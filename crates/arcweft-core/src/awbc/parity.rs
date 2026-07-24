@@ -108,6 +108,9 @@ impl ParityTrace {
             VmExit::Returned(_) => ParityEvent::Stop {
                 reason: "returned".to_owned(),
             },
+            VmExit::Cancelled => ParityEvent::Stop {
+                reason: "cancelled".to_owned(),
+            },
             VmExit::Trapped(trap) => ParityEvent::Trap {
                 code: trap_code(trap.code).to_owned(),
                 message: trap.message.clone(),

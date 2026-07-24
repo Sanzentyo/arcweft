@@ -79,6 +79,7 @@ pub enum FiberStatus {
     Running,
     Suspended,
     Returned,
+    Cancelled,
     Trapped,
 }
 
@@ -174,6 +175,7 @@ pub struct FiberStreamState {
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub enum FiberTerminalValue {
     Returned(Option<RuntimeValue>),
+    Cancelled,
     Trapped(FiberTrap),
 }
 
@@ -815,10 +817,59 @@ impl FiberState {
         Ok(())
     }
 
+    pub(super) fn mark_cancelled(&mut self) {
+        self.status = FiberStatus::Cancelled;
+        self.suspension = None;
+        self.terminal = Some(FiberTerminalValue::Cancelled);
+    }
+
     pub fn mark_trapped(&mut self, trap: FiberTrap) {
+        if matches!(
+            self.status,
+            FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped
+        ) {
+            return;
+        }
         self.status = FiberStatus::Trapped;
         self.suspension = None;
         self.terminal = Some(FiberTerminalValue::Trapped(trap));
+    }
+
+    /// Detaches all registered cleanups in whole-stack unwind order.
+    ///
+    /// Frames unwind from callee to caller. Each frame first drains lexical
+    /// scopes from innermost to outermost and then drains frame-root cleanups.
+    /// Entries are removed while collecting them, so a later terminal signal
+    /// cannot execute the same cleanup twice.
+    pub(super) fn take_unwind_cleanups(&mut self) -> Vec<FiberScopeCleanup> {
+        let mut cleanups = Vec::new();
+        for frame in self.frames.iter_mut().rev() {
+            for scope in frame.scopes.iter_mut().rev() {
+                while let Some(cleanup) = scope.cleanups.pop() {
+                    cleanups.push(cleanup);
+                }
+            }
+            while let Some(cleanup) = frame.root_cleanups.pop() {
+                cleanups.push(cleanup);
+            }
+        }
+        cleanups
+    }
+
+    pub(super) fn take_active_frame_cleanups(
+        &mut self,
+    ) -> Result<Vec<FiberScopeCleanup>, FiberStateError> {
+        let frame = self.active_frame_mut()?;
+        let mut cleanups = Vec::new();
+        for scope in frame.scopes.iter_mut().rev() {
+            while let Some(cleanup) = scope.cleanups.pop() {
+                cleanups.push(cleanup);
+            }
+        }
+        while let Some(cleanup) = frame.root_cleanups.pop() {
+            cleanups.push(cleanup);
+        }
+        Ok(cleanups)
     }
 
     fn require_status(&self, expected: FiberStatus) -> Result<(), FiberStateError> {
@@ -857,6 +908,16 @@ fn validate_fiber_terminal_shape(state: &FiberState) -> Result<(), FiberStateErr
                     state.terminal.as_ref(),
                     Some(FiberTerminalValue::Returned(_))
                 )
+            {
+                return Err(FiberStateError::InvalidStatus {
+                    actual: state.status,
+                    expected: state.status,
+                });
+            }
+        }
+        FiberStatus::Cancelled => {
+            if state.suspension.is_some()
+                || !matches!(state.terminal.as_ref(), Some(FiberTerminalValue::Cancelled))
             {
                 return Err(FiberStateError::InvalidStatus {
                     actual: state.status,
@@ -1426,7 +1487,7 @@ fn validate_terminal(
         FiberTerminalValue::Returned(Some(value)) => {
             validate_runtime_value_at(program, value, None, "terminal.returned".to_owned())
         }
-        FiberTerminalValue::Returned(None) => Ok(()),
+        FiberTerminalValue::Returned(None) | FiberTerminalValue::Cancelled => Ok(()),
         FiberTerminalValue::Trapped(trap) => {
             if trap
                 .source_map

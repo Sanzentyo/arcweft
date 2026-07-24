@@ -1,6 +1,6 @@
 use super::{
     AwaitManyInFlight, AwaitManyState, AwaitState, AwaitTarget, CancelScopeId, ChoiceState,
-    DialogueState, Engine, FlowEvent, FlowFiberStatus, HostCallState, LineEffectRequest,
+    DialogueState, Engine, FlowEvent, FlowExit, FlowFiberStatus, HostCallState, LineEffectRequest,
     RuntimeDiagnostic, RuntimeEvalError, RuntimeFieldValue, RuntimePayload, RuntimeSeq,
     RuntimeStepInput, RuntimeStepOutput, RuntimeValue, TaskEvent, TaskEventKind, TaskKey,
     TaskPolicy, TaskPriority, TaskSpec, runtime_sequence_values,
@@ -161,12 +161,7 @@ impl Engine {
                 ));
             }
             TaskEventKind::Cancelled => {
-                let message = format!("await task {} was cancelled", state.target.task.0);
-                self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                output.diagnostics.push(RuntimeDiagnostic::categorized(
-                    RuntimeDiagnosticCategory::Host,
-                    message,
-                ));
+                self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
             }
         }
     }
@@ -389,16 +384,7 @@ impl Engine {
                     return;
                 }
                 TaskEventKind::Cancelled => {
-                    let in_flight = &state.in_flight[position];
-                    let message = format!(
-                        "await task {} at index {} was cancelled",
-                        in_flight.task.0, in_flight.index
-                    );
-                    self.fiber.status = FlowFiberStatus::Failed(message.clone());
-                    output.diagnostics.push(RuntimeDiagnostic::categorized(
-                        RuntimeDiagnosticCategory::Host,
-                        message,
-                    ));
+                    self.fiber.status = FlowFiberStatus::Done(FlowExit::Done);
                     return;
                 }
             }

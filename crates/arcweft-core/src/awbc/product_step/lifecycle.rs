@@ -188,17 +188,20 @@ impl AwbcProductStepExecutor {
             error.category(),
             message.clone(),
         ));
-        self.fiber.mark_trapped(FiberTrap {
-            code: match error {
-                ProductStepError::Type(_) => AwbcTrapCode::TypeMismatch,
-                ProductStepError::Host(_) => AwbcTrapCode::HostAbiMismatch,
-                ProductStepError::Input(_) | ProductStepError::Internal(_) => {
-                    AwbcTrapCode::InternalInvariant
-                }
+        self.terminate_with_trap(
+            FiberTrap {
+                code: match error {
+                    ProductStepError::Type(_) => AwbcTrapCode::TypeMismatch,
+                    ProductStepError::Host(_) => AwbcTrapCode::HostAbiMismatch,
+                    ProductStepError::Input(_) | ProductStepError::Internal(_) => {
+                        AwbcTrapCode::InternalInvariant
+                    }
+                },
+                message: Some(message),
+                source_map: None,
             },
-            message: Some(message),
-            source_map: None,
-        });
+            output,
+        );
     }
 
     pub(super) fn fail_with_trap(
@@ -213,6 +216,19 @@ impl AwbcProductStepExecutor {
             message: Some(message),
             source_map,
         };
+        self.terminate_with_trap(trap, output);
+    }
+
+    pub(super) fn terminate_with_trap(&mut self, trap: FiberTrap, output: &mut RuntimeStepOutput) {
+        if matches!(
+            self.fiber.status,
+            FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped
+        ) {
+            return;
+        }
+        for cleanup in self.fiber.take_unwind_cleanups() {
+            self.emit_effect(cleanup.effect, &cleanup.args, output);
+        }
         self.record_trap(&trap, output);
         self.fiber.mark_trapped(trap);
     }
@@ -257,7 +273,11 @@ impl AwbcProductStepExecutor {
         if self.fiber.status == FiberStatus::Trapped {
             return RuntimeStepStopReason::Failed;
         }
-        if self.fiber.status == FiberStatus::Returned && self.child_fibers.is_empty() {
+        if matches!(
+            self.fiber.status,
+            FiberStatus::Returned | FiberStatus::Cancelled
+        ) && self.child_fibers.is_empty()
+        {
             return RuntimeStepStopReason::Done;
         }
         if matches!(
@@ -301,7 +321,11 @@ impl AwbcProductStepExecutor {
         if self.fiber.status == FiberStatus::Trapped {
             return true;
         }
-        if self.fiber.status == FiberStatus::Returned && self.child_fibers.is_empty() {
+        if matches!(
+            self.fiber.status,
+            FiberStatus::Returned | FiberStatus::Cancelled
+        ) && self.child_fibers.is_empty()
+        {
             return true;
         }
         if matches!(
@@ -364,7 +388,7 @@ impl AwbcProductStepExecutor {
         if !self.child_fibers.is_empty()
             && matches!(
                 self.fiber.status,
-                FiberStatus::Returned | FiberStatus::Suspended
+                FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Suspended
             )
         {
             return FlowFiberStatus::Running;
@@ -377,6 +401,7 @@ impl AwbcProductStepExecutor {
                 }
                 _ => FlowFiberStatus::Done(FlowExit::Done),
             },
+            FiberStatus::Cancelled => FlowFiberStatus::Done(FlowExit::Done),
             FiberStatus::Trapped => match self.fiber.terminal.as_ref() {
                 Some(FiberTerminalValue::Trapped(trap)) => FlowFiberStatus::Failed(
                     trap.message

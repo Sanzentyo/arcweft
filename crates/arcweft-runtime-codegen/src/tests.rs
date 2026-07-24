@@ -10,6 +10,7 @@ use crate::region::{
 };
 use arcweft_core::awbc::fiber::{FiberCursor, FiberSafePoint, FiberState};
 use arcweft_core::awbc::schema::*;
+use arcweft_core::awbc::vm::cancel_fiber;
 
 const PROGRAM_DIGEST: AwbcDigest = AwbcDigest([7; 32]);
 
@@ -211,6 +212,30 @@ fn compiled_fallback_must_not_consume_instruction_budget() {
     );
     assert_eq!(fiber.line_cursor, 0);
     assert_eq!(fiber.budget.remaining, 10);
+}
+
+#[test]
+fn compiled_region_rejects_a_cancelled_entry_without_reclassifying_it() {
+    let program = program();
+    let region = TestRegion {
+        metadata: metadata(&program),
+        behavior: RegionBehavior::Continue,
+    };
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 1, 10).expect("fiber");
+    let cancellation = cancel_fiber(&mut fiber);
+
+    assert!(matches!(
+        cancellation.exit,
+        arcweft_core::awbc::vm::VmExit::Cancelled
+    ));
+    assert_eq!(
+        execute_compiled_region(&region, identity(), &program, &mut fiber, 10),
+        Err(CompiledApplyError::InvalidEntry)
+    );
+    assert_eq!(
+        fiber.terminal,
+        Some(arcweft_core::awbc::fiber::FiberTerminalValue::Cancelled)
+    );
 }
 
 #[test]

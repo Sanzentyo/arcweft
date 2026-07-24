@@ -173,6 +173,11 @@ fn run_function(
         match output.exit {
             VmExit::Running => {}
             VmExit::Returned(value) => return Ok(value.unwrap_or(RuntimeValue::Unit)),
+            VmExit::Cancelled => {
+                return Err(VmError::Runtime(
+                    "test pure helper was cancelled".to_owned(),
+                ));
+            }
             VmExit::Trapped(trap) => {
                 return Err(VmError::Runtime(format!(
                     "test pure helper trapped: {trap:?}"

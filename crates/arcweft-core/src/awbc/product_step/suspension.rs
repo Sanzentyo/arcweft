@@ -9,6 +9,7 @@ use super::{
     content_request, flow_id_from_awbc_public_id, runtime_sequence_values, runtime_value_label,
     source_id_for, stream_id_for, task_spec,
 };
+use crate::awbc::vm::cancel_fiber;
 use crate::source::SourcePolicy;
 
 impl AwbcProductStepExecutor {
@@ -100,12 +101,8 @@ impl AwbcProductStepExecutor {
                 true
             }
             TaskEventKind::Cancelled => {
-                self.fail_with_trap(
-                    AwbcTrapCode::HostAbiMismatch,
-                    format!("await task {} was cancelled", task_id.0),
-                    None,
-                    output,
-                );
+                let cancellation = cancel_fiber(&mut self.fiber);
+                self.consume_observations(cancellation.observations, output);
                 true
             }
         }
@@ -243,15 +240,8 @@ impl AwbcProductStepExecutor {
                     return true;
                 }
                 TaskEventKind::Cancelled => {
-                    self.fail_with_trap(
-                        AwbcTrapCode::HostAbiMismatch,
-                        format!(
-                            "await task {} at index {} was cancelled",
-                            event.task_id.0, state.in_flight[position].index
-                        ),
-                        None,
-                        output,
-                    );
+                    let cancellation = cancel_fiber(&mut self.fiber);
+                    self.consume_observations(cancellation.observations, output);
                     return true;
                 }
             }

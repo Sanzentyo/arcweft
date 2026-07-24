@@ -281,6 +281,10 @@ fn map_vm_exit(
             CompiledStepExit::Suspended,
         ),
         VmExit::Returned(value) => CompiledStepExit::Returned(value),
+        VmExit::Cancelled => failed(
+            AwbcTrapCode::InternalInvariant,
+            "running effect-free compiled region observed cancellation".to_owned(),
+        ),
         VmExit::Trapped(trap) => CompiledStepExit::Failed(RuntimeFailure {
             code: trap.code,
             message: trap.message,

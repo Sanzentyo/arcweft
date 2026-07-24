@@ -246,7 +246,7 @@ impl AwbcProductStepExecutor {
             observations: RuntimeObservationState::default(),
             source_states: BTreeMap::new(),
             stream_states: BTreeMap::new(),
-            status: if fiber.status == FiberStatus::Returned {
+            status: if matches!(fiber.status, FiberStatus::Returned | FiberStatus::Cancelled) {
                 FlowFiberStatus::Done(FlowExit::Done)
             } else {
                 FlowFiberStatus::Running
@@ -521,7 +521,7 @@ impl AwbcProductStepExecutor {
     fn has_attemptable_work(&self) -> bool {
         !matches!(
             self.fiber.status,
-            FiberStatus::Returned | FiberStatus::Trapped
+            FiberStatus::Returned | FiberStatus::Cancelled | FiberStatus::Trapped
         ) || self
             .child_fibers
             .iter()
@@ -553,7 +553,10 @@ impl AwbcProductStepExecutor {
                         self.initialize_suspension(output, pure_backend);
                     }
                     VmExit::Returned(value) => Self::record_return(value.as_ref(), output),
-                    VmExit::Running | VmExit::Trapped(_) | VmExit::BudgetYield(_) => {}
+                    VmExit::Running
+                    | VmExit::Cancelled
+                    | VmExit::Trapped(_)
+                    | VmExit::BudgetYield(_) => {}
                 }
                 usize::try_from(vm_output.executed).unwrap_or(usize::MAX)
             }
@@ -614,7 +617,7 @@ impl AwbcProductStepExecutor {
                     self.consume_observations(vm_output.observations, output);
                     match vm_output.exit {
                         VmExit::Running => {}
-                        VmExit::Returned(_) => return,
+                        VmExit::Returned(_) | VmExit::Cancelled => return,
                         VmExit::Trapped(trap) => {
                             self.record_trap(&trap, output);
                             return;
@@ -687,11 +690,10 @@ impl AwbcProductStepExecutor {
                     FiberStatus::Running | FiberStatus::Suspended => {
                         self.child_fibers.push_back(child);
                     }
-                    FiberStatus::Returned => {}
+                    FiberStatus::Returned | FiberStatus::Cancelled => {}
                     FiberStatus::Trapped => {
                         if let Some(FiberTerminalValue::Trapped(trap)) = child.terminal {
-                            self.record_trap(&trap, output);
-                            self.fiber.mark_trapped(trap);
+                            self.terminate_with_trap(trap, output);
                         }
                     }
                 }

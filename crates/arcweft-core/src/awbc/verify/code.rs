@@ -1076,8 +1076,8 @@ fn apply_terminator(
             resume,
         } => {
             let task_ty = read_register(verifier, function, block, *task, state)?;
-            if !is_task_handle(program.runtime_types.get(task_ty.index())) {
-                return invalid_type(&at, "task handle");
+            if !is_await_handle(program.runtime_types.get(task_ty.index())) {
+                return invalid_type(&at, "task or need handle");
             }
             let mut next = state.clone();
             if let Some(pattern) = binding {
@@ -1921,6 +1921,13 @@ fn is_sequence_or_dynamic(ty: Option<&AwbcRuntimeType>) -> bool {
 
 fn is_dynamic(ty: Option<&AwbcRuntimeType>) -> bool {
     matches!(ty, Some(AwbcRuntimeType::Dynamic))
+}
+
+fn is_await_handle(ty: Option<&AwbcRuntimeType>) -> bool {
+    matches!(
+        ty,
+        Some(AwbcRuntimeType::TaskHandle | AwbcRuntimeType::NeedHandle | AwbcRuntimeType::Dynamic)
+    )
 }
 
 fn is_task_handle(ty: Option<&AwbcRuntimeType>) -> bool {

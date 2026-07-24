@@ -111,6 +111,11 @@ fn run_function_with_host(
         match output.exit {
             VmExit::Running => {}
             VmExit::Returned(value) => return Ok(value.unwrap_or(RuntimeValue::Unit)),
+            VmExit::Cancelled => {
+                return Err(VmError::Runtime(
+                    "pure helper execution was cancelled".to_owned(),
+                ));
+            }
             VmExit::Trapped(trap) => {
                 return Err(VmError::Runtime(trap.message.unwrap_or_else(|| {
                     format!("AWBC pure helper trap {:?}", trap.code)

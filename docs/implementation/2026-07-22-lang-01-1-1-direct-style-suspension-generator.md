@@ -57,17 +57,29 @@ Lang-01.3.1.2.1/.2 contracts and the unresolved codec-8 allocation recorded in
 
 ## Remaining completion boundary
 
-The ordinary-function semantic and parser/HIR authority switches are now
-complete. The sequence does not yet:
+The ordinary-function parser/HIR switch and semantic execution classification
+are complete. The sequence itself is not complete, however. Its remaining
+rows are classified by final owner rather than being collapsed into a single
+Stream dependency:
 
-- connect the checked execution fact to the final runtime-plan/AWBC Stream
-  lowering; or
-- publish Stream ABI/codec wire changes.
+| Boundary | State | Remaining work or owner |
+|---|---|---|
+| ABI-neutral same-fiber frames, terminal cancellation, and whole-stack cleanup | `LANDED_VALIDATED` | [the 2026-07-24 direct-suspension kernel note](2026-07-24-lang-01-1-1-awbc-direct-suspension-kernel.md) |
+| direct `Need<T, E>` Ready/Err materialization and same-step `await` | `MISSING` | replace the current task-plan-only Product `Await` reader with the final typed in-memory Need owner; do not add a wire surrogate |
+| non-Need `await`, exact borrow range, and `ThreadHandle` negative evidence | `MISSING` | semantic diagnostic and negative-matrix closure |
+| effect-trait requirement/implementation facts and diagnostics | `MISSING` | typed semantic owner and its direct tests |
+| callable execution facts in project/LSP indexes | `MISSING` | publish canonical checked facts; do not synthesize callable IDs from hover text |
+| authored ordinary-function AWBC kind and public lowering | `DESIGN_BLOCKED` | final codec-8 kind allocation and opcode interleave reconciliation |
+| `StreamFactory` runtime/wire/save projection | `DESIGN_BLOCKED` | Lang-01.3.1.2.2.1 correction and the final Stream authority switch |
+| detached external-capability `FsError` fixtures | `DESIGN_BLOCKED` | Proof attached syntax/HIR public switch, not a raw-body repair in this sequence |
+| old RuntimeCallable/StreamPlan wire rows and source-spelling scans | `SUPERSEDED` | final Lang-01.3 contracts and the repository-wide source-gate prohibition |
 
-Those remaining changes stay ordered behind the pending Stream runtime-wire
-correction. No provisional
-`CheckedReturnTarget`, compatibility alias, dual reader, or source gate was
-introduced.
+The ABI-neutral kernel does not make the blocked authored-function wire
+projection, typed Ready/Err Need behavior, semantic negative rows, effect
+traits, or tooling publication appear complete. No provisional
+`CheckedReturnTarget`, compatibility alias, dual reader, synthetic authored
+function kind, or source gate is introduced while those final owners are
+pending.
 
 ## Baseline validation boundary
 
