@@ -1,5 +1,5 @@
 mod support
 
-flow support_ready {
+flow support_ready() -> String {
   return "support"
 }
