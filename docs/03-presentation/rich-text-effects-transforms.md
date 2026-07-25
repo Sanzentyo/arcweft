@@ -92,17 +92,10 @@ is the logical glyph index relative to the first glyph reached by that
 application. It starts at zero independently for each application and is never
 a UTF-8 byte offset or the containing document's global glyph index.
 
-Extern Rust or WASM entries use the same declaration model:
-
-```arcw
-extern rust mod studio_fx from crate "studio_fx" {
-    #[fx]
-    pub fn bloom(
-        amount: f32 = 1.0,
-        radius: Length = 8px,
-    ) -> Fx
-}
-```
+Rust or WASM Fx entries are exported through generated adapter metadata and
+mounted by the schema-1 manifest. Arcweft source does not repeat their
+signatures; the verified metadata record is the typed callable authority for
+sema, LSP, bundling, and runtime planning.
 
 Presentation extensions use the ordinary typed `#[fx] fn ... -> Fx` boundary.
 

@@ -3,8 +3,7 @@ use crate::ast::flow::ContractClause;
 use crate::ast::ids::{
     EntityRef, EntityRefSyntax, FamilyRelativeEntityRef, IdRef, RelativeId, RelativeIdSpelling,
 };
-use crate::ast::items::{EntityDeclKind, ExternModSource};
-use crate::ast::symbol_path::ProjectSymbolPath;
+use crate::ast::items::EntityDeclKind;
 use crate::cst::{
     split_leading_entity_ref_parts, split_leading_ident, split_leading_relative_entity_ref,
     split_leading_relative_id, split_top_level_keyword_once, starts_leading_entity_ref,
@@ -54,25 +53,6 @@ pub(super) fn split_function_header_lines<'a>(
     }
     let end_index = end_index.unwrap_or(signature.len());
     (!signature.is_empty()).then(|| (signature.join("\n"), lines[end_index..].to_vec()))
-}
-
-pub(super) fn parse_extern_mod_head(
-    head: &str,
-) -> Option<(String, ProjectSymbolPath, Option<ExternModSource>)> {
-    let rest = head.trim_start().strip_prefix("extern")?.trim_start();
-    let (abi, Some(rest)) = split_top_level_keyword_once(rest, "mod") else {
-        return None;
-    };
-    let (path, source) = split_top_level_keyword_once(rest, "from");
-    let path = path.trim().parse::<ProjectSymbolPath>().ok()?;
-    let source = source.and_then(parse_extern_mod_source);
-    Some((abi.trim().to_owned(), path, source))
-}
-
-fn parse_extern_mod_source(source: &str) -> Option<ExternModSource> {
-    let crate_name = source.trim().strip_prefix("crate")?.trim_start();
-    let crate_name = crate_name.strip_prefix('"')?.strip_suffix('"')?;
-    (!crate_name.is_empty()).then(|| ExternModSource::Crate(crate_name.to_owned()))
 }
 
 pub(super) fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {

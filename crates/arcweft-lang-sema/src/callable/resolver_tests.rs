@@ -27,7 +27,7 @@ use crate::{
         identity::EnvironmentBindingId,
         nominal::{
             AcceptedNominalId, AcceptedNominalOrigin, AcceptedNominalOwnerId,
-            AcceptedNominalRecord, AcceptedNominalSemantics, RustPackageId,
+            AcceptedNominalRecord, AcceptedNominalSemantics,
         },
     },
     nominal::{
@@ -65,7 +65,6 @@ use super::{
     EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationRecord,
     EnvironmentDeclarationOrdinal, LexicalCallableScope, PRODUCTION_CALLABLE_LIMITS,
     ReceiverMethodKey, ResolveCallError, ResolveCallOutcome, ResolvedCallTarget, ResolverWork,
-    RustCallableProvenance, RustCallablePurity, RustItemPath, RustPackageProvenance,
     SignatureOrigin, SignatureQueryStep, SignatureQueryStepControl, SpreadArgumentPolicy,
     StandardEnvironmentId, UnknownNamedArgumentPolicy, resolve_call_target,
 };
@@ -2737,105 +2736,6 @@ flow @flow.main main {
         focused.report().retained_argument_inference_facts().count(),
         2
     );
-}
-
-#[test]
-fn extern_rust_alias_resolves_exact_typed_environment_record() {
-    const SOURCE: &str = r#"
-extern rust mod mini_games.truck from crate "truck_game" {
-    pub type Rank
-    pub fn score_to_rank(score: i32) -> Rank
-}
-
-flow @flow.main main {
-    let rank: Rank = mini_games.truck.score_to_rank(score = 42i32)
-}
-"#;
-    let (document, project, symbol_world) = root_project_source("rust-extern-alias", SOURCE);
-    let rank_path: arcweft_lang_syntax::types::TypePath = project_path(["Rank"]).into();
-    let base = TypeCheckEnv::standard()
-        .try_with_nominal_record(
-            AcceptedNominalRecord::try_new(
-                AcceptedNominalId::new(
-                    AcceptedNominalOwnerId::RustPackage(
-                        RustPackageId::try_new("truck_game").expect("package id"),
-                    ),
-                    rank_path.clone(),
-                ),
-                0,
-                AcceptedNominalSemantics::Opaque,
-                AcceptedNominalOrigin::RustExport,
-                None,
-            )
-            .expect("accepted Rust nominal"),
-        )
-        .expect("Rust type export");
-    let rank = base
-        .nominal_catalog()
-        .exact(&rank_path)
-        .expect("typed Rust rank export");
-    let rank_type = TypeKind::AcceptedNominal(AcceptedNominalType::new(
-        rank.id().clone(),
-        Box::<[TypeKind]>::default(),
-    ));
-    let adapter = AdapterPackageId::try_new("adapter.rust").expect("adapter id");
-    let rust = RustCallableProvenance::try_new(
-        adapter.clone(),
-        RustPackageProvenance::try_new("truck_game", "1.0.0", None)
-            .expect("Rust package provenance"),
-        RustItemPath::try_new("truck_game::score_to_rank").expect("Rust item path"),
-        RustCallablePurity::Pure,
-    )
-    .expect("Rust callable provenance");
-    let record = EnvironmentCallablePublicationRecord::try_new(
-        EnvironmentCallableKind::RustFunction,
-        CallableLookupKey::Free(callable_path(&["score_to_rank"])),
-        CallableOverloadIndex::try_from_usize(0).expect("overload"),
-        ordinary_single_parameter_schema("score", TypeKind::I32, rank_type),
-        CallableDocumentation::missing(),
-        None,
-        Some(rust),
-        EnvironmentDeclarationOrdinal::try_from_usize(0).expect("declaration ordinal"),
-    )
-    .expect("Rust publication record");
-    let environment_document = source_document(
-        "arcweft-generated://callable-resolver/rust-alias",
-        "rust score_to_rank callable",
-    );
-    let environment_input = source_backed_callable_input(
-        EnvironmentCallableOwner::Adapter(adapter),
-        &environment_document,
-        [record],
-    );
-    let facts = one_character_facts_with_environment(
-        &document,
-        vec![Arc::clone(&document), environment_document],
-        symbol_world,
-        &sample_manifest("layers/body.png"),
-        vec![environment_input],
-    );
-    let world = CharacterRegistrar::register(CharacterRegistrationRequest::new(
-        Arc::new(base),
-        &project,
-        &facts,
-        None,
-    ))
-    .expect("registered Rust alias fixture");
-    let fixture = ResolverFixture {
-        document,
-        project,
-        world,
-    };
-
-    let candidate =
-        resolved_candidate(fixture.resolve_path(&["mini_games", "truck", "score_to_rank"]));
-    assert!(matches!(
-        candidate.origin(),
-        SignatureOrigin::Adapter { .. }
-    ));
-    analyze_registered_project_types(&fixture.project.linked_module(), &fixture.world)
-        .into_result()
-        .expect("extern Rust alias typechecks through the accepted catalog");
 }
 
 #[test]

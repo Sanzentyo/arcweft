@@ -6,12 +6,10 @@ use std::{
 
 use arcweft_lang_hir::{
     callable_source::HirCallableSignatureSource,
-    model::HirTopLevelDecl,
     project::HirProject,
     symbol::{CallableDeclarationOwner, ProjectSymbolTable, ProjectSymbolTargetId},
 };
 use arcweft_lang_syntax::{
-    ast::items::{ExternModMember, ExternModSource},
     ast::pattern::Pattern,
     types::{FnParam, FnParamGroup, FnParamKind},
 };
@@ -22,7 +20,7 @@ use crate::{
     env::{FunctionSignature, TypeCheckEnv},
     nominal::{CheckedTypeReferenceCache, NominalResolutionIndex},
     registration::{AcceptedNominalWorld, AcceptedNominalWorldStamp, EnvironmentManifestDigest},
-    types::{GenericTypeOwnerId, TypeKind},
+    types::TypeKind,
 };
 
 use super::digest::CanonicalEncoder;
@@ -51,7 +49,6 @@ pub(crate) struct RegisteredCallableCatalogBuilder {
     project_modules: Vec<RegisteredProjectModuleCallables>,
     project_records: Vec<Arc<CallableRecord>>,
     project_bindings: Vec<(ProjectCallablePath, ProjectNameBinding)>,
-    rust_extern_aliases: Vec<RustExternAliasSeed>,
     environment_publications: Vec<EnvironmentCallablePublication>,
     nominal_resolutions: NominalResolutionIndex,
     nominal_cache: CheckedTypeReferenceCache,
@@ -62,13 +59,6 @@ struct ProjectParameterPublication {
     groups: Vec<CallableParameterGroup>,
     documentation: Vec<CallableParameterDocumentation>,
     sources: Vec<CallableParameterSource>,
-}
-
-struct RustExternAliasSeed {
-    path: ProjectCallablePath,
-    package: String,
-    export: CallableName,
-    signature: FunctionSignature,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -146,7 +136,6 @@ impl RegisteredCallableCatalogBuilder {
             project_modules: Vec::new(),
             project_records: Vec::new(),
             project_bindings: Vec::new(),
-            rust_extern_aliases: Vec::new(),
             environment_publications: Vec::new(),
             nominal_resolutions: NominalResolutionIndex::production(),
             nominal_cache: CheckedTypeReferenceCache::default(),
@@ -174,7 +163,7 @@ impl RegisteredCallableCatalogBuilder {
             }
             .into());
         }
-        for (module, hir) in project.modules() {
+        for (module, _) in project.modules() {
             self.work.charge(1)?;
             let source = project.source(module).ok_or_else(|| {
                 CallableCatalogBuildError::MissingProjectModuleSource {
@@ -234,80 +223,6 @@ impl RegisteredCallableCatalogBuilder {
                     source.clone(),
                     declarations,
                 ));
-            self.add_rust_extern_aliases(project, symbols, nominal_world, module, hir)?;
-        }
-        Ok(())
-    }
-
-    fn add_rust_extern_aliases(
-        &mut self,
-        project: &HirProject,
-        symbols: &ProjectSymbolTable,
-        nominal_world: &AcceptedNominalWorld,
-        module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
-        hir: &arcweft_lang_hir::model::HirModule,
-    ) -> Result<(), CallableCatalogBuildError> {
-        for declaration in hir.declarations() {
-            let HirTopLevelDecl::ExternMod(item) = declaration else {
-                continue;
-            };
-            if item.abi() != "rust" {
-                continue;
-            }
-            let Some(ExternModSource::Crate(package)) = item.source() else {
-                continue;
-            };
-            for member in item.members() {
-                let ExternModMember::Function(function) = member else {
-                    continue;
-                };
-                self.work.charge(1)?;
-                let export = CallableName::try_new(function.signature().name())
-                    .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
-                let path = item
-                    .path()
-                    .segments()
-                    .iter()
-                    .map(|segment| CallableName::try_new(segment.as_str()))
-                    .chain(std::iter::once(Ok(export.clone())))
-                    .collect::<Result<Vec<_>, _>>()
-                    .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
-                let path = CallablePath::try_new(path)
-                    .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
-                let declaration_source = hir.source_span(*item.range()).ok_or_else(|| {
-                    CallableCatalogBuildError::MissingProjectModuleSource {
-                        module: module.clone(),
-                    }
-                })?;
-                if function
-                    .signature()
-                    .generic_params()
-                    .iter()
-                    .any(|parameter| parameter.as_type_param().is_some())
-                {
-                    return Err(CallableCatalogBuildError::InvalidProjectSignatureSource {
-                        span: declaration_source,
-                    });
-                }
-                self.rust_extern_aliases.push(RustExternAliasSeed {
-                    path: ProjectCallablePath::new(project.package().clone(), module.clone(), path),
-                    package: package.clone(),
-                    export,
-                    signature: ProjectSignatureResolver::new(
-                        project,
-                        symbols,
-                        nominal_world,
-                        &mut self.nominal_resolutions,
-                        &mut self.nominal_cache,
-                    )
-                    .resolve_function_signature(
-                        module,
-                        hir,
-                        function.signature(),
-                        &GenericTypeOwnerId::AcceptedSource(declaration_source),
-                    )?,
-                });
-            }
         }
         Ok(())
     }
@@ -490,12 +405,6 @@ impl RegisteredCallableCatalogBuilder {
     pub(crate) fn finish(mut self) -> Result<RegisteredCallableCatalog, CallableCatalogBuildError> {
         let environment =
             finish_environment(self.environment_publications, &self.limits, &mut self.work)?;
-        bind_rust_extern_aliases(
-            self.rust_extern_aliases,
-            &environment,
-            &mut self.project_bindings,
-            &mut self.work,
-        )?;
         let project = finish_project(
             self.project_modules,
             self.project_records,
@@ -509,42 +418,6 @@ impl RegisteredCallableCatalogBuilder {
             self.nominal_resolutions,
         ))
     }
-}
-
-fn bind_rust_extern_aliases(
-    aliases: Vec<RustExternAliasSeed>,
-    environment: &EnvironmentCallableCatalog,
-    bindings: &mut Vec<(ProjectCallablePath, ProjectNameBinding)>,
-    work: &mut CatalogBuildWork,
-) -> Result<(), CallableCatalogBuildError> {
-    for alias in aliases {
-        work.charge(1)?;
-        let matching = environment
-            .rust_exports(&alias.package, &alias.export)
-            .into_iter()
-            .filter(|record| record.schema().matches_function_signature(&alias.signature))
-            .collect::<Vec<_>>();
-        match matching.as_slice() {
-            [] => {}
-            [record] => {
-                let CallableCandidateId::Environment(id) = record.id() else {
-                    return Err(CallableCatalogBuildError::InvalidRecord(
-                        super::CallableCatalogError::IdKeyMismatch,
-                    ));
-                };
-                bindings.push((alias.path, ProjectNameBinding::Environment(id.clone())));
-            }
-            candidates => {
-                return Err(CallableCatalogBuildError::AmbiguousRustExternBinding {
-                    path: alias.path,
-                    package: alias.package.clone(),
-                    export: alias.export.clone(),
-                    candidates: candidates.len(),
-                });
-            }
-        }
-    }
-    Ok(())
 }
 
 fn project_parameters(

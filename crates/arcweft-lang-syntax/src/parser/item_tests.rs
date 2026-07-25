@@ -37,7 +37,7 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
         "layer World: world_2d {}\n",
         "entry cli @entry.cli.main { goto @flow.main }\n",
         "extern capability audio {}\n",
-        "extern mod native\n",
+        "extern rust mod native from crate \"native\" {}\n",
         "test @test.smoke scenario {}\n",
         "bench @bench.speed {}\n",
         "source data {}\n",

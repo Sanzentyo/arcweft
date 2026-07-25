@@ -33,7 +33,6 @@ use crate::effect_model::{
     CallableId, CallableKind, EffectContract, Visibility as EffectVisibility,
 };
 use crate::effects::EffectSet;
-use crate::env::nominal::RustPackageId;
 use crate::nominal::{GenericTypeScope, SelfTypeScope};
 use crate::propagation::{
     CheckedReturnType, PropagationBarrierEvidence, PropagationBoundaryEvidence,
@@ -47,11 +46,10 @@ use arcweft_lang_hir::model::{HirFlow, HirFunction};
 use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_hir::style::HirStyleDecl;
 use arcweft_lang_hir::symbol::CallableDeclarationId;
-use arcweft_lang_syntax::ast::common::{TextRange, Visibility};
+use arcweft_lang_syntax::ast::common::Visibility;
 use arcweft_lang_syntax::ast::flow::AuthoredExpr;
 use arcweft_lang_syntax::ast::items::{
-    EntityDeclItem, EntityDeclKind, EntryRouteBinding, EntryRouteBindingSource, ExternModActivity,
-    ExternModFunction, ExternModItem, ExternModMember, ExternModSource, ExternModType, ImplItem,
+    EntityDeclItem, EntityDeclKind, EntryRouteBinding, EntryRouteBindingSource, ImplItem,
     ImplMember, TypeAliasItem,
 };
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
@@ -1443,7 +1441,6 @@ impl TypeChecker<'_> {
             | HirTopLevelDecl::Trait(_)
             | HirTopLevelDecl::ExternCapability(_) => {}
             HirTopLevelDecl::Impl(item) => self.check_impl_item(item),
-            HirTopLevelDecl::ExternMod(item) => self.check_extern_mod(item),
             HirTopLevelDecl::Entry(item) => {
                 self.expect_entity_kind(item.id(), &EntityKind::Entry, "entry id");
                 for item in item.items() {
@@ -1496,160 +1493,6 @@ impl TypeChecker<'_> {
 
     fn check_style_decl(&mut self, item: &HirStyleDecl) {
         self.expect_entity_kind(item.id(), &EntityKind::Style, "style id");
-    }
-
-    fn check_extern_mod(&mut self, item: &ExternModItem) {
-        if item.abi() != "rust" {
-            return;
-        }
-        let Some((package, package_id)) = self.extern_rust_package(item) else {
-            return;
-        };
-        if !self.has_rust_package_metadata(&package_id) {
-            self.errors
-                .push(TypeCheckError::missing_rust_package_metadata(package));
-            return;
-        }
-
-        let namespace = item.path().to_string();
-        for member in item.members() {
-            match member {
-                ExternModMember::Type(ty) => {
-                    self.check_extern_rust_type(&package, &package_id, &namespace, ty);
-                }
-                ExternModMember::Function(function) => {
-                    self.check_extern_rust_function(&package, &namespace, function, *item.range());
-                }
-                ExternModMember::Activity(activity) => {
-                    self.check_extern_rust_activity(activity);
-                }
-                ExternModMember::Raw(raw) => {
-                    self.errors.push(TypeCheckError::new(format!(
-                        "raw extern rust member is not type-checkable: {raw}"
-                    )));
-                }
-            }
-        }
-    }
-
-    fn extern_rust_package(&mut self, item: &ExternModItem) -> Option<(String, RustPackageId)> {
-        let Some(ExternModSource::Crate(package)) = item.source() else {
-            self.errors.push(TypeCheckError::new(format!(
-                "extern rust module `{}` must declare `from crate \"name\"`",
-                item.path()
-            )));
-            return None;
-        };
-        match RustPackageId::try_new(package.clone()) {
-            Ok(package_id) => Some((package.clone(), package_id)),
-            Err(error) => {
-                self.errors.push(TypeCheckError::new(format!(
-                    "extern rust package `{package}` is invalid: {error}"
-                )));
-                None
-            }
-        }
-    }
-
-    fn has_rust_package_metadata(&self, package: &RustPackageId) -> bool {
-        let registered_environment = self
-            .registered_world
-            .map(crate::registration::RegisteredSemanticWorld::environment);
-        let catalog =
-            registered_environment.map(|environment| environment.callable_catalog().environment());
-        let rust_owner = crate::env::nominal::AcceptedNominalOwnerId::RustPackage(package.clone());
-        let nominal_catalog = registered_environment
-            .map(crate::registration::RegisteredTypeCheckEnv::nominal_catalog);
-        catalog.is_some_and(|catalog| catalog.has_rust_package(package))
-            || nominal_catalog.is_some_and(|catalog| {
-                catalog
-                    .exact_records_for_owner(&rust_owner)
-                    .next()
-                    .is_some()
-            })
-    }
-
-    fn check_extern_rust_type(
-        &mut self,
-        package: &str,
-        package_id: &RustPackageId,
-        namespace: &str,
-        ty: &ExternModType,
-    ) {
-        let rust_owner =
-            crate::env::nominal::AcceptedNominalOwnerId::RustPackage(package_id.clone());
-        let found = self
-            .registered_world
-            .map(crate::registration::RegisteredSemanticWorld::environment)
-            .map(crate::registration::RegisteredTypeCheckEnv::nominal_catalog)
-            .is_some_and(|catalog| {
-                catalog.exact_records_for_owner(&rust_owner).any(|record| {
-                    record
-                        .id()
-                        .canonical_path()
-                        .segments()
-                        .last()
-                        .is_some_and(|segment| segment.as_str() == ty.name())
-                })
-            });
-        if !found {
-            self.errors.push(TypeCheckError::missing_rust_export(
-                package,
-                format!("{namespace}.{}", ty.name()),
-            ));
-        }
-    }
-
-    fn check_extern_rust_function(
-        &mut self,
-        package: &str,
-        namespace: &str,
-        function: &ExternModFunction,
-        declaration_range: TextRange,
-    ) {
-        let owner = self.generic_owner_for_signature(function.signature(), declaration_range);
-        let generics = self.generic_scope_for_signature(function.signature(), &owner);
-        self.check_signature_type_refs(function.signature(), &generics, &SelfTypeScope::Absent);
-        let export_name = format!("{namespace}.{}", function.signature().name());
-        let expected =
-            self.resolve_function_signature(function.signature(), &generics, SelfTypeScope::Absent);
-        let Ok(export) = crate::callable::CallableName::try_new(function.signature().name()) else {
-            self.errors
-                .push(TypeCheckError::missing_rust_export(package, export_name));
-            return;
-        };
-        let candidates = self
-            .registered_world
-            .map(crate::registration::RegisteredSemanticWorld::environment)
-            .map(|environment| environment.callable_catalog().environment())
-            .into_iter()
-            .flat_map(|catalog| catalog.rust_exports(package, &export))
-            .cloned()
-            .collect::<Vec<_>>();
-        if candidates.is_empty() {
-            self.errors
-                .push(TypeCheckError::missing_rust_export(package, export_name));
-        } else if !candidates
-            .iter()
-            .any(|record| record.schema().matches_function_signature(&expected))
-        {
-            self.errors
-                .push(TypeCheckError::rust_export_signature_mismatch(
-                    package,
-                    export_name,
-                    expected.source_label(),
-                    candidates[0].schema().source_label(),
-                ));
-        }
-    }
-
-    fn check_extern_rust_activity(&mut self, activity: &ExternModActivity) {
-        self.resolve_authored_type(
-            activity.ty(),
-            &GenericTypeScope::empty(),
-            SelfTypeScope::Absent,
-        );
-        self.check_type_ref_shape(activity.ty().value());
     }
 
     fn check_type_alias_decl(&mut self, item: &TypeAliasItem) {

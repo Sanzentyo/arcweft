@@ -61,6 +61,7 @@ diagnostic, CSS/Takumi route, or source gate is permitted.
 | 6 | private View grammar integration with typed common expression descendants | complete |
 | 7 | complete reduced Stage 1 declaration inventory gate | complete |
 | 7a | delete the obsolete authored Asset declaration producer and migrate fixtures to catalog references | complete |
+| 7b | delete authored external-module syntax and its HIR/sema alias path after manifest metadata became authoritative | complete |
 | 8 | atomic attached public AST switch and generic entity deletion | pending |
 | 9 | typed HIR/project-symbol and downstream migration | pending |
 | 10 | docs/examples/fixtures and obsolete-path deletion | pending |

@@ -11,7 +11,7 @@ use arcweft_lang_syntax::{
         ids::{EntityRef, EntityRefSyntax},
         items::{
             Attribute, EntityDeclItem, EntityDeclKind, EnumItem, ExternCapabilityItem,
-            ExternModItem, FunctionSignatureSource, ImplItem, StructItem, TraitItem, TypeAliasItem,
+            FunctionSignatureSource, ImplItem, StructItem, TraitItem, TypeAliasItem,
         },
         line_plan::LinePlan,
         pattern::Pattern,
@@ -98,7 +98,6 @@ pub enum HirTopLevelDecl {
     EntityDecl(EntityDeclItem),
     Entry(HirEntryDecl),
     ExternCapability(ExternCapabilityItem),
-    ExternMod(ExternModItem),
     Struct(StructItem),
     TypeAlias(TypeAliasItem),
     Proof(ProofItem),

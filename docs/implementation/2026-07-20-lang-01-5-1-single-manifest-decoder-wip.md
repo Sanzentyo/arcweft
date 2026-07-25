@@ -29,6 +29,10 @@ Implemented so far:
   nesting-depth, and work limits;
 - removal of the empty `adapter_sources` and `rust_metadata_sources` topology
   carriers;
+- deletion of the authored `extern rust mod` AST/CST/parser/HIR/sema/tooling
+  authority, including its source-to-generated-callable alias bridge and
+  spelling-specific semantic diagnostics; generated external-module metadata
+  is now the sole module-import owner;
 - deletion of the old `arcweft-launch` `TomlScanner`/source-map reader, the old
   `arcweft-project` manifest reader, the project-local adapter-manifest reader,
   and the Rust-only metadata reader;
@@ -62,8 +66,6 @@ Still required before completion:
 - inject manifest-owned content-unit facts into `ProjectIndex`, then remove the
   obsolete source `content` declaration after the shared syntax/HIR migration
   cut is available;
-- remove concrete authored external-module syntax through the same shared
-  syntax/HIR migration cut;
 - run the package test matrix, workspace check/Clippy, Tier 2, and structural
   audit at the final reviewable gate.
 
@@ -244,8 +246,8 @@ turn an unresolved design topic into an inferred production contract.
 ### Entry conditions
 
 - The shared call-surface/sema cut is committed and its Cargo gate is released.
-- The isolated authored `extern rust mod` removal is restored on top of that
-  cut before fixing the resulting callers.
+- The authored external-module producer and all of its callers are deleted as
+  one compiling cut; no source alias is restored while later consumers move.
 - No Lang-01.5.1 change rewrites or preserves the accepted call-surface facts
   merely to make an obsolete fixture compile.
 - `jj status` and `jj diff` identify each concurrent slice before any selective
@@ -292,19 +294,17 @@ turn an unresolved design topic into an inferred production contract.
 8. Run `cargo check -p arcweft-lsp --all-targets` and focused LSP tests before
    the broader review gate.
 
-### Authored external-module syntax: ready for direct removal
+### Authored external-module syntax: deleted
 
-After restoring the isolated removal, finish the compile-error-driven cleanup
-in one coherent cut:
+The compile-error-driven cleanup is recorded in
+[the authored external-module deletion note](2026-07-25-lang-01-5-1-authored-external-module-deletion.md):
 
-- delete the remaining `ExternModuleItem` AST/CST/grammar surface and parser
-  item classification/budget entries;
-- delete sema errors and checker/resolver paths that exist only for authored
-  `extern rust mod`;
-- migrate or delete the parser, declaration, and callable-resolver tests that
-  still construct that removed declaration; and
-- retain generated external-module registration exclusively through the
-  accepted manifest/metadata topology.
+- the `ExternModItem` AST/CST/parser and HIR producer is gone;
+- sema errors, checker/resolver aliases, and tooling readers that existed only
+  for authored external modules are gone;
+- obsolete positive parser/declaration/callable-alias tests were deleted; and
+- generated external-module registration remains exclusively in the accepted
+  manifest/metadata topology.
 
 The final parser evidence is ordinary current-grammar rejection and absence of
 an executable typed node. No spelling-specific diagnostic, deprecated node,

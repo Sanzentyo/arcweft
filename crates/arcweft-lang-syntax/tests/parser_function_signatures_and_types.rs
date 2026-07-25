@@ -265,7 +265,6 @@ fn source_parser_uses_the_same_open_nominal_grammar_on_owned_type_surfaces() {
         "fn bad(value: ProjectFlag) -> Unit {}",
         "trait Bad { fn value(input: ProjectFlag) -> Unit }",
         "impl Bad for Thing { fn value(input: ProjectFlag) -> Unit {} }",
-        "extern rust mod bad from crate \"bad\" { pub fn value(input: ProjectFlag) -> Unit }",
     ] {
         let parsed = parse_source(source);
         assert!(

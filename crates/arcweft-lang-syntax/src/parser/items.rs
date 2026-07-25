@@ -3,8 +3,7 @@ use crate::ast::ids::{EntityRef, EntityRefSyntax};
 use crate::ast::items::{
     CapabilityFn, ContentDeclBody, EntityDeclBody, EntityDeclItem, EntityDeclKind, EntryDeclItem,
     EntryItem, EntryKind, EntryRoleKind, EntryRouteBinding, EntryRouteBindingSource, EnumItem,
-    EnumItemInit, EnumVariant, ExternCapabilityItem, ExternModActivity, ExternModFunction,
-    ExternModItem, ExternModMember, ExternModType, ExternModTypeKind, FunctionInit, FunctionItem,
+    EnumItemInit, EnumVariant, ExternCapabilityItem, FunctionInit, FunctionItem,
     FunctionParameterSource, FunctionSignatureSource, ImageDeclBody, ImageDeclField, ImplItem,
     ImplItemInit, ImplMember, StructField, StructItem, StructItemInit, TraitItem, TraitMember,
     TypeAliasItem, TypeAliasItemInit, ViewDeclBody,
@@ -21,10 +20,9 @@ use std::collections::BTreeMap;
 
 use super::headers::{
     parse_contract_clauses, parse_contract_expr_list, parse_entity_decl_head,
-    parse_extern_mod_head, parse_optional_angle_head,
-    parse_required_decl_entity_ref_without_name_marker, parse_required_entity_ref,
-    parse_required_entity_ref_syntax, parse_visibility_prefix, simple_error,
-    split_function_header_lines,
+    parse_optional_angle_head, parse_required_decl_entity_ref_without_name_marker,
+    parse_required_entity_ref, parse_required_entity_ref_syntax, parse_visibility_prefix,
+    simple_error, split_function_header_lines,
 };
 use super::recovery::{ParseError, ParseErrorKind, RecoverySuggestion};
 use super::view::parse_view_body;
@@ -631,30 +629,6 @@ impl Parser<'_> {
             parse_capability_fns(&block.body, body_base, &mut self.errors),
             block.body.into_owned(),
             TextRange::new(start_line.start, block.end),
-        ))
-    }
-
-    pub(super) fn parse_extern_mod_item(&mut self) -> Option<ExternModItem> {
-        let start_line = self.current().clone();
-        let (head, body, end, ok) = self.take_brace_block();
-        if !ok {
-            self.push_error(
-                TextRange::new(start_line.start, start_line.end),
-                "unclosed block while parsing external module",
-                ["}"],
-                Some(start_line.text.trim()),
-                ["insert a closing `}` for the external module body"],
-            );
-            return None;
-        }
-        let (abi, path, source) = parse_extern_mod_head(head.trim())?;
-        Some(ExternModItem::new(
-            abi,
-            path,
-            source,
-            parse_extern_mod_members(&body, start_line.start, &mut self.errors),
-            body.into_owned(),
-            TextRange::new(start_line.start, end),
         ))
     }
 }
@@ -1623,84 +1597,6 @@ fn parse_capability_fn(
         effects,
         TextRange::new(item_base, item_base + item.len()),
     ))
-}
-
-fn parse_extern_mod_members(
-    body: &str,
-    body_base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
-) -> Vec<ExternModMember> {
-    super::collect_logical_block_items_with_base(body, body_base)
-        .into_iter()
-        .map(|item| {
-            let source = item.source.trim();
-            let base = item.base + subslice_offset(&item.source, source).unwrap_or_default();
-            parse_extern_mod_member(source, base, errors)
-        })
-        .collect()
-}
-
-fn parse_extern_mod_member(
-    item: &str,
-    item_base: usize,
-    errors: &mut Vec<super::recovery::ParseError>,
-) -> ExternModMember {
-    let item = item.trim_end_matches(';').trim();
-    let (visibility, rest) = parse_visibility_prefix(item);
-    let rest = rest.trim();
-    if let Some(name) = rest.strip_prefix("type ").map(str::trim)
-        && let Some((name, tail)) = split_leading_ident(name)
-        && tail.trim().is_empty()
-    {
-        return ExternModMember::Type(ExternModType::new(
-            visibility,
-            ExternModTypeKind::Type,
-            name,
-        ));
-    }
-    if let Some(name) = rest.strip_prefix("event ").map(str::trim)
-        && let Some((name, tail)) = split_leading_ident(name)
-        && tail.trim().is_empty()
-    {
-        return ExternModMember::Type(ExternModType::new(
-            visibility,
-            ExternModTypeKind::Event,
-            name,
-        ));
-    }
-    if rest.starts_with("fn ") {
-        return parse_fn_signature_at(
-            rest,
-            item_base
-                + subslice_offset(item, rest)
-                    .expect("external function remains in the member source"),
-        )
-        .map_or_else(
-            |error| {
-                errors.push(simple_error(
-                    item_base,
-                    rest.len(),
-                    &error.to_string(),
-                    "a valid external function signature",
-                ));
-                ExternModMember::Raw(item.to_owned())
-            },
-            |signature| ExternModMember::Function(ExternModFunction::new(visibility, signature)),
-        );
-    }
-    if let Some(activity) = rest.strip_prefix("activity ").map(str::trim)
-        && let Some((name, ty)) = split_top_level_punctuation_once(activity, ':')
-        && let Some((name, tail)) = split_leading_ident(name.trim())
-        && tail.trim().is_empty()
-    {
-        let ty_source = ty.trim();
-        let ty_base = item_base
-            + subslice_offset(item, ty_source)
-                .expect("external activity type remains in the member source");
-        let ty = parse_type_ref_or_error(ty_source, ty_base, errors);
-        return ExternModMember::Activity(ExternModActivity::new(visibility, name, ty));
-    }
-    ExternModMember::Raw(item.to_owned())
 }
 
 pub(super) fn parse_trait_members(

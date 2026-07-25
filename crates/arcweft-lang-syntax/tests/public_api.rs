@@ -8,4 +8,5 @@ fn removed_public_api_contract() {
     cases.compile_fail("tests/ui/parse_error_construction.rs");
     cases.compile_fail("tests/ui/try_expr_construction.rs");
     cases.compile_fail("tests/ui/removed_asset_declaration_kind.rs");
+    cases.compile_fail("tests/ui/removed_extern_mod_item.rs");
 }

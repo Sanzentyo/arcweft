@@ -19,26 +19,33 @@ location. `arcweft-rust-abi-build` is the build-script helper crate for writing
 that JSON and emitting Cargo rerun hints, while `arcweft-rust-abi` remains data
 and codecs only and the proc macros remain the source of truth for signatures.
 
-Arcweft source declares the imported Rust module shape, and a launch profile
-selects the metadata file that makes those names visible to sema and LSP:
+Arcweft source does not redeclare the imported module shape. The schema-1
+launch manifest admits one exact generated metadata artifact and a profile
+selects the import that makes its mounted names visible to sema and LSP:
 
-```arcw
-extern rust mod mini_games.truck from crate "truck_game" {
-    pub type TruckInput
-    pub type TruckResult
+```toml
+[external-modules.truck-game]
+mount = "mini_games.truck"
+metadata = "generated/truck-game.json"
+metadata-hash = "blake3:1111111111111111111111111111111111111111111111111111111111111111"
+expected-package = "org.example.truck-game"
+expected-version = "1.0.0"
+expected-module = "truck_game"
+expected-family = "rust"
+expected-abi-hash = "blake3:2222222222222222222222222222222222222222222222222222222222222222"
+visibility = "package"
+demand = "required"
 
-    pub fn score_to_rank(score: i32) -> Rank
-
-    pub activity truck_game: Activity<TruckInput, TruckResult>
-    requires input.seed != 0
-    ensures result.score >= 0
-}
+[profiles.game]
+kind = "game"
+source = "src/main.arcw"
+external-modules = ["truck-game"]
 ```
 
-Semantic checking compares structured `extern rust mod` members against the
-selected package metadata. A direct source check, or a profile that omits the
-matching `rust_metadata` file, rejects the extern declaration instead of
-creating dynamic fallback bindings.
+The loader verifies the artifact digest and declared identity before projecting
+its typed public exports. A direct source check or a profile that omits the
+import receives no generated bindings; there is no dynamic fallback or
+source-authored alias layer.
 
 Adapter metadata is carried by `arcweft-adapter-context` as an
 `AdapterManifest`. Standard manifests such as `sans-io`, `native-http`,
@@ -49,14 +56,13 @@ capabilities, host-call identifiers, tooling docs, and merged Rust ABI exports.
 This keeps core language parsing independent from adapter-specific names while
 still giving CLI, verifier, and LSP one typed source of truth.
 
-Project profiles can also load JSON or TOML adapter manifest files through
-`adapter_manifests`. These manifests use the same typed model as standard
-adapters and must declare `schema_version = 1`; see
-[Adapter Manifest Schema](../schemas/adapter-manifest.md). Effect labels are
-stored as `EffectCapability` ids with parsed family/operation/scope components,
-while host calls use stable ids such as `fs.read_text` or `custom.read`.
-Unknown adapter ids are accepted by profile resolution only when an adapter
-manifest path is present, then validated against the merged registry.
+Standard adapters use the typed [Adapter Manifest
+Schema](../schemas/adapter-manifest.md). Effect labels are stored as
+`EffectCapability` ids with parsed family/operation/scope components, while
+host calls use stable ids such as `fs.read_text` or `custom.read`. Generated
+external-module metadata is projected into the same typed semantic view only
+after its schema-1 import has been admitted; a profile does not load a second
+project-local adapter-manifest reader.
 
 Minimal adapter build scripts construct the manifest explicitly and delegate
 file I/O to `arcweft-rust-abi-build`:

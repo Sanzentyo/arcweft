@@ -518,44 +518,6 @@ impl EnvironmentCallableCatalog {
         }
         Ok(())
     }
-
-    pub(crate) fn rust_exports<'a>(
-        &'a self,
-        package: &'a str,
-        export: &'a super::CallableName,
-    ) -> Vec<&'a Arc<CallableRecord>> {
-        let mut records = self
-            .by_id
-            .values()
-            .filter(move |record| {
-                matches!(
-                    record.id(),
-                    super::CallableCandidateId::Environment(id)
-                        if id.kind() == EnvironmentCallableKind::RustFunction
-                ) && matches!(
-                    record.key(),
-                    super::CallableLookupKey::Free(path)
-                        if path.segments() == std::slice::from_ref(export)
-                ) && record
-                    .rust()
-                    .is_some_and(|rust| rust.package().name() == package)
-            })
-            .collect::<Vec<_>>();
-        records.sort_by(|left, right| record_order(left, right));
-        records
-    }
-
-    pub(crate) fn has_rust_package(&self, package: &crate::env::nominal::RustPackageId) -> bool {
-        self.by_id.values().any(|record| {
-            matches!(
-                record.id(),
-                super::CallableCandidateId::Environment(id)
-                    if id.kind() == EnvironmentCallableKind::RustFunction
-            ) && record
-                .rust()
-                .is_some_and(|rust| rust.package().name() == package.as_str())
-        })
-    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

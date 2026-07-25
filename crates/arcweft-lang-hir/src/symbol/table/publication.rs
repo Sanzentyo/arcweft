@@ -150,7 +150,6 @@ impl ProjectSymbolTable {
                     | HirTopLevelDecl::EntityDecl(_)
                     | HirTopLevelDecl::Entry(_)
                     | HirTopLevelDecl::ExternCapability(_)
-                    | HirTopLevelDecl::ExternMod(_)
                     | HirTopLevelDecl::Proof(_)
                     | HirTopLevelDecl::Test(_)
                     | HirTopLevelDecl::Bench(_)

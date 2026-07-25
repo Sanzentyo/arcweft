@@ -937,15 +937,6 @@ impl ActionParam {
 }
 
 impl<'a> NominalTypeContext<'a> {
-    pub(crate) const fn empty() -> Self {
-        Self {
-            fields: None,
-            variant_payloads: None,
-            project: None,
-            env: None,
-        }
-    }
-
     const fn new(
         fields: &'a HashMap<String, HashMap<String, TypeKind>>,
         variant_payloads: &'a HashMap<String, HashMap<String, EnumVariantPayload>>,

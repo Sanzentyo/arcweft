@@ -170,7 +170,6 @@ impl SurfaceScanner<'_> {
             | HirTopLevelDecl::Enum(_)
             | HirTopLevelDecl::EntityDecl(_)
             | HirTopLevelDecl::ExternCapability(_)
-            | HirTopLevelDecl::ExternMod(_)
             | HirTopLevelDecl::Proof(_)
             | HirTopLevelDecl::Test(_)
             | HirTopLevelDecl::Bench(_)

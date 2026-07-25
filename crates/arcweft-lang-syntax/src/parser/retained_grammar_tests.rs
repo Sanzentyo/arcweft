@@ -98,7 +98,7 @@ fn removed_top_level_families_and_statements_use_ordinary_error_items() {
     let source = concat!(
         "asset room { file = \"room.png\" }\n",
         "content chapter {}\n",
-        "extern mod native\n",
+        "extern rust mod native from crate \"native\" {}\n",
         "dialogue defaults {}\n",
         "source telemetry {}\n",
         "state GameState {}\n",

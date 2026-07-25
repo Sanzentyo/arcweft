@@ -213,7 +213,6 @@ pub(crate) enum CstTopLevelItemKind {
     EntityDecl,
     Entry,
     ExternCapability,
-    ExternMod,
     Proof,
     Test,
     Bench,

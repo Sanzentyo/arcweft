@@ -73,7 +73,6 @@ fn collect_top_level_decl(declaration: &HirTopLevelDecl, uses: &mut Vec<SymbolUs
     match declaration {
         HirTopLevelDecl::Enum(_)
         | HirTopLevelDecl::ExternCapability(_)
-        | HirTopLevelDecl::ExternMod(_)
         | HirTopLevelDecl::Proof(_)
         | HirTopLevelDecl::Struct(_) => {}
         HirTopLevelDecl::Entry(item) => collect_entry_decl(item, uses),

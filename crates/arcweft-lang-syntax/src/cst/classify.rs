@@ -106,8 +106,6 @@ pub(super) fn classify_top_level_item(trimmed: &str) -> CstTopLevelItemKind {
         CstTopLevelItemKind::Entry
     } else if looks_like_extern_capability_item(trimmed) {
         CstTopLevelItemKind::ExternCapability
-    } else if looks_like_extern_mod_item(trimmed) {
-        CstTopLevelItemKind::ExternMod
     } else if looks_like_proof_item(trimmed) {
         CstTopLevelItemKind::Proof
     } else if looks_like_test_item(trimmed) {
@@ -210,10 +208,6 @@ fn looks_like_entity_decl_item(trimmed: &str) -> bool {
         rest.strip_prefix(keyword)
             .is_some_and(|tail| tail.starts_with(char::is_whitespace))
     })
-}
-
-fn looks_like_extern_mod_item(trimmed: &str) -> bool {
-    visible_head(trimmed).starts_with("extern ")
 }
 
 fn looks_like_entry_item(trimmed: &str) -> bool {

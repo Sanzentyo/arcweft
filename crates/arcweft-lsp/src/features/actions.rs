@@ -301,7 +301,6 @@ fn callable_item_range(items: &[Item], callable: &CallableId) -> Option<TextRang
         | Item::EntityDecl(_)
         | Item::Entry(_)
         | Item::ExternCapability(_)
-        | Item::ExternMod(_)
         | Item::Proof(_)
         | Item::Test(_)
         | Item::Bench(_)

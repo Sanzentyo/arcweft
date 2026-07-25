@@ -119,10 +119,6 @@ impl HirLoweringState {
                 self.declarations
                     .push(HirTopLevelDecl::ExternCapability(item.clone()));
             }
-            Item::ExternMod(item) => {
-                self.declarations
-                    .push(HirTopLevelDecl::ExternMod(item.clone()));
-            }
             Item::Impl(item) => {
                 self.declarations.push(HirTopLevelDecl::Impl(item.clone()));
             }

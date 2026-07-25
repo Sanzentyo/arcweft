@@ -574,31 +574,6 @@ impl CallableSignatureSchema {
         self.groups.iter().map(|group| group.parameters.len()).sum()
     }
 
-    /// Returns the canonical semantic schema label used in diagnostics.
-    pub(crate) fn source_label(&self) -> String {
-        let mut groups = String::new();
-        for group in self.groups() {
-            let parameters = group
-                .parameters()
-                .iter()
-                .map(|parameter| {
-                    let ty = match parameter.ty() {
-                        CallableParameterType::Exact(ty) => ty.source_label(),
-                        CallableParameterType::Unchecked => "_".to_owned(),
-                    };
-                    parameter
-                        .name()
-                        .map_or(ty.clone(), |name| format!("{}: {ty}", name.as_str()))
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            groups.push('(');
-            groups.push_str(&parameters);
-            groups.push(')');
-        }
-        format!("fn{groups} -> {}", self.result().source_label())
-    }
-
     pub fn semantic_eq(&self, other: &Self) -> bool {
         self.result == other.result
             && self.effects == other.effects
@@ -672,27 +647,6 @@ impl CallableSignatureSchema {
             CallableValidator::Ordinary,
             limits,
         )
-    }
-
-    /// Whether this catalog schema exactly represents one source-level semantic signature.
-    pub(crate) fn matches_function_signature(&self, signature: &FunctionSignature) -> bool {
-        self.result == *signature.body_return_type()
-            && self.groups.len() == signature.remaining_call_groups().saturating_add(1)
-            && self.groups.iter().enumerate().all(|(index, group)| {
-                let parameters = if index == 0 {
-                    signature.params()
-                } else {
-                    signature
-                        .remaining_param_group(index - 1)
-                        .unwrap_or_default()
-                };
-                group.parameters().len() == parameters.len()
-                    && group
-                        .parameters()
-                        .iter()
-                        .zip(parameters)
-                        .all(|(catalog, source)| parameter_matches(catalog, source))
-            })
     }
 }
 
@@ -832,28 +786,6 @@ fn unchecked_function_parameter_group(
         vec![parameter],
         limits,
     )
-}
-
-fn parameter_matches(catalog: &CallableParameter, source: &FunctionParam) -> bool {
-    let type_matches = match catalog.ty() {
-        CallableParameterType::Exact(ty) => ty == source.ty(),
-        CallableParameterType::Unchecked => false,
-    };
-    let passing_matches = match catalog.passing() {
-        CallableParameterPassing::PositionalOnly => source.name().is_none() && !source.is_rest(),
-        CallableParameterPassing::PositionalOrNamed => source.name().is_some() && !source.is_rest(),
-        CallableParameterPassing::RestPositional => source.is_rest(),
-        CallableParameterPassing::NamedOnly | CallableParameterPassing::RestNamed => false,
-    };
-    let presence_matches = match catalog.presence() {
-        CallableParameterPresence::Required => !source.has_default(),
-        CallableParameterPresence::Defaulted => source.has_default(),
-        CallableParameterPresence::Optional => false,
-    };
-    catalog.name().map(CallableName::as_str) == source.name()
-        && type_matches
-        && passing_matches
-        && presence_matches
 }
 
 impl CallableEffectSchema {

@@ -230,9 +230,9 @@ last valid metadata while reporting stale or missing metadata.
 
 The stdio transport resolves project metadata from `arcw.toml` near each opened
 document and caches the resolved profile per document URI. On `didOpen` and
-`didSave` it refreshes that document's selected launch profile, loads
-profile-local adapter manifests, applies profile-selected Rust ABI JSON to the
-selected adapter, and publishes profile diagnostics together with source
+`didSave` it refreshes that document's selected launch profile, admits its
+selected generated external-module metadata, projects accepted exports into
+the selected adapter, and publishes profile diagnostics together with source
 diagnostics. `workspace/didChangeWatchedFiles` and
 `workspace/didChangeConfiguration` refresh metadata for all open documents, so
 adapter manifest and Rust ABI changes become visible to completion, hover, and
@@ -240,12 +240,13 @@ signature help without restarting the server. File reads and URI-to-path
 conversion stay in `arcweft-lsp`; `arcweft-verify-lsp` continues to receive only
 typed adapter/runtime facts. Profile diagnostics carry the profile id and a
 profile-relative resource label, never host absolute paths. Missing and invalid
-Rust ABI metadata are reported as `profile.rust_metadata.read` and
-`profile.rust_metadata.parse`, and watched-file/configuration notifications
-refresh Rust metadata for every open document. A project-local manifest is
-treated as a declared profile surface, not as proof that the selected runner
-implements its host calls; conformance diagnostics compare the declared manifest
-against the runner capability preset.
+external-module metadata are reported as
+`profile.external_module_metadata.read` and
+`profile.external_module_metadata.parse`, and watched-file/configuration
+notifications refresh selected metadata for every open document. An accepted
+generated module is a declared profile surface, not proof that the selected
+runner implements its host calls; conformance diagnostics compare the projected
+adapter view against the runner capability preset.
 
 Source diagnostics use the same profile-aware semantic pipeline as CLI checks:
 syntax parse, HIR lowering, HIR reference resolution, typecheck readiness,

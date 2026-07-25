@@ -7,7 +7,6 @@ use super::ids::{EntityRef, WikiLink};
 use super::proof::{BenchItem, ProofItem, TestItem};
 use super::source::SourceItem;
 use super::style::StyleDecl;
-use super::symbol_path::ProjectSymbolPath;
 use super::view::ViewBody;
 
 /// Typed syntax view of an `.arcw` source with module/use headers and items.
@@ -34,7 +33,6 @@ pub enum Item {
     EntityDecl(EntityDeclItem),
     Entry(EntryDeclItem),
     ExternCapability(ExternCapabilityItem),
-    ExternMod(ExternModItem),
     Proof(ProofItem),
     Test(TestItem),
     Bench(BenchItem),
@@ -147,7 +145,6 @@ impl Item {
             Self::EntityDecl(item) => Some(*item.range()),
             Self::Entry(item) => Some(*item.range()),
             Self::ExternCapability(item) => Some(*item.range()),
-            Self::ExternMod(item) => Some(*item.range()),
             Self::Proof(item) => Some(*item.range()),
             Self::Test(item) => Some(*item.range()),
             Self::Bench(item) => Some(*item.range()),
@@ -470,63 +467,6 @@ pub struct EntryRouteBinding {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum EntryRouteBindingSource {
     PathParam(String),
-}
-
-/// External module import declaration such as
-/// `extern rust mod path from crate "name" { ... }`.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExternModItem {
-    abi: String,
-    path: ProjectSymbolPath,
-    source: Option<ExternModSource>,
-    members: Vec<ExternModMember>,
-    body: String,
-    range: TextRange,
-}
-
-/// Typed implementation source selected by an external module declaration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ExternModSource {
-    Crate(String),
-}
-
-/// Structured member declared inside an `extern rust mod` block.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ExternModMember {
-    Type(ExternModType),
-    Function(ExternModFunction),
-    Activity(ExternModActivity),
-    Raw(String),
-}
-
-/// Rust type-like export declared by an external module.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExternModType {
-    visibility: Option<Visibility>,
-    kind: ExternModTypeKind,
-    name: String,
-}
-
-/// Type-like external export category.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ExternModTypeKind {
-    Type,
-    Event,
-}
-
-/// Rust function export declared by an external module.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExternModFunction {
-    visibility: Option<Visibility>,
-    signature: FnSignature,
-}
-
-/// Runtime activity export declared by an external module.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct ExternModActivity {
-    visibility: Option<Visibility>,
-    name: String,
-    ty: AuthoredTypeRef,
 }
 
 /// Host capability declaration such as `extern capability cli { fn stdout(...) }`.
@@ -1297,127 +1237,6 @@ impl EntryRouteBindingSource {
         match self {
             Self::PathParam(name) => name,
         }
-    }
-}
-
-impl ExternModItem {
-    pub(crate) const fn new(
-        abi: String,
-        path: ProjectSymbolPath,
-        source: Option<ExternModSource>,
-        members: Vec<ExternModMember>,
-        body: String,
-        range: TextRange,
-    ) -> Self {
-        Self {
-            abi,
-            path,
-            source,
-            members,
-            body,
-            range,
-        }
-    }
-
-    pub fn abi(&self) -> &str {
-        &self.abi
-    }
-
-    pub const fn path(&self) -> &ProjectSymbolPath {
-        &self.path
-    }
-
-    pub const fn source(&self) -> Option<&ExternModSource> {
-        self.source.as_ref()
-    }
-
-    pub fn members(&self) -> &[ExternModMember] {
-        &self.members
-    }
-
-    pub fn body(&self) -> &str {
-        &self.body
-    }
-
-    pub const fn range(&self) -> &TextRange {
-        &self.range
-    }
-}
-
-impl ExternModSource {
-    pub fn crate_name(&self) -> &str {
-        match self {
-            Self::Crate(name) => name,
-        }
-    }
-}
-
-impl ExternModType {
-    pub(crate) fn new(
-        visibility: Option<Visibility>,
-        kind: ExternModTypeKind,
-        name: impl Into<String>,
-    ) -> Self {
-        Self {
-            visibility,
-            kind,
-            name: name.into(),
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub const fn kind(&self) -> ExternModTypeKind {
-        self.kind
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-}
-
-impl ExternModFunction {
-    pub(crate) const fn new(visibility: Option<Visibility>, signature: FnSignature) -> Self {
-        Self {
-            visibility,
-            signature,
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub const fn signature(&self) -> &FnSignature {
-        &self.signature
-    }
-}
-
-impl ExternModActivity {
-    pub(crate) fn new(
-        visibility: Option<Visibility>,
-        name: impl Into<String>,
-        ty: AuthoredTypeRef,
-    ) -> Self {
-        Self {
-            visibility,
-            name: name.into(),
-            ty,
-        }
-    }
-
-    pub const fn visibility(&self) -> Option<Visibility> {
-        self.visibility
-    }
-
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    pub const fn ty(&self) -> &AuthoredTypeRef {
-        &self.ty
     }
 }
 

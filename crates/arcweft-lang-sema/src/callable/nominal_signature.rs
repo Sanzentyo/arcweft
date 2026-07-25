@@ -11,8 +11,6 @@ use arcweft_lang_syntax::{
 };
 
 use crate::{
-    checker::{NominalTypeContext, signature::function_signature_from_resolved},
-    env::FunctionSignature,
     nominal::{
         CheckedTypeReferenceCache, GenericTypeBinding, GenericTypeScope, NominalResolutionIndex,
         NominalResolutionLimits, ResolvedTypeRefOutcome, SelfTypeScope, TypeResolutionInput,
@@ -69,22 +67,6 @@ impl<'a> ProjectSignatureResolver<'a> {
             source.signature(),
             &GenericTypeOwnerId::Callable(source.declaration().clone()),
         )
-    }
-
-    pub(super) fn resolve_function_signature(
-        &mut self,
-        module: &CanonicalModulePath,
-        hir: &HirModule,
-        signature: &FnSignature,
-        owner: &GenericTypeOwnerId,
-    ) -> Result<FunctionSignature, CallableCatalogBuildError> {
-        let resolved = self.resolve_signature_types(module, hir, signature, owner)?;
-        Ok(function_signature_from_resolved(
-            signature,
-            &resolved.parameter_types,
-            resolved.return_type,
-            NominalTypeContext::empty(),
-        ))
     }
 
     fn resolve_signature_types(

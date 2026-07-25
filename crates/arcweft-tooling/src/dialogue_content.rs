@@ -154,7 +154,6 @@ where
             | Item::EntityDecl(_)
             | Item::Entry(_)
             | Item::ExternCapability(_)
-            | Item::ExternMod(_)
             | Item::Style(_)
             | Item::Proof(_)
             | Item::Test(_)

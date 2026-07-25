@@ -101,17 +101,6 @@ pub enum TypeCheckErrorKind {
         boundary: String,
         primary: Option<SourceSpan>,
     },
-    /// An `extern rust mod` declaration references a package without loaded ABI metadata.
-    MissingRustPackageMetadata { package: String },
-    /// An `extern rust mod` member is not present in loaded ABI metadata.
-    MissingRustExport { package: String, export: String },
-    /// An `extern rust mod` function signature differs from loaded ABI metadata.
-    RustExportSignatureMismatch {
-        package: String,
-        export: String,
-        expected: String,
-        actual: String,
-    },
     /// An inline dialogue function call omitted explicit error handling.
     InlineCallErrorPolicyMissing { function: String },
     /// An inline dialogue function call declared more than one failure policy.
@@ -604,53 +593,6 @@ impl TypeCheckError {
         }
     }
 
-    pub(crate) fn missing_rust_package_metadata(package: impl Into<String>) -> Self {
-        let package = package.into();
-        Self {
-            message: format!(
-                "extern rust module imports crate `{package}`, but no Rust ABI metadata for that crate was loaded"
-            ),
-            kind: TypeCheckErrorKind::MissingRustPackageMetadata { package },
-        }
-    }
-
-    pub(crate) fn missing_rust_export(
-        package: impl Into<String>,
-        export: impl Into<String>,
-    ) -> Self {
-        let package = package.into();
-        let export = export.into();
-        Self {
-            message: format!(
-                "extern rust module imports `{export}` from crate `{package}`, but the export is missing from loaded Rust ABI metadata"
-            ),
-            kind: TypeCheckErrorKind::MissingRustExport { package, export },
-        }
-    }
-
-    pub(crate) fn rust_export_signature_mismatch(
-        package: impl Into<String>,
-        export: impl Into<String>,
-        expected: impl Into<String>,
-        actual: impl Into<String>,
-    ) -> Self {
-        let package = package.into();
-        let export = export.into();
-        let expected = expected.into();
-        let actual = actual.into();
-        Self {
-            message: format!(
-                "extern rust export `{export}` from crate `{package}` has signature `{actual}`, but Arcweft declared `{expected}`"
-            ),
-            kind: TypeCheckErrorKind::RustExportSignatureMismatch {
-                package,
-                export,
-                expected,
-                actual,
-            },
-        }
-    }
-
     /// Human-readable type-checking failure.
     pub fn message(&self) -> &str {
         &self.message
@@ -691,9 +633,6 @@ impl TypeCheckError {
             | TypeCheckErrorKind::AmbiguousDataLastMethodFallback { .. }
             | TypeCheckErrorKind::BorrowedClosureCaptureCrossesBoundary { .. }
             | TypeCheckErrorKind::BorrowAcrossSuspension { primary: None, .. }
-            | TypeCheckErrorKind::MissingRustPackageMetadata { .. }
-            | TypeCheckErrorKind::MissingRustExport { .. }
-            | TypeCheckErrorKind::RustExportSignatureMismatch { .. }
             | TypeCheckErrorKind::InlineCallErrorPolicyMissing { .. }
             | TypeCheckErrorKind::InlineFailurePolicyConflict { .. }
             | TypeCheckErrorKind::UnknownInlineFailurePolicy { .. }
@@ -803,15 +742,6 @@ fn typecheck_error_code(kind: &TypeCheckErrorKind) -> String {
         }
         TypeCheckErrorKind::BorrowAcrossSuspension { .. } => {
             "sema.suspend.borrow_across".to_owned()
-        }
-        TypeCheckErrorKind::MissingRustPackageMetadata { .. } => {
-            "sema.extern_rust.missing_metadata".to_owned()
-        }
-        TypeCheckErrorKind::MissingRustExport { .. } => {
-            "sema.extern_rust.missing_export".to_owned()
-        }
-        TypeCheckErrorKind::RustExportSignatureMismatch { .. } => {
-            "sema.extern_rust.signature_mismatch".to_owned()
         }
         TypeCheckErrorKind::InlineCallErrorPolicyMissing { .. } => {
             "sema.dialogue.inline_error_policy_missing".to_owned()

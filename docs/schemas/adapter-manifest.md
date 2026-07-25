@@ -69,9 +69,11 @@ types:
 - `Vec<T>`, `Seq<T>`, `Option<T>`
 - any other label is treated as a named adapter/Rust type
 
-Project-local adapter manifests do not infer Rust APIs from source files. Rust
-exports are provided by separate `arcweft-rust-abi` metadata listed in the launch
-profile `rust_metadata` field and then merged into the selected adapter manifest.
+Adapter manifests do not infer Rust APIs from source files. Project Rust/WASM
+exports are provided by generated metadata admitted through schema-1
+`[external-modules.<id>]` entries and selected by a profile's
+`external-modules` list. Accepted public exports are then projected into the
+selected adapter's semantic view.
 
 ## TOML Example
 

@@ -239,7 +239,6 @@ impl Parser<'_> {
             CstTopLevelItemKind::ExternCapability => self
                 .parse_extern_capability_item()
                 .map(Item::ExternCapability),
-            CstTopLevelItemKind::ExternMod => self.parse_extern_mod_item().map(Item::ExternMod),
             CstTopLevelItemKind::Proof => self.parse_proof_item().map(Item::Proof),
             CstTopLevelItemKind::Test => self.parse_test_item().map(Item::Test),
             CstTopLevelItemKind::Bench => self.parse_bench_item().map(Item::Bench),

@@ -10,7 +10,6 @@ impl HirTopLevelDecl {
             Self::EntityDecl(_) => "entity_decl",
             Self::Entry(_) => "entry",
             Self::ExternCapability(_) => "extern_capability",
-            Self::ExternMod(_) => "extern_mod",
             Self::Struct(_) => "struct",
             Self::TypeAlias(_) => "type_alias",
             Self::Proof(_) => "proof",
