@@ -26,7 +26,7 @@ because GitHub did not expose the Jujutsu header.
 
 ## Intake status
 
-`RETURNED_SEMANTICS_ACCEPTED_CATALOG_CORRECTION_RETURNED_TRAIT_VALIDATOR_CORRECTION_REQUIRED`.
+`RETURNED_SEMANTICS_ACCEPTED_CATALOG_AND_TRAIT_VALIDATOR_CORRECTIONS_RETURNED`.
 
 The following design decisions are accepted and do not need to be requested
 again:
@@ -49,7 +49,7 @@ again:
 No `dyn` parser placeholder, compatibility alias, dual reader, source gate,
 removed-syntax diagnostic, CSS path, or Takumi path is authorized.
 
-## Catalog authority correction and remaining gap
+## Returned catalog and trait-validator closures
 
 The catalog-authority correction has returned and is recorded in the
 [Lang-01.1.1.3.1 intake](2026-07-25-lang-01-1-1-3-1-checked-callable-catalog-intake.md).
@@ -57,16 +57,15 @@ It selects retention of the exact accepted `Arc<CallableRecord>` and delegates
 all accepted metadata reads from checked facts. That closes the former copied
 signature/source authority gap and must not be reopened.
 
-One narrower identity boundary remains. The current accepted signature schema
-stores `CallableValidator::Trait(TraitCallableId)` before checking, while the
-returned correction deletes `TraitCallableId` and its candidate variant but
-does not define the replacement pre-check validator payload or the retained
-`CallableFamily::TraitMethod` projection used by resolver accounting and
-signature help.
+The narrower identity boundary has also returned. It replaces
+`CallableValidator::Trait(TraitCallableId)` with the role-only
+`CallableValidator::Method(CallableMethodRole)`, keeps exact identity in the
+accepted record and checked shell, and assigns the observational
+`CallableFamily::TraitMethod` projection to `CallableRecord::family()`.
 
-The independently throwable correction is:
+Its verified intake is:
 
-- [Lang-01.1.1.3.1.1 trait validator and resolver-family identity reconciliation](../reviews/requests/2026-07-25-lang-01.1.1.3.1.1-trait-validator-and-resolver-family-identity-reconciliation.md).
+- [Lang-01.1.1.3.1.1 trait validator and resolver-family return intake](2026-07-25-lang-01-1-1-3-1-1-trait-validator-resolver-family-intake.md).
 
 ## Current implementation WIP disposition
 
@@ -98,8 +97,7 @@ are not repaired or reintroduced while the WIP is split.
 
 ## Production boundary
 
-The catalog correction has returned and is accepted except for the explicit
-pre-check validator/family join. Do not start the final Lang-01.1.1.3 public
-authority switch until `.3.1.1` returns. This narrow design wait is independent
-from the accepted Stream wire correction and does not block the previously
-selected Proof-first dependency order.
+Both corrections have returned and are implementation-ready. The final
+Lang-01.1.1.3 public authority switch remains at its established dependency
+position after the active Proof and typed RichText work; this ordering is no
+longer a design wait. The accepted Stream wire correction remains independent.

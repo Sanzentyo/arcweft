@@ -28,7 +28,7 @@ baseline.
 
 ## Intake status
 
-`RETURNED_CATALOG_AUTHORITY_ACCEPTED_NARROW_TRAIT_VALIDATOR_CORRECTION_REQUIRED`.
+`RETURNED_CATALOG_AUTHORITY_ACCEPTED_TRAIT_VALIDATOR_CORRECTION_RETURNED`.
 
 The package closes the catalog gap that blocked Lang-01.1.1.3. These decisions
 are accepted and must not be requested again:
@@ -49,14 +49,20 @@ No copied metadata catalog, trait-only signature catalog, compatibility view,
 dual reader, source gate, removed-syntax diagnostic, CSS path, or Takumi path
 is authorized.
 
-## Remaining pre-check validator identity gap
+## Returned pre-check validator identity closure
 
-The current accepted signature schema stores
+The current accepted signature schema still stores
 `CallableValidator::Trait(TraitCallableId)`. That schema is frozen into the
 accepted `CallableRecord` before body checking or checked-ID/conformance
-construction. The returned package nevertheless requires deletion of both
-`TraitCallableId` and `CallableCandidateId::TraitMethod` without defining the
-replacement pre-check validator payload.
+construction. The returned Lang-01.1.1.3.1.1 correction now defines the final
+replacement rather than leaving this as a design gap:
+
+- `CallableValidator::Method(CallableMethodRole)` carries role only;
+- exact structural identity remains in the enclosing accepted record;
+- exact checked identity remains in the pending/final checked shell;
+- `CallableRecord::family()` owns the observational `TraitMethod` projection;
+- ambiguity retains exact checked IDs; and
+- the old ID, candidate, validator, origin, and ambiguity shapes are deleted.
 
 The gap is observable beyond one enum field:
 
@@ -68,22 +74,19 @@ The gap is observable beyond one enum field:
   accounting and signature help, while the returned final candidate becomes
   `CallableCandidateId::Project(CallableDeclarationKey)`.
 
-A checked ID cannot fill the accepted-schema slot because it is constructed
-after catalog freeze. A display name, local implementation index, sentinel, or
-hidden retained legacy variant would violate the returned deletion contract.
-Selecting the final typed payload and the family projection is therefore a
-small public semantic-owner decision, not an implementation detail.
+A checked ID still cannot fill the accepted-schema slot because it is
+constructed after catalog freeze. The returned role-only validator closes that
+ordering constraint without duplicating identity. The verified correction
+intake is:
 
-The independently throwable correction is:
-
-- [Lang-01.1.1.3.1.1 trait validator and resolver-family identity reconciliation](../reviews/requests/2026-07-25-lang-01.1.1.3.1.1-trait-validator-and-resolver-family-identity-reconciliation.md).
+- [Lang-01.1.1.3.1.1 trait validator and resolver-family return intake](2026-07-25-lang-01-1-1-3-1-1-trait-validator-resolver-family-intake.md).
 
 ## Deletion-driven implementation disposition
 
 Do not repair, extend, alias, or add new consumers to `TraitCallableId`. The
 type, old candidate variant, old validator payload, old ambiguity payload, and
-any obsolete signature origin must be deleted with their selected structural
-replacement in one compiling authority switch after `.3.1.1` returns.
+any obsolete signature origin must be deleted with their now-selected
+structural/checked replacements in one compiling authority switch.
 
 Privacy reductions that expose no new authority, such as making the raw record
 or legacy-ID constructor crate-private when all callers are already internal,
@@ -97,8 +100,8 @@ are not permission to run ahead of the active Proof and RichText slices.
 
 ## Production boundary
 
-The full Lang-01.1.1.3 public switch remains design-blocked only at the narrow
-trait-validator/family boundary above. The returned `.3.1` package otherwise
-replaces the former catalog-authority blocker. This wait does not block the
-current Proof-first dependency order or deletion of independently obsolete
-producers whose final owners are already specified.
+The full Lang-01.1.1.3 public switch is no longer design-blocked at the
+trait-validator/family boundary. The `.3.1` catalog contract and returned
+`.3.1.1` correction are implementation-ready at the established Lang-01.1.1
+dependency position. This does not move them ahead of the active Proof-first
+order or authorize mixing them into the current Proof working copy.
