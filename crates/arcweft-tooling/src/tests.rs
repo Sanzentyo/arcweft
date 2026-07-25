@@ -1102,43 +1102,6 @@ fn materializes_top_level_and_choice_ids() {
 }
 
 #[test]
-fn materializes_dialogue_line_option_ids() {
-    let source = "flow @flow.opening opening {\n    scope outer {\n        scope rain {\n            地の文(id=@say:.sound):\n                雨の音。[p]\n            alice(id=@.comment, text_key=@.comment_text):\n                Good morning.[p]\n            alice.say(id=@...shared, text_key=@super.inner_text)[\n                Shared.[p]\n            ]\n        }\n    }\n}\n";
-    let report = materialize_ids(source).expect("materialize report");
-
-    assert!(report.output.contains(
-            "地の文(id=@say.opening.narrator.outer.rain.sound, text_key=@text.opening.narrator.outer.rain.sound):"
-        ));
-    assert!(report.output.contains(
-            "alice(id=@say.opening.alice.outer.rain.comment, text_key=@text.opening.alice.outer.rain.comment_text):"
-        ));
-    assert!(report.output.contains(
-        "alice.say(id=@say.opening.alice.shared, text_key=@text.opening.alice.outer.inner_text)["
-    ));
-}
-
-#[test]
-fn materializes_omitted_dialogue_ids_in_colon_call_and_flat_fences() {
-    let source = "flow @flow.opening opening {\n    alice:\n        Hi[p]\n    alice.say()[\n        Again[p]\n    ]\n=== scope rain ===\n=== line 地の文 ===\n雨。[p]\n=== with ===\nwait(mark(.done))\n=== /with ===\n=== /line ===\n=== /scope ===\n}\n";
-    let report = materialize_ids(source).expect("materialize report");
-
-    assert!(
-        report
-            .output
-            .contains("alice(id=@say.opening.alice.001, text_key=@text.opening.alice.001):")
-    );
-    assert!(
-        report
-            .output
-            .contains("alice.say(id=@say.opening.alice.002, text_key=@text.opening.alice.002)[")
-    );
-    assert!(report.output.contains(
-            "=== line 地の文(id=@say.opening.narrator.rain.001, text_key=@text.opening.narrator.rain.001) ==="
-        ));
-    assert!(report.output.contains("=== with ==="));
-}
-
-#[test]
 fn canonical_rich_text_keeps_dialogue_call_ranges_after_natural_apostrophes() {
     let source = "flow @flow.opening opening {\n    let handles = alice.say()[don't [fx warning()]stop[/fx] [.shake]now[/][p]]\n}\n";
     let report = format_source(

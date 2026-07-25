@@ -1,6 +1,4 @@
-use arcweft_lang_hir::id_context::{
-    IdContextEntry, IdContextMaterialization, IdContextOption, collect_id_context,
-};
+use arcweft_lang_hir::id_context::{IdContextEntry, IdContextMaterialization, collect_id_context};
 
 use crate::edit::report_from_edits;
 use crate::model::{InlayHint, TextEdit, ToolingEditReport, ToolingError};
@@ -31,32 +29,6 @@ fn id_context_edit(entry: &IdContextEntry) -> TextEdit {
             end: range.end(),
             replacement: format!("@{normalized}"),
         },
-        IdContextMaterialization::InsertDialogueOptions {
-            insert,
-            call_has_options,
-            options_has_any,
-            options,
-        } => {
-            let joined = options
-                .iter()
-                .map(IdContextOption::as_assignment)
-                .collect::<Vec<_>>()
-                .join(", ");
-            let replacement = if *call_has_options {
-                if *options_has_any {
-                    format!(", {joined}")
-                } else {
-                    joined
-                }
-            } else {
-                format!("({joined})")
-            };
-            TextEdit {
-                start: insert.start(),
-                end: insert.end(),
-                replacement,
-            }
-        }
     }
 }
 
@@ -68,16 +40,6 @@ fn id_context_hints(source: &str) -> Vec<InlayHint> {
             IdContextMaterialization::Replace { range, normalized } => InlayHint {
                 position: range.end(),
                 label: format!("@{normalized}"),
-            },
-            IdContextMaterialization::InsertDialogueOptions {
-                insert, options, ..
-            } => InlayHint {
-                position: insert.start(),
-                label: options
-                    .iter()
-                    .map(IdContextOption::as_assignment)
-                    .collect::<Vec<_>>()
-                    .join(", "),
             },
         })
         .collect()

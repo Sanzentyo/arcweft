@@ -1426,11 +1426,7 @@ fn inlay_hint_request_uses_document_line_index() {
     let labels = inlay_hint_labels(&mut session, uri);
 
     assert!(labels.iter().any(|label| label == "@flow.opening"));
-    assert!(
-        labels
-            .iter()
-            .any(|label| label.contains("id=@say.opening.alice.001"))
-    );
+    assert!(!labels.iter().any(|label| label.contains("id=@say.")));
 }
 
 #[test]

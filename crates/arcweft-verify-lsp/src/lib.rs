@@ -1409,8 +1409,8 @@ mod tests {
         assert!(hints.iter().any(|hint| {
             matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label == "@flow.opening")
         }));
-        assert!(hints.iter().any(|hint| {
-            matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label.contains("id=@say.opening.alice.001"))
+        assert!(!hints.iter().any(|hint| {
+            matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label.contains("id=@say."))
         }));
     }
 

@@ -1711,18 +1711,16 @@ Current high-confidence state:
   `arcw ids materialize` as dry-run-by-default adapter commands with `--write`
   and `--json`; `arcweft-verify-lsp` exposes the same source actions and hints
   without owning an LSP transport. The current ID materialization table covers
-  top-level declarations, explicit and omitted dialogue line `id=` /
-  `text_key=` options, flat `=== line ... ===` dialogue heads, and
-  choice/choice-option IDs. Canonical `with { ... }`, `with:`, and flat
-  `=== with ===` line-plan attachments share the same materialization context.
-- The old `arcweft-tooling` dialogue-ID line scanner has been removed from the
-  tooling crate. ID materialization now flows through
-  `arcweft-lang-hir::collect_id_context`, which emits typed source operations
-  for declarations, choices, choice options, explicit dialogue `id` /
-  `text_key` options, and omitted dialogue options. Speaker-preset discovery
-  now walks the parsed typed tree instead of source lines. Tooling, CLI, and
-  LSP convert typed operations into edits, hints, and actions instead of
-  keeping scanner-specific logic.
+  top-level declarations and choice/choice-option IDs. It deliberately emits
+  no Dialogue line-ID edit or hint while AW-AH-009.4.2/.3 replace the
+  provisional speaker-derived identity path with accepted source-site
+  identity.
+- The old Dialogue-ID scanner and its later typed-AST speaker/counter rewrite
+  have both been removed from the tooling path. `arcweft-lang-hir::collect_id_context`
+  now emits typed source operations only for declarations, choices, and choice
+  options. Tooling, CLI, and LSP do not synthesize provisional `say.*` or
+  `text.*` identities; the final hints and actions must consume the accepted
+  AW-AH-009.4.3 project inventory rather than recreate a source scanner.
 - `pro_review19.md` is reflected with Rust-like collection names. The facade
   crate exposes minimal Sans I/O standard data crates through explicit
   namespaces rather than a flat compatibility prelude:

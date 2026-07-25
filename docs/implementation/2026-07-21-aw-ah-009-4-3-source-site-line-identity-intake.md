@@ -78,6 +78,11 @@ At intake, production still has the provisional model:
 | Accepted line product | `HirProject` has no project-wide accepted dialogue-line inventory or source-`ExprId` lookup. | One immutable `AcceptedDialogueLineInventory` owned by the accepted `HirProject`. |
 | Source application owner | Only the private AW-AH-009.4.2 carrier substrate has landed. | The final public source-backed application CST/AST/HIR arena must land before candidate production. |
 
+The provisional tooling projection that used the same speaker/scope/counter
+identity was deleted independently on 2026-07-25. See
+[`2026-07-25-aw-ah-009-4-3-speaker-derived-id-tooling-deletion.md`](2026-07-25-aw-ah-009-4-3-speaker-derived-id-tooling-deletion.md).
+The execution carrier remains frozen until the direct replacement above.
+
 The existing private AW-AH-009.4.2 work is documented in
 `docs/implementation/2026-07-20-aw-ah-009-4-2-private-cut-2.md`. It is not the
 public expression owner required by AW-AH-009.4.3 Frontier 1, so successful

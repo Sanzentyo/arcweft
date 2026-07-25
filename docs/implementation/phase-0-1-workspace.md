@@ -397,7 +397,9 @@ Syntax parser:
   flow, speaker, and scope path. When `id` is omitted, HIR lowering allocates a
   stable per-flow/speaker/scope ordinal such as
   `say.opening.narrator.rain.001`, and omitted `text_key` is derived from the
-  normalized `say...` line ID.
+  normalized `say...` line ID. This remains a provisional production-lowering
+  path until the AW-AH-009.4.2/.3 atomic replacement; tooling, CLI, and LSP no
+  longer materialize or suggest these speaker-derived identities.
 - Line plans preserve `init`, generic `thread name` blocks, scoped
   `defer { ... }`, `defer on completed|cancelled|failed`, local `on mark(.name)` handlers,
   `wait(mark(.name))`, duration waits, and `'line.* <- expr` lifetime registry
