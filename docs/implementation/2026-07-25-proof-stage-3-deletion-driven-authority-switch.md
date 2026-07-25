@@ -22,10 +22,19 @@ boundary:
   `HirStmtKind` shape, and does not select a revision-bound owner for the exact
   unsafe-audit insertion anchor.
 
+A subsequent independent record audit found one further public-schema gap:
+the base package references `HirName`, `HirPath`, `HirEntityReference`,
+`HirLifetimeKey`, `HirLiteral`, and the ordinary expression/pattern child
+records without defining their exact value shapes. This is result-changing for
+literal decoding/canonicalization and ID-reference precedence, so the current
+WIP leaf records are private evidence only and are not accepted as final
+authority.
+
 The independently throwable corrections are:
 
 - [proof 01.1.1.2.1 final HIR item/member inventory](../reviews/requests/2026-07-25-seq-proof-01.1.1.2.1-final-hir-item-member-inventory-reconciliation.md);
-- [proof 01.1.1.3 statement if-let/unsafe-audit anchor](../reviews/requests/2026-07-25-seq-proof-01.1.1.3-if-let-unsafe-audit-anchor-reconciliation.md).
+- [proof 01.1.1.3 statement if-let/unsafe-audit anchor](../reviews/requests/2026-07-25-seq-proof-01.1.1.3-if-let-unsafe-audit-anchor-reconciliation.md); and
+- [proof 01.1.1.4 final HIR semantic leaf/expression payload](../reviews/requests/2026-07-25-seq-proof-01.1.1.4-final-hir-semantic-leaf-expression-payload-reconciliation.md).
 
 They block only the named inventory/payload/anchor rows. `signal` target/value
 and the closed trigger projection are derivable from existing typed owners and
@@ -142,6 +151,40 @@ deletion.
    product; and
 6. delete the remaining old source/CST/line bridge and close the public and
    compile-fail matrix before validation.
+
+## Independent attached-expression audit
+
+The uncommitted Stage 3 accessors received an independent contract review
+before HIR expression lowering. The review found no P0 defect, but the
+following rows are mandatory public-switch blockers rather than optional
+cleanup:
+
+- only the complete `Path` carries `SyntaxNodeId`; authored path segments are
+  revision-bound, ID-less projections of that owner;
+- `DelimitedGroup` forwards its caller's semantic role to its sole inner
+  expression, including nested groups and postfix/binary parents;
+- literal nodes publish the typed value classified by the canonical lexer;
+  HIR does not reinterpret `raw_text()` or Rowan tokens;
+- compact numeric sequences retain one expression identity plus ID-less typed
+  values and ranges, and an unterminated trailing separator still owns its
+  `MissingExpression` recovery boundary;
+- `AwaitExpression` retains `applies_try`, and `CallArgument` retains its
+  positional, named, or spread form;
+- the current `=>` implication operator lowers through the owned `BinaryOp`
+  vocabulary without colliding with match-arm delimiters;
+- missing record-field names use `MissingName`, missing closure punctuation
+  uses `MissingTokenNode`, and a `match` without its required opening brace is
+  incomplete/recovered rather than a clean empty match; and
+- Agent REPL classification observes those same fragment recovery facts while
+  item and multi-statement cells remain synthetic whole documents.
+
+Focused evidence must cover grouped-expression roles, all literal families,
+plain and propagating await, all three call-argument forms, compact numeric
+exact/trailing/unterminated cases, implication versus match-arm context, and
+the named recovery cases above. The old `lower_to_hir` and
+`lower_document_to_hir` references currently preventing broader Agent/compiler
+tests are deletion inventory; they are migrated to the final lowering request,
+not restored to make this intermediate checkout green.
 
 This note records an in-progress atomic change. Completion requires focused
 syntax/HIR/consumer tests, workspace check and strict Clippy, normal workspace
