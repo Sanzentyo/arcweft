@@ -267,8 +267,9 @@ fn parse_prefix_with_dialogue(
     match text {
         "&" => emit_prefix_operand(parser, end, SyntaxKind::BorrowExpression, role, true),
         "*" => emit_prefix_operand(parser, end, SyntaxKind::DereferenceExpression, role, false),
-        "!" | "-" | "+" => {
-            emit_prefix_operand(parser, end, SyntaxKind::UnaryExpression, role, false)
+        "!" | "-" => emit_prefix_operand(parser, end, SyntaxKind::UnaryExpression, role, false),
+        "try" if propagating_await_spelling(parser, end) == Some(PropagatingAwait::TryAwait) => {
+            emit_propagating_await(parser, end, role, dialogue, PropagatingAwait::TryAwait)
         }
         "try" => emit_prefix_operand_with_dialogue(
             parser,
@@ -278,6 +279,11 @@ fn parse_prefix_with_dialogue(
             false,
             dialogue,
         ),
+        "await"
+            if propagating_await_spelling(parser, end) == Some(PropagatingAwait::AwaitQuestion) =>
+        {
+            emit_propagating_await(parser, end, role, dialogue, PropagatingAwait::AwaitQuestion)
+        }
         "await" => emit_prefix_operand_with_dialogue(
             parser,
             end,
@@ -289,7 +295,6 @@ fn parse_prefix_with_dialogue(
         "thread" if composite::has_braced_body(parser, end) => {
             composite::emit_thread_expression(parser, end, role)
         }
-        "thread" => emit_prefix_operand(parser, end, SyntaxKind::ThreadExpression, role, false),
         "result" | "task" | "seq" | "stream" if composite::has_braced_body(parser, end) => {
             composite::emit_computation_block(parser, end, role)
         }
@@ -349,6 +354,10 @@ fn emit_prefix_operand_with_dialogue(
     dialogue: Option<DialogueSurface>,
 ) -> CompletedNode {
     let start_event = parser.event_position();
+    if !parser.enter_prefix_expression() {
+        bump_until(parser, end);
+        return CompletedNode { start_event };
+    }
     parser.start(kind, role);
     parser.bump();
     parser.bump_trivia();
@@ -363,6 +372,63 @@ fn emit_prefix_operand_with_dialogue(
         parser.finish();
     }
     parser.finish();
+    parser.leave_prefix_expression();
+    CompletedNode { start_event }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PropagatingAwait {
+    TryAwait,
+    AwaitQuestion,
+}
+
+fn propagating_await_spelling(
+    parser: &ShadowDocumentParser<'_, '_>,
+    end: usize,
+) -> Option<PropagatingAwait> {
+    match parser.current_text()? {
+        "try" => super::shadow_recovery::first_significant(parser, parser.cursor() + 1, end)
+            .filter(|index| super::shadow_recovery::token_text(parser, *index) == Some("await"))
+            .map(|_| PropagatingAwait::TryAwait),
+        "await" => {
+            let question = parser.token_at(parser.cursor() + 1)?;
+            (parser.text_of(question) == "?"
+                && parser.current()?.range().end() == question.range().start())
+            .then_some(PropagatingAwait::AwaitQuestion)
+        }
+        _ => None,
+    }
+}
+
+fn emit_propagating_await(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    role: SyntaxRole,
+    dialogue: Option<DialogueSurface>,
+    spelling: PropagatingAwait,
+) -> CompletedNode {
+    let start_event = parser.event_position();
+    if !parser.enter_prefix_expression() {
+        bump_until(parser, end);
+        return CompletedNode { start_event };
+    }
+    parser.start(SyntaxKind::AwaitExpression, role);
+    parser.bump();
+    parser.bump_trivia();
+    match spelling {
+        PropagatingAwait::TryAwait => debug_assert!(parser.at("await")),
+        PropagatingAwait::AwaitQuestion => debug_assert!(parser.at("?")),
+    }
+    parser.bump();
+    parser.bump_trivia();
+    if parser.cursor() < end {
+        parse_binding_power_with_dialogue(parser, end, 90, SyntaxRole::Operand, dialogue);
+    } else {
+        parser.start(SyntaxKind::MissingExpression, SyntaxRole::Operand);
+        parser.finish();
+    }
+    parser.finish();
+    parser.leave_prefix_expression();
     CompletedNode { start_event }
 }
 

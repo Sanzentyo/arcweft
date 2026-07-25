@@ -1,5 +1,4 @@
 use super::{ParseFailure, ParsedSource, SyntaxDatabase, SyntaxIdentityKind};
-use crate::parser::{parse_source, recovery::ParseErrorKind};
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 use core::num::NonZeroU64;
@@ -224,7 +223,7 @@ fn diagnostic_limit_is_inclusive_and_one_over_rolls_back() {
         )
         .expect("the 1,024th diagnostic commits");
     assert_eq!(recovered.status(), super::ParseStatus::Recovered);
-    assert_eq!(recovered.diagnostics().len(), 1_024);
+    assert_eq!(recovered.bound().diagnostics().len(), 1_024);
     let allocator_next = database
         .lineages
         .get(&name)
@@ -250,49 +249,6 @@ fn diagnostic_limit_is_inclusive_and_one_over_rolls_back() {
     assert!(Arc::ptr_eq(&current.current, &recovered));
     assert_eq!(current.current.snapshot().generation().get(), 2);
     assert_eq!(current.shadow.next_node_for_test(), allocator_next);
-}
-
-#[test]
-fn top_level_item_budget_accepts_the_maximum_and_rolls_back_one_over() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::with_test_limits(super::SyntaxTransactionLimits {
-        top_level_items: 1,
-        ..super::SyntaxTransactionLimits::default()
-    });
-    let initial_source = "flow first {}\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, initial_source),
-        )
-        .expect("the configured maximum succeeds");
-    let allocator_next = database
-        .lineages
-        .get(&name)
-        .expect("lineage")
-        .shadow
-        .next_node_for_test();
-    let one_over = "flow first {}\nflow second {}\n";
-
-    let failed = database.reparse(
-        &initial,
-        &[source_edit(
-            &initial,
-            SourceRange::new(0, initial_source.len()),
-            one_over,
-        )],
-    );
-
-    assert!(matches!(
-        failed,
-        Err(ParseFailure::LimitExceeded(
-            super::SyntaxLimit::TopLevelItems
-        ))
-    ));
-    let current = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
-    assert_eq!(current.current.snapshot().generation().get(), 1);
 }
 
 #[test]
@@ -340,35 +296,163 @@ fn prefix_depth_limit_is_fatal_and_rolls_back_the_transaction() {
 }
 
 #[test]
-fn prefix_depth_diagnostics_are_typed_and_counted_across_recovery_modes() {
-    let maximum = format!(
-        "flow story {{\n    let value = {}input\n}}\n",
-        "& ".repeat(64)
+fn ordinary_expression_nesting_does_not_consume_prefix_depth() {
+    let name = SourceName::path("nested.arcw");
+    let source = format!(
+        "flow story {{\n    let value = {}input{}\n}}\n",
+        "(".repeat(65),
+        ")".repeat(65)
     );
-    let accepted = parse_source(maximum);
-    assert!(accepted.errors().is_empty());
-    assert_eq!(accepted.syntax_stats().prefix_depth_limit_failures, 0);
+    let mut database = SyntaxDatabase::default();
 
-    for source in [
-        format!(
-            "flow story {{\n    let value = {}input\n}}\n",
-            "& ".repeat(65)
-        ),
-        format!(
-            "flow story {{\n    let value = consume({}input, fallback)\n}}\n",
-            "& ".repeat(65)
-        ),
-    ] {
-        let parsed = parse_source(source);
+    let parsed = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("parenthesized expression owners do not form a prefix chain");
+
+    assert_eq!(parsed.status(), super::ParseStatus::Clean);
+}
+
+#[test]
+fn prefix_depth_tracks_active_ancestors_through_parentheses() {
+    let name = SourceName::path("nested-prefix.arcw");
+    let exact_expression = format!(
+        "{}input{}",
+        "&(".repeat(super::SyntaxLimit::PrefixDepth.maximum()),
+        ")".repeat(super::SyntaxLimit::PrefixDepth.maximum())
+    );
+    let initial_source = format!("flow story {{\n    let value = {exact_expression}\n}}\n");
+    let mut database = SyntaxDatabase::default();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, initial_source.clone()),
+        )
+        .expect("the 64th active prefix ancestor commits");
+    let allocator_next = database
+        .lineages
+        .get(&name)
+        .expect("lineage")
+        .shadow
+        .next_node_for_test();
+    let one_over_expression = format!(
+        "{}input{}",
+        "&(".repeat(super::SyntaxLimit::PrefixDepth.maximum() + 1),
+        ")".repeat(super::SyntaxLimit::PrefixDepth.maximum() + 1)
+    );
+    let one_over_source = format!("flow story {{\n    let value = {one_over_expression}\n}}\n");
+
+    let failed = database.reparse(
+        &initial,
+        &[source_edit(
+            &initial,
+            SourceRange::new(0, initial_source.len()),
+            one_over_source,
+        )],
+    );
+
+    assert!(matches!(
+        failed,
+        Err(ParseFailure::LimitExceeded(super::SyntaxLimit::PrefixDepth))
+    ));
+    let current = database.lineages.get(&name).expect("lineage current");
+    assert!(Arc::ptr_eq(&current.current, &initial));
+    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
+}
+
+#[test]
+fn propagating_await_spellings_emit_one_typed_prefix_node() {
+    for (ordinal, expression) in ["try await task()", "await? task()"]
+        .into_iter()
+        .enumerate()
+    {
+        let name = SourceName::path(format!("propagating-await-{ordinal}.arcw"));
+        let source = format!("flow story {{\n    let value = {expression}\n}}\n");
+        let mut database = SyntaxDatabase::default();
+        let parsed = database
+            .parse_initial(
+                SourceSnapshotId::initial(name.clone()),
+                source_document(&name, source),
+            )
+            .expect("propagating await commits");
+        let nodes = parsed.attached().nodes().collect::<Vec<_>>();
+
         assert_eq!(
-            parsed
-                .errors()
+            nodes
                 .iter()
-                .filter(|error| { error.kind() == ParseErrorKind::ExpressionPrefixDepthLimit })
+                .filter(|node| node.kind() == GrammarKind::AwaitExpression)
                 .count(),
             1
         );
-        assert_eq!(parsed.syntax_stats().prefix_depth_limit_failures, 1);
+        assert!(
+            nodes
+                .iter()
+                .all(|node| node.kind() != GrammarKind::TryExpression)
+        );
+    }
+
+    let name = SourceName::path("grouped-try-await.arcw");
+    let source = "flow story {\n    let value = try (await task())\n}\n";
+    let mut database = SyntaxDatabase::default();
+    let parsed = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("explicit grouping retains two ordinary prefix nodes");
+    let nodes = parsed.attached().nodes().collect::<Vec<_>>();
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| node.kind() == GrammarKind::AwaitExpression)
+            .count(),
+        1
+    );
+    assert_eq!(
+        nodes
+            .iter()
+            .filter(|node| node.kind() == GrammarKind::TryExpression)
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn propagating_await_spellings_consume_one_prefix_level_per_head() {
+    for (ordinal, head) in ["try await ", "await? "].into_iter().enumerate() {
+        let exact_name = SourceName::path(format!("await-depth-exact-{ordinal}.arcw"));
+        let exact_expression = format!(
+            "{}task()",
+            head.repeat(super::SyntaxLimit::PrefixDepth.maximum())
+        );
+        let exact_source = format!("flow story {{\n    let value = {exact_expression}\n}}\n");
+        let mut exact_database = SyntaxDatabase::default();
+        exact_database
+            .parse_initial(
+                SourceSnapshotId::initial(exact_name.clone()),
+                source_document(&exact_name, exact_source),
+            )
+            .expect("64 propagating await heads consume exactly 64 prefix levels");
+
+        let one_over_name = SourceName::path(format!("await-depth-over-{ordinal}.arcw"));
+        let one_over_expression = format!(
+            "{}task()",
+            head.repeat(super::SyntaxLimit::PrefixDepth.maximum() + 1)
+        );
+        let one_over_source = format!("flow story {{\n    let value = {one_over_expression}\n}}\n");
+        let mut one_over_database = SyntaxDatabase::default();
+        let failed = one_over_database.parse_initial(
+            SourceSnapshotId::initial(one_over_name.clone()),
+            source_document(&one_over_name, one_over_source),
+        );
+
+        assert!(matches!(
+            failed,
+            Err(ParseFailure::LimitExceeded(super::SyntaxLimit::PrefixDepth))
+        ));
+        assert!(!one_over_database.lineages.contains_key(&one_over_name));
     }
 }
 
@@ -421,7 +505,6 @@ fn source_generation_exhaustion_rolls_back_the_transaction() {
     let name = SourceName::path("story.arcw");
     let mut database = SyntaxDatabase::with_test_limits(super::SyntaxTransactionLimits {
         source_generation: 1,
-        ..super::SyntaxTransactionLimits::default()
     });
     let source = "flow story {}\n";
     let initial = database
@@ -1419,7 +1502,7 @@ fn fatal_private_attachment_failure_rolls_back_initial_transaction() {
     let lineage_before = database.shadow.next_lineage_for_test();
     let failed = database.parse_initial_with_attachment_failure(
         &SourceSnapshotId::initial(name.clone()),
-        source_document(&name, "proof invalid() = ()\n"),
+        &source_document(&name, "proof invalid() = ()\n"),
     );
 
     assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
@@ -1458,7 +1541,7 @@ fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
     let lineage_before = database.shadow.next_lineage_for_test();
     let failed = database.parse_initial_with_attachment_failure(
         &SourceSnapshotId::initial(name.clone()),
-        source_document(&name, source),
+        &source_document(&name, source),
     );
 
     assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));

@@ -171,6 +171,14 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         self.budget.assertion_condition();
     }
 
+    pub(super) fn enter_prefix_expression(&mut self) -> bool {
+        self.budget.enter_prefix_expression()
+    }
+
+    pub(super) fn leave_prefix_expression(&mut self) {
+        self.budget.leave_prefix_expression();
+    }
+
     pub(super) const fn budget_failed(&self) -> bool {
         self.budget.failure().is_some()
     }

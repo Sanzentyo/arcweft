@@ -13,11 +13,8 @@ use super::bound::{
     BoundPatternFragment, BoundStatementFragment, BoundTypeFragment, ExpressionFragment,
     PatternFragment, StatementFragment, TypeFragment,
 };
-use crate::ast::items::TypedSyntaxTree;
 #[cfg(test)]
 use crate::attachment::SyntaxSnapshotData;
-use crate::cst::SyntaxNode;
-use crate::parser::recovery::{ParseError, ParseErrorKind};
 
 use super::limits::SyntaxLimit;
 use super::transaction;
@@ -25,57 +22,38 @@ use super::transaction;
 /// Immutable parse result owned by one incremental syntax database lineage.
 #[derive(Clone, Debug)]
 pub struct ParsedSource {
-    snapshot: SourceSnapshotId,
-    document: SourceDocument,
-    parsed: crate::source::ParsedSource,
-    shadow: Rc<BoundParsedSource>,
-    status: ParseStatus,
+    bound: Rc<BoundParsedSource>,
 }
 
 impl ParsedSource {
     /// Source name and generation accepted by the parse transaction.
-    pub const fn snapshot(&self) -> &SourceSnapshotId {
-        &self.snapshot
+    pub fn snapshot(&self) -> &SourceSnapshotId {
+        self.bound.snapshot_id().source()
     }
 
     /// Exact content provenance retained independently from session lineage.
-    pub const fn document(&self) -> &SourceDocument {
-        &self.document
+    pub fn document(&self) -> &SourceDocument {
+        self.bound.document()
     }
 
     /// Exact UTF-8 source bytes for this immutable snapshot.
     pub fn source(&self) -> &str {
-        self.document.text()
-    }
-
-    /// Lossless CST root.
-    pub const fn root(&self) -> &SyntaxNode {
-        self.parsed.syntax()
-    }
-
-    /// Typed surface tree projected from the lossless CST.
-    pub const fn typed_tree(&self) -> &TypedSyntaxTree {
-        self.parsed.typed_tree()
-    }
-
-    /// Recoverable syntax diagnostics in deterministic parser order.
-    pub fn diagnostics(&self) -> &[ParseError] {
-        self.parsed.errors()
+        self.document().text()
     }
 
     /// Whether this snapshot is clean or contains recovered syntax.
-    pub const fn status(&self) -> ParseStatus {
-        self.status
+    pub fn status(&self) -> ParseStatus {
+        self.bound.status()
     }
 
     #[cfg(test)]
     pub(crate) fn attached(&self) -> &Arc<SyntaxSnapshotData> {
-        self.shadow.syntax()
+        self.bound.syntax()
     }
 
     #[cfg(test)]
     pub(super) const fn bound(&self) -> &Rc<BoundParsedSource> {
-        &self.shadow
+        &self.bound
     }
 }
 
@@ -95,16 +73,12 @@ struct SourceLineage {
 
 #[derive(Clone, Copy, Debug)]
 struct SyntaxTransactionLimits {
-    top_level_items: usize,
-    diagnostics: usize,
     source_generation: u32,
 }
 
 impl Default for SyntaxTransactionLimits {
     fn default() -> Self {
         Self {
-            top_level_items: SyntaxLimit::TopLevelItems.maximum(),
-            diagnostics: SyntaxLimit::Diagnostics.maximum(),
             source_generation: u32::MAX,
         }
     }
@@ -187,7 +161,7 @@ impl SyntaxDatabase {
         snapshot: SourceSnapshotId,
         document: SourceDocument,
     ) -> Result<Arc<ParsedSource>, ParseFailure> {
-        self.parse_initial_with_shadow_fault(&snapshot, document, transaction::ShadowFault::None)
+        self.parse_initial_with_shadow_fault(&snapshot, &document, transaction::ShadowFault::None)
     }
 
     /// Attaches one standalone expression to a database-owned private lineage.
@@ -302,7 +276,7 @@ impl SyntaxDatabase {
     fn parse_initial_with_shadow_fault(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: SourceDocument,
+        document: &SourceDocument,
         shadow_fault: transaction::ShadowFault,
     ) -> Result<Arc<ParsedSource>, ParseFailure> {
         if snapshot.generation() != SourceGeneration::INITIAL
@@ -311,16 +285,11 @@ impl SyntaxDatabase {
         {
             return Err(ParseFailure::SourceMismatch);
         }
-        let parsed = parse_checked(document.text(), self.limits)?;
         let shadow = self
             .shadow
-            .stage_initial(snapshot, &document, shadow_fault)?;
+            .stage_initial(snapshot, document, shadow_fault)?;
         let result = Arc::new(ParsedSource {
-            snapshot: snapshot.clone(),
-            document,
-            status: parse_status(&parsed),
-            parsed,
-            shadow: Rc::clone(shadow.current()),
+            bound: Rc::clone(shadow.current()),
         });
         let shadow = self.shadow.commit_initial(shadow);
         self.lineages.insert(
@@ -382,7 +351,6 @@ impl SyntaxDatabase {
             Arc::<str>::from(next_text),
         )
         .map_err(|_| ParseFailure::InternalInvariant)?;
-        let parsed = parse_checked(document.text(), self.limits)?;
         let snapshot = previous
             .snapshot()
             .checked_next()
@@ -391,11 +359,7 @@ impl SyntaxDatabase {
             .shadow
             .stage_reparse(&snapshot, &document, shadow_fault)?;
         let result = Arc::new(ParsedSource {
-            snapshot,
-            document,
-            status: parse_status(&parsed),
-            parsed,
-            shadow: Rc::clone(shadow.current()),
+            bound: Rc::clone(shadow.current()),
         });
         let lineage = self
             .lineages
@@ -410,7 +374,7 @@ impl SyntaxDatabase {
     fn parse_initial_with_attachment_failure(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: SourceDocument,
+        document: &SourceDocument,
     ) -> Result<Arc<ParsedSource>, ParseFailure> {
         self.parse_initial_with_shadow_fault(
             snapshot,
@@ -446,41 +410,7 @@ impl SyntaxDatabase {
 
 impl ParsedSource {
     const fn bound_internal(&self) -> &Rc<BoundParsedSource> {
-        &self.shadow
-    }
-}
-
-fn parse_checked(
-    source: &str,
-    limits: SyntaxTransactionLimits,
-) -> Result<crate::source::ParsedSource, ParseFailure> {
-    let parsed = crate::parser::parse_source(source.to_owned());
-    if parsed.errors().len() > limits.diagnostics {
-        return Err(ParseFailure::LimitExceeded(SyntaxLimit::Diagnostics));
-    }
-    if parsed.typed_tree().items().len() > limits.top_level_items {
-        return Err(ParseFailure::LimitExceeded(SyntaxLimit::TopLevelItems));
-    }
-    if parsed.syntax_stats().prefix_depth_limit_failures > 0 {
-        return Err(ParseFailure::LimitExceeded(SyntaxLimit::PrefixDepth));
-    }
-    if parsed
-        .errors()
-        .iter()
-        .any(|error| error.kind() == ParseErrorKind::AssertionTooManyConditions)
-    {
-        return Err(ParseFailure::LimitExceeded(
-            SyntaxLimit::AssertionConditions,
-        ));
-    }
-    Ok(parsed)
-}
-
-fn parse_status(parsed: &crate::source::ParsedSource) -> ParseStatus {
-    if parsed.errors().is_empty() {
-        ParseStatus::Clean
-    } else {
-        ParseStatus::Recovered
+        &self.bound
     }
 }
 

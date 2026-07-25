@@ -22,6 +22,7 @@ use crate::incremental::SyntaxLimit;
 #[derive(Debug, Default)]
 pub(crate) struct GrammarBudget {
     stack: Vec<BudgetFrame>,
+    prefix_depth: usize,
     top_level_items: usize,
     statements: usize,
     expressions: usize,
@@ -82,6 +83,27 @@ struct DiagnosticKey {
 }
 
 impl GrammarBudget {
+    /// Enters one prefix-expression ancestor on the current typed expression
+    /// path before emitting its node.
+    pub(crate) fn enter_prefix_expression(&mut self) -> bool {
+        if self.failure.is_some() {
+            return false;
+        }
+        if let Err(limit) = charge(&mut self.prefix_depth, SyntaxLimit::PrefixDepth) {
+            self.failure = Some(limit);
+            return false;
+        }
+        true
+    }
+
+    /// Leaves one successfully entered prefix-expression ancestor.
+    pub(crate) fn leave_prefix_expression(&mut self) {
+        self.prefix_depth = self
+            .prefix_depth
+            .checked_sub(1)
+            .expect("prefix-expression budget leaves only accepted entries");
+    }
+
     /// Accepts one node start if doing so stays inside every inclusive budget.
     pub(crate) fn start(&mut self, kind: SyntaxKind, role: SyntaxRole) -> bool {
         if self.failure.is_some() {
@@ -371,6 +393,26 @@ mod tests {
 
         let mut fresh = GrammarBudget::default();
         assert!(fresh.event(&diagnostic_event(0)));
+    }
+
+    #[test]
+    fn prefix_depth_budget_accepts_exact_limit_and_rejects_one_over() {
+        let mut budget = GrammarBudget::default();
+        for _ in 0..SyntaxLimit::PrefixDepth.maximum() {
+            assert!(budget.enter_prefix_expression());
+        }
+        assert!(!budget.enter_prefix_expression());
+        assert_eq!(budget.failure(), Some(SyntaxLimit::PrefixDepth));
+        for _ in 0..SyntaxLimit::PrefixDepth.maximum() {
+            budget.leave_prefix_expression();
+        }
+        assert_eq!(budget.prefix_depth, 0);
+
+        let mut fresh = GrammarBudget::default();
+        for _ in 0..=SyntaxLimit::PrefixDepth.maximum() {
+            assert!(fresh.enter_prefix_expression());
+            fresh.leave_prefix_expression();
+        }
     }
 
     fn document_budget() -> GrammarBudget {

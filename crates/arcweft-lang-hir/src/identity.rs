@@ -247,15 +247,6 @@ impl SyntheticKey {
     }
 }
 
-/// Checked allocator family reported by fatal HIR lowering.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirIdentityKind {
-    Module,
-    Revision,
-    Slot,
-    LocalGeneration,
-}
-
 /// Inclusive HIR allocation limit.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirLimit {

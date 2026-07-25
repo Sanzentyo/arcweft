@@ -276,18 +276,22 @@ impl SyntaxDiagnostic {
         })
     }
 
+    /// Stable diagnostic code emitted by the attached grammar transaction.
     pub(crate) const fn code(&self) -> &'static str {
         self.code
     }
 
+    /// Primary span in the exact immutable source revision.
     pub(crate) const fn primary(&self) -> &SourceSpan {
         &self.primary
     }
 
+    /// Optional related span in the same immutable source revision.
     pub(crate) const fn related(&self) -> Option<&SourceSpan> {
         self.related.as_ref()
     }
 
+    /// Human-readable diagnostic detail; never an identity key.
     pub(crate) fn message(&self) -> &str {
         &self.message
     }

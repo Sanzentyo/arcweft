@@ -45,13 +45,13 @@ note: required by a bound in `requires_deserialize`
 5 | fn requires_deserialize<T: serde::de::DeserializeOwned>() {}
   |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `requires_deserialize`
 
-error[E0277]: the trait bound `arcweft_lang_hir::identity::LocalGeneration: serde::Serialize` is not satisfied
+error[E0277]: the trait bound `LocalGeneration: serde::Serialize` is not satisfied
   --> tests/ui/session_identity_serde.rs:10:26
    |
 10 |     requires_serialize::<LocalGeneration>();
-   |                          ^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `arcweft_lang_hir::identity::LocalGeneration`
+   |                          ^^^^^^^^^^^^^^^ the trait `Serialize` is not implemented for `LocalGeneration`
    |
-   = note: for local types consider adding `#[derive(serde::Serialize)]` to your `arcweft_lang_hir::identity::LocalGeneration` type
+   = note: for local types consider adding `#[derive(serde::Serialize)]` to your `LocalGeneration` type
    = note: for types from other crates check whether the crate offers a `serde` feature flag
    = help: the following other types implement trait `Serialize`:
              &'a T
