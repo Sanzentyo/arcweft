@@ -67,7 +67,7 @@ Stream dependency:
 | ABI-neutral same-fiber frames, terminal cancellation, and whole-stack cleanup | `LANDED_VALIDATED` | [the 2026-07-24 direct-suspension kernel note](2026-07-24-lang-01-1-1-awbc-direct-suspension-kernel.md) |
 | direct `Need<T, E>` Ready/Err materialization and same-step `await` | `MISSING` | replace the current task-plan-only Product `Await` reader with the final typed in-memory Need owner; do not add a wire surrogate |
 | non-Need `await`, exact borrow range, and `ThreadHandle` negative evidence | `LANDED_VALIDATED` | [the 2026-07-24 suspension-diagnostic note](2026-07-24-lang-01-1-1-suspension-diagnostics.md) |
-| effect-trait requirement/implementation facts and diagnostics | `MISSING` | typed semantic owner and its direct tests |
+| effect-trait requirement/implementation facts and diagnostics | `DESIGN_BLOCKED` | [Lang-01.1.1.3](../reviews/requests/2026-07-24-lang-01.1.1.3-effect-trait-contract-and-dynamic-dispatch-production-reconciliation.md) must close the omitted-row diagnostic owner and reconcile E017 with the maintained dynamic-trait-object deferral |
 | callable execution facts in project/LSP indexes | `MISSING` | publish canonical checked facts; do not synthesize callable IDs from hover text |
 | authored ordinary-function AWBC kind and public lowering | `DESIGN_BLOCKED` | final codec-8 kind allocation and opcode interleave reconciliation |
 | `StreamFactory` runtime/wire/save projection | `DESIGN_BLOCKED` | Lang-01.3.1.2.2.1 correction and the final Stream authority switch |

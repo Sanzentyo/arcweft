@@ -50,7 +50,10 @@ materialization, effect-trait requirement/implementation facts, project/LSP
 callable-execution publication, the codec-8 authored-function kind, or the
 Stream runtime switch. Effect-trait rows A023, E014-E017, E022, and E023 need a
 typed trait-method effect source and semantic callable owner; the omitted-row
-diagnostic contract remains underspecified and is not guessed here.
+diagnostic contract remains underspecified and is not guessed here. The exact
+owner, diagnostic ranges, and conflict with the maintained deferral of dynamic
+trait objects are now isolated in the independently throwable
+[Lang-01.1.1.3 production-reconciliation request](../reviews/requests/2026-07-24-lang-01.1.1.3-effect-trait-contract-and-dynamic-dispatch-production-reconciliation.md).
 
 ## Validation
 
