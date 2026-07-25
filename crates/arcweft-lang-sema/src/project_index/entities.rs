@@ -916,7 +916,6 @@ fn callable_param_name(pattern: &Pattern) -> Option<&str> {
 
 pub(super) fn entity_decl_kind(kind: EntityDeclKind) -> EntityKind {
     match kind {
-        EntityDeclKind::Asset => EntityKind::Asset,
         EntityDeclKind::Image => EntityKind::Image,
         EntityDeclKind::Character => EntityKind::Character,
         EntityDeclKind::View => EntityKind::View,
@@ -939,7 +938,6 @@ pub(super) fn entity_decl_kind(kind: EntityDeclKind) -> EntityKind {
 
 pub(super) fn entity_decl_kind_label(kind: EntityDeclKind) -> &'static str {
     match kind {
-        EntityDeclKind::Asset => "asset",
         EntityDeclKind::Image => "image",
         EntityDeclKind::Character => "character",
         EntityDeclKind::View => "view",

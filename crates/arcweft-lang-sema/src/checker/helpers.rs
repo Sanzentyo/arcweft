@@ -72,7 +72,6 @@ pub(super) fn expr_path_label(expr: &Expr) -> Option<String> {
 
 pub(super) fn entity_kind_for_decl(kind: EntityDeclKind) -> EntityKind {
     match kind {
-        EntityDeclKind::Asset => EntityKind::Asset,
         EntityDeclKind::Image => EntityKind::Image,
         EntityDeclKind::Character => EntityKind::Character,
         EntityDeclKind::View => EntityKind::View,

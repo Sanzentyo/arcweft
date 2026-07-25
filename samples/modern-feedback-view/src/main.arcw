@@ -3,11 +3,6 @@ pub character concierge {
   default_voice = auto
 }
 
-pub asset bg.glass_lights {
-  kind = image
-  file = "bg/glass_lights.png"
-}
-
 pub image glass_bg {
   asset = @asset:.bg.glass_lights
   target = @target.modern.glass_bg

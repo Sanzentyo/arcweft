@@ -208,27 +208,27 @@ generic parameters. `Ident EntityRef` retains relation headers such as
 `parent @bus.master`; whether a particular relation or typed tail is meaningful
 for an entity kind is a semantic rule. A second unstructured identifier after
 a compact declaration name is not a header extension. For example,
-`asset unexpected extra { ... }` is a syntax error at `extra`, does not produce an
+`character unexpected extra { ... }` is a syntax error at `extra`, does not produce an
 entity declaration AST node, and recovery resumes after that declaration's
 line or balanced block.
 
-Asset declarations use this ordinary entity declaration surface:
+Assets do not have an authored declaration surface. Reconciled project assets
+come from the selected asset catalog; a normalized virtual path such as
+`bg/room.png` deterministically derives the public ID `asset.bg.room`.
+Presentation-object declarations remain ordinary authored declarations:
 
 ```text
-AssetDecl := Visibility? 'asset' DeclIdentity AssetBody?
 ImageDecl := Visibility? 'image' DeclIdentity ImageObjectBody?
 ```
 
-The declaration establishes the `asset` entity id. Authored asset references
-should prefer family-relative spelling such as `@asset:.bg.room`; this omits
-the default family from the id path while retaining the explicit asset
-reference anchor. Fully qualified references such as `@asset.bg.room` remain
-available for generated surfaces, manifest/tooling output, stored public-id
-roundtrips, and external interfaces that need the stored public id verbatim.
-They are not the recommended spelling for ordinary hand-authored asset
-references.
-Image payload packaging is still handled by the bundle image asset table, which
-records encoded files and decoded metadata.
+Authored asset references should prefer family-relative spelling such as
+`@asset:.bg.room`; this omits the default family from the id path while
+retaining the explicit asset reference anchor. Fully qualified references such
+as `@asset.bg.room` remain available for generated surfaces, manifest/tooling
+output, stored public-id roundtrips, and external interfaces that need the
+stored public id verbatim. Image payload packaging is handled by the bundle
+image asset table, which records the catalog identity, encoded files, and
+decoded metadata.
 
 `image` declarations establish stable presentation-object ids such as
 `@image.sample.pulse_sprite`. Their bodies use the same flat fields as bounded
@@ -296,14 +296,13 @@ omit that family prefix. Prefer
 `source http_requests: Source<T, E>` or
 `source @source.http_requests: Source<T, E>` over
 `source @source.http_requests http_requests: ...`. Prefer
-`pub character alice { display = "Alice" }`,
-`asset bg_room { source = file("images/room.webp") }`, or
+`pub character alice { display = "Alice" }` or
 `content chapter_two { roots = [@flow.chapter_two] }` for hand-written source.
-Fully qualified forms such as `pub character @character.alice { ... }`,
-`asset @asset.bg_room { ... }`, and
-`content @content.chapter_two { ... }` are accepted but are generated or
-fully elaborated surfaces rather than the recommended authoring form. Avoid
-putting display names or aliases in declaration headers.
+Fully qualified forms such as `pub character @character.alice { ... }` and
+`content @content.chapter_two { ... }` are accepted but are generated or fully
+elaborated surfaces rather than the recommended authoring form. Assets are not
+part of this declaration grammar; their identities come from the project asset
+catalog. Avoid putting display names or aliases in declaration headers.
 
 ## Dialogue and line plans
 

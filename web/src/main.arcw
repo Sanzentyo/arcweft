@@ -70,26 +70,6 @@ pub view WebPanel(dialogue: DialogueView) {
         .style(@style.web_panel)
 }
 
-pub asset generated.background {
-    kind = image
-    file = "generated/background.png"
-}
-
-pub asset generated.character_stand {
-    kind = image
-    file = "generated/character_stand.png"
-}
-
-pub asset generated.gif_pulse {
-    kind = image
-    file = "generated/gif_pulse.gif"
-}
-
-pub asset generated.webp_pulse {
-    kind = image
-    file = "generated/webp_pulse.webp"
-}
-
 pub image @image.generated.character_stand {
     asset = @asset:.generated.character_stand
     x = 72px

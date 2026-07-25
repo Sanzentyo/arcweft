@@ -281,7 +281,6 @@ pub struct FunctionParameterSource {
 /// Top-level entity declaration family with runtime-specific body preserved.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum EntityDeclKind {
-    Asset,
     Image,
     Character,
     View,
@@ -304,7 +303,6 @@ pub enum EntityDeclKind {
 impl EntityDeclKind {
     pub const fn keyword(self) -> &'static str {
         match self {
-            Self::Asset => "asset",
             Self::Image => "image",
             Self::Character => "character",
             Self::View => "view",

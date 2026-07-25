@@ -1,10 +1,5 @@
 // Same authored object as stand-top-right.arcw. Validate with a host viewport
 // of 1920x1080 logical pixels and 3840x2160 physical pixels.
-pub asset zundamon.normal {
-    kind = image
-    file = "zundamon/normal.png"
-}
-
 pub image @image.zundamon.stand.responsive.hidpi {
     asset = @asset:.zundamon.normal
     layer = @layer.character

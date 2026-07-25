@@ -79,7 +79,6 @@ pub(super) fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
     [
         ("audio bus", EntityDeclKind::AudioBus),
         ("mixer snapshot", EntityDeclKind::MixerSnapshot),
-        ("asset", EntityDeclKind::Asset),
         ("image", EntityDeclKind::Image),
         ("character", EntityDeclKind::Character),
         ("view", EntityDeclKind::View),
@@ -110,7 +109,6 @@ pub(super) fn entity_decl_kind(input: &str) -> Option<(EntityDeclKind, &str)> {
 
 pub(super) fn entity_decl_family(kind: EntityDeclKind) -> &'static str {
     match kind {
-        EntityDeclKind::Asset => "asset",
         EntityDeclKind::Image => "image",
         EntityDeclKind::Character => "character",
         EntityDeclKind::View => "view",

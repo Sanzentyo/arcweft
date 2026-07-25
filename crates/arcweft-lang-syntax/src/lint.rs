@@ -896,9 +896,6 @@ flow @flow.opening {
     fn explicit_entity_decl_id_prefers_compact_authoring_form() {
         let parsed = parse_source(
             r"
-asset @asset.bg_room {
-}
-
 image @image.sample.pulse_sprite {
 }
 
@@ -913,13 +910,7 @@ content @content.chapter_two {
             .filter(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
             .collect::<Vec<_>>();
 
-        assert_eq!(explicit.len(), 3);
-        assert!(explicit.iter().any(|lint| {
-            lint.message().contains("asset bg_room")
-                && lint
-                    .message()
-                    .contains("default declaration family explicitly")
-        }));
+        assert_eq!(explicit.len(), 2);
         assert!(
             explicit
                 .iter()
@@ -951,9 +942,6 @@ character alice {
         let codes = lint_codes(
             r#"
 pub character concierge {
-}
-
-pub asset bg.glass_lights {
 }
 
 pub view ModernFeedbackPanel() {

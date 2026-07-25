@@ -293,8 +293,8 @@ pub character @character.alice Alice as alice {}
 
 #[test]
 fn invalid_entity_block_header_is_not_an_ast_node_and_recovers_after_its_block() {
-    let source = r#"pub asset unexpected extra {
-    file = "unused.png"
+    let source = r#"pub character unexpected extra {
+    display = "Unused"
 }
 pub character bob {}
 "#;
@@ -312,6 +312,29 @@ pub character bob {}
         parsed.typed_tree().items(),
         [Item::EntityDecl(item)]
             if item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::Character
+                && item.id().body() == "character.bob"
+    ));
+}
+
+#[test]
+fn non_declaration_block_is_raw_recovery_and_does_not_hide_the_next_declaration() {
+    let source = r#"pub asset bg {
+    file = "bg/room.png"
+}
+pub character bob {}
+"#;
+    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+
+    assert_eq!(parsed.errors().len(), 1);
+    let error = &parsed.errors()[0];
+    assert_eq!(error.message(), "unexpected top-level item");
+    assert_eq!(error.found(), Some("pub asset bg {"));
+    assert_eq!(&source[error.range().as_range()], "pub asset bg {");
+    assert!(matches!(
+        parsed.typed_tree().items(),
+        [Item::Raw(raw), Item::EntityDecl(item)]
+            if raw.head() == "pub asset bg {"
+                && item.kind() == arcweft_lang_syntax::ast::items::EntityDeclKind::Character
                 && item.id().body() == "character.bob"
     ));
 }

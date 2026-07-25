@@ -660,9 +660,6 @@ flow chapter_two {}
 
     let bad = parse_ok(
         r"
-asset chapter_two {
-}
-
 flow bad_content_ref {
     content.prefetch(@asset:.chapter_two)
 }
@@ -3554,17 +3551,6 @@ flow @flow.opening opening {
 fn typechecks_presentation_image_object_call_with_named_asset_and_bounds() {
     let tree = parse_ok(
         r#"
-asset bg.room {
-    file = "bg/room.png"
-    kind = image
-}
-
-asset bg.pulse {
-    file = "bg/pulse.gif"
-    kind = image
-    animation = true
-}
-
 image @image.sample.pulse {
     asset = @asset:.bg.pulse
     target = @target.sample.pulse
@@ -3584,7 +3570,10 @@ flow @flow.opening opening {
     );
     let hir = lower_to_hir(&tree).expect("presentation image fixture lowers");
 
-    validate_hir_references(&hir, &registry_from_hir(&hir)).expect("declared image assets resolve");
+    let registry = registry_from_hir(&hir)
+        .with_entity("asset.bg.room", EntityKind::Asset)
+        .with_entity("asset.bg.pulse", EntityKind::Asset);
+    validate_hir_references(&hir, &registry).expect("catalog image assets resolve");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("presentation image call typechecks");
 }
 
@@ -3592,17 +3581,6 @@ flow @flow.opening opening {
 fn typechecks_family_relative_asset_references_in_asset_expected_calls() {
     let tree = parse_ok(
         r#"
-asset room {
-    file = "bg/room.png"
-    kind = image
-}
-
-asset pulse {
-    file = "bg/pulse.gif"
-    kind = image
-    animation = true
-}
-
 flow @flow.opening opening {
     let room = bg(@asset:.room)
     let pulse = image(asset = @asset:.pulse, id = "image.sample.pulse")

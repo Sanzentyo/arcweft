@@ -141,7 +141,6 @@ pub fn registry_from_hir_and_project(
 
 fn entity_decl_registry_kind(kind: EntityDeclKind) -> EntityKind {
     match kind {
-        EntityDeclKind::Asset => EntityKind::Asset,
         EntityDeclKind::Image => EntityKind::Image,
         EntityDeclKind::Character => EntityKind::Character,
         EntityDeclKind::View => EntityKind::View,

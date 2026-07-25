@@ -192,11 +192,6 @@ content chapter_two {
     roots = [ @flow.chapter_two, @asset:.bg ]
 }
 
-asset bg {
-    file = "bg/chapter-two.png"
-    kind = image
-}
-
 flow chapter_two {
     return "chapter two"
 }
@@ -735,11 +730,6 @@ entry agent @entry.agent.smoke {
 fn project_index_from_hir_projects_inline_image_agent_actions() {
     let tree = parse_source(
             r#"
-asset bg.pulse {
-    file = "bg/pulse.gif"
-    kind = image
-}
-
 flow @flow.opening opening {
     let pulse = image(asset = @asset:.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
 }

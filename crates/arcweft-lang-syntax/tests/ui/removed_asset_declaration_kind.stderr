@@ -1,0 +1,5 @@
+error[E0599]: no variant, associated function, or constant named `Asset` found for enum `EntityDeclKind` in the current scope
+ --> tests/ui/removed_asset_declaration_kind.rs:4:29
+  |
+4 |     let _ = EntityDeclKind::Asset;
+  |                             ^^^^^ variant, associated function, or constant not found in `EntityDeclKind`

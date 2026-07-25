@@ -168,11 +168,6 @@ flow main {
 fn value_position_image_handle_lowers_lifecycle_methods_and_cleanup_cancel() {
     let parsed = parse_source(
         r#"
-pub asset bg.card {
-  kind = image
-  file = "bg/card.png"
-}
-
 pub image card {
   asset = @asset:.bg.card
   target = @target.card
@@ -305,11 +300,6 @@ flow main {
 fn explicit_view_and_image_mount_exprs_lower_to_scoped_handle_create() {
     let parsed = parse_source(
         r#"
-pub asset bg.card {
-  kind = image
-  file = "bg/card.png"
-}
-
 pub image card {
   asset = @asset:.bg.card
   target = @target.card

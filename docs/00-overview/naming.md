@@ -239,12 +239,12 @@ Do not write `goto @.next` or `bg(@.bg.room)`. Relative IDs are ID
 declarations/overrides, not general references. Bare `.suffix` is not part of
 the core grammar.
 
-Declaration headers are different from reference expressions. The declaration
-keyword already supplies the default family, so hand-written source should
-prefer compact declaration IDs such as `asset bg_room { ... }` or
-`content chapter_two { ... }`; fully qualified declaration headers such as
-`asset @asset.bg_room { ... }` are accepted as generated or fully elaborated
-surfaces and should be linted toward the compact form.
+Declaration headers are different from reference expressions. For authored
+declaration families, the declaration keyword already supplies the default
+family, so hand-written source should prefer compact declaration IDs such as
+`content chapter_two { ... }`. Assets are catalog-only and have no declaration
+header. Their `asset.*` IDs are derived from normalized virtual paths under the
+selected `assets/` root; source only refers to those IDs.
 
 ## 予約名
 

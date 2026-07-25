@@ -187,7 +187,6 @@ fn looks_like_entity_decl_item(trimmed: &str) -> bool {
         "audio bus",
         "mixer snapshot",
         "voice profile",
-        "asset",
         "image",
         "character",
         "view",

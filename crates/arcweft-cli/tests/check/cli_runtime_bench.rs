@@ -1556,6 +1556,8 @@ fn bundle_json_packages_image_animation_sample_assets_and_run_bundle_validates_t
     let run_output = Command::new(env!("CARGO_BIN_EXE_arcw"))
         .arg("run-bundle")
         .arg(&bundle_path)
+        .arg("--entry")
+        .arg("entry.image_static_png")
         .arg("--mode")
         .arg("drain")
         .arg("--steps")

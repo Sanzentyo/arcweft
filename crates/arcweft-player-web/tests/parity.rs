@@ -781,11 +781,6 @@ const fn standard_dialogue_test_viewport() -> RenderViewport {
 
 fn authored_image_handle_bundle() -> ArcweftBundle {
     const SOURCE: &str = r#"
-pub asset card_file {
-  kind = image
-  file = "bg/room.png"
-}
-
 pub image card {
   asset = @asset:.card_file
   target = @target.card

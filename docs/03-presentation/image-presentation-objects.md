@@ -8,14 +8,11 @@ frame timing.
 
 ## Source Surface
 
-The current implemented source surface is ordinary call syntax:
+The current implemented source surface uses ordinary call syntax and authored
+image-object declarations. Asset identities come from the selected asset
+catalog rather than source declarations:
 
 ```arcw
-pub asset bg_room {
-  kind = image
-  file = "bg/room.png"
-}
-
 pub image @image.sample.pulse_sprite {
   asset = @asset:.bg.pulse
   target = @target.sample.pulse_sprite
@@ -77,24 +74,16 @@ module scope. `image(@image.id)` expands that declaration into the same
 hit-test, capture, bundle validation, and native rendering all see the same
 typed object. Call-site named arguments may override declaration fields.
 
-`asset name { ... }` is the recommended hand-written asset declaration surface:
-the `asset` keyword already supplies the default declaration family, so the
-family prefix is omitted there. It declares the stable asset id used by
-`asset.image(...)`, `bg(...)`, and `image(...)`. Fully qualified declaration
-headers such as `asset @asset.bg_room { ... }` remain valid for generated or
-fully elaborated source, but authoring tools should lint them toward the
-compact declaration form. Authored asset references should prefer
+Assets are catalog-only. The build adapter enumerates the manifest-selected
+`assets/` root, normalizes each relative `/`-separated virtual path, removes its
+extension, and derives an `AssetId`; for example, `bg/pulse.gif` becomes
+`asset.bg.pulse`. The bundle records the encoded payload and decoded metadata in
+`image_assets[]`. Authored source refers to catalog entries with
 family-relative references such as `bg(@asset:.bg.room)` and
-`image(asset = @asset:.bg.pulse)`; this is the compact authored form because
-the `asset` anchor is explicit while the id path does not repeat the default
-family. Fully qualified references such as `@asset.bg.room` remain valid for
-generated surfaces, manifest/tooling output, stored public-id roundtrips, and
-external interfaces that need the stored public id verbatim, but they are not
-the recommended spelling for ordinary hand-authored asset references. Asset
-bodies are preserved as source metadata;
-the current bundle implementation still records encoded payloads from the
-manifest-selected `assets/` root into `image_assets[]` and validates statically known image
-references against that table.
+`image(asset = @asset:.bg.pulse)`. Fully qualified references such as
+`@asset.bg.room` remain valid for generated surfaces, manifest/tooling output,
+stored public-id roundtrips, and external interfaces that need the stored public
+id verbatim.
 
 The older fluent sketch form `image(@asset).fit(...)` is not the implemented
 surface. Declared image objects are the canonical reusable object form and lower

@@ -49,12 +49,13 @@ that need the stored public id verbatim. They are not the recommended spelling
 for ordinary hand-authored asset references when the family has a default
 public-id prefix.
 
-Declaration headers are a separate surface. There, the declaration keyword
-already supplies the family, so hand-written source should omit the default
-family prefix and prefer compact declaration ids such as `asset bg_room { ... }`
-and `content chapter_two { ... }`. Fully qualified declaration headers such as
-`asset @asset.bg_room { ... }` are accepted for generated or fully elaborated
-source and lint toward the compact authoring form.
+Declaration headers are a separate surface. For authored declaration families,
+the declaration keyword already supplies the family, so hand-written source
+should omit the default family prefix and prefer compact declaration IDs such
+as `content chapter_two { ... }`. Assets have no declaration header. The asset
+catalog derives `asset.*` identities from normalized virtual paths under the
+selected `assets/` root, while source uses the reference expressions described
+above.
 
 `#` is reserved for Rust-like attributes in the `#[...]` form and is not an
 entity-reference marker.
