@@ -23,12 +23,15 @@ boundary:
   unsafe-audit insertion anchor.
 
 A subsequent independent record audit found one further public-schema gap:
-the base package references `HirName`, `HirPath`, `HirEntityReference`,
-`HirLifetimeKey`, `HirLiteral`, and the ordinary expression/pattern child
-records without defining their exact value shapes. This is result-changing for
-literal decoding/canonicalization and ID-reference precedence, so the current
-WIP leaf records are private evidence only and are not accepted as final
-authority.
+the packages do not define one exhaustive final `HirExprKind` and all reachable
+payloads. In addition to undefined `HirName`, `HirPath`,
+`HirEntityReference`, `HirLifetimeKey`, `HirLiteral`, and ordinary
+expression/pattern child records, the audit found undefined `HirCallExpr` and
+`HirDialogueContent`, loss of the two placeholder meanings and thread metadata,
+and the obsolete base `MemoBlock` variant. These are result-changing for
+literal decoding/canonicalization, call/content ownership, runtime thread
+semantics, and ID-reference precedence. Current WIP leaf/expression records are
+private evidence only and are not accepted as final authority.
 
 The independently throwable corrections are:
 
