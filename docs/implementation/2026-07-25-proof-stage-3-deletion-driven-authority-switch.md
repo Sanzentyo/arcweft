@@ -28,10 +28,15 @@ payloads. In addition to undefined `HirName`, `HirPath`,
 `HirEntityReference`, `HirLifetimeKey`, `HirLiteral`, and ordinary
 expression/pattern child records, the audit found undefined `HirCallExpr` and
 `HirDialogueContent`, loss of the two placeholder meanings and thread metadata,
-and the obsolete base `MemoBlock` variant. These are result-changing for
-literal decoding/canonicalization, call/content ownership, runtime thread
-semantics, and ID-reference precedence. Current WIP leaf/expression records are
-private evidence only and are not accepted as final authority.
+and the obsolete base `MemoBlock` variant. The accepted AW-AH-007/008 RichText
+contract also predates the Proof arena/source-component decision: its D3.2
+sketch embeds tag IDs, source spans, and nested HIR values directly, and must be
+reconciled with `ExprId`, revision-bound component queries, and the final
+`HirDialogueContent` without weakening its limits. These are result-changing
+for literal decoding/canonicalization, call/content ownership, runtime thread
+semantics, RichText diagnostics, and ID-reference precedence. Current WIP
+leaf/expression records are private evidence only and are not accepted as final
+authority.
 
 The independently throwable corrections are:
 
