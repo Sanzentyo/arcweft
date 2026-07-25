@@ -55,6 +55,13 @@ owner, diagnostic ranges, and conflict with the maintained deferral of dynamic
 trait objects are now isolated in the independently throwable
 [Lang-01.1.1.3 production-reconciliation request](../reviews/requests/2026-07-24-lang-01.1.1.3-effect-trait-contract-and-dynamic-dispatch-production-reconciliation.md).
 
+That request returned on 2026-07-25. Its effect semantics, typed diagnostics,
+E017 supersession, and deletion inventory are accepted, but its checked
+catalog duplicates signature/source ownership without defining a relationship
+to the accepted callable catalog. Production remains held by the narrow
+[Lang-01.1.1.3.1 catalog-authority correction](../reviews/requests/2026-07-25-lang-01.1.1.3.1-checked-callable-catalog-authority-and-consumer-scope-reconciliation.md);
+see the [return intake](2026-07-25-lang-01-1-1-3-effect-trait-intake.md).
+
 ## Validation
 
 - `cargo test -p arcweft-lang-sema --lib tests::await_ -- --nocapture`: 24

@@ -41,6 +41,11 @@ Stream runtime cut, rather than repair or copy them into the new runtime model.
 
 ## Blocking opcode inconsistency
 
+> Resolved on 2026-07-25 by the accepted
+> [Lang-01.3.1.2.2.1 wire-allocation return](2026-07-25-lang-01-3-1-2-2-1-curried-stream-wire-intake.md).
+> The historical conflict below records why that correction was requested; it
+> is no longer an active design blocker.
+
 The two accepted packages allocate codec-8 instruction bytes incompatibly:
 
 ```text
@@ -58,6 +63,8 @@ remain design-blocked rather than locally guessed.
 The independently throwable correction is:
 
 - [Lang-01.3.1.2.2.1 curried Stream wire-allocation reconciliation](../reviews/requests/2026-07-24-lang-01.3.1.2.2.1-curried-stream-wire-allocation-reconciliation.md)
+
+The request has returned and must not be dispatched again.
 
 ## Work that continues independently
 
