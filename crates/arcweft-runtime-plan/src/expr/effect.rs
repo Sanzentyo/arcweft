@@ -3,8 +3,8 @@
 use super::{RuntimePureHelperLookup, lower_runtime_expr_strict_with_pure};
 use crate::labels::{call_arg_label, expr_label, named_arg_label, named_arg_value};
 use arcweft_core::effect::{
-    LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
-    RuntimeEffectExpr, RuntimeEffectFieldExpr, RuntimeEvent, RuntimeField, RuntimeLog,
+    LineEffectRequest, RuntimeAssignment, RuntimeCall, RuntimeEffectExpr, RuntimeEffectFieldExpr,
+    RuntimeEvent, RuntimeField, RuntimeLog,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
 use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
@@ -120,7 +120,7 @@ fn lower_effect_call(
                 _ => unreachable!("matched control effect callee"),
             }
         }
-        "ensure" | "assert" | "debug_assert" => {
+        "ensure" => {
             let mut args = bind_fixed_effect_args(
                 callee,
                 authored_args,
@@ -131,19 +131,7 @@ fn lower_effect_call(
             let message = args[1].take().unwrap_or_else(|| {
                 RuntimeExpr::Value(RuntimeValue::String("assertion failed".to_owned()))
             });
-            if callee == "ensure" {
-                RuntimeEffectExpr::Ensure { condition, message }
-            } else {
-                RuntimeEffectExpr::Assert {
-                    condition,
-                    message,
-                    profile: if callee == "debug_assert" {
-                        RuntimeAssertionProfile::DebugOnly
-                    } else {
-                        RuntimeAssertionProfile::Always
-                    },
-                }
-            }
+            RuntimeEffectExpr::Ensure { condition, message }
         }
         callee if callee.starts_with("log.") => {
             let (message, fields) = bind_field_effect_args(callee, "message", authored_args, args)?;
@@ -347,27 +335,7 @@ fn runtime_control_call(call: &RuntimeCall) -> Option<LineEffectRequest> {
             condition: call.args.first().cloned().unwrap_or_default(),
             message: call.args.get(1).cloned().unwrap_or_default(),
         }),
-        "assert" => Some(LineEffectRequest::Assert(runtime_assertion(
-            call,
-            RuntimeAssertionProfile::Always,
-        ))),
-        "debug_assert" => Some(LineEffectRequest::Assert(runtime_assertion(
-            call,
-            RuntimeAssertionProfile::DebugOnly,
-        ))),
         _ => None,
-    }
-}
-
-fn runtime_assertion(call: &RuntimeCall, profile: RuntimeAssertionProfile) -> RuntimeAssertion {
-    RuntimeAssertion {
-        condition: call.args.first().cloned().unwrap_or_default(),
-        message: call
-            .args
-            .get(1)
-            .cloned()
-            .unwrap_or_else(|| "assertion failed".to_owned()),
-        profile,
     }
 }
 

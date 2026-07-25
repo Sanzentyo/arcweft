@@ -72,6 +72,20 @@ fn runtime_valued_generic_effect_requires_a_typed_boundary() {
 }
 
 #[test]
+fn old_assertion_call_spellings_are_not_builtin_effects() {
+    for callee in ["assert", "debug_assert"] {
+        let lowered = lower(&format!("{callee}(true)"))
+            .expect("closed ordinary call remains a generic static host call");
+
+        let LoweredRuntimeEffect::Static(LineEffectRequest::Call(call)) = lowered else {
+            panic!("old assertion spelling must not produce an assertion effect");
+        };
+        assert_eq!(call.callee, callee);
+        assert_eq!(call.args, ["true"]);
+    }
+}
+
+#[test]
 fn typed_effect_rejects_spread_at_its_boundary() {
     let error = lower("signal.set([@signal.current, score]...)")
         .expect_err("typed effect spread requires an explicit signature expansion");

@@ -1872,67 +1872,6 @@ flow @flow.ready ready {
 }
 
 #[test]
-fn runtime_plan_lowering_preserves_assertion_profiles() {
-    let tree = parse_ok(
-        r#"
-flow @flow.assertions assertions {
-    ensure(route.is_some(), "route missing")
-    assert(state.ready(), "state must be ready")
-    debug_assert(cache.consistent())
-}
-"#,
-    );
-    let hir = lower_to_hir(&tree).expect("assertion runtime fixture lowers to HIR");
-    validate_typecheck_ready(&hir).expect("assertion fixture is typecheck-ready");
-
-    let plan = lower_runtime_plan(&hir).expect("assertion runtime plan lowers");
-    let [
-        FlowOp::EvaluatedEffect(RuntimeEffectExpr::Ensure {
-            condition: ensure_condition,
-            message: ensure_message,
-        }),
-        FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
-            condition: assert_condition,
-            message: assert_message,
-            profile: RuntimeAssertionProfile::Always,
-        }),
-        FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
-            condition: debug_condition,
-            message: debug_message,
-            profile: RuntimeAssertionProfile::DebugOnly,
-        }),
-    ] = plan.flows[0].ops.as_slice()
-    else {
-        panic!("expected three assertion-related effects");
-    };
-
-    assert!(matches!(
-        ensure_condition,
-        RuntimeExpr::Call { .. } | RuntimeExpr::MethodCall { .. }
-    ));
-    assert_eq!(
-        ensure_message,
-        &RuntimeExpr::Value(RuntimeValue::String("route missing".to_owned()))
-    );
-    assert!(matches!(
-        assert_condition,
-        RuntimeExpr::Call { .. } | RuntimeExpr::MethodCall { .. }
-    ));
-    assert_eq!(
-        assert_message,
-        &RuntimeExpr::Value(RuntimeValue::String("state must be ready".to_owned()))
-    );
-    assert!(matches!(
-        debug_condition,
-        RuntimeExpr::Call { .. } | RuntimeExpr::MethodCall { .. }
-    ));
-    assert_eq!(
-        debug_message,
-        &RuntimeExpr::Value(RuntimeValue::String("assertion failed".to_owned()))
-    );
-}
-
-#[test]
 fn typed_check_assertions_lower_conditions_in_authored_order() {
     let tree = parse_ok(
         r"
