@@ -19,22 +19,22 @@ use super::bound::{BoundFragment, BoundFragmentKind, BoundParsedSource};
 use super::{ParseFailure, SyntaxIdentityKind, reconcile};
 
 #[derive(Debug)]
-pub(super) struct ShadowDatabaseState {
-    database: Option<SyntaxDatabaseId>,
+pub(super) struct SyntaxTransactionState {
+    database: SyntaxDatabaseId,
     next_lineage: Option<NonZeroU64>,
 }
 
-impl Default for ShadowDatabaseState {
-    fn default() -> Self {
-        Self {
-            database: SyntaxDatabaseId::allocate(),
+impl SyntaxTransactionState {
+    pub(super) fn try_new() -> Option<Self> {
+        Some(Self {
+            database: SyntaxDatabaseId::allocate()?,
             next_lineage: Some(NonZeroU64::MIN),
-        }
+        })
     }
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct ShadowLineageState {
+pub(super) struct SyntaxLineageState {
     current: Rc<BoundParsedSource>,
     shape: Arc<GrammarShapeNode>,
     identities: GrammarIdentityMap,
@@ -43,13 +43,13 @@ pub(super) struct ShadowLineageState {
 
 #[derive(Debug)]
 pub(super) struct StagedInitial {
-    lineage: ShadowLineageState,
+    lineage: SyntaxLineageState,
     next_lineage: Option<NonZeroU64>,
 }
 
 #[derive(Debug)]
 pub(super) struct StagedReparse {
-    lineage: ShadowLineageState,
+    lineage: SyntaxLineageState,
 }
 
 #[derive(Debug)]
@@ -69,18 +69,18 @@ struct StagedFreshAttachment {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum ShadowFault {
+pub(super) enum TransactionFault {
     None,
     #[cfg(test)]
     MissingAttachment,
 }
 
-impl ShadowDatabaseState {
+impl SyntaxTransactionState {
     pub(super) fn stage_initial(
         &self,
         source: &SourceSnapshotId,
-        document: &SourceDocument,
-        fault: ShadowFault,
+        document: &Arc<SourceDocument>,
+        fault: TransactionFault,
     ) -> Result<StagedInitial, ParseFailure> {
         let build =
             parse_shadow_document(document).map_err(|error| map_grammar_build_failure(&error))?;
@@ -90,7 +90,7 @@ impl ShadowDatabaseState {
                 .map_err(|_| ParseFailure::InternalInvariant)?,
         );
         Ok(StagedInitial {
-            lineage: ShadowLineageState {
+            lineage: SyntaxLineageState {
                 current,
                 shape: Arc::new(staged.shape),
                 identities: staged.identities,
@@ -103,9 +103,9 @@ impl ShadowDatabaseState {
     pub(super) fn stage_fragment<K: BoundFragmentKind>(
         &self,
         source: &SourceSnapshotId,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         span: &SourceSpan,
-        fault: ShadowFault,
+        fault: TransactionFault,
     ) -> Result<StagedFragment<K>, ParseFailure> {
         let build = parse_shadow_fragment(document, span.range(), K::GRAMMAR)
             .map_err(|error| map_grammar_build_failure(&error))?;
@@ -120,13 +120,12 @@ impl ShadowDatabaseState {
     fn stage_fresh_attachment(
         &self,
         source: &SourceSnapshotId,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         build: GrammarBuild,
-        fault: ShadowFault,
+        fault: TransactionFault,
     ) -> Result<StagedFreshAttachment, ParseFailure> {
-        let database = self.database.ok_or(ParseFailure::InternalInvariant)?;
         let ordinal = self.next_lineage.ok_or(ParseFailure::InternalInvariant)?;
-        let lineage_id = SyntaxLineageId::new(database, ordinal);
+        let lineage_id = SyntaxLineageId::new(self.database, ordinal);
         let next_lineage = ordinal.get().checked_add(1).and_then(NonZeroU64::new);
         let shape = GrammarShapeNode::from_build(&build).map_err(map_grammar_shape_failure)?;
         let mut allocator = GrammarNodeAllocator::new(lineage_id);
@@ -134,9 +133,8 @@ impl ShadowDatabaseState {
             reconcile::allocate_initial_grammar(&shape, &mut || allocator.allocate())?;
         apply_fault(fault, &build, &mut identities);
         let snapshot_id = SyntaxSnapshotId::new(lineage_id, source.clone());
-        let syntax =
-            attach_typed_tree(&build, &identities, snapshot_id, Arc::new(document.clone()))
-                .map_err(|_| ParseFailure::InternalInvariant)?;
+        let syntax = attach_typed_tree(&build, &identities, snapshot_id, Arc::clone(document))
+            .map_err(|_| ParseFailure::InternalInvariant)?;
         Ok(StagedFreshAttachment {
             build,
             syntax,
@@ -147,7 +145,7 @@ impl ShadowDatabaseState {
         })
     }
 
-    pub(super) fn commit_initial(&mut self, staged: StagedInitial) -> ShadowLineageState {
+    pub(super) fn commit_initial(&mut self, staged: StagedInitial) -> SyntaxLineageState {
         self.next_lineage = staged.next_lineage;
         staged.lineage
     }
@@ -163,12 +161,12 @@ impl ShadowDatabaseState {
     }
 }
 
-impl ShadowLineageState {
+impl SyntaxLineageState {
     pub(super) fn stage_reparse(
         &self,
         source: &SourceSnapshotId,
-        document: &SourceDocument,
-        fault: ShadowFault,
+        document: &Arc<SourceDocument>,
+        fault: TransactionFault,
     ) -> Result<StagedReparse, ParseFailure> {
         if source.name() != self.current.snapshot_id().source().name()
             || source.generation() <= self.current.snapshot_id().source().generation()
@@ -185,9 +183,8 @@ impl ShadowLineageState {
             })?;
         apply_fault(fault, &build, &mut identities);
         let snapshot_id = SyntaxSnapshotId::new(self.allocator.lineage, source.clone());
-        let syntax =
-            attach_typed_tree(&build, &identities, snapshot_id, Arc::new(document.clone()))
-                .map_err(|_| ParseFailure::InternalInvariant)?;
+        let syntax = attach_typed_tree(&build, &identities, snapshot_id, Arc::clone(document))
+            .map_err(|_| ParseFailure::InternalInvariant)?;
         let current = Rc::new(
             BoundParsedSource::try_new(syntax, &build)
                 .map_err(|_| ParseFailure::InternalInvariant)?,
@@ -224,7 +221,7 @@ impl StagedInitial {
 }
 
 impl StagedReparse {
-    pub(super) fn into_lineage(self) -> ShadowLineageState {
+    pub(super) fn into_lineage(self) -> SyntaxLineageState {
         self.lineage
     }
 
@@ -269,14 +266,14 @@ const fn map_grammar_shape_failure(_: GrammarShapeError) -> ParseFailure {
 }
 
 fn apply_fault(
-    fault: ShadowFault,
+    fault: TransactionFault,
     build: &crate::grammar::build::GrammarBuild,
     identities: &mut GrammarIdentityMap,
 ) {
     match fault {
-        ShadowFault::None => {}
+        TransactionFault::None => {}
         #[cfg(test)]
-        ShadowFault::MissingAttachment => {
+        TransactionFault::MissingAttachment => {
             if let Some(entry) = build.index().entries().last() {
                 identities.remove_path(entry.path());
             }

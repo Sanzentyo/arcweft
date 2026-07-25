@@ -8,6 +8,7 @@ mod shape;
 mod transaction;
 
 pub use database::{
-    InvalidEditSet, ParseFailure, ParseStatus, ParsedSource, SyntaxDatabase, SyntaxIdentityKind,
+    InvalidEditSet, ParseFailure, ParseStatus, ParsedSource, SyntaxDatabase,
+    SyntaxDatabaseCreateError, SyntaxIdentityKind,
 };
 pub use limits::SyntaxLimit;

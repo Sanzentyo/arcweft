@@ -687,18 +687,21 @@ mod tests {
     use arcweft_source::{
         SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId,
     };
+    use std::sync::Arc;
 
-    fn document_and_ids(text: &str) -> (SourceDocument, Vec<SyntaxNodeId>) {
+    fn document_and_ids(text: &str) -> (Arc<SourceDocument>, Vec<SyntaxNodeId>) {
         let name = SourceName::Generated;
-        let document = SourceDocument::try_new(
-            SourceDocumentId::try_new("arcw:/dialogue-surface-test").expect("document ID"),
-            name.clone(),
-            text,
-        )
-        .expect("test document");
-        let mut database = SyntaxDatabase::default();
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcw:/dialogue-surface-test").expect("document ID"),
+                name.clone(),
+                text,
+            )
+            .expect("test document"),
+        );
+        let mut database = SyntaxDatabase::try_new().expect("syntax database identity");
         let parsed = database
-            .parse_initial(SourceSnapshotId::initial(name), document.clone())
+            .parse_initial(SourceSnapshotId::initial(name), Arc::clone(&document))
             .expect("source parses transactionally");
         let ids = parsed
             .attached()

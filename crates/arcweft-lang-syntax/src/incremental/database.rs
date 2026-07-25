@@ -41,6 +41,11 @@ impl ParsedSource {
         self.document().text()
     }
 
+    /// Whether two values refer to the exact same immutable grammar snapshot.
+    pub fn is_same_snapshot(&self, other: &Self) -> bool {
+        self.bound.snapshot_id() == other.bound.snapshot_id()
+    }
+
     /// Whether this snapshot is clean or contains recovered syntax.
     pub fn status(&self) -> ParseStatus {
         self.bound.status()
@@ -58,17 +63,17 @@ impl ParsedSource {
 }
 
 /// Owner of source generations and never-reused CST identities for one session.
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct SyntaxDatabase {
     lineages: BTreeMap<SourceName, SourceLineage>,
     limits: SyntaxTransactionLimits,
-    shadow: transaction::ShadowDatabaseState,
+    transaction: transaction::SyntaxTransactionState,
 }
 
 #[derive(Debug)]
 struct SourceLineage {
-    current: Arc<ParsedSource>,
-    shadow: transaction::ShadowLineageState,
+    current: ParsedSource,
+    transaction: transaction::SyntaxLineageState,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -141,14 +146,29 @@ pub enum ParseFailure {
     InternalInvariant,
 }
 
+/// Failure to allocate a fresh syntax database session identity.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum SyntaxDatabaseCreateError {
+    #[error("syntax database identity allocation is exhausted")]
+    IdentityExhausted,
+}
+
 impl SyntaxDatabase {
+    /// Allocates a fresh syntax database with a never-reused session identity.
+    pub fn try_new() -> Result<Self, SyntaxDatabaseCreateError> {
+        Ok(Self {
+            lineages: BTreeMap::new(),
+            limits: SyntaxTransactionLimits::default(),
+            transaction: transaction::SyntaxTransactionState::try_new()
+                .ok_or(SyntaxDatabaseCreateError::IdentityExhausted)?,
+        })
+    }
+
     #[cfg(test)]
     fn with_test_limits(limits: SyntaxTransactionLimits) -> Self {
-        Self {
-            lineages: BTreeMap::new(),
-            limits,
-            shadow: transaction::ShadowDatabaseState::default(),
-        }
+        let mut database = Self::try_new().expect("test syntax database identity");
+        database.limits = limits;
+        database
     }
 
     /// Parses the first generation of one source lineage atomically.
@@ -159,9 +179,13 @@ impl SyntaxDatabase {
     pub fn parse_initial(
         &mut self,
         snapshot: SourceSnapshotId,
-        document: SourceDocument,
-    ) -> Result<Arc<ParsedSource>, ParseFailure> {
-        self.parse_initial_with_shadow_fault(&snapshot, &document, transaction::ShadowFault::None)
+        document: Arc<SourceDocument>,
+    ) -> Result<ParsedSource, ParseFailure> {
+        self.parse_initial_with_transaction_fault(
+            &snapshot,
+            &document,
+            transaction::TransactionFault::None,
+        )
     }
 
     /// Attaches one standalone expression to a database-owned private lineage.
@@ -179,14 +203,14 @@ impl SyntaxDatabase {
     pub(crate) fn parse_bound_expression_fragment(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         span: &SourceSpan,
     ) -> Result<BoundExpressionFragment, ParseFailure> {
-        self.parse_bound_fragment_with_shadow_fault::<ExpressionFragment>(
+        self.parse_bound_fragment_with_transaction_fault::<ExpressionFragment>(
             snapshot,
             document,
             span,
-            transaction::ShadowFault::None,
+            transaction::TransactionFault::None,
         )
     }
 
@@ -200,14 +224,14 @@ impl SyntaxDatabase {
     pub(crate) fn parse_bound_type_fragment(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         span: &SourceSpan,
     ) -> Result<BoundTypeFragment, ParseFailure> {
-        self.parse_bound_fragment_with_shadow_fault::<TypeFragment>(
+        self.parse_bound_fragment_with_transaction_fault::<TypeFragment>(
             snapshot,
             document,
             span,
-            transaction::ShadowFault::None,
+            transaction::TransactionFault::None,
         )
     }
 
@@ -221,14 +245,14 @@ impl SyntaxDatabase {
     pub(crate) fn parse_bound_pattern_fragment(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         span: &SourceSpan,
     ) -> Result<BoundPatternFragment, ParseFailure> {
-        self.parse_bound_fragment_with_shadow_fault::<PatternFragment>(
+        self.parse_bound_fragment_with_transaction_fault::<PatternFragment>(
             snapshot,
             document,
             span,
-            transaction::ShadowFault::None,
+            transaction::TransactionFault::None,
         )
     }
 
@@ -242,61 +266,57 @@ impl SyntaxDatabase {
     pub(crate) fn parse_bound_statement_fragment(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         span: &SourceSpan,
     ) -> Result<BoundStatementFragment, ParseFailure> {
-        self.parse_bound_fragment_with_shadow_fault::<StatementFragment>(
+        self.parse_bound_fragment_with_transaction_fault::<StatementFragment>(
             snapshot,
             document,
             span,
-            transaction::ShadowFault::None,
+            transaction::TransactionFault::None,
         )
     }
 
-    fn parse_bound_fragment_with_shadow_fault<K: BoundFragmentKind>(
+    fn parse_bound_fragment_with_transaction_fault<K: BoundFragmentKind>(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         span: &SourceSpan,
-        shadow_fault: transaction::ShadowFault,
+        transaction_fault: transaction::TransactionFault,
     ) -> Result<BoundFragment<K>, ParseFailure> {
         if snapshot.name() != document.display_name() || span.validate_for(document).is_err() {
             return Err(ParseFailure::SourceMismatch);
         }
-        let staged = self
-            .shadow
-            .stage_fragment::<K>(snapshot, document, span, shadow_fault)?;
-        Ok(self.shadow.commit_fragment(staged))
+        let staged =
+            self.transaction
+                .stage_fragment::<K>(snapshot, document, span, transaction_fault)?;
+        Ok(self.transaction.commit_fragment(staged))
     }
 
-    #[expect(
-        clippy::arc_with_non_send_sync,
-        reason = "the contract requires immutable Arc snapshots while Rowan red nodes remain session-thread-affine"
-    )]
-    fn parse_initial_with_shadow_fault(
+    fn parse_initial_with_transaction_fault(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: &SourceDocument,
-        shadow_fault: transaction::ShadowFault,
-    ) -> Result<Arc<ParsedSource>, ParseFailure> {
+        document: &Arc<SourceDocument>,
+        transaction_fault: transaction::TransactionFault,
+    ) -> Result<ParsedSource, ParseFailure> {
         if snapshot.generation() != SourceGeneration::INITIAL
             || snapshot.name() != document.display_name()
             || self.lineages.contains_key(snapshot.name())
         {
             return Err(ParseFailure::SourceMismatch);
         }
-        let shadow = self
-            .shadow
-            .stage_initial(snapshot, document, shadow_fault)?;
-        let result = Arc::new(ParsedSource {
-            bound: Rc::clone(shadow.current()),
-        });
-        let shadow = self.shadow.commit_initial(shadow);
+        let staged = self
+            .transaction
+            .stage_initial(snapshot, document, transaction_fault)?;
+        let result = ParsedSource {
+            bound: Rc::clone(staged.current()),
+        };
+        let transaction = self.transaction.commit_initial(staged);
         self.lineages.insert(
             snapshot.name().clone(),
             SourceLineage {
-                current: Arc::clone(&result),
-                shadow,
+                current: result.clone(),
+                transaction,
             },
         );
         Ok(result)
@@ -307,37 +327,33 @@ impl SyntaxDatabase {
         &mut self,
         previous: &ParsedSource,
         edits: &[SourceEdit],
-    ) -> Result<Arc<ParsedSource>, ParseFailure> {
-        self.reparse_with_shadow_fault(previous, edits, transaction::ShadowFault::None)
+    ) -> Result<ParsedSource, ParseFailure> {
+        self.reparse_with_transaction_fault(previous, edits, transaction::TransactionFault::None)
     }
 
-    #[expect(
-        clippy::arc_with_non_send_sync,
-        reason = "the contract requires immutable Arc snapshots while Rowan red nodes remain session-thread-affine"
-    )]
-    fn reparse_with_shadow_fault(
+    fn reparse_with_transaction_fault(
         &mut self,
         previous: &ParsedSource,
         edits: &[SourceEdit],
-        shadow_fault: transaction::ShadowFault,
-    ) -> Result<Arc<ParsedSource>, ParseFailure> {
+        transaction_fault: transaction::TransactionFault,
+    ) -> Result<ParsedSource, ParseFailure> {
         let lineage = self
             .lineages
             .get(previous.snapshot().name())
             .ok_or(ParseFailure::SourceMismatch)?;
         if lineage.current.snapshot() != previous.snapshot()
             || lineage.current.source() != previous.source()
-            || !Rc::ptr_eq(lineage.shadow.current(), previous.bound_internal())
+            || !Rc::ptr_eq(lineage.transaction.current(), previous.bound_internal())
         {
             return Err(ParseFailure::SourceMismatch);
         }
         validate_edits(previous, edits)?;
         if edits.is_empty() {
-            return Ok(Arc::clone(&lineage.current));
+            return Ok(lineage.current.clone());
         }
         let next_text = apply_edits(previous.source(), edits);
         if next_text == previous.source() {
-            return Ok(Arc::clone(&lineage.current));
+            return Ok(lineage.current.clone());
         }
 
         if previous.snapshot().generation().get() >= self.limits.source_generation {
@@ -345,28 +361,30 @@ impl SyntaxDatabase {
                 SyntaxIdentityKind::SourceGeneration,
             ));
         }
-        let document = SourceDocument::try_new(
-            previous.document().identity().id().clone(),
-            previous.document().display_name().clone(),
-            Arc::<str>::from(next_text),
-        )
-        .map_err(|_| ParseFailure::InternalInvariant)?;
+        let document = Arc::new(
+            SourceDocument::try_new(
+                previous.document().identity().id().clone(),
+                previous.document().display_name().clone(),
+                Arc::<str>::from(next_text),
+            )
+            .map_err(|_| ParseFailure::InternalInvariant)?,
+        );
         let snapshot = previous
             .snapshot()
             .checked_next()
             .map_err(|_| ParseFailure::IdentityExhausted(SyntaxIdentityKind::SourceGeneration))?;
-        let shadow = lineage
-            .shadow
-            .stage_reparse(&snapshot, &document, shadow_fault)?;
-        let result = Arc::new(ParsedSource {
-            bound: Rc::clone(shadow.current()),
-        });
+        let staged = lineage
+            .transaction
+            .stage_reparse(&snapshot, &document, transaction_fault)?;
+        let result = ParsedSource {
+            bound: Rc::clone(staged.current()),
+        };
         let lineage = self
             .lineages
             .get_mut(previous.snapshot().name())
             .ok_or(ParseFailure::InternalInvariant)?;
-        lineage.current = Arc::clone(&result);
-        lineage.shadow = shadow.into_lineage();
+        lineage.current = result.clone();
+        lineage.transaction = staged.into_lineage();
         Ok(result)
     }
 
@@ -374,12 +392,12 @@ impl SyntaxDatabase {
     fn parse_initial_with_attachment_failure(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: &SourceDocument,
-    ) -> Result<Arc<ParsedSource>, ParseFailure> {
-        self.parse_initial_with_shadow_fault(
+        document: &Arc<SourceDocument>,
+    ) -> Result<ParsedSource, ParseFailure> {
+        self.parse_initial_with_transaction_fault(
             snapshot,
             document,
-            transaction::ShadowFault::MissingAttachment,
+            transaction::TransactionFault::MissingAttachment,
         )
     }
 
@@ -388,22 +406,26 @@ impl SyntaxDatabase {
         &mut self,
         previous: &ParsedSource,
         edits: &[SourceEdit],
-    ) -> Result<Arc<ParsedSource>, ParseFailure> {
-        self.reparse_with_shadow_fault(previous, edits, transaction::ShadowFault::MissingAttachment)
+    ) -> Result<ParsedSource, ParseFailure> {
+        self.reparse_with_transaction_fault(
+            previous,
+            edits,
+            transaction::TransactionFault::MissingAttachment,
+        )
     }
 
     #[cfg(test)]
     fn parse_bound_fragment_with_attachment_failure<K: BoundFragmentKind>(
         &mut self,
         snapshot: &SourceSnapshotId,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         span: &SourceSpan,
     ) -> Result<BoundFragment<K>, ParseFailure> {
-        self.parse_bound_fragment_with_shadow_fault::<K>(
+        self.parse_bound_fragment_with_transaction_fault::<K>(
             snapshot,
             document,
             span,
-            transaction::ShadowFault::MissingAttachment,
+            transaction::TransactionFault::MissingAttachment,
         )
     }
 }

@@ -9,13 +9,19 @@ use std::sync::Arc;
 use crate::attachment::{PredicateItemKind, SyntaxLookupError, SyntaxNodeHandle};
 use crate::grammar::kinds::SyntaxKind as GrammarKind;
 
-fn source_document(name: &SourceName, text: impl Into<Arc<str>>) -> SourceDocument {
-    SourceDocument::try_new(
-        SourceDocumentId::try_new(name.display_name()).expect("valid test document id"),
-        name.clone(),
-        text,
+fn source_document(name: &SourceName, text: impl Into<Arc<str>>) -> Arc<SourceDocument> {
+    Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(name.display_name()).expect("valid test document id"),
+            name.clone(),
+            text,
+        )
+        .expect("test source document"),
     )
-    .expect("test source document")
+}
+
+fn syntax_database() -> SyntaxDatabase {
+    SyntaxDatabase::try_new().expect("test syntax database identity")
 }
 
 fn source_span(document: &SourceDocument, range: SourceRange) -> arcweft_source::SourceSpan {
@@ -41,32 +47,34 @@ fn source_edit(
 #[test]
 fn no_op_replacements_return_the_exact_current_snapshot() {
     let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
+    let document = source_document(&name, "flow story {}\n");
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
-            source_document(&name, "flow story {}\n"),
+            Arc::clone(&document),
         )
         .expect("initial parse");
+    assert!(Arc::ptr_eq(initial.bound().document(), &document));
     let unchanged = database
         .reparse(
             &initial,
             &[source_edit(&initial, SourceRange::new(5, 10), "story")],
         )
         .expect("no-op reparse");
-    assert!(Arc::ptr_eq(&initial, &unchanged));
+    assert!(initial.is_same_snapshot(&unchanged));
     assert_eq!(unchanged.snapshot().generation().get(), 1);
 
     let empty = database
         .reparse(&initial, &[])
         .expect("an empty edit transaction is a no-op");
-    assert!(Arc::ptr_eq(&initial, &empty));
+    assert!(initial.is_same_snapshot(&empty));
 }
 
 #[test]
 fn invalid_edit_order_overlap_and_foreign_provenance_leave_lineage_unchanged() {
     let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let source = "flow café {}\n";
     let initial = database
         .parse_initial(
@@ -78,7 +86,7 @@ fn invalid_edit_order_overlap_and_foreign_provenance_leave_lineage_unchanged() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
 
     let foreign_name = SourceName::path("other.arcw");
@@ -123,14 +131,14 @@ fn invalid_edit_order_overlap_and_foreign_provenance_leave_lineage_unchanged() {
     ));
     assert!(matches!(&failures[2], Err(ParseFailure::SourceMismatch)));
     let current = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
+    assert!(current.current.is_same_snapshot(&initial));
+    assert_eq!(current.transaction.next_node_for_test(), allocator_next);
 }
 
 #[test]
 fn reparsing_a_stale_snapshot_is_rejected_without_mutation() {
     let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial_source = "flow story {}\n";
     let initial = database
         .parse_initial(
@@ -148,7 +156,7 @@ fn reparsing_a_stale_snapshot_is_rejected_without_mutation() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
 
     let stale = database.reparse(
@@ -158,8 +166,8 @@ fn reparsing_a_stale_snapshot_is_rejected_without_mutation() {
 
     assert!(matches!(stale, Err(ParseFailure::SourceMismatch)));
     let lineage = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&lineage.current, &current));
-    assert_eq!(lineage.shadow.next_node_for_test(), allocator_next);
+    assert!(lineage.current.is_same_snapshot(&current));
+    assert_eq!(lineage.transaction.next_node_for_test(), allocator_next);
 }
 
 #[test]
@@ -167,14 +175,14 @@ fn reparsing_a_snapshot_from_another_database_is_rejected_without_mutation() {
     let name = SourceName::path("story.arcw");
     let snapshot = SourceSnapshotId::initial(name.clone());
     let source: Arc<str> = Arc::from("flow story {}\n");
-    let mut local = SyntaxDatabase::default();
+    let mut local = syntax_database();
     let local_initial = local
         .parse_initial(
             snapshot.clone(),
             source_document(&name, Arc::clone(&source)),
         )
         .expect("local initial parse");
-    let mut foreign = SyntaxDatabase::default();
+    let mut foreign = syntax_database();
     let foreign_initial = foreign
         .parse_initial(snapshot, source_document(&name, source))
         .expect("foreign initial parse");
@@ -182,7 +190,7 @@ fn reparsing_a_snapshot_from_another_database_is_rejected_without_mutation() {
         .lineages
         .get(&name)
         .expect("local lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
 
     let rejected = local.reparse(
@@ -196,14 +204,14 @@ fn reparsing_a_snapshot_from_another_database_is_rejected_without_mutation() {
 
     assert!(matches!(rejected, Err(ParseFailure::SourceMismatch)));
     let lineage = local.lineages.get(&name).expect("local lineage");
-    assert!(Arc::ptr_eq(&lineage.current, &local_initial));
-    assert_eq!(lineage.shadow.next_node_for_test(), allocator_next);
+    assert!(lineage.current.is_same_snapshot(&local_initial));
+    assert_eq!(lineage.transaction.next_node_for_test(), allocator_next);
 }
 
 #[test]
 fn diagnostic_limit_is_inclusive_and_one_over_rolls_back() {
     let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial_source = "flow story {}\n";
     let initial = database
         .parse_initial(
@@ -228,7 +236,7 @@ fn diagnostic_limit_is_inclusive_and_one_over_rolls_back() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
     let over_limit = format!("{at_limit}unknown_top_level\n");
 
@@ -246,15 +254,15 @@ fn diagnostic_limit_is_inclusive_and_one_over_rolls_back() {
         Err(ParseFailure::LimitExceeded(super::SyntaxLimit::Diagnostics))
     ));
     let current = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&current.current, &recovered));
+    assert!(current.current.is_same_snapshot(&recovered));
     assert_eq!(current.current.snapshot().generation().get(), 2);
-    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
+    assert_eq!(current.transaction.next_node_for_test(), allocator_next);
 }
 
 #[test]
 fn prefix_depth_limit_is_fatal_and_rolls_back_the_transaction() {
     let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial_source = format!(
         "flow story {{\n    let value = {}input\n}}\n",
         "& ".repeat(64)
@@ -269,7 +277,7 @@ fn prefix_depth_limit_is_fatal_and_rolls_back_the_transaction() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
     let one_over = format!(
         "flow story {{\n    let value = {}input\n}}\n",
@@ -290,8 +298,8 @@ fn prefix_depth_limit_is_fatal_and_rolls_back_the_transaction() {
         Err(ParseFailure::LimitExceeded(super::SyntaxLimit::PrefixDepth))
     ));
     let current = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
+    assert!(current.current.is_same_snapshot(&initial));
+    assert_eq!(current.transaction.next_node_for_test(), allocator_next);
     assert_eq!(current.current.snapshot().generation().get(), 1);
 }
 
@@ -303,7 +311,7 @@ fn ordinary_expression_nesting_does_not_consume_prefix_depth() {
         "(".repeat(65),
         ")".repeat(65)
     );
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
 
     let parsed = database
         .parse_initial(
@@ -324,7 +332,7 @@ fn prefix_depth_tracks_active_ancestors_through_parentheses() {
         ")".repeat(super::SyntaxLimit::PrefixDepth.maximum())
     );
     let initial_source = format!("flow story {{\n    let value = {exact_expression}\n}}\n");
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -335,7 +343,7 @@ fn prefix_depth_tracks_active_ancestors_through_parentheses() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
     let one_over_expression = format!(
         "{}input{}",
@@ -358,8 +366,8 @@ fn prefix_depth_tracks_active_ancestors_through_parentheses() {
         Err(ParseFailure::LimitExceeded(super::SyntaxLimit::PrefixDepth))
     ));
     let current = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
+    assert!(current.current.is_same_snapshot(&initial));
+    assert_eq!(current.transaction.next_node_for_test(), allocator_next);
 }
 
 #[test]
@@ -370,7 +378,7 @@ fn propagating_await_spellings_emit_one_typed_prefix_node() {
     {
         let name = SourceName::path(format!("propagating-await-{ordinal}.arcw"));
         let source = format!("flow story {{\n    let value = {expression}\n}}\n");
-        let mut database = SyntaxDatabase::default();
+        let mut database = syntax_database();
         let parsed = database
             .parse_initial(
                 SourceSnapshotId::initial(name.clone()),
@@ -395,7 +403,7 @@ fn propagating_await_spellings_emit_one_typed_prefix_node() {
 
     let name = SourceName::path("grouped-try-await.arcw");
     let source = "flow story {\n    let value = try (await task())\n}\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let parsed = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -428,7 +436,7 @@ fn propagating_await_spellings_consume_one_prefix_level_per_head() {
             head.repeat(super::SyntaxLimit::PrefixDepth.maximum())
         );
         let exact_source = format!("flow story {{\n    let value = {exact_expression}\n}}\n");
-        let mut exact_database = SyntaxDatabase::default();
+        let mut exact_database = syntax_database();
         exact_database
             .parse_initial(
                 SourceSnapshotId::initial(exact_name.clone()),
@@ -442,7 +450,7 @@ fn propagating_await_spellings_consume_one_prefix_level_per_head() {
             head.repeat(super::SyntaxLimit::PrefixDepth.maximum() + 1)
         );
         let one_over_source = format!("flow story {{\n    let value = {one_over_expression}\n}}\n");
-        let mut one_over_database = SyntaxDatabase::default();
+        let mut one_over_database = syntax_database();
         let failed = one_over_database.parse_initial(
             SourceSnapshotId::initial(one_over_name.clone()),
             source_document(&one_over_name, one_over_source),
@@ -459,7 +467,7 @@ fn propagating_await_spellings_consume_one_prefix_level_per_head() {
 #[test]
 fn assertion_condition_limit_accepts_exactly_64_and_rolls_back_one_over() {
     let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let conditions = core::iter::repeat_n("true", 64)
         .collect::<Vec<_>>()
         .join(", ");
@@ -474,7 +482,7 @@ fn assertion_condition_limit_accepts_exactly_64_and_rolls_back_one_over() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
     let one_over = format!("{conditions}, true");
     let one_over_source = format!("flow assertions {{\n    assert.check({one_over})\n}}\n");
@@ -495,8 +503,8 @@ fn assertion_condition_limit_accepts_exactly_64_and_rolls_back_one_over() {
         ))
     ));
     let current = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
+    assert!(current.current.is_same_snapshot(&initial));
+    assert_eq!(current.transaction.next_node_for_test(), allocator_next);
     assert_eq!(current.current.snapshot().generation().get(), 1);
 }
 
@@ -517,7 +525,7 @@ fn source_generation_exhaustion_rolls_back_the_transaction() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
 
     let failed = database.reparse(
@@ -532,9 +540,9 @@ fn source_generation_exhaustion_rolls_back_the_transaction() {
         ))
     ));
     let current = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&current.current, &initial));
+    assert!(current.current.is_same_snapshot(&initial));
     assert_eq!(current.current.snapshot().generation().get(), 1);
-    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
+    assert_eq!(current.transaction.next_node_for_test(), allocator_next);
 }
 
 #[test]
@@ -542,7 +550,7 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
     let name = SourceName::path("story.arcw");
     let initial_source = "flow story {}\n";
     let addition = "flow final {}\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -558,7 +566,7 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
     );
     assert!(matches!(invalid, Err(ParseFailure::InvalidEdits(_))));
 
-    let mut control = SyntaxDatabase::default();
+    let mut control = syntax_database();
     let control_initial = control
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -569,7 +577,7 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
         .lineages
         .get(&name)
         .expect("control lineage")
-        .shadow
+        .transaction
         .next_node_for_test()
         .expect("control next node");
     control
@@ -586,7 +594,7 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
         .lineages
         .get(&name)
         .expect("control lineage")
-        .shadow
+        .transaction
         .next_node_for_test()
         .expect("control next node");
     let allocated = after
@@ -602,7 +610,7 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
         .lineages
         .get_mut(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .set_next_node_for_test(Some(last_start));
     let with_last_id = database
         .reparse(
@@ -627,7 +635,7 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
         Err(ParseFailure::IdentityExhausted(SyntaxIdentityKind::Node))
     ));
     let current = database.lineages.get(&name).expect("lineage current");
-    assert!(Arc::ptr_eq(&current.current, &with_last_id));
+    assert!(current.current.is_same_snapshot(&with_last_id));
     assert_eq!(current.current.snapshot().generation().get(), 2);
 }
 
@@ -635,7 +643,7 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
 fn same_line_descendants_receive_distinct_private_grammar_ids() {
     let name = SourceName::path("identity.arcw");
     let source = "proof distinct((a, b): (Int, Int), c: Int) = a + b + c\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let parsed = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -684,7 +692,7 @@ fn same_line_descendants_receive_distinct_private_grammar_ids() {
 fn private_bound_product_retains_the_attached_snapshot_and_grammar_diagnostics() {
     let name = SourceName::path("bound-recovery.arcw");
     let source = "proof () = ()\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let parsed = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -728,7 +736,7 @@ fn private_bound_diagnostic_spans_share_the_exact_committed_source_revision() {
         .match_indices("display_name")
         .map(|(offset, _)| offset)
         .collect::<Vec<_>>();
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let parsed = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -772,7 +780,7 @@ fn private_bound_diagnostic_spans_share_the_exact_committed_source_revision() {
 fn private_bound_reparse_replaces_diagnostics_without_mutating_the_old_snapshot() {
     let name = SourceName::path("bound-reparse.arcw");
     let source = "proof () = ()\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -810,7 +818,7 @@ fn private_bound_expression_fragment_owns_one_attached_expression_lineage() {
     let document = source_document(&name, source);
     let span = source_span(&document, SourceRange::new(0, source.len()));
     let identity = document.identity().clone();
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let fragment = database
         .parse_bound_expression_fragment(&snapshot, &document, &span)
         .expect("standalone expression attaches to a private lineage");
@@ -867,7 +875,7 @@ fn private_bound_expression_fragment_retains_postfix_try_root_and_exact_span() {
     let snapshot = SourceSnapshotId::initial(name.clone());
     let document = source_document(&name, source);
     let span = source_span(&document, SourceRange::new(fragment_start, fragment_end));
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let fragment = database
         .parse_bound_expression_fragment(&snapshot, &document, &span)
         .expect("postfix Try fragment attaches to one private lineage");
@@ -889,7 +897,7 @@ fn private_empty_expression_fragment_is_recovered_without_a_detached_value() {
     let source = "   ";
     let document = source_document(&name, source);
     let span = source_span(&document, SourceRange::new(0, source.len()));
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let fragment = database
         .parse_bound_expression_fragment(&SourceSnapshotId::initial(name.clone()), &document, &span)
         .expect("missing expression remains attached and queryable");
@@ -910,7 +918,7 @@ fn private_recovered_expression_fragment_binds_grammar_diagnostics_to_its_revisi
     let snapshot = SourceSnapshotId::initial(name.clone());
     let document = source_document(&name, source);
     let span = source_span(&document, SourceRange::new(0, source.len()));
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let fragment = database
         .parse_bound_expression_fragment(&snapshot, &document, &span)
         .expect("recovered expression fragment remains attached");
@@ -940,15 +948,15 @@ fn private_fragment_attachment_failure_consumes_no_lineage_or_node_identity() {
     let name = SourceName::path("bound-fragment-attachment-failure.arcw");
     let source = "value + 1";
     let snapshot = SourceSnapshotId::initial(name.clone());
-    let mut database = SyntaxDatabase::default();
-    let lineage_before = database.shadow.next_lineage_for_test();
+    let mut database = syntax_database();
+    let lineage_before = database.transaction.next_lineage_for_test();
     let wrong_name = SourceName::path("wrong-bound-fragment.arcw");
     let wrong_document = source_document(&wrong_name, source);
     let wrong_span = source_span(&wrong_document, SourceRange::new(0, source.len()));
     let mismatch =
         database.parse_bound_expression_fragment(&snapshot, &wrong_document, &wrong_span);
     assert!(matches!(mismatch, Err(ParseFailure::SourceMismatch)));
-    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let document = source_document(&name, source);
     let span = source_span(&document, SourceRange::new(0, source.len()));
@@ -962,12 +970,12 @@ fn private_fragment_attachment_failure_consumes_no_lineage_or_node_identity() {
         );
 
     assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
-    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let accepted = database
         .parse_bound_expression_fragment(&snapshot, &document, &span)
         .expect("valid retry uses the unconsumed fragment lineage");
-    let mut control = SyntaxDatabase::default();
+    let mut control = syntax_database();
     let control_document = source_document(&name, source);
     let control_span = source_span(&control_document, SourceRange::new(0, source.len()));
     let control = control
@@ -1006,7 +1014,7 @@ fn private_type_pattern_and_statement_fragments_own_exact_document_spans() {
         &document,
         SourceRange::new(statement_start, statement_start + statement_surface.len()),
     );
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
 
     let type_fragment = database
         .parse_bound_type_fragment(&snapshot, &document, &type_span)
@@ -1077,7 +1085,7 @@ fn private_empty_non_expression_fragments_are_attached_at_the_explicit_span() {
     let document = source_document(&name, source);
     let at = "prefix".len();
     let span = source_span(&document, SourceRange::new(at, at));
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
 
     let type_fragment = database
         .parse_bound_type_fragment(&snapshot, &document, &span)
@@ -1115,7 +1123,7 @@ fn private_non_expression_fragment_diagnostics_bind_to_the_explicit_revision() {
     );
     let snapshot = SourceSnapshotId::initial(name.clone());
     let document = source_document(&name, source);
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
 
     let type_surface = "  (String  ";
     let type_start = source.find(type_surface).expect("recovered type");
@@ -1195,22 +1203,22 @@ fn private_non_expression_fragment_failures_commit_no_lineage_or_node_identity()
     let snapshot = SourceSnapshotId::initial(name.clone());
     let document = source_document(&name, source);
     let span = source_span(&document, SourceRange::new(0, source.len()));
-    let mut database = SyntaxDatabase::default();
-    let lineage_before = database.shadow.next_lineage_for_test();
+    let mut database = syntax_database();
+    let lineage_before = database.transaction.next_lineage_for_test();
 
     let foreign_name = SourceName::path("foreign-bound-fragment-family.arcw");
     let foreign_document = source_document(&foreign_name, source);
     let foreign_span = source_span(&foreign_document, SourceRange::new(0, source.len()));
     let mismatch = database.parse_bound_type_fragment(&snapshot, &document, &foreign_span);
     assert!(matches!(mismatch, Err(ParseFailure::SourceMismatch)));
-    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let type_failure = database
         .parse_bound_fragment_with_attachment_failure::<crate::incremental::bound::TypeFragment>(
             &snapshot, &document, &span,
         );
     assert!(matches!(type_failure, Err(ParseFailure::InternalInvariant)));
-    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let pattern_failure = database
         .parse_bound_fragment_with_attachment_failure::<crate::incremental::bound::PatternFragment>(
@@ -1220,7 +1228,7 @@ fn private_non_expression_fragment_failures_commit_no_lineage_or_node_identity()
         pattern_failure,
         Err(ParseFailure::InternalInvariant)
     ));
-    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let statement_failure = database
         .parse_bound_fragment_with_attachment_failure::<
@@ -1234,12 +1242,12 @@ fn private_non_expression_fragment_failures_commit_no_lineage_or_node_identity()
         statement_failure,
         Err(ParseFailure::InternalInvariant)
     ));
-    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let accepted = database
         .parse_bound_statement_fragment(&snapshot, &document, &span)
         .expect("valid retry uses the first unconsumed lineage");
-    let mut control = SyntaxDatabase::default();
+    let mut control = syntax_database();
     let control = control
         .parse_bound_statement_fragment(&snapshot, &document, &span)
         .expect("control statement fragment");
@@ -1250,8 +1258,8 @@ fn private_non_expression_fragment_failures_commit_no_lineage_or_node_identity()
 fn independent_databases_cannot_resolve_equal_private_raw_slots() {
     let name = SourceName::path("same.arcw");
     let snapshot = SourceSnapshotId::initial(name.clone());
-    let mut first_database = SyntaxDatabase::default();
-    let mut second_database = SyntaxDatabase::default();
+    let mut first_database = syntax_database();
+    let mut second_database = syntax_database();
     let first = first_database
         .parse_initial(
             snapshot.clone(),
@@ -1276,7 +1284,7 @@ fn independent_databases_cannot_resolve_equal_private_raw_slots() {
 fn trivia_reparse_preserves_private_descendant_ids_and_old_snapshot_ranges() {
     let name = SourceName::path("predicate.arcw");
     let source = "predicate ready(value: Int) requires value > 0 = value == 1\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -1335,7 +1343,7 @@ fn trivia_reparse_preserves_private_descendant_ids_and_old_snapshot_ranges() {
 fn unique_private_grammar_siblings_retain_ids_when_reordered() {
     let name = SourceName::path("reordered-proofs.arcw");
     let source = "proof first() = 1\nproof second() = 2\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -1371,7 +1379,7 @@ fn unique_private_grammar_siblings_retain_ids_when_reordered() {
 fn a_private_grammar_copy_is_fresh_while_the_original_retains_its_id() {
     let name = SourceName::path("copied-proof.arcw");
     let source = "proof same() = ()\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -1404,7 +1412,7 @@ fn moving_a_private_grammar_node_across_block_parents_allocates_a_fresh_id() {
     let name = SourceName::path("moved-expression.arcw");
     let source =
         "proof relocate() -> Int { let first: Int = { target() }; let second: Int = { 0 }; 0 }\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -1436,7 +1444,7 @@ fn moving_a_private_grammar_node_across_block_parents_allocates_a_fresh_id() {
 fn changed_private_grammar_node_is_fresh_while_its_sibling_survives() {
     let name = SourceName::path("changed-proof.arcw");
     let source = "proof first() = ()\nproof second() = ()\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -1472,7 +1480,7 @@ fn changed_private_grammar_node_is_fresh_while_its_sibling_survives() {
 fn missing_and_error_nodes_reconcile_by_recovery_role() {
     let name = SourceName::path("recovery.arcw");
     let source = "proof () = ()\nunknown surface\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -1498,8 +1506,8 @@ fn missing_and_error_nodes_reconcile_by_recovery_role() {
 #[test]
 fn fatal_private_attachment_failure_rolls_back_initial_transaction() {
     let name = SourceName::path("attachment-failure.arcw");
-    let mut database = SyntaxDatabase::default();
-    let lineage_before = database.shadow.next_lineage_for_test();
+    let mut database = syntax_database();
+    let lineage_before = database.transaction.next_lineage_for_test();
     let failed = database.parse_initial_with_attachment_failure(
         &SourceSnapshotId::initial(name.clone()),
         &source_document(&name, "proof invalid() = ()\n"),
@@ -1507,7 +1515,7 @@ fn fatal_private_attachment_failure_rolls_back_initial_transaction() {
 
     assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
     assert!(database.lineages.is_empty());
-    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let accepted = database
         .parse_initial(
@@ -1516,7 +1524,7 @@ fn fatal_private_attachment_failure_rolls_back_initial_transaction() {
         )
         .expect("next valid transaction uses the unconsumed lineage");
     let control_name = SourceName::path("control.arcw");
-    let mut control = SyntaxDatabase::default();
+    let mut control = syntax_database();
     let control = control
         .parse_initial(
             SourceSnapshotId::initial(control_name.clone()),
@@ -1537,8 +1545,8 @@ fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
         "    let line = alice[本文。[effect .wave amp=2 label=\"強い\"]]\n",
         "}\n",
     );
-    let mut database = SyntaxDatabase::default();
-    let lineage_before = database.shadow.next_lineage_for_test();
+    let mut database = syntax_database();
+    let lineage_before = database.transaction.next_lineage_for_test();
     let failed = database.parse_initial_with_attachment_failure(
         &SourceSnapshotId::initial(name.clone()),
         &source_document(&name, source),
@@ -1546,7 +1554,7 @@ fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
 
     assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
     assert!(database.lineages.is_empty());
-    assert_eq!(database.shadow.next_lineage_for_test(), lineage_before);
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let accepted = database
         .parse_initial(
@@ -1554,7 +1562,7 @@ fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
             source_document(&name, source),
         )
         .expect("valid retry uses the unconsumed RichText lineage and slots");
-    let mut control_database = SyntaxDatabase::default();
+    let mut control_database = syntax_database();
     let control_name = SourceName::path("rich-text-attachment-failure.arcw");
     let control = control_database
         .parse_initial(
@@ -1588,7 +1596,7 @@ fn fatal_private_attachment_failure_rolls_back_reparse_transaction() {
     let name = SourceName::path("reparse-attachment-failure.arcw");
     let source = "proof first() = ()\n";
     let addition = "proof second() = ()\n";
-    let mut database = SyntaxDatabase::default();
+    let mut database = syntax_database();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
@@ -1604,20 +1612,20 @@ fn fatal_private_attachment_failure_rolls_back_reparse_transaction() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .shadow
+        .transaction
         .next_node_for_test();
 
     let failed = database.reparse_with_attachment_failure(&initial, std::slice::from_ref(&edit));
     assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
     let current = database.lineages.get(&name).expect("lineage");
-    assert!(Arc::ptr_eq(&current.current, &initial));
-    assert!(Rc::ptr_eq(current.shadow.current(), initial.bound()));
-    assert_eq!(current.shadow.next_node_for_test(), next_before);
+    assert!(current.current.is_same_snapshot(&initial));
+    assert!(Rc::ptr_eq(current.transaction.current(), initial.bound()));
+    assert_eq!(current.transaction.next_node_for_test(), next_before);
 
     let accepted = database
         .reparse(&initial, &[edit])
         .expect("valid retry after failed attachment");
-    let mut control_database = SyntaxDatabase::default();
+    let mut control_database = syntax_database();
     let control_initial = control_database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
