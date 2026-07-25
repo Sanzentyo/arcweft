@@ -26,7 +26,7 @@ because GitHub did not expose the Jujutsu header.
 
 ## Intake status
 
-`RETURNED_MECHANICALLY_VALID_AUTHORITY_CORRECTION_REQUIRED`.
+`RETURNED_SEMANTICS_ACCEPTED_CATALOG_CORRECTION_RETURNED_TRAIT_VALIDATOR_CORRECTION_REQUIRED`.
 
 The following design decisions are accepted and do not need to be requested
 again:
@@ -49,23 +49,24 @@ again:
 No `dyn` parser placeholder, compatibility alias, dual reader, source gate,
 removed-syntax diagnostic, CSS path, or Takumi path is authorized.
 
-## Blocking catalog authority gap
+## Catalog authority correction and remaining gap
 
-The original request forbids redesigning the accepted shared callable catalog
-or adding copied authorities. The returned contract nevertheless gives
-`CheckedCallableFacts` owned signature and source fields without defining any
-relationship to the existing `RegisteredCallableCatalog` / `CallableRecord`
-owner. It neither retains the exact accepted record nor replaces and deletes
-the existing catalog while migrating its documentation, visibility,
-publication, provider, standard, and environment responsibilities.
+The catalog-authority correction has returned and is recorded in the
+[Lang-01.1.1.3.1 intake](2026-07-25-lang-01-1-1-3-1-checked-callable-catalog-intake.md).
+It selects retention of the exact accepted `Arc<CallableRecord>` and delegates
+all accepted metadata reads from checked facts. That closes the former copied
+signature/source authority gap and must not be reopened.
 
-Literal implementation would therefore create parallel signature/source
-authorities. Choosing an overlay or a full catalog replacement is a public
-semantic ownership decision and is not inferred locally.
+One narrower identity boundary remains. The current accepted signature schema
+stores `CallableValidator::Trait(TraitCallableId)` before checking, while the
+returned correction deletes `TraitCallableId` and its candidate variant but
+does not define the replacement pre-check validator payload or the retained
+`CallableFamily::TraitMethod` projection used by resolver accounting and
+signature help.
 
 The independently throwable correction is:
 
-- [Lang-01.1.1.3.1 checked callable catalog authority and consumer-scope reconciliation](../reviews/requests/2026-07-25-lang-01.1.1.3.1-checked-callable-catalog-authority-and-consumer-scope-reconciliation.md).
+- [Lang-01.1.1.3.1.1 trait validator and resolver-family identity reconciliation](../reviews/requests/2026-07-25-lang-01.1.1.3.1.1-trait-validator-and-resolver-family-identity-reconciliation.md).
 
 ## Current implementation WIP disposition
 
@@ -83,6 +84,8 @@ Stable substrate that may be separated into an independent coherent cut:
 
 Work held for the corrected Lang-01.1.1.3 authority switch:
 
+- pre-check trait/inherent validator identity and the trait-method observational
+  family projection;
 - project graph/callable public keys that must become revision-bound checked
   IDs;
 - copied `ProjectFunctionSymbol` effect rows;
@@ -95,7 +98,8 @@ are not repaired or reintroduced while the WIP is split.
 
 ## Production boundary
 
-No Lang-01.1.1.3 production implementation starts until the catalog correction
-returns. This design wait is independent from the accepted Stream wire
-correction and does not block the previously selected Proof-first dependency
-order.
+The catalog correction has returned and is accepted except for the explicit
+pre-check validator/family join. Do not start the final Lang-01.1.1.3 public
+authority switch until `.3.1.1` returns. This narrow design wait is independent
+from the accepted Stream wire correction and does not block the previously
+selected Proof-first dependency order.
