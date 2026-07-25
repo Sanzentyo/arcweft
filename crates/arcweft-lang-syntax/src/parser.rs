@@ -128,7 +128,7 @@ use control_flow::{
 };
 pub use fragment::{
     ExpectedToken, FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind,
-    parse_document, parse_document_with_source, parse_fragment,
+    parse_document_with_source, parse_fragment,
 };
 use helpers::{
     PendingDocLines, attach_plan_to_dialogue_expr, collect_logical_block_items,
@@ -156,7 +156,7 @@ use statements::{
 /// Parses an Arcweft source string.
 #[must_use]
 pub fn parse_source(source: impl Into<String>) -> ParsedSource {
-    parse_document(source, ParseOptions::default())
+    parse_source_with_options(source, ParseOptions::default())
 }
 
 pub(crate) fn parse_callback_block_expr_body_recovering_at(

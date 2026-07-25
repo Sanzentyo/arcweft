@@ -47,11 +47,6 @@ pub struct ParsedFragment {
     errors: Vec<ParseError>,
 }
 
-/// Parses a full Arcweft source document.
-pub fn parse_document(source: impl Into<String>, options: ParseOptions) -> ParsedSource {
-    super::parse_source_with_options(source, options)
-}
-
 /// Parses an immutable source document while preserving its exact identity.
 pub fn parse_document_with_source(
     document: Arc<SourceDocument>,
@@ -77,7 +72,7 @@ pub fn parse_fragment(source: &str, kind: FragmentKind, options: ParseOptions) -
             super::control_flow::parse_stmt_lines(source),
         )),
         FragmentKind::Items => {
-            let parsed = parse_document(source, options);
+            let parsed = super::parse_source_with_options(source, options);
             let errors = parsed.errors().to_vec();
             let items = parsed.typed_tree().items().to_vec();
             if errors.is_empty() {

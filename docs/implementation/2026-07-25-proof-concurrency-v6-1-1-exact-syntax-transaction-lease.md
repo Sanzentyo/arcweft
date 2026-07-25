@@ -144,8 +144,8 @@ standalone `source::ParsedSource`, detached `TypedSyntaxTree`, and their
 compiler/LSP/tooling consumers remain one production authority until the
 workspace-wide attached switch can delete them atomically.
 
-The next independently coherent deletion is the redundant public
-`parser::parse_document` alias, which has no external production caller. The
+The redundant public `parser::parse_document` alias, which had no external
+production caller, is deleted in the immediately following coherent cut. The
 larger Stage 3 switch must then delete old source/fragment readers first in its
 working change and migrate compiler, project-loader, CLI, LSP, tooling, Agent,
 and source-backed HIR keys to the final attached owner without a compatibility
