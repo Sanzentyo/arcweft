@@ -1,4 +1,4 @@
-use super::{ParseFailure, ParsedSource, SyntaxDatabase, SyntaxIdentityKind, SyntaxNodeId};
+use super::{ParseFailure, ParsedSource, SyntaxDatabase, SyntaxIdentityKind};
 use crate::parser::{parse_source, recovery::ParseErrorKind};
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
@@ -40,68 +40,6 @@ fn source_edit(
 }
 
 #[test]
-fn syntax_node_ids_retain_the_full_non_zero_slot_domain() {
-    let last = SyntaxNodeId(NonZeroU64::new(u64::MAX).unwrap());
-    assert_eq!(last.0.get(), u64::MAX);
-}
-
-#[test]
-fn trivia_reparse_advances_once_and_preserves_every_node_identity() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, "flow first {}\nflow second {}\n"),
-        )
-        .expect("initial parse");
-    let initial_ids = initial
-        .root()
-        .descendants()
-        .map(|node| initial.identities().id_for(&node).expect("node identity"))
-        .collect::<Vec<_>>();
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(&initial, SourceRange::new(4, 5), "   ")],
-        )
-        .expect("trivia reparse");
-    let reparsed_ids = reparsed
-        .root()
-        .descendants()
-        .map(|node| reparsed.identities().id_for(&node).expect("node identity"))
-        .collect::<Vec<_>>();
-    assert_eq!(reparsed.snapshot().generation().get(), 2);
-    assert_eq!(initial_ids, reparsed_ids);
-}
-
-#[test]
-fn recovered_line_indentation_does_not_invent_a_parent_or_replace_ids() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "unknown\n    also_unknown\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("recovered source commits");
-    let first_id = line_id(&initial, "unknown\n");
-    let second_id = line_id(&initial, "also_unknown");
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(&initial, SourceRange::new(8, 12), "        ")],
-        )
-        .expect("indentation-only recovery edit commits");
-
-    assert_eq!(line_id(&reparsed, "unknown\n"), first_id);
-    assert_eq!(line_id(&reparsed, "also_unknown"), second_id);
-}
-
-#[test]
 fn no_op_replacements_return_the_exact_current_snapshot() {
     let name = SourceName::path("story.arcw");
     let mut database = SyntaxDatabase::default();
@@ -127,290 +65,6 @@ fn no_op_replacements_return_the_exact_current_snapshot() {
 }
 
 #[test]
-fn replaced_subtrees_get_fresh_ids_without_retiring_unchanged_siblings() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "flow first {\n    log.info(\"old\")\n}\nflow second {}\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("initial parse");
-    let replaced_id = smallest_node_id_containing(&initial, "log.info(\"old\")");
-    let sibling_id = line_id(&initial, "second");
-    let start = source.find("old").expect("fixture token");
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(start, start + "old".len()),
-                "new",
-            )],
-        )
-        .expect("replacement parses");
-
-    assert_ne!(
-        smallest_node_id_containing(&reparsed, "log.info(\"new\")"),
-        replaced_id
-    );
-    assert_eq!(line_id(&reparsed, "second"), sibling_id);
-}
-
-#[test]
-fn moving_a_node_across_parents_allocates_a_fresh_identity() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "flow first {\n    log.info(\"move\")\n}\nflow second {}\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("initial parse");
-    let moved_id = smallest_node_id_containing(&initial, "log.info(\"move\")");
-    let moved_source = "flow first {}\nflow second {\n    log.info(\"move\")\n}\n";
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(0, source.len()),
-                moved_source,
-            )],
-        )
-        .expect("parent move parses");
-
-    assert_ne!(
-        smallest_node_id_containing(&reparsed, "log.info(\"move\")"),
-        moved_id
-    );
-}
-
-#[test]
-fn moving_a_node_across_indentation_parents_allocates_a_fresh_identity() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "flow story {\n    first:\n        log.info(\"move\")\n    second:\n}\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("recovered indentation fixture parses");
-    let moved_id = smallest_node_id_containing(&initial, "log.info(\"move\")");
-    let moved_source = "flow story {\n    first:\n    second:\n        log.info(\"move\")\n}\n";
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(0, source.len()),
-                moved_source,
-            )],
-        )
-        .expect("indentation parent move parses");
-
-    assert_ne!(
-        smallest_node_id_containing(&reparsed, "log.info(\"move\")"),
-        moved_id
-    );
-}
-
-#[test]
-fn reordering_unique_nodes_inside_one_parent_retains_their_identities() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "flow story {\n    log.info(\"first\")\n    log.info(\"second\")\n}\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("initial parse");
-    let first_id = smallest_node_id_containing(&initial, "log.info(\"first\")");
-    let second_id = smallest_node_id_containing(&initial, "log.info(\"second\")");
-    let reordered = "flow story {\n    log.info(\"second\")\n    log.info(\"first\")\n}\n";
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(0, source.len()),
-                reordered,
-            )],
-        )
-        .expect("same-parent reorder parses");
-
-    assert_eq!(
-        smallest_node_id_containing(&reparsed, "log.info(\"first\")"),
-        first_id
-    );
-    assert_eq!(
-        smallest_node_id_containing(&reparsed, "log.info(\"second\")"),
-        second_id
-    );
-}
-
-#[test]
-fn equivalent_recovery_nodes_survive_trivia_edits() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "flow story {\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("recovered source commits");
-    assert_eq!(initial.status(), super::ParseStatus::Recovered);
-    let initial_ids = initial
-        .root()
-        .descendants()
-        .map(|node| initial.identities().id_for(&node).expect("node identity"))
-        .collect::<Vec<_>>();
-    let insertion = source.find("story").expect("fixture token");
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(insertion, insertion),
-                "  ",
-            )],
-        )
-        .expect("trivia edit commits");
-    let reparsed_ids = reparsed
-        .root()
-        .descendants()
-        .map(|node| reparsed.identities().id_for(&node).expect("node identity"))
-        .collect::<Vec<_>>();
-
-    assert_eq!(reparsed.status(), super::ParseStatus::Recovered);
-    assert_eq!(initial_ids, reparsed_ids);
-}
-
-#[test]
-fn unique_moved_siblings_keep_ids_and_copies_get_fresh_ids() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "flow first {}\nflow second {}\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("initial parse");
-    let first_id = line_id(&initial, "first");
-    let second_id = line_id(&initial, "second");
-    let moved_text = "flow second {}\nflow first {}\n";
-    let moved = database
-        .reparse(
-            &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(0, source.len()),
-                moved_text,
-            )],
-        )
-        .expect("moved reparse");
-    assert_eq!(line_id(&moved, "first"), first_id);
-    assert_eq!(line_id(&moved, "second"), second_id);
-
-    let copied_text = "flow second {}\nflow first {}\nflow first {}\n";
-    let copied = database
-        .reparse(
-            &moved,
-            &[source_edit(
-                &moved,
-                SourceRange::new(0, moved_text.len()),
-                copied_text,
-            )],
-        )
-        .expect("copied reparse");
-    let copied_first_ids = copied
-        .root()
-        .children()
-        .filter(|node| node.text().to_string().contains("first"))
-        .map(|node| copied.identities().id_for(&node).expect("line identity"))
-        .collect::<Vec<_>>();
-    assert_eq!(copied_first_ids.len(), 2);
-    assert_eq!(copied_first_ids[0], first_id);
-    assert_ne!(copied_first_ids[1], first_id);
-}
-
-#[test]
-fn inserting_between_unique_siblings_preserves_existing_ids() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "flow first {}\nflow second {}\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("initial parse");
-    let first_id = line_id(&initial, "first");
-    let second_id = line_id(&initial, "second");
-    let insertion = source.find("flow second").expect("second sibling");
-
-    let reparsed = database
-        .reparse(
-            &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(insertion, insertion),
-                "flow inserted {}\n",
-            )],
-        )
-        .expect("sibling insertion parses");
-
-    assert_eq!(line_id(&reparsed, "first"), first_id);
-    assert_eq!(line_id(&reparsed, "second"), second_id);
-    assert_ne!(line_id(&reparsed, "inserted"), first_id);
-    assert_ne!(line_id(&reparsed, "inserted"), second_id);
-}
-
-#[test]
-fn repeated_identical_siblings_follow_distance_then_old_id_ties() {
-    let name = SourceName::path("story.arcw");
-    let mut database = SyntaxDatabase::default();
-    let source = "flow story {\n    log.info(\"same\")\n    log.info(\"same\")\n}\n";
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-        )
-        .expect("initial parse");
-    let initial_ids = line_ids_containing(&initial, "log.info(\"same\")");
-    assert_eq!(initial_ids.len(), 2);
-    let copied_source =
-        "flow story {\n    log.info(\"same\")\n    log.info(\"same\")\n    log.info(\"same\")\n}\n";
-
-    let copied = database
-        .reparse(
-            &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(0, source.len()),
-                copied_source,
-            )],
-        )
-        .expect("copy parses");
-    let copied_ids = line_ids_containing(&copied, "log.info(\"same\")");
-
-    assert_eq!(copied_ids.len(), 3);
-    assert_eq!(&copied_ids[..2], initial_ids.as_slice());
-    assert!(!initial_ids.contains(&copied_ids[2]));
-}
-
-#[test]
 fn invalid_edit_order_overlap_and_foreign_provenance_leave_lineage_unchanged() {
     let name = SourceName::path("story.arcw");
     let mut database = SyntaxDatabase::default();
@@ -425,8 +79,8 @@ fn invalid_edit_order_overlap_and_foreign_provenance_leave_lineage_unchanged() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .allocator
-        .next;
+        .shadow
+        .next_node_for_test();
 
     let foreign_name = SourceName::path("other.arcw");
     let foreign = source_document(&foreign_name, source);
@@ -471,7 +125,7 @@ fn invalid_edit_order_overlap_and_foreign_provenance_leave_lineage_unchanged() {
     assert!(matches!(&failures[2], Err(ParseFailure::SourceMismatch)));
     let current = database.lineages.get(&name).expect("lineage current");
     assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.allocator.next, allocator_next);
+    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
 }
 
 #[test]
@@ -495,8 +149,8 @@ fn reparsing_a_stale_snapshot_is_rejected_without_mutation() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .allocator
-        .next;
+        .shadow
+        .next_node_for_test();
 
     let stale = database.reparse(
         &initial,
@@ -506,7 +160,7 @@ fn reparsing_a_stale_snapshot_is_rejected_without_mutation() {
     assert!(matches!(stale, Err(ParseFailure::SourceMismatch)));
     let lineage = database.lineages.get(&name).expect("lineage current");
     assert!(Arc::ptr_eq(&lineage.current, &current));
-    assert_eq!(lineage.allocator.next, allocator_next);
+    assert_eq!(lineage.shadow.next_node_for_test(), allocator_next);
 }
 
 #[test]
@@ -529,8 +183,8 @@ fn reparsing_a_snapshot_from_another_database_is_rejected_without_mutation() {
         .lineages
         .get(&name)
         .expect("local lineage")
-        .allocator
-        .next;
+        .shadow
+        .next_node_for_test();
 
     let rejected = local.reparse(
         &foreign_initial,
@@ -544,7 +198,7 @@ fn reparsing_a_snapshot_from_another_database_is_rejected_without_mutation() {
     assert!(matches!(rejected, Err(ParseFailure::SourceMismatch)));
     let lineage = local.lineages.get(&name).expect("local lineage");
     assert!(Arc::ptr_eq(&lineage.current, &local_initial));
-    assert_eq!(lineage.allocator.next, allocator_next);
+    assert_eq!(lineage.shadow.next_node_for_test(), allocator_next);
 }
 
 #[test]
@@ -575,8 +229,8 @@ fn diagnostic_limit_is_inclusive_and_one_over_rolls_back() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .allocator
-        .next;
+        .shadow
+        .next_node_for_test();
     let over_limit = format!("{at_limit}unknown_top_level\n");
 
     let failed = database.reparse(
@@ -595,7 +249,7 @@ fn diagnostic_limit_is_inclusive_and_one_over_rolls_back() {
     let current = database.lineages.get(&name).expect("lineage current");
     assert!(Arc::ptr_eq(&current.current, &recovered));
     assert_eq!(current.current.snapshot().generation().get(), 2);
-    assert_eq!(current.allocator.next, allocator_next);
+    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
 }
 
 #[test]
@@ -616,8 +270,8 @@ fn top_level_item_budget_accepts_the_maximum_and_rolls_back_one_over() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .allocator
-        .next;
+        .shadow
+        .next_node_for_test();
     let one_over = "flow first {}\nflow second {}\n";
 
     let failed = database.reparse(
@@ -637,7 +291,7 @@ fn top_level_item_budget_accepts_the_maximum_and_rolls_back_one_over() {
     ));
     let current = database.lineages.get(&name).expect("lineage current");
     assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.allocator.next, allocator_next);
+    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
     assert_eq!(current.current.snapshot().generation().get(), 1);
 }
 
@@ -659,8 +313,8 @@ fn prefix_depth_limit_is_fatal_and_rolls_back_the_transaction() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .allocator
-        .next;
+        .shadow
+        .next_node_for_test();
     let one_over = format!(
         "flow story {{\n    let value = {}input\n}}\n",
         "& ".repeat(65)
@@ -681,7 +335,7 @@ fn prefix_depth_limit_is_fatal_and_rolls_back_the_transaction() {
     ));
     let current = database.lineages.get(&name).expect("lineage current");
     assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.allocator.next, allocator_next);
+    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
     assert_eq!(current.current.snapshot().generation().get(), 1);
 }
 
@@ -736,8 +390,8 @@ fn assertion_condition_limit_accepts_exactly_64_and_rolls_back_one_over() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .allocator
-        .next;
+        .shadow
+        .next_node_for_test();
     let one_over = format!("{conditions}, true");
     let one_over_source = format!("flow assertions {{\n    assert.check({one_over})\n}}\n");
 
@@ -758,7 +412,7 @@ fn assertion_condition_limit_accepts_exactly_64_and_rolls_back_one_over() {
     ));
     let current = database.lineages.get(&name).expect("lineage current");
     assert!(Arc::ptr_eq(&current.current, &initial));
-    assert_eq!(current.allocator.next, allocator_next);
+    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
     assert_eq!(current.current.snapshot().generation().get(), 1);
 }
 
@@ -780,8 +434,8 @@ fn source_generation_exhaustion_rolls_back_the_transaction() {
         .lineages
         .get(&name)
         .expect("lineage")
-        .allocator
-        .next;
+        .shadow
+        .next_node_for_test();
 
     let failed = database.reparse(
         &initial,
@@ -797,17 +451,19 @@ fn source_generation_exhaustion_rolls_back_the_transaction() {
     let current = database.lineages.get(&name).expect("lineage current");
     assert!(Arc::ptr_eq(&current.current, &initial));
     assert_eq!(current.current.snapshot().generation().get(), 1);
-    assert_eq!(current.allocator.next, allocator_next);
+    assert_eq!(current.shadow.next_node_for_test(), allocator_next);
 }
 
 #[test]
 fn invalid_edits_and_exhausted_allocation_commit_nothing() {
     let name = SourceName::path("story.arcw");
+    let initial_source = "flow story {}\n";
+    let addition = "flow final {}\n";
     let mut database = SyntaxDatabase::default();
     let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
-            source_document(&name, "flow story {}\n"),
+            source_document(&name, initial_source),
         )
         .expect("initial parse");
     let invalid = database.reparse(
@@ -819,19 +475,59 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
     );
     assert!(matches!(invalid, Err(ParseFailure::InvalidEdits(_))));
 
+    let mut control = SyntaxDatabase::default();
+    let control_initial = control
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, initial_source),
+        )
+        .expect("control initial parse");
+    let before = control
+        .lineages
+        .get(&name)
+        .expect("control lineage")
+        .shadow
+        .next_node_for_test()
+        .expect("control next node");
+    control
+        .reparse(
+            &control_initial,
+            &[source_edit(
+                &control_initial,
+                SourceRange::new(initial_source.len(), initial_source.len()),
+                addition,
+            )],
+        )
+        .expect("control reparse");
+    let after = control
+        .lineages
+        .get(&name)
+        .expect("control lineage")
+        .shadow
+        .next_node_for_test()
+        .expect("control next node");
+    let allocated = after
+        .get()
+        .checked_sub(before.get())
+        .filter(|count| *count > 0)
+        .expect("reparse allocates grammar identities");
+    let last_start = u64::MAX
+        .checked_sub(allocated - 1)
+        .and_then(NonZeroU64::new)
+        .expect("last allocatable grammar identity range");
     database
         .lineages
         .get_mut(&name)
         .expect("lineage")
-        .allocator
-        .next = NonZeroU64::new(u64::MAX);
+        .shadow
+        .set_next_node_for_test(Some(last_start));
     let with_last_id = database
         .reparse(
             &initial,
             &[source_edit(
                 &initial,
                 SourceRange::new(initial.source().len(), initial.source().len()),
-                "flow final {}\n",
+                addition,
             )],
         )
         .expect("the final non-zero ID is usable");
@@ -1911,33 +1607,5 @@ fn private_ids_containing(
         .nodes()
         .filter(|node| node.kind() == kind && node.rowan().text().to_string().contains(needle))
         .map(|node| node.id())
-        .collect()
-}
-
-fn line_id(source: &super::ParsedSource, needle: &str) -> SyntaxNodeId {
-    let line = source
-        .root()
-        .children()
-        .find(|node| node.text().to_string().contains(needle))
-        .expect("matching line");
-    source.identities().id_for(&line).expect("line identity")
-}
-
-fn smallest_node_id_containing(source: &super::ParsedSource, needle: &str) -> SyntaxNodeId {
-    let node = source
-        .root()
-        .descendants()
-        .filter(|node| node.text().to_string().contains(needle))
-        .min_by_key(|node| node.text().len())
-        .expect("matching syntax node");
-    source.identities().id_for(&node).expect("node identity")
-}
-
-fn line_ids_containing(source: &super::ParsedSource, needle: &str) -> Vec<SyntaxNodeId> {
-    source
-        .root()
-        .children()
-        .filter(|node| node.text().to_string().contains(needle))
-        .map(|node| source.identities().id_for(&node).expect("line identity"))
         .collect()
 }

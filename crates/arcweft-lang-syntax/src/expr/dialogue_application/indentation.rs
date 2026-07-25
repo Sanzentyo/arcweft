@@ -4,7 +4,7 @@ use super::{
     DialogueSurfaceInvariantError, checked_width, source_slice, validate_contains,
     validate_horizontal_whitespace, validate_offset, validate_order,
 };
-use crate::{ast::common::TextRange, incremental::SyntaxNodeId};
+use crate::{ast::common::TextRange, attachment::SyntaxNodeId};
 use arcweft_source::SourceDocument;
 
 /// Exact parser classification of content following a colon application.

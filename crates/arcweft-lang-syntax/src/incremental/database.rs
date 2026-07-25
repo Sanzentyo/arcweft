@@ -1,12 +1,11 @@
 //! Incremental parse database, snapshot transactions, and syntax identities.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
 use arcweft_source::identity::{SourceGeneration, SourceSnapshotId};
 use arcweft_source::{SourceDocument, SourceEdit, SourceName, SourceSpan};
-use core::num::NonZeroU64;
 use thiserror::Error;
 
 use super::bound::{
@@ -21,38 +20,7 @@ use crate::cst::SyntaxNode;
 use crate::parser::recovery::{ParseError, ParseErrorKind};
 
 use super::limits::SyntaxLimit;
-use super::{reconcile, shape, transaction};
-
-/// Stable node identity within one in-memory syntax database lineage.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SyntaxNodeId(pub(super) NonZeroU64);
-
-/// Node-to-ID inventory for one immutable parsed CST snapshot.
-#[derive(Clone, Debug)]
-pub struct SyntaxIdentityMap {
-    nodes: HashMap<SyntaxNode, SyntaxNodeId>,
-}
-
-impl SyntaxIdentityMap {
-    pub(super) fn new(nodes: HashMap<SyntaxNode, SyntaxNodeId>) -> Self {
-        Self { nodes }
-    }
-
-    /// Returns the stable session identity assigned to this snapshot node.
-    pub fn id_for(&self, node: &SyntaxNode) -> Option<SyntaxNodeId> {
-        self.nodes.get(node).copied()
-    }
-
-    /// Number of identity-bearing CST nodes in this snapshot.
-    pub fn len(&self) -> usize {
-        self.nodes.len()
-    }
-
-    /// Whether the snapshot has no identity-bearing nodes.
-    pub fn is_empty(&self) -> bool {
-        self.nodes.is_empty()
-    }
-}
+use super::transaction;
 
 /// Immutable parse result owned by one incremental syntax database lineage.
 #[derive(Clone, Debug)]
@@ -60,7 +28,6 @@ pub struct ParsedSource {
     snapshot: SourceSnapshotId,
     document: SourceDocument,
     parsed: crate::source::ParsedSource,
-    identities: Arc<SyntaxIdentityMap>,
     shadow: Rc<BoundParsedSource>,
     status: ParseStatus,
 }
@@ -91,11 +58,6 @@ impl ParsedSource {
         self.parsed.typed_tree()
     }
 
-    /// Stable node identities for this snapshot.
-    pub fn identities(&self) -> &Arc<SyntaxIdentityMap> {
-        &self.identities
-    }
-
     /// Recoverable syntax diagnostics in deterministic parser order.
     pub fn diagnostics(&self) -> &[ParseError] {
         self.parsed.errors()
@@ -107,7 +69,7 @@ impl ParsedSource {
     }
 
     #[cfg(test)]
-    pub(super) fn attached(&self) -> &Arc<SyntaxSnapshotData> {
+    pub(crate) fn attached(&self) -> &Arc<SyntaxSnapshotData> {
         self.shadow.syntax()
     }
 
@@ -128,7 +90,6 @@ pub struct SyntaxDatabase {
 #[derive(Debug)]
 struct SourceLineage {
     current: Arc<ParsedSource>,
-    allocator: NodeAllocator,
     shadow: transaction::ShadowLineageState,
 }
 
@@ -145,19 +106,6 @@ impl Default for SyntaxTransactionLimits {
             top_level_items: SyntaxLimit::TopLevelItems.maximum(),
             diagnostics: SyntaxLimit::Diagnostics.maximum(),
             source_generation: u32::MAX,
-        }
-    }
-}
-
-#[derive(Clone, Debug)]
-struct NodeAllocator {
-    next: Option<NonZeroU64>,
-}
-
-impl Default for NodeAllocator {
-    fn default() -> Self {
-        Self {
-            next: Some(NonZeroU64::MIN),
         }
     }
 }
@@ -364,9 +312,6 @@ impl SyntaxDatabase {
             return Err(ParseFailure::SourceMismatch);
         }
         let parsed = parse_checked(document.text(), self.limits)?;
-        let shape = shape::ShapeNode::from_syntax(parsed.syntax().clone());
-        let mut allocator = NodeAllocator::default();
-        let identities = reconcile::allocate_initial(&shape, &mut || allocator.allocate())?;
         let shadow = self
             .shadow
             .stage_initial(snapshot, &document, shadow_fault)?;
@@ -375,7 +320,6 @@ impl SyntaxDatabase {
             document,
             status: parse_status(&parsed),
             parsed,
-            identities: Arc::new(identities),
             shadow: Rc::clone(shadow.current()),
         });
         let shadow = self.shadow.commit_initial(shadow);
@@ -383,7 +327,6 @@ impl SyntaxDatabase {
             snapshot.name().clone(),
             SourceLineage {
                 current: Arc::clone(&result),
-                allocator,
                 shadow,
             },
         );
@@ -415,7 +358,6 @@ impl SyntaxDatabase {
             .ok_or(ParseFailure::SourceMismatch)?;
         if lineage.current.snapshot() != previous.snapshot()
             || lineage.current.source() != previous.source()
-            || !Arc::ptr_eq(lineage.current.identities(), previous.identities())
             || !Rc::ptr_eq(lineage.shadow.current(), previous.bound_internal())
         {
             return Err(ParseFailure::SourceMismatch);
@@ -445,13 +387,6 @@ impl SyntaxDatabase {
             .snapshot()
             .checked_next()
             .map_err(|_| ParseFailure::IdentityExhausted(SyntaxIdentityKind::SourceGeneration))?;
-        let old_shape = shape::ShapeNode::from_syntax(previous.root().clone());
-        let new_shape = shape::ShapeNode::from_syntax(parsed.syntax().clone());
-        let mut allocator = lineage.allocator.clone();
-        let identities =
-            reconcile::reconcile(&old_shape, &new_shape, previous.identities(), &mut || {
-                allocator.allocate()
-            })?;
         let shadow = lineage
             .shadow
             .stage_reparse(&snapshot, &document, shadow_fault)?;
@@ -460,7 +395,6 @@ impl SyntaxDatabase {
             document,
             status: parse_status(&parsed),
             parsed,
-            identities: Arc::new(identities),
             shadow: Rc::clone(shadow.current()),
         });
         let lineage = self
@@ -468,7 +402,6 @@ impl SyntaxDatabase {
             .get_mut(previous.snapshot().name())
             .ok_or(ParseFailure::InternalInvariant)?;
         lineage.current = Arc::clone(&result);
-        lineage.allocator = allocator;
         lineage.shadow = shadow.into_lineage();
         Ok(result)
     }
@@ -514,16 +447,6 @@ impl SyntaxDatabase {
 impl ParsedSource {
     const fn bound_internal(&self) -> &Rc<BoundParsedSource> {
         &self.shadow
-    }
-}
-
-impl NodeAllocator {
-    fn allocate(&mut self) -> Result<SyntaxNodeId, ParseFailure> {
-        let slot = self
-            .next
-            .ok_or(ParseFailure::IdentityExhausted(SyntaxIdentityKind::Node))?;
-        self.next = slot.get().checked_add(1).and_then(NonZeroU64::new);
-        Ok(SyntaxNodeId(slot))
     }
 }
 

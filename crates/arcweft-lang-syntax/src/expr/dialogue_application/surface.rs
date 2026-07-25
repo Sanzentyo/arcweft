@@ -5,7 +5,7 @@ use super::{
     DialogueSurfaceInvariantError, source_slice, validate_contains, validate_delimiter,
     validate_offset, validate_order,
 };
-use crate::{ast::common::TextRange, incremental::SyntaxNodeId};
+use crate::{ast::common::TextRange, attachment::SyntaxNodeId};
 use arcweft_source::SourceDocument;
 
 /// Exact source ownership for a line plan attached to an application.
@@ -680,8 +680,9 @@ mod tests {
     };
     use crate::{
         ast::common::TextRange,
+        attachment::SyntaxNodeId,
         expr::dialogue_application::{DialogueIndentation, DialogueIndentationPrefix},
-        incremental::{SyntaxDatabase, SyntaxNodeId},
+        incremental::SyntaxDatabase,
     };
     use arcweft_source::{
         SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId,
@@ -700,9 +701,9 @@ mod tests {
             .parse_initial(SourceSnapshotId::initial(name), document.clone())
             .expect("source parses transactionally");
         let ids = parsed
-            .root()
-            .descendants()
-            .filter_map(|node| parsed.identities().id_for(&node))
+            .attached()
+            .nodes()
+            .map(|node| node.id())
             .collect::<Vec<_>>();
         (document, ids)
     }

@@ -191,16 +191,6 @@ impl<'a> CstPunctuationScan<'a> {
             })
     }
 
-    /// Counts closing braces that leave enclosing blocks before this line can
-    /// introduce a new block. Tokens inside strings and comments are already
-    /// excluded by the CST lexer.
-    pub(crate) fn leading_brace_closes(&self) -> usize {
-        self.punctuation_tokens()
-            .take_while(|token| token.text() != "{")
-            .filter(|token| token.text() == "}")
-            .count()
-    }
-
     pub(crate) fn line_deltas(&self, source: &str) -> Vec<CstPunctuationDeltas> {
         let mut deltas = source
             .lines()

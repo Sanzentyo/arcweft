@@ -210,6 +210,11 @@ impl ShadowLineageState {
     pub(super) const fn next_node_for_test(&self) -> Option<NonZeroU64> {
         self.allocator.next
     }
+
+    #[cfg(test)]
+    pub(super) const fn set_next_node_for_test(&mut self, next: Option<NonZeroU64>) {
+        self.allocator.next = next;
+    }
 }
 
 impl StagedInitial {

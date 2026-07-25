@@ -9,6 +9,5 @@ mod transaction;
 
 pub use database::{
     InvalidEditSet, ParseFailure, ParseStatus, ParsedSource, SyntaxDatabase, SyntaxIdentityKind,
-    SyntaxIdentityMap, SyntaxNodeId,
 };
 pub use limits::SyntaxLimit;
