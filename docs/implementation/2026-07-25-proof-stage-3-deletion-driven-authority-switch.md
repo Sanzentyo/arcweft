@@ -198,6 +198,42 @@ This note records an in-progress atomic change. Completion requires focused
 syntax/HIR/consumer tests, workspace check and strict Clippy, normal workspace
 tests, Tier 2, structural audit, and a coherent push to `main`.
 
+## 2026-07-26 private-substrate evidence
+
+The current production working change remains intentionally unpushed because
+the compiler/project HIR authority cannot compile until the final item,
+expression, and statement contracts above return. The following rows are
+`WIP_UNVALIDATED_AT_WORKSPACE`, not landed completion claims:
+
+- attached expression/path/recovery accessors pass 13 focused tests and all 509
+  syntax library tests; strict syntax Clippy and workspace formatting pass;
+- the syntax public-API trybuild suite passes after updating one diagnostic-only
+  fully-qualified type path while preserving the same removed capability-policy
+  API constraint;
+- `slot.rs` is 657 production LOC after moving 544 LOC of unit tests to
+  `slot_tests.rs`; HIR library check and normal Clippy pass;
+- HIR strict Clippy remains blocked by 132 expected dead-code warnings from the
+  private, deliberately unconnected arena/slot records, rather than by a
+  compatibility suppression; and
+- the canonical structural audit reports zero errors and 150 repository-wide
+  warnings.
+
+The deleted lowering definitions remain absent. A direct migration inventory
+finds 559 `lower_to_hir` references in 58 Rust files, 109
+`lower_document_to_hir` references in 40 files, and a 91-file union. It also
+finds 310 detached-style `.typed_tree()` calls in 88 files and 46
+`.into_typed_tree()` calls in 23 files; the small attached-snapshot-internal
+`typed_tree()` set is a different, retained owner. These counts are one-off
+review evidence, not a checked-in source gate.
+
+Syntax lint, formatter sessions, compiler syntax facts, project-loader parse
+ownership, and the LSP document store can move to bound `ParsedSource` before
+the contracts return. Public `HirDatabase::lower`, compiler/project HIR,
+sema/runtime-plan/LSP HIR consumers, statement `if let`, and unsafe-audit edit
+projection remain explicitly blocked on `.2.1`, `.4`, or `.3` as applicable.
+The old functions must not be restored to make this intermediate checkout
+green.
+
 ## Repository policy
 
 The current `AGENTS.md` already requires root-cause deletion of obsolete
