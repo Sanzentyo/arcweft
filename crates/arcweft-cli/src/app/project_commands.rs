@@ -21,7 +21,6 @@ use arcweft_bundle::{
 };
 use arcweft_compiler::{
     incremental::{BuildSnapshotRequest, snapshot_compiled_project},
-    parse::parse_source_text,
     persistent::{
         ActualBytecodeUnitFactsInput, ActualLinkPlanFactsInput, BytecodeUnitFactsInput,
         HirBodyFactsInput, InterfaceSummaryFactsInput, LinkPlanFactsInput, ParsedSyntaxFactsInput,
@@ -36,6 +35,7 @@ use arcweft_compiler::{
     },
 };
 use arcweft_lang_sema::project_index::{ProgramHash, project_semantic_index_from_checked_project};
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_lang_syntax::source::ParsedSource;
 use arcweft_project::{
     artifact::{ArtifactKey, ArtifactKeyInput, ArtifactKind},
@@ -1224,7 +1224,7 @@ fn write_persistent_query_source(
         .iter()
         .find(|module| module.module() == source.module())
         .expect("compiled project contains every loaded source module");
-    let parsed = parse_source_text(source.source().to_owned());
+    let parsed = parse_document_with_source(Arc::clone(source.document()), ParseOptions::default());
     if !parsed.errors().is_empty() {
         eprintln!(
             "error: cannot persist parse facts for {} after a successful build: parser returned {} error(s)",

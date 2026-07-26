@@ -1,13 +1,13 @@
-use arcweft_compiler::parse::{lint_source_tree, parse_source_text};
+use arcweft_compiler::parse::lint_source_tree;
 use arcweft_lang_syntax::{
     ast::common::TextRange,
     lint::{SyntaxLint, SyntaxLintCode, SyntaxLintSeverity},
-    parser::recovery::ParseErrorKind,
+    parser::{parse_source, recovery::ParseErrorKind},
 };
 
 #[test]
-fn compiler_parser_facade_preserves_statement_error_owner() {
-    let parsed = parse_source_text("flow demo {\n    assert.assume(true)\n}\n");
+fn syntax_parser_preserves_statement_error_owner() {
+    let parsed = parse_source("flow demo {\n    assert.assume(true)\n}\n");
     let [error] = parsed.errors() else {
         panic!("expected one parser error");
     };
@@ -20,7 +20,7 @@ fn compiler_parser_facade_preserves_statement_error_owner() {
 
 #[test]
 fn compiler_lint_facade_preserves_independent_lint_owner() {
-    let parsed = parse_source_text("flow @flow.opening {\n}\n");
+    let parsed = parse_source("flow @flow.opening {\n}\n");
     assert!(parsed.errors().is_empty());
 
     let lints: Vec<SyntaxLint> = lint_source_tree(parsed.typed_tree());

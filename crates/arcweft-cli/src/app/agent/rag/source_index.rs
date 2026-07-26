@@ -5,9 +5,10 @@ use super::{
     ProjectSemanticIndex, QualifiedName, RagQuery, SearchChannel, SearchHit, SemaPublicId,
     SessionId, SourceAnchor, StableHash, agent_graph_edge_kind_counts,
     agent_graph_symbol_has_dynamic_control, agent_graph_symbol_kind_counts,
-    agent_program_graph_summary, agent_trace_kind_name, fs, hir, parse,
-    project_semantic_index_from_hir,
+    agent_program_graph_summary, agent_trace_kind_name, fs, hir, project_semantic_index_from_hir,
 };
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use std::sync::Arc;
 
 pub(in crate::app::agent) struct AgentSourceRagIndex {
     pub(in crate::app::agent) seed: String,
@@ -85,21 +86,26 @@ pub(in crate::app::agent) fn agent_source_rag_index(
 ) -> Result<AgentSourceRagIndex, String> {
     let source = fs::read_to_string(path)
         .map_err(|error| format!("agent rag query failed to read source: {error}"))?;
-    let document = crate::app::project::source_document_for_path(path, source.clone())
-        .map_err(|code| format!("agent rag source document is invalid: {code:?}"))?;
-    let parsed = parse::parse_source_text(source.clone());
+    let document = Arc::new(
+        crate::app::project::source_document_for_path(path, source.clone())
+            .map_err(|code| format!("agent rag source document is invalid: {code:?}"))?,
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     if !parsed.errors().is_empty() {
         return Err(format!(
             "agent rag query source parse errors: {:?}",
             parsed.errors()
         ));
     }
-    let hir = hir::lower_source_document(&document, parsed.typed_tree())
+    let hir = hir::lower_source_document(document.as_ref(), parsed.typed_tree())
         .map_err(|errors| format!("agent rag query source HIR errors: {errors:?}"))?;
     let source_hash = agent_content_hash(&source);
-    let project =
-        project_semantic_index_from_hir(&hir, ProgramHash::new(source_hash.clone()), &document)
-            .map_err(|error| format!("agent rag query failed to build project index: {error}"))?;
+    let project = project_semantic_index_from_hir(
+        &hir,
+        ProgramHash::new(source_hash.clone()),
+        document.as_ref(),
+    )
+    .map_err(|error| format!("agent rag query failed to build project index: {error}"))?;
     let source_file = DebugSourceFile {
         program_hash: StableHash::new(project.program_hash().as_str())
             .map_err(|error| format!("invalid source file program hash: {error}"))?,

@@ -1097,7 +1097,8 @@ struct HirBodyCounts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{hir::lower_source_tree, parse::parse_source_text};
+    use crate::hir::lower_source_tree;
+    use arcweft_lang_syntax::parser::parse_source;
     use arcweft_project::{
         fingerprint::NamedDigest,
         persistent_object::{AwboEnvelope, AwboError, CompilerBuildIdentity},
@@ -1150,7 +1151,7 @@ return "done"
 
     #[test]
     fn persistent_parse_facts_encode_deterministically() {
-        let parsed = parse_source_text(SOURCE);
+        let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
         let key = key(CompilerObjectKind::ParsedSyntax, &parsed);
         let input = ParsedSyntaxFactsInput {
@@ -1184,7 +1185,7 @@ return "done"
 
     #[test]
     fn persistent_hir_body_facts_round_trip_without_hir_serialization() {
-        let parsed = parse_source_text(SOURCE);
+        let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
         let tree = parsed.clone().into_typed_tree();
         let hir = lower_source_tree(&tree).expect("source lowers to HIR");
@@ -1211,7 +1212,7 @@ return "done"
 
     #[test]
     fn persistent_interface_summary_facts_round_trip_without_hir_serialization() {
-        let parsed = parse_source_text(SOURCE);
+        let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
         let tree = parsed.clone().into_typed_tree();
         let hir = lower_source_tree(&tree).expect("source lowers to HIR");
@@ -1249,7 +1250,7 @@ return "done"
     #[test]
     fn persistent_function_signature_digest_tracks_entity_family_arguments() {
         fn digest_for(source: &str) -> BuildDigest {
-            let parsed = parse_source_text(source);
+            let parsed = parse_source(source);
             assert!(parsed.errors().is_empty());
             let tree = parsed.into_typed_tree();
             let hir = lower_source_tree(&tree).expect("source lowers to HIR");
@@ -1280,7 +1281,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
     #[test]
     fn persistent_fact_builder_rejects_wrong_key_kind() {
-        let parsed = parse_source_text(SOURCE);
+        let parsed = parse_source(SOURCE);
         let key = key(CompilerObjectKind::HirBody, &parsed);
         let error = parsed_syntax_object(&ParsedSyntaxFactsInput {
             key: &key,
@@ -1300,7 +1301,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
     #[test]
     fn persistent_query_soft_miss_does_not_block_source_rebuild() {
-        let parsed = parse_source_text(SOURCE);
+        let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
         let key = key(CompilerObjectKind::ParsedSyntax, &parsed);
         let bytes = AwboEnvelope::new(
@@ -1324,7 +1325,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
             AwboError::KeyDigestMismatch,
         );
 
-        let rebuilt = parse_source_text(SOURCE);
+        let rebuilt = parse_source(SOURCE);
         assert!(rebuilt.errors().is_empty());
         let tree = rebuilt.clone().into_typed_tree();
         lower_source_tree(&tree).expect("source rebuild still lowers to HIR");
@@ -1332,7 +1333,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
     #[test]
     fn persistent_query_actual_bytecode_builder_produces_verified_reusable_payload() {
-        let parsed = parse_source_text(SOURCE);
+        let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
         let tree = parsed.clone().into_typed_tree();
         let hir = lower_source_tree(&tree).expect("source lowers to HIR");
@@ -1394,7 +1395,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
     #[test]
     fn persistent_query_actual_link_builder_keeps_ordered_descriptor() {
-        let parsed = parse_source_text(SOURCE);
+        let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
         let key = key(CompilerObjectKind::LinkPlan, &parsed);
         let ordered = vec![

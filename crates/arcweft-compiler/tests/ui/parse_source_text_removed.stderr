@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_compiler::parse::parse_source_text`
+ --> tests/ui/parse_source_text_removed.rs:1:5
+  |
+1 | use arcweft_compiler::parse::parse_source_text;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_source_text` in `parse`

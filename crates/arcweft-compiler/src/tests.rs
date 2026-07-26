@@ -48,7 +48,6 @@ use crate::{
         lower_source_runtime_plan_with_stats_and_options,
         lower_source_runtime_plan_with_typecheck_stats_and_options,
     },
-    parse::parse_source_text,
     source::compile_source,
 };
 
@@ -472,7 +471,7 @@ flow @flow.main main {
 
 #[test]
 fn runtime_plan_uses_typecheck_evidence_for_function_value_calls() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 flow @flow.main main() -> String {
     let ok: bool = f(1i64)
@@ -518,7 +517,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_reports_missing_typed_lowering_evidence() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 flow @flow.main main {
     let ok: bool = f(1i64)
@@ -554,7 +553,7 @@ flow @flow.main main {
 
 #[test]
 fn runtime_plan_uses_expected_function_evidence_for_placeholder_args() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 flow @flow.main main() -> String {
     let accepted: bool = accept(_ > 80i64)
@@ -612,7 +611,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_report_carries_closure_capture_metadata() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 flow @flow.main main() -> String {
     let limit: i64 = 80i64
@@ -663,7 +662,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_inferred_partial_placeholder_functions() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 #[pure]
 fn add(left: i64, right: i64) -> i64 {
@@ -761,7 +760,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_named_missing_inferred_helper_input() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 fn add(left: i64, right: i64) -> i64 {
     return left + right
@@ -808,7 +807,7 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn runtime_plan_lowers_typed_data_last_method_fallback() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 #[pure]
 fn above(min: i64, value: i64) -> bool {
@@ -889,7 +888,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_keeps_curried_source_and_local_method_fallback_staged() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 #[pure]
 fn above(min: i64)(value: i64) -> bool {
@@ -977,7 +976,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_fixed_literal_spread_data_last_method_fallback() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 #[pure]
 fn between(min: i64, max: i64, value: i64) -> bool {
@@ -1077,7 +1076,7 @@ fn assert_mixed_spread_data_last_stage(expr: &RuntimeExpr) {
 
 #[test]
 fn runtime_plan_lowers_data_last_pipe_call_with_typecheck() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 #[pure]
 fn add(lhs: i64, rhs: i64) -> i64 {
@@ -1158,7 +1157,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_binds_pipe_left_once_inside_if_let_expression() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 flow @flow.main main() -> i64 {
     let maybe = Some(7i64)
@@ -1224,7 +1223,7 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn runtime_plan_binds_pipe_left_once_inside_match_expression() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 flow @flow.main main() -> i64 {
     let ready = true
@@ -1289,7 +1288,7 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
@@ -1348,7 +1347,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_source_function_named_data_last_pipe_to_apply() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn choose(left: String, right: String) -> (String, String) {
     return (left, right)
@@ -1430,7 +1429,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_destructured_closure_parameter_application() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 flow @flow.main main() -> String {
     let choose = |(left, right): (String, String)| right
@@ -1484,7 +1483,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_named_missing_source_function_partial_call() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn choose(left: String, right: String) -> String {
     return right
@@ -1557,7 +1556,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_lowers_signature_fixed_literal_spread_apply() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn add(left: i64, right: i64) -> i64 {
     return left + right
@@ -1648,7 +1647,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_curried_source_function_value() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn pair(left: String)(right: String) -> (String, String) {
     return (left, right)
@@ -1740,7 +1739,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_lowers_function_value_fixed_literal_spread_apply() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn add(a: i64)(b: i64) -> i64 {
     return a + b
@@ -1816,7 +1815,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn function_value_numeric_spread_keeps_following_typed_evidence_aligned() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn sum(a: i64, b: i64) -> i64 {
     return a + b
@@ -1852,7 +1851,7 @@ flow main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_returned_closure() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn pairer(left: String) -> String -> (String, String) {
     return |right: String| (left, right)
@@ -1932,7 +1931,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_destructured_closure_let() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn choose_right(pair: (String, String)) -> String {
     let choose = |(left, right): (String, String)| right
@@ -2028,7 +2027,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_pure_helper_call_body() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 #[pure]
 fn add(left: i64, right: i64) -> i64 {
@@ -2131,7 +2130,7 @@ flow @flow.main main() -> i64 {
 }
 
 fn assert_source_fn_pure_helper_alias_body_lowers() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 #[pure]
 fn add(left: i64, right: i64) -> i64 {
@@ -2236,7 +2235,7 @@ flow @flow.main main() -> (String, i64) {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_exact_source_call_body() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn pair(left: String, right: String) -> (String, String) {
     return (left, right)
@@ -2320,7 +2319,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_exact_source_alias_body() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn pair(left: String, right: String) -> (String, String) {
     return (left, right)
@@ -2410,7 +2409,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_pure_helper_pipe_body() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 #[pure]
 fn add(left: i64, right: i64) -> i64 {
@@ -2531,7 +2530,7 @@ fn runtime_pipe_body_has_partial_and_exact_helper_apply(expr: &RuntimeExpr) -> b
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_named_source_pipe_body() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn pair(left: String, right: String) -> (String, String) {
     return (left, right)
@@ -2594,7 +2593,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_control_expression_body() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 fn choose_score(value: i64, ready: bool) -> i64 {
     let boosted = if ready { value + 10i64 } else { value }
@@ -2684,7 +2683,7 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_if_let_expression_body() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 fn choose_optional(maybe: Option<i64>, fallback: i64) -> i64 {
     let selected = if let .Some(value) = maybe when value > fallback {
@@ -2782,7 +2781,7 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_callback_param_call() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn use_loader(path: String, load: String -> String) -> String {
     return load(path)
@@ -2854,7 +2853,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_callback_partial_let() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn apply_suffix(prefix: String, combine: String -> String -> String, suffix: String) -> String {
     let with_prefix = combine(prefix)
@@ -2949,7 +2948,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_source_function_partial_when_body_calls() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
@@ -2992,7 +2991,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_source_function_partial_when_body_calls_unaccepted_source() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
@@ -3039,7 +3038,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_prefix_source_function_partial_when_body_calls() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
@@ -3082,7 +3081,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_bare_source_function_value_when_body_calls() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
@@ -3124,7 +3123,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_bare_source_function_value_when_body_calls_unaccepted_source() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
@@ -3170,7 +3169,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
@@ -3214,7 +3213,7 @@ flow @flow.main main() -> String {
 #[test]
 fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls_unaccepted_source()
  {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
@@ -3261,7 +3260,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_local_function_data_last_pipe_to_apply() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
@@ -3329,7 +3328,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_keeps_curried_data_last_pipe_groups_staged() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 #[pure]
 fn add(left: i64)(right: i64) -> i64 {
@@ -3374,7 +3373,7 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn runtime_plan_preserves_curried_call_group_application_samples() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 #[pure]
 fn tuple_tail(a: i64, b: i64)(c: i64) -> (i64, i64, i64) {
@@ -3422,7 +3421,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_uses_typecheck_evidence_across_source_exprs() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 flow @flow.main main() -> i64 {
     let warmup = 1i64
@@ -3480,7 +3479,7 @@ pub source @source.values: Source<i64, String> {
 
 #[test]
 fn runtime_plan_keeps_presentation_named_numeric_evidence_aligned() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r#"
 flow main() -> String {
     image(asset = @asset:.bg.pulse, id = "image.pulse", x = 1px, opacity = 0.5, depth = 7, param.count = 9, visible = true)
@@ -3580,7 +3579,7 @@ entry cli @entry.main {
 
 #[test]
 fn lower_source_runtime_plan_with_options_preserves_admitted_dialogue_profile() {
-    let parsed = parse_source_text(
+    let parsed = parse_source(
         r"
 character @character.alice Alice as alice {}
 
