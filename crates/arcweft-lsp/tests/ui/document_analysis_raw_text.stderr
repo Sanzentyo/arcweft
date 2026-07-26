@@ -1,0 +1,11 @@
+error[E0599]: no associated function or constant named `analyze` found for struct `DocumentAnalysis` in the current scope
+ --> tests/ui/document_analysis_raw_text.rs:6:31
+  |
+6 |     let _ = DocumentAnalysis::analyze("fn main() {}\n", PositionEncoding::Utf16, profile);
+  |                               ^^^^^^^ associated function or constant not found in `DocumentAnalysis`
+  |
+note: if you're trying to build a new `DocumentAnalysis`, consider using `DocumentAnalysis::analyze_snapshot` which returns `DocumentAnalysis`
+ --> src/diagnostics.rs
+  |
+  |     pub fn analyze_snapshot(snapshot: &DocumentSnapshot, profile: &LspProfile) -> Self {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

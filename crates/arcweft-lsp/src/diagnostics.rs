@@ -9,12 +9,11 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::{
     lint::{SyntaxLint, lint_id_policy},
-    parser::{parse_source, recovery::ParseError},
+    parser::{ParseOptions, parse_document_with_source, recovery::ParseError},
 };
 use arcweft_source::{
     Diagnostic as ArcDiagnostic, DiagnosticLabelStyle, DiagnosticSeverity as ArcDiagnosticSeverity,
-    SourceDocument, SourceDocumentId, SourceName, SourceRevision, SourceSpan,
-    SourceSpanValidationError,
+    SourceDocument, SourceSpan, SourceSpanValidationError,
 };
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
@@ -27,6 +26,7 @@ use lsp_types::{
     Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, NumberOrString,
     Position, PublishDiagnosticsParams, Range, Uri,
 };
+use std::sync::Arc;
 
 /// Analyzed document diagnostics plus source index used by feature handlers.
 #[derive(Clone, Debug)]
@@ -34,7 +34,7 @@ pub struct DocumentAnalysis {
     diagnostics: Vec<Diagnostic>,
     line_index: LineIndex,
     verification_report: Option<VerificationReport>,
-    source_revision: SourceRevision,
+    document: Arc<SourceDocument>,
 }
 
 /// Revision-validating adapter from shared Arcweft diagnostics to LSP values.
@@ -67,59 +67,45 @@ impl<'a> DiagnosticProjector<'a> {
 }
 
 impl DocumentAnalysis {
-    /// Runs syntax, HIR lowering, profile-aware type checking, and verifier diagnostics.
-    ///
-    /// # Panics
-    ///
-    /// Panics only if the current platform cannot represent the in-memory source length in a
-    /// revision-bound source identity.
-    pub fn analyze(source: &str, encoding: PositionEncoding, profile: &LspProfile) -> Self {
-        let document = SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-generated://lsp-document-analysis/0")
-                .expect("generated LSP document id is valid"),
-            SourceName::Generated,
-            source,
-        )
-        .expect("an in-memory LSP source fits the source document identity");
-        Self::analyze_document(&document, encoding, profile)
-    }
-
     fn analyze_document(
-        document: &SourceDocument,
-        encoding: PositionEncoding,
+        document: Arc<SourceDocument>,
+        line_index: LineIndex,
         profile: &LspProfile,
     ) -> Self {
-        let source = document.text();
-        let line_index = LineIndex::new(source.to_owned(), encoding);
+        let source_document = document.as_ref();
         let mut verification_report = None;
-        let parsed = parse_source(source.to_owned());
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         let mut diagnostics = parsed
             .errors()
             .iter()
-            .filter_map(|error| lsp_diagnostic_from_parse_error(error, &line_index, document).ok())
+            .filter_map(|error| {
+                lsp_diagnostic_from_parse_error(error, &line_index, source_document).ok()
+            })
             .collect::<Vec<_>>();
 
         if parsed.errors().is_empty() {
             diagnostics.extend(syntax_lint_diagnostics(
                 &lint_id_policy(parsed.typed_tree()),
                 &line_index,
-                document,
+                source_document,
             ));
-            match lower_document_to_hir(document, parsed.typed_tree()) {
+            match lower_document_to_hir(source_document, parsed.typed_tree()) {
                 Ok(hir) => {
                     let env = profile.typecheck_env();
-                    let resolve = resolve_diagnostics(&hir, &line_index, document);
+                    let resolve = resolve_diagnostics(&hir, &line_index, source_document);
                     if resolve.is_empty() {
-                        let readiness = readiness_diagnostics(&hir, &line_index, document);
+                        let readiness = readiness_diagnostics(&hir, &line_index, source_document);
                         if readiness.is_empty() {
                             let typecheck_report = analyze_types(&hir, &env);
                             diagnostics.extend(typecheck_diagnostics(
                                 &typecheck_report.diagnostics,
                                 &line_index,
-                                document,
+                                source_document,
                             ));
-                            diagnostics
-                                .extend(typecheck_warnings(&typecheck_report.warnings, document));
+                            diagnostics.extend(typecheck_warnings(
+                                &typecheck_report.warnings,
+                                source_document,
+                            ));
                             if typecheck_report.diagnostics.is_empty() {
                                 let report = verify_module_with_env(
                                     &hir,
@@ -146,9 +132,9 @@ impl DocumentAnalysis {
                 Err(errors) => {
                     diagnostics.extend(errors.into_iter().filter_map(|error| {
                         lsp_diagnostic_from_arcweft(
-                            &error.diagnostic(document),
+                            &error.diagnostic(source_document),
                             &line_index,
-                            document,
+                            source_document,
                         )
                         .ok()
                     }));
@@ -160,7 +146,7 @@ impl DocumentAnalysis {
             diagnostics,
             line_index,
             verification_report,
-            source_revision: document.identity().revision(),
+            document,
         }
     }
 
@@ -168,8 +154,8 @@ impl DocumentAnalysis {
     /// snapshot.
     pub fn analyze_snapshot(snapshot: &DocumentSnapshot, profile: &LspProfile) -> Self {
         Self::analyze_document(
-            snapshot.source_document(),
-            snapshot.line_index().position_encoding(),
+            Arc::clone(snapshot.source_document()),
+            snapshot.line_index().clone(),
             profile,
         )
     }
@@ -189,9 +175,9 @@ impl DocumentAnalysis {
         self.verification_report.as_ref()
     }
 
-    /// BLAKE3 revision of the exact UTF-8 source analyzed here.
-    pub const fn source_revision(&self) -> SourceRevision {
-        self.source_revision
+    /// Exact source-document lease retained by this analysis.
+    pub(crate) const fn source_document(&self) -> &Arc<SourceDocument> {
+        &self.document
     }
 }
 
@@ -521,8 +507,48 @@ mod tests {
     };
     use arcweft_runtime_host::RuntimeHostRunnerKind;
     use arcweft_source::{
-        DiagnosticApplicability, DiagnosticLabel, DiagnosticSuggestion, SourceEdit, SourceRange,
+        DiagnosticApplicability, DiagnosticLabel, DiagnosticSuggestion, SourceDocumentId,
+        SourceEdit, SourceName, SourceRange,
     };
+
+    fn analyze_fixture(
+        source: &str,
+        encoding: PositionEncoding,
+        profile: &LspProfile,
+    ) -> DocumentAnalysis {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-generated://lsp-document-analysis/fixture")
+                    .expect("fixture document ID"),
+                SourceName::Generated,
+                source,
+            )
+            .expect("fixture source document"),
+        );
+        let line_index = LineIndex::new(document.text(), encoding);
+        DocumentAnalysis::analyze_document(document, line_index, profile)
+    }
+
+    #[test]
+    fn document_analysis_retains_the_exact_source_lease() {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("file:///workspace/exact-analysis.arcw")
+                    .expect("fixture document ID"),
+                SourceName::path("exact-analysis.arcw"),
+                "fn main() {}\n",
+            )
+            .expect("fixture source document"),
+        );
+
+        let analysis = DocumentAnalysis::analyze_document(
+            Arc::clone(&document),
+            LineIndex::new(document.text(), PositionEncoding::Utf16),
+            &LspProfile::default_for_runner(RuntimeHostRunnerKind::Native),
+        );
+
+        assert!(Arc::ptr_eq(analysis.source_document(), &document));
+    }
 
     #[test]
     fn stale_span_is_not_published() {
@@ -706,7 +732,7 @@ mod tests {
                 (PositionEncoding::Utf16, utf16.clone()),
                 (PositionEncoding::Utf8, utf8.clone()),
             ] {
-                let analysis = DocumentAnalysis::analyze(&source, encoding, &profile);
+                let analysis = analyze_fixture(&source, encoding, &profile);
                 let diagnostic = analysis
                     .diagnostics()
                     .iter()
@@ -755,8 +781,7 @@ flow @.main main {
 }
 "#;
         let default_profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let default_analysis =
-            DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &default_profile);
+        let default_analysis = analyze_fixture(source, PositionEncoding::Utf16, &default_profile);
         assert!(default_analysis.diagnostics().iter().any(|diagnostic| {
             diagnostic
                 .message
@@ -795,7 +820,7 @@ flow @.main main {
             [],
         );
         let profile = LspProfile::new(adapter, RuntimeHostRunnerKind::Native);
-        let profile_analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let profile_analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
 
         assert!(
             profile_analysis.diagnostics().iter().any(|diagnostic| {
@@ -818,7 +843,7 @@ flow @flow.opening opening {
 }
 "#;
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
 
         assert!(
             !analysis.diagnostics().iter().any(|diagnostic| {
@@ -840,7 +865,7 @@ flow @flow.closure_numeric_fallback closure_numeric_fallback {
 }
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
         let diagnostic = analysis
             .diagnostics()
             .iter()
@@ -864,7 +889,7 @@ flow @flow.opening start {
 }
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
         let diagnostic = analysis
             .diagnostics()
             .iter()
@@ -879,7 +904,7 @@ flow @flow.opening start {
     fn parser_diagnostic_missing_as_preserves_utf16_payload_without_an_edit() {
         let source = "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
         let diagnostic = analysis
             .diagnostics()
             .iter()
@@ -922,7 +947,7 @@ flow @flow.opening start {
     fn parser_diagnostic_missing_as_maps_the_same_payload_to_utf8() {
         let source = "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf8, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf8, &profile);
         let diagnostic = analysis
             .diagnostics()
             .iter()
@@ -957,7 +982,7 @@ flow @flow.opening start {
     fn statement_unknown_mode_projects_as_parser_diagnostic() {
         let source = "flow demo {\n    assert.assume(true)\n}\n";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
         let [diagnostic] = analysis.diagnostics() else {
             panic!(
                 "expected one parser diagnostic, got {:?}",
@@ -982,7 +1007,7 @@ flow @flow.opening start {
     fn bare_flow_item_uses_generic_declaration_only_syntax_diagnostics() {
         let source = "alice: hello\npub character bob {}\n";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
         let diagnostic = analysis
             .diagnostics()
             .iter()
@@ -1016,7 +1041,7 @@ flow @flow.opening {
 }
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
         let diagnostic = analysis
             .diagnostics()
             .iter()
@@ -1037,7 +1062,7 @@ flow @flow.prologue {
 }
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
 
         assert!(!analysis.diagnostics().iter().any(|diagnostic| {
             diagnostic.code == Some(NumberOrString::String("AWF0002".into()))
@@ -1055,7 +1080,7 @@ flow @flow.opening start {
 }
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
 
         assert!(analysis.diagnostics().iter().any(|diagnostic| {
             diagnostic.code == Some(NumberOrString::String("AWF0104".into()))
@@ -1076,7 +1101,7 @@ flow @flow.opening start {
 pub type Payload = String | Bytes
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
 
         let diagnostic = analysis
             .diagnostics()
@@ -1102,7 +1127,7 @@ effects {}
 }
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
 
         let diagnostic = analysis
             .diagnostics()
@@ -1136,7 +1161,7 @@ effects { }
 }
 "#;
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
 
         let diagnostic = analysis
             .diagnostics()
@@ -1198,7 +1223,7 @@ effects { }
 }
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
 
         let diagnostic = analysis
             .diagnostics()
@@ -1240,7 +1265,7 @@ flow @flow.opening {
 }
 ";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = DocumentAnalysis::analyze(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
         let diagnostic = analysis
             .diagnostics()
             .iter()

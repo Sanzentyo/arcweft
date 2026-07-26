@@ -262,6 +262,7 @@ fn semantic_analysis_cache_is_exact_reused_and_bounded_per_open_uri() {
             .expect("open analysis")
             .analysis,
     );
+    assert_analysis_cache_requires_exact_source_lease(&session, &uri, first, &first_analysis);
     assert_code_actions_reuse_analysis(&session, &uri, &first_analysis);
 
     let second = first.replace("alice: one", "alice: two");
@@ -338,6 +339,43 @@ fn semantic_analysis_cache_is_exact_reused_and_bounded_per_open_uri() {
         ))
         .expect("close document");
     assert!(session.analyses_by_uri.is_empty());
+}
+
+fn assert_analysis_cache_requires_exact_source_lease(
+    session: &ArcweftLspSession,
+    uri: &Uri,
+    source: &str,
+    expected: &Arc<DocumentAnalysis>,
+) {
+    let open_snapshot = session.documents.get(uri).expect("open snapshot");
+    assert!(Arc::ptr_eq(
+        expected.source_document(),
+        open_snapshot.source_document()
+    ));
+    assert!(Arc::ptr_eq(
+        expected,
+        &session
+            .cached_analysis(open_snapshot)
+            .expect("exact source lease is cached")
+    ));
+
+    let mut independent_store = crate::documents::DocumentStore::default();
+    let equal_bytes_with_a_different_lease = independent_store.open(
+        DidOpenTextDocumentParams {
+            text_document: TextDocumentItem {
+                uri: uri.clone(),
+                language_id: "arcweft".to_owned(),
+                version: open_snapshot.version(),
+                text: source.to_owned(),
+            },
+        },
+        session.position_encoding,
+    );
+    assert!(
+        session
+            .cached_analysis(&equal_bytes_with_a_different_lease)
+            .is_none()
+    );
 }
 
 fn assert_notification_rebuilds_analysis(

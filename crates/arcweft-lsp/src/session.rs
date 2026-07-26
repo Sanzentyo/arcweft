@@ -10,7 +10,6 @@ use crate::profiles::{
 };
 use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
 use crate::uri_key::LspUriKey;
-use arcweft_source::SourceRevision;
 use arcweft_tooling::model::ToolingError;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response, ResponseError};
 use lsp_types::notification::{
@@ -59,7 +58,6 @@ pub struct ArcweftLspSession {
 #[derive(Debug)]
 struct CachedDocumentAnalysis {
     version: i32,
-    revision: SourceRevision,
     profile_generation: Option<AcceptedEnvironmentGeneration>,
     analysis: Arc<DocumentAnalysis>,
 }
@@ -608,7 +606,6 @@ impl ArcweftLspSession {
             LspUriKey::from_uri(snapshot.uri()),
             CachedDocumentAnalysis {
                 version: snapshot.version(),
-                revision: analysis.source_revision(),
                 profile_generation,
                 analysis: Arc::clone(&analysis),
             },
@@ -642,7 +639,6 @@ impl ArcweftLspSession {
     }
 
     fn cached_analysis(&self, snapshot: &DocumentSnapshot) -> Option<Arc<DocumentAnalysis>> {
-        let revision = SourceRevision::for_utf8(snapshot.text());
         let profile_generation = self
             .profile_for_uri(snapshot.uri())
             .accepted_environment()
@@ -651,8 +647,11 @@ impl ArcweftLspSession {
             .get(&LspUriKey::from_uri(snapshot.uri()))
             .filter(|cached| {
                 cached.version == snapshot.version()
-                    && cached.revision == revision
                     && cached.profile_generation == profile_generation
+                    && Arc::ptr_eq(
+                        cached.analysis.source_document(),
+                        snapshot.source_document(),
+                    )
             })
             .map(|cached| Arc::clone(&cached.analysis))
     }
