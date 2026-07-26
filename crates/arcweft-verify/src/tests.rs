@@ -260,7 +260,7 @@ fn proof_insertion_without_target_keeps_host_command() {
 }
 
 #[test]
-fn unsafe_audit_insertion_target_generates_source_edit() {
+fn unsafe_audit_command_waits_for_revision_bound_hir_source_component() {
     let report = report(
         r"
 flow @flow.unsafe_demo unsafe_demo {
@@ -278,17 +278,8 @@ flow @flow.unsafe_demo unsafe_demo {
         .flat_map(|diagnostic| diagnostic.actions.iter())
         .find(|action| action.kind == ToolActionKind::GenerateUnsafeAudit)
         .expect("missing unsafe audit exposes action");
-    let edit = action
-        .source_edit()
-        .expect("exact unsafe opening brace becomes replacement edit");
-
-    assert_eq!(edit.span().end, edit.span().start + 1);
-    assert_eq!(
-        edit.applicability(),
-        ToolActionApplicability::HasPlaceholders
-    );
-    assert!(edit.replacement().contains("reason = _"));
-    assert!(edit.replacement().contains("/// SAFETY: TODO"));
+    assert!(action.source_edit().is_none());
+    assert!(action.command.is_some());
 }
 
 #[test]

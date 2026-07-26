@@ -1224,47 +1224,6 @@ mod tests {
     }
 
     #[test]
-    fn verifier_unsafe_audit_replacement_action_becomes_workspace_edit() {
-        let uri = "file:///game/routes/opening.arcw"
-            .parse::<Uri>()
-            .expect("uri");
-        let report = VerificationReport {
-            policy: VerificationPolicy::default(),
-            diagnostics: vec![VerificationDiagnostic {
-                id: "d1".to_owned(),
-                severity: VerifySeverity::Warning,
-                message: "unsafe lifetime audit requires metadata".to_owned(),
-                source: None,
-                obligation: Some("obligation.0002".to_owned()),
-                related_ids: Vec::new(),
-                actions: vec![ToolAction {
-                    id: "action.generate_unsafe_audit".to_owned(),
-                    label: "Generate unsafe lifetime audit metadata".to_owned(),
-                    kind: ToolActionKind::GenerateUnsafeAudit,
-                    source_edit: Some(arcweft_verify::ToolActionSourceEdit {
-                        span: VerifySourceSpan { start: 31, end: 32 },
-                        replacement:
-                            " reason = _\n{\n    /// SAFETY: TODO: justify this unsafe lifetime block."
-                                .to_owned(),
-                        applicability: ToolActionApplicability::HasPlaceholders,
-                    }),
-                    command: None,
-                }],
-            }],
-            ..VerificationReport::default()
-        };
-
-        let actions = code_actions_from_report_with_mapper(&uri, &report, &TestMapper);
-
-        let edit = actions[0].edit.as_ref().expect("workspace edit");
-        let text_edit = &edit.changes.as_ref().expect("changes")[&uri][0];
-        assert_eq!(text_edit.range.start, Position::new(0, 31));
-        assert_eq!(text_edit.range.end, Position::new(0, 32));
-        assert!(text_edit.new_text.contains("reason = _"));
-        assert!(text_edit.new_text.contains("/// SAFETY: TODO"));
-    }
-
-    #[test]
     fn verifier_host_action_becomes_command_action() {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()

@@ -15,7 +15,7 @@ use arcweft_lang_hir::syntax::{
         common::TextRange,
         flow::{
             AwaitWith, FlowItem, LoopBlock, ScopeExprBlock, SelectBranchHead, Stmt, StmtMatchArm,
-            ThreadBlock, UnsafeAuditInsertion, WaitTarget,
+            ThreadBlock, WaitTarget,
         },
         ids::{EntityRefSyntax, IdRef},
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
@@ -331,7 +331,6 @@ pub enum SemanticProofTrust {
 pub struct SemanticUnsafeAuditSummary {
     pub id: String,
     pub source: Option<SemanticSourceSpan>,
-    pub audit_insertion: Option<SemanticSourceSpan>,
     pub has_reason: bool,
     pub has_safety_doc: bool,
 }
@@ -842,16 +841,9 @@ impl<'a> SemanticAnalyzer<'a> {
                 id,
                 reason,
                 has_safety_doc,
-                audit_insertion,
                 body,
             } => {
-                self.collect_unsafe_lifetime(
-                    id,
-                    reason.as_ref(),
-                    *has_safety_doc,
-                    audit_insertion.as_ref(),
-                    body,
-                );
+                self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body);
                 BlockFlow::from_fallthrough(facts)
             }
             _ => {
@@ -1023,15 +1015,8 @@ impl<'a> SemanticAnalyzer<'a> {
                 id,
                 reason,
                 has_safety_doc,
-                audit_insertion,
                 body,
-            } => self.collect_unsafe_lifetime(
-                id,
-                reason.as_ref(),
-                *has_safety_doc,
-                audit_insertion.as_ref(),
-                body,
-            ),
+            } => self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body),
             Stmt::If {
                 condition,
                 body,
@@ -1660,7 +1645,6 @@ impl<'a> SemanticAnalyzer<'a> {
         id: &IdRef,
         reason: Option<&Expr>,
         has_safety_doc: bool,
-        audit_insertion: Option<&UnsafeAuditInsertion>,
         body: &[Stmt],
     ) {
         let id = id_ref_label(id, "unsafe");
@@ -1671,8 +1655,6 @@ impl<'a> SemanticAnalyzer<'a> {
         self.report.unsafe_audits.push(SemanticUnsafeAuditSummary {
             id: id.clone(),
             source: None,
-            audit_insertion: audit_insertion
-                .map(|insertion| span_from_range(insertion.replacement_range())),
             has_reason: reason.is_some(),
             has_safety_doc,
         });

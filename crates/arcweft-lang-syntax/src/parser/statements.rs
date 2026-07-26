@@ -2,11 +2,10 @@ use super::assertion::{assertion_statement_candidate, parse_assertion_statement}
 use super::headers::parse_required_id_ref;
 use super::{
     AuthoredExpr, CstStmtKind, DeferOutcome, Expr, IdRef, ParseError, Parser, RawSyntax,
-    RelativeId, RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, UnsafeAuditInsertion,
-    WaitTarget, classify_stmt, parse_binding_pattern, parse_defer_outcome, parse_expr_lossy,
-    parse_pattern, parse_scope_expr_body, parse_stmt_lines, parse_thread_block_items,
-    parse_trigger_pattern, split_pattern_guard, split_top_level_binding,
-    split_top_level_keyword_once,
+    RelativeId, RelativeIdSpelling, ScopeExprBlock, Stmt, TextRange, WaitTarget, classify_stmt,
+    parse_binding_pattern, parse_defer_outcome, parse_expr_lossy, parse_pattern,
+    parse_scope_expr_body, parse_stmt_lines, parse_thread_block_items, parse_trigger_pattern,
+    split_pattern_guard, split_top_level_binding, split_top_level_keyword_once,
 };
 use crate::cst::{
     ArcweftPunctuation, CstBlockEvent, CstPunctuationScan, SyntaxParseStats,
@@ -571,7 +570,6 @@ fn parse_braced_stmt(
             body,
             base,
             body_base,
-            None,
             expressions,
         ));
     }
@@ -730,7 +728,6 @@ fn parse_unsafe_lifetime_block_with_context(
     body: &str,
     base: Option<usize>,
     body_base: Option<usize>,
-    audit_insertion: Option<UnsafeAuditInsertion>,
     expressions: &mut StmtExprContext<'_>,
 ) -> Stmt {
     let mut lines = head.lines().map(str::trim).filter(|line| !line.is_empty());
@@ -785,7 +782,6 @@ fn parse_unsafe_lifetime_block_with_context(
         id,
         reason,
         has_safety_doc,
-        audit_insertion,
         body: executable_body,
     }
 }
@@ -917,7 +913,6 @@ pub(super) fn parse_unsafe_lifetime_block(
     head: &str,
     body: &str,
     base: usize,
-    audit_insertion: Option<UnsafeAuditInsertion>,
     errors: &mut Vec<ParseError>,
 ) -> Stmt {
     let mut lines = head.lines().map(str::trim).filter(|line| !line.is_empty());
@@ -962,7 +957,6 @@ pub(super) fn parse_unsafe_lifetime_block(
         id,
         reason,
         has_safety_doc,
-        audit_insertion,
         body: parse_stmt_lines(&executable_body),
     }
 }

@@ -8,10 +8,10 @@ use super::{
     BlockStyle, ContentCall, CstBlockEvent, CstFlowItemKind, CstLetFlowItemKind, CstLine,
     CstLineEvents, CstPunctuationDeltas, CstStructuredFlowBlockKind, DeferOutcome, Flow, FlowInit,
     FlowItem, MappedDialogueSourceBuilder, ParseError, Parser, RawSyntax, ScopeBlock, Stmt,
-    SyntaxParseStats, TextRange, UnsafeAuditInsertion, flat_block_head, indentation,
-    is_await_with_head, is_expression_statement_call, is_typed_stmt, is_with_brace_head,
-    parse_await_with, parse_defer_outcome, parse_flat_fence, parse_line_options,
-    parse_line_plan_attachment, parse_owned_expr_recovering, parse_scope_head, parse_stmt_lines,
+    SyntaxParseStats, TextRange, flat_block_head, indentation, is_await_with_head,
+    is_expression_statement_call, is_typed_stmt, is_with_brace_head, parse_await_with,
+    parse_defer_outcome, parse_flat_fence, parse_line_options, parse_line_plan_attachment,
+    parse_owned_expr_recovering, parse_scope_head, parse_stmt_lines,
     parse_stmt_recovering_with_base, parse_thread_block, parse_unsafe_lifetime_block,
     parse_with_brace_label, retain_expr_recovery_diagnostic, split_call_head,
     split_top_level_keyword_once,
@@ -536,18 +536,10 @@ impl<'a> Parser<'a> {
             );
             return None;
         }
-        let audit_insertion = block
-            .body_range
-            .as_ref()
-            .and_then(|range| range.start.checked_sub(1))
-            .map(|open_brace| {
-                UnsafeAuditInsertion::new(TextRange::new(open_brace, open_brace + 1))
-            });
         Some(FlowItem::Stmt(parse_unsafe_lifetime_block(
             &block.head,
             &block.body,
             start_line.start,
-            audit_insertion,
             &mut self.errors,
         )))
     }
