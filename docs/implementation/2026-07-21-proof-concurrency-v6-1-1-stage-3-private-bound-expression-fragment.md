@@ -2,6 +2,13 @@
 
 Date: 2026-07-21
 
+Status: `HISTORICAL_PREDECESSOR_SUPERSEDED`
+
+The parse-at-attachment `BoundExpressionFragment` described here was deleted
+on 2026-07-27. Its replacement parses a source-free `UnboundFragment<K>` once
+and performs only checked exact-byte event attachment; see
+[`2026-07-27-proof-unbound-fragment-exact-attachment.md`](2026-07-27-proof-unbound-fragment-exact-attachment.md).
+
 ## Outcome
 
 This cut adds the smallest private fragment prerequisite for the accepted

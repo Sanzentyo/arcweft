@@ -60,6 +60,14 @@ pub(crate) enum SyntaxLookupError {
         expected: SyntaxKind,
         actual: SyntaxKind,
     },
+    #[error(
+        "syntax identity {id:?} has kind {actual:?}, which is outside the expected {expected:?} family"
+    )]
+    KindPredicateMismatch {
+        id: SyntaxNodeId,
+        expected: AstTag,
+        actual: SyntaxKind,
+    },
     #[error("syntax identity {id:?} has AST tag {actual:?}, expected {expected:?}")]
     AstTagMismatch {
         id: SyntaxNodeId,

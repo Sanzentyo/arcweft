@@ -43,17 +43,6 @@ impl<'a> DocumentLexer<'a> {
         }
     }
 
-    /// Lexes one already validated UTF-8 range as an independent fragment
-    /// while retaining document-absolute token ranges.
-    pub(super) const fn for_range(source: &'a str, range: SourceRange) -> Self {
-        Self {
-            source,
-            cursor: range.start(),
-            end: range.end(),
-            block_comment: None,
-        }
-    }
-
     pub(super) fn lex(mut self) -> Box<[LexToken]> {
         let mut tokens = Vec::new();
         while let Some(token) = self.next_token() {

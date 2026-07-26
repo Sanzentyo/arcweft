@@ -16,11 +16,11 @@ use super::family::{
 use super::node::{
     AssertionStatementKind, AstKind, AstNode, BinaryExpressionKind, BlockKind, CallArgumentKind,
     CallExpressionKind, DeclarationHeaderKind, DeclarationPublicIdKind, DialogueCallExpressionKind,
-    DocBlockKind, ExpressionBodyKind, ExpressionStatementKind, FixedParameterGroupKind,
-    FunctionTypeKind, GenericApplicationTypeKind, IfStatementKind, LetStatementKind,
-    MissingBodyKind, NameReferenceKind, OmittedBlockTailKind, OuterAttributeKind, ParameterKind,
-    PredicateBlockKind, PredicateBodyKind, ProofBlockKind, ProofBodyKind, ProofCallStatementKind,
-    RecordPatternFieldKind, RecordPatternKind, RichTextArgumentPayloadKind,
+    DocBlockKind, ExactAstKind, ExpressionBodyKind, ExpressionStatementKind,
+    FixedParameterGroupKind, FunctionTypeKind, GenericApplicationTypeKind, IfStatementKind,
+    LetStatementKind, MissingBodyKind, NameReferenceKind, OmittedBlockTailKind, OuterAttributeKind,
+    ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind, ProofBodyKind,
+    ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind, RichTextArgumentPayloadKind,
     RichTextArgumentTokenKind, RichTextArgumentValueKind, RichTextConditionPayloadKind,
     RichTextDialogueCallPayloadKind, RichTextEndTagKind, RichTextFxCallPayloadKind,
     RichTextInvalidArgumentKind, RichTextNamedArgumentKind, RichTextPositionalArgumentKind,
@@ -125,7 +125,7 @@ const fn role_class_is_ordinal(role: SyntaxRoleClass) -> bool {
 }
 
 impl<K: AstKind> AstNode<K> {
-    pub(crate) fn required_exact_child<C: AstKind>(
+    pub(crate) fn required_exact_child<C: ExactAstKind>(
         &self,
         role: SyntaxRole,
     ) -> Result<AstNode<C>, SyntaxAccessError> {
@@ -139,7 +139,7 @@ impl<K: AstKind> AstNode<K> {
         Ok(syntax.cast()?)
     }
 
-    pub(crate) fn optional_exact_child<C: AstKind>(
+    pub(crate) fn optional_exact_child<C: ExactAstKind>(
         &self,
         role: SyntaxRole,
     ) -> Result<Option<AstNode<C>>, SyntaxAccessError> {
@@ -149,7 +149,7 @@ impl<K: AstKind> AstNode<K> {
             .transpose()
     }
 
-    pub(crate) fn exact_children<C: AstKind>(
+    pub(crate) fn exact_children<C: ExactAstKind>(
         &self,
         role: SyntaxRole,
     ) -> Result<Vec<AstNode<C>>, SyntaxAccessError> {
@@ -195,7 +195,7 @@ impl<K: AstKind> AstNode<K> {
             .collect()
     }
 
-    pub(crate) fn ordered_exact_children<C: AstKind>(
+    pub(crate) fn ordered_exact_children<C: ExactAstKind>(
         &self,
         role: SyntaxRoleClass,
     ) -> Result<Vec<AstNode<C>>, SyntaxAccessError> {
@@ -219,7 +219,7 @@ impl<K: AstKind> AstNode<K> {
 }
 
 impl<F: FamilySpec> FamilyNode<F> {
-    pub(crate) fn required_exact_child<C: AstKind>(
+    pub(crate) fn required_exact_child<C: ExactAstKind>(
         &self,
         role: SyntaxRole,
     ) -> Result<AstNode<C>, SyntaxAccessError> {
@@ -233,7 +233,7 @@ impl<F: FamilySpec> FamilyNode<F> {
         Ok(syntax.cast()?)
     }
 
-    pub(crate) fn optional_exact_child<C: AstKind>(
+    pub(crate) fn optional_exact_child<C: ExactAstKind>(
         &self,
         role: SyntaxRole,
     ) -> Result<Option<AstNode<C>>, SyntaxAccessError> {
@@ -278,7 +278,7 @@ impl<F: FamilySpec> FamilyNode<F> {
             .collect()
     }
 
-    pub(crate) fn ordered_exact_children<C: AstKind>(
+    pub(crate) fn ordered_exact_children<C: ExactAstKind>(
         &self,
         role: SyntaxRoleClass,
     ) -> Result<Vec<AstNode<C>>, SyntaxAccessError> {

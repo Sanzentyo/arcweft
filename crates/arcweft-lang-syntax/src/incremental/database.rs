@@ -8,13 +8,11 @@ use arcweft_source::identity::{SourceGeneration, SourceSnapshotId};
 use arcweft_source::{SourceDocument, SourceEdit, SourceName, SourceSpan};
 use thiserror::Error;
 
-use super::bound::{
-    BoundExpressionFragment, BoundFragment, BoundFragmentKind, BoundParsedSource,
-    BoundPatternFragment, BoundStatementFragment, BoundTypeFragment, ExpressionFragment,
-    PatternFragment, StatementFragment, TypeFragment,
-};
+use super::bound::BoundParsedSource;
 #[cfg(test)]
 use crate::attachment::SyntaxSnapshotData;
+use crate::parser::fragment::ParseCompletion;
+use crate::parser::unbound_fragment::{AttachedFragment, FragmentKind, UnboundFragment};
 
 use super::limits::SyntaxLimit;
 use super::transaction;
@@ -146,6 +144,19 @@ pub enum ParseFailure {
     InternalInvariant,
 }
 
+/// Private predecessor of the final public fragment-attachment error.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum FragmentAttachmentFailure {
+    #[error("the fragment source identity or span does not match the target document")]
+    SourceMismatch,
+    #[error("only a complete standalone fragment can be attached: {completion:?}")]
+    FragmentNotComplete { completion: ParseCompletion },
+    #[error("the target source bytes do not exactly match the standalone fragment")]
+    FragmentTextMismatch,
+    #[error(transparent)]
+    Transaction(#[from] ParseFailure),
+}
+
 /// Failure to allocate a fresh syntax database session identity.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SyntaxDatabaseCreateError {
@@ -188,11 +199,11 @@ impl SyntaxDatabase {
         )
     }
 
-    /// Attaches one standalone expression to a database-owned private lineage.
+    /// Attaches one complete standalone fragment to a fresh private lineage.
     ///
-    /// The caller must provide the source identity explicitly. This private
-    /// predecessor never fabricates a source lineage and cannot be passed to
-    /// source-file HIR lowering as a [`ParsedSource`].
+    /// Attachment projects the retained grammar events into the exact target
+    /// span. It never parses the target document bytes again and cannot produce
+    /// a whole-source [`ParsedSource`].
     #[cfg_attr(
         not(test),
         allow(
@@ -200,96 +211,47 @@ impl SyntaxDatabase {
             reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
         )
     )]
-    pub(crate) fn parse_bound_expression_fragment(
+    pub(crate) fn attach_fragment<K: FragmentKind>(
         &mut self,
         snapshot: &SourceSnapshotId,
         document: &Arc<SourceDocument>,
         span: &SourceSpan,
-    ) -> Result<BoundExpressionFragment, ParseFailure> {
-        self.parse_bound_fragment_with_transaction_fault::<ExpressionFragment>(
+        fragment: UnboundFragment<K>,
+    ) -> Result<AttachedFragment<K>, FragmentAttachmentFailure> {
+        self.attach_fragment_with_transaction_fault(
             snapshot,
             document,
             span,
+            fragment,
             transaction::TransactionFault::None,
         )
     }
 
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
-        )
-    )]
-    pub(crate) fn parse_bound_type_fragment(
+    fn attach_fragment_with_transaction_fault<K: FragmentKind>(
         &mut self,
         snapshot: &SourceSnapshotId,
         document: &Arc<SourceDocument>,
         span: &SourceSpan,
-    ) -> Result<BoundTypeFragment, ParseFailure> {
-        self.parse_bound_fragment_with_transaction_fault::<TypeFragment>(
-            snapshot,
-            document,
-            span,
-            transaction::TransactionFault::None,
-        )
-    }
-
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
-        )
-    )]
-    pub(crate) fn parse_bound_pattern_fragment(
-        &mut self,
-        snapshot: &SourceSnapshotId,
-        document: &Arc<SourceDocument>,
-        span: &SourceSpan,
-    ) -> Result<BoundPatternFragment, ParseFailure> {
-        self.parse_bound_fragment_with_transaction_fault::<PatternFragment>(
-            snapshot,
-            document,
-            span,
-            transaction::TransactionFault::None,
-        )
-    }
-
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
-        )
-    )]
-    pub(crate) fn parse_bound_statement_fragment(
-        &mut self,
-        snapshot: &SourceSnapshotId,
-        document: &Arc<SourceDocument>,
-        span: &SourceSpan,
-    ) -> Result<BoundStatementFragment, ParseFailure> {
-        self.parse_bound_fragment_with_transaction_fault::<StatementFragment>(
-            snapshot,
-            document,
-            span,
-            transaction::TransactionFault::None,
-        )
-    }
-
-    fn parse_bound_fragment_with_transaction_fault<K: BoundFragmentKind>(
-        &mut self,
-        snapshot: &SourceSnapshotId,
-        document: &Arc<SourceDocument>,
-        span: &SourceSpan,
+        fragment: UnboundFragment<K>,
         transaction_fault: transaction::TransactionFault,
-    ) -> Result<BoundFragment<K>, ParseFailure> {
+    ) -> Result<AttachedFragment<K>, FragmentAttachmentFailure> {
         if snapshot.name() != document.display_name() || span.validate_for(document).is_err() {
-            return Err(ParseFailure::SourceMismatch);
+            return Err(FragmentAttachmentFailure::SourceMismatch);
         }
-        let staged =
-            self.transaction
-                .stage_fragment::<K>(snapshot, document, span, transaction_fault)?;
+        let (text, tree, completion) = fragment.into_parts();
+        if completion != ParseCompletion::Complete {
+            return Err(FragmentAttachmentFailure::FragmentNotComplete { completion });
+        }
+        if &document.text()[span.range().as_range()] != text.as_ref() {
+            return Err(FragmentAttachmentFailure::FragmentTextMismatch);
+        }
+        let staged = self.transaction.stage_fragment::<K>(
+            snapshot,
+            document,
+            span,
+            &tree,
+            transaction_fault,
+        )?;
         Ok(self.transaction.commit_fragment(staged))
     }
 
@@ -415,16 +377,18 @@ impl SyntaxDatabase {
     }
 
     #[cfg(test)]
-    fn parse_bound_fragment_with_attachment_failure<K: BoundFragmentKind>(
+    fn attach_fragment_with_attachment_failure<K: FragmentKind>(
         &mut self,
         snapshot: &SourceSnapshotId,
         document: &Arc<SourceDocument>,
         span: &SourceSpan,
-    ) -> Result<BoundFragment<K>, ParseFailure> {
-        self.parse_bound_fragment_with_transaction_fault::<K>(
+        fragment: UnboundFragment<K>,
+    ) -> Result<AttachedFragment<K>, FragmentAttachmentFailure> {
+        self.attach_fragment_with_transaction_fault(
             snapshot,
             document,
             span,
+            fragment,
             transaction::TransactionFault::MissingAttachment,
         )
     }

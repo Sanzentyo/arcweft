@@ -9,7 +9,7 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceRange};
 
 use super::error::SyntaxLookupError;
-use super::{AstKind, AstNode};
+use super::{AstKind, AstNode, ExactAstKind};
 use crate::grammar::build::GrammarEventPath;
 use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole};
 
@@ -379,7 +379,7 @@ impl SyntaxNodeHandle {
             .collect()
     }
 
-    pub(crate) fn cast<K: AstKind>(&self) -> Result<AstNode<K>, SyntaxLookupError> {
+    pub(crate) fn cast<K: ExactAstKind>(&self) -> Result<AstNode<K>, SyntaxLookupError> {
         AstNode::new(self.clone())
     }
 }

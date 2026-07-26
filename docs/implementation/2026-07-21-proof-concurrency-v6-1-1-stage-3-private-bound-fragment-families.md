@@ -2,6 +2,13 @@
 
 Date: 2026-07-21
 
+Status: `HISTORICAL_PREDECESSOR_SUPERSEDED`
+
+The document-range lexer and `BoundFragment<K>` model described here were
+deleted on 2026-07-27. The replacement retains one source-free grammar event
+tree and attaches it to exact matching bytes without reparsing; see
+[`2026-07-27-proof-unbound-fragment-exact-attachment.md`](2026-07-27-proof-unbound-fragment-exact-attachment.md).
+
 ## Outcome
 
 This cut completes the private fragment-family prerequisite for the accepted

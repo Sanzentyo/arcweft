@@ -7,6 +7,7 @@
 
 use arcweft_source::SourceDocument;
 use rowan::{GreenNode, GreenNodeBuilder};
+use std::sync::Arc;
 use thiserror::Error;
 
 use super::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
@@ -86,6 +87,7 @@ impl UnattachedGrammarIndex {
 /// Validated shadow grammar tree and its not-yet-attached metadata.
 #[derive(Clone, Debug)]
 pub(crate) struct GrammarBuild {
+    events: Arc<[SyntaxEvent]>,
     green: GreenNode,
     index: UnattachedGrammarIndex,
     missing_tokens: Box<[MissingTokenSite]>,
@@ -93,6 +95,10 @@ pub(crate) struct GrammarBuild {
 }
 
 impl GrammarBuild {
+    pub(crate) fn events(&self) -> &[SyntaxEvent] {
+        &self.events
+    }
+
     pub(crate) const fn green(&self) -> &GreenNode {
         &self.green
     }
@@ -142,12 +148,6 @@ pub(crate) enum GrammarBuildError {
     UnclosedNodes { open_nodes: usize },
     #[error("grammar stream has no source-file root")]
     MissingRoot,
-    #[error("fragment range {start}..{end} is invalid for {source_len} source bytes")]
-    InvalidFragmentRange {
-        start: usize,
-        end: usize,
-        source_len: usize,
-    },
     #[error("token event {event} has invalid range {start}..{end} for {source_len} bytes")]
     InvalidTokenRange {
         event: usize,
@@ -190,7 +190,15 @@ pub(crate) fn build_grammar(
     document: &SourceDocument,
     events: &[SyntaxEvent],
 ) -> Result<GrammarBuild, GrammarBuildError> {
-    validate_events(document, events)?;
+    build_grammar_text(document.text(), events)
+}
+
+/// Builds one validated grammar tree from source-relative events.
+pub(crate) fn build_grammar_text(
+    source: &str,
+    events: &[SyntaxEvent],
+) -> Result<GrammarBuild, GrammarBuildError> {
+    validate_events(source, events)?;
     super::budget::validate_events(events).map_err(GrammarBuildError::LimitExceeded)?;
 
     let mut builder = GreenNodeBuilder::new();
@@ -228,7 +236,7 @@ pub(crate) fn build_grammar(
                 });
             }
             SyntaxEvent::Token { kind, range } => {
-                let text = &document.text()[range.as_range()];
+                let text = &source[range.as_range()];
                 builder.token(rowan::SyntaxKind(*kind as u16), text);
                 advance_element(&mut stack, event_index)?;
             }
@@ -258,6 +266,7 @@ pub(crate) fn build_grammar(
     }
 
     Ok(GrammarBuild {
+        events: Arc::from(events),
         green: builder.finish(),
         index: UnattachedGrammarIndex {
             entries: entries.into_boxed_slice(),
@@ -278,11 +287,8 @@ fn advance_element(stack: &mut [OpenNode], event: usize) -> Result<(), GrammarBu
     Ok(())
 }
 
-fn validate_events(
-    document: &SourceDocument,
-    events: &[SyntaxEvent],
-) -> Result<(), GrammarBuildError> {
-    let mut validator = EventValidator::new(document.text());
+fn validate_events(source: &str, events: &[SyntaxEvent]) -> Result<(), GrammarBuildError> {
+    let mut validator = EventValidator::new(source);
     for (event_index, event) in events.iter().enumerate() {
         validator.accept(event_index, event)?;
     }
@@ -457,7 +463,7 @@ impl<'a> EventValidator<'a> {
 mod tests {
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
-    use super::{GrammarBuildError, build_grammar};
+    use super::{GrammarBuildError, build_grammar, build_grammar_text};
     use crate::grammar::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
     use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -625,5 +631,21 @@ mod tests {
                 kind: SyntaxKind::PathExpression,
             }
         );
+    }
+
+    #[test]
+    fn source_free_build_retains_the_exact_validated_event_transaction() {
+        let events = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::start(SyntaxKind::PathExpression, SyntaxRole::Element(0)),
+            SyntaxEvent::token(SyntaxKind::IdentifierToken, SourceRange::new(0, 1)),
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::token(SyntaxKind::EofToken, SourceRange::new(1, 1)),
+            SyntaxEvent::FinishNode,
+        ];
+
+        let built = build_grammar_text("x", &events).expect("source-free grammar build");
+        assert_eq!(built.green().to_string(), "x");
+        assert_eq!(built.events(), events);
     }
 }

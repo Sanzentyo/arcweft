@@ -8,7 +8,7 @@
 use arcweft_source::{SourceDocument, SourceRange};
 
 use crate::grammar::budget::GrammarBudget;
-use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar};
+use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar_text};
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -262,77 +262,57 @@ pub(crate) fn parse_shadow_document(
     })
 }
 
-/// Typed fragment family accepted by the private bound-fragment transaction.
+/// Grammar family accepted by standalone fragment parsing.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum ShadowFragmentKind {
+pub(super) enum FragmentGrammar {
     Expression,
     Type,
     Pattern,
     Statement,
 }
 
-/// Parses one standalone fragment through the shared lexer, grammar emitters,
-/// event budget, recovery, and lossless root transaction.
-pub(crate) fn parse_shadow_fragment(
-    document: &SourceDocument,
-    span: SourceRange,
-    kind: ShadowFragmentKind,
+/// Parses one source-free fragment through the shared lexer and grammar.
+pub(super) fn parse_unbound_fragment(
+    source: &str,
+    grammar: FragmentGrammar,
 ) -> Result<GrammarBuild, GrammarBuildError> {
-    document
-        .span(span)
-        .map_err(|_| GrammarBuildError::InvalidFragmentRange {
-            start: span.start(),
-            end: span.end(),
-            source_len: document.text().len(),
-        })?;
-    let tokens = DocumentLexer::for_range(document.text(), span).lex();
-    build_shadow_root(document, &tokens, |tokens, events, budget| {
-        if span.start() > 0 {
-            push_event(
-                events,
-                budget,
-                SyntaxEvent::token(SyntaxKind::TextToken, SourceRange::new(0, span.start())),
-            );
-        }
-        let mut parser = ShadowDocumentParser::for_fragment(
-            document.text(),
-            tokens,
-            span.start(),
-            events,
-            budget,
-        );
+    let tokens = DocumentLexer::new(source).lex();
+    build_shadow_root_text(source, &tokens, |tokens, events, budget| {
+        let mut parser = ShadowDocumentParser::for_fragment(source, tokens, 0, events, budget);
         parser.bump_trivia();
-        match kind {
-            ShadowFragmentKind::Expression => {
+        match grammar {
+            FragmentGrammar::Expression => {
                 emit_expression(&mut parser, tokens.len(), SyntaxRole::Element(0));
             }
-            ShadowFragmentKind::Type => {
+            FragmentGrammar::Type => {
                 emit_type(&mut parser, tokens.len(), SyntaxRole::Element(0));
             }
-            ShadowFragmentKind::Pattern => {
+            FragmentGrammar::Pattern => {
                 emit_pattern(&mut parser, tokens.len(), SyntaxRole::Element(0));
             }
-            ShadowFragmentKind::Statement => {
+            FragmentGrammar::Statement => {
                 emit_statement_fragment(&mut parser, tokens.len(), SyntaxRole::Element(0));
             }
         }
         while parser.bump().is_some() {}
-        if span.end() < document.text().len() {
-            push_event(
-                events,
-                budget,
-                SyntaxEvent::token(
-                    SyntaxKind::TextToken,
-                    SourceRange::new(span.end(), document.text().len()),
-                ),
-            );
-        }
         Ok(())
     })
 }
 
 fn build_shadow_root(
     document: &SourceDocument,
+    tokens: &[LexToken],
+    emit_body: impl FnOnce(
+        &[LexToken],
+        &mut Vec<SyntaxEvent>,
+        &mut GrammarBudget,
+    ) -> Result<(), GrammarBuildError>,
+) -> Result<GrammarBuild, GrammarBuildError> {
+    build_shadow_root_text(document.text(), tokens, emit_body)
+}
+
+fn build_shadow_root_text(
+    source: &str,
     tokens: &[LexToken],
     emit_body: impl FnOnce(
         &[LexToken],
@@ -354,12 +334,12 @@ fn build_shadow_root(
         &mut budget,
         SyntaxEvent::token(
             SyntaxKind::EofToken,
-            SourceRange::new(document.text().len(), document.text().len()),
+            SourceRange::new(source.len(), source.len()),
         ),
     );
     finish_event(&mut events, &mut budget);
     budget_failure(&budget)?;
-    build_grammar(document, &events)
+    build_grammar_text(source, &events)
 }
 
 fn emit_logical_lines(

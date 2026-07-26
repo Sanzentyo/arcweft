@@ -5,17 +5,20 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use arcweft_source::identity::SourceSnapshotId;
-use arcweft_source::{SourceDocument, SourceSpan};
+use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
 use crate::attachment::{
     GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData,
     SyntaxSnapshotId, attach_typed_tree,
 };
-use crate::grammar::build::{GrammarBuild, GrammarBuildError};
+use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar};
+use crate::grammar::event::SyntaxEvent;
+use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::incremental::shape::{GrammarShapeError, GrammarShapeNode};
-use crate::parser::{parse_shadow_document, parse_shadow_fragment};
+use crate::parser::parse_shadow_document;
+use crate::parser::unbound_fragment::{AttachedFragment, FragmentKind, FragmentTree};
 
-use super::bound::{BoundFragment, BoundFragmentKind, BoundParsedSource};
+use super::bound::BoundParsedSource;
 use super::{ParseFailure, SyntaxIdentityKind, reconcile};
 
 #[derive(Debug)]
@@ -52,9 +55,8 @@ pub(super) struct StagedReparse {
     lineage: SyntaxLineageState,
 }
 
-#[derive(Debug)]
-pub(super) struct StagedFragment<K> {
-    fragment: BoundFragment<K>,
+pub(super) struct StagedFragment<K: FragmentKind> {
+    fragment: AttachedFragment<K>,
     next_lineage: Option<NonZeroU64>,
 }
 
@@ -100,17 +102,26 @@ impl SyntaxTransactionState {
         })
     }
 
-    pub(super) fn stage_fragment<K: BoundFragmentKind>(
+    pub(super) fn stage_fragment<K: FragmentKind>(
         &self,
         source: &SourceSnapshotId,
         document: &Arc<SourceDocument>,
         span: &SourceSpan,
+        tree: &FragmentTree,
         fault: TransactionFault,
     ) -> Result<StagedFragment<K>, ParseFailure> {
-        let build = parse_shadow_fragment(document, span.range(), K::GRAMMAR)
-            .map_err(|error| map_grammar_build_failure(&error))?;
+        let build = project_fragment_tree(document, span.range(), tree)?;
         let staged = self.stage_fresh_attachment(source, document, build, fault)?;
-        let fragment = BoundFragment::<K>::try_new(staged.syntax, &staged.build, span.clone())?;
+        let root = staged
+            .syntax
+            .root_handle()
+            .child(SyntaxRole::Element(0))
+            .ok_or(ParseFailure::InternalInvariant)?;
+        let root = staged
+            .syntax
+            .typed_node::<K::AstKind>(root.id())
+            .map_err(|_| ParseFailure::InternalInvariant)?;
+        let fragment = AttachedFragment::new(staged.syntax, root);
         Ok(StagedFragment {
             fragment,
             next_lineage: staged.next_lineage,
@@ -150,7 +161,10 @@ impl SyntaxTransactionState {
         staged.lineage
     }
 
-    pub(super) fn commit_fragment<K>(&mut self, staged: StagedFragment<K>) -> BoundFragment<K> {
+    pub(super) fn commit_fragment<K: FragmentKind>(
+        &mut self,
+        staged: StagedFragment<K>,
+    ) -> AttachedFragment<K> {
         self.next_lineage = staged.next_lineage;
         staged.fragment
     }
@@ -256,9 +270,78 @@ impl GrammarNodeAllocator {
 fn map_grammar_build_failure(error: &GrammarBuildError) -> ParseFailure {
     match error {
         GrammarBuildError::LimitExceeded(limit) => ParseFailure::LimitExceeded(*limit),
-        GrammarBuildError::InvalidFragmentRange { .. } => ParseFailure::SourceMismatch,
         _ => ParseFailure::InternalInvariant,
     }
+}
+
+fn project_fragment_tree(
+    document: &SourceDocument,
+    target: SourceRange,
+    tree: &FragmentTree,
+) -> Result<GrammarBuild, ParseFailure> {
+    let events = tree.events();
+    if events.len() < 3
+        || events.first()
+            != Some(&SyntaxEvent::start(
+                SyntaxKind::SourceFile,
+                SyntaxRole::Root,
+            ))
+        || events.last() != Some(&SyntaxEvent::FinishNode)
+    {
+        return Err(ParseFailure::InternalInvariant);
+    }
+
+    let fragment_len = target
+        .end()
+        .checked_sub(target.start())
+        .ok_or(ParseFailure::InternalInvariant)?;
+    let eof_index = events.len() - 2;
+    if events[eof_index]
+        != SyntaxEvent::token(
+            SyntaxKind::EofToken,
+            SourceRange::new(fragment_len, fragment_len),
+        )
+        || events[1..eof_index].iter().any(|event| {
+            matches!(
+                event,
+                SyntaxEvent::Token {
+                    kind: SyntaxKind::EofToken,
+                    ..
+                }
+            )
+        })
+    {
+        return Err(ParseFailure::InternalInvariant);
+    }
+
+    let mut projected = Vec::with_capacity(events.len() + 2);
+    projected.push(SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root));
+    if target.start() > 0 {
+        projected.push(SyntaxEvent::token(
+            SyntaxKind::TextToken,
+            SourceRange::new(0, target.start()),
+        ));
+    }
+    for event in &events[1..eof_index] {
+        projected.push(
+            event
+                .rebased(target.start())
+                .ok_or(ParseFailure::InternalInvariant)?,
+        );
+    }
+    if target.end() < document.text().len() {
+        projected.push(SyntaxEvent::token(
+            SyntaxKind::TextToken,
+            SourceRange::new(target.end(), document.text().len()),
+        ));
+    }
+    projected.push(SyntaxEvent::token(
+        SyntaxKind::EofToken,
+        SourceRange::new(document.text().len(), document.text().len()),
+    ));
+    projected.push(SyntaxEvent::FinishNode);
+
+    build_grammar(document, &projected).map_err(|error| map_grammar_build_failure(&error))
 }
 
 const fn map_grammar_shape_failure(_: GrammarShapeError) -> ParseFailure {

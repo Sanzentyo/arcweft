@@ -7,10 +7,23 @@ use arcweft_source::SourceRange;
 use super::{SyntaxLookupError, SyntaxNodeHandle, SyntaxNodeId, SyntaxSnapshotId};
 use crate::grammar::kinds::{AstTag, SyntaxKind};
 
+mod sealed {
+    pub trait Sealed {}
+}
+
 /// Exact grammar-kind marker owned by the syntax crate.
-pub(crate) trait AstKind: Copy + 'static {
-    const KIND: SyntaxKind;
+pub(crate) trait AstKind: sealed::Sealed + Copy + 'static {
     const TAG: AstTag;
+
+    fn accepts(kind: SyntaxKind) -> bool;
+
+    fn exact_kind() -> Option<SyntaxKind> {
+        None
+    }
+}
+
+pub(crate) trait ExactAstKind: AstKind {
+    const KIND: SyntaxKind;
 }
 
 macro_rules! define_ast_kinds {
@@ -23,9 +36,22 @@ macro_rules! define_ast_kinds {
             #[derive(Clone, Copy, Debug, Eq, PartialEq)]
             pub(crate) struct $marker;
 
+            impl sealed::Sealed for $marker {}
+
             impl AstKind for $marker {
-                const KIND: SyntaxKind = SyntaxKind::$kind;
                 const TAG: AstTag = AstTag::$tag;
+
+                fn accepts(kind: SyntaxKind) -> bool {
+                    kind == SyntaxKind::$kind
+                }
+
+                fn exact_kind() -> Option<SyntaxKind> {
+                    Some(SyntaxKind::$kind)
+                }
+            }
+
+            impl ExactAstKind for $marker {
+                const KIND: SyntaxKind = SyntaxKind::$kind;
             }
         )+
 
@@ -35,6 +61,40 @@ macro_rules! define_ast_kinds {
         ];
     };
 }
+
+macro_rules! define_fragment_root_kind {
+    ($marker:ident, $tag:ident, $accepts:expr) => {
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        pub(crate) struct $marker;
+
+        impl sealed::Sealed for $marker {}
+
+        impl AstKind for $marker {
+            const TAG: AstTag = AstTag::$tag;
+
+            fn accepts(kind: SyntaxKind) -> bool {
+                ($accepts)(kind)
+            }
+        }
+    };
+}
+
+define_fragment_root_kind!(
+    ExpressionFragmentRootKind,
+    Expression,
+    SyntaxKind::is_expression
+);
+define_fragment_root_kind!(TypeFragmentRootKind, Type, SyntaxKind::is_type_node);
+define_fragment_root_kind!(
+    PatternFragmentRootKind,
+    Pattern,
+    SyntaxKind::is_pattern_node
+);
+define_fragment_root_kind!(
+    StatementFragmentRootKind,
+    Statement,
+    SyntaxKind::is_statement
+);
 
 define_ast_kinds!(SOURCE_FILE_MARKERS, SourceFile;
     SourceFileKind => SourceFile,
@@ -333,7 +393,7 @@ impl<K: AstKind> core::fmt::Debug for AstNode<K> {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         formatter
             .debug_struct("AstNode")
-            .field("kind", &K::KIND)
+            .field("kind", &self.syntax.kind())
             .field("tag", &K::TAG)
             .field("id", &self.id())
             .field("snapshot", self.snapshot_id())
@@ -351,18 +411,25 @@ impl<K: AstKind> Eq for AstNode<K> {}
 
 impl<K: AstKind> AstNode<K> {
     pub(super) fn new(syntax: SyntaxNodeHandle) -> Result<Self, SyntaxLookupError> {
-        if syntax.kind() != K::KIND {
-            return Err(SyntaxLookupError::KindMismatch {
-                id: syntax.id(),
-                expected: K::KIND,
-                actual: syntax.kind(),
-            });
-        }
         if syntax.tag() != K::TAG {
             return Err(SyntaxLookupError::AstTagMismatch {
                 id: syntax.id(),
                 expected: K::TAG,
                 actual: syntax.tag(),
+            });
+        }
+        if !K::accepts(syntax.kind()) {
+            return Err(match K::exact_kind() {
+                Some(expected) => SyntaxLookupError::KindMismatch {
+                    id: syntax.id(),
+                    expected,
+                    actual: syntax.kind(),
+                },
+                None => SyntaxLookupError::KindPredicateMismatch {
+                    id: syntax.id(),
+                    expected: K::TAG,
+                    actual: syntax.kind(),
+                },
             });
         }
         Ok(Self {
@@ -413,9 +480,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use super::{
-        ATTRIBUTE_MARKERS, BODY_MARKERS, DECLARATION_PART_MARKERS, DELIMITER_MARKERS,
-        EXPRESSION_MARKERS, ITEM_MARKERS, NAME_MARKERS, PATH_MARKERS, PATTERN_MARKERS,
-        RECOVERY_MARKERS, RICH_TEXT_MARKERS, SOURCE_FILE_MARKERS, STATEMENT_MARKERS, TYPE_MARKERS,
+        ATTRIBUTE_MARKERS, AstKind, BODY_MARKERS, DECLARATION_PART_MARKERS, DELIMITER_MARKERS,
+        EXPRESSION_MARKERS, ExpressionFragmentRootKind, ITEM_MARKERS, NAME_MARKERS, PATH_MARKERS,
+        PATTERN_MARKERS, PatternFragmentRootKind, RECOVERY_MARKERS, RICH_TEXT_MARKERS,
+        SOURCE_FILE_MARKERS, STATEMENT_MARKERS, StatementFragmentRootKind, TYPE_MARKERS,
+        TypeFragmentRootKind,
     };
     use crate::grammar::kinds::{AstTag, IdentityClass, SyntaxKind};
 
@@ -458,5 +527,29 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn fragment_root_markers_accept_only_their_typed_node_family() {
+        assert!(ExpressionFragmentRootKind::accepts(
+            SyntaxKind::BinaryExpression
+        ));
+        assert!(ExpressionFragmentRootKind::accepts(
+            SyntaxKind::MissingExpression
+        ));
+        assert!(!ExpressionFragmentRootKind::accepts(SyntaxKind::PathType));
+
+        assert!(TypeFragmentRootKind::accepts(
+            SyntaxKind::GenericApplicationType
+        ));
+        assert!(!TypeFragmentRootKind::accepts(SyntaxKind::BindingPattern));
+
+        assert!(PatternFragmentRootKind::accepts(SyntaxKind::VariantPattern));
+        assert!(!PatternFragmentRootKind::accepts(SyntaxKind::LetStatement));
+
+        assert!(StatementFragmentRootKind::accepts(SyntaxKind::LetStatement));
+        assert!(!StatementFragmentRootKind::accepts(
+            SyntaxKind::CallExpression
+        ));
     }
 }

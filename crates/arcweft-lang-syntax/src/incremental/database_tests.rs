@@ -1,4 +1,6 @@
-use super::{ParseFailure, ParsedSource, SyntaxDatabase, SyntaxIdentityKind};
+use super::{
+    FragmentAttachmentFailure, ParseFailure, ParsedSource, SyntaxDatabase, SyntaxIdentityKind,
+};
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 use core::num::NonZeroU64;
@@ -8,6 +10,11 @@ use std::sync::Arc;
 
 use crate::attachment::{PredicateItemKind, SyntaxLookupError, SyntaxNodeHandle};
 use crate::grammar::kinds::SyntaxKind as GrammarKind;
+use crate::parser::fragment::{ParseCompletion, ParseOptions};
+use crate::parser::unbound_fragment::{
+    AttachedFragment, FragmentKind, UnboundFragment, parse_expression_fragment,
+    parse_pattern_fragment, parse_statement_fragment, parse_type_fragment,
+};
 
 fn source_document(name: &SourceName, text: impl Into<Arc<str>>) -> Arc<SourceDocument> {
     Arc::new(
@@ -28,6 +35,38 @@ fn source_span(document: &SourceDocument, range: SourceRange) -> arcweft_source:
     document
         .span(range)
         .expect("valid span in the exact test source revision")
+}
+
+fn attach_exact_fragment<K: FragmentKind>(
+    database: &mut SyntaxDatabase,
+    snapshot: &SourceSnapshotId,
+    document: &Arc<SourceDocument>,
+    fragment_text: &str,
+    fragment: UnboundFragment<K>,
+    expected_kind: GrammarKind,
+) -> AttachedFragment<K> {
+    let start = document
+        .text()
+        .find(fragment_text)
+        .expect("fragment text in target document");
+    let span = source_span(
+        document,
+        SourceRange::new(start, start + fragment_text.len()),
+    );
+    let attached = database
+        .attach_fragment(snapshot, document, &span, fragment)
+        .expect("complete exact-byte fragment attaches");
+    assert_eq!(attached.root().kind(), expected_kind);
+    assert_eq!(
+        attached.root().range(),
+        SourceRange::new(start, start + fragment_text.len())
+    );
+    assert_eq!(
+        attached.syntax().root_handle().rowan().to_string(),
+        document.text()
+    );
+    assert_eq!(attached.syntax().document().identity(), document.identity());
+    attached
 }
 
 fn source_edit(
@@ -811,54 +850,50 @@ fn private_bound_reparse_replaces_diagnostics_without_mutating_the_old_snapshot(
 }
 
 #[test]
-fn private_bound_expression_fragment_owns_one_attached_expression_lineage() {
-    let name = SourceName::path("bound-expression-fragment.arcw");
-    let source = "  left(1) + right  ";
+fn attached_expression_fragment_owns_one_fresh_lineage_and_exact_source_span() {
+    let name = SourceName::path("attached-expression-fragment.arcw");
+    let source = "before value? after";
+    let fragment_text = "value?";
+    let fragment_start = source.find(fragment_text).expect("fragment text");
+    let fragment_end = fragment_start + fragment_text.len();
     let snapshot = SourceSnapshotId::initial(name.clone());
     let document = source_document(&name, source);
-    let span = source_span(&document, SourceRange::new(0, source.len()));
-    let identity = document.identity().clone();
+    let span = source_span(&document, SourceRange::new(fragment_start, fragment_end));
     let mut database = syntax_database();
+
+    let unbound = parse_expression_fragment(fragment_text, ParseOptions::default());
+    assert_eq!(unbound.text(), fragment_text);
+    assert_eq!(unbound.completion(), &ParseCompletion::Complete);
+    assert!(unbound.diagnostics().is_empty());
     let fragment = database
-        .parse_bound_expression_fragment(&snapshot, &document, &span)
-        .expect("standalone expression attaches to a private lineage");
-    let expression_start = source.find("left").unwrap();
-    let expression_end = source.rfind("right").unwrap() + "right".len();
+        .attach_fragment(&snapshot, &document, &span, unbound)
+        .expect("complete expression attaches without reparsing");
 
     assert_eq!(fragment.snapshot_id().source(), &snapshot);
-    assert_eq!(fragment.document().identity(), &identity);
-    assert_eq!(fragment.document().text(), source);
-    assert_eq!(fragment.span(), &span);
-    assert_eq!(fragment.status(), super::ParseStatus::Clean);
-    assert!(fragment.diagnostics().is_empty());
-    assert_eq!(fragment.root().kind(), GrammarKind::BinaryExpression);
-    assert_eq!(
-        fragment.root().role(),
-        crate::grammar::kinds::SyntaxRole::Element(0)
-    );
+    assert_eq!(fragment.root().kind(), GrammarKind::TryExpression);
     assert_eq!(
         fragment.root().range(),
-        SourceRange::new(expression_start, expression_end)
-    );
-    assert_eq!(
-        fragment.root().parent().expect("source-file root").kind(),
-        GrammarKind::SourceFile
+        SourceRange::new(fragment_start, fragment_end)
     );
     assert_eq!(
         fragment
+            .root()
             .syntax()
-            .root_handle()
-            .child(crate::grammar::kinds::SyntaxRole::Element(0))
-            .expect("attached expression child"),
-        fragment.root().clone()
+            .parent()
+            .expect("source-file root")
+            .kind(),
+        GrammarKind::SourceFile
     );
     assert_eq!(fragment.syntax().root_handle().rowan().to_string(), source);
 
-    let second_document = source_document(&name, source);
-    let second_span = source_span(&second_document, SourceRange::new(0, source.len()));
     let second = database
-        .parse_bound_expression_fragment(&snapshot, &second_document, &second_span)
-        .expect("each explicit fragment attachment owns a fresh lineage");
+        .attach_fragment(
+            &snapshot,
+            &document,
+            &span,
+            parse_expression_fragment(fragment_text, ParseOptions::default()),
+        )
+        .expect("each explicit attachment owns a fresh lineage");
     assert_ne!(
         fragment.snapshot_id().lineage(),
         second.snapshot_id().lineage()
@@ -867,390 +902,195 @@ fn private_bound_expression_fragment_owns_one_attached_expression_lineage() {
 }
 
 #[test]
-fn private_bound_expression_fragment_retains_postfix_try_root_and_exact_span() {
-    let name = SourceName::path("bound-postfix-try-fragment.arcw");
-    let source = "before value? after";
-    let fragment_start = source.find("value?").unwrap();
-    let fragment_end = fragment_start + "value?".len();
+fn every_final_fragment_family_attaches_its_typed_root_at_the_exact_span() {
+    let name = SourceName::path("attached-fragment-families.arcw");
+    let source = concat!(
+        "prefix\n",
+        "left + right\n",
+        "Result<String, Error>\n",
+        ".Some(mut value)\n",
+        "let answer: I32 = call(1);\n",
+        "suffix",
+    );
     let snapshot = SourceSnapshotId::initial(name.clone());
     let document = source_document(&name, source);
-    let span = source_span(&document, SourceRange::new(fragment_start, fragment_end));
     let mut database = syntax_database();
-    let fragment = database
-        .parse_bound_expression_fragment(&snapshot, &document, &span)
-        .expect("postfix Try fragment attaches to one private lineage");
 
-    assert_eq!(fragment.span(), &span);
-    assert_eq!(fragment.status(), super::ParseStatus::Clean);
-    assert!(fragment.diagnostics().is_empty());
-    assert_eq!(fragment.root().kind(), GrammarKind::TryExpression);
-    assert_eq!(
-        fragment.root().range(),
-        SourceRange::new(fragment_start, fragment_end)
+    let expression_text = "left + right";
+    let attached_expression = attach_exact_fragment(
+        &mut database,
+        &snapshot,
+        &document,
+        expression_text,
+        parse_expression_fragment(expression_text, ParseOptions::default()),
+        GrammarKind::BinaryExpression,
     );
-    assert_eq!(fragment.syntax().root_handle().rowan().to_string(), source);
+
+    let type_text = "Result<String, Error>";
+    let attached_type = attach_exact_fragment(
+        &mut database,
+        &snapshot,
+        &document,
+        type_text,
+        parse_type_fragment(type_text, ParseOptions::default()),
+        GrammarKind::GenericApplicationType,
+    );
+
+    let pattern_text = ".Some(mut value)";
+    let attached_pattern = attach_exact_fragment(
+        &mut database,
+        &snapshot,
+        &document,
+        pattern_text,
+        parse_pattern_fragment(pattern_text, ParseOptions::default()),
+        GrammarKind::VariantPattern,
+    );
+
+    let statement_text = "let answer: I32 = call(1);";
+    let attached_statement = attach_exact_fragment(
+        &mut database,
+        &snapshot,
+        &document,
+        statement_text,
+        parse_statement_fragment(statement_text, ParseOptions::default()),
+        GrammarKind::LetStatement,
+    );
+    assert_ne!(
+        attached_expression.snapshot_id().lineage(),
+        attached_type.snapshot_id().lineage()
+    );
+    assert_ne!(
+        attached_type.snapshot_id().lineage(),
+        attached_pattern.snapshot_id().lineage()
+    );
+    assert_ne!(
+        attached_pattern.snapshot_id().lineage(),
+        attached_statement.snapshot_id().lineage()
+    );
 }
 
 #[test]
-fn private_empty_expression_fragment_is_recovered_without_a_detached_value() {
-    let name = SourceName::path("bound-empty-expression-fragment.arcw");
-    let source = "   ";
-    let document = source_document(&name, source);
-    let span = source_span(&document, SourceRange::new(0, source.len()));
-    let mut database = syntax_database();
-    let fragment = database
-        .parse_bound_expression_fragment(&SourceSnapshotId::initial(name.clone()), &document, &span)
-        .expect("missing expression remains attached and queryable");
-
-    assert_eq!(fragment.status(), super::ParseStatus::Recovered);
-    assert!(fragment.diagnostics().is_empty());
-    assert_eq!(fragment.root().kind(), GrammarKind::MissingExpression);
-    assert_eq!(
-        fragment.root().range(),
-        SourceRange::new(source.len(), source.len())
-    );
-}
-
-#[test]
-fn private_recovered_expression_fragment_binds_grammar_diagnostics_to_its_revision() {
-    let name = SourceName::path("bound-recovered-expression-fragment.arcw");
-    let source = "call(";
+fn incomplete_invalid_mismatched_and_foreign_fragments_commit_no_lineage() {
+    let name = SourceName::path("fragment-attachment-gates.arcw");
     let snapshot = SourceSnapshotId::initial(name.clone());
-    let document = source_document(&name, source);
-    let span = source_span(&document, SourceRange::new(0, source.len()));
     let mut database = syntax_database();
-    let fragment = database
-        .parse_bound_expression_fragment(&snapshot, &document, &span)
-        .expect("recovered expression fragment remains attached");
-    let missing_close = fragment
-        .diagnostics()
-        .iter()
-        .find(|diagnostic| diagnostic.code() == "syntax.expression.missing_call_close")
-        .unwrap_or_else(|| {
-            panic!(
-                "missing expression-fragment diagnostic: {:?}",
-                fragment.diagnostics()
-            )
-        });
+    let lineage_before = database.transaction.next_lineage_for_test();
 
-    assert_eq!(fragment.status(), super::ParseStatus::Recovered);
-    assert_eq!(fragment.root().kind(), GrammarKind::CallExpression);
-    assert_eq!(missing_close.primary().source(), document.identity());
-    assert_eq!(
-        missing_close.primary().range(),
-        SourceRange::new(source.len(), source.len())
+    let incomplete_source = "call(";
+    let incomplete_document = source_document(&name, incomplete_source);
+    let incomplete_span = source_span(
+        &incomplete_document,
+        SourceRange::new(0, incomplete_source.len()),
     );
-    assert!(missing_close.related().is_none());
+    let incomplete = parse_expression_fragment(incomplete_source, ParseOptions::default());
+    assert!(matches!(
+        incomplete.completion(),
+        ParseCompletion::Incomplete { .. }
+    ));
+    let rejected = database.attach_fragment(
+        &snapshot,
+        &incomplete_document,
+        &incomplete_span,
+        incomplete,
+    );
+    assert!(matches!(
+        rejected,
+        Err(FragmentAttachmentFailure::FragmentNotComplete {
+            completion: ParseCompletion::Incomplete { .. }
+        })
+    ));
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
+
+    let invalid_source = ")";
+    let invalid_document = source_document(&name, invalid_source);
+    let invalid_span = source_span(&invalid_document, SourceRange::new(0, invalid_source.len()));
+    let rejected = database.attach_fragment(
+        &snapshot,
+        &invalid_document,
+        &invalid_span,
+        parse_expression_fragment(invalid_source, ParseOptions::default()),
+    );
+    assert!(matches!(
+        rejected,
+        Err(FragmentAttachmentFailure::FragmentNotComplete {
+            completion: ParseCompletion::Invalid
+        })
+    ));
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
+
+    let mismatch_text = "value";
+    let mismatch_document = source_document(&name, "other");
+    let mismatch_span = source_span(&mismatch_document, SourceRange::new(0, mismatch_text.len()));
+    let rejected = database.attach_fragment(
+        &snapshot,
+        &mismatch_document,
+        &mismatch_span,
+        parse_expression_fragment(mismatch_text, ParseOptions::default()),
+    );
+    assert!(matches!(
+        rejected,
+        Err(FragmentAttachmentFailure::FragmentTextMismatch)
+    ));
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
+
+    let exact_document = source_document(&name, mismatch_text);
+    let foreign_name = SourceName::path("foreign-fragment.arcw");
+    let foreign_document = source_document(&foreign_name, mismatch_text);
+    let foreign_span = source_span(&foreign_document, SourceRange::new(0, mismatch_text.len()));
+    let rejected = database.attach_fragment(
+        &snapshot,
+        &exact_document,
+        &foreign_span,
+        parse_expression_fragment(mismatch_text, ParseOptions::default()),
+    );
+    assert!(matches!(
+        rejected,
+        Err(FragmentAttachmentFailure::SourceMismatch)
+    ));
+    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 }
 
 #[test]
-fn private_fragment_attachment_failure_consumes_no_lineage_or_node_identity() {
-    let name = SourceName::path("bound-fragment-attachment-failure.arcw");
+fn fragment_attachment_failure_consumes_no_lineage_or_node_identity() {
+    let name = SourceName::path("fragment-attachment-rollback.arcw");
     let source = "value + 1";
     let snapshot = SourceSnapshotId::initial(name.clone());
-    let mut database = syntax_database();
-    let lineage_before = database.transaction.next_lineage_for_test();
-    let wrong_name = SourceName::path("wrong-bound-fragment.arcw");
-    let wrong_document = source_document(&wrong_name, source);
-    let wrong_span = source_span(&wrong_document, SourceRange::new(0, source.len()));
-    let mismatch =
-        database.parse_bound_expression_fragment(&snapshot, &wrong_document, &wrong_span);
-    assert!(matches!(mismatch, Err(ParseFailure::SourceMismatch)));
-    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
-
     let document = source_document(&name, source);
     let span = source_span(&document, SourceRange::new(0, source.len()));
-    let failed = database
-        .parse_bound_fragment_with_attachment_failure::<
-            crate::incremental::bound::ExpressionFragment,
-        >(
-            &snapshot,
-            &document,
-            &span,
-        );
+    let mut database = syntax_database();
+    let lineage_before = database.transaction.next_lineage_for_test();
 
-    assert!(matches!(failed, Err(ParseFailure::InternalInvariant)));
+    let failed = database.attach_fragment_with_attachment_failure(
+        &snapshot,
+        &document,
+        &span,
+        parse_expression_fragment(source, ParseOptions::default()),
+    );
+    assert!(matches!(
+        failed,
+        Err(FragmentAttachmentFailure::Transaction(
+            ParseFailure::InternalInvariant
+        ))
+    ));
     assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let accepted = database
-        .parse_bound_expression_fragment(&snapshot, &document, &span)
-        .expect("valid retry uses the unconsumed fragment lineage");
+        .attach_fragment(
+            &snapshot,
+            &document,
+            &span,
+            parse_expression_fragment(source, ParseOptions::default()),
+        )
+        .expect("valid retry uses the unconsumed lineage");
     let mut control = syntax_database();
-    let control_document = source_document(&name, source);
-    let control_span = source_span(&control_document, SourceRange::new(0, source.len()));
     let control = control
-        .parse_bound_expression_fragment(&snapshot, &control_document, &control_span)
+        .attach_fragment(
+            &snapshot,
+            &document,
+            &span,
+            parse_expression_fragment(source, ParseOptions::default()),
+        )
         .expect("control fragment");
-    assert_eq!(accepted.root().id().slot(), control.root().id().slot());
-}
-
-#[test]
-fn private_type_pattern_and_statement_fragments_own_exact_document_spans() {
-    let name = SourceName::path("bound-non-expression-fragments.arcw");
-    let source = concat!(
-        "prefix\n",
-        "  Result<String, Error>  \n",
-        "  .Some(mut value)  \n",
-        "  let answer: I32 = call(1);  \n",
-        "suffix",
-    );
-    let snapshot = SourceSnapshotId::initial(name.clone());
-    let document = source_document(&name, source);
-    let type_surface = "  Result<String, Error>  ";
-    let type_start = source.find(type_surface).expect("type fragment");
-    let type_span = source_span(
-        &document,
-        SourceRange::new(type_start, type_start + type_surface.len()),
-    );
-    let pattern_surface = "  .Some(mut value)  ";
-    let pattern_start = source.find(pattern_surface).expect("pattern fragment");
-    let pattern_span = source_span(
-        &document,
-        SourceRange::new(pattern_start, pattern_start + pattern_surface.len()),
-    );
-    let statement_surface = "  let answer: I32 = call(1);  ";
-    let statement_start = source.find(statement_surface).expect("statement fragment");
-    let statement_span = source_span(
-        &document,
-        SourceRange::new(statement_start, statement_start + statement_surface.len()),
-    );
-    let mut database = syntax_database();
-
-    let type_fragment = database
-        .parse_bound_type_fragment(&snapshot, &document, &type_span)
-        .expect("type fragment attaches");
-    let pattern_fragment = database
-        .parse_bound_pattern_fragment(&snapshot, &document, &pattern_span)
-        .expect("pattern fragment attaches");
-    let statement_fragment = database
-        .parse_bound_statement_fragment(&snapshot, &document, &statement_span)
-        .expect("ordinary statement fragment attaches");
-
-    assert_eq!(type_fragment.span(), &type_span);
-    assert_eq!(
-        type_fragment.root().kind(),
-        GrammarKind::GenericApplicationType
-    );
-    assert_eq!(
-        type_fragment.root().range(),
-        SourceRange::new(type_start + 2, type_start + type_surface.trim_end().len())
-    );
-    assert_eq!(pattern_fragment.span(), &pattern_span);
-    assert_eq!(pattern_fragment.root().kind(), GrammarKind::VariantPattern);
-    assert_eq!(
-        pattern_fragment.root().range(),
-        SourceRange::new(
-            pattern_start + 2,
-            pattern_start + pattern_surface.trim_end().len()
-        )
-    );
-    assert_eq!(statement_fragment.span(), &statement_span);
-    assert_eq!(statement_fragment.root().kind(), GrammarKind::LetStatement);
-    assert_eq!(
-        statement_fragment.root().range(),
-        SourceRange::new(
-            statement_start + 2,
-            statement_start + statement_surface.trim_end().len()
-        )
-    );
-    for fragment in [
-        type_fragment.syntax(),
-        pattern_fragment.syntax(),
-        statement_fragment.syntax(),
-    ] {
-        assert_eq!(fragment.root_handle().rowan().to_string(), source);
-        assert_eq!(fragment.document().identity(), document.identity());
-    }
-    assert_eq!(type_fragment.status(), super::ParseStatus::Clean);
-    assert_eq!(pattern_fragment.status(), super::ParseStatus::Clean);
-    assert_eq!(statement_fragment.status(), super::ParseStatus::Clean);
-    assert!(type_fragment.diagnostics().is_empty());
-    assert!(pattern_fragment.diagnostics().is_empty());
-    assert!(statement_fragment.diagnostics().is_empty());
-    assert_ne!(
-        type_fragment.snapshot_id().lineage(),
-        pattern_fragment.snapshot_id().lineage()
-    );
-    assert_ne!(
-        pattern_fragment.snapshot_id().lineage(),
-        statement_fragment.snapshot_id().lineage()
-    );
-}
-
-#[test]
-fn private_empty_non_expression_fragments_are_attached_at_the_explicit_span() {
-    let name = SourceName::path("bound-empty-non-expression-fragments.arcw");
-    let source = "prefixsuffix";
-    let snapshot = SourceSnapshotId::initial(name.clone());
-    let document = source_document(&name, source);
-    let at = "prefix".len();
-    let span = source_span(&document, SourceRange::new(at, at));
-    let mut database = syntax_database();
-
-    let type_fragment = database
-        .parse_bound_type_fragment(&snapshot, &document, &span)
-        .expect("empty type is attached recovery");
-    let pattern_fragment = database
-        .parse_bound_pattern_fragment(&snapshot, &document, &span)
-        .expect("empty pattern is attached recovery");
-    let statement_fragment = database
-        .parse_bound_statement_fragment(&snapshot, &document, &span)
-        .expect("empty statement is attached recovery");
-
-    assert_eq!(type_fragment.root().kind(), GrammarKind::MissingType);
-    assert_eq!(pattern_fragment.root().kind(), GrammarKind::MissingPattern);
-    assert_eq!(
-        statement_fragment.root().kind(),
-        GrammarKind::ErrorStatement
-    );
-    assert_eq!(type_fragment.root().range(), SourceRange::new(at, at));
-    assert_eq!(pattern_fragment.root().range(), SourceRange::new(at, at));
-    assert_eq!(statement_fragment.root().range(), SourceRange::new(at, at));
-    assert_eq!(type_fragment.status(), super::ParseStatus::Recovered);
-    assert_eq!(pattern_fragment.status(), super::ParseStatus::Recovered);
-    assert_eq!(statement_fragment.status(), super::ParseStatus::Recovered);
-}
-
-#[test]
-fn private_non_expression_fragment_diagnostics_bind_to_the_explicit_revision() {
-    let name = SourceName::path("bound-recovered-non-expression-fragments.arcw");
-    let source = concat!(
-        "prefix\n",
-        "  (String  \n",
-        "  .Some(value  \n",
-        "  wait(call(  \n",
-        "suffix",
-    );
-    let snapshot = SourceSnapshotId::initial(name.clone());
-    let document = source_document(&name, source);
-    let mut database = syntax_database();
-
-    let type_surface = "  (String  ";
-    let type_start = source.find(type_surface).expect("recovered type");
-    let type_span = source_span(
-        &document,
-        SourceRange::new(type_start, type_start + type_surface.len()),
-    );
-    let type_fragment = database
-        .parse_bound_type_fragment(&snapshot, &document, &type_span)
-        .expect("recovered type remains attached");
-    assert!(type_fragment.diagnostics().iter().any(|diagnostic| {
-        diagnostic.code() == "syntax.type.missing_tuple_close"
-            && diagnostic.primary().source() == document.identity()
-            && diagnostic.primary().range().start() >= type_span.range().start()
-            && diagnostic.primary().range().end() <= type_span.range().end()
-    }));
-
-    let pattern_surface = "  .Some(value  ";
-    let pattern_start = source.find(pattern_surface).expect("recovered pattern");
-    let pattern_span = source_span(
-        &document,
-        SourceRange::new(pattern_start, pattern_start + pattern_surface.len()),
-    );
-    let pattern_fragment = database
-        .parse_bound_pattern_fragment(&snapshot, &document, &pattern_span)
-        .expect("recovered pattern remains attached");
-    assert!(pattern_fragment.diagnostics().iter().any(|diagnostic| {
-        diagnostic.code() == "syntax.pattern.missing_variant_close"
-            && diagnostic.primary().source() == document.identity()
-            && diagnostic.primary().range().start() >= pattern_span.range().start()
-            && diagnostic.primary().range().end() <= pattern_span.range().end()
-    }));
-
-    let statement_surface = "  wait(call(  ";
-    let statement_start = source.find(statement_surface).expect("recovered statement");
-    let statement_span = source_span(
-        &document,
-        SourceRange::new(statement_start, statement_start + statement_surface.len()),
-    );
-    let statement_fragment = database
-        .parse_bound_statement_fragment(&snapshot, &document, &statement_span)
-        .expect("recovered statement remains attached");
-    assert!(statement_fragment.diagnostics().iter().any(|diagnostic| {
-        diagnostic.code() == "syntax.statement.missing_wait_close"
-            && diagnostic.primary().source() == document.identity()
-            && diagnostic.primary().range().start() >= statement_span.range().start()
-            && diagnostic.primary().range().end() <= statement_span.range().end()
-    }));
-    let missing_closes = statement_fragment
-        .syntax()
-        .nodes()
-        .filter(|node| node.kind() == GrammarKind::CloseParenNode)
-        .collect::<Vec<_>>();
-    assert_eq!(missing_closes.len(), 2);
-    assert!(missing_closes.iter().all(|node| node.range().is_empty()));
-    assert_ne!(missing_closes[0].id(), missing_closes[1].id());
-    for close in missing_closes {
-        assert_eq!(
-            statement_fragment
-                .syntax()
-                .bind_rowan(close.rowan())
-                .expect("event path distinguishes equal zero-width Rowan nodes")
-                .id(),
-            close.id()
-        );
-    }
-
-    assert_eq!(type_fragment.status(), super::ParseStatus::Recovered);
-    assert_eq!(pattern_fragment.status(), super::ParseStatus::Recovered);
-    assert_eq!(statement_fragment.status(), super::ParseStatus::Recovered);
-}
-
-#[test]
-fn private_non_expression_fragment_failures_commit_no_lineage_or_node_identity() {
-    let name = SourceName::path("bound-fragment-family-failure.arcw");
-    let source = "value";
-    let snapshot = SourceSnapshotId::initial(name.clone());
-    let document = source_document(&name, source);
-    let span = source_span(&document, SourceRange::new(0, source.len()));
-    let mut database = syntax_database();
-    let lineage_before = database.transaction.next_lineage_for_test();
-
-    let foreign_name = SourceName::path("foreign-bound-fragment-family.arcw");
-    let foreign_document = source_document(&foreign_name, source);
-    let foreign_span = source_span(&foreign_document, SourceRange::new(0, source.len()));
-    let mismatch = database.parse_bound_type_fragment(&snapshot, &document, &foreign_span);
-    assert!(matches!(mismatch, Err(ParseFailure::SourceMismatch)));
-    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
-
-    let type_failure = database
-        .parse_bound_fragment_with_attachment_failure::<crate::incremental::bound::TypeFragment>(
-            &snapshot, &document, &span,
-        );
-    assert!(matches!(type_failure, Err(ParseFailure::InternalInvariant)));
-    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
-
-    let pattern_failure = database
-        .parse_bound_fragment_with_attachment_failure::<crate::incremental::bound::PatternFragment>(
-            &snapshot, &document, &span,
-        );
-    assert!(matches!(
-        pattern_failure,
-        Err(ParseFailure::InternalInvariant)
-    ));
-    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
-
-    let statement_failure = database
-        .parse_bound_fragment_with_attachment_failure::<
-            crate::incremental::bound::StatementFragment,
-        >(
-            &snapshot,
-            &document,
-            &span,
-        );
-    assert!(matches!(
-        statement_failure,
-        Err(ParseFailure::InternalInvariant)
-    ));
-    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
-
-    let accepted = database
-        .parse_bound_statement_fragment(&snapshot, &document, &span)
-        .expect("valid retry uses the first unconsumed lineage");
-    let mut control = syntax_database();
-    let control = control
-        .parse_bound_statement_fragment(&snapshot, &document, &span)
-        .expect("control statement fragment");
     assert_eq!(accepted.root().id().slot(), control.root().id().slot());
 }
 

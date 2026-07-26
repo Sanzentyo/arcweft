@@ -14,7 +14,7 @@ use core::marker::PhantomData;
 use arcweft_source::SourceRange;
 
 use super::{
-    AstKind, AstNode, SyntaxAccessError, SyntaxNodeHandle, SyntaxNodeId, SyntaxSnapshotId,
+    AstNode, ExactAstKind, SyntaxAccessError, SyntaxNodeHandle, SyntaxNodeId, SyntaxSnapshotId,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -117,7 +117,7 @@ impl<F: FamilySpec> FamilyNode<F> {
         self.syntax.range()
     }
 
-    pub(crate) fn cast<K: AstKind>(&self) -> Result<AstNode<K>, super::SyntaxLookupError> {
+    pub(crate) fn cast<K: ExactAstKind>(&self) -> Result<AstNode<K>, super::SyntaxLookupError> {
         self.syntax.cast()
     }
 }

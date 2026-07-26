@@ -20,7 +20,7 @@ pub(super) fn emit_open_delimiter(
 pub(super) fn emit_close_delimiter(
     parser: &mut ShadowDocumentParser<'_, '_>,
     kind: SyntaxKind,
-    spelling: &str,
+    spelling: &'static str,
     diagnostic: &'static str,
 ) {
     parser.start(kind, SyntaxRole::CloseDelimiter);
@@ -29,7 +29,8 @@ pub(super) fn emit_close_delimiter(
     } else {
         let at = parser.current_offset();
         parser.push(SyntaxEvent::MissingToken {
-            expected: expected(SyntaxKind::PunctuationToken),
+            expected: ExpectedToken::try_with_spelling(SyntaxKind::PunctuationToken, spelling)
+                .expect("real grammar punctuation token"),
             at,
         });
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(

@@ -159,8 +159,12 @@ deletion.
 
 ## Current implementation groups
 
-1. replace the old fragment payload and parse-at-attachment predecessor with
-   final unbound/attached fragment ownership;
+1. the private source-free fragment owner is landed: the old
+   `BoundFragment<K>` and parse-at-attachment path are deleted, and the four
+   final families now retain one `UnboundFragment<K>` event tree for checked
+   exact-byte `AttachedFragment<K>` projection; public exports, the final
+   `ParseFailure::Attachment` projection, REPL migration, and compile-fail
+   lowering rows remain part of the atomic public switch;
 2. publish the already-tested attached IDs, handles, typed families, exact
    accessors, diagnostics, and spans;
 3. migrate Agent REPL classification and synthetic-document ownership;

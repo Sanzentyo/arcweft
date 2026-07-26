@@ -46,7 +46,7 @@ pub mod dialogue;
 #[cfg(test)]
 mod dialogue_expression_tests;
 mod document;
-pub(crate) use document::{ShadowFragmentKind, parse_shadow_document, parse_shadow_fragment};
+pub(crate) use document::parse_shadow_document;
 mod entry_grammar;
 #[cfg(test)]
 mod entry_grammar_tests;
@@ -119,6 +119,7 @@ mod type_declaration_grammar;
 #[cfg(test)]
 mod type_declaration_grammar_tests;
 mod type_ref;
+pub(crate) mod unbound_fragment;
 pub mod view;
 mod view_grammar;
 #[cfg(test)]

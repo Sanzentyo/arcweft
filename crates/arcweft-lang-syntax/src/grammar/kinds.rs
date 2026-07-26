@@ -350,6 +350,30 @@ impl SyntaxKind {
         matches!(self.identity_class(), IdentityClass::Token)
     }
 
+    pub(crate) const fn token_display_name(self) -> Option<&'static str> {
+        match self {
+            Self::WhitespaceToken => Some("whitespace"),
+            Self::NewlineToken => Some("newline"),
+            Self::CommentToken => Some("comment"),
+            Self::DocCommentToken => Some("documentation comment"),
+            Self::IdentifierToken => Some("identifier"),
+            Self::LifetimeToken => Some("lifetime"),
+            Self::NumberToken => Some("number"),
+            Self::StringToken => Some("string"),
+            Self::UnterminatedStringToken => Some("string terminator"),
+            Self::RawStringToken => Some("raw string"),
+            Self::CharacterToken => Some("character"),
+            Self::EntityReferenceToken => Some("entity reference"),
+            Self::KeywordToken => Some("keyword"),
+            Self::PunctuationToken => Some("punctuation"),
+            Self::TextToken => Some("text"),
+            Self::ErrorToken => Some("valid token"),
+            Self::MissingToken => Some("missing token"),
+            Self::EofToken => Some("end of input"),
+            _ => None,
+        }
+    }
+
     /// Returns the identity policy owned by this grammar kind.
     #[allow(
         dead_code,

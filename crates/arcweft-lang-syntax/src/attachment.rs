@@ -15,7 +15,10 @@ use std::sync::Arc;
 use arcweft_source::SourceDocument;
 
 pub(crate) use error::{AttachmentFailure, SyntaxAccessError, SyntaxLookupError};
-pub(crate) use node::{AstKind, AstNode, SourceFileKind};
+pub(crate) use node::{
+    AstKind, AstNode, ExactAstKind, ExpressionFragmentRootKind, PatternFragmentRootKind,
+    SourceFileKind, StatementFragmentRootKind, TypeFragmentRootKind,
+};
 #[cfg(test)]
 pub(crate) use node::{
     BlockKind, ExpressionStatementKind, PredicateItemKind, ProofItemKind, SourceItemKind,
