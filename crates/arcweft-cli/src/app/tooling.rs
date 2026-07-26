@@ -1,4 +1,3 @@
-use super::commands::IdsCommand;
 use super::shared::{is_arcw_path, print_json};
 use arcweft_lang_hir::{
     lower::lower_document_to_hir,
@@ -13,7 +12,6 @@ use arcweft_source::{SourceDocumentId, SourceRange};
 use arcweft_tooling::{
     canonicalize_source,
     format::format_source,
-    id_context::materialize_ids,
     model::{
         CanonicalizationInput, FormatOptions, ToolingDiagnostic, ToolingEditReport, ToolingError,
     },
@@ -132,14 +130,6 @@ pub(super) fn canonicalize_command(options: &CanonicalizeCommandOptions) -> Resu
         json: options.json,
     };
     run_tooling_command(&tooling_options, true, canonicalize_project_source)
-}
-
-pub(super) fn ids_command(command: IdsCommand) -> Result<(), ExitCode> {
-    match command {
-        IdsCommand::Materialize(options) => {
-            run_tooling_command(&options, false, |_path, source| materialize_ids(source))
-        }
-    }
 }
 
 fn run_tooling_command(

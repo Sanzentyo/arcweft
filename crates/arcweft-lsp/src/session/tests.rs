@@ -396,27 +396,6 @@ fn assert_code_actions_reuse_analysis(
 }
 
 #[test]
-fn code_actions_return_workspace_edits() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_fixture(&mut session, uri.clone());
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri },
-            range: Range::new(Position::new(0, 0), Position::new(10, 0)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    assert!(actions.iter().any(|action| {
-        matches!(action, CodeActionOrCommand::CodeAction(action) if action.edit.is_some())
-    }));
-}
-
-#[test]
 fn code_actions_expand_effect_upper_bound() {
     let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
     let mut session = ArcweftLspSession::new(&LspConfig::default());
@@ -1415,18 +1394,6 @@ flow @flow.main main {}\n";
     );
 
     runtime.shutdown();
-}
-
-#[test]
-fn inlay_hint_request_uses_document_line_index() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_fixture(&mut session, uri.clone());
-
-    let labels = inlay_hint_labels(&mut session, uri);
-
-    assert!(labels.iter().any(|label| label == "@flow.opening"));
-    assert!(!labels.iter().any(|label| label.contains("id=@say.")));
 }
 
 #[test]

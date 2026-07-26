@@ -10,7 +10,6 @@ mod dialogue_application;
 mod dialogue_identity;
 pub mod entry;
 pub mod fx;
-pub mod id_context;
 pub mod identity;
 pub mod lower;
 pub mod lower_choice;

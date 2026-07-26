@@ -217,8 +217,9 @@ the order of future implementation cuts:
 The current cuts remove the direct CLI dependency on `arcweft-player-native`,
 move renderer tests into `arcweft-render-native`, extract the Clap command
 surface into `app/commands.rs`, move bundle/run-bundle implementation into
-`app/bundle.rs`, and isolate tooling commands (`fmt`, `ids materialize`) in
-`app/tooling.rs`. Agent observe / hit-test / MCP implementation now lives in
+`app/bundle.rs`, and isolate the `fmt` tooling command in `app/tooling.rs`.
+The former `ids materialize` path has since been deleted with its raw-source
+identity scanner. Agent observe / hit-test / MCP implementation now lives in
 `app/agent.rs`, keeping native observation logic out of the primary dispatch
 module while it is being moved toward the unified LayerTree / InputRouter /
 semantic observation model. The CLI native renderer dependency is gated behind

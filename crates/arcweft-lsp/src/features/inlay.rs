@@ -12,14 +12,12 @@ use arcweft_lang_syntax::ast::flow::{FlowItem, Stmt};
 use arcweft_lang_syntax::ast::items::{Item, TypedSyntaxTree};
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_source::SourceDocumentIdentity;
-use arcweft_verify_lsp::inferred_id_inlay_hints_with_mapper;
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel};
 use std::{collections::HashSet, sync::Arc};
 
 /// Computes Arcweft inlay hints for one source snapshot.
 pub fn hints(profile: &LspProfile, document: &DocumentSnapshot) -> Vec<InlayHint> {
-    let mut hints = inferred_id_inlay_hints_with_mapper(document.text(), document.line_index());
-    hints.extend(inferred_let_type_inlay_hints(profile, document));
+    let mut hints = inferred_let_type_inlay_hints(profile, document);
     hints.sort_by_key(inlay_sort_key);
     hints
 }

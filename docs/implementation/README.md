@@ -296,8 +296,8 @@ Phase 0 / Phase 1 minimal Rust workspace:
   before choosing its closing bracket. The full rich-text grammar check fixture now includes a
   family-relative `dialogue defaults` profile and canonical nested `rich_text`
   typography blocks in both defaults and character `dialogue_style` examples.
-  ID materialization actions return focused LSP `WorkspaceEdit` values
-  through the same byte-span mapper used for diagnostics, and command-backed
+  Command-backed tooling actions return focused LSP `WorkspaceEdit` values
+  through the same byte-span mapper used for diagnostics, and
   `workspace/executeCommand` edits use one structured `{ uri, edit }` argument
   without accepting legacy positional shim arguments. The transport negotiates
   workspace-edit shape from client capabilities, returning versioned
@@ -1705,22 +1705,14 @@ Current high-confidence state:
 - Verifier JSON uses a stable adjacent-tagged representation for proof
   expressions, including string-carrying variants such as
   `{ "kind": "var", "value": "signal.write" }`.
-- Phase 2.1 tooling has a first Sans I/O crate, `arcweft-tooling`, for source
-  edit reports, sugar expansion, ID materialization edits, source code actions,
-  and inferred-ID hints. The CLI now wires `arcw fmt` and
-  `arcw ids materialize` as dry-run-by-default adapter commands with `--write`
-  and `--json`; `arcweft-verify-lsp` exposes the same source actions and hints
-  without owning an LSP transport. The current ID materialization table covers
-  top-level declarations and choice/choice-option IDs. It deliberately emits
-  no Dialogue line-ID edit or hint while AW-AH-009.4.2/.3 replace the
-  provisional speaker-derived identity path with accepted source-site
-  identity.
-- The old Dialogue-ID scanner and its later typed-AST speaker/counter rewrite
-  have both been removed from the tooling path. `arcweft-lang-hir::collect_id_context`
-  now emits typed source operations only for declarations, choices, and choice
-  options. Tooling, CLI, and LSP do not synthesize provisional `say.*` or
-  `text.*` identities; the final hints and actions must consume the accepted
-  AW-AH-009.4.3 project inventory rather than recreate a source scanner.
+- Phase 2.1 tooling has a Sans I/O crate, `arcweft-tooling`, for source edit
+  reports, formatting, semantic canonicalization, and source code actions.
+  The raw-source ID materializer and its CLI/LSP/inlay adapters have been
+  deleted. They reparsed source and reconstructed declaration/choice context
+  from CST lines, so retaining them would create a second identity authority.
+  The final ID hints and actions must consume the accepted AW-AH-009.4.2/.3
+  project/source-site inventory rather than recreate a scanner. No `arcw ids`
+  command or `arcweft.materializeId` compatibility command remains.
 - `pro_review19.md` is reflected with Rust-like collection names. The facade
   crate exposes minimal Sans I/O standard data crates through explicit
   namespaces rather than a flat compatibility prelude:
@@ -1774,9 +1766,10 @@ Current high-confidence state:
   now only a public module namespace.
 - `arcweft-lang-hir` now exposes responsibility modules instead of flat
   compatibility exports: public consumers import HIR data through `model`,
-  lowering through `lower`, ID-context tooling through `id_context`, and syntax
-  ownership through the namespaced `syntax` module. The lowering implementation
-  is split into public responsibility namespaces `lower_flow`,
+  lowering through `lower`, and syntax ownership through the namespaced
+  `syntax` module. The former raw-source `id_context` module has been deleted.
+  The lowering implementation is split into public responsibility namespaces
+  `lower_flow`,
   `lower_dialogue`, `lower_choice`, `lower_ids`, and `lower_context`.
 - `arcweft-lang-syntax` has started the AST family split requested by
   `pro_review21.md`: top-level tree/item/recovery wrappers live in
@@ -1869,8 +1862,10 @@ The stable specification locations for the `pro_review4.md` decisions are:
 - `docs/01-language/grammar.md`: grammar summary for `scope`, relative IDs, module paths, and await grouping.
 - `docs/01-language/scenario-surface-syntax.md`: dialogue, choice, and scenario-facing sugar examples.
 - `docs/01-language/modules.md`: `self::`, `super::`, `crate::`, and `parent::` normalization.
-- `docs/04-tooling/cli.md`: explicit sugar expansion and ID materialization commands.
-- `docs/04-tooling/lsp.md`: sugar expansion and ID materialization code actions.
+- `docs/04-tooling/cli.md`: explicit formatting/canonicalization commands and
+  the typed-owner requirement for any future ID materializer.
+- `docs/04-tooling/lsp.md`: source code actions and the removed raw-source ID
+  materialization boundary.
 - `docs/02-runtime/core.md`: VM, effect requests, and data-format Sans I/O boundary.
 - `docs/02-runtime/cranelift-jit.md`: native-only pure-function JIT boundary.
 - `docs/02-runtime/plugins.md`: WIT/Wasm plugin sandbox boundary.

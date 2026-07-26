@@ -23,8 +23,8 @@ use arcweft_verify::{
 };
 use lsp_types::{
     CodeAction, CodeActionKind, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity,
-    Hover, HoverContents, InlayHint, InlayHintKind, MarkedString, NumberOrString, Position, Range,
-    TextEdit, Uri, WorkspaceEdit,
+    Hover, HoverContents, MarkedString, NumberOrString, Position, Range, TextEdit, Uri,
+    WorkspaceEdit,
 };
 use std::collections::HashMap;
 use thiserror::Error;
@@ -802,28 +802,6 @@ pub fn workspace_edit_from_tool_action_edit(
     WorkspaceEdit::new(HashMap::from([(uri.clone(), vec![text_edit])]))
 }
 
-/// Converts inferred Arcweft IDs into LSP inlay hints.
-pub fn inferred_id_inlay_hints_with_mapper(
-    source: &str,
-    mapper: &impl LspPositionMapper,
-) -> Vec<InlayHint> {
-    arcweft_tooling::id_context::inferred_id_hints(source)
-        .into_iter()
-        .map(|hint| InlayHint {
-            position: mapper
-                .range_from_byte_span(hint.position, hint.position)
-                .start,
-            label: lsp_types::InlayHintLabel::String(hint.label),
-            kind: Some(InlayHintKind::TYPE),
-            text_edits: None,
-            tooltip: None,
-            padding_left: None,
-            padding_right: None,
-            data: None,
-        })
-        .collect()
-}
-
 fn diagnostic_from_verify_with_mapper(
     diagnostic: &VerificationDiagnostic,
     mapper: &impl LspPositionMapper,
@@ -1325,7 +1303,7 @@ mod tests {
     }
 
     #[test]
-    fn exposes_source_actions_and_inlay_hints() {
+    fn exposes_source_actions() {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()
             .expect("uri");
@@ -1348,11 +1326,6 @@ mod tests {
                     .as_ref()
                     .is_some_and(|command| command.command == "arcweft.canonicalRichText")
         }));
-        assert!(
-            actions
-                .iter()
-                .any(|action| action.title == "Materialize inferred Arcweft ID")
-        );
         let document = SourceDocument::try_new(
             SourceDocumentId::try_new(uri.to_string()).expect("source id"),
             arcweft_source::SourceName::path(uri.to_string()),
@@ -1363,13 +1336,6 @@ mod tests {
             .expect("mapped source code actions");
         assert!(mapped_actions.iter().any(|action| {
             action.title == "Canonicalize inferred rich-text tags" && action.edit.is_some()
-        }));
-        let hints = inferred_id_inlay_hints_with_mapper(source, &TestMapper);
-        assert!(hints.iter().any(|hint| {
-            matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label == "@flow.opening")
-        }));
-        assert!(!hints.iter().any(|hint| {
-            matches!(&hint.label, lsp_types::InlayHintLabel::String(label) if label.contains("id=@say."))
         }));
     }
 

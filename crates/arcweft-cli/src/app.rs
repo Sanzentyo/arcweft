@@ -41,7 +41,7 @@ use self::runtime::run::runtime_run_command;
 use self::runtime::script_bench::script_bench_command;
 use self::runtime::script_test::script_test_command;
 use self::runtime::serve::runtime_serve_command;
-use self::tooling::{canonicalize_command, format_command, ids_command};
+use self::tooling::{canonicalize_command, format_command};
 use self::verify::{unsafe_command, verify_command, verify_types_command};
 use crate::toolchain_profile;
 use arcweft_host_adapter::{HostAdapterError, HostAdapterRegistryBuilder};
@@ -119,6 +119,5 @@ fn run_cli(cli: Cli, adapter_registrars: &[NativeAdapterRegistrar]) -> Result<()
         CliCommand::Jit { command } => jit_command(command),
         CliCommand::Fmt(options) => format_command(&options),
         CliCommand::Canonicalize(options) => canonicalize_command(&options),
-        CliCommand::Ids { command } => ids_command(command),
     }
 }

@@ -143,13 +143,6 @@ impl ToolingDiagnostic {
     }
 }
 
-/// Inlay hint data independent from any concrete LSP transport.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct InlayHint {
-    pub position: usize,
-    pub label: String,
-}
-
 /// Tooling code action data independent from any concrete LSP transport.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ToolingCodeAction {

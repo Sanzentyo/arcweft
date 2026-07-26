@@ -83,15 +83,6 @@ pub(super) enum CliCommand {
     Fmt(ToolingCommandOptions),
     /// Canonicalizes semantic Arcweft sugar using the containing checked project.
     Canonicalize(CanonicalizeCommandOptions),
-    Ids {
-        #[command(subcommand)]
-        command: IdsCommand,
-    },
-}
-
-#[derive(Debug, Subcommand)]
-pub(super) enum IdsCommand {
-    Materialize(ToolingCommandOptions),
 }
 
 #[derive(Debug, Subcommand)]

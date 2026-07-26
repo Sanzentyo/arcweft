@@ -11,7 +11,6 @@ mod dialogue_content;
 mod dialogue_sugar;
 pub mod edit;
 pub mod format;
-pub mod id_context;
 mod line_sugar;
 pub mod model;
 mod path_sugar;

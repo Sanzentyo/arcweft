@@ -2,7 +2,6 @@ use crate::{
     canonicalize_source,
     code_actions::source_code_actions,
     format::format_source,
-    id_context::materialize_ids,
     model::{
         CanonicalizationInput, FormatOptions, ToolingCodeAction, ToolingEditReport, ToolingError,
     },
@@ -1090,15 +1089,6 @@ fn source_code_actions_include_decl_identity_rewrite_only_when_linted() {
         edit.replacement
             .contains("#[generated]\nflow @flow.generated generated {")
     );
-}
-
-#[test]
-fn materializes_top_level_and_choice_ids() {
-    let source = "flow @flow.opening opening {\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\ntest @.smoke scenario {}\n";
-    let report = materialize_ids(source).expect("materialize report");
-    assert!(report.output.contains("choice @choice.opening.first"));
-    assert!(report.output.contains("@choice.opening.first.listen"));
-    assert!(report.output.contains("test @test.smoke scenario"));
 }
 
 #[test]

@@ -1448,28 +1448,15 @@ and stable child entity slots. They must never renumber dialogue or choice IDs
 as a side effect of editing.
 
 Relative IDs are not expanded by default because they are author-facing source
-syntax. A separate materialization command may rewrite relative IDs to their
-fully normalized registry IDs when a project wants explicit IDs in source:
+syntax. The CLI currently exposes no ID-materialization command. The former
+implementation reparsed raw source and reconstructed declaration/choice
+context with a textual CST-line scanner; it was deleted rather than repaired
+or retained beside the final typed identity owner.
 
-```bash
-arcw ids materialize game/routes/opening.arcw
-arcw ids materialize --write game/routes/
-```
-
-Materialization resolves only ID-bearing contexts such as line IDs, text keys,
-choice IDs, and choice option IDs. It must not rewrite ordinary entity
-references, and it must not invent support for ambiguous forms such as
-`goto @.next`.
-
-The current CLI implementation routes both commands through the Sans I/O
-`arcweft-tooling` crate. `arcw fmt` is a dry-run by default and writes only with
-`--write`; `arcw ids materialize` follows the same dry-run/write split and can
-emit JSON reports. The current materialization slice covers known top-level
-declaration IDs, explicit dialogue line `id=` / `text_key=` options, omitted
-dialogue line IDs/text keys, choice IDs, and choice-option IDs. Dialogue ID
-materialization treats `with { ... }`, `with:`, and flat `=== with ===`
-line-plan attachments as the same source construct; flat `=== line ... ===`
-heads are materialized with the same `@say...` / `@text...` rules as colon and
-bracket dialogue calls.
+Any future materialization command must consume the accepted project identity
+inventory and the AW-AH-009.4.2/.3 typed source-site owners. It must not infer
+identity from source strings, preserve a compatibility alias for `arcw ids`, or
+invent support for ambiguous forms such as `goto @.next`. `arcw fmt` remains a
+dry run by default and writes only with `--write`.
 
 

@@ -1,6 +1,5 @@
 use crate::canonicalize_source;
 use crate::format::format_source;
-use crate::id_context::materialize_ids;
 use crate::model::{
     CanonicalizationInput, FormatOptions, TextEdit, ToolingCodeAction, ToolingError,
 };
@@ -42,13 +41,6 @@ pub fn source_code_actions(
             Vec::new(),
         ));
     }
-    let report = materialize_ids(source)?;
-    actions.extend(report.edits.into_iter().map(|edit| ToolingCodeAction {
-        id: "arcweft.materializeId".to_owned(),
-        label: "Materialize inferred Arcweft ID".to_owned(),
-        edit: Some(edit),
-        diagnostics: Vec::new(),
-    }));
     Ok(actions)
 }
 

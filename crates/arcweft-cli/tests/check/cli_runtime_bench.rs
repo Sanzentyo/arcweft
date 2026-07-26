@@ -2567,34 +2567,6 @@ fn fmt_canonical_rich_text_preserves_nested_proxy_params() {
 }
 
 #[test]
-fn ids_materialize_leaves_provisional_dialogue_identity_untouched() {
-    let source = "flow @flow.opening opening {\n    scope rain {\n        alice(id=@.comment, text_key=@.comment_text):\n            Hi[p]\n    }\n    alice:\n        Omitted[p]\n=== line 地の文 ===\nFlat[p]\n=== with ===\nwait(mark(.done))\n=== /with ===\n=== /line ===\n    choice @.first {\n        @.listen \"Listen\" -> @flow.next\n    }\n}\n";
-    let path = temp_arcw("ids-materialize", source);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("ids")
-        .arg("materialize")
-        .arg("--json")
-        .arg(&path)
-        .output()
-        .expect("arcw ids materialize runs");
-
-    assert!(
-        output.status.success(),
-        "ids materialize should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(stdout.contains("alice(id=@.comment, text_key=@.comment_text):"));
-    assert!(stdout.contains("alice:"));
-    assert!(stdout.contains("=== line 地の文 ==="));
-    assert!(!stdout.contains("id=@say.opening"));
-    assert!(stdout.contains("choice @choice.opening.first"));
-    assert!(stdout.contains("@choice.opening.first.listen"));
-    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
-}
-
-#[test]
 fn test_json_lists_script_tests() {
     let path = temp_arcw(
         "script-test",

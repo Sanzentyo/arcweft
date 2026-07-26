@@ -20,7 +20,6 @@
 
 ## DSL固有
 
-- ID inference / materialize / rename
 - Ref resolution
 - Sugar expansion code actions:
   - `with:` → `with { ... }`
@@ -42,13 +41,13 @@
     through `type=`, `struct=`, `proxy=`, or by using the struct name itself
   - does not expand unrelated dialogue sugar such as `$(expr)`, ruby shorthand,
     `[page]`, or speaker-line sugar
-- ID code actions:
-  - materialize dialogue `id=@.suffix` and `text_key=@.suffix` options as
-    normalized `@say...` / `@text...` IDs
-  - insert omitted dialogue `id=` / `text_key=` for colon, bracket-call, and
-    flat `=== line ... ===` dialogue heads
-  - materialize `choice @.suffix` and relative option IDs as normalized `@choice...` IDs
-  - keep `@.suffix` / `@..suffix` / `@...suffix` and `@super...` relative IDs by default during formatting
+- Typed ID actions are future work and are not part of the current server:
+  - hints, materialization, and rename must consume the accepted typed
+    project/source-site identity inventory
+  - they must not reconstruct declaration, choice, or dialogue identity from
+    raw source or restore provisional `@say...` / `@text...` identities
+  - formatting continues to preserve authored `@.suffix` / `@..suffix` /
+    `@...suffix` and `@super...` relative IDs
 - `Need` unhandled diagnostics
 - naked await in flow diagnostics
 - borrow crosses await diagnostics
@@ -178,11 +177,13 @@ client capability negotiation, publish-diagnostics notifications, and request
 dispatch outside the verifier helper. MVP document sync is
 `TextDocumentSyncKind::FULL`; incremental sync and `ropey` remain future work.
 
-It also exposes source-level helpers backed by `arcweft-tooling`: sugar
-expansion actions, relative-ID materialization actions, and inferred-ID inlay
-hints. These helpers return `lsp-types` data only; opening documents, applying
-workspace edits, watching files, and resolving editor capabilities remain
-transport-adapter responsibilities.
+It also exposes source-level helpers backed by `arcweft-tooling`, including
+sugar expansion and formatting actions. These helpers return `lsp-types` data
+only; opening documents, applying workspace edits, watching files, and
+resolving editor capabilities remain transport-adapter responsibilities. The
+old relative-ID materialization action and inferred-ID inlay path are not part
+of the current server: they rebuilt identity from raw source and were deleted
+pending the accepted typed project/source-site inventory.
 
 Actual LSP ranges must not treat byte offsets as `Position.character` values.
 `arcweft-verify-lsp` exposes `LspPositionMapper`, while `arcweft-lsp` owns a
@@ -191,7 +192,7 @@ encoding. UTF-16 remains the default, and UTF-8 is selected only when the client
 advertises it through initialize capabilities.
 
 Source-level code actions return `WorkspaceEdit` values when the server can map
-the current document snapshot. Sugar expansion and ID materialization edits are
+the current document snapshot. Current formatting and semantic rewrites are
 computed by `arcweft-tooling`, converted through `LspPositionMapper`, and sent
 as LSP text edits. Command-backed edits use a single structured
 `workspace/executeCommand` argument:
