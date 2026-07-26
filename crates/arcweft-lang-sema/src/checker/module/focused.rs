@@ -143,7 +143,6 @@ pub fn analyze_registered_project_types_for_focused_call(
     let mut checker = TypeChecker::new_with_project(
         registered.environment().typecheck_env(),
         module,
-        None,
         Some(registered.symbols()),
         Some(registered),
         CallTargetFactMode::Focused {
@@ -187,7 +186,6 @@ pub(crate) fn analyze_registered_project_types_for_call_facts(
     let mut checker = TypeChecker::new_with_project(
         registered.environment().typecheck_env(),
         module,
-        None,
         Some(registered.symbols()),
         Some(registered),
         CallTargetFactMode::Focused {
@@ -229,7 +227,6 @@ pub(crate) fn analyze_detached_types_for_call_facts(
     let mut checker = TypeChecker::new_with_project(
         environment,
         module,
-        None,
         None,
         None,
         CallTargetFactMode::Focused {
@@ -279,7 +276,6 @@ pub(crate) fn analyze_registered_project_types_for_signature_call(
     let mut checker = TypeChecker::new_with_project(
         registered.environment().typecheck_env(),
         module,
-        None,
         Some(registered.symbols()),
         Some(registered),
         CallTargetFactMode::Focused {

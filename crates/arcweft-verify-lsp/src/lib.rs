@@ -632,48 +632,13 @@ fn verifier_code_action_kind(kind: ToolActionKind) -> CodeActionKind {
     }
 }
 
-/// Converts source-level Arcweft tooling actions into LSP code actions.
-pub fn source_code_actions(
-    uri: &Uri,
-    source: &str,
-    canonicalization: arcweft_tooling::model::CanonicalizationInput<'_>,
-) -> Result<Vec<CodeAction>, arcweft_tooling::model::ToolingError> {
-    Ok(
-        arcweft_tooling::code_actions::source_code_actions(source, canonicalization)?
-            .into_iter()
-            .map(|action| {
-                let diagnostics = action
-                    .diagnostics
-                    .into_iter()
-                    .map(|diagnostic| tooling_diagnostic(&diagnostic))
-                    .collect::<Vec<_>>();
-                CodeAction {
-                    title: action.label,
-                    kind: Some(CodeActionKind::REFACTOR_REWRITE),
-                    diagnostics: (!diagnostics.is_empty()).then_some(diagnostics),
-                    command: Some(lsp_types::Command {
-                        title: action.id.clone(),
-                        command: action.id,
-                        arguments: Some(vec![
-                            serde_json::json!(uri.to_string()),
-                            serde_json::json!(action.edit),
-                        ]),
-                    }),
-                    ..CodeAction::default()
-                }
-            })
-            .collect(),
-    )
-}
-
 /// Converts source-level Arcweft tooling actions into edit-bearing LSP code actions.
 pub fn source_code_actions_with_mapper(
     uri: &Uri,
     document: &SourceDocument,
     mapper: &impl LspPositionMapper,
-    canonicalization: arcweft_tooling::model::CanonicalizationInput<'_>,
 ) -> Result<Vec<CodeAction>, arcweft_tooling::model::ToolingError> {
-    arcweft_tooling::code_actions::source_code_actions(document.text(), canonicalization)?
+    arcweft_tooling::code_actions::source_code_actions(document.text())?
         .into_iter()
         .map(|action| {
             let edit = action
@@ -714,14 +679,6 @@ pub fn source_code_actions_with_mapper(
             })
         })
         .collect()
-}
-
-fn tooling_diagnostic(diagnostic: &arcweft_tooling::model::ToolingDiagnostic) -> Diagnostic {
-    let mut converted = Diagnostic::new_simple(Range::default(), diagnostic.message.clone());
-    converted.severity = Some(DiagnosticSeverity::WARNING);
-    converted.code = Some(NumberOrString::String(diagnostic.code.clone()));
-    converted.source = Some("arcweft-tooling".to_owned());
-    converted
 }
 
 fn tooling_diagnostic_with_mapper(
@@ -1308,35 +1265,21 @@ mod tests {
             .parse::<Uri>()
             .expect("uri");
         let source = "flow @.opening opening {\n    alice: [.shake amp=2px]hi[/][p]\n}\n";
-        let unavailable = arcweft_lang_sema::canonicalization::SemanticDataUnavailable::new(
-            arcweft_source::SourceDocumentId::try_new(uri.to_string()).expect("URI is non-empty"),
-            "standalone test document",
-        );
-        let input = arcweft_tooling::model::CanonicalizationInput::Unavailable(&unavailable);
-        let actions = source_code_actions(&uri, source, input).expect("source code actions");
-        assert!(
-            !actions
-                .iter()
-                .any(|action| action.title == "Canonicalize Arcweft sugar")
-        );
-        assert!(actions.iter().any(|action| {
-            action.title == "Canonicalize inferred rich-text tags"
-                && action
-                    .command
-                    .as_ref()
-                    .is_some_and(|command| command.command == "arcweft.canonicalRichText")
-        }));
         let document = SourceDocument::try_new(
             SourceDocumentId::try_new(uri.to_string()).expect("source id"),
             arcweft_source::SourceName::path(uri.to_string()),
             source,
         )
         .expect("source document");
-        let mapped_actions = source_code_actions_with_mapper(&uri, &document, &TestMapper, input)
+        let mapped_actions = source_code_actions_with_mapper(&uri, &document, &TestMapper)
             .expect("mapped source code actions");
-        assert!(mapped_actions.iter().any(|action| {
-            action.title == "Canonicalize inferred rich-text tags" && action.edit.is_some()
-        }));
+        assert_eq!(mapped_actions.len(), 1);
+        assert_eq!(
+            mapped_actions[0].title,
+            "Canonicalize inferred rich-text tags"
+        );
+        assert!(mapped_actions[0].edit.is_some());
+        assert!(mapped_actions[0].command.is_none());
     }
 
     #[test]

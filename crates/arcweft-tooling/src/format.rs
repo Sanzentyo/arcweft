@@ -1,6 +1,8 @@
-use crate::dialogue_sugar::{DialogueSugarContext, DialogueSugarMode, dialogue_text_sugar_edits};
 use crate::edit::report_from_edits;
 use crate::model::{FormatOptions, TextEdit, ToolingDiagnostic, ToolingEditReport, ToolingError};
+use crate::rich_text_canonicalization::{
+    RichTextCanonicalizationContext, rich_text_canonical_edits as canonical_content_edits,
+};
 use crate::style_environment::canonical_environment_edits;
 use arcweft_lang_syntax::parser::parse_source;
 
@@ -29,6 +31,6 @@ pub fn format_source(
 }
 
 fn rich_text_canonical_edits(parsed: &arcweft_lang_syntax::source::ParsedSource) -> Vec<TextEdit> {
-    let context = DialogueSugarContext::from_parsed(parsed);
-    dialogue_text_sugar_edits(parsed, DialogueSugarMode::RichTextOnly, &context)
+    let context = RichTextCanonicalizationContext::from_parsed(parsed);
+    canonical_content_edits(parsed, &context)
 }

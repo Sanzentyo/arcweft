@@ -18,7 +18,6 @@ use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use crate::{
-    canonicalization::SemanticScopeId,
     checker::TypeExpressionId,
     types::{EntityKind, TypeKind},
 };
@@ -48,6 +47,9 @@ pub struct CallableOverloadIndex(u16);
 pub struct CallableArgumentIndex(u16);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableArgumentSlotIndex(u16);
+/// Unique lexical scope inside one type-check transaction.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SemanticScopeId(u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LexicalBindingIndex(u32);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -204,6 +206,9 @@ impl CallableArgumentSlotIndex {
     }
 }
 impl LexicalBindingIndex {
+    pub(crate) const fn from_u32(value: u32) -> Self {
+        Self(value)
+    }
     pub fn try_from_usize(value: usize) -> Result<Self, CallableScalarError> {
         u32::try_from(value)
             .map(Self)
@@ -212,6 +217,15 @@ impl LexicalBindingIndex {
                 value,
             })
     }
+    pub const fn get(self) -> usize {
+        self.0 as usize
+    }
+}
+impl SemanticScopeId {
+    pub(crate) const fn from_u32(value: u32) -> Self {
+        Self(value)
+    }
+
     pub const fn get(self) -> usize {
         self.0 as usize
     }
@@ -926,7 +940,6 @@ pub struct LocalCallableId {
     binding: LexicalBindingIndex,
 }
 impl LocalCallableId {
-    #[allow(dead_code, reason = "allocated by the shared resolver migration cut")]
     pub(crate) fn new(scope: SemanticScopeId, binding: LexicalBindingIndex) -> Self {
         Self { scope, binding }
     }

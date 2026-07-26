@@ -5,12 +5,8 @@ use crate::borrow::{
 use crate::callable::{
     CallTargetFactMode, CallTargetFacts, CallTargetFactsInput, CallableDiagnostic,
     CallableDiagnosticCode, CallableDiagnosticRelated, CallableDiagnosticSeverity,
-    CallableDiagnosticSubject, CallableQueryDepth, CheckedCallTarget, PRODUCTION_CALLABLE_LIMITS,
-    ResolvedCallable,
-};
-use crate::canonicalization::{
-    CanonicalizationSourceSet, CheckedCanonicalizationInventory, CheckedSpeakerLine,
-    SemanticScopeId, SemanticSymbolIdentity,
+    CallableDiagnosticSubject, CallableQueryDepth, CheckedCallTarget, LocalCallableId,
+    PRODUCTION_CALLABLE_LIMITS, ResolvedCallable, SemanticScopeId,
 };
 use crate::diagnostics::{
     TraitDiagnostic, TypeCheckError, TypeCheckReadinessError, TypeCheckWarning,
@@ -68,7 +64,6 @@ mod assertion;
 pub mod borrow_state;
 mod call_target_facts;
 mod candidate_evaluation;
-mod canonicalization;
 pub mod choice;
 pub mod effects;
 pub mod expr;
@@ -89,11 +84,11 @@ pub mod source;
 pub mod source_ranges;
 pub mod stmt;
 pub mod suspension;
+mod symbol_resolution;
 
 pub use module::{
-    analyze_project_types_for_canonicalization, analyze_registered_project_types,
-    analyze_registered_project_types_for_canonicalization,
-    analyze_registered_project_types_for_focused_call, analyze_types,
+    analyze_registered_project_types, analyze_registered_project_types_for_focused_call,
+    analyze_types,
 };
 
 pub(crate) use call_target_facts::FocusedCallSite;
@@ -559,7 +554,6 @@ pub struct TypeCheckReport {
     pub style_catalog: crate::style::CheckedViewStyleCatalog,
     pub view_part_catalog: crate::view_part::CheckedViewPartCatalog,
     pub view_part_diagnostics: Vec<crate::view_part::ViewPartDiagnostic>,
-    pub canonicalization_inventories: Vec<CheckedCanonicalizationInventory>,
     /// Exact source ranges of calls resolved to ordinary project functions.
     pub project_callable_references: Vec<ProjectCallableReference>,
     /// Exact source ranges of authored absolute entity references.
@@ -828,7 +822,6 @@ struct TypeChecker<'a> {
     pending_higher_order_effect_calls: Vec<PendingHigherOrderEffectCall>,
     for_iteration_evidence: Vec<ForIterationEvidence>,
     record_runtime_for_iteration_evidence: bool,
-    canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
     project_symbols: Option<&'a ProjectSymbolTable>,
     registered_environment: Option<&'a crate::registration::RegisteredTypeCheckEnv>,
     registered_world: Option<&'a crate::registration::RegisteredSemanticWorld>,
@@ -842,12 +835,11 @@ struct TypeChecker<'a> {
     call_resolver_control: CallResolverControl<'a>,
     signature_work_charge: SignatureWorkChargeState,
     focused_candidate_depth: CallableQueryDepth,
-    local_symbol_identities: HashMap<String, SemanticSymbolIdentity>,
+    local_callable_ids: HashMap<String, LocalCallableId>,
     semantic_scope_stack: Vec<SemanticScopeId>,
     next_semantic_scope: u32,
     next_semantic_binding: u32,
     current_module: Option<arcweft_lang_syntax::ast::module_path::CanonicalModulePath>,
-    checked_speaker_lines: Vec<CheckedSpeakerLine>,
     registered_candidate_transaction_depth: usize,
     registered_candidate_journal:
         Vec<registered_candidate_transaction::RegisteredCandidateMutation>,
@@ -966,7 +958,7 @@ struct LocalBindingSnapshotEntry {
     previous_callable_signature: Option<SourceCallableSignature>,
     previous_curried_signature_call: Option<CurriedSignatureCallValue>,
     previous_higher_order_param_alias: Option<String>,
-    previous_symbol_identity: Option<SemanticSymbolIdentity>,
+    previous_callable_id: Option<LocalCallableId>,
 }
 
 #[derive(Clone, Debug)]
@@ -1083,7 +1075,6 @@ impl TypeChecker<'_> {
             module,
             None,
             None,
-            None,
             CallTargetFactMode::Disabled,
             CallResolverControl::ordinary(),
         )
@@ -1140,7 +1131,6 @@ impl<'a> TypeChecker<'a> {
     fn new_with_project(
         env: &'a TypeCheckEnv,
         checked_module: &'a HirModule,
-        canonicalization_sources: Option<&'a CanonicalizationSourceSet>,
         project_symbols: Option<&'a ProjectSymbolTable>,
         registered_world: Option<&'a crate::registration::RegisteredSemanticWorld>,
         call_target_fact_mode: CallTargetFactMode,
@@ -1221,7 +1211,6 @@ impl<'a> TypeChecker<'a> {
             pending_higher_order_effect_calls: Vec::new(),
             for_iteration_evidence: Vec::new(),
             record_runtime_for_iteration_evidence: false,
-            canonicalization_sources,
             project_symbols,
             registered_environment,
             registered_world,
@@ -1237,12 +1226,11 @@ impl<'a> TypeChecker<'a> {
                 candidate_work: false,
             },
             focused_candidate_depth: CallableQueryDepth::new(PRODUCTION_CALLABLE_LIMITS),
-            local_symbol_identities: HashMap::new(),
+            local_callable_ids: HashMap::new(),
             semantic_scope_stack: Vec::new(),
             next_semantic_scope: 0,
             next_semantic_binding: 0,
             current_module: None,
-            checked_speaker_lines: Vec::new(),
             registered_candidate_transaction_depth: 0,
             registered_candidate_journal: Vec::new(),
         }
@@ -1368,7 +1356,7 @@ impl<'a> TypeChecker<'a> {
                         self.local_curried_signature_calls.get(&name).cloned();
                     let previous_higher_order_param_alias =
                         self.local_higher_order_param_aliases.get(&name).cloned();
-                    let previous_symbol_identity = self.local_symbol_identities.get(&name).cloned();
+                    let previous_callable_id = self.local_callable_ids.get(&name).cloned();
                     let previous_ty = self.bind_local(name.clone(), ty);
                     LocalBindingSnapshotEntry {
                         name,
@@ -1377,7 +1365,7 @@ impl<'a> TypeChecker<'a> {
                         previous_callable_signature,
                         previous_curried_signature_call,
                         previous_higher_order_param_alias,
-                        previous_symbol_identity,
+                        previous_callable_id,
                     }
                 })
                 .collect(),
@@ -1393,14 +1381,9 @@ impl<'a> TypeChecker<'a> {
         let previous_higher_order_param_alias = self.local_higher_order_param_aliases.remove(&name);
         let scope = self.current_semantic_scope();
         let binding = self.allocate_semantic_binding();
-        let previous_symbol_identity = self.local_symbol_identities.insert(
-            name.clone(),
-            SemanticSymbolIdentity::Local {
-                scope,
-                binding,
-                name: name.clone(),
-            },
-        );
+        let previous_callable_id = self
+            .local_callable_ids
+            .insert(name.clone(), LocalCallableId::new(scope, binding));
         if let Some(frame) = self.closure_capture_stack.len().checked_sub(1) {
             self.retain_closure_frame_local(frame, name.clone());
         }
@@ -1412,7 +1395,7 @@ impl<'a> TypeChecker<'a> {
                 previous_callable_signature,
                 previous_curried_signature_call,
                 previous_higher_order_param_alias,
-                previous_symbol_identity,
+                previous_callable_id,
             });
         }
         previous
@@ -1469,10 +1452,10 @@ impl<'a> TypeChecker<'a> {
             } else {
                 self.local_higher_order_param_aliases.remove(&entry.name);
             }
-            if let Some(identity) = entry.previous_symbol_identity {
-                self.local_symbol_identities.insert(entry.name, identity);
+            if let Some(id) = entry.previous_callable_id {
+                self.local_callable_ids.insert(entry.name, id);
             } else {
-                self.local_symbol_identities.remove(&entry.name);
+                self.local_callable_ids.remove(&entry.name);
             }
         }
         if snapshot.entered_semantic_scope.is_some() {

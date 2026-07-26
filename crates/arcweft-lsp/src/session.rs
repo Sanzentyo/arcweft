@@ -1,4 +1,3 @@
-use crate::commands::ArcweftCommand;
 use crate::config::LspConfig;
 use crate::custom::ArcweftCustomRequest;
 use crate::diagnostics::{DocumentAnalysis, publish_diagnostics_from_analysis};
@@ -13,7 +12,6 @@ use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspRepl
 use crate::uri_key::LspUriKey;
 use arcweft_source::SourceRevision;
 use arcweft_tooling::model::ToolingError;
-use arcweft_verify_lsp::workspace_edit_from_tooling_edit;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response, ResponseError};
 use lsp_types::notification::{
     DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles,
@@ -21,22 +19,22 @@ use lsp_types::notification::{
     Notification as LspNotification, PublishDiagnostics,
 };
 use lsp_types::request::{
-    CodeActionRequest, Completion, DocumentSymbolRequest, ExecuteCommand, GotoDefinition,
-    HoverRequest, InlayHintRequest, PrepareRenameRequest, References, Rename,
-    Request as LspRequest, WorkspaceSymbolRequest,
+    CodeActionRequest, Completion, DocumentSymbolRequest, GotoDefinition, HoverRequest,
+    InlayHintRequest, PrepareRenameRequest, References, Rename, Request as LspRequest,
+    WorkspaceSymbolRequest,
 };
 use lsp_types::{
     CodeActionOrCommand, CodeActionParams, CodeActionResponse, CompletionParams,
     CompletionResponse, DidChangeConfigurationParams, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidChangeWorkspaceFoldersParams, DidCloseTextDocumentParams,
     DidOpenTextDocumentParams, DidSaveTextDocumentParams, DocumentSymbolParams,
-    ExecuteCommandOptions, ExecuteCommandParams, GotoDefinitionParams, HoverParams,
-    HoverProviderCapability, InitializeParams, InlayHintParams, InlayHintServerCapabilities, OneOf,
-    OptionalVersionedTextDocumentIdentifier, ReferenceParams, RenameOptions, RenameParams,
-    ServerCapabilities, SignatureHelpOptions, TextDocumentEdit, TextDocumentSyncCapability,
-    TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit, WorkspaceSymbolParams,
+    GotoDefinitionParams, HoverParams, HoverProviderCapability, InitializeParams, InlayHintParams,
+    InlayHintServerCapabilities, OneOf, OptionalVersionedTextDocumentIdentifier, ReferenceParams,
+    RenameOptions, RenameParams, ServerCapabilities, SignatureHelpOptions, TextDocumentEdit,
+    TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions, WorkspaceEdit,
+    WorkspaceSymbolParams,
 };
-use serde::{Deserialize, de::DeserializeOwned};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
@@ -140,13 +138,6 @@ impl ArcweftLspSession {
                 work_done_progress_options: WorkDoneProgressOptions::default(),
             }),
             code_action_provider: Some(lsp_types::CodeActionProviderCapability::Simple(true)),
-            execute_command_provider: Some(ExecuteCommandOptions {
-                commands: ArcweftCommand::all()
-                    .into_iter()
-                    .map(|command| command.as_str().to_owned())
-                    .collect(),
-                work_done_progress_options: WorkDoneProgressOptions::default(),
-            }),
             inlay_hint_provider: Some(OneOf::Right(InlayHintServerCapabilities::Options(
                 lsp_types::InlayHintOptions {
                     resolve_provider: Some(false),
@@ -488,12 +479,6 @@ impl ArcweftLspSession {
             method if method == ArcweftCustomRequest::ReplCommand.as_str() => {
                 Self::handle_repl_command_request(request, repl)
             }
-            ExecuteCommand::METHOD => {
-                let (id, params) =
-                    extract::<ExecuteCommandParams>(request, ExecuteCommand::METHOD)?;
-                let result = self.execute_command(&params);
-                Ok(Response::new_ok(id, result))
-            }
             _ => Ok(Response::new_err(
                 request.id,
                 ErrorCode::MethodNotFound as i32,
@@ -576,9 +561,8 @@ impl ArcweftLspSession {
             return Ok(Vec::new());
         };
         let analysis = self.cached_analysis(document).unwrap_or_else(|| {
-            Arc::new(DocumentAnalysis::analyze(
-                document.text(),
-                document.line_index().position_encoding(),
+            Arc::new(DocumentAnalysis::analyze_snapshot(
+                document,
                 self.profile_for_uri(document.uri()),
             ))
         });
@@ -600,28 +584,6 @@ impl ArcweftLspSession {
         Ok(actions)
     }
 
-    fn execute_command(&self, params: &ExecuteCommandParams) -> Value {
-        let Some(_command) = ArcweftCommand::parse(&params.command) else {
-            return Value::Null;
-        };
-        let Some((uri, edit)) = command_uri_and_edit(params) else {
-            return Value::Null;
-        };
-        let Some(document) = self.document_for_params(&uri) else {
-            return Value::Null;
-        };
-        let Ok(edit) = workspace_edit_from_tooling_edit(
-            &uri,
-            &edit,
-            document.source_document(),
-            document.line_index(),
-        ) else {
-            return Value::Null;
-        };
-        let edit = self.workspace_edit_policy.normalize(edit, &self.documents);
-        serde_json::to_value(edit).unwrap_or(Value::Null)
-    }
-
     fn profile_for_uri(&self, uri: &lsp_types::Uri) -> &LspProfile {
         self.profiles_by_uri
             .get(&LspUriKey::from_uri(uri))
@@ -638,12 +600,7 @@ impl ArcweftLspSession {
 
     fn replace_analysis(&mut self, snapshot: &DocumentSnapshot) -> Arc<DocumentAnalysis> {
         let profile = self.profile_for_uri(snapshot.uri()).clone();
-        let analysis = Arc::new(DocumentAnalysis::analyze_project(
-            snapshot.text(),
-            snapshot.line_index().position_encoding(),
-            &profile,
-            snapshot.uri(),
-        ));
+        let analysis = Arc::new(DocumentAnalysis::analyze_snapshot(snapshot, &profile));
         let profile_generation = profile
             .accepted_environment()
             .map(|environment| environment.generation());
@@ -749,22 +706,6 @@ impl ArcweftLspSession {
             ),
         )
     }
-}
-
-fn command_uri_and_edit(
-    params: &ExecuteCommandParams,
-) -> Option<(lsp_types::Uri, arcweft_tooling::model::TextEdit)> {
-    if params.arguments.len() != 1 {
-        return None;
-    }
-    let args: ToolingEditCommandArgs = serde_json::from_value(params.arguments[0].clone()).ok()?;
-    Some((args.uri, args.edit))
-}
-
-#[derive(Debug, Deserialize)]
-struct ToolingEditCommandArgs {
-    uri: lsp_types::Uri,
-    edit: arcweft_tooling::model::TextEdit,
 }
 
 fn extract<P: DeserializeOwned>(

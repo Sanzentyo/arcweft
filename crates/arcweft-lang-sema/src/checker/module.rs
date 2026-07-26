@@ -24,9 +24,6 @@ use super::{
     ident_pattern_name, validate_typecheck_ready,
 };
 use crate::callable::CallTargetFactMode;
-use crate::canonicalization::{
-    CanonicalizationSourceSet, CheckedCanonicalizationInventory, SemanticDataUnavailable,
-};
 use crate::checker::helpers::{type_kind_label, type_ref_label};
 use crate::dialogue_view::{DialogueViewModelRegistry, STANDARD_DIALOGUE_VIEW_RESOURCE};
 use crate::effect_model::{
@@ -43,7 +40,6 @@ use crate::types::GenericTypeOwnerId;
 use crate::view_part::{ViewPartDiagnostic, check_view_parts};
 use arcweft_lang_hir::entry::HirEntryItem;
 use arcweft_lang_hir::model::{HirFlow, HirFunction};
-use arcweft_lang_hir::project::HirProject;
 use arcweft_lang_hir::style::HirStyleDecl;
 use arcweft_lang_hir::symbol::CallableDeclarationId;
 use arcweft_lang_syntax::ast::common::Visibility;
@@ -54,8 +50,6 @@ use arcweft_lang_syntax::ast::items::{
 };
 use arcweft_lang_syntax::expr::{ComputationBlockKind, Expr};
 use arcweft_lang_syntax::types::{FnParam, FnSignature, TypeRef};
-use arcweft_source::SourceDocumentId;
-use arcweft_source::SourceDocumentIdentity;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 impl TypeCheckReport {
@@ -109,17 +103,6 @@ impl TypeCheckReport {
             .iter()
             .find(|fact| fact.declaration() == declaration)
     }
-
-    /// Returns canonicalization evidence for one exact registered source identity.
-    pub fn canonicalization_inventory(
-        &self,
-        module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
-        source: &SourceDocumentIdentity,
-    ) -> Option<&CheckedCanonicalizationInventory> {
-        self.canonicalization_inventories
-            .iter()
-            .find(|inventory| inventory.module() == module && inventory.source() == source)
-    }
 }
 
 pub(crate) struct FocusedCallTypeCheckReport {
@@ -153,7 +136,6 @@ pub fn analyze_registered_project_types(
     let mut checker = TypeChecker::new_with_project(
         registered.environment().typecheck_env(),
         module,
-        None,
         Some(registered.symbols()),
         Some(registered),
         CallTargetFactMode::All,
@@ -167,157 +149,6 @@ pub fn analyze_registered_project_types(
         view_part_diagnostics,
         &mut checker,
     )
-}
-
-/// Analyzes a registered project while retaining exact-source speaker-line evidence.
-pub fn analyze_registered_project_types_for_canonicalization(
-    project: &HirProject,
-    registered: &crate::registration::RegisteredSemanticWorld,
-    sources: &CanonicalizationSourceSet,
-) -> Result<TypeCheckReport, SemanticDataUnavailable> {
-    validate_canonicalization_sources(project, sources)?;
-    let module = project.linked_module();
-    let (style_catalog, style_diagnostics) = check_view_styles(&module);
-    let (view_part_catalog, view_part_diagnostics) = check_view_parts(&module);
-    let mut checker = TypeChecker::new_with_project(
-        registered.environment().typecheck_env(),
-        &module,
-        Some(sources),
-        Some(registered.symbols()),
-        Some(registered),
-        CallTargetFactMode::All,
-        CallResolverControl::ordinary(),
-    );
-    Ok(finish_type_check(
-        &module,
-        style_catalog,
-        style_diagnostics,
-        view_part_catalog,
-        view_part_diagnostics,
-        &mut checker,
-    ))
-}
-
-/// Analyzes one linked project while retaining exact-source speaker-line evidence.
-pub fn analyze_project_types_for_canonicalization(
-    project: &HirProject,
-    env: &TypeCheckEnv,
-    sources: &CanonicalizationSourceSet,
-) -> Result<TypeCheckReport, SemanticDataUnavailable> {
-    validate_canonicalization_sources(project, sources)?;
-    let document = canonicalization_diagnostic_document(project, sources);
-    let root_source = project
-        .source(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
-        .ok_or_else(|| {
-            SemanticDataUnavailable::new(
-                document.clone(),
-                "HIR project has no root source identity",
-            )
-        })?;
-    let world = arcweft_lang_hir::symbol::ProjectSymbolWorldId::try_new(
-        project.package().clone(),
-        root_source.id().clone(),
-        "canonicalization",
-    )
-    .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
-    let revision = arcweft_lang_hir::symbol::ProjectSymbolRevision::try_for_documents(
-        project
-            .modules()
-            .filter_map(|(path, _)| project.source(path)),
-    )
-    .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
-    let externals =
-        arcweft_lang_hir::symbol::ProjectExternalDeclarations::try_new(world, revision, Vec::new())
-            .map_err(|error| SemanticDataUnavailable::new(document.clone(), error.to_string()))?;
-    let project_symbols = project
-        .project_symbols(&externals)
-        .map_err(|report| {
-            SemanticDataUnavailable::new(
-                document,
-                report
-                    .diagnostics()
-                    .iter()
-                    .map(std::string::ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            )
-        })?
-        .into_table();
-    let module = project.linked_module();
-    let (style_catalog, style_diagnostics) = check_view_styles(&module);
-    let (view_part_catalog, view_part_diagnostics) = check_view_parts(&module);
-    let mut checker = TypeChecker::new_with_project(
-        env,
-        &module,
-        Some(sources),
-        Some(&project_symbols),
-        None,
-        CallTargetFactMode::Disabled,
-        CallResolverControl::ordinary(),
-    );
-    Ok(finish_type_check(
-        &module,
-        style_catalog,
-        style_diagnostics,
-        view_part_catalog,
-        view_part_diagnostics,
-        &mut checker,
-    ))
-}
-
-fn validate_canonicalization_sources(
-    project: &HirProject,
-    sources: &CanonicalizationSourceSet,
-) -> Result<(), SemanticDataUnavailable> {
-    let document = canonicalization_diagnostic_document(project, sources);
-    if sources.project() != project.package() {
-        return Err(SemanticDataUnavailable::new(
-            document,
-            format!(
-                "source project `{}` does not match checked project `{}`",
-                sources.project(),
-                project.package()
-            ),
-        ));
-    }
-    for (module, _) in project.modules() {
-        let Some(expected) = project.source(module) else {
-            continue;
-        };
-        let Some(actual) = sources.source(module) else {
-            return Err(SemanticDataUnavailable::new(
-                document,
-                format!("module `{module}` has no canonicalization source identity"),
-            ));
-        };
-        if actual != expected {
-            return Err(SemanticDataUnavailable::new(
-                actual.id().clone(),
-                format!("module `{module}` canonicalization source is stale"),
-            ));
-        }
-    }
-    Ok(())
-}
-
-fn canonicalization_diagnostic_document(
-    project: &HirProject,
-    sources: &CanonicalizationSourceSet,
-) -> SourceDocumentId {
-    sources
-        .first_document()
-        .cloned()
-        .or_else(|| {
-            project
-                .source(&arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root())
-                .map(|identity| identity.id().clone())
-        })
-        .or_else(|| {
-            project.modules().find_map(|(module, _)| {
-                project.source(module).map(|identity| identity.id().clone())
-            })
-        })
-        .unwrap_or_else(|| SourceDocumentId::try_new("<project>").expect("non-empty document id"))
 }
 
 fn finish_type_check(
@@ -362,7 +193,6 @@ fn finish_type_check_with_call_facts(
     checker
         .warnings
         .extend(effects.warnings().cloned().map(TypeCheckWarning::effect));
-    let canonicalization_inventories = checker.finish_canonicalization_inventories();
     let call_target_fact_recorder = std::mem::replace(
         &mut checker.call_target_fact_recorder,
         CallTargetFactRecorder::new(CallTargetFactMode::Disabled),
@@ -392,7 +222,6 @@ fn finish_type_check_with_call_facts(
         style_catalog,
         view_part_catalog,
         view_part_diagnostics,
-        canonicalization_inventories,
         project_callable_references: std::mem::take(&mut checker.project_callable_references),
         project_entity_references: std::mem::take(&mut checker.project_entity_references),
         call_target_fact_report: call_target_fact_report.clone(),
@@ -1793,7 +1622,6 @@ impl TypeChecker<'_> {
     }
 
     pub(super) fn check_dialogue_item(&mut self, dialogue: &arcweft_lang_hir::model::HirDialogue) {
-        self.record_checked_speaker_line(dialogue);
         if !self.is_dialogue_callee(dialogue.callee()) {
             self.errors.push(TypeCheckError::new(format!(
                 "dialogue callee `{}` must resolve to Ref<Character> or SpeakerPreset",

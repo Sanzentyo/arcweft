@@ -67,7 +67,6 @@ pub(super) struct RegisteredCandidateCheckpoint {
     for_iteration_evidence: usize,
     project_callable_references: usize,
     project_entity_references: usize,
-    checked_speaker_lines: usize,
     loop_break_types: Vec<usize>,
     yield_stack: Vec<YieldContext>,
     last_checked_closure_effect_callable: Option<CallableId>,
@@ -101,7 +100,6 @@ impl TypeChecker<'_> {
             for_iteration_evidence: self.for_iteration_evidence.len(),
             project_callable_references: self.project_callable_references.len(),
             project_entity_references: self.project_entity_references.len(),
-            checked_speaker_lines: self.checked_speaker_lines.len(),
             loop_break_types: self
                 .loop_stack
                 .iter()
@@ -294,8 +292,6 @@ impl TypeChecker<'_> {
             .truncate(checkpoint.project_callable_references);
         self.project_entity_references
             .truncate(checkpoint.project_entity_references);
-        self.checked_speaker_lines
-            .truncate(checkpoint.checked_speaker_lines);
         debug_assert_eq!(self.loop_stack.len(), checkpoint.loop_break_types.len());
         for (context, len) in self.loop_stack.iter_mut().zip(checkpoint.loop_break_types) {
             context.break_types.truncate(len);

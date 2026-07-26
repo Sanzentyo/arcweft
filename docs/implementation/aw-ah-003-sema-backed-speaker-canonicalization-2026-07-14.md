@@ -2,7 +2,15 @@
 
 Date: 2026-07-14
 
-Status: implemented and focused validation complete
+Status: historical; implementation deleted on 2026-07-26
+
+> Superseded implementation record. The sema inventory, tooling canonicalizer,
+> `arcw canonicalize`, and LSP sugar action described below were deleted after
+> AW-AH-009.4.2/.3 established typed `CharacterDialogue` construction and
+> content application as the final owner. See
+> [`2026-07-26-proof-obsolete-dialogue-canonicalizer-deletion.md`](2026-07-26-proof-obsolete-dialogue-canonicalizer-deletion.md).
+> The remainder of this file is retained as historical evidence, not as a
+> current API or implementation contract.
 
 Source package:
 `D:\sanze\Downloads\aw-ah-003-sema-backed-speaker-canonicalization.zip`

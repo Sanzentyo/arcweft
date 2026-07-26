@@ -111,14 +111,21 @@ let tempo = 92bpm
 `"#fff"`, `"#ffff"`, `"#rrggbb"`, and `"#rrggbbaa"` remain ordinary string
 literals until the type checker sees an expected `Color`.
 
-## Syntax canonicalization decision
+## CharacterDialogue surface ownership decision
 
-Arcweft has script-friendly sugar, but semantic hashing, formatting, hot reload, and diagnostics use canonical lowering.
+Dialogue construction and content application are distinct typed operations.
+Parentheses construct or immutably reconfigure a `CharacterDialogue`; brackets
+and colon apply `DialogueContent` and produce a line. Ordinary calls use the
+shared `CallExpr` owner. There is no `.say`, `Speaker`, or `SpeakerPreset`
+canonical surface.
 
-Canonical forms:
+Final forms:
 
 ```text
-speaker.say(args)[text]
+Ref<Character>(CharacterDialoguePatch) -> CharacterDialogue
+CharacterDialogue(CharacterDialoguePatch) -> CharacterDialogue
+CharacterDialogue[DialogueContent] -> DialogueLine
+CharacterDialogue: DialogueContent -> DialogueLine
 with { line_plan }
 
 try await expr with { pending p => ... }
@@ -126,33 +133,12 @@ try await expr with { pending p => ... }
 at(time) { cue_body }
 ```
 
-Sugar forms:
+Examples:
 
 ```text
-speaker: text
-speaker(args): text
-speaker[text]
-with:
-    line_plan
-await? expr with:
-    pending p:
-        ...
-at(time):
-    cue_body
-```
-
-Lowering rules:
-
-```text
-alice: text
-  -> alice.say()[text]
-
-alice(voice=auto): text
-  -> alice.say(voice=auto)[text]
-
-alice2(voice=auto): text
-  -> alice2(voice=auto)[text]
-     # speaker presets remain callable; do not force `.say`.
+alice(voice=auto)        # CharacterDialogue construction
+alice(voice=auto)[text]  # content application
+alice(voice=auto): text  # colon content application
 
 with:
   -> with { ... }
@@ -161,9 +147,12 @@ await? expr with { ... }
   -> try await expr with { ... }
 ```
 
-Formatters should preserve `with:` by default in hand-written scenario files. LSP and CLI may offer an explicit expansion action that rewrites sugar to canonical form.
+Formatters preserve `with:` by default in hand-written scenario files. CLI and
+LSP do not expose a semantic Dialogue sugar-expansion action.
 
-`speaker.say()[text] { ... }` is not a line-plan attachment. A bare trailing `{ ... }` after a dialogue call is parsed as a separate unnamed `scope`, so line plans must use `with { ... }` or `with:`.
+`CharacterDialogue[text] { ... }` is not a line-plan attachment. A bare trailing
+`{ ... }` after content application is parsed as a separate unnamed `scope`, so
+line plans must use `with { ... }` or `with:`.
 
 ## Scope and relative ID decision
 
@@ -344,7 +333,7 @@ Control-transfer diagnostics must name the continuation being exited. Scope labe
     }
 }
 
-alice.say()[聞いて。[p]]
+alice()[聞いて。[p]]
 with 'line {
     cancel on input(.SkipLine):
         out 'line .Skipped

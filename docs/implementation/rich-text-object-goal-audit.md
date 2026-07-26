@@ -17,7 +17,7 @@ execution without transitional fallback layers.
 
 | Requirement | Current evidence | Status |
 |---|---|---|
-| `character.say` / `narrator.say` remain high-level facades over typed text objects | `docs/implementation/native-rich-text-player.md`; `samples/rich-text-full-grammar.arcw`; CLI regressions around `agent_observe_json_reports_rich_text_display_objects` and full grammar native observe | Covered |
+| Typed `CharacterDialogue[...]` / colon application is the sole high-level facade over typed text objects | Final AW-AH-009.4.2/.3 contracts; current native-player and Agent evidence still passes through the frozen legacy runtime carrier | Migration pending |
 | Page, line, run, glyph, glyph-cluster, ruby, and proxy objects are observable with stable ids | `AgentRichTextElementKind`; `agent_observe_json_reports_rich_text_display_objects`; vertical glyph/ruby raw crop regressions; `SVR-2026-06-17-018` through `023` and `SVR-2026-06-18-005` | Covered |
 | Object-scoped images preserve typed object metadata | `AgentImageObjectRef`; `image_resource_metadata_preserves_observed_object_ref`; `agent_observe_reports_text_presentation_z_index_depth`; `image_tool_content_preserves_object_rich_text_ref_metadata`; `SVR-2026-06-17-035` through `050` and `SVR-2026-06-18-005` / `006` | Covered |
 | `#[text_proxy]` / `#[rich_text_proxy]` metadata survives lowering, observe, hit-test, capture, and MCP readback | `agent_observe_infers_text_proxy_struct_shorthand`; `agent_observe_infers_rich_text_proxy_struct_attribute_family`; full grammar proxy regressions; `SVR-2026-06-17-021`, `025`, `034`, `038`, and `SVR-2026-06-18-001` / `002` / `006` | Covered |

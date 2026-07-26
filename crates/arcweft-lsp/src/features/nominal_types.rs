@@ -877,12 +877,7 @@ entry agent @entry.agent.main {
             profile.diagnostics()
         );
         let document = open(&main_path, MAIN);
-        let analysis = DocumentAnalysis::analyze_project(
-            MAIN,
-            PositionEncoding::Utf16,
-            &profile,
-            document.uri(),
-        );
+        let analysis = DocumentAnalysis::analyze_snapshot(&document, &profile);
         let published = publish_diagnostics_from_analysis(&document, &profile, &analysis);
         assert!(published.diagnostics.iter().all(|diagnostic| {
             !matches!(

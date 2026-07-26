@@ -1,49 +1,24 @@
-use std::sync::Arc;
-
-use arcweft_lang_hir::{
-    lower::lower_document_to_hir,
-    project::{HirProject, HirProjectModule},
-};
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
-
 use crate::{
-    canonicalization::CanonicalizationSourceSet,
-    checker::{CallableExecutionMode, TypeCheckReport, analyze_project_types_for_canonicalization},
+    checker::{CallableExecutionMode, TypeCheckReport, analyze_registered_project_types},
     env::TypeCheckEnv,
+    registration::ProjectRegistrationFacts,
+    test_support::character_project::{register, root_project_source},
     types::TypeKind,
 };
 
 fn analyze_project(source: &str) -> TypeCheckReport {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-project://function-execution/src/main.arcw")
-                .expect("document id"),
-            SourceName::path("src/main.arcw"),
-            source,
-        )
-        .expect("source document"),
-    );
-    let parsed = parse_source(source);
-    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
-    let root = CanonicalModulePath::crate_root();
-    let project = HirProject::new(
-        "function-execution",
-        [
-            HirProjectModule::try_new(root.clone(), document.identity().clone(), hir)
-                .expect("root module"),
-        ],
+    let (document, project, world_id) = root_project_source("function-execution", source);
+    let facts = ProjectRegistrationFacts::try_new(
+        world_id,
+        vec![document],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
     )
-    .expect("HIR project");
-    let source_span = document
-        .span(SourceRange::new(0, source.len()))
-        .expect("complete source span");
-    let sources =
-        CanonicalizationSourceSet::try_new(project.package().clone(), [(root, source_span)])
-            .expect("canonicalization source set");
-    analyze_project_types_for_canonicalization(&project, &TypeCheckEnv::standard(), &sources)
-        .expect("project semantic analysis")
+    .expect("project registration facts");
+    let world = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect("project semantic registration");
+    analyze_registered_project_types(&project.linked_module(), &world)
 }
 
 fn execution<'a>(report: &'a TypeCheckReport, name: &str) -> &'a CallableExecutionMode {

@@ -20,11 +20,11 @@ use crate::{
         CallableName, CallableParameter, CallableParameterType, CallablePath,
         CallableSignatureSchema, CallableValidator, CharacterOwnerSource,
         CheckedCallArgumentSlotFact, CheckedCallTarget, DataLastCallableId, DialogueCallableId,
-        DialogueCalleeIdentity, FunctionValueOrdinal, FunctionValueSignatureId,
-        LexicalBindingIndex, LexicalCallBinding, LexicalCallableScope, LocalCallableId,
-        NonEmptyResolvedCandidates, PRODUCTION_CALLABLE_LIMITS, PresentationCallableId,
-        ProjectNominalTypeId, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
-        ResolvedCharacterOwner, ResolvedEnumSeed, ResolvedFunctionValueSeed, SpeakerCallableId,
+        DialogueCalleeIdentity, FunctionValueOrdinal, FunctionValueSignatureId, LexicalCallBinding,
+        LexicalCallableScope, LocalCallableId, NonEmptyResolvedCandidates,
+        PRODUCTION_CALLABLE_LIMITS, PresentationCallableId, ProjectNominalTypeId,
+        ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable, ResolvedCharacterOwner,
+        ResolvedEnumSeed, ResolvedFunctionValueSeed, SpeakerCallableId,
         data_last_unsupported_spread_reason,
     },
     checker::{
@@ -565,10 +565,11 @@ impl TypeChecker<'_> {
                     });
                 function_value_ordinal = function_value_ordinal.saturating_add(1);
                 let id_expression = self
-                    .local_symbol_identities
+                    .local_callable_ids
                     .get(name)
-                    .and_then(local_binding_expression)
-                    .unwrap_or(expression);
+                    .map_or(expression, |identity| {
+                        TypeExpressionId::from_index(identity.binding().get())
+                    });
                 let id = FunctionValueSignatureId::new(id_expression, ordinal);
                 let curried = self.local_curried_signature_calls.get(name);
                 let schema = curried
@@ -623,13 +624,7 @@ impl TypeChecker<'_> {
     }
 
     fn registered_local_callable_id(&self, name: &str) -> Option<LocalCallableId> {
-        let crate::canonicalization::SemanticSymbolIdentity::Local { scope, binding, .. } =
-            self.local_symbol_identities.get(name)?
-        else {
-            return None;
-        };
-        let binding = LexicalBindingIndex::try_from_usize(binding.0 as usize).ok()?;
-        Some(LocalCallableId::new(*scope, binding))
+        self.local_callable_ids.get(name).cloned()
     }
 
     fn registered_free_path_has_value_receiver(&self, callee: &Expr, path: &CallablePath) -> bool {
@@ -1195,8 +1190,12 @@ impl TypeChecker<'_> {
         let Some(path) = callable_path(callee) else {
             return;
         };
-        let callee_identity = self
-            .resolve_project_character_in(&module, &path.dotted_name())
+        let callee_span = self.source_span_for_expr(callee);
+        let callee_identity = callee_span
+            .as_ref()
+            .and_then(|source| {
+                self.resolve_project_character_in(&module, &path.dotted_name(), source)
+            })
             .map_or_else(
                 || DialogueCalleeIdentity::Content { path: path.clone() },
                 |character| {
@@ -1213,7 +1212,6 @@ impl TypeChecker<'_> {
         };
         let lexical = LexicalCallableScope::default();
         let call_span = self.source_span_for_expr(dialogue);
-        let callee_span = self.source_span_for_expr(callee);
         let records_facts = self.call_target_fact_recorder.wants(call_span.as_ref());
         let focused_work = self.uses_focused_callable_work(call_span.as_ref());
         let trait_catalog = &self.trait_catalog;
@@ -1657,17 +1655,6 @@ fn collect_callable_path_segments(callee: &Expr, segments: &mut Vec<CallableName
         }
         _ => None,
     }
-}
-
-fn local_binding_expression(
-    identity: &crate::canonicalization::SemanticSymbolIdentity,
-) -> Option<TypeExpressionId> {
-    let crate::canonicalization::SemanticSymbolIdentity::Local { binding, .. } = identity else {
-        return None;
-    };
-    Some(TypeExpressionId::from_index(
-        usize::try_from(binding.0).ok()?,
-    ))
 }
 
 fn function_value_effects(ty: &TypeKind) -> EffectRow {

@@ -268,32 +268,21 @@ Phase 0 / Phase 1 minimal Rust workspace:
   --manifest ... --profile ... --image png` uses the same profile-selected
   defaults for Agent JSON and native image debug output, including selected
   dialogue View targets, rich-text base styles, ruby layout defaults, and inline
-  effect provenance. Selection-scoped code actions can extract active non-line
-  contributors such as `text_color` and `rich_text.ruby.size` into dialogue line
-  options, can lift selected defaults into the current lexical speaker preset's
-  call options, can lift them into the matching character's `dialogue_style`
-  block when the character declaration is in the current document, can extract
-  active contributors into the effective authored View style (`rich_text` for
-  `rich_text.*` paths, `dialogue_style` for other dialogue style paths), or move
-  active non-default contributors into the profile-selected `dialogue defaults`
-  block when one is selected, falling back to the ID-free project-wide defaults
-  block only when no profile selection is active.
-  Block extraction targets use canonical nested style blocks such as
-  `rich_text { ruby { size = ... } }`. Source-level sugar
-  expansion and canonical
-  rich-text actions now include dialogue content embedded in line-result `let`
-  bindings such as `let handles = alice.say()[...] with: ...`, and they
-  return a coordinated rewrite edit so paired constructs such as
+  effect provenance. The old selection-scoped line/SpeakerPreset/character
+  extraction actions were deleted with the semantic speaker canonicalizer.
+  Hover, definition, and reference projection remain frozen consumers of the
+  current runtime cascade until the typed CharacterDialogue authority switch.
+  The retained canonical RichText action includes dialogue content embedded in
+  line-result `let` bindings such as `let handles = alice()[...] with: ...`, and
+  returns one coordinated rewrite edit so paired constructs such as
   `[.shake]...[/]` cannot be applied as only an opening-tag or closing-tag
   rewrite. Runtime rich-text lowering and formatter/LSP canonicalization treat
   unknown dot selectors without attributes as zero-width markers, while
   unknown dot selectors with attributes such as `[.sparkle amp=2px]...[/]`
   infer custom effect spans and canonicalize them to
-  `[effect .sparkle amp=2px]...[/effect]`. Sugar expansion now guards
-  AST-derived dialogue content ranges before
-  applying line-level rewrites, so body text such as `cue:` is not rewritten as a
-  speaker line, while `[raw: ...]` shorthand scans nested bracket-like text
-  before choosing its closing bracket. The full rich-text grammar check fixture now includes a
+  `[effect .sparkle amp=2px]...[/effect]`. The deleted general sugar planner no
+  longer rewrites speaker lines, `.say`, `with:`, parent paths, ruby shorthand,
+  or scalar dialogue tags. The full rich-text grammar check fixture now includes a
   family-relative `dialogue defaults` profile and canonical nested `rich_text`
   typography blocks in both defaults and character `dialogue_style` examples.
   Command-backed tooling actions return focused LSP `WorkspaceEdit` values
@@ -809,9 +798,9 @@ Current high-confidence state:
 - `pro_review4.md`: adopted value-producing `{ ... }` blocks, `scope name { ... }`
   blocks for relative ID namespaces, unnamed `scope { ... }` as name-omitted
   sugar, relative IDs only in ID-bearing contexts,
-  `self::` / `super::` / `crate::` module-path roots, reserved `parent::`
-  normalization, and explicit sugar expansion for `with:`, speaker colon lines,
-  speaker-preset calls, and `await?`.
+  `self::` / `super::` / `crate::` module-path roots. Its provisional semantic
+  expansion of `parent::`, speaker colon lines, SpeakerPreset calls, and
+  `await?` was superseded and deleted; no compatibility action remains.
 - `pro_review5.md`: adopted structured function signatures with generic params,
   curried parameter groups and `where` clauses; structured hook headers
   (`when`, `priority`, `once`, `effects`); structured dialogue line options; and
@@ -1706,7 +1695,10 @@ Current high-confidence state:
   expressions, including string-carrying variants such as
   `{ "kind": "var", "value": "signal.write" }`.
 - Phase 2.1 tooling has a Sans I/O crate, `arcweft-tooling`, for source edit
-  reports, formatting, semantic canonicalization, and source code actions.
+  reports, formatting, RichText-only canonicalization, and source code actions.
+  The AW-AH-003 sema-backed Speaker canonicalizer, its CLI command, and its LSP
+  project-reload/action path were deleted after the final CharacterDialogue
+  contracts superseded that carrier.
   The raw-source ID materializer and its CLI/LSP/inlay adapters have been
   deleted. They reparsed source and reconstructed declaration/choice context
   from CST lines, so retaining them would create a second identity authority.

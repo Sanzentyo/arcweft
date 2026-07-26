@@ -21,26 +21,17 @@
 ## DSL固有
 
 - Ref resolution
-- Sugar expansion code actions:
-  - `with:` → `with { ... }`
-  - `speaker:` → `speaker.say()[...]`
-  - `speaker(args):` → `speaker.say(args)[...]` for character refs
-  - `speaker_preset(args):` → `speaker_preset(args)[...]`
-  - preserve `try expr` / `expr?` and `try await` / `await?` authored spellings;
-    source-facing actions do not canonicalize between retained forms
-  - `parent::path` → `super::path`
-  - preserve the callee kind when expanding dialogue sugar, so lexical speaker
-    presets are not rewritten into forced `.say(...)` calls
 - Rich-text canonicalization code action:
-  - command/action id: `arcweft.canonicalRichText`
+  - action id: `arcweft.canonicalRichText`; the action carries a revision-bound
+    `WorkspaceEdit` directly and is not an advertised execute-command alias
   - rewrites inferred dot selectors such as `[.shake]...[/]` into explicit
     family tags such as `[effect .shake]...[/effect]`
   - rewrites unknown dot selectors to `[mark .name]`
   - rewrites inferred text proxy object selectors to `[object ...]` when the
     selector references a visible `#[text_proxy]` / `#[rich_text_proxy]` struct
     through `type=`, `struct=`, `proxy=`, or by using the struct name itself
-  - does not expand unrelated dialogue sugar such as `$(expr)`, ruby shorthand,
-    `[page]`, or speaker-line sugar
+  - does not expand unrelated dialogue syntax such as `$(expr)`, ruby shorthand,
+    `[page]`, colon content application, or parenthesized construction
 - Typed ID actions are future work and are not part of the current server:
   - hints, materialization, and rename must consume the accepted typed
     project/source-site identity inventory
@@ -107,8 +98,9 @@ LSP features use that shared index:
   the contributing dialogue Style
 - go to active profile selection jumps to the manifest or build profile that
   selected the dialogue View and Style
-- code actions can extract an override to a line option, speaker preset,
-  character `dialogue_style`, authored View style, or profile dialogue Style
+- the old line/SpeakerPreset/character extraction actions are not offered;
+  final extraction must consume the typed `CharacterDialogue` application and
+  accepted presentation owners after the Dialogue authority switch
 
 Generated or fully elaborated source is also surfaced through diagnostics.
 Domain lint names are used in user-authored attributes, while stable numeric
@@ -139,7 +131,6 @@ arcweft/applyGraphPatch
 arcweft/getRagContext
 arcweft/renderRouteMap
 arcweft/parseInput
-arcweft/expandSugar
 arcweft/shaderPreview
 arcweft/audioCuePreview
 ```
@@ -177,8 +168,8 @@ client capability negotiation, publish-diagnostics notifications, and request
 dispatch outside the verifier helper. MVP document sync is
 `TextDocumentSyncKind::FULL`; incremental sync and `ropey` remain future work.
 
-It also exposes source-level helpers backed by `arcweft-tooling`, including
-sugar expansion and formatting actions. These helpers return `lsp-types` data
+It also exposes the RichText-only source action backed by `arcweft-tooling`.
+The helper returns `lsp-types` data
 only; opening documents, applying workspace edits, watching files, and
 resolving editor capabilities remain transport-adapter responsibilities. The
 old relative-ID materialization action and inferred-ID inlay path are not part
@@ -192,26 +183,12 @@ encoding. UTF-16 remains the default, and UTF-8 is selected only when the client
 advertises it through initialize capabilities.
 
 Source-level code actions return `WorkspaceEdit` values when the server can map
-the current document snapshot. Current formatting and semantic rewrites are
-computed by `arcweft-tooling`, converted through `LspPositionMapper`, and sent
-as LSP text edits. Command-backed edits use a single structured
-`workspace/executeCommand` argument:
-
-```json
-{
-  "uri": "file:///story.arcw",
-  "edit": {
-    "start": 0,
-    "end": 0,
-    "replacement": "// generated\n"
-  }
-}
-```
-
-The server does not accept older positional command argument shapes; removed
-syntax and removed tooling protocols should fail through the normal request
-result path instead of transitional protocol branches. The command still returns a
-`WorkspaceEdit`, so the server never writes files directly.
+the current document snapshot. Current RichText rewrites are computed by
+`arcweft-tooling`, converted through `LspPositionMapper`, and sent
+as LSP text edits. The deleted semantic sugar command transport has no generic
+`workspace/executeCommand` replacement. Verifier host commands remain typed
+action payloads for an owning client integration; the server does not advertise
+or reinterpret them as arbitrary source-edit injection.
 
 Adapter completions, hover, and signature help are also Sans I/O. The LSP helper
 consumes an already-resolved adapter manifest containing standard adapter facts,
@@ -258,9 +235,8 @@ has not passed profile-aware type checking.
 
 Workspace edits are negotiated in the transport. If the client advertises
 `workspace.workspaceEdit.documentChanges`, edit-bearing code actions and
-`workspace/executeCommand` results are returned as versioned
-`documentChanges`; otherwise they fall back to the plain `changes` map. The
-server still never writes files directly.
+rename results are returned as versioned `documentChanges`; otherwise they fall
+back to the plain `changes` map. The server still never writes files directly.
 
 The helper also exposes adapter requirement diagnostics. The transport or
 profile-aware compiler path supplies typed requirements collected from route

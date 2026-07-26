@@ -1348,39 +1348,14 @@ Line-plan items that are parsed but not yet represented in the Phase 2.0 runtime
 model fail `arcw check` with a `LinePlanLowerError` until their lowering is
 implemented.
 
-## Formatting and canonicalization
+## Formatting and RichText canonicalization
 
 `arcw fmt` is syntax-only and preserves authoring sugar such as `with:`. Its
-optional rich-text rewrite is likewise syntax-owned. Rewrites that depend on
-speaker types or project declarations use the separate semantic
-canonicalization command:
+optional rich-text rewrite is likewise syntax-owned:
 
 ```bash
 arcw fmt game/routes/opening.arcw
 arcw fmt --canonical-rich-text game/routes/opening.arcw
-arcw canonicalize game/routes/opening.arcw
-arcw canonicalize --write game/routes/
-```
-
-Semantic canonicalization rewrites checked source-level sugar to canonical
-forms:
-
-```text
-with:                 -> with { ... }
-speaker: text         -> speaker.say()[text]
-speaker(args): text   -> speaker.say(args)[text] for character refs
-speaker_preset(args): text
-                      -> speaker_preset(args)[text]
-parent::path          -> super::path
-｜base《ruby》       -> |[base](ruby)
-|base{ruby}          -> |[base](ruby)
-$(expr)              -> #[expr]
-[! flash(...)]      -> [call flash(...)]
-[.mark]              -> [mark .mark]
-[w 500ms]            -> [w time=500ms]
-[page]/[wait]/[nl]   -> [p]/[l]/[r]
-rich_text.ruby.size = 14px
-                      -> rich_text { ruby { size = 14px } }
 ```
 
 `fmt --canonical-rich-text` rewrites only inferred dot rich-text selectors such
@@ -1398,8 +1373,8 @@ visible proxy struct, `[.KeywordHit]...[/]` becomes
 `[object .KeywordHit type=KeywordHit]...[/object]`; existing parameters are
 preserved while adding the inferred `type`, so `[.HoverHit tone=alert]...[/]`
 becomes `[object .HoverHit type=HoverHit tone=alert]...[/object]`. It does not
-expand unrelated dialogue sugar such as `$(expr)`, ruby shorthand, `[page]`, or
-speaker-line sugar.
+expand unrelated dialogue syntax such as `$(expr)`, ruby shorthand, `[page]`,
+colon content application, or parenthesized `CharacterDialogue` construction.
 The runtime/debug form keeps the originating proxy declaration as typed
 metadata. Agent observe and hit-test report both the resolved proxy `type_name`
 and the declaration provenance (`struct_name` plus `text_proxy` /
@@ -1407,7 +1382,7 @@ and the declaration provenance (`struct_name` plus `text_proxy` /
 objects without guessing whether a value came from inline attributes or a
 declared proxy default.
 
-Declaration canonicalization uses the same diagnostic names as LSP. Source-level
+Declaration linting uses the same diagnostic names as LSP. Source-level
 lint names are domain namespaces, while JSON diagnostics and CI logs also carry
 stable numeric codes:
 
@@ -1424,26 +1399,21 @@ for `identity::decl_binding_mismatch`, `hint` for `style::explicit_decl_id`, and
 
 `flow @flow.opening opening(...)` and
 `source @source.http_requests http_requests: ...` are fully elaborated source
-forms. The parser accepts them, but formatter and check report
-`style::redundant_decl_identity` for hand-written source and may rewrite them to
-the canonical form. Generated source can opt in with `#[generated]` or
+forms. The parser accepts them, while check and LSP report
+`style::redundant_decl_identity` for hand-written source. Generated source can opt in with `#[generated]` or
 source-level `#![generated(...)]`; specific lint rewrites can be suppressed with
 `#[allow(style::redundant_decl_identity)]` or source-level `#![allow(...)]`. A mismatch such as
 `flow @flow.opening start(...)` reports `identity::decl_binding_mismatch` and is
 not rewritten automatically.
 
-Semantic canonicalization must preserve the callee kind. A lexical
-`SpeakerPreset` remains a callable speaker value, so
-`alice2(voice=auto): text` expands to
-`alice2(voice=auto)[text]`, not to `alice2.say(voice=auto)[text]`.
-Dialogue-text authoring sugar is preserved by default and normalized only when
-`arcw canonicalize` is requested; `fmt --canonical-rich-text` changes only the
-inferred rich-text tag family described above.
-Dialogue presentation is canonical manifest data. CLI canonicalization preserves
-the selected profile dialogue table and its structured inline-failure policy so
-CLI and LSP edits converge on the same accepted project contract and provenance.
+The former sema-backed `arcw canonicalize` command was deleted. It deepened the
+provisional `SpeakerLine` / `SpeakerPreset` / `.say` model that is superseded by
+typed `CharacterDialogue` construction and content application. The CLI does
+not retain an alias, dual reader, or replacement string-based canonicalizer.
+`fmt --canonical-rich-text` changes only the inferred rich-text tag family
+described above.
 
-Both edit commands must preserve IDs, source anchors where possible, comments,
+The formatting command must preserve IDs, source anchors where possible, comments,
 and stable child entity slots. They must never renumber dialogue or choice IDs
 as a side effect of editing.
 

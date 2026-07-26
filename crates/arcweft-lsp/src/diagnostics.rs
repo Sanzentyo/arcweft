@@ -3,7 +3,6 @@ use crate::positions::{LineIndex, PositionEncoding};
 use crate::profiles::LspProfile;
 use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
-    canonicalization::{CheckedCanonicalizationInventory, SemanticDataUnavailable},
     check::{analyze_types, validate_typecheck_ready},
     diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning},
     resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
@@ -35,7 +34,6 @@ pub struct DocumentAnalysis {
     diagnostics: Vec<Diagnostic>,
     line_index: LineIndex,
     verification_report: Option<VerificationReport>,
-    canonicalization: Result<CheckedCanonicalizationInventory, SemanticDataUnavailable>,
     source_revision: SourceRevision,
 }
 
@@ -162,36 +160,18 @@ impl DocumentAnalysis {
             diagnostics,
             line_index,
             verification_report,
-            canonicalization: Err(SemanticDataUnavailable::new(
-                document.identity().id().clone(),
-                "standalone document analysis has no checked project snapshot",
-            )),
             source_revision: document.identity().revision(),
         }
     }
 
-    /// Runs analysis against the containing project and exact open-document snapshot.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `uri` cannot form a non-empty, control-free source document identity or if the
-    /// current platform cannot represent the in-memory source length in that identity.
-    pub fn analyze_project(
-        source: &str,
-        encoding: PositionEncoding,
-        profile: &LspProfile,
-        uri: &Uri,
-    ) -> Self {
-        let document = SourceDocument::try_new(
-            SourceDocumentId::try_new(uri.to_string()).expect("LSP URI is a valid document id"),
-            SourceName::path(uri.to_string()),
-            source,
+    /// Runs analysis against the exact source document and negotiated line index of an open
+    /// snapshot.
+    pub fn analyze_snapshot(snapshot: &DocumentSnapshot, profile: &LspProfile) -> Self {
+        Self::analyze_document(
+            snapshot.source_document(),
+            snapshot.line_index().position_encoding(),
+            profile,
         )
-        .expect("an in-memory LSP source fits the source document identity");
-        let mut analysis = Self::analyze_document(&document, encoding, profile);
-        analysis.canonicalization =
-            crate::canonicalization::checked_inventory_for_document(uri, source, profile);
-        analysis
     }
 
     /// Diagnostics emitted for the analyzed document.
@@ -207,18 +187,6 @@ impl DocumentAnalysis {
     /// Verifier report retained for typed verifier code actions.
     pub const fn verification_report(&self) -> Option<&VerificationReport> {
         self.verification_report.as_ref()
-    }
-
-    /// Exact checked inventory or typed unavailability for this snapshot.
-    pub const fn canonicalization_input(
-        &self,
-    ) -> arcweft_tooling::model::CanonicalizationInput<'_> {
-        match &self.canonicalization {
-            Ok(inventory) => arcweft_tooling::model::CanonicalizationInput::Checked(inventory),
-            Err(unavailable) => {
-                arcweft_tooling::model::CanonicalizationInput::Unavailable(unavailable)
-            }
-        }
     }
 
     /// BLAKE3 revision of the exact UTF-8 source analyzed here.
@@ -245,11 +213,7 @@ pub fn publish_diagnostics(
     snapshot: &DocumentSnapshot,
     profile: &LspProfile,
 ) -> PublishDiagnosticsParams {
-    let analysis = DocumentAnalysis::analyze(
-        snapshot.text(),
-        snapshot.line_index().position_encoding(),
-        profile,
-    );
+    let analysis = DocumentAnalysis::analyze_snapshot(snapshot, profile);
     publish_diagnostics_from_analysis(snapshot, profile, &analysis)
 }
 

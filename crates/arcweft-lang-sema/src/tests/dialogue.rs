@@ -1,5 +1,12 @@
 use super::support::*;
-use crate::diagnostics::TypeCheckError;
+use crate::{
+    callable::{CallTargetFact, CallableCandidateId, DialogueCallableId},
+    checker::analyze_registered_project_types,
+    diagnostics::TypeCheckError,
+    test_support::character_project::{
+        one_character_facts, register, root_project_source, sample_manifest,
+    },
+};
 
 #[test]
 fn parses_reusable_flow_body() {
@@ -97,6 +104,32 @@ flow @flow.opening opening {
         delimited.id().expect("generated delimited line id").body(),
         "say.opening.alice.002"
     );
+}
+
+#[test]
+fn registered_character_dialogue_keeps_frozen_speaker_classification() {
+    let source = r"
+flow @flow.opening opening {
+    let akane = @<character.akane>
+    let line = akane[おはよう。[p]]
+}
+";
+    let (document, project, world_id) = root_project_source("dialogue-speaker-freeze", source);
+    let manifest = sample_manifest("layers/body.png");
+    let facts = one_character_facts(&document, world_id, &manifest);
+    let world = register(&project, &facts, TypeCheckEnv::standard(), None)
+        .expect("registered character project");
+    let report = analyze_registered_project_types(&project.linked_module(), &world);
+
+    assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
+    let retained = report.retained_call_target_facts().collect::<Vec<_>>();
+    assert_eq!(retained.len(), 1, "retained facts: {retained:?}");
+    assert!(matches!(
+        retained[0].target(),
+        CallTargetFact::Selected { selected, .. }
+            if selected.id()
+                == &CallableCandidateId::Dialogue(DialogueCallableId::SpeakerLine)
+    ));
 }
 
 #[test]

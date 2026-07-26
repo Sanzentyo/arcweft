@@ -1,31 +1,10 @@
-use crate::canonicalize_source;
 use crate::format::format_source;
-use crate::model::{
-    CanonicalizationInput, FormatOptions, TextEdit, ToolingCodeAction, ToolingError,
-};
+use crate::model::{FormatOptions, TextEdit, ToolingCodeAction, ToolingError};
 
 /// Returns source-level code actions that are safe to expose through LSP.
 ///
-/// Semantic canonicalization is omitted when the adapter has no checked
-/// inventory. Syntax-owned actions remain available in that state.
-pub fn source_code_actions(
-    source: &str,
-    input: CanonicalizationInput<'_>,
-) -> Result<Vec<ToolingCodeAction>, ToolingError> {
+pub fn source_code_actions(source: &str) -> Result<Vec<ToolingCodeAction>, ToolingError> {
     let mut actions = Vec::new();
-    if matches!(input, CanonicalizationInput::Checked(_)) {
-        let report = canonicalize_source(source, input)?;
-        if report.changed {
-            let diagnostics = report.diagnostics;
-            actions.push(rewrite_action(
-                "arcweft.canonicalizeSugar",
-                "Canonicalize Arcweft sugar",
-                source,
-                report.output,
-                diagnostics,
-            ));
-        }
-    }
     let report = format_source(
         source,
         FormatOptions {

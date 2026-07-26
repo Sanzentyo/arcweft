@@ -25,7 +25,7 @@ use arcweft_lang_syntax::{
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
 
 use crate::{
-    canonicalization::SemanticScopeId,
+    callable::SemanticScopeId,
     checker::TypeExpressionId,
     effect_row::EffectRow,
     env::TypeCheckEnv,
@@ -372,7 +372,7 @@ fn data_last_candidate() -> CallableCandidateId {
     )
     .expect("data-last schema");
     let base = CallableCandidateId::Local(LocalCallableId::new(
-        SemanticScopeId(77),
+        SemanticScopeId::from_u32(77),
         LexicalBindingIndex::try_from_usize(0).expect("binding index"),
     ));
     CallableCandidateId::DataLast(
@@ -1662,7 +1662,7 @@ fn data_last_ids_enforce_context_free_coordinates() {
     )
     .expect("data-last schema");
     let local = super::CallableCandidateId::Local(LocalCallableId::new(
-        SemanticScopeId(1),
+        SemanticScopeId::from_u32(1),
         LexicalBindingIndex::try_from_usize(0).expect("binding index"),
     ));
     assert!(matches!(

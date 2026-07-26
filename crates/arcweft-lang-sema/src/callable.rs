@@ -69,9 +69,9 @@ pub use identity::{
     LanguageDocumentationFamily, LexicalBindingIndex, LocalCallableId, MathCallableId,
     OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId, ProjectCallablePath,
     ProjectNameBinding, ProjectNominalTypeId, PromotionCallableId, ReceiverMethodKey,
-    ReductionConstructorKind, ResultConstructorKind, RustItemPath, SpeakerCallableId,
-    StageMethodId, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation, TraitCallableId,
-    TraitCallableSource, TraitImplementationIndex, VectorDimensions,
+    ReductionConstructorKind, ResultConstructorKind, RustItemPath, SemanticScopeId,
+    SpeakerCallableId, StageMethodId, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation,
+    TraitCallableId, TraitCallableSource, TraitImplementationIndex, VectorDimensions,
 };
 #[cfg(test)]
 pub(crate) use limits::AssociatedResolverWorkReport;

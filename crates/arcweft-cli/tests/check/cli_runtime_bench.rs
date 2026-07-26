@@ -2351,145 +2351,19 @@ fn fmt_rejects_unknown_option_without_rewriting_source() {
 }
 
 #[test]
-fn canonicalize_accepts_flags_before_path_and_writes() {
-    let path = temp_arcw_project(
-        "canonicalize-expand",
-        "pub character @character.alice Alice as alice {}\nflow @flow.opening opening {\n    alice: hi $(name)[.shake]there[/][page]\n    with:\n        log.info(\"x\")\n    goto parent::next\n}\n",
-    );
-
+fn help_does_not_advertise_removed_semantic_canonicalizer() {
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("canonicalize")
-        .arg("--write")
-        .arg(&path)
+        .arg("--help")
         .output()
-        .expect("arcw canonicalize runs");
+        .expect("arcw help runs");
 
-    assert!(
-        output.status.success(),
-        "canonicalize should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let rewritten = fs::read_to_string(&path).expect("rewritten source");
-    assert!(rewritten.contains("alice.say()[hi #[name][effect .shake]there[/effect][p]]"));
-    assert!(rewritten.contains("with {"));
-    assert!(rewritten.contains("goto super::next"));
-}
-
-#[test]
-fn canonicalize_shared_helper_corpus_matches_tooling_output() {
-    let source = include_str!(
-        "../../../arcweft-tooling/tests/fixtures/canonicalization/aw-ah-003-helper.arcw"
-    );
-    let expected = include_str!(
-        "../../../arcweft-tooling/tests/fixtures/canonicalization/aw-ah-003-helper.expected.arcw"
-    );
-    let path = temp_arcw_project("canonicalize-shared-helper", source);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("canonicalize")
-        .arg("--write")
-        .arg(&path)
-        .output()
-        .expect("arcw canonicalize runs");
-
-    assert!(
-        output.status.success(),
-        "canonicalize should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    assert_eq!(
-        fs::read_to_string(&path).expect("rewritten source"),
-        expected
-    );
-}
-
-#[test]
-fn canonicalize_rejects_unavailable_project_without_writing() {
-    let source = "flow main {\n  alice: unchanged\n}\n";
-    let path = temp_arcw("canonicalize-no-project", source);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("canonicalize")
-        .arg("--write")
-        .arg(&path)
-        .output()
-        .expect("arcw canonicalize runs");
-
-    assert!(!output.status.success());
-    assert_eq!(fs::read_to_string(&path).expect("source remains"), source);
-}
-
-#[test]
-fn canonicalize_respects_decl_identity_attributes_when_writing() {
-    let source = "#[generated]\nflow @flow.generated generated {\n}\n#[allow(style::redundant_decl_identity)]\nsource @source.http_requests http_requests: Source<HttpRequest, HttpError> {\n}\nflow @flow.opening opening {\n}\nflow @flow.opening start {\n}\n";
-    let path = temp_arcw_project("canonicalize-decl-identity-attrs", source);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("canonicalize")
-        .arg("--write")
-        .arg(&path)
-        .output()
-        .expect("arcw canonicalize runs");
-
-    assert!(
-        output.status.success(),
-        "canonicalize should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let rewritten = fs::read_to_string(&path).expect("rewritten source");
-    assert!(rewritten.contains("flow @flow.generated generated {"));
-    assert!(rewritten.contains("source @source.http_requests http_requests"));
-    assert!(rewritten.contains("flow opening {"));
-    assert!(rewritten.contains("flow @flow.opening start {"));
-}
-
-#[test]
-fn canonicalize_respects_source_generated_attribute_when_writing() {
-    let source = "#![generated(tool)]\npub character @character.alice Alice as alice {}\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
-    let path = temp_arcw_project("canonicalize-source-generated", source);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("canonicalize")
-        .arg("--write")
-        .arg(&path)
-        .output()
-        .expect("arcw canonicalize runs");
-
-    assert!(
-        output.status.success(),
-        "canonicalize should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let rewritten = fs::read_to_string(&path).expect("rewritten source");
-    assert!(rewritten.contains("flow @flow.generated generated {"));
-    assert!(rewritten.contains("alice.say()[hi[p]]"));
-}
-
-#[test]
-fn canonicalize_respects_source_allow_attribute_when_writing() {
-    let source = "#![allow(style::redundant_decl_identity)]\npub character @character.alice Alice as alice {}\nflow @flow.generated generated {\n    alice: hi[p]\n}\n";
-    let path = temp_arcw_project("canonicalize-source-allow", source);
-
-    let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
-        .arg("canonicalize")
-        .arg("--write")
-        .arg(&path)
-        .output()
-        .expect("arcw canonicalize runs");
-
-    assert!(
-        output.status.success(),
-        "canonicalize should succeed, stderr: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let rewritten = fs::read_to_string(&path).expect("rewritten source");
-    assert!(rewritten.contains("flow @flow.generated generated {"));
-    assert!(rewritten.contains("alice.say()[hi[p]]"));
+    assert!(output.status.success());
+    assert!(!String::from_utf8_lossy(&output.stdout).contains("canonicalize"));
 }
 
 #[test]
 fn fmt_canonical_rich_text_rewrites_inferred_tags_without_other_sugar() {
-    let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword]word[/][.sparkle amp=2px]there[/][page]\n    let handles = alice.say()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
+    let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword]word[/][.sparkle amp=2px]there[/][page]\n    let handles = alice()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
     let path = temp_arcw("fmt-canonical-rich-text", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
