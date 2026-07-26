@@ -542,7 +542,6 @@ where
         );
         let view_product = view::ViewProjectLowerer::for_project(
             &hir_project,
-            &linked_hir,
             &typecheck_report,
             &style,
             project,

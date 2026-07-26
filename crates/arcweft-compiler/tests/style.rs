@@ -286,11 +286,21 @@ fn style_compiler_qualifies_equal_local_patch_ranges_and_uses_checked_ordinals()
     assert_eq!(patches[1].id(), ViewStylePatchId::new(1));
 
     let applications = compiled.style().applications();
-    for (view, expected_patch) in [
-        (PublicId::try_new("view.Root").unwrap(), 0),
-        (PublicId::try_new("view.child.Child").unwrap(), 1),
+    for (module, view, expected_patch) in [
+        (
+            CanonicalModulePath::crate_root(),
+            PublicId::try_new("view.Root").unwrap(),
+            0,
+        ),
+        (child, PublicId::try_new("view.child.Child").unwrap(), 1),
     ] {
-        let ranges = styled_producer_ranges(compiled.linked_hir(), &view);
+        let ranges = styled_producer_ranges(
+            compiled
+                .hir_project()
+                .module(&module)
+                .expect("View owner module HIR"),
+            &view,
+        );
         assert_eq!(ranges.len(), 1);
         assert_eq!(
             applications.applications_for(&view, ranges[0]),

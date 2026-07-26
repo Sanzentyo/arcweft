@@ -18,6 +18,7 @@ use arcweft_bundle::{
 use arcweft_id::{IdError, PublicId};
 use arcweft_lang_hir::{model::HirModule, project::HirProject};
 use arcweft_lang_sema::{check::TypeCheckReport, dialogue_view::DialogueViewModelRegistry};
+use arcweft_lang_syntax::ast::items::EntityDeclItem;
 use arcweft_presentation::{fx::FxDefinition, image::ImageObjectId};
 use arcweft_project::sources::ProjectSources;
 use arcweft_resource_model::registry::{ResourceTypeRegistry, ResourceTypeRegistryDigest};
@@ -46,7 +47,7 @@ pub struct CompiledViewProduct {
 
 /// Compiler-owned context for one source-bound View product candidate.
 pub(crate) struct ViewProjectLowerer<'a> {
-    linked_hir: &'a HirModule,
+    hir_project: &'a HirProject,
     typecheck: &'a TypeCheckReport,
     style: &'a CompiledViewStyleArtifact,
     source_map: SourceMapSection,
@@ -215,8 +216,7 @@ impl<'a> ViewProjectLowerer<'a> {
     /// Creates a lowerer from the exact module HIR and documents in one project.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn for_project(
-        hir_project: &HirProject,
-        linked_hir: &'a HirModule,
+        hir_project: &'a HirProject,
         typecheck: &'a TypeCheckReport,
         style: &'a CompiledViewStyleArtifact,
         project: &ProjectSources,
@@ -253,7 +253,7 @@ impl<'a> ViewProjectLowerer<'a> {
             )?;
         }
         Ok(Self {
-            linked_hir,
+            hir_project,
             typecheck,
             style,
             source_map,
@@ -265,8 +265,11 @@ impl<'a> ViewProjectLowerer<'a> {
         })
     }
 
-    fn validate_authored_views(&self) -> Result<(), ViewProjectLowerError> {
-        for view in self.linked_hir.view_declarations() {
+    fn validate_authored_views(
+        &self,
+        views: &[&EntityDeclItem],
+    ) -> Result<(), ViewProjectLowerError> {
+        for view in views {
             let public_id = view_resource_id(view.id().body());
             let view_id = ViewId::try_new(public_id.clone()).map_err(|source| {
                 ViewProjectLowerError::InvalidViewIdentity {
@@ -330,11 +333,11 @@ impl<'a> ViewProjectLowerer<'a> {
 
     fn lower_authored_sidecars(
         &self,
+        views: &[&EntityDeclItem],
         dialogue_view_models: &DialogueViewModelRegistry,
     ) -> Result<ViewBundleSidecars, ViewProjectLowerError> {
-        let views = self.linked_hir.view_declarations().collect::<Vec<_>>();
         view_sidecars(
-            &views,
+            views,
             dialogue_view_models,
             self.style.applications(),
             self.source_image_objects,
@@ -359,7 +362,12 @@ impl<'a> ViewProjectLowerer<'a> {
     /// generated source stops satisfying its compile-time invariants after the
     /// typed standard resources have already been constructed successfully.
     pub(crate) fn lower(self) -> Result<CompiledViewProduct, ViewProjectLowerError> {
-        self.validate_authored_views()?;
+        let views = self
+            .hir_project
+            .modules()
+            .flat_map(|(_, hir)| hir.view_declarations())
+            .collect::<Vec<_>>();
+        self.validate_authored_views(&views)?;
         if !self.typecheck.diagnostics.is_empty() {
             return Err(ViewProjectLowerError::UncheckedTypeReport {
                 count: self.typecheck.diagnostics.len(),
@@ -371,7 +379,7 @@ impl<'a> ViewProjectLowerer<'a> {
             text,
             input,
             image_objects,
-        } = self.lower_authored_sidecars(dialogue_view_models)?;
+        } = self.lower_authored_sidecars(&views, dialogue_view_models)?;
         reject_image_object_collisions(
             self.source_image_objects,
             &image_objects,

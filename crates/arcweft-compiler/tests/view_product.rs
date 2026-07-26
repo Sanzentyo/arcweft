@@ -6,8 +6,9 @@ use arcweft_compiler::project::{
 };
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
@@ -75,6 +76,52 @@ style Primary {
         product.resource_type_registry_digest(),
         ResourceTypeRegistry::empty().digest()
     );
+}
+
+#[test]
+fn compiler_lowers_project_views_in_canonical_module_and_source_order() {
+    let (project, context, root_document, a_document, z_document) =
+        canonical_view_project_fixture();
+    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+        .expect("canonical multi-module View project");
+    let program = compiled
+        .view_product()
+        .product()
+        .program()
+        .expect("project View program");
+    let standard = ViewId::standard_dialogue();
+    let authored = program
+        .definitions()
+        .filter(|definition| definition.public_id.view_id() != &standard)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        authored
+            .iter()
+            .map(|definition| definition.public_id.view_id().as_str())
+            .collect::<Vec<_>>(),
+        ["view.RootFirst", "view.RootSecond", "view.a.A", "view.z.Z",]
+    );
+    assert_eq!(program.program_id().as_str(), "view.program.view.RootFirst");
+    for pair in authored.windows(2) {
+        assert!(
+            pair[0].body.end_instruction <= pair[1].body.start_instruction,
+            "View instruction spans must advance across module boundaries"
+        );
+    }
+
+    for (view, document) in [
+        ("view.RootFirst", &root_document),
+        ("view.a.A", &a_document),
+        ("view.z.Z", &z_document),
+    ] {
+        let view = ViewId::try_new(view).expect("View ID");
+        let span = compiled
+            .view_product()
+            .view_source(&view)
+            .expect("module-bound View source");
+        assert_eq!(span.source(), document.identity());
+        assert!(source_text(document, span).starts_with("pub view"));
+    }
 }
 
 #[test]
@@ -512,6 +559,119 @@ fn project_view_fixture(source: &str, source_id: &str) -> ProjectViewFixture {
         document,
         context,
     }
+}
+
+fn canonical_view_project_fixture() -> (
+    ProjectSources,
+    ProjectCompilationContext,
+    Arc<SourceDocument>,
+    Arc<SourceDocument>,
+    Arc<SourceDocument>,
+) {
+    let a_module =
+        CanonicalModulePath::from_segments(
+            [ModuleSegment::new("a").expect("valid module segment")],
+        );
+    let z_module =
+        CanonicalModulePath::from_segments(
+            [ModuleSegment::new("z").expect("valid module segment")],
+        );
+    let root_document = canonical_view_document(
+        "arcweft-test://canonical-view/root",
+        "src/main.arcw",
+        "pub view RootFirst() { Text(\"root first\") }\n\
+         pub view RootSecond() { Text(\"root second\") }\n",
+    );
+    let a_document = canonical_view_document(
+        "arcweft-test://canonical-view/a",
+        "src/a.arcw",
+        "mod a\n\npub view A() { Text(\"a\") }\n",
+    );
+    let z_document = canonical_view_document(
+        "arcweft-test://canonical-view/z",
+        "src/z.arcw",
+        "mod z\n\npub view Z() { Text(\"z\") }\n",
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        PackageSpec {
+            id: PackageId::new("local.arcweft.canonical-view").expect("package ID"),
+            version: PackageVersion::new("0.0.0").expect("package version"),
+        },
+        BuildSpec::default(),
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://canonical-view/manifest")
+                    .expect("manifest source ID"),
+                SourceName::path("arcw.toml"),
+                "",
+            )
+            .expect("manifest document"),
+        ),
+        [
+            ProjectSourceFile::new(
+                z_module.clone(),
+                PathBuf::from("src/z.arcw"),
+                Arc::clone(&z_document),
+                [],
+            ),
+            ProjectSourceFile::new(
+                CanonicalModulePath::crate_root(),
+                PathBuf::from("src/main.arcw"),
+                Arc::clone(&root_document),
+                [
+                    ModuleDependency::new(z_module),
+                    ModuleDependency::new(a_module.clone()),
+                ],
+            ),
+            ProjectSourceFile::new(
+                a_module,
+                PathBuf::from("src/a.arcw"),
+                Arc::clone(&a_document),
+                [],
+            ),
+        ],
+    )
+    .expect("canonical View project sources");
+    let package =
+        CallablePackageId::try_new(project.package().id.as_str()).expect("callable package ID");
+    let world = ProjectSymbolWorldId::try_new(
+        package,
+        root_document.identity().id().clone(),
+        "canonical-view-project-test",
+    )
+    .expect("symbol world");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        project
+            .modules()
+            .map(|source| Arc::clone(source.document()))
+            .collect::<Vec<_>>(),
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registration facts");
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        Arc::new(ResourceTypeRegistry::empty()),
+        None,
+        None,
+    );
+    (project, context, root_document, a_document, z_document)
+}
+
+fn canonical_view_document(id: &str, path: &str, source: &str) -> Arc<SourceDocument> {
+    Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(id).expect("source ID"),
+            SourceName::path(path),
+            source,
+        )
+        .expect("canonical View source document"),
+    )
 }
 
 fn source_text<'a>(document: &'a SourceDocument, span: &arcweft_source::SourceSpan) -> &'a str {
