@@ -1,9 +1,12 @@
 //! Ordinary outline, completion, and workspace-symbol presentation for entry role edges.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_lang_sema::project_index::{ProjectEntryRoleTarget, ProjectSemanticIndex};
-use arcweft_lang_syntax::{ast::items::Item, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::items::Item,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_verify_lsp::LspPositionMapper;
 use lsp_types::{
     CompletionItem, CompletionItemKind, DocumentSymbol, DocumentSymbolResponse, Documentation,
@@ -21,7 +24,10 @@ pub(crate) fn document_symbols(
     profile: &LspProfile,
     document: &DocumentSnapshot,
 ) -> DocumentSymbolResponse {
-    let parsed = parse_source(document.text().to_owned());
+    let parsed = parse_document_with_source(
+        Arc::clone(document.source_document()),
+        ParseOptions::default(),
+    );
     let role_details = exact_role_details(profile, document);
     let mut symbols = Vec::new();
     for item in parsed.typed_tree().items() {

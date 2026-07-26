@@ -64,7 +64,7 @@ enum ViewPartSymbol {
 impl ViewPartMetadataIndex {
     pub(crate) fn for_document(profile: &LspProfile, document: &DocumentSnapshot) -> Option<Self> {
         let parsed = parse_document_with_source(
-            Arc::new(document.source_document().clone()),
+            Arc::clone(document.source_document()),
             ParseOptions::default(),
         );
         Self::from_parsed(profile, &parsed)

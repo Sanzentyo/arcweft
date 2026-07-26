@@ -79,9 +79,9 @@ impl DocumentSnapshot {
         self.document.text()
     }
 
-    /// Exact revision-bound source document for this open snapshot.
-    pub fn source_document(&self) -> &SourceDocument {
-        self.document.as_ref()
+    /// Exact revision-bound source document lease for this open snapshot.
+    pub const fn source_document(&self) -> &Arc<SourceDocument> {
+        &self.document
     }
 
     /// Source-aware line index for this snapshot.
@@ -221,6 +221,10 @@ mod tests {
             .expect("full sync change");
 
         assert_eq!(snapshot.version(), 2);
-        assert!(store.get(&uri).is_some());
+        let retained = store.get(&uri).expect("changed document is retained");
+        assert!(Arc::ptr_eq(
+            snapshot.source_document(),
+            retained.source_document()
+        ));
     }
 }

@@ -6,10 +6,10 @@ use arcweft_lang_syntax::ast::choice::ChoicePlanItem;
 use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_lang_syntax::ast::flow::{FlowItem, Stmt};
 use arcweft_lang_syntax::ast::items::{Item, TypedSyntaxTree};
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_source::SourceDocumentIdentity;
 use lsp_types::{InlayHint, InlayHintKind, InlayHintLabel};
-use std::collections::HashSet;
+use std::{collections::HashSet, sync::Arc};
 
 /// Computes Arcweft inlay hints for one source snapshot.
 pub fn hints(profile: &LspProfile, document: &DocumentSnapshot) -> Vec<InlayHint> {
@@ -36,7 +36,7 @@ fn inferred_let_type_inlay_hints(
         return Vec::new();
     }
 
-    let parsed = parse_source(bound_document.text().to_owned());
+    let parsed = parse_document_with_source(Arc::clone(source.document()), ParseOptions::default());
     if !parsed.errors().is_empty() {
         return Vec::new();
     }
