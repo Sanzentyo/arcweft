@@ -44,6 +44,13 @@ The independently throwable corrections are:
 - [proof 01.1.1.3 statement if-let/unsafe-audit anchor](../reviews/requests/2026-07-25-seq-proof-01.1.1.3-if-let-unsafe-audit-anchor-reconciliation.md); and
 - [proof 01.1.1.4 final HIR semantic leaf/expression payload](../reviews/requests/2026-07-25-seq-proof-01.1.1.4-final-hir-semantic-leaf-expression-payload-reconciliation.md).
 
+The `01.1.1.4` return received on 2026-07-26 was mechanically valid but
+rejected as not implementation-ready after semantic intake. Its exact defects
+and verified external archive identity are recorded in
+[`2026-07-26-proof-01.1.1.4-return-intake.md`](2026-07-26-proof-01.1.1.4-return-intake.md).
+The active replacement request is
+[proof 01.1.1.4.1 corrected full redelivery](../reviews/requests/2026-07-26-seq-proof-01.1.1.4.1-final-hir-leaf-expression-redelivery-correction.md).
+
 They block only the named inventory/payload/anchor rows. `signal` target/value
 and the closed trigger projection are derivable from existing typed owners and
 are implemented locally rather than over-requested. All independent attached
