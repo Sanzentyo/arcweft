@@ -82,7 +82,7 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             SyntaxKind::ErrorItem,
             SyntaxKind::TestItem,
             SyntaxKind::BenchItem,
-            SyntaxKind::ErrorItem,
+            SyntaxKind::SourceItem,
             SyntaxKind::StyleItem,
             SyntaxKind::ErrorItem,
             SyntaxKind::ErrorItem,
@@ -95,7 +95,7 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             .iter()
             .filter(|diagnostic| diagnostic.code() == "syntax.item.expected_declaration")
             .count(),
-        5,
+        4,
         "{:?}",
         built.diagnostics()
     );
@@ -143,6 +143,7 @@ const fn is_item_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::TestItem
             | SyntaxKind::BenchItem
+            | SyntaxKind::SourceItem
             | SyntaxKind::StyleItem
             | SyntaxKind::ErrorItem
     )

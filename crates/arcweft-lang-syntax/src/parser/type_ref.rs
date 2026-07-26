@@ -255,10 +255,7 @@ fn emit_flat_type(
 }
 
 fn generic_open(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> Option<usize> {
-    let open = boundary(parser, start, end, &["<"])?;
-    find_matching_close(parser, open + 1, "<")
-        .is_some_and(|close| close < end)
-        .then_some(open)
+    boundary(parser, start, end, &["<"])
 }
 
 fn boundary(

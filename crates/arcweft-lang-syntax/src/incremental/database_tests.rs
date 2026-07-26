@@ -1340,6 +1340,65 @@ fn trivia_reparse_preserves_private_descendant_ids_and_old_snapshot_ranges() {
 }
 
 #[test]
+fn source_trivia_reparse_preserves_attached_header_type_and_handler_identities() {
+    let name = SourceName::path("source.arcw");
+    let source = concat!(
+        "source events: Source<Event, Error> {\n",
+        "    on item event => yield event\n",
+        "}\n",
+    );
+    let mut database = syntax_database();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+        )
+        .expect("initial source declaration");
+    let retained = [
+        (GrammarKind::SourceItem, "events"),
+        (GrammarKind::DeclarationHeader, "events"),
+        (GrammarKind::GenericApplicationType, "Source<Event"),
+        (GrammarKind::OnStatement, "on item"),
+    ]
+    .map(|(kind, needle)| {
+        let id = private_id_containing(&initial, kind, needle);
+        let range = initial
+            .attached()
+            .syntax_node(id)
+            .expect("initial attached source node")
+            .range();
+        (kind, needle, id, range)
+    });
+
+    let reparsed = database
+        .reparse(
+            &initial,
+            &[source_edit(&initial, SourceRange::new(6, 6), "  ")],
+        )
+        .expect("source trivia reparse");
+
+    for (kind, needle, old_id, old_range) in retained {
+        let new_id = private_id_containing(&reparsed, kind, needle);
+        let new_range = reparsed
+            .attached()
+            .syntax_node(new_id)
+            .expect("reparsed attached source node")
+            .range();
+        assert_eq!(new_id, old_id, "{kind:?} lost its reconciled identity");
+        let expected_start = if matches!(
+            kind,
+            GrammarKind::SourceItem | GrammarKind::DeclarationHeader
+        ) {
+            old_range.start()
+        } else {
+            old_range.start() + 2
+        };
+        assert_eq!(new_range.start(), expected_start);
+        assert_eq!(new_range.end(), old_range.end() + 2);
+    }
+}
+
+#[test]
 fn unique_private_grammar_siblings_retain_ids_when_reordered() {
     let name = SourceName::path("reordered-proofs.arcw");
     let source = "proof first() = 1\nproof second() = 2\n";

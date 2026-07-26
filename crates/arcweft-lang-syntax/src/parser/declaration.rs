@@ -697,6 +697,24 @@ fn emit_contract_clause(
     parser.bump();
     parser.bump_trivia();
     let end = find_header_boundary(parser, parser.cursor());
+    emit_contract_condition_until(parser, end);
+    parser.finish();
+}
+
+pub(super) fn emit_contract_clause_until(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    kind: SyntaxKind,
+    role: SyntaxRole,
+) {
+    parser.start(kind, role);
+    parser.bump();
+    parser.bump_trivia();
+    emit_contract_condition_until(parser, end);
+    parser.finish();
+}
+
+fn emit_contract_condition_until(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     let expression_start = parser.cursor();
     emit_expression(parser, end, SyntaxRole::Condition);
     if trimmed_end(parser, expression_start, end) == expression_start {
@@ -708,5 +726,4 @@ fn emit_contract_clause(
         )));
     }
     bump_until(parser, end);
-    parser.finish();
 }

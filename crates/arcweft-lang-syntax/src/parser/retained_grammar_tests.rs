@@ -100,7 +100,6 @@ fn removed_top_level_families_and_statements_use_ordinary_error_items() {
         "content chapter {}\n",
         "extern rust mod native from crate \"native\" {}\n",
         "dialogue defaults {}\n",
-        "source telemetry {}\n",
         "state GameState {}\n",
         "image portrait {}\n",
         "voice alice {}\n",
@@ -108,7 +107,7 @@ fn removed_top_level_families_and_statements_use_ordinary_error_items() {
         "character Alice {}\n",
     );
     let built = parse(source);
-    assert_eq!(count_kind(&built, SyntaxKind::ErrorItem), 9);
+    assert_eq!(count_kind(&built, SyntaxKind::ErrorItem), 8);
     assert_eq!(count_kind(&built, SyntaxKind::CharacterDeclarationItem), 1);
     assert_eq!(
         built
@@ -116,7 +115,7 @@ fn removed_top_level_families_and_statements_use_ordinary_error_items() {
             .iter()
             .filter(|diagnostic| diagnostic.code() == "syntax.item.expected_declaration")
             .count(),
-        9
+        8
     );
     assert!(built.diagnostics().iter().all(|diagnostic| {
         !diagnostic.code().contains("removed")

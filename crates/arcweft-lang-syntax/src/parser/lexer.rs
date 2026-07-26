@@ -319,8 +319,11 @@ fn character_literal_len(source: &str) -> Option<usize> {
 
 fn entity_reference_len(source: &str) -> Option<usize> {
     let rest = source.strip_prefix('@')?;
-    if let Some(delimited) = rest.strip_prefix('{') {
-        return Some(delimited.find('}').map_or(source.len(), |close| close + 3));
+    if let Some(delimited) = rest.strip_prefix('<') {
+        return Some(delimited.find('>').map_or_else(
+            || 2 + take_while(delimited, |character| !character.is_whitespace()),
+            |close| close + 3,
+        ));
     }
     let len = take_while(rest, |character| {
         is_identifier_continue(character) || matches!(character, '.' | ':' | '-' | '/')
@@ -527,5 +530,17 @@ mod tests {
         assert_eq!(tokens.len(), 1);
         assert_eq!(tokens[0].kind(), SyntaxKind::UnterminatedStringToken);
         assert_eq!(&source[tokens[0].range().as_range()], source);
+    }
+
+    #[test]
+    fn delimited_entity_reference_is_one_exact_token() {
+        let source = "@<source.events>:";
+        let tokens = DocumentLexer::new(source).lex();
+
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].kind(), SyntaxKind::EntityReferenceToken);
+        assert_eq!(&source[tokens[0].range().as_range()], "@<source.events>");
+        assert_eq!(tokens[1].kind(), SyntaxKind::PunctuationToken);
+        assert_eq!(&source[tokens[1].range().as_range()], ":");
     }
 }

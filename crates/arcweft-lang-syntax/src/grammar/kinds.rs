@@ -71,6 +71,7 @@ define_syntax_kinds! {
     ExternCapabilityItem,
     TestItem,
     BenchItem,
+    SourceItem,
     StyleItem,
     ErrorItem,
     InnerAttribute,
@@ -418,6 +419,7 @@ impl SyntaxKind {
             | Self::ExternCapabilityItem
             | Self::TestItem
             | Self::BenchItem
+            | Self::SourceItem
             | Self::StyleItem
             | Self::ErrorItem
             | Self::InnerAttribute
@@ -663,6 +665,7 @@ impl SyntaxKind {
             | Self::ExternCapabilityItem
             | Self::TestItem
             | Self::BenchItem
+            | Self::SourceItem
             | Self::StyleItem
             | Self::ErrorItem => Some(AstTag::Item),
             Self::AssertionStatement
@@ -933,6 +936,7 @@ impl SyntaxKind {
                 | Self::ExternCapabilityItem
                 | Self::TestItem
                 | Self::BenchItem
+                | Self::SourceItem
                 | Self::StyleItem
                 | Self::ErrorItem
         )

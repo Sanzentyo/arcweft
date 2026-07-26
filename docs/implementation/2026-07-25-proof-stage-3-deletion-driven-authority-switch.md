@@ -134,7 +134,10 @@ attached-to-detached projection, wrapper, alias, or fallback.
   `SyntaxNodeId`.
 - Current source declarations are attached `SourceItem` nodes, matching the
   package's exact syntax and HIR inventories; no detached `SourceItem`
-  projection survives.
+  projection survives after the public switch. The private attached syntax row
+  is landed and validated separately in
+  [`2026-07-27-proof-attached-source-syntax.md`](2026-07-27-proof-attached-source-syntax.md);
+  the detached projection remains frozen until that switch.
 - The base Proof archive's `DialogueCallExpression` and
   `HirExpr::DialogueCall` examples are superseded by the later accepted
   AW-AH-009.4.2 contract. The same unmerged syntax series replaces them with

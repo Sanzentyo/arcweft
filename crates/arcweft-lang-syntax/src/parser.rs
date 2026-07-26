@@ -99,6 +99,9 @@ mod signal_grammar;
 #[cfg(test)]
 mod signal_grammar_tests;
 pub mod source;
+mod source_grammar;
+#[cfg(test)]
+mod source_grammar_tests;
 mod statement;
 pub mod statements;
 pub mod style;

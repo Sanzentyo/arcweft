@@ -47,9 +47,23 @@ pub(super) fn emit_braced_block(
     role: SyntaxRole,
     missing_close_code: &'static str,
 ) {
+    let end = token_count(parser);
+    emit_braced_block_until(parser, end, item_kind, block_kind, role, missing_close_code);
+}
+
+pub(super) fn emit_braced_block_until(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    item_kind: SyntaxKind,
+    block_kind: SyntaxKind,
+    role: SyntaxRole,
+    missing_close_code: &'static str,
+) {
     parser.start(block_kind, role);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
-    let close = find_matching_close(parser, parser.cursor(), "{").unwrap_or(token_count(parser));
+    let close = find_matching_close(parser, parser.cursor(), "{")
+        .filter(|close| *close < end)
+        .unwrap_or(end);
     parser.start(SyntaxKind::StatementList, SyntaxRole::Element(0));
     let mut statement = 0_u32;
     let mut has_tail = false;

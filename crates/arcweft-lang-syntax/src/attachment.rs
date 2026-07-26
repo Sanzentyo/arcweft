@@ -17,7 +17,9 @@ use arcweft_source::SourceDocument;
 pub(crate) use error::{AttachmentFailure, SyntaxAccessError, SyntaxLookupError};
 pub(crate) use node::{AstKind, AstNode, SourceFileKind};
 #[cfg(test)]
-pub(crate) use node::{PredicateItemKind, ProofItemKind};
+pub(crate) use node::{
+    BlockKind, ExpressionStatementKind, PredicateItemKind, ProofItemKind, SourceItemKind,
+};
 pub(crate) use snapshot::{
     GrammarSyntaxNode, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeHandle, SyntaxNodeId,
     SyntaxSnapshotData, SyntaxSnapshotId,

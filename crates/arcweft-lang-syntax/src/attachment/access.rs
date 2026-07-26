@@ -15,16 +15,17 @@ use super::family::{
 };
 use super::node::{
     AssertionStatementKind, AstKind, AstNode, BinaryExpressionKind, BlockKind, CallArgumentKind,
-    CallExpressionKind, DeclarationHeaderKind, DialogueCallExpressionKind, DocBlockKind,
-    ExpressionBodyKind, FixedParameterGroupKind, FunctionTypeKind, GenericApplicationTypeKind,
-    IfStatementKind, LetStatementKind, MissingBodyKind, NameReferenceKind, OmittedBlockTailKind,
-    OuterAttributeKind, ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind,
-    ProofBodyKind, ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind,
-    RichTextArgumentPayloadKind, RichTextArgumentTokenKind, RichTextArgumentValueKind,
-    RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind, RichTextEndTagKind,
-    RichTextFxCallPayloadKind, RichTextInvalidArgumentKind, RichTextNamedArgumentKind,
-    RichTextPositionalArgumentKind, RichTextTagKind, RichTextTagNameKind, SourceFileKind,
-    TypeArgumentKind, UnsafeLifetimeStatementKind, VisibilityKind, WholeBindingPatternKind,
+    CallExpressionKind, DeclarationHeaderKind, DeclarationPublicIdKind, DialogueCallExpressionKind,
+    DocBlockKind, ExpressionBodyKind, ExpressionStatementKind, FixedParameterGroupKind,
+    FunctionTypeKind, GenericApplicationTypeKind, IfStatementKind, LetStatementKind,
+    MissingBodyKind, NameReferenceKind, OmittedBlockTailKind, OuterAttributeKind, ParameterKind,
+    PredicateBlockKind, PredicateBodyKind, ProofBlockKind, ProofBodyKind, ProofCallStatementKind,
+    RecordPatternFieldKind, RecordPatternKind, RichTextArgumentPayloadKind,
+    RichTextArgumentTokenKind, RichTextArgumentValueKind, RichTextConditionPayloadKind,
+    RichTextDialogueCallPayloadKind, RichTextEndTagKind, RichTextFxCallPayloadKind,
+    RichTextInvalidArgumentKind, RichTextNamedArgumentKind, RichTextPositionalArgumentKind,
+    RichTextTagKind, RichTextTagNameKind, SourceFileKind, SourceItemKind, TypeArgumentKind,
+    UnsafeLifetimeStatementKind, VisibilityKind, WholeBindingPatternKind,
 };
 use super::{SyntaxAccessError, SyntaxLookupError, SyntaxNodeHandle, SyntaxSnapshotData};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
@@ -303,6 +304,46 @@ impl<F: FamilySpec> FamilyNode<F> {
 impl AstNode<SourceFileKind> {
     pub(crate) fn items(&self) -> Result<Vec<ItemNode>, SyntaxAccessError> {
         self.ordered_family_children::<ItemFamily>(SyntaxRoleClass::Element)
+    }
+}
+
+impl AstNode<SourceItemKind> {
+    pub(crate) fn header(&self) -> Result<AstNode<DeclarationHeaderKind>, SyntaxAccessError> {
+        self.required_exact_child(SyntaxRole::Element(0))
+    }
+
+    pub(crate) fn public_id(
+        &self,
+    ) -> Result<Option<AstNode<DeclarationPublicIdKind>>, SyntaxAccessError> {
+        self.header()?.optional_exact_child(SyntaxRole::PublicId)
+    }
+
+    pub(crate) fn name(&self) -> Result<Option<NameNode>, SyntaxAccessError> {
+        self.header()?
+            .optional_family_child::<NameFamily>(SyntaxRole::Name)
+    }
+
+    pub(crate) fn source_type(&self) -> Result<Option<TypeNode>, SyntaxAccessError> {
+        self.header()?
+            .optional_family_child::<TypeFamily>(SyntaxRole::Type)
+    }
+
+    pub(crate) fn body(&self) -> Result<DeclarationBodyNode, SyntaxAccessError> {
+        let syntax = self
+            .syntax()
+            .optional_unique_child(SyntaxRole::Body)?
+            .ok_or(SyntaxAccessError::MissingFamilyChild {
+                parent: self.id(),
+                role: SyntaxRole::Body,
+                expected: AstNodeFamily::Body,
+            })?;
+        DeclarationBodyNode::new(syntax)
+    }
+}
+
+impl AstNode<ExpressionStatementKind> {
+    pub(crate) fn source_initializer(&self) -> Result<ExprNode, SyntaxAccessError> {
+        self.required_family_child::<ExpressionFamily>(SyntaxRole::Initializer)
     }
 }
 

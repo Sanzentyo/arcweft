@@ -432,6 +432,7 @@ fn structured_declaration_after_outer_prefixes(
             | SyntaxKind::ExternCapabilityItem
             | SyntaxKind::TestItem
             | SyntaxKind::BenchItem
+            | SyntaxKind::SourceItem
             | SyntaxKind::StyleItem
     )
     .then_some((declaration, kind))
@@ -543,6 +544,11 @@ fn declaration_group_end(
             return last;
         };
         let next_tokens = &tokens[next.start..next.end];
+        if kind == SyntaxKind::SourceItem
+            && classify_top_level_item(source, next_tokens).is_some_and(is_declaration_item_kind)
+        {
+            return last;
+        }
         if (kind == SyntaxKind::TypeAliasItem && line_starts_with(source, next_tokens, "where"))
             || declaration_header_angle_is_open(source, grouped)
             || declaration_continuation_line(source, next_tokens)
@@ -570,6 +576,9 @@ fn declaration_has_body(source: &str, tokens: &[LexToken], kind: SyntaxKind) -> 
             continue;
         }
         let text = &source[token.range.as_range()];
+        if kind == SyntaxKind::SourceItem && text == "{" {
+            return true;
+        }
         if depth == 0
             && matches!(kind, SyntaxKind::FlowItem | SyntaxKind::FunctionItem)
             && matches!(text, "reads" | "effects" | "modifies")
@@ -643,6 +652,10 @@ fn declaration_continuation_line(source: &str, tokens: &[LexToken]) -> bool {
         })
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the exhaustive top-level kind-to-grammar-owner dispatcher stays in one auditable table"
+)]
 fn emit_declaration_item(
     source: &str,
     tokens: &[LexToken],
@@ -737,6 +750,13 @@ fn emit_declaration_item(
                 budget,
             );
         }
+        SyntaxKind::SourceItem => super::source_grammar::emit_declaration(
+            source,
+            tokens,
+            SyntaxRole::Element(ordinal),
+            events,
+            budget,
+        ),
         SyntaxKind::StyleItem => super::style_grammar::emit_declaration(
             source,
             tokens,

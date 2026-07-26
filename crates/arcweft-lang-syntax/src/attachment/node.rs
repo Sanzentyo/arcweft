@@ -64,6 +64,7 @@ define_ast_kinds!(ITEM_MARKERS, Item;
     ExternCapabilityItemKind => ExternCapabilityItem,
     TestItemKind => TestItem,
     BenchItemKind => BenchItem,
+    SourceItemKind => SourceItem,
     StyleItemKind => StyleItem,
     ErrorItemKind => ErrorItem,
 );
