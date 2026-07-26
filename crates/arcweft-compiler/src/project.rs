@@ -506,7 +506,6 @@ where
         validate_entry_selection(&checked_entries, context.entry_selection())?;
         let style = style::lower_project_view_styles(
             &hir_project,
-            &linked_hir,
             &typecheck_report.style_catalog,
             project,
         )

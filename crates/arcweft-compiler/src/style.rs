@@ -119,15 +119,10 @@ pub enum ViewStyleLowerError {
     },
     #[error("checked Style catalog contains duplicate inline patch ID {0}")]
     DuplicateCheckedInlinePatchId(u32),
-    #[error("linked inline Style patch {0} has no checked catalog entry")]
+    #[error("project inline Style patch {0} has no checked catalog entry")]
     MissingCheckedInlinePatch(u32),
-    #[error(
-        "module-preserving Style patch inventory has {source_count} entries, but linked HIR has {linked_count}"
-    )]
-    LinkedInlinePatchCountMismatch {
-        source_count: usize,
-        linked_count: usize,
-    },
+    #[error("project contains more inline Style patches than a u32 ID can address")]
+    TooManyInlinePatches,
     #[error(
         "View Style application in module `{module}` at {application:?} does not match checked patch {patch:?}"
     )]
@@ -204,7 +199,6 @@ impl ViewStyleApplicationLookup {
 /// Lowers a linked project while retaining each module's source identity.
 pub fn lower_project_view_styles(
     hir_project: &HirProject,
-    linked_hir: &HirModule,
     catalog: &CheckedViewStyleCatalog,
     project: &ProjectSources,
 ) -> Result<CompiledViewStyleArtifact, ViewStyleLowerError> {
@@ -221,17 +215,16 @@ pub fn lower_project_view_styles(
                 .map(|(path, hir)| (path.clone(), hir)),
         )
         .collect::<Vec<_>>();
-    lower_view_styles(&modules, linked_hir, catalog, &origins)
+    lower_view_styles(&modules, catalog, &origins)
 }
 
 fn lower_view_styles(
     modules: &[(CanonicalModulePath, &HirModule)],
-    linked_hir: &HirModule,
     catalog: &CheckedViewStyleCatalog,
     origins: &StyleSourceOrigins,
 ) -> Result<CompiledViewStyleArtifact, ViewStyleLowerError> {
     let resource = lower_style_resource(catalog, origins)?;
-    let applications = lower_style_applications(modules, linked_hir, catalog)?;
+    let applications = lower_style_applications(modules, catalog)?;
     Ok(CompiledViewStyleArtifact {
         resource,
         applications,
@@ -562,7 +555,6 @@ fn lower_patch(
 
 fn lower_style_applications(
     modules: &[(CanonicalModulePath, &HirModule)],
-    linked_hir: &HirModule,
     catalog: &CheckedViewStyleCatalog,
 ) -> Result<ViewStyleApplicationLookup, ViewStyleLowerError> {
     let sheets = catalog
@@ -570,7 +562,7 @@ fn lower_style_applications(
         .iter()
         .map(|sheet| sheet.id().clone())
         .collect::<BTreeSet<_>>();
-    let mut patches = CheckedPatchInventory::new(modules, linked_hir, catalog.inline_patches())?;
+    let mut patches = CheckedPatchInventory::new(modules, catalog.inline_patches())?;
     let mut views = BTreeMap::new();
     for (module, hir) in modules {
         for declaration in hir.declarations() {
@@ -750,7 +742,6 @@ struct CheckedPatchInventory<'a> {
 impl<'a> CheckedPatchInventory<'a> {
     fn new(
         modules: &[(CanonicalModulePath, &HirModule)],
-        linked_hir: &HirModule,
         patches: &'a [CheckedViewStylePatch],
     ) -> Result<Self, ViewStyleLowerError> {
         let mut checked_by_id = BTreeMap::new();
@@ -762,45 +753,37 @@ impl<'a> CheckedPatchInventory<'a> {
             }
         }
 
-        let source_sites = modules
-            .iter()
-            .flat_map(|(module, hir)| hir.style_patches().iter().map(move |patch| (module, patch)))
-            .collect::<Vec<_>>();
-        let linked_patches = linked_hir.style_patches();
-        if source_sites.len() != linked_patches.len() {
-            return Err(ViewStyleLowerError::LinkedInlinePatchCountMismatch {
-                source_count: source_sites.len(),
-                linked_count: linked_patches.len(),
-            });
-        }
-
         let mut by_site = BTreeMap::new();
-        for ((module, source_patch), linked_patch) in source_sites.into_iter().zip(linked_patches) {
-            if source_patch.range() != linked_patch.range() {
-                return Err(ViewStyleLowerError::InlinePatchRangeMismatch {
-                    module: module.clone(),
-                    application: source_patch.range(),
-                    patch: linked_patch.range(),
-                });
+        let mut patch_base = 0_u32;
+        for (module, hir) in modules {
+            for source_patch in hir.style_patches() {
+                let ordinal = patch_base
+                    .checked_add(source_patch.ordinal())
+                    .ok_or(ViewStyleLowerError::TooManyInlinePatches)?;
+                let patch_id = ViewStylePatchId::new(ordinal);
+                let checked = checked_by_id.remove(&patch_id).ok_or(
+                    ViewStyleLowerError::MissingCheckedInlinePatch(patch_id.value()),
+                )?;
+                if checked.range() != source_patch.range() {
+                    return Err(ViewStyleLowerError::InlinePatchRangeMismatch {
+                        module: module.clone(),
+                        application: source_patch.range(),
+                        patch: checked.range(),
+                    });
+                }
+                let key = StylePatchSiteKey::new(module.clone(), source_patch.range());
+                if by_site.insert(key, checked).is_some() {
+                    return Err(ViewStyleLowerError::DuplicateCheckedInlinePatchRange {
+                        module: module.clone(),
+                        range: source_patch.range(),
+                    });
+                }
             }
-            let patch_id = ViewStylePatchId::new(linked_patch.ordinal());
-            let checked = checked_by_id.remove(&patch_id).ok_or(
-                ViewStyleLowerError::MissingCheckedInlinePatch(patch_id.value()),
-            )?;
-            if checked.range() != linked_patch.range() {
-                return Err(ViewStyleLowerError::InlinePatchRangeMismatch {
-                    module: module.clone(),
-                    application: linked_patch.range(),
-                    patch: checked.range(),
-                });
-            }
-            let key = StylePatchSiteKey::new(module.clone(), source_patch.range());
-            if by_site.insert(key, checked).is_some() {
-                return Err(ViewStyleLowerError::DuplicateCheckedInlinePatchRange {
-                    module: module.clone(),
-                    range: source_patch.range(),
-                });
-            }
+            let module_patch_count = u32::try_from(hir.style_patches().len())
+                .map_err(|_| ViewStyleLowerError::TooManyInlinePatches)?;
+            patch_base = patch_base
+                .checked_add(module_patch_count)
+                .ok_or(ViewStyleLowerError::TooManyInlinePatches)?;
         }
         if !checked_by_id.is_empty() {
             return Err(ViewStyleLowerError::UnreferencedInlinePatches {

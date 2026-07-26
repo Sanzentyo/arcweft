@@ -1,5 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
+use arcweft_bundle::resource_codec::ProductSourceId;
 use arcweft_compiler::project::{ProjectCompilationContext, ProjectCompileStage, compile_project};
 use arcweft_compiler::source::compile_source;
 use arcweft_id::PublicId;
@@ -260,39 +261,43 @@ fn style_compiler_rejects_an_application_to_a_missing_sheet() {
 }
 
 #[test]
-fn style_compiler_qualifies_equal_local_patch_ranges_and_uses_checked_ordinals() {
-    let (project, child) = project_with_equal_local_style_patch_ranges();
+fn style_compiler_uses_canonical_project_patch_ordinals_and_exact_sources() {
+    let (project, a, z) = project_with_shuffled_equal_local_style_patch_ranges();
     let context = project_context(&project);
     let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
-        .expect("linked Style project compiles");
+        .expect("module-preserving Style project compiles");
 
-    let root_patch_range = compiled
-        .hir_project()
-        .module(&CanonicalModulePath::crate_root())
-        .expect("root HIR")
-        .style_patches()[0]
-        .range();
-    let child_patch_range = compiled
-        .hir_project()
-        .module(&child)
-        .expect("child HIR")
-        .style_patches()[0]
-        .range();
-    assert_eq!(root_patch_range, child_patch_range);
+    let root = CanonicalModulePath::crate_root();
+    let first_patch_ranges = [&root, &a, &z].map(|module| {
+        compiled
+            .hir_project()
+            .module(module)
+            .expect("module HIR")
+            .style_patches()[0]
+            .range()
+    });
+    assert_eq!(first_patch_ranges[0], first_patch_ranges[1]);
+    assert_eq!(first_patch_ranges[1], first_patch_ranges[2]);
 
     let patches = compiled.style().resource().program.patches();
-    assert_eq!(patches.len(), 2);
-    assert_eq!(patches[0].id(), ViewStylePatchId::new(0));
-    assert_eq!(patches[1].id(), ViewStylePatchId::new(1));
+    assert_eq!(patches.len(), 4);
+    assert_eq!(
+        patches
+            .iter()
+            .map(arcweft_view::style::ViewStylePatch::id)
+            .collect::<Vec<_>>(),
+        (0..4).map(ViewStylePatchId::new).collect::<Vec<_>>()
+    );
 
     let applications = compiled.style().applications();
-    for (module, view, expected_patch) in [
+    for (module, view, expected_patches) in [
         (
-            CanonicalModulePath::crate_root(),
+            root.clone(),
             PublicId::try_new("view.Root").unwrap(),
-            0,
+            vec![0, 1],
         ),
-        (child, PublicId::try_new("view.child.Child").unwrap(), 1),
+        (a.clone(), PublicId::try_new("view.a.A").unwrap(), vec![2]),
+        (z.clone(), PublicId::try_new("view.z.Z").unwrap(), vec![3]),
     ] {
         let ranges = styled_producer_ranges(
             compiled
@@ -301,42 +306,91 @@ fn style_compiler_qualifies_equal_local_patch_ranges_and_uses_checked_ordinals()
                 .expect("View owner module HIR"),
             &view,
         );
-        assert_eq!(ranges.len(), 1);
-        assert_eq!(
-            applications.applications_for(&view, ranges[0]),
-            &[ViewStyleApplicationTarget::inline(ViewStylePatchId::new(
-                expected_patch
-            ))]
-        );
+        assert_eq!(ranges.len(), expected_patches.len());
+        for (range, expected_patch) in ranges.into_iter().zip(expected_patches) {
+            assert_eq!(
+                applications.applications_for(&view, range),
+                &[ViewStyleApplicationTarget::inline(ViewStylePatchId::new(
+                    expected_patch
+                ))]
+            );
+        }
+    }
+
+    let resource = compiled.style().resource();
+    for (project_ordinal, module, local_ordinal) in
+        [(0, &root, 0), (1, &root, 1), (2, &a, 0), (3, &z, 0)]
+    {
+        let declaration = &patches[project_ordinal].declarations()[0];
+        let source_range = resource.source_map_refs[declaration.source().value() as usize];
+        let source_ref = &resource.source_refs[source_range.source().value() as usize];
+        let source = project.module(module).expect("project source module");
+        let expected_source =
+            ProductSourceId::try_for_document_id(source.document().identity().id())
+                .expect("product source identity");
+        assert_eq!(source_ref.id(), &expected_source);
+
+        let hir_range = compiled
+            .hir_project()
+            .module(module)
+            .expect("module HIR")
+            .style_patches()[local_ordinal]
+            .declarations()[0]
+            .range();
+        assert_eq!(source_range.start_byte() as usize, hir_range.start());
+        assert_eq!(source_range.end_byte() as usize, hir_range.end());
     }
 }
 
-fn project_with_equal_local_style_patch_ranges() -> (ProjectSources, CanonicalModulePath) {
-    let child = CanonicalModulePath::from_segments([
-        ModuleSegment::new("child").expect("valid module segment")
-    ]);
+fn project_with_shuffled_equal_local_style_patch_ranges()
+-> (ProjectSources, CanonicalModulePath, CanonicalModulePath) {
+    let a =
+        CanonicalModulePath::from_segments(
+            [ModuleSegment::new("a").expect("valid module segment")],
+        );
+    let z =
+        CanonicalModulePath::from_segments(
+            [ModuleSegment::new("z").expect("valid module segment")],
+        );
     let root_body = r#"pub view Root() {
-    Button("Root").style { opacity = 800milli }
+    Column {
+        Button("Root 0").style { opacity = 800milli }
+        Button("Root 1").style { opacity = 810milli }
+    }
 }
 "#;
-    let child_source = r#"mod child
+    let a_body = r#"mod a
 
-pub view Child() {
-    Button("Child").style { opacity = 700milli }
+pub view A() {
+    Button("A").style { opacity = 700milli }
 }
 "#;
-    let root_style_offset = root_body.find(".style").expect("root inline Style site");
-    let child_style_offset = child_source
-        .find(".style")
-        .expect("child inline Style site");
-    let root_source = format!(
-        "{}{}",
-        " ".repeat(child_style_offset - root_style_offset),
-        root_body
-    );
+    let z_body = r#"mod z
+
+pub view Z() {
+    Button("Z").style { opacity = 600milli }
+}
+"#;
+    let first_style_offset = [root_body, a_body, z_body]
+        .into_iter()
+        .map(|source| source.find(".style").expect("inline Style site"))
+        .max()
+        .expect("source inventory");
+    let align = |source: &str| {
+        let current = source.find(".style").expect("inline Style site");
+        format!("{}{}", " ".repeat(first_style_offset - current), source)
+    };
+    let root_source = align(root_body);
+    let a_source = align(a_body);
+    let z_source = align(z_body);
     assert_eq!(
         root_source.find(".style"),
-        child_source.find(".style"),
+        a_source.find(".style"),
+        "fixture must exercise equal module-local Style ranges"
+    );
+    assert_eq!(
+        a_source.find(".style"),
+        z_source.find(".style"),
         "fixture must exercise equal module-local Style ranges"
     );
     let project = ProjectSources::new(
@@ -347,46 +401,52 @@ pub view Child() {
             version: PackageVersion::new("0.1.0").expect("package version"),
         },
         BuildSpec::default(),
-        Arc::new(
-            SourceDocument::try_new(
-                SourceDocumentId::try_new("arcweft-project://style-project/arcw.toml")
-                    .expect("manifest document ID"),
-                SourceName::path("arcw.toml"),
-                "schema = 1\n[package]\nid = \"org.arcweft.style-project\"\nversion = \"0.1.0\"\n",
-            )
-            .expect("manifest document"),
+        style_fixture_document(
+            "arcweft-project://style-project/arcw.toml",
+            "arcw.toml",
+            "schema = 1\n[package]\nid = \"org.arcweft.style-project\"\nversion = \"0.1.0\"\n",
         ),
         [
             ProjectSourceFile::new(
-                CanonicalModulePath::crate_root(),
-                PathBuf::from("src/main.arcw"),
-                Arc::new(
-                    SourceDocument::try_new(
-                        SourceDocumentId::try_new("src/main.arcw").expect("root document id"),
-                        SourceName::path("src/main.arcw"),
-                        root_source,
-                    )
-                    .expect("root document"),
-                ),
-                [ModuleDependency::new(child.clone())],
+                z.clone(),
+                PathBuf::from("src/z.arcw"),
+                style_fixture_document("src/z.arcw", "src/z.arcw", z_source),
+                [],
             ),
             ProjectSourceFile::new(
-                child.clone(),
-                PathBuf::from("src/child.arcw"),
-                Arc::new(
-                    SourceDocument::try_new(
-                        SourceDocumentId::try_new("src/child.arcw").expect("child document id"),
-                        SourceName::path("src/child.arcw"),
-                        child_source,
-                    )
-                    .expect("child document"),
-                ),
+                CanonicalModulePath::crate_root(),
+                PathBuf::from("src/main.arcw"),
+                style_fixture_document("src/main.arcw", "src/main.arcw", root_source),
+                [
+                    ModuleDependency::new(z.clone()),
+                    ModuleDependency::new(a.clone()),
+                ],
+            ),
+            ProjectSourceFile::new(
+                a.clone(),
+                PathBuf::from("src/a.arcw"),
+                style_fixture_document("src/a.arcw", "src/a.arcw", a_source),
                 [],
             ),
         ],
     )
     .expect("valid source inventory");
-    (project, child)
+    (project, a, z)
+}
+
+fn style_fixture_document(
+    id: &str,
+    display_name: &str,
+    source: impl Into<String>,
+) -> Arc<SourceDocument> {
+    Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(id).expect("fixture document ID"),
+            SourceName::path(display_name),
+            source.into(),
+        )
+        .expect("Style fixture document"),
+    )
 }
 
 fn styled_producer_ranges(hir: &HirModule, view: &PublicId) -> Vec<TextRange> {
@@ -399,7 +459,17 @@ fn styled_producer_ranges(hir: &HirModule, view: &PublicId) -> Vec<TextRange> {
             }
             _ => None,
         })
-        .expect("View body is retained in HIR");
+        .unwrap_or_else(|| {
+            let candidates = hir
+                .declarations()
+                .iter()
+                .filter_map(|declaration| match declaration {
+                    HirTopLevelDecl::EntityDecl(entity) => Some(entity.id().body()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>();
+            panic!("View `{view}` is retained in HIR; candidates: {candidates:?}")
+        });
     let mut ranges = Vec::new();
     collect_styled_producer_ranges(body.value(), &mut ranges);
     ranges
