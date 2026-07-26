@@ -371,7 +371,7 @@ impl ProjectCommandReport {
                 .map(|source| ProjectModuleReport {
                     module: source.module().to_string(),
                     source: source.path().display().to_string(),
-                    source_hash: source.source_hash().to_hex(),
+                    source_hash: source.source_revision().to_hex(),
                 })
                 .collect(),
             compile_units: state
@@ -1301,7 +1301,7 @@ fn persistent_query_write_item(
     let object_key = CompilerObjectKey {
         kind,
         compiler: persistent_compiler_identity(snapshot),
-        source_digest: BuildDigest::from_bytes(source.source_hash().as_bytes()),
+        source_digest: BuildDigest::from(source.source_revision()),
         query_options_digest,
         dependency_interface_digests: dependency_interface_digests.clone(),
         dependency_body_digests: dependency_body_digests.clone(),

@@ -37,7 +37,7 @@ pub fn snapshot_compiled_project(
         .modules()
         .iter()
         .map(|module| {
-            let source_digest = BuildDigest::from_bytes(module.source_hash().as_bytes());
+            let source_digest = BuildDigest::from(module.source().revision());
             let interface_digest = BuildDigest::of(
                 format!("{}:interface:{source_digest}", module.module()).as_bytes(),
             );
@@ -103,7 +103,7 @@ fn project_fingerprint(
     let mut source_bytes = Vec::new();
     for module in sources.modules() {
         source_bytes.extend_from_slice(module.module().to_string().as_bytes());
-        source_bytes.extend_from_slice(&module.source_hash().as_bytes());
+        source_bytes.extend_from_slice(module.source_revision().as_bytes());
     }
     ProjectFingerprint::new(ProjectFingerprintInput {
         package: sources.package().id.as_str().to_owned(),

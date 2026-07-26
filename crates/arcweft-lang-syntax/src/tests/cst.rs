@@ -273,15 +273,13 @@ fn cst_flow_block_event_reuses_complete_body_line_events_only() {
 }
 
 #[test]
-fn successful_parse_exposes_typed_tree_and_hash() {
+fn successful_parse_exposes_typed_tree_and_document_revision() {
     let parsed = parse_source("flow opening {\n    alice: おはよう。[p]\n}\n");
 
     assert!(parsed.is_ok());
-    assert_eq!(parsed.source_hash().as_bytes().len(), 32);
-    assert_eq!(parsed.source_hash().to_string().len(), 64);
     assert_eq!(
-        parsed.source_hash().to_hex(),
-        parsed.source_hash().to_string()
+        parsed.identity().revision(),
+        arcweft_source::SourceRevision::for_utf8(parsed.source())
     );
     assert!(matches!(parsed.typed_tree().items(), [Item::Flow(_)]));
 }

@@ -1,3 +1,4 @@
+use arcweft_source::SourceRevision;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::fmt::{Display, Write as _};
@@ -70,6 +71,12 @@ impl BuildDigest {
                 write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
                 hex
             })
+    }
+}
+
+impl From<SourceRevision> for BuildDigest {
+    fn from(revision: SourceRevision) -> Self {
+        Self::from_bytes(*revision.as_bytes())
     }
 }
 
@@ -236,6 +243,14 @@ pub(crate) fn put_named_digests(out: &mut Vec<u8>, values: &[NamedDigest]) {
 #[cfg(test)]
 mod tests {
     use super::{BuildDigest, NamedDigest, ProjectFingerprint, ProjectFingerprintInput};
+    use arcweft_source::SourceRevision;
+
+    #[test]
+    fn source_revision_converts_without_rehashing() {
+        let revision = SourceRevision::for_utf8("fn main() {}\n");
+
+        assert_eq!(BuildDigest::from(revision).as_bytes(), *revision.as_bytes());
+    }
 
     #[test]
     fn named_digests_are_canonicalized_by_name() {

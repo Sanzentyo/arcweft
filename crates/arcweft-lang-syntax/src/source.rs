@@ -7,7 +7,7 @@ use crate::parser::recovery::{ParseError, ParseErrorKind, RecoveryEdit, Recovery
 use arcweft_source::{
     SourceDocument, SourceDocumentIdentity, SourceRange, SourceSpan, SourceSpanError,
 };
-use std::{cmp::Ordering, fmt, sync::Arc};
+use std::{cmp::Ordering, sync::Arc};
 
 /// Fully parsed source file.
 ///
@@ -22,22 +22,7 @@ pub struct ParsedSource {
     errors: Vec<ParseError>,
     syntax_stats: SyntaxParseStats,
     line_index: LineIndex,
-    source_hash: SourceHash,
 }
-
-/// Deterministic content digest of source text used for cache keys.
-///
-/// The digest is BLAKE3 over the exact UTF-8 source bytes. It intentionally
-/// does not normalize line endings or Unicode forms; callers that need logical
-/// source equivalence should normalize before parsing.
-///
-/// BLAKE3 is heavier than a 64-bit non-cryptographic hash and adds a small
-/// dependency/bundle-size cost, including for wasm builds. The tradeoff is
-/// intentional: `SourceHash` is meant to be stable enough for cache keys,
-/// manifests, and future incremental parsing where accidental collisions are
-/// harder to justify than the modest implementation cost.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub struct SourceHash([u8; Self::LEN]);
 
 /// Byte offsets of line starts for source-coordinate conversion.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,7 +44,6 @@ impl ParsedSource {
             .filter(|error| error.kind() == ParseErrorKind::ExpressionPrefixDepthLimit)
             .count();
         syntax_stats.checked_add_prefix_depth_limit_failures(prefix_depth_failures);
-        let source_hash = SourceHash::new(document.text());
         let line_index = LineIndex::new(document.text());
         Self {
             document,
@@ -68,7 +52,6 @@ impl ParsedSource {
             errors,
             syntax_stats,
             line_index,
-            source_hash,
         }
     }
 
@@ -116,11 +99,6 @@ impl ParsedSource {
     /// Line index for byte-offset diagnostics.
     pub const fn line_index(&self) -> &LineIndex {
         &self.line_index
-    }
-
-    /// Deterministic source hash.
-    pub const fn source_hash(&self) -> SourceHash {
-        self.source_hash
     }
 
     /// True when no parse diagnostics were emitted.
@@ -178,40 +156,6 @@ fn compare_recovery_edits(left: &[RecoveryEdit], right: &[RecoveryEdit]) -> Orde
         }
     }
     left.len().cmp(&right.len())
-}
-
-impl SourceHash {
-    /// Number of bytes in a source digest.
-    pub const LEN: usize = 32;
-
-    fn new(source: &str) -> Self {
-        Self(*blake3::hash(source.as_bytes()).as_bytes())
-    }
-
-    /// Raw stable digest bytes.
-    pub const fn as_bytes(self) -> [u8; Self::LEN] {
-        self.0
-    }
-
-    /// Lowercase hexadecimal digest for manifests, logs, and cache filenames.
-    pub fn to_hex(self) -> String {
-        self.0
-            .iter()
-            .fold(String::with_capacity(Self::LEN * 2), |mut out, byte| {
-                use std::fmt::Write as _;
-                write!(&mut out, "{byte:02x}").expect("writing to String cannot fail");
-                out
-            })
-    }
-}
-
-impl fmt::Display for SourceHash {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        for byte in self.0 {
-            write!(formatter, "{byte:02x}")?;
-        }
-        Ok(())
-    }
 }
 
 impl LineIndex {

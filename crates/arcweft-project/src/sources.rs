@@ -1,18 +1,13 @@
 use crate::graph::{ModuleDependency, ModuleGraph, ModuleGraphError, ModuleNode};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_manifest_model::{BuildSpec, PackageSpec};
-use arcweft_source::SourceDocument;
+use arcweft_source::{SourceDocument, SourceRevision};
 use std::{
     collections::BTreeMap,
-    fmt::Write as _,
     path::{Path, PathBuf},
     sync::Arc,
 };
 use thiserror::Error;
-
-/// Content hash used by deterministic incremental build keys.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ModuleSourceHash([u8; 32]);
 
 /// One loaded source and its resolved module dependencies.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -20,7 +15,6 @@ pub struct ProjectSourceFile {
     module: CanonicalModulePath,
     path: PathBuf,
     document: Arc<SourceDocument>,
-    source_hash: ModuleSourceHash,
     dependencies: Vec<ModuleDependency>,
 }
 
@@ -49,25 +43,6 @@ pub enum ProjectSourcesError {
     DuplicateModule { module: CanonicalModulePath },
 }
 
-impl ModuleSourceHash {
-    pub fn from_source(source: &str) -> Self {
-        Self(*blake3::hash(source.as_bytes()).as_bytes())
-    }
-
-    pub const fn as_bytes(self) -> [u8; 32] {
-        self.0
-    }
-
-    pub fn to_hex(self) -> String {
-        self.0
-            .iter()
-            .fold(String::with_capacity(64), |mut hex, byte| {
-                write!(&mut hex, "{byte:02x}").expect("writing to String cannot fail");
-                hex
-            })
-    }
-}
-
 impl ProjectSourceFile {
     pub fn new(
         module: CanonicalModulePath,
@@ -75,13 +50,11 @@ impl ProjectSourceFile {
         document: Arc<SourceDocument>,
         dependencies: impl IntoIterator<Item = ModuleDependency>,
     ) -> Self {
-        let source_hash = ModuleSourceHash::from_source(document.text());
         let dependencies = ModuleDependency::normalize(dependencies);
         Self {
             module,
             path,
             document,
-            source_hash,
             dependencies,
         }
     }
@@ -102,8 +75,9 @@ impl ProjectSourceFile {
         &self.document
     }
 
-    pub const fn source_hash(&self) -> ModuleSourceHash {
-        self.source_hash
+    /// Exact content revision owned by the source document.
+    pub fn source_revision(&self) -> SourceRevision {
+        self.document.identity().revision()
     }
 
     pub fn dependencies(&self) -> &[ModuleDependency] {
@@ -191,5 +165,54 @@ impl ProjectSources {
 
     pub fn target_root(&self) -> PathBuf {
         self.project_root.join(self.build.target_dir.as_path())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ProjectSourceFile, SourceDocument};
+    use crate::graph::ModuleDependency;
+    use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+    use arcweft_source::{SourceDocumentId, SourceName, SourceRevision};
+    use std::{path::PathBuf, sync::Arc};
+
+    fn source_file(id: &str, text: &str) -> ProjectSourceFile {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(id).expect("document ID"),
+                SourceName::path("src/main.arcw"),
+                text,
+            )
+            .expect("source document"),
+        );
+        ProjectSourceFile::new(
+            CanonicalModulePath::crate_root(),
+            PathBuf::from("src/main.arcw"),
+            document,
+            std::iter::empty::<ModuleDependency>(),
+        )
+    }
+
+    #[test]
+    fn project_source_revision_is_the_document_revision() {
+        let source = source_file("arcweft-project://revision/main.arcw", "fn main() {}\n");
+
+        assert_eq!(
+            source.source_revision(),
+            source.document().identity().revision()
+        );
+        assert_eq!(
+            source.source_revision(),
+            SourceRevision::for_utf8(source.source())
+        );
+    }
+
+    #[test]
+    fn content_revision_does_not_duplicate_document_identity() {
+        let first = source_file("arcweft-project://first/main.arcw", "fn main() {}\n");
+        let second = source_file("arcweft-project://second/main.arcw", "fn main() {}\n");
+
+        assert_eq!(first.source_revision(), second.source_revision());
+        assert_ne!(first.document().identity(), second.document().identity());
     }
 }

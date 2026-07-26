@@ -128,7 +128,7 @@ pub fn parsed_syntax_object(
     input: &ParsedSyntaxFactsInput<'_>,
 ) -> Result<ParsedSyntaxObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::ParsedSyntax)?;
-    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let source_digest = BuildDigest::from(input.parsed.identity().revision());
     let diagnostics = input
         .parsed
         .errors()
@@ -168,7 +168,7 @@ pub fn hir_body_object(
     input: &HirBodyFactsInput<'_>,
 ) -> Result<HirBodyObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::HirBody)?;
-    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let source_digest = BuildDigest::from(input.parsed.identity().revision());
     let facts = hir_body_facts(input.module, input.hir)?;
     Ok(HirBodyObject {
         schema_version: AWBO_SCHEMA_VERSION,
@@ -195,7 +195,7 @@ pub fn interface_summary_object(
     input: &InterfaceSummaryFactsInput<'_>,
 ) -> Result<InterfaceSummaryObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::InterfaceSummary)?;
-    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let source_digest = BuildDigest::from(input.parsed.identity().revision());
     let stage_inputs = input.key.stage_inputs();
     let public_symbols = interface_public_symbols(input.module, input.hir)?;
     Ok(InterfaceSummaryObject {
@@ -226,7 +226,7 @@ pub fn typecheck_gate_object(
     input: &TypecheckGateFactsInput<'_>,
 ) -> Result<TypecheckGateObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::TypecheckGate)?;
-    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let source_digest = BuildDigest::from(input.parsed.identity().revision());
     if input.interface_summary.source_digest != source_digest {
         return Err(PersistentFactsError::SourceDigestMismatch {
             field: "interface_summary",
@@ -279,7 +279,7 @@ pub fn bytecode_unit_object(
     input: &BytecodeUnitFactsInput<'_>,
 ) -> Result<BytecodeUnitObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::BytecodeUnit)?;
-    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let source_digest = BuildDigest::from(input.parsed.identity().revision());
     if input.hir_body.source_digest != source_digest {
         return Err(PersistentFactsError::SourceDigestMismatch { field: "hir_body" });
     }
@@ -340,7 +340,7 @@ pub fn actual_bytecode_unit_object(
     input: &ActualBytecodeUnitFactsInput<'_>,
 ) -> Result<BytecodeUnitObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::BytecodeUnit)?;
-    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let source_digest = BuildDigest::from(input.parsed.identity().revision());
     if input.hir_body.source_digest != source_digest {
         return Err(PersistentFactsError::SourceDigestMismatch { field: "hir_body" });
     }
@@ -398,7 +398,7 @@ pub fn link_plan_object(
     input: &LinkPlanFactsInput<'_>,
 ) -> Result<LinkPlanObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::LinkPlan)?;
-    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let source_digest = BuildDigest::from(input.parsed.identity().revision());
     let stage_inputs = input.key.stage_inputs();
     let descriptor = LinkDescriptorObject {
         ordered_unit_identities: NamedDigest::canonicalize(input.ordered_unit_digests.clone()),
@@ -439,7 +439,7 @@ pub fn actual_link_plan_object(
     input: &ActualLinkPlanFactsInput<'_>,
 ) -> Result<LinkPlanObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::LinkPlan)?;
-    let source_digest = BuildDigest::from_bytes(input.parsed.source_hash().as_bytes());
+    let source_digest = BuildDigest::from(input.parsed.identity().revision());
     let stage_inputs = input.key.stage_inputs();
     let descriptor = LinkDescriptorObject {
         ordered_unit_identities: input.ordered_unit_identities.clone(),
@@ -1137,7 +1137,7 @@ return "done"
         CompilerObjectKey {
             kind,
             compiler: compiler(),
-            source_digest: BuildDigest::from_bytes(parsed.source_hash().as_bytes()),
+            source_digest: BuildDigest::from(parsed.identity().revision()),
             query_options_digest: digest("options"),
             dependency_interface_digests: vec![
                 NamedDigest::new("z", digest("z-interface")),

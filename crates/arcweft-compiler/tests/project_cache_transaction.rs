@@ -62,7 +62,14 @@ impl ProjectCompileCache for RecordingCache {
 
 fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrationFacts>) {
     let (project, document, world) = project_fixture(source, profile);
-    let facts = Arc::new(
+    (project, registration_facts(document, world))
+}
+
+fn registration_facts(
+    document: Arc<SourceDocument>,
+    world: ProjectSymbolWorldId,
+) -> Arc<ProjectRegistrationFacts> {
+    Arc::new(
         ProjectRegistrationFacts::try_new(
             world,
             vec![document],
@@ -71,20 +78,28 @@ fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrat
             Vec::new(),
         )
         .expect("registration facts"),
-    );
-    (project, facts)
+    )
 }
 
 fn project_fixture(
     source: &str,
     profile: &str,
 ) -> (ProjectSources, Arc<SourceDocument>, ProjectSymbolWorldId) {
+    project_fixture_with_document_id(
+        source,
+        profile,
+        &format!("arcweft-project://compiler-cache-{profile}/src/main.arcw"),
+    )
+}
+
+fn project_fixture_with_document_id(
+    source: &str,
+    profile: &str,
+    document_id: &str,
+) -> (ProjectSources, Arc<SourceDocument>, ProjectSymbolWorldId) {
     let document = Arc::new(
         SourceDocument::try_new(
-            SourceDocumentId::try_new(format!(
-                "arcweft-project://compiler-cache-{profile}/src/main.arcw"
-            ))
-            .expect("document id"),
+            SourceDocumentId::try_new(document_id).expect("document id"),
             SourceName::path("src/main.arcw"),
             source,
         )
@@ -268,6 +283,10 @@ fn compiled_project_exposes_the_exact_shared_hir_project() {
 
     let retained = Arc::clone(compiled.hir_project());
     assert!(Arc::ptr_eq(compiled.hir_project(), &retained));
+    assert_eq!(
+        compiled.modules()[0].source(),
+        project.root_module().document().identity()
+    );
 }
 
 #[test]
@@ -305,6 +324,103 @@ fn lowered_hir_cache_hit_remains_read_only() {
     hit.registered_environment()
         .verify_character_inventory(hit.project_symbols())
         .expect("hit path produced a complete registered world");
+}
+
+#[test]
+fn lowered_hir_cache_rejects_another_document_identity_with_the_same_bytes() {
+    let source = "fn main() -> Unit { () }\n";
+    let profile = "identity-miss";
+    let (first_project, first_document, first_world) = project_fixture_with_document_id(
+        source,
+        profile,
+        "arcweft-project://identity-first/src/main.arcw",
+    );
+    let first_facts = registration_facts(first_document, first_world);
+    let mut cache = RecordingCache::default();
+    let first = compile_project_with_cache(
+        &first_project,
+        &context(TypeCheckEnv::standard(), first_facts),
+        &RuntimePlanLowerOptions::default(),
+        &mut cache,
+    )
+    .expect("first compilation");
+    cache.reset_activity();
+
+    let (second_project, second_document, second_world) = project_fixture_with_document_id(
+        source,
+        profile,
+        "arcweft-project://identity-second/src/main.arcw",
+    );
+    let expected_identity = second_document.identity().clone();
+    let second_facts = registration_facts(second_document, second_world);
+    let second = compile_project_with_cache(
+        &second_project,
+        &context(TypeCheckEnv::standard(), second_facts),
+        &RuntimePlanLowerOptions::default(),
+        &mut cache,
+    )
+    .expect("second compilation");
+
+    assert_eq!(cache.loads, 1, "the identical content key was consulted");
+    assert_eq!(
+        cache.stores, 1,
+        "the foreign document artifact was replaced"
+    );
+    assert_eq!(
+        first.compile_units()[0].fingerprint(),
+        second.compile_units()[0].fingerprint()
+    );
+    assert_eq!(
+        second.compile_units()[0].cache_status(),
+        ProjectCompileCacheStatus::Miss
+    );
+    assert_eq!(second.modules()[0].source(), &expected_identity);
+}
+
+#[test]
+fn source_revision_change_invalidates_the_compile_unit_cache() {
+    let profile = "revision-miss";
+    let document_id = "arcweft-project://revision-miss/src/main.arcw";
+    let (first_project, first_document, first_world) =
+        project_fixture_with_document_id("fn main() -> Unit { () }\n", profile, document_id);
+    let mut cache = RecordingCache::default();
+    let first = compile_project_with_cache(
+        &first_project,
+        &context(
+            TypeCheckEnv::standard(),
+            registration_facts(first_document, first_world),
+        ),
+        &RuntimePlanLowerOptions::default(),
+        &mut cache,
+    )
+    .expect("first compilation");
+    cache.reset_activity();
+
+    let (changed_project, changed_document, changed_world) =
+        project_fixture_with_document_id("fn main() -> Unit {\n    ()\n}\n", profile, document_id);
+    let changed_revision = changed_document.identity().revision();
+    let changed = compile_project_with_cache(
+        &changed_project,
+        &context(
+            TypeCheckEnv::standard(),
+            registration_facts(changed_document, changed_world),
+        ),
+        &RuntimePlanLowerOptions::default(),
+        &mut cache,
+    )
+    .expect("changed compilation");
+
+    assert_eq!(cache.loads, 1);
+    assert_eq!(cache.stores, 1);
+    assert_ne!(
+        first.compile_units()[0].fingerprint(),
+        changed.compile_units()[0].fingerprint()
+    );
+    assert_eq!(
+        changed.compile_units()[0].cache_status(),
+        ProjectCompileCacheStatus::Miss
+    );
+    assert_eq!(changed.modules()[0].source().revision(), changed_revision);
 }
 
 #[test]

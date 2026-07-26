@@ -48,7 +48,7 @@ use arcweft_lang_syntax::{
 use arcweft_presentation::fx::FxDefinition;
 use arcweft_project::{
     graph::CompileUnitId,
-    sources::{ModuleSourceHash, ProjectSourceFile, ProjectSources},
+    sources::{ProjectSourceFile, ProjectSources},
 };
 use arcweft_runtime_plan::{
     flow::{RuntimePlanLowerOptions, RuntimePlanLowerReport},
@@ -115,10 +115,7 @@ pub struct ProjectDiagnosticSource {
 pub struct CompiledProjectModule {
     module: CanonicalModulePath,
     compile_unit: CompileUnitId,
-    source_hash: ModuleSourceHash,
-    source: SourceDocumentIdentity,
     syntax_lints: Vec<SyntaxLint>,
-    syntax_warnings: usize,
     syntax_stats: SyntaxParseStats,
     hir: HirModule,
 }
@@ -286,12 +283,16 @@ impl CompiledProjectModule {
         self.compile_unit
     }
 
-    pub const fn source_hash(&self) -> ModuleSourceHash {
-        self.source_hash
-    }
-
-    pub const fn source(&self) -> &SourceDocumentIdentity {
-        &self.source
+    /// Exact source identity retained by this source-backed compiled module.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the compiler violates its construction invariant and
+    /// stores a synthetic HIR module in a compiled project source slot.
+    pub fn source(&self) -> &SourceDocumentIdentity {
+        self.hir
+            .source_identity()
+            .expect("compiled project modules are source-backed")
     }
 
     /// Non-blocking syntax lints produced from this accepted module source.
@@ -299,8 +300,8 @@ impl CompiledProjectModule {
         &self.syntax_lints
     }
 
-    pub const fn syntax_warnings(&self) -> usize {
-        self.syntax_warnings
+    pub fn syntax_warnings(&self) -> usize {
+        parse::count_warning_lints(&self.syntax_lints)
     }
 
     pub const fn syntax_stats(&self) -> &SyntaxParseStats {
@@ -442,7 +443,7 @@ where
         for module in &modules {
             let bound = HirProjectModule::try_new(
                 module.module.clone(),
-                module.source.clone(),
+                module.source().clone(),
                 module.hir.clone(),
             )
             .map_err(|error| {
@@ -810,7 +811,6 @@ fn compile_module(
                 .map(|lint| lint.diagnostic(document)),
         ));
     }
-    let syntax_warnings = parse::count_warning_lints(&lints);
     let hir = hir::lower_source_document(document, &tree).map_err(|errors| {
         module_error(
             source,
@@ -822,10 +822,7 @@ fn compile_module(
     Ok(CompiledProjectModule {
         module: source.module().clone(),
         compile_unit,
-        source_hash: source.source_hash(),
-        source: document.identity().clone(),
         syntax_lints: lints,
-        syntax_warnings,
         syntax_stats,
         hir,
     })
@@ -842,7 +839,7 @@ fn build_unit_fingerprints(
         hasher.update(project.package().id.as_str().as_bytes());
         for module in unit.modules() {
             hasher.update(module.to_string().as_bytes());
-            hasher.update(&project.module(module).unwrap().source_hash().as_bytes());
+            hasher.update(project.module(module).unwrap().source_revision().as_bytes());
         }
         for dependency in unit.dependencies() {
             let fingerprint = fingerprints
@@ -872,9 +869,6 @@ fn cached_unit_matches(
                 && source_documents
                     .get(expected)
                     .is_some_and(|document| document.identity() == cached.source())
-                && project
-                    .module(expected)
-                    .is_some_and(|source| source.source_hash() == cached.source_hash())
         })
 }
 

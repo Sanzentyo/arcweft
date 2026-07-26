@@ -390,7 +390,7 @@ fn compiled_source_hash(compiled: &CompiledProject) -> StableHash {
     let mut hasher = blake3::Hasher::new_derive_key("arcweft.agent-artifact.source-set.v1");
     for module in modules {
         hash_source_part(&mut hasher, module.module().to_string().as_bytes());
-        hash_source_part(&mut hasher, &module.source_hash().as_bytes());
+        hash_source_part(&mut hasher, module.source().revision().as_bytes());
     }
     StableHash::from_blake3_bytes(hasher.finalize().into())
 }
