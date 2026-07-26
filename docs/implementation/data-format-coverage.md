@@ -15,6 +15,15 @@
 | bincode interop | `arcweft-codec-binary` optional `bincode-interop` feature | Interop only | Not the primary Arcweft binary format; disabled by default. |
 | ORC | future adapter boundary | Not default | Reserved until a suitably maintained Rust crate is selected. |
 
+## Typed JSON save boundary
+
+Fixed-version typed JSON saves use the checksummed `SaveEnvelope` and have one
+decode authority: `decode_strict_typed_json_save`. It rejects unknown fields at
+any payload depth, duplicate fields, trailing JSON values, trailing envelope
+bytes, mismatched schema IDs/codecs, and old or future schema versions unless a
+separate explicitly typed migration boundary owns that format. There is no
+permissive typed JSON save decoder or predecessor reader.
+
 ## DSL runtime surface
 
 Arcweft source now selects serialization formats with the built-in `DataFormat`

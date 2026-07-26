@@ -382,30 +382,12 @@ where
     SaveEnvelope::new(schema_id, schema_version, TYPED_JSON_CODEC_ID, payload).encode_bytes()
 }
 
-pub fn decode_typed_json_save<T>(
-    input: &[u8],
-    expected_schema_id: &SaveSchemaId,
-    current_schema_version: u32,
-    options: &SaveDecodeOptions,
-) -> Result<T>
-where
-    T: DeserializeOwned,
-{
-    let payload =
-        decode_typed_json_payload(input, expected_schema_id, current_schema_version, options)?;
-    serde_json::from_slice(&payload).map_err(|error| {
-        DataError::new(
-            DataErrorKind::InvalidEncoding,
-            format!("failed to decode typed JSON save payload: {error}"),
-        )
-    })
-}
-
 /// Decodes a typed JSON save while rejecting ignored fields anywhere in the
 /// payload tree.
 ///
 /// This is intended for fixed, versioned payloads whose current schema must be
-/// matched exactly. It does not add a migration or predecessor reader.
+/// matched exactly. It does not add a migration or predecessor reader, and it
+/// rejects trailing envelope data regardless of the general decode option.
 pub fn decode_strict_typed_json_save<T>(
     input: &[u8],
     expected_schema_id: &SaveSchemaId,
@@ -415,8 +397,14 @@ pub fn decode_strict_typed_json_save<T>(
 where
     T: DeserializeOwned,
 {
-    let payload =
-        decode_typed_json_payload(input, expected_schema_id, current_schema_version, options)?;
+    let mut strict_options = options.clone();
+    strict_options.allow_trailing_data = false;
+    let payload = decode_typed_json_payload(
+        input,
+        expected_schema_id,
+        current_schema_version,
+        &strict_options,
+    )?;
     let mut deserializer = serde_json::Deserializer::from_slice(&payload);
     let mut ignored = Vec::new();
     let value = serde_ignored::deserialize(&mut deserializer, |path| {
@@ -586,7 +574,7 @@ mod typed_json_tests {
     #[test]
     fn typed_json_save_round_trips_strict_envelope() {
         let bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 1).unwrap();
-        let decoded = decode_typed_json_save::<TypedPayload>(
+        let decoded = decode_strict_typed_json_save::<TypedPayload>(
             &bytes,
             &schema(),
             1,
@@ -600,7 +588,7 @@ mod typed_json_tests {
     #[test]
     fn typed_json_save_rejects_future_schema_version() {
         let bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 2).unwrap();
-        let error = decode_typed_json_save::<TypedPayload>(
+        let error = decode_strict_typed_json_save::<TypedPayload>(
             &bytes,
             &schema(),
             1,
@@ -612,10 +600,58 @@ mod typed_json_tests {
     }
 
     #[test]
+    fn typed_json_save_rejects_predecessor_schema_version() {
+        let bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 1).unwrap();
+        let error = decode_strict_typed_json_save::<TypedPayload>(
+            &bytes,
+            &schema(),
+            2,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("requires migration to 2"));
+    }
+
+    #[test]
+    fn typed_json_save_rejects_schema_identity_mismatch() {
+        let bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 1).unwrap();
+        let error = decode_strict_typed_json_save::<TypedPayload>(
+            &bytes,
+            &SaveSchemaId::new("arcweft.test.other"),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("does not match expected"));
+    }
+
+    #[test]
+    fn typed_json_save_rejects_non_json_codec() {
+        let bytes = SaveEnvelope::new(schema(), 1, "msgpack", vec![0x80])
+            .encode_bytes()
+            .unwrap();
+        let error = decode_strict_typed_json_save::<TypedPayload>(
+            &bytes,
+            &schema(),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(
+            error
+                .to_string()
+                .contains("does not match typed JSON codec")
+        );
+    }
+
+    #[test]
     fn typed_json_save_rejects_trailing_envelope_data() {
         let mut bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 1).unwrap();
         bytes.push(0);
-        let error = decode_typed_json_save::<TypedPayload>(
+        let error = decode_strict_typed_json_save::<TypedPayload>(
             &bytes,
             &schema(),
             1,
@@ -624,6 +660,83 @@ mod typed_json_tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("trailing data"));
+    }
+
+    #[test]
+    fn strict_typed_json_save_disables_the_trailing_data_escape_hatch() {
+        let mut bytes = encode_typed_json_save(&TypedPayload { value: 7 }, schema(), 1).unwrap();
+        bytes.push(0);
+        let options = SaveDecodeOptions {
+            allow_trailing_data: true,
+            ..SaveDecodeOptions::default()
+        };
+        let error = decode_strict_typed_json_save::<TypedPayload>(&bytes, &schema(), 1, &options)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("trailing data"));
+    }
+
+    #[test]
+    fn strict_typed_json_save_rejects_unknown_top_level_fields() {
+        let bytes = SaveEnvelope::new(
+            schema(),
+            1,
+            TYPED_JSON_CODEC_ID,
+            br#"{"value":7,"predecessor":true}"#.to_vec(),
+        )
+        .encode_bytes()
+        .unwrap();
+        let error = decode_strict_typed_json_save::<TypedPayload>(
+            &bytes,
+            &schema(),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("predecessor"));
+    }
+
+    #[test]
+    fn strict_typed_json_save_rejects_duplicate_fields() {
+        let bytes = SaveEnvelope::new(
+            schema(),
+            1,
+            TYPED_JSON_CODEC_ID,
+            br#"{"value":7,"value":8}"#.to_vec(),
+        )
+        .encode_bytes()
+        .unwrap();
+        let error = decode_strict_typed_json_save::<TypedPayload>(
+            &bytes,
+            &schema(),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("duplicate field `value`"));
+    }
+
+    #[test]
+    fn strict_typed_json_save_rejects_trailing_payload_values() {
+        let bytes = SaveEnvelope::new(
+            schema(),
+            1,
+            TYPED_JSON_CODEC_ID,
+            br#"{"value":7} {"value":8}"#.to_vec(),
+        )
+        .encode_bytes()
+        .unwrap();
+        let error = decode_strict_typed_json_save::<TypedPayload>(
+            &bytes,
+            &schema(),
+            1,
+            &SaveDecodeOptions::default(),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("trailing characters"));
     }
 
     #[test]

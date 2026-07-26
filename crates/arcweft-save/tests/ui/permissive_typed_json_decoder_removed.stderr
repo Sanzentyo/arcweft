@@ -1,0 +1,11 @@
+error[E0432]: unresolved import `arcweft_save::decode_typed_json_save`
+ --> tests/ui/permissive_typed_json_decoder_removed.rs:1:5
+  |
+1 | use arcweft_save::decode_typed_json_save;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `decode_typed_json_save` in the root
+  |
+help: a similar name exists in the module
+  |
+1 - use arcweft_save::decode_typed_json_save;
+1 + use arcweft_save::encode_typed_json_save;
+  |

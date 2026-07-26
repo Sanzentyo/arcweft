@@ -318,6 +318,22 @@ struct NativePlayerSessionSave {
     dialogue_visual_clock: DialogueVisualClockSnapshot,
 }
 
+impl NativePlayerSessionSave {
+    fn decode(input: &[u8]) -> Result<Self, NativeSceneWindowError> {
+        arcweft_save::decode_strict_typed_json_save(
+            input,
+            &arcweft_save::SaveSchemaId::new(NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID),
+            NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
+            &arcweft_save::SaveDecodeOptions::default(),
+        )
+        .map_err(
+            |error| NativeSceneWindowError::NativePlayerSessionSaveDecode {
+                message: error.to_string(),
+            },
+        )
+    }
+}
+
 struct RestoredNativePlayerState {
     input: InputControllerSnapshot,
     dialogue_visual_clock: DialogueVisualClockSnapshot,
@@ -962,17 +978,7 @@ fn load_native_player_session_save(
         path: path.to_path_buf(),
         source,
     })?;
-    let save = arcweft_save::decode_typed_json_save::<NativePlayerSessionSave>(
-        &bytes,
-        &arcweft_save::SaveSchemaId::new(NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID),
-        NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
-        &arcweft_save::SaveDecodeOptions::default(),
-    )
-    .map_err(
-        |error| NativeSceneWindowError::NativePlayerSessionSaveDecode {
-            message: error.to_string(),
-        },
-    )?;
+    let save = NativePlayerSessionSave::decode(&bytes)?;
     runtime.session_mut().import_session_save_bytes(
         &save.runtime_session,
         &arcweft_save::SaveDecodeOptions::default(),
@@ -1045,10 +1051,38 @@ fn save_native_player_session(
 #[cfg(test)]
 mod tests {
     use super::{
+        DialogueVisualClockSnapshot, InputControllerSnapshot, NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID,
+        NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION, NativePlayerSessionSave,
         surrounding_excerpt_range, text_input_commit_from_key_text,
         window_ime_composition_selection,
     };
     use arcweft_presentation::text_input::{TextByteOffset, TextInputOperation, TextRange};
+
+    #[test]
+    fn native_player_session_save_decode_rejects_unknown_payload_fields() {
+        let save = NativePlayerSessionSave {
+            runtime_session: Vec::new(),
+            input: InputControllerSnapshot::default(),
+            dialogue_visual_clock: DialogueVisualClockSnapshot::default(),
+        };
+        let mut payload = serde_json::to_value(save).unwrap();
+        payload
+            .as_object_mut()
+            .unwrap()
+            .insert("predecessor".to_owned(), serde_json::Value::Bool(true));
+        let bytes = arcweft_save::SaveEnvelope::new(
+            arcweft_save::SaveSchemaId::new(NATIVE_PLAYER_SESSION_SAVE_SCHEMA_ID),
+            NATIVE_PLAYER_SESSION_SAVE_SCHEMA_VERSION,
+            arcweft_save::TYPED_JSON_CODEC_ID,
+            serde_json::to_vec(&payload).unwrap(),
+        )
+        .encode_bytes()
+        .unwrap();
+
+        let error = NativePlayerSessionSave::decode(&bytes).unwrap_err();
+
+        assert!(error.to_string().contains("predecessor"));
+    }
 
     #[test]
     fn winit_preedit_selection_uses_utf8_byte_offsets() {
