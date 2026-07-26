@@ -14,17 +14,17 @@ use super::family::{
     StatementFamily, StatementNode, TypeFamily, TypeNode,
 };
 use super::node::{
-    AssertionStatementKind, AstKind, AstNode, BinaryExpressionKind, CallArgumentKind,
+    AssertionStatementKind, AstKind, AstNode, BinaryExpressionKind, BlockKind, CallArgumentKind,
     CallExpressionKind, DeclarationHeaderKind, DialogueCallExpressionKind, DocBlockKind,
     ExpressionBodyKind, FixedParameterGroupKind, FunctionTypeKind, GenericApplicationTypeKind,
-    LetStatementKind, MissingBodyKind, NameReferenceKind, OmittedBlockTailKind, OuterAttributeKind,
-    ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind, ProofBodyKind,
-    ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind, RichTextArgumentPayloadKind,
-    RichTextArgumentTokenKind, RichTextArgumentValueKind, RichTextConditionPayloadKind,
-    RichTextDialogueCallPayloadKind, RichTextEndTagKind, RichTextFxCallPayloadKind,
-    RichTextInvalidArgumentKind, RichTextNamedArgumentKind, RichTextPositionalArgumentKind,
-    RichTextTagKind, RichTextTagNameKind, SourceFileKind, TypeArgumentKind, VisibilityKind,
-    WholeBindingPatternKind,
+    IfStatementKind, LetStatementKind, MissingBodyKind, NameReferenceKind, OmittedBlockTailKind,
+    OuterAttributeKind, ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind,
+    ProofBodyKind, ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind,
+    RichTextArgumentPayloadKind, RichTextArgumentTokenKind, RichTextArgumentValueKind,
+    RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind, RichTextEndTagKind,
+    RichTextFxCallPayloadKind, RichTextInvalidArgumentKind, RichTextNamedArgumentKind,
+    RichTextPositionalArgumentKind, RichTextTagKind, RichTextTagNameKind, SourceFileKind,
+    TypeArgumentKind, UnsafeLifetimeStatementKind, VisibilityKind, WholeBindingPatternKind,
 };
 use super::{SyntaxAccessError, SyntaxLookupError, SyntaxNodeHandle, SyntaxSnapshotData};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
@@ -450,6 +450,28 @@ impl AstNode<ExpressionBodyKind> {
     }
 }
 
+/// Typed head of a statement-form conditional.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum IfStatementHeadNode {
+    /// Ordinary `if condition` head.
+    Condition(ExprNode),
+    /// Pattern-matching `if let pattern = scrutinee [when guard]` head.
+    Let {
+        pattern: PatternNode,
+        scrutinee: ExprNode,
+        guard: Option<ExprNode>,
+    },
+}
+
+/// Typed authored branch following an `else` keyword.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum IfStatementElseNode {
+    /// Braced terminal else branch.
+    Block(AstNode<BlockKind>),
+    /// Nested `else if` or `else if let` statement.
+    If(AstNode<IfStatementKind>),
+}
+
 /// Authored block tail or the exact zero-width omitted-tail marker.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum BlockTailNode {
@@ -507,10 +529,69 @@ macro_rules! impl_block_access {
 
 impl_block_access!(PredicateBlockKind);
 impl_block_access!(ProofBlockKind);
+impl_block_access!(BlockKind);
 
 impl AstNode<AssertionStatementKind> {
     pub(crate) fn conditions(&self) -> Result<Vec<ExprNode>, SyntaxAccessError> {
         self.family_children::<ExpressionFamily>(SyntaxRole::Condition)
+    }
+}
+
+impl AstNode<UnsafeLifetimeStatementKind> {
+    /// Source-owned unsafe-lifetime body containing the audit insertion anchor.
+    pub(crate) fn body(&self) -> Result<AstNode<BlockKind>, SyntaxAccessError> {
+        self.required_exact_child(SyntaxRole::Body)
+    }
+
+    /// Exact authored opening delimiter used for an audit insertion edit.
+    ///
+    /// Consumers retain this delimiter's qualified syntax identity in the HIR
+    /// source-component table; they do not copy its offset into semantic HIR.
+    pub(crate) fn audit_insertion_anchor(&self) -> Result<DelimiterNode, SyntaxAccessError> {
+        self.body()?.open_delimiter()
+    }
+}
+
+impl AstNode<IfStatementKind> {
+    /// Exact typed conditional head without reparsing source text.
+    pub(crate) fn head(&self) -> Result<IfStatementHeadNode, SyntaxAccessError> {
+        if let Some(pattern) = self.optional_family_child::<PatternFamily>(SyntaxRole::Pattern)? {
+            return Ok(IfStatementHeadNode::Let {
+                pattern,
+                scrutinee: self.required_family_child::<ExpressionFamily>(SyntaxRole::Scrutinee)?,
+                guard: self.optional_family_child::<ExpressionFamily>(SyntaxRole::Guard)?,
+            });
+        }
+        Ok(IfStatementHeadNode::Condition(
+            self.required_family_child::<ExpressionFamily>(SyntaxRole::Condition)?,
+        ))
+    }
+
+    /// Required braced then branch.
+    pub(crate) fn then_branch(&self) -> Result<AstNode<BlockKind>, SyntaxAccessError> {
+        self.required_exact_child(SyntaxRole::ThenBranch)
+    }
+
+    /// Optional typed else block or nested conditional statement.
+    pub(crate) fn else_branch(&self) -> Result<Option<IfStatementElseNode>, SyntaxAccessError> {
+        let Some(branch) = self
+            .syntax()
+            .optional_unique_child(SyntaxRole::ElseBranch)?
+        else {
+            return Ok(None);
+        };
+        Ok(Some(match branch.kind() {
+            SyntaxKind::Block => IfStatementElseNode::Block(branch.cast()?),
+            SyntaxKind::IfStatement => IfStatementElseNode::If(branch.cast()?),
+            actual_kind => {
+                return Err(SyntaxAccessError::FamilyMismatch {
+                    id: branch.id(),
+                    expected: AstNodeFamily::Statement,
+                    actual_kind,
+                    actual_tag: branch.tag(),
+                });
+            }
+        }))
     }
 }
 

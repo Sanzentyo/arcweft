@@ -337,17 +337,19 @@ mod tests {
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
     use core::num::NonZeroU64;
 
-    use super::access::{BlockTailNode, DeclarationBodyNode};
+    use super::access::{
+        BlockTailNode, DeclarationBodyNode, IfStatementElseNode, IfStatementHeadNode,
+    };
     use super::family::{DelimiterFamily, ExpressionFamily, FamilyNode, RichTextNode, TypeFamily};
     use super::node::{
         AssertionStatementKind, BinaryExpressionKind, CallExpressionKind, CharacterBodyKind,
         CharacterDeclarationItemKind, DialogueCallExpressionKind, ExpressionBodyKind,
-        FixedParameterGroupKind, FunctionTypeKind, GenericApplicationTypeKind, LetStatementKind,
-        PredicateBodyKind, ProofBlockKind, ProofBodyKind, ProofCallStatementKind,
+        FixedParameterGroupKind, FunctionTypeKind, GenericApplicationTypeKind, IfStatementKind,
+        LetStatementKind, PredicateBodyKind, ProofBlockKind, ProofBodyKind, ProofCallStatementKind,
         RecordPatternKind, RichTextArgumentPayloadKind, RichTextArgumentValueKind,
         RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind, RichTextEndTagKind,
         RichTextFxCallPayloadKind, RichTextInvalidArgumentKind, RichTextNamedArgumentKind,
-        RichTextTagKind, WholeBindingPatternKind,
+        RichTextTagKind, UnsafeLifetimeStatementKind, WholeBindingPatternKind,
     };
     use super::{
         AstNode, GrammarIdentityMap, PredicateItemKind, ProofItemKind, SyntaxDatabaseId,
@@ -527,6 +529,146 @@ mod tests {
             ["true", "false"]
         );
         assert_eq!(assertion.child(SyntaxRole::Condition), None);
+    }
+
+    #[test]
+    fn statement_if_let_and_unsafe_audit_anchor_remain_typed_and_snapshot_bound() {
+        let snapshot = attach(concat!(
+            "fn choose(input: Option<Int>, ready: Bool) {\n",
+            "    if let .Some(value) = input when ready { value; } else if ready { 1; } else { 0; };\n",
+            "    unsafe lifetime @unsafe.audit { value; };\n",
+            "}\n",
+        ));
+
+        let conditional = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::IfStatement)
+            .expect("if statement")
+            .cast::<IfStatementKind>()
+            .unwrap();
+        let IfStatementHeadNode::Let {
+            pattern,
+            scrutinee,
+            guard,
+        } = conditional.head().unwrap()
+        else {
+            panic!("statement-form if let must keep its pattern head");
+        };
+        assert_eq!(pattern.syntax().rowan().text().to_string(), ".Some(value)");
+        assert_eq!(scrutinee.syntax().rowan().text().to_string(), "input");
+        assert_eq!(guard.unwrap().syntax().rowan().text().to_string(), "ready");
+        assert_eq!(
+            conditional
+                .then_branch()
+                .unwrap()
+                .statements()
+                .unwrap()
+                .len(),
+            1
+        );
+        let Some(IfStatementElseNode::If(nested)) = conditional.else_branch().unwrap() else {
+            panic!("else if must keep its nested statement identity");
+        };
+        assert!(matches!(
+            nested.head().unwrap(),
+            IfStatementHeadNode::Condition(condition)
+                if condition.syntax().rowan().text() == "ready"
+        ));
+        assert!(matches!(
+            nested.else_branch().unwrap(),
+            Some(IfStatementElseNode::Block(_))
+        ));
+
+        let audit = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::UnsafeLifetimeStatement)
+            .expect("unsafe lifetime statement")
+            .cast::<UnsafeLifetimeStatementKind>()
+            .unwrap();
+        let anchor = audit.audit_insertion_anchor().unwrap();
+        assert_eq!(anchor.syntax().rowan().text().to_string(), "{");
+        assert_eq!(anchor.snapshot_id(), snapshot.snapshot_id());
+        assert_eq!(
+            anchor.syntax().parent(),
+            Some(audit.body().unwrap().syntax().clone())
+        );
+        assert_eq!(
+            anchor.id(),
+            audit.body().unwrap().open_delimiter().unwrap().id()
+        );
+        assert_eq!(
+            audit
+                .body()
+                .unwrap()
+                .close_delimiter()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "}"
+        );
+    }
+
+    #[test]
+    fn missing_if_let_equals_retains_a_typed_missing_scrutinee() {
+        let snapshot = attach(concat!(
+            "fn choose(input: Option<Int>) {\n",
+            "    if let .Some(value) input { value; };\n",
+            "}\n",
+        ));
+        let conditional = snapshot
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::IfStatement)
+            .expect("recovered if statement")
+            .cast::<IfStatementKind>()
+            .unwrap();
+        let IfStatementHeadNode::Let { scrutinee, .. } = conditional.head().unwrap() else {
+            panic!("recovered if let must keep its pattern head");
+        };
+        assert_eq!(scrutinee.kind(), SyntaxKind::MissingExpression);
+        assert!(scrutinee.range().is_empty());
+        assert_eq!(scrutinee.snapshot_id(), snapshot.snapshot_id());
+    }
+
+    #[test]
+    fn unsafe_audit_body_recovery_never_fabricates_an_authored_anchor() {
+        let missing_body = attach(concat!(
+            "fn audit() {\n",
+            "    unsafe lifetime @unsafe.audit value;\n",
+            "}\n",
+        ));
+        let audit = missing_body
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::UnsafeLifetimeStatement)
+            .expect("unsafe lifetime statement")
+            .cast::<UnsafeLifetimeStatementKind>()
+            .unwrap();
+        assert!(audit.body().is_err());
+        assert!(audit.audit_insertion_anchor().is_err());
+
+        let unclosed_body = attach(concat!(
+            "fn audit() {\n",
+            "    unsafe lifetime @unsafe.audit { value;\n",
+        ));
+        let audit = unclosed_body
+            .nodes()
+            .find(|node| node.kind() == SyntaxKind::UnsafeLifetimeStatement)
+            .expect("recovered unsafe lifetime statement")
+            .cast::<UnsafeLifetimeStatementKind>()
+            .unwrap();
+        let body = audit.body().unwrap();
+        assert_eq!(
+            audit
+                .audit_insertion_anchor()
+                .unwrap()
+                .syntax()
+                .rowan()
+                .text()
+                .to_string(),
+            "{"
+        );
+        assert!(body.close_delimiter().unwrap().range().is_empty());
     }
 
     #[test]

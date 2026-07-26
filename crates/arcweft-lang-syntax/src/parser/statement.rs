@@ -560,6 +560,7 @@ fn emit_pattern_condition_head(
     emit_pattern(parser, equals, SyntaxRole::Pattern);
     bump_until(parser, equals);
     if parser.cursor() >= end {
+        emit_expression(parser, end, SyntaxRole::Scrutinee);
         return;
     }
     parser.bump();
