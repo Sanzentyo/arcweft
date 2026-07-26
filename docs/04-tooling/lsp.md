@@ -9,6 +9,10 @@
 - find references
 - semantic tokens
 - inlay hints
+  - semantic type hints are projected only from the exact accepted project
+    source and its accepted type-check report; a missing accepted project, a
+    foreign URI, or editor bytes that differ from the accepted source yields no
+    semantic hint instead of triggering a detached local HIR/type-check pass
   - inferred `let` expressions containing numeric fallback show their stable
     resolved type (`: i32`, `: f64`, `: Vec<i32>`, and so on), including unary,
     binary, and compact-sequence expressions; explicit ascriptions do not get a

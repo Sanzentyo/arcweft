@@ -1075,7 +1075,6 @@ flow @flow.main main {}\n";
 
 #[test]
 fn inlay_hint_request_reports_inferred_function_types() {
-    let uri = "file:///function-inlays.arcw".parse::<Uri>().expect("uri");
     let source = r"
 flow @flow.function_inlays function_inlays {
     let predicate = _ > 80i64
@@ -1083,8 +1082,7 @@ flow @flow.function_inlays function_inlays {
     let explicit: i64 -> bool = _ > 80i64
 }
 ";
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) = accepted_dialogue_session("function-inlays", source);
 
     let labels = inlay_hint_labels(&mut session, uri);
 
@@ -1108,7 +1106,6 @@ flow @flow.function_inlays function_inlays {
 
 #[test]
 fn inlay_hint_request_reports_unsuffixed_numeric_fallback_types() {
-    let uri = "file:///numeric-inlays.arcw".parse::<Uri>().expect("uri");
     let source = r"
 flow @flow.numeric_inlays numeric_inlays {
     let count = 42
@@ -1119,8 +1116,7 @@ flow @flow.numeric_inlays numeric_inlays {
     let explicit: u64 = 42
 }
 ";
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), source);
+    let (_project, mut session, uri) = accepted_dialogue_session("numeric-inlays", source);
 
     let labels = inlay_hint_labels(&mut session, uri);
 
@@ -1141,6 +1137,74 @@ flow @flow.numeric_inlays numeric_inlays {
     assert!(
         !labels.iter().any(|label| label == ": u64"),
         "explicit numeric type should not receive a duplicate inlay: {labels:?}"
+    );
+}
+
+#[test]
+fn inlay_hint_request_without_accepted_project_returns_empty() {
+    let uri = "file:///unaccepted-inlays.arcw"
+        .parse::<Uri>()
+        .expect("uri");
+    let source = r"
+flow @flow.unaccepted_inlays unaccepted_inlays {
+    let predicate = _ > 80i64
+    let count = 42
+}
+";
+    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    open_text(&mut session, uri.clone(), source);
+
+    assert!(
+        inlay_hint_labels(&mut session, uri).is_empty(),
+        "standalone parsing must not create a second semantic authority"
+    );
+}
+
+#[test]
+fn inlay_hints_require_the_exact_accepted_project_source() {
+    let source = r"
+flow @flow.accepted_inlays accepted_inlays {
+    let predicate = _ > 80i64
+    let count = 42
+}
+";
+    let (_project, session, uri) = accepted_dialogue_session("accepted-inlay-boundary", source);
+    let profile = session.profile_for_uri(&uri).clone();
+    let mut documents = crate::documents::DocumentStore::default();
+
+    let stale = documents.open(
+        DidOpenTextDocumentParams {
+            text_document: TextDocumentItem::new(
+                uri.clone(),
+                "arcweft".to_owned(),
+                2,
+                source.replacen("80i64", "81i64", 1),
+            ),
+        },
+        PositionEncoding::Utf16,
+    );
+    assert!(
+        crate::features::inlay::hints(&profile, &stale).is_empty(),
+        "same-length stale editor bytes must not reuse or reconstruct accepted semantics"
+    );
+
+    let foreign_uri = "file:///foreign-inlays.arcw"
+        .parse::<Uri>()
+        .expect("foreign URI");
+    let foreign = documents.open(
+        DidOpenTextDocumentParams {
+            text_document: TextDocumentItem::new(
+                foreign_uri,
+                "arcweft".to_owned(),
+                1,
+                source.to_owned(),
+            ),
+        },
+        PositionEncoding::Utf16,
+    );
+    assert!(
+        crate::features::inlay::hints(&profile, &foreign).is_empty(),
+        "matching bytes from a foreign document must not borrow accepted semantics"
     );
 }
 
