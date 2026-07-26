@@ -1,5 +1,6 @@
 pub mod assertion;
 pub mod assertion_identity;
+mod assertion_lower;
 pub mod audio;
 pub mod awbc_lower;
 pub mod errors;
