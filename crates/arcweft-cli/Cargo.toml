@@ -15,7 +15,8 @@ arcweft-agent-runner = { workspace = true }
 arcweft-agent-repl = { workspace = true }
 arcweft-content-policy = { workspace = true }
 arcweft-core = { workspace = true }
-arcweft-adapter-context = { workspace = true, features = ["sema"] }
+arcweft-adapter-context = { workspace = true }
+arcweft-adapter-sema = { workspace = true }
 arcweft-adapter-desktop = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = true }
 arcweft-character = { workspace = true }

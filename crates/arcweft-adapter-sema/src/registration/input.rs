@@ -52,7 +52,7 @@ use arcweft_rust_abi::{
 };
 use arcweft_source::{SourceDocument, SourceSpan};
 
-use crate::manifest::{
+use arcweft_adapter_context::manifest::{
     AdapterCallableName, AdapterCallablePath, AdapterEffectCapability, AdapterEnvironmentOwnerId,
     AdapterFreeCallableKind, AdapterFunctionSignature, AdapterManifest, AdapterNominalOwner,
     AdapterNominalPath, AdapterNominalTypeRef, AdapterNominalVisibility, AdapterParameterPassing,
@@ -274,7 +274,7 @@ impl<'a> EnvironmentInputProjector<'a> {
 
     fn rust_metadata_record(
         &self,
-        rust_type: &crate::manifest::AdapterRustType,
+        rust_type: &arcweft_adapter_context::manifest::AdapterRustType,
         nominal_inventory: &mut Vec<AcceptedNominalInventoryInput>,
     ) -> Result<RustTypeMetadataPublicationInput, AdapterRegistrationFactsError> {
         let package = RustPackageId::try_new(rust_type.package().id.as_str())?;
@@ -847,7 +847,7 @@ fn rust_nominal_node(
     source: &TypeSource<'_>,
 ) -> Result<EnvironmentTypeProjectionKind, AdapterRegistrationFactsError> {
     let prefix = mounts.get(package).ok_or_else(|| {
-        crate::manifest::AdapterManifestModelError::MissingRustPackageMount {
+        arcweft_adapter_context::manifest::AdapterManifestModelError::MissingRustPackageMount {
             package: package.clone(),
         }
     })?;
@@ -1058,7 +1058,7 @@ fn nominal_path(path: &AdapterNominalPath) -> Result<TypePath, AdapterRegistrati
 }
 
 fn project_symbol_path(
-    path: &crate::manifest::AdapterSymbolPath,
+    path: &arcweft_adapter_context::manifest::AdapterSymbolPath,
 ) -> Result<ProjectSymbolPath, AdapterRegistrationFactsError> {
     Ok(ProjectSymbolPath::new(
         ModulePathRoot::ImplicitCrate,
@@ -1106,7 +1106,7 @@ fn ordinal(value: usize) -> Result<EnvironmentDeclarationOrdinal, AdapterRegistr
 }
 
 fn rust_provenance(
-    function: &crate::manifest::AdapterRustFunction,
+    function: &arcweft_adapter_context::manifest::AdapterRustFunction,
     adapter: &AdapterPackageId,
 ) -> Result<RustCallableProvenance, AdapterRegistrationFactsError> {
     let package = rust_package_provenance(function.package())?;
@@ -1171,7 +1171,7 @@ fn validate_tooling(manifest: &AdapterManifest) -> Result<(), AdapterRegistratio
     for doc in manifest.tooling_docs() {
         if seen.iter().any(|subject| *subject == doc.subject()) {
             return Err(
-                crate::manifest::AdapterCallableModelError::DuplicateToolingSubject {
+                arcweft_adapter_context::manifest::AdapterCallableModelError::DuplicateToolingSubject {
                     subject: doc.subject().clone(),
                 }
                 .into(),
@@ -1180,7 +1180,7 @@ fn validate_tooling(manifest: &AdapterManifest) -> Result<(), AdapterRegistratio
         seen.push(doc.subject());
         let Some(signature) = subject_signature(manifest, doc.subject()) else {
             return Err(
-                crate::manifest::AdapterCallableModelError::ToolingParameterOutOfBounds {
+                arcweft_adapter_context::manifest::AdapterCallableModelError::ToolingParameterOutOfBounds {
                     subject: doc.subject().clone(),
                     group: 0,
                     parameter: 0,
@@ -1196,7 +1196,7 @@ fn validate_tooling(manifest: &AdapterManifest) -> Result<(), AdapterRegistratio
                 .is_none()
             {
                 return Err(
-                    crate::manifest::AdapterCallableModelError::ToolingParameterOutOfBounds {
+                    arcweft_adapter_context::manifest::AdapterCallableModelError::ToolingParameterOutOfBounds {
                         subject: doc.subject().clone(),
                         group: parameter.group().get(),
                         parameter: parameter.parameter().get(),
@@ -1222,7 +1222,7 @@ fn subject_signature<'a>(
             .functions()
             .iter()
             .find(|function| function.path() == path && function.overload() == *overload)
-            .map(crate::manifest::AdapterFunction::signature),
+            .map(arcweft_adapter_context::manifest::AdapterFunction::signature),
         AdapterToolingSubject::Free {
             kind: AdapterFreeCallableKind::RustFunction,
             path,
@@ -1231,7 +1231,7 @@ fn subject_signature<'a>(
             .rust_functions()
             .iter()
             .find(|function| function.path() == path && function.overload() == *overload)
-            .map(crate::manifest::AdapterRustFunction::signature),
+            .map(arcweft_adapter_context::manifest::AdapterRustFunction::signature),
         AdapterToolingSubject::Method {
             receiver,
             name,
@@ -1244,6 +1244,6 @@ fn subject_signature<'a>(
                     && method.callable_name() == name
                     && method.overload() == *overload
             })
-            .map(crate::manifest::AdapterMethod::signature),
+            .map(arcweft_adapter_context::manifest::AdapterMethod::signature),
     }
 }

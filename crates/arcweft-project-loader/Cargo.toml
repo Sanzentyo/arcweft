@@ -8,7 +8,8 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-arcweft-adapter-context = { workspace = true, features = ["sema"] }
+arcweft-adapter-context = { workspace = true }
+arcweft-adapter-sema = { workspace = true }
 arcweft-adapter-metadata = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = true }
 arcweft-character = { workspace = true }

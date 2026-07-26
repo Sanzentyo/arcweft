@@ -1,19 +1,14 @@
 //! Typed adapter manifest model shared by product adapters, CLI, LSP, and semantic checking.
 
-use std::collections::BTreeMap;
-
-#[cfg(feature = "sema")]
-use arcweft_lang_sema::env::{EffectCapability, TypeCheckEnv};
 use arcweft_rust_abi::{
     ArcweftRustAbiLimits, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
     ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
     ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef, ArcweftRustVariantPayload,
 };
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use thiserror::Error;
 mod nominal;
-#[cfg(feature = "sema")]
-mod registration;
 mod registry;
 
 pub use crate::callable::{
@@ -29,11 +24,6 @@ pub use nominal::{
     AdapterNominalPathError, AdapterNominalPathPrefix, AdapterNominalPathSegment,
     AdapterNominalTypeRef, AdapterNominalVisibility, AdapterRustPackageMountTable,
     AdapterTypeModelError,
-};
-#[cfg(feature = "sema")]
-pub use registration::{
-    AdapterRegistrationFactsError, SourceBackedAdapterRegistrationFacts,
-    SourceBackedAdapterRegistrationParts,
 };
 pub use registry::{AdapterRegistry, AdapterRegistryError};
 
@@ -625,28 +615,6 @@ impl AdapterManifest {
         Ok(self)
     }
 
-    /// Declares this manifest's effect capabilities to a checker environment.
-    #[cfg(feature = "sema")]
-    pub fn declare_effects(&self, env: TypeCheckEnv) -> TypeCheckEnv {
-        self.effects.iter().fold(env, |env, effect| {
-            env.with_capability(effect.to_sema_effect_capability())
-        })
-    }
-
-    /// Marks this manifest's effects as provided by the selected target.
-    #[cfg(feature = "sema")]
-    pub fn grant_effect_availability(&self, env: TypeCheckEnv) -> TypeCheckEnv {
-        self.effects.iter().fold(env, |env, effect| {
-            env.with_available_effect(effect.to_sema_effect_capability())
-        })
-    }
-
-    /// Declares this manifest's effects and marks them as target-provided.
-    #[cfg(feature = "sema")]
-    pub fn declare_target_effects(&self, env: TypeCheckEnv) -> TypeCheckEnv {
-        self.grant_effect_availability(self.declare_effects(env))
-    }
-
     /// Injected symbols, preserved for tooling and diagnostics.
     pub fn symbols(&self) -> &[AdapterSymbol] {
         &self.symbols
@@ -929,14 +897,6 @@ fn require_type_ref_mounts(
         | ArcweftRustTypeRef::String
         | ArcweftRustTypeRef::Char
         | ArcweftRustTypeRef::TypeParameter { .. } => Ok(()),
-    }
-}
-
-#[cfg(feature = "sema")]
-impl AdapterEffectCapability {
-    /// Converts this capability into the semantic checker capability model.
-    pub fn to_sema_effect_capability(&self) -> EffectCapability {
-        EffectCapability::new(self.id.clone())
     }
 }
 

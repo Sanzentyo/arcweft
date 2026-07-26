@@ -7,7 +7,8 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-adapter-context = { workspace = true, features = ["sema"] }
+arcweft-adapter-context = { workspace = true }
+arcweft-adapter-sema = { workspace = true }
 arcweft-agent-repl = { workspace = true }
 arcweft-character = { workspace = true }
 arcweft-compiler = { workspace = true }

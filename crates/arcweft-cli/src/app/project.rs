@@ -6,6 +6,7 @@ use super::runtime::profile::run_profile_phase;
 use super::shared::is_arcw_path;
 use crate::output::RuntimeProfilePhase;
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
+use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_compiler::project::{
     AcceptedLaunchProfileInput, CompiledProject, ProjectCompilationContext,
     ProjectCompileDiagnostic, ProjectCompileError, ProjectEntrySelection,
@@ -815,8 +816,8 @@ fn direct_registration_facts(
             eprintln!("error: direct-source adapter ordinal exceeds u64::MAX");
             ExitCode::FAILURE
         })?;
-        let registration = manifest
-            .source_backed_registration_facts(ordinal)
+        let registration = AdapterSemanticRegistration::new(manifest)
+            .source_backed_facts(ordinal)
             .map_err(|error| {
                 eprintln!(
                     "error: failed to publish direct-source adapter registration facts: {error}"
@@ -1030,14 +1031,14 @@ pub(in crate::app) fn semantic_context_for_selection(
         None => adapter_manifest_for_selection(selection, adapter_override)?,
     };
     let env = if adapter_override.is_some() || selection.profile().is_some() {
-        manifest.declare_target_effects(TypeCheckEnv::standard())
+        AdapterSemanticRegistration::new(&manifest).declare_target_effects(TypeCheckEnv::standard())
     } else {
-        manifest.declare_effects(TypeCheckEnv::standard())
+        AdapterSemanticRegistration::new(&manifest).declare_effects(TypeCheckEnv::standard())
     };
     let desktop = arcweft_adapter_desktop::standard_desktop_manifests();
-    let env = desktop
-        .iter()
-        .fold(env, |env, manifest| manifest.declare_effects(env));
+    let env = desktop.iter().fold(env, |env, manifest| {
+        AdapterSemanticRegistration::new(manifest).declare_effects(env)
+    });
     let mut adapter_manifests = Vec::with_capacity(desktop.len() + 1);
     adapter_manifests.push(manifest);
     adapter_manifests.extend(desktop.iter().cloned());

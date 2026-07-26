@@ -6,7 +6,7 @@ use arcweft_rust_abi::{
     ArcweftRustTypeRef, ArcweftRustVariant, ArcweftRustVariantPayload,
 };
 
-use crate::manifest::{
+use arcweft_adapter_context::manifest::{
     AdapterCallablePath, AdapterFreeCallableKind, AdapterFunctionSignature, AdapterManifest,
     AdapterNominalPath, AdapterParameterPassing, AdapterParameterPresence, AdapterToolingSubject,
     AdapterTypeKind,
@@ -49,7 +49,7 @@ fn hash_manifest_mounts(hasher: &mut blake3::Hasher, manifest: &AdapterManifest)
             prefix
                 .segments()
                 .iter()
-                .map(crate::manifest::nominal::AdapterNominalPathSegment::as_str),
+                .map(arcweft_adapter_context::manifest::AdapterNominalPathSegment::as_str),
         );
     }
 }
@@ -65,8 +65,8 @@ fn hash_manifest_nominals(hasher: &mut blake3::Hasher, manifest: &AdapterManifes
         hash_u8(
             hasher,
             match declaration.visibility() {
-                crate::manifest::AdapterNominalVisibility::Public => 0,
-                crate::manifest::AdapterNominalVisibility::Private => 1,
+                arcweft_adapter_context::manifest::AdapterNominalVisibility::Public => 0,
+                arcweft_adapter_context::manifest::AdapterNominalVisibility::Private => 1,
             },
         );
         hash_str(hasher, declaration.source_label());
@@ -118,7 +118,7 @@ fn hash_manifest_symbols(hasher: &mut blake3::Hasher, manifest: &AdapterManifest
                 .path()
                 .segments()
                 .iter()
-                .map(crate::symbol::AdapterSymbolSegment::as_str),
+                .map(arcweft_adapter_context::manifest::AdapterSymbolSegment::as_str),
         );
         hash_adapter_type(hasher, symbol.ty());
     }
@@ -237,7 +237,7 @@ fn hash_signature(hasher: &mut blake3::Hasher, signature: &AdapterFunctionSignat
                 hasher,
                 parameter
                     .name()
-                    .map(crate::callable::AdapterCallableName::as_str),
+                    .map(arcweft_adapter_context::manifest::AdapterCallableName::as_str),
             );
             hash_u8(hasher, passing_tag(parameter.passing()));
             hash_u8(hasher, presence_tag(parameter.presence()));
@@ -247,10 +247,13 @@ fn hash_signature(hasher: &mut blake3::Hasher, signature: &AdapterFunctionSignat
     hash_adapter_type(hasher, signature.return_type());
 }
 
-fn hash_effects(hasher: &mut blake3::Hasher, effects: &[crate::manifest::AdapterEffectCapability]) {
+fn hash_effects(
+    hasher: &mut blake3::Hasher,
+    effects: &[arcweft_adapter_context::manifest::AdapterEffectCapability],
+) {
     let mut effects = effects
         .iter()
-        .map(crate::manifest::AdapterEffectCapability::as_str)
+        .map(arcweft_adapter_context::manifest::AdapterEffectCapability::as_str)
         .collect::<Vec<_>>();
     effects.sort_unstable();
     hash_len(hasher, effects.len());
@@ -494,11 +497,11 @@ fn hash_adapter_type(hasher: &mut blake3::Hasher, ty: &AdapterTypeKind) {
         }
         AdapterTypeKind::Nominal { nominal } => {
             match nominal.owner() {
-                crate::manifest::AdapterNominalOwner::Environment { owner } => {
+                arcweft_adapter_context::manifest::AdapterNominalOwner::Environment { owner } => {
                     hash_u8(hasher, 0);
                     hash_str(hasher, owner.as_str());
                 }
-                crate::manifest::AdapterNominalOwner::RustPackage { package } => {
+                arcweft_adapter_context::manifest::AdapterNominalOwner::RustPackage { package } => {
                     hash_u8(hasher, 1);
                     hash_str(hasher, package.as_str());
                 }
@@ -536,7 +539,7 @@ fn hash_nominal_path(hasher: &mut blake3::Hasher, path: &AdapterNominalPath) {
         hasher,
         path.segments()
             .iter()
-            .map(crate::manifest::nominal::AdapterNominalPathSegment::as_str),
+            .map(arcweft_adapter_context::manifest::AdapterNominalPathSegment::as_str),
     );
 }
 
@@ -545,7 +548,7 @@ fn hash_callable_path(hasher: &mut blake3::Hasher, path: &AdapterCallablePath) {
         hasher,
         path.segments()
             .iter()
-            .map(crate::callable::AdapterCallableName::as_str),
+            .map(arcweft_adapter_context::manifest::AdapterCallableName::as_str),
     );
 }
 
@@ -621,7 +624,7 @@ fn hash_str(hasher: &mut blake3::Hasher, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::manifest::AdapterEffectCapability;
+    use arcweft_adapter_context::manifest::AdapterEffectCapability;
 
     #[test]
     fn manifest_digest_is_independent_of_set_insertion_order() {

@@ -7,7 +7,10 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_adapter_context::manifest::{AdapterManifest, AdapterRegistrationFactsError};
+use arcweft_adapter_context::manifest::AdapterManifest;
+use arcweft_adapter_sema::registration::{
+    AdapterRegistrationFactsError, AdapterSemanticRegistration,
+};
 use arcweft_character::{
     manifest::registration::{
         CharacterManifestRootField, CharacterManifestTokenPath, SourceBackedCharacterManifest,
@@ -415,8 +418,8 @@ fn append_adapter_sources<'a>(
     for (index, manifest) in manifests.into_iter().enumerate() {
         let ordinal = u64::try_from(index)
             .map_err(|_| ProjectRegistrationLoadError::AdapterOrdinalOverflow)?;
-        let parts = manifest
-            .source_backed_registration_facts(ordinal)?
+        let parts = AdapterSemanticRegistration::new(manifest)
+            .source_backed_facts(ordinal)?
             .into_parts();
         sources.documents.push(parts.document);
         sources.external_facts.extend(parts.externals);

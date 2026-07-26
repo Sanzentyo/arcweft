@@ -20,7 +20,7 @@ use arcweft_rust_abi::{
 };
 use arcweft_source::SourceRange;
 
-use crate::manifest::{
+use arcweft_adapter_context::manifest::{
     AdapterCallablePath, AdapterFreeCallableKind, AdapterFunctionSignature, AdapterManifest,
     AdapterNominalOwner, AdapterNominalPath, AdapterNominalTypeRef, AdapterToolingSubject,
     AdapterTypeKind,
@@ -31,16 +31,16 @@ use super::{
     project_callable_path, project_symbol_path,
 };
 
-pub(in crate::manifest::registration) struct RenderedRegistrationSource {
-    pub(in crate::manifest::registration) text: String,
-    pub(in crate::manifest::registration) symbols: Vec<RenderedRegistrationSymbol>,
-    pub(in crate::manifest::registration) map: RegistrationSourceMap,
+pub(in crate::registration) struct RenderedRegistrationSource {
+    pub(in crate::registration) text: String,
+    pub(in crate::registration) symbols: Vec<RenderedRegistrationSymbol>,
+    pub(in crate::registration) map: RegistrationSourceMap,
 }
 
-pub(in crate::manifest::registration) struct RenderedRegistrationSymbol {
-    pub(in crate::manifest::registration) path: crate::manifest::AdapterSymbolPath,
-    pub(in crate::manifest::registration) spelling: String,
-    pub(in crate::manifest::registration) range: SourceRange,
+pub(in crate::registration) struct RenderedRegistrationSymbol {
+    pub(in crate::registration) path: arcweft_adapter_context::manifest::AdapterSymbolPath,
+    pub(in crate::registration) spelling: String,
+    pub(in crate::registration) range: SourceRange,
 }
 
 struct AdapterCallableLine<'a> {
@@ -50,11 +50,11 @@ struct AdapterCallableLine<'a> {
     name: String,
     overload_index: usize,
     signature: &'a AdapterFunctionSignature,
-    effects: &'a [crate::manifest::AdapterEffectCapability],
+    effects: &'a [arcweft_adapter_context::manifest::AdapterEffectCapability],
 }
 
 #[derive(Default)]
-pub(in crate::manifest::registration) struct RegistrationSourceMap {
+pub(in crate::registration) struct RegistrationSourceMap {
     items: BTreeMap<EnvironmentPublicationItemId, SourceRange>,
     types: BTreeMap<(EnvironmentPublicationItemId, EnvironmentTypeSite), SourceRange>,
 }
@@ -122,7 +122,7 @@ impl RegistrationSourceMap {
     }
 }
 
-pub(in crate::manifest::registration) fn render(
+pub(in crate::registration) fn render(
     manifest: &AdapterManifest,
     owner: &EnvironmentCallableOwner,
 ) -> Result<RenderedRegistrationSource, AdapterRegistrationFactsError> {
@@ -165,7 +165,7 @@ fn render_header_and_mounts(renderer: &mut Renderer, manifest: &AdapterManifest)
                 prefix
                     .segments()
                     .iter()
-                    .map(crate::manifest::nominal::AdapterNominalPathSegment::as_str),
+                    .map(arcweft_adapter_context::manifest::AdapterNominalPathSegment::as_str),
             );
         });
     }
@@ -189,8 +189,8 @@ fn render_nominal_declarations(
             write!(text, " arity={} visibility=", declaration.arity())
                 .expect("writing to String cannot fail");
             text.push_str(match declaration.visibility() {
-                crate::manifest::AdapterNominalVisibility::Public => "public",
-                crate::manifest::AdapterNominalVisibility::Private => "private",
+                arcweft_adapter_context::manifest::AdapterNominalVisibility::Public => "public",
+                arcweft_adapter_context::manifest::AdapterNominalVisibility::Private => "private",
             });
             text.push_str(" label=");
             scalar(text, declaration.source_label());
@@ -428,7 +428,7 @@ impl Renderer {
     fn symbol_line(
         &mut self,
         item: &EnvironmentPublicationItemId,
-        symbol: &crate::manifest::AdapterSymbol,
+        symbol: &arcweft_adapter_context::manifest::AdapterSymbol,
     ) -> Result<(String, SourceRange), AdapterRegistrationFactsError> {
         let item_start = self.text.len();
         self.text.push_str("symbol path=");
@@ -725,7 +725,7 @@ impl Renderer {
     fn rust_type_line(
         &mut self,
         item: EnvironmentPublicationItemId,
-        rust_type: &crate::manifest::AdapterRustType,
+        rust_type: &arcweft_adapter_context::manifest::AdapterRustType,
     ) -> Result<(), AdapterRegistrationFactsError> {
         let start = self.text.len();
         self.text.push_str("rust-type package=");
@@ -1040,10 +1040,13 @@ fn render_unmapped_adapter_type(text: &mut String, ty: &AdapterTypeKind) {
     }
 }
 
-fn render_effects(text: &mut String, effects: &[crate::manifest::AdapterEffectCapability]) {
+fn render_effects(
+    text: &mut String,
+    effects: &[arcweft_adapter_context::manifest::AdapterEffectCapability],
+) {
     let mut effects = effects
         .iter()
-        .map(crate::manifest::AdapterEffectCapability::as_str)
+        .map(arcweft_adapter_context::manifest::AdapterEffectCapability::as_str)
         .collect::<Vec<_>>();
     effects.sort_unstable();
     text.push_str(" effects=[");
@@ -1092,7 +1095,7 @@ fn tooling_subject_key(subject: &AdapterToolingSubject) -> [u8; 32] {
 fn callable_path_text(path: &AdapterCallablePath) -> String {
     path.segments()
         .iter()
-        .map(crate::callable::AdapterCallableName::as_str)
+        .map(arcweft_adapter_context::manifest::AdapterCallableName::as_str)
         .collect::<Vec<_>>()
         .join("::")
 }
@@ -1102,7 +1105,7 @@ fn adapter_path(text: &mut String, path: &AdapterNominalPath) {
         text,
         path.segments()
             .iter()
-            .map(crate::manifest::nominal::AdapterNominalPathSegment::as_str),
+            .map(arcweft_adapter_context::manifest::AdapterNominalPathSegment::as_str),
     );
 }
 

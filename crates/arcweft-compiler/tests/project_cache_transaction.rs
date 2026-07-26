@@ -8,6 +8,7 @@ use arcweft_adapter_context::manifest::{
     AdapterNominalVisibility, AdapterParameterGroup, AdapterParameterPassing,
     AdapterParameterPresence, AdapterTypeKind,
 };
+use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_compiler::incremental::{BuildSnapshotRequest, snapshot_compiled_project};
 use arcweft_compiler::project::{
     CompiledProjectModule, ProjectCompilationContext, ProjectCompileCache,
@@ -132,8 +133,8 @@ fn fixture_with_manifest(
     manifest: &AdapterManifest,
 ) -> (ProjectSources, Arc<ProjectRegistrationFacts>, TypeCheckEnv) {
     let (project, document, world) = project_fixture(source, profile);
-    let parts = manifest
-        .source_backed_registration_facts(0)
+    let parts = AdapterSemanticRegistration::new(manifest)
+        .source_backed_facts(0)
         .expect("adapter registration facts")
         .into_parts();
     let facts = Arc::new(
@@ -149,7 +150,7 @@ fn fixture_with_manifest(
     (
         project,
         facts,
-        manifest.declare_effects(TypeCheckEnv::standard()),
+        AdapterSemanticRegistration::new(manifest).declare_effects(TypeCheckEnv::standard()),
     )
 }
 

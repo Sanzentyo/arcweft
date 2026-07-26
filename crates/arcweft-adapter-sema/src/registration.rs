@@ -1,9 +1,15 @@
 //! Deterministic source-backed publication of typed adapter symbols.
 
 mod input;
+#[cfg(test)]
+mod tests;
 
 use std::sync::Arc;
 
+use arcweft_adapter_context::manifest::{
+    AdapterCallableModelError, AdapterEffectCapability, AdapterEnvironmentOwnerId, AdapterManifest,
+    AdapterManifestModelError, AdapterNominalPathError,
+};
 use arcweft_lang_hir::symbol::{
     CallablePackageIdError, ExternalDeclarationSeed, ExternalDeclarationSeedError,
     ProjectDirectBinding, ProjectDirectBindingError,
@@ -37,10 +43,13 @@ use arcweft_source::{
 };
 use thiserror::Error;
 
-use super::{
-    AdapterCallableModelError, AdapterEnvironmentOwnerId, AdapterManifest,
-    AdapterManifestModelError, AdapterNominalPathError,
-};
+use arcweft_lang_sema::env::TypeCheckEnv;
+
+/// Semantic projection context for one language-free adapter manifest.
+#[derive(Clone, Copy, Debug)]
+pub struct AdapterSemanticRegistration<'a> {
+    manifest: &'a AdapterManifest,
+}
 
 /// One adapter's deterministic generated source and typed external contributions.
 #[derive(Clone, Debug)]
@@ -128,19 +137,43 @@ pub enum AdapterRegistrationFactsError {
     },
 }
 
-impl AdapterManifest {
+impl<'a> AdapterSemanticRegistration<'a> {
+    /// Selects one manifest as the source of semantic environment facts.
+    pub const fn new(manifest: &'a AdapterManifest) -> Self {
+        Self { manifest }
+    }
+
+    /// Declares this manifest's effect capabilities without target availability.
+    pub fn declare_effects(self, env: TypeCheckEnv) -> TypeCheckEnv {
+        self.manifest.effects().iter().fold(env, |env, effect| {
+            env.with_capability(effect_capability(effect))
+        })
+    }
+
+    fn grant_effect_availability(self, env: TypeCheckEnv) -> TypeCheckEnv {
+        self.manifest.effects().iter().fold(env, |env, effect| {
+            env.with_available_effect(effect_capability(effect))
+        })
+    }
+
+    /// Declares this manifest's effects and marks them as target-provided.
+    pub fn declare_target_effects(self, env: TypeCheckEnv) -> TypeCheckEnv {
+        self.grant_effect_availability(self.declare_effects(env))
+    }
+
     /// Binds every registration-visible base fact to one deterministic generated document.
-    pub fn source_backed_registration_facts(
-        &self,
+    pub fn source_backed_facts(
+        self,
         ordinal: u64,
     ) -> Result<SourceBackedAdapterRegistrationFacts, AdapterRegistrationFactsError> {
-        let owner = environment_callable_owner(self)?;
+        let manifest = self.manifest;
+        let owner = environment_callable_owner(manifest)?;
         let nominal_owner = EnvironmentBindingId::try_new(
-            AdapterEnvironmentOwnerId::for_adapter(self.id()).as_str(),
+            AdapterEnvironmentOwnerId::for_adapter(manifest.id()).as_str(),
         )?;
-        let rendering = input::source::render(self, &owner)?;
+        let rendering = input::source::render(manifest, &owner)?;
         let document = Arc::new(SourceDocument::try_new(
-            SourceDocumentId::try_new(format!("arcweft-generated://adapter-context/{ordinal}"))?,
+            SourceDocumentId::try_new(format!("arcweft-generated://adapter-sema/{ordinal}"))?,
             SourceName::Generated,
             rendering.text,
         )?);
@@ -184,7 +217,7 @@ impl AdapterManifest {
             ));
         }
         Ok(SourceBackedAdapterRegistrationFacts {
-            environment: input::environment_input(self, owner, &document, &rendering.map)?,
+            environment: input::environment_input(manifest, owner, &document, &rendering.map)?,
             document,
             externals,
         })
@@ -217,18 +250,30 @@ fn environment_callable_owner(
     manifest: &AdapterManifest,
 ) -> Result<EnvironmentCallableOwner, CallableScalarError> {
     let standard = match manifest.id().as_str() {
-        crate::standard::SANS_IO_ADAPTER_ID => Some(StandardEnvironmentId::SansIo),
-        crate::standard::NATIVE_HTTP_ADAPTER_ID => Some(StandardEnvironmentId::NativeHttp),
-        crate::standard::INFERENCE_TENSOR_ADAPTER_ID => {
+        arcweft_adapter_context::standard::SANS_IO_ADAPTER_ID => {
+            Some(StandardEnvironmentId::SansIo)
+        }
+        arcweft_adapter_context::standard::NATIVE_HTTP_ADAPTER_ID => {
+            Some(StandardEnvironmentId::NativeHttp)
+        }
+        arcweft_adapter_context::standard::INFERENCE_TENSOR_ADAPTER_ID => {
             Some(StandardEnvironmentId::InferenceTensor)
         }
-        crate::standard::SYSTEM_INFO_ADAPTER_ID => Some(StandardEnvironmentId::SystemInfo),
-        crate::standard::NATIVE_FILE_ADAPTER_ID => Some(StandardEnvironmentId::NativeFile),
-        crate::standard::MATH_ADAPTER_ID => Some(StandardEnvironmentId::Math),
+        arcweft_adapter_context::standard::SYSTEM_INFO_ADAPTER_ID => {
+            Some(StandardEnvironmentId::SystemInfo)
+        }
+        arcweft_adapter_context::standard::NATIVE_FILE_ADAPTER_ID => {
+            Some(StandardEnvironmentId::NativeFile)
+        }
+        arcweft_adapter_context::standard::MATH_ADAPTER_ID => Some(StandardEnvironmentId::Math),
         _ => None,
     };
     standard.map_or_else(
         || AdapterPackageId::try_new(manifest.id().as_str()).map(EnvironmentCallableOwner::Adapter),
         |owner| Ok(EnvironmentCallableOwner::Standard(owner)),
     )
+}
+
+fn effect_capability(effect: &AdapterEffectCapability) -> arcweft_lang_sema::env::EffectCapability {
+    arcweft_lang_sema::env::EffectCapability::new(effect.as_str())
 }

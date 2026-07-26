@@ -14,6 +14,7 @@ members = [
     "crates/arcweft-debug-sqlite",
     "crates/arcweft-adt",
     "crates/arcweft-adapter-context",
+    "crates/arcweft-adapter-sema",
     "crates/arcweft-adapter-desktop",
     "crates/arcweft-desktop-contract",
     "crates/arcweft-desktop-host",
@@ -105,6 +106,7 @@ repository = "https://github.com/Sanzentyo/arcweft"
 [workspace.dependencies]
 arcweft = { path = "crates/arcweft" }
 arcweft-adapter-context = { path = "crates/arcweft-adapter-context" }
+arcweft-adapter-sema = { path = "crates/arcweft-adapter-sema" }
 arcweft-adapter-desktop = { path = "crates/arcweft-adapter-desktop" }
 arcweft-adapter-metadata = { path = "crates/arcweft-adapter-metadata" }
 arcweft-adt = { path = "crates/arcweft-adt" }

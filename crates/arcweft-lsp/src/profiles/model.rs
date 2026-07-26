@@ -4,6 +4,7 @@ use super::{
     uri::file_uri_from_path,
 };
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
+use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_character::catalog::CharacterCatalog;
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_launch::resolve::ResolvedLaunchProfile;
@@ -144,7 +145,7 @@ impl LspProfile {
 
     /// Builds the semantic environment selected by this profile.
     pub fn typecheck_env(&self) -> TypeCheckEnv {
-        self.adapter.declare_effects(TypeCheckEnv::standard())
+        AdapterSemanticRegistration::new(&self.adapter).declare_effects(TypeCheckEnv::standard())
     }
 
     pub(crate) fn replace_diagnostics(&mut self, diagnostic: LspProfileDiagnostic) {

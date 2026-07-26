@@ -56,6 +56,13 @@ capabilities, host-call identifiers, tooling docs, and merged Rust ABI exports.
 This keeps core language parsing independent from adapter-specific names while
 still giving CLI, verifier, and LSP one typed source of truth.
 
+`arcweft-adapter-context` remains a language-free data boundary so runtime
+hosts can consume the same selected manifest without acquiring syntax, HIR, or
+semantic-analysis dependencies. `arcweft-adapter-sema` is the compiler-side
+bridge that turns an admitted `AdapterManifest` into source-backed external,
+nominal, callable, and effect facts. Runtime crates do not depend on that
+projection crate.
+
 Standard adapters use the typed [Adapter Manifest
 Schema](../schemas/adapter-manifest.md). Effect labels are stored as
 `EffectCapability` ids with parsed family/operation/scope components, while

@@ -270,11 +270,7 @@ dependencies = [
 name = "arcweft-adapter-context"
 version = "0.1.0"
 dependencies = [
- "arcweft-lang-hir",
- "arcweft-lang-sema",
- "arcweft-lang-syntax",
  "arcweft-rust-abi",
- "arcweft-source",
  "blake3",
  "serde",
  "serde_json",
@@ -304,6 +300,20 @@ dependencies = [
  "json-spanned-value",
  "serde",
  "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "arcweft-adapter-sema"
+version = "0.1.0"
+dependencies = [
+ "arcweft-adapter-context",
+ "arcweft-lang-hir",
+ "arcweft-lang-sema",
+ "arcweft-lang-syntax",
+ "arcweft-rust-abi",
+ "arcweft-source",
+ "blake3",
  "thiserror 2.0.18",
 ]
 
@@ -550,6 +560,7 @@ dependencies = [
  "anstyle",
  "arcweft-adapter-context",
  "arcweft-adapter-desktop",
+ "arcweft-adapter-sema",
  "arcweft-agent-mcp",
  "arcweft-agent-mcp-client",
  "arcweft-agent-policy",
@@ -707,6 +718,7 @@ name = "arcweft-compiler"
 version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
+ "arcweft-adapter-sema",
  "arcweft-agent-protocol",
  "arcweft-agent-runner",
  "arcweft-bundle",
@@ -1000,6 +1012,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
  "arcweft-adapter-metadata",
+ "arcweft-adapter-sema",
  "arcweft-agent-repl",
  "arcweft-character",
  "arcweft-compiler",
@@ -1204,6 +1217,7 @@ version = "0.1.0"
 dependencies = [
  "arcweft-adapter-context",
  "arcweft-adapter-metadata",
+ "arcweft-adapter-sema",
  "arcweft-bundle",
  "arcweft-character",
  "arcweft-core",
