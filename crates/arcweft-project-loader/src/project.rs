@@ -7,7 +7,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePath, ModulePathError, ModuleSegment},
         symbol_path::ProjectSymbolPath,
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_launch::{accepted::SourceBackedManifest, diagnostic::ManifestReport};
 use arcweft_project::{
@@ -382,7 +382,12 @@ fn scan_source(
     budget: &mut ProjectLoadBudget,
 ) -> Result<ScannedSource, ProjectLoadError> {
     let source = budget.read_document(&path)?;
-    let parsed = parse_source(&source);
+    let document = Arc::new(SourceDocument::try_new(
+        project_document_id(package, project_root, &path)?,
+        SourceName::path(path.display().to_string()),
+        source,
+    )?);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     if !parsed.errors().is_empty() {
         return Err(ProjectLoadError::Syntax {
             path,
@@ -428,11 +433,6 @@ fn scan_source(
             .clone(),
         })
         .collect();
-    let document = Arc::new(SourceDocument::try_new(
-        project_document_id(package, project_root, &path)?,
-        SourceName::path(path.display().to_string()),
-        source,
-    )?);
     Ok(ScannedSource {
         path,
         document,

@@ -24,7 +24,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePath},
         symbol_path::ProjectSymbolPath,
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_launch::{accepted::SourceBackedManifest, resolve::ResolvedLaunchProfile};
 use arcweft_manifest_model::{AdapterFamily, RawDigest};
@@ -699,13 +699,13 @@ impl<'a> TopologyBuilder<'a> {
         source_root: &Path,
         module: &CanonicalModulePath,
         path: &Path,
-        document: &SourceDocument,
+        document: &Arc<SourceDocument>,
         resource_id: &ProfileTopologyResourceId,
         module_resources: &mut BTreeMap<CanonicalModulePath, (PathBuf, Arc<SourceDocument>)>,
         queue: &mut BTreeSet<CanonicalModulePath>,
     ) -> Result<Vec<ModuleDependency>, ProfileTopologyLoadError> {
         self.budget.charge_work(1)?;
-        let parsed = parse_source(document.text());
+        let parsed = parse_document_with_source(Arc::clone(document), ParseOptions::default());
         if !parsed.errors().is_empty() {
             let maximum = usize::try_from(ProfileTopologyLimits::PRODUCTION.diagnostics())
                 .map_err(|_| ProfileTopologyLoadError::ArithmeticOverflow {
