@@ -386,7 +386,12 @@ impl ProjectCommandReport {
                 })
                 .collect(),
             syntax_warnings: state.compiled.syntax_warnings(),
-            flows: state.compiled.linked_hir().flows().len(),
+            flows: state
+                .compiled
+                .hir_project()
+                .modules()
+                .map(|(_, module)| module.flows().len())
+                .sum(),
             line_task_groups: state.compiled.line_task_groups().len(),
             verifier_diagnostics: state.verification.diagnostics.len(),
             obligations: state.verification.obligations.len(),

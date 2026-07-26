@@ -100,6 +100,28 @@ return "done"
 }
 
 #[test]
+fn project_report_counts_flows_across_modules() {
+    let (root, profile) = cache_test_project("module-preserving-flow-count");
+    fs::write(
+        root.join("src").join("support.arcw"),
+        r#"mod support
+
+flow support_ready() -> String {
+return "support"
+}
+"#,
+    )
+    .expect("support module writes");
+
+    let state = compile_project_command(&profile, VerificationMode::Dev).expect("project compiles");
+    let report = ProjectCommandReport::from_state(&state);
+
+    assert_eq!(report.modules.len(), 2);
+    assert_eq!(report.flows, 3);
+    let _ = fs::remove_dir_all(root);
+}
+
+#[test]
 fn cache_build_writes_persistent_query_evidence_and_preserves_awfb_root() {
     let (root, profile) = cache_test_project("persistent-query-evidence");
     let target_root = root.join("target").join("debug");

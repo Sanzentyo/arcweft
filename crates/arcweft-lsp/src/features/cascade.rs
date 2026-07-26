@@ -1,5 +1,8 @@
 use crate::{documents::DocumentSnapshot, profiles::LspProfile, uri_key::LspUriKey};
-use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
+use arcweft_lang_hir::{
+    model::{HirDialogue, HirFlowItem},
+    project::HirProject,
+};
 use arcweft_lang_syntax::ast::common::TextRange;
 #[cfg(test)]
 use arcweft_lang_syntax::ast::dialogue::LineOptions;
@@ -69,9 +72,9 @@ pub(crate) fn effective_dialogue_cascade_at(
     }
     let module = accepted.project().module_key(accepted_identity)?;
     // Prove this source/module pair is still present in the accepted HIR before
-    // using the compiler-owned linked order that indexes the runtime catalog.
+    // using canonical project order to index the compiler-owned runtime catalog.
     accepted.project().hir(&module).ok()?;
-    let dialogues = collect_dialogues(accepted.compiled().linked_hir());
+    let dialogues = collect_dialogues(accepted.compiled().hir_project());
     let (dialogue_index, dialogue) = dialogues.iter().enumerate().find(|(_, dialogue)| {
         dialogue.source_module() == Some(module.module())
             && dialogue_contains_offset(dialogue, offset)
@@ -136,10 +139,12 @@ fn hir_dialogue_style_path(dialogue: &HirDialogue, offset: usize) -> Option<Stri
         .or_else(|| inline_content_style_path(dialogue.content(), offset))
 }
 
-fn collect_dialogues(module: &HirModule) -> Vec<&HirDialogue> {
+fn collect_dialogues(project: &HirProject) -> Vec<&HirDialogue> {
     let mut dialogues = Vec::new();
-    for flow in module.flows() {
-        collect_flow_item_dialogues(flow.body(), &mut dialogues);
+    for (_, module) in project.modules() {
+        for flow in module.flows() {
+            collect_flow_item_dialogues(flow.body(), &mut dialogues);
+        }
     }
     dialogues
 }
@@ -780,8 +785,64 @@ fn collect_flow_item_dialogues<'a>(items: &'a [HirFlowItem], dialogues: &mut Vec
 
 #[cfg(test)]
 mod tests {
-    use super::style_path_at;
-    use arcweft_lang_syntax::parser::parse_source;
+    use super::{collect_dialogues, style_path_at};
+    use arcweft_lang_hir::{
+        lower::lower_document_to_hir,
+        project::{HirProject, HirProjectModule},
+    };
+    use arcweft_lang_syntax::{
+        ast::module_path::{CanonicalModulePath, ModuleSegment},
+        parser::parse_source,
+    };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+    fn project_module(
+        path: CanonicalModulePath,
+        document_id: &str,
+        source: &str,
+    ) -> HirProjectModule {
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(document_id).expect("document ID"),
+            SourceName::path(document_id),
+            source,
+        )
+        .expect("source document");
+        let parsed = parse_source(source);
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+        let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
+        HirProjectModule::try_new(path, document.identity().clone(), hir)
+            .expect("source-bound HIR module")
+    }
+
+    #[test]
+    fn dialogue_projection_preserves_canonical_project_module_order() {
+        let root = CanonicalModulePath::crate_root();
+        let child = root.join(ModuleSegment::new("chapter").expect("module segment"));
+        let project = HirProject::new(
+            "cascade-tests",
+            [
+                project_module(
+                    root.clone(),
+                    "arcweft-generated://cascade-tests/root",
+                    "flow root {\n    narrator:\n        Root\n}\n",
+                ),
+                project_module(
+                    child.clone(),
+                    "arcweft-generated://cascade-tests/chapter",
+                    "flow child {\n    narrator:\n        Child\n}\n",
+                ),
+            ],
+        )
+        .expect("HIR project");
+
+        assert_eq!(
+            collect_dialogues(&project)
+                .into_iter()
+                .map(|dialogue| dialogue.source_module().cloned())
+                .collect::<Vec<_>>(),
+            [Some(root), Some(child)]
+        );
+    }
 
     #[test]
     fn inline_style_paths_project_multiline_lf_and_crlf_offsets() {

@@ -1836,6 +1836,64 @@ flow opening {
 }
 
 #[test]
+fn hover_in_child_module_uses_project_global_dialogue_ordinal() {
+    let project = TestProject::new("hover-child-dialogue-global-ordinal");
+    project.write(
+        "arcw.toml",
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.dialogue.project-cascade"
+version = "0.1.0"
+
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+"#,
+    );
+    let root_source = r##"use self.side.child_helper
+
+pub character root_speaker {}
+
+flow root {
+    root_speaker(rich_text.text.color=rgb("#111111")): root[p]
+}
+"##;
+    project.write("src/main.arcw", root_source);
+    let child_source = r##"mod side
+
+pub character child_speaker {}
+
+pub fn child_helper() -> Unit {
+    ()
+}
+
+flow child {
+    child_speaker(rich_text.text.color=rgb("#222222")): child[p]
+}
+"##;
+    project.write("src/side.arcw", child_source);
+
+    let root_uri = file_uri(&project.path("src/main.arcw"));
+    let uri = file_uri(&project.path("src/side.arcw"));
+    let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+    open_text(&mut session, root_uri, root_source);
+    open_text(&mut session, uri.clone(), child_source);
+    let profile = session.profile_for_uri(&uri);
+    assert!(
+        profile.accepted_environment().is_some(),
+        "child document should belong to an accepted project generation: {:?}",
+        profile.diagnostics()
+    );
+
+    let hover = hover_text(&mut session, uri, child_source, "222222");
+    assert!(hover.contains("for `child_speaker`"), "{hover}");
+    assert!(hover.contains("#222222"), "{hover}");
+    assert!(!hover.contains("root_speaker"), "{hover}");
+    assert!(!hover.contains("#111111"), "{hover}");
+}
+
+#[test]
 fn hover_on_nested_rich_text_line_option_filters_to_leaf_path() {
     let source = r##"
 pub character alice {

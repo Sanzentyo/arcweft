@@ -287,9 +287,12 @@ fn project_fixture() -> (Arc<SourceDocument>, Arc<HirProject>) {
 }
 
 fn accepted_candidate(compiled: Arc<CompiledProject>) -> AcceptedProfileCandidate {
+    let root = CanonicalModulePath::crate_root();
     let document = Arc::new(
         compiled
-            .linked_hir()
+            .hir_project()
+            .module(&root)
+            .expect("compiled root HIR module")
             .source_document()
             .cloned()
             .expect("compiled source document"),
