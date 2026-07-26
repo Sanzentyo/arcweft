@@ -26,7 +26,7 @@ use lsp_types::{
     Hover, HoverContents, MarkedString, NumberOrString, Position, Range, TextEdit, Uri,
     WorkspaceEdit,
 };
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 use thiserror::Error;
 
 /// Sans I/O LSP context supplied by the caller after resolving profiles.
@@ -632,21 +632,21 @@ fn verifier_code_action_kind(kind: ToolActionKind) -> CodeActionKind {
     }
 }
 
-/// Converts source-level Arcweft tooling actions into edit-bearing LSP code actions.
+/// Converts source-level Arcweft tooling actions from one exact document lease into LSP edits.
 pub fn source_code_actions_with_mapper(
     uri: &Uri,
-    document: &SourceDocument,
+    document: &Arc<SourceDocument>,
     mapper: &impl LspPositionMapper,
 ) -> Result<Vec<CodeAction>, arcweft_tooling::model::ToolingError> {
-    arcweft_tooling::code_actions::source_code_actions(document.text())?
+    arcweft_tooling::code_actions::source_code_actions(Arc::clone(document))?
         .into_iter()
         .map(|action| {
             let edit = action
                 .edit
                 .as_ref()
                 .map(|edit| {
-                    workspace_edit_from_tooling_edit(uri, edit, document, mapper).map_err(|error| {
-                        match error {
+                    workspace_edit_from_tooling_edit(uri, edit, document.as_ref(), mapper).map_err(
+                        |error| match error {
                             SourceSpanError::Reversed | SourceSpanError::OutOfBounds => {
                                 arcweft_tooling::model::ToolingError::RangeOutOfBounds {
                                     start: edit.start,
@@ -660,8 +660,8 @@ pub fn source_code_actions_with_mapper(
                                     end: edit.end,
                                 }
                             }
-                        }
-                    })
+                        },
+                    )
                 })
                 .transpose()?;
             let diagnostics = action
@@ -1265,12 +1265,14 @@ mod tests {
             .parse::<Uri>()
             .expect("uri");
         let source = "flow @.opening opening {\n    alice: [.shake amp=2px]hi[/][p]\n}\n";
-        let document = SourceDocument::try_new(
-            SourceDocumentId::try_new(uri.to_string()).expect("source id"),
-            arcweft_source::SourceName::path(uri.to_string()),
-            source,
-        )
-        .expect("source document");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(uri.to_string()).expect("source id"),
+                arcweft_source::SourceName::path(uri.to_string()),
+                source,
+            )
+            .expect("source document"),
+        );
         let mapped_actions = source_code_actions_with_mapper(&uri, &document, &TestMapper)
             .expect("mapped source code actions");
         assert_eq!(mapped_actions.len(), 1);

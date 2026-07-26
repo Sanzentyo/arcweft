@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_tooling::format::format_source`
+ --> tests/ui/format_source_removed.rs:1:5
+  |
+1 | use arcweft_tooling::format::format_source;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `format_source` in `format`

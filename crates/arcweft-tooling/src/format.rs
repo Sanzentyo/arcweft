@@ -4,16 +4,19 @@ use crate::rich_text_canonicalization::{
     RichTextCanonicalizationContext, rich_text_canonical_edits as canonical_content_edits,
 };
 use crate::style_environment::canonical_environment_edits;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use arcweft_source::SourceDocument;
+use std::sync::Arc;
 
 mod view;
 
-/// Formats source while preserving authoring sugar by default.
-pub fn format_source(
-    source: &str,
+/// Formats an exact source document while preserving authoring sugar by default.
+pub fn format_document(
+    document: Arc<SourceDocument>,
     options: FormatOptions,
 ) -> Result<ToolingEditReport, ToolingError> {
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(document, ParseOptions::default());
+    let source = parsed.source();
     let mut edits = view::canonical_edits(source, &parsed);
     edits.extend(canonical_environment_edits(&parsed));
     if options.canonical_rich_text {

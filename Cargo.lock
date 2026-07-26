@@ -1542,6 +1542,7 @@ dependencies = [
  "arcweft-source",
  "serde",
  "thiserror 2.0.18",
+ "trybuild",
 ]
 
 [[package]]

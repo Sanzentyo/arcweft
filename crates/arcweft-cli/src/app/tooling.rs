@@ -1,12 +1,17 @@
-use super::shared::{is_arcw_path, print_json};
+use super::{
+    project::source_document_for_path,
+    shared::{is_arcw_path, print_json},
+};
+use arcweft_source::SourceDocument;
 use arcweft_tooling::{
-    format::format_source,
+    format::format_document,
     model::{FormatOptions, ToolingDiagnostic, ToolingEditReport, ToolingError},
 };
 use clap::Args;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 #[derive(Args, Clone, Debug)]
 #[allow(clippy::struct_excessive_bools)]
@@ -83,9 +88,9 @@ struct ToolingFileReport {
 }
 
 pub(super) fn format_command(options: &ToolingCommandOptions) -> Result<(), ExitCode> {
-    run_tooling_command(options, |source| {
-        format_source(
-            source,
+    run_tooling_command(options, |document| {
+        format_document(
+            document,
             FormatOptions {
                 canonical_rich_text: options.canonical_rich_text,
             },
@@ -95,7 +100,7 @@ pub(super) fn format_command(options: &ToolingCommandOptions) -> Result<(), Exit
 
 fn run_tooling_command(
     options: &ToolingCommandOptions,
-    mut run_one: impl FnMut(&str) -> Result<ToolingEditReport, ToolingError>,
+    mut run_one: impl FnMut(Arc<SourceDocument>) -> Result<ToolingEditReport, ToolingError>,
 ) -> Result<(), ExitCode> {
     let paths = collect_tooling_paths(&options.path)?;
     let mut reports = Vec::new();
@@ -104,7 +109,8 @@ fn run_tooling_command(
             eprintln!("error: failed to read {}: {error}", path.display());
             ExitCode::FAILURE
         })?;
-        let report = run_one(&source).map_err(|error| {
+        let document = Arc::new(source_document_for_path(&path, source)?);
+        let report = run_one(document).map_err(|error| {
             eprintln!("error: failed to edit {}: {error}", path.display());
             ExitCode::FAILURE
         })?;

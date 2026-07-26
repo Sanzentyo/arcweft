@@ -1,4 +1,7 @@
-use arcweft_tooling::{format::format_source, model::FormatOptions};
+mod support;
+
+use arcweft_tooling::model::FormatOptions;
+use support::format_fixture;
 
 #[test]
 fn formatter_preserves_canonical_capability_members_without_synthesizing_policy() {
@@ -13,13 +16,13 @@ fn formatter_preserves_canonical_capability_members_without_synthesizing_policy(
 }
 ";
 
-    let first = format_source(source, FormatOptions::default()).expect("format succeeds");
+    let first = format_fixture(source, FormatOptions::default()).expect("format succeeds");
     assert!(!first.changed);
     assert_eq!(first.output, source);
     assert!(first.diagnostics.is_empty());
 
     let second =
-        format_source(&first.output, FormatOptions::default()).expect("second format succeeds");
+        format_fixture(&first.output, FormatOptions::default()).expect("second format succeeds");
     assert!(!second.changed);
     assert_eq!(second.output, source);
 }
@@ -34,7 +37,7 @@ fn formatter_preserves_unknown_capability_member_bytes() {
 }
 ";
 
-    let report = format_source(source, FormatOptions::default()).expect("format succeeds");
+    let report = format_fixture(source, FormatOptions::default()).expect("format succeeds");
     assert!(!report.changed);
     assert_eq!(report.output, source);
 }

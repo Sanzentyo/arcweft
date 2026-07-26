@@ -13,7 +13,6 @@ use arcweft_presentation::appearance::{
 };
 use arcweft_tooling::{
     edit::apply_text_edits,
-    format::format_source,
     model::FormatOptions,
     style_environment::{
         StyleEnvironmentCodeActionInput, StyleEnvironmentCodeActionKind,
@@ -26,6 +25,8 @@ use arcweft_tooling::{
         style_environment_semantic_spans,
     },
 };
+mod support;
+use support::format_fixture;
 
 #[test]
 fn formatter_orders_fields_canonically_and_normalizes_percentage() {
@@ -35,7 +36,7 @@ fn formatter_orders_fields_canonically_and_normalizes_percentage() {
     }
 }
 ";
-    let report = format_source(source, FormatOptions::default()).expect("format report");
+    let report = format_fixture(source, FormatOptions::default()).expect("format report");
     assert_eq!(
         report.output,
         r"pub style adaptive {
@@ -48,7 +49,7 @@ fn formatter_orders_fields_canonically_and_normalizes_percentage() {
 }
 "
     );
-    let second = format_source(&report.output, FormatOptions::default()).expect("second format");
+    let second = format_fixture(&report.output, FormatOptions::default()).expect("second format");
     assert!(!second.changed);
     assert_eq!(second.output, report.output);
 }
@@ -61,10 +62,10 @@ fn formatter_is_idempotent_for_recovered_environment_nodes() {
     }
 }
 ";
-    let first = format_source(source, FormatOptions::default()).expect("format report");
+    let first = format_fixture(source, FormatOptions::default()).expect("format report");
     assert!(!first.changed);
     assert_eq!(first.output, source);
-    let second = format_source(&first.output, FormatOptions::default()).expect("second format");
+    let second = format_fixture(&first.output, FormatOptions::default()).expect("second format");
     assert_eq!(second.output, first.output);
 }
 
