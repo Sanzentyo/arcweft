@@ -17,7 +17,7 @@ use arcweft_lang_hir::symbol::{
     CallableDeclarationId, CallableDeclarationOwner, CallablePackageId, ProjectSymbolWorldId,
 };
 use arcweft_lang_hir::{
-    lower::{lower_document_to_hir, lower_to_hir},
+    lower::lower_document_to_hir,
     project::{HirProject, HirProjectModule},
 };
 use arcweft_lang_sema::project_index::{
@@ -43,7 +43,7 @@ use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewProgramId, ViewStyle
 
 use crate::{
     agent_project::agent_project_graph_from_project,
-    hir::{lower_source_tree, validate_hir_with_env},
+    hir::validate_hir_with_env,
     lower::{
         lower_source_runtime_plan_with_stats_and_options,
         lower_source_runtime_plan_with_typecheck_stats_and_options,
@@ -266,7 +266,7 @@ fn agent_project_graph_snapshot_preserves_project_callables() {
 
 #[test]
 fn agent_project_graph_snapshot_preserves_flow_control_summary() {
-    let tree = parse_source(
+    let parsed = parse_source(
         r#"
 pub fn current_route() -> Ref<Flow> {
 return @flow.done
@@ -282,12 +282,11 @@ flow @flow.done done() -> String {
 return "done"
 }
 "#,
-    )
-    .into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let document = test_source_document("game.arcw", hir.source_len().unwrap_or_default());
+    );
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("source lowers to HIR");
     let project =
-        project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), &document)
+        project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), parsed.document())
             .expect("project indexes flow control");
 
     let graph = agent_project_graph_from_project(&project).expect("graph snapshot builds");
@@ -479,7 +478,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(
         &hir,
         &TypeCheckEnv::standard()
@@ -525,7 +525,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(
         &hir,
         &TypeCheckEnv::standard()
@@ -561,7 +562,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let predicate = TypeKind::function([TypeKind::I64], TypeKind::Bool);
     let typecheck = arcweft_lang_sema::check::analyze_types(
         &hir,
@@ -623,7 +625,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(typecheck.diagnostics.is_empty());
     assert!(
@@ -679,7 +682,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -772,7 +776,8 @@ flow @flow.main main() -> i64 {
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -822,7 +827,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -910,7 +916,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -991,7 +998,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1092,7 +1100,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1170,7 +1179,8 @@ flow @flow.main main() -> i64 {
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1235,7 +1245,8 @@ flow @flow.main main() -> i64 {
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1301,7 +1312,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1360,7 +1372,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1438,7 +1451,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1496,7 +1510,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1570,7 +1585,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1661,7 +1677,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1752,7 +1769,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1829,7 +1847,8 @@ flow main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1864,7 +1883,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -1944,7 +1964,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -2046,7 +2067,8 @@ flow @flow.main main() -> i64 {
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -2149,7 +2171,8 @@ flow @flow.main main() -> (String, i64) {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(typecheck.diagnostics.is_empty());
 
@@ -2251,7 +2274,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -2336,7 +2360,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -2428,7 +2453,8 @@ flow @flow.main main() -> (String, i64, i64) {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(typecheck.diagnostics.is_empty());
 
@@ -2546,7 +2572,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(typecheck.diagnostics.is_empty());
 
@@ -2610,7 +2637,8 @@ flow @flow.main main() -> i64 {
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -2700,7 +2728,8 @@ flow @flow.main main() -> i64 {
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -2794,7 +2823,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -2869,7 +2899,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -2961,7 +2992,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3008,7 +3040,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3051,7 +3084,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3094,7 +3128,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3140,7 +3175,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3182,7 +3218,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3230,7 +3267,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3274,7 +3312,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3341,7 +3380,8 @@ flow @flow.main main() -> i64 {
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3392,7 +3432,8 @@ flow @flow.main main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3438,7 +3479,8 @@ pub source @source.values: Source<i64, String> {
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let function_ty = TypeKind::function([TypeKind::I64], TypeKind::I64);
     let source_ty = TypeKind::Source {
         item: Box::new(TypeKind::I64),
@@ -3487,7 +3529,8 @@ flow main() -> String {
 }
 "#,
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("presentation fixture lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("presentation fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         typecheck.diagnostics.is_empty(),
@@ -3588,7 +3631,8 @@ alice: Hello[p]
 }
 ",
     );
-    let hir = lower_source_tree(parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     validate_hir_with_env(&hir, &TypeCheckEnv::standard()).expect("fixture typechecks");
 
     let profile = DialoguePresentationProfile::new(

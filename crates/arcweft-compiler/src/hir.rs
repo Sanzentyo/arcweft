@@ -1,4 +1,4 @@
-use arcweft_lang_hir::lower::{lower_document_to_hir, lower_to_hir};
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_hir::model::HirModule;
 use arcweft_lang_sema::check::{TypeCheckReport, analyze_registered_project_types, analyze_types};
 use arcweft_lang_sema::env::TypeCheckEnv;
@@ -11,13 +11,6 @@ use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
 use arcweft_source::SourceDocument;
 
 use crate::error::ValidateHirError;
-
-/// Lowers a typed syntax tree into HIR.
-pub fn lower_source_tree(
-    tree: &TypedSyntaxTree,
-) -> Result<HirModule, Vec<arcweft_lang_hir::model::HirLowerError>> {
-    lower_to_hir(tree)
-}
 
 /// Lowers a typed syntax tree while binding every retained range to one source revision.
 pub fn lower_source_document(

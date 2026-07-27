@@ -1,6 +1,6 @@
 use arcweft_compiler::{
     error::ValidateHirError,
-    hir::{lower_source_tree, validate_hir_with_env},
+    hir::{lower_source_document, validate_hir_with_env},
 };
 use arcweft_lang_sema::diagnostics::TypeCheckError;
 use arcweft_lang_sema::env::TypeCheckEnv;
@@ -8,11 +8,11 @@ use arcweft_lang_syntax::parser::parse_source;
 
 #[test]
 fn compiler_hir_validation_surfaces_trait_diagnostic_code() {
-    let tree = parse_source(include_str!(
+    let parsed = parse_source(include_str!(
         "../../../fixtures/traits/err-missing-associated-type.arcw"
-    ))
-    .into_typed_tree();
-    let hir = lower_source_tree(&tree).expect("HIR lowers");
+    ));
+    let hir = lower_source_document(parsed.document(), parsed.typed_tree()).expect("HIR lowers");
+    assert_eq!(hir.source_identity(), Some(parsed.document().identity()));
     let err = validate_hir_with_env(&hir, &TypeCheckEnv::standard()).expect_err("trait error");
     let ValidateHirError::Type(diagnostics) = err else {
         panic!("expected type diagnostics");

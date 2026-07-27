@@ -21,6 +21,9 @@ The current Proof source-identity convergence boundary for LSP diagnostics and
 feature readers is tracked in
 `docs/implementation/2026-07-27-proof-lsp-diagnostic-exact-source-lease.md` and
 `docs/implementation/2026-07-27-proof-lsp-feature-exact-source-lease.md`.
+The compiler source-free HIR facade deletion and its document-identity
+compile/behavior evidence are tracked in
+`docs/implementation/2026-07-27-proof-compiler-source-free-hir-facade-deletion.md`.
 The final HIR expression authority remains gated on the corrected Proof
 `01.1.1.4.1` redelivery rather than being inferred from these preparatory cuts.
 

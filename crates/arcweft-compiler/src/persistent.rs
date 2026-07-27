@@ -1097,7 +1097,7 @@ struct HirBodyCounts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hir::lower_source_tree;
+    use crate::hir::lower_source_document;
     use arcweft_lang_syntax::parser::parse_source;
     use arcweft_project::{
         fingerprint::NamedDigest,
@@ -1187,8 +1187,8 @@ return "done"
     fn persistent_hir_body_facts_round_trip_without_hir_serialization() {
         let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
-        let tree = parsed.clone().into_typed_tree();
-        let hir = lower_source_tree(&tree).expect("source lowers to HIR");
+        let hir = lower_source_document(parsed.document(), parsed.typed_tree())
+            .expect("source lowers to HIR");
         let key = key(CompilerObjectKind::HirBody, &parsed);
         let object = hir_body_object(&HirBodyFactsInput {
             key: &key,
@@ -1214,8 +1214,8 @@ return "done"
     fn persistent_interface_summary_facts_round_trip_without_hir_serialization() {
         let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
-        let tree = parsed.clone().into_typed_tree();
-        let hir = lower_source_tree(&tree).expect("source lowers to HIR");
+        let hir = lower_source_document(parsed.document(), parsed.typed_tree())
+            .expect("source lowers to HIR");
         let key = key(CompilerObjectKind::InterfaceSummary, &parsed);
         let object = interface_summary_object(&InterfaceSummaryFactsInput {
             key: &key,
@@ -1252,8 +1252,8 @@ return "done"
         fn digest_for(source: &str) -> BuildDigest {
             let parsed = parse_source(source);
             assert!(parsed.errors().is_empty());
-            let tree = parsed.into_typed_tree();
-            let hir = lower_source_tree(&tree).expect("source lowers to HIR");
+            let hir = lower_source_document(parsed.document(), parsed.typed_tree())
+                .expect("source lowers to HIR");
             let function = hir.functions().first().expect("function is present");
             signature_digest("function", function.name(), Some(function.signature()))
                 .expect("signature digest builds")
@@ -1327,16 +1327,16 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
         let rebuilt = parse_source(SOURCE);
         assert!(rebuilt.errors().is_empty());
-        let tree = rebuilt.clone().into_typed_tree();
-        lower_source_tree(&tree).expect("source rebuild still lowers to HIR");
+        lower_source_document(rebuilt.document(), rebuilt.typed_tree())
+            .expect("source rebuild still lowers to HIR");
     }
 
     #[test]
     fn persistent_query_actual_bytecode_builder_produces_verified_reusable_payload() {
         let parsed = parse_source(SOURCE);
         assert!(parsed.errors().is_empty());
-        let tree = parsed.clone().into_typed_tree();
-        let hir = lower_source_tree(&tree).expect("source lowers to HIR");
+        let hir = lower_source_document(parsed.document(), parsed.typed_tree())
+            .expect("source lowers to HIR");
         let interface_key = key(CompilerObjectKind::InterfaceSummary, &parsed);
         let hir_key = key(CompilerObjectKind::HirBody, &parsed);
         let typecheck_key = key(CompilerObjectKind::TypecheckGate, &parsed);

@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_compiler::hir::lower_source_tree`
+ --> tests/ui/lower_source_tree_removed.rs:1:5
+  |
+1 | use arcweft_compiler::hir::lower_source_tree;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `lower_source_tree` in `hir`
