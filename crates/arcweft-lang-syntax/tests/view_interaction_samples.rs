@@ -45,6 +45,10 @@ const SAMPLES: &[(&str, &str)] = &[
 fn view_interaction_samples_parse_without_recovery_errors() {
     for (name, source) in SAMPLES {
         let parsed = parse_source(*source);
-        assert!(parsed.is_ok(), "{name} parse errors: {:?}", parsed.errors());
+        assert!(
+            parsed.errors().is_empty(),
+            "{name} parse errors: {:?}",
+            parsed.errors()
+        );
     }
 }

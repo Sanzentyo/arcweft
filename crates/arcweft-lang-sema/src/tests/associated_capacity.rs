@@ -1559,7 +1559,8 @@ fn associated_malformed_receiver_checks_retained_arguments_once() {
         );
         let call_start = source.find(malformed).expect("recovered call is unique");
         let call_span = parsed
-            .span(TextRange::new(call_start, call_start + malformed.len()))
+            .document()
+            .span(SourceRange::new(call_start, call_start + malformed.len()))
             .expect("recovered call belongs to the parsed source");
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("malformed receiver recovery still lowers the retained module");
@@ -1591,7 +1592,8 @@ fn associated_missing_member_checks_arguments_once() {
         );
         let call_start = source.find(malformed).expect("recovered call is unique");
         let call_span = parsed
-            .span(TextRange::new(call_start, call_start + malformed.len()))
+            .document()
+            .span(SourceRange::new(call_start, call_start + malformed.len()))
             .expect("recovered call belongs to the parsed source");
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("missing-member recovery still lowers the retained module");

@@ -17,7 +17,6 @@ use super::repl::{
 #[cfg(feature = "agent-repl")]
 use super::repl::{AgentReplReedlineCompleter, AgentReplReedlineValidator};
 use super::repl_project_binding::agent_repl_reconcile_project_bound_bindings;
-use super::repl_snapshot::agent_repl_serialized_bindings;
 use super::runtime_observation::agent_observe_layout_scene_graph;
 use super::*;
 use arcweft_agent_protocol::protocol::{AgentProjectGraph, AgentScrollAction, AgentSessionInfo};
@@ -2084,34 +2083,6 @@ fn agent_repl_stdio_connect_reports_project_hash_binding_policy() {
         decisions
             .iter()
             .any(|decision| { decision["name"] == "frame" && decision["decision"] == "dropped" })
-    );
-}
-
-#[test]
-fn agent_repl_serialized_bindings_separate_literals_from_project_refs() {
-    let count = agent_repl_serialized_bindings(&agent_repl_parse_fragment("let count = [1, 2, 3]"));
-    let hero =
-        agent_repl_serialized_bindings(&agent_repl_parse_fragment("let hero = @character.alice"));
-    let party = agent_repl_serialized_bindings(&agent_repl_parse_fragment(
-        "let party = [@character.alice, \"bob\"]",
-    ));
-
-    assert_eq!(
-        count
-            .get("count")
-            .map(|binding| binding.snapshot_kind.as_str()),
-        Some("literal")
-    );
-    assert_eq!(
-        hero.get("hero")
-            .map(|binding| binding.snapshot_kind.as_str()),
-        Some("project_ref")
-    );
-    assert_eq!(
-        party
-            .get("party")
-            .map(|binding| binding.snapshot_kind.as_str()),
-        Some("project_ref")
     );
 }
 

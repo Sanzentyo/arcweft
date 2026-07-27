@@ -1,12 +1,9 @@
 //! Parsed source container and line indexing.
 
-use crate::ast::common::TextRange;
 use crate::ast::items::TypedSyntaxTree;
 use crate::cst::{SyntaxNode, SyntaxParseStats};
 use crate::parser::recovery::{ParseError, ParseErrorKind, RecoveryEdit, RecoverySuggestion};
-use arcweft_source::{
-    SourceDocument, SourceDocumentIdentity, SourceRange, SourceSpan, SourceSpanError,
-};
+use arcweft_source::{SourceDocument, SourceDocumentIdentity};
 use std::{cmp::Ordering, sync::Arc};
 
 /// Fully parsed source file.
@@ -70,12 +67,6 @@ impl ParsedSource {
         self.document.identity()
     }
 
-    /// Binds a parser byte range to the exact source revision.
-    pub fn span(&self, range: TextRange) -> Result<SourceSpan, SourceSpanError> {
-        self.document
-            .span(SourceRange::new(range.start(), range.end()))
-    }
-
     /// Lossless rowan syntax tree.
     pub const fn syntax(&self) -> &SyntaxNode {
         &self.syntax
@@ -99,11 +90,6 @@ impl ParsedSource {
     /// Line index for byte-offset diagnostics.
     pub const fn line_index(&self) -> &LineIndex {
         &self.line_index
-    }
-
-    /// True when no parse diagnostics were emitted.
-    pub fn is_ok(&self) -> bool {
-        self.errors.is_empty()
     }
 
     /// Consumes the parsed source and returns the typed syntax model.

@@ -58,13 +58,6 @@ pub(super) struct AgentReplBinding {
     pub(super) non_serializable_reason: Option<String>,
 }
 
-#[cfg(test)]
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct AgentReplSerializedBinding {
-    pub(super) source: String,
-    pub(super) snapshot_kind: String,
-}
-
 #[derive(Debug)]
 struct AgentReplRemoteConnection {
     session: Option<McpAgentSession<StdioMcpTransport>>,

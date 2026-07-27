@@ -892,8 +892,10 @@ Current high-confidence state:
   complete brace block does not re-lex the assembled block text.
   Normal `parse_source` line events borrow from the original source buffer
   instead of allocating a second owned `String` for every line, so parser bench
-  JSON reports `line_owned_bytes = 0`. The standalone `cst_lines(root)` helper
-  still owns line text for tooling contexts that only have a CST root.
+  JSON reports `line_owned_bytes = 0`. The old source-free `cst_lines(root)`
+  projection has been deleted; every line-event consumer must provide the exact
+  source backing through `cst_lines_for_source` rather than reconstructing owned
+  text from a detached CST root.
   Balanced block events also borrow source-backed head/body fragments when the
   original line endings can be preserved exactly, so the checked-in parser bench
   now reports `block_owned_bytes = 0` for the normal LF source path. AST fields

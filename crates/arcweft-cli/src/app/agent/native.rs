@@ -233,8 +233,6 @@ mod repl_cli_command;
 mod repl_command_bridge;
 mod repl_command_format;
 mod repl_project_binding;
-#[cfg(test)]
-mod repl_snapshot;
 mod runtime_observation;
 #[cfg(test)]
 mod tests;

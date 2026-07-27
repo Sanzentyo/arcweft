@@ -1,7 +1,7 @@
 use crate::cst::{
     CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineKind, CstPunctuationScan, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxKind,
-    classify_stmt, cst_lines, find_last_depth_zero_open_punctuation,
+    classify_stmt, cst_lines_for_source, find_last_depth_zero_open_punctuation,
     find_last_top_level_punctuation, find_matching_punctuation,
     find_top_level_matching_punctuation, source_line_count, source_line_iter,
     split_first_string_literal, split_last_top_level_punctuation_sequence_once,
@@ -46,8 +46,9 @@ fn cst_preserves_comments_doc_comments_entity_refs_and_newlines() {
 
 #[test]
 fn cst_line_events_classify_trivia_docs_and_code() {
-    let root = crate::cst::parse_cst("   \n// comment\n/// Doc\nflow @flow.opening opening {}\n");
-    let lines = cst_lines(&root);
+    let source = "   \n// comment\n/// Doc\nflow @flow.opening opening {}\n";
+    let root = crate::cst::parse_cst(source);
+    let lines = cst_lines_for_source(&root, source);
 
     assert_eq!(lines.get(0).map(CstLine::kind), Some(CstLineKind::Blank));
     assert_eq!(lines.get(1).map(CstLine::kind), Some(CstLineKind::Comment));
@@ -78,10 +79,9 @@ fn cst_text_helpers_split_lines_and_doc_prefixes() {
 
 #[test]
 fn cst_line_events_classify_top_level_dispatch() {
-    let root = crate::cst::parse_cst(
-        "@memo old\n#[build(tool)]\n#![generated(tool)]\nmod game.routes\npub use crate.prelude.*\npub source @source.frames: Source<T, E> {}\nalice: hello\n",
-    );
-    let lines = cst_lines(&root);
+    let source = "@memo old\n#[build(tool)]\n#![generated(tool)]\nmod game.routes\npub use crate.prelude.*\npub source @source.frames: Source<T, E> {}\nalice: hello\n";
+    let root = crate::cst::parse_cst(source);
+    let lines = cst_lines_for_source(&root, source);
 
     assert_eq!(
         lines.get(0).map(CstLine::top_level_line_kind),
@@ -151,10 +151,9 @@ style native_text_input_sample {
 
 #[test]
 fn cst_line_events_classify_flow_item_dispatch() {
-    let root = crate::cst::parse_cst(
-        "@choice old\nchoice @choice.opening {}\nlet selected = choice @choice.next {}\nlet bg = try await load_bg() with:\nlet route = load_route()?\ninclude @flow.next\nscope local {}\n",
-    );
-    let lines = cst_lines(&root);
+    let source = "@choice old\nchoice @choice.opening {}\nlet selected = choice @choice.next {}\nlet bg = try await load_bg() with:\nlet route = load_route()?\ninclude @flow.next\nscope local {}\n";
+    let root = crate::cst::parse_cst(source);
+    let lines = cst_lines_for_source(&root, source);
 
     assert_eq!(
         lines.get(0).map(CstLine::flow_item_kind),
@@ -231,10 +230,9 @@ fn cst_statement_classifier_covers_typed_statement_heads() {
 
 #[test]
 fn cst_flow_block_event_keeps_effects_prelude_out_of_body() {
-    let root = crate::cst::parse_cst(
-        "flow @flow.opening opening\nrequires ready\n effects { asset.read }\n{\n    goto @flow.next\n}\n",
-    );
-    let lines = cst_lines(&root);
+    let source = "flow @flow.opening opening\nrequires ready\n effects { asset.read }\n{\n    goto @flow.next\n}\n";
+    let root = crate::cst::parse_cst(source);
+    let lines = cst_lines_for_source(&root, source);
     let block = lines.collect_flow_block(0);
 
     assert!(block.ok);
@@ -276,7 +274,7 @@ fn cst_flow_block_event_reuses_complete_body_line_events_only() {
 fn successful_parse_exposes_typed_tree_and_document_revision() {
     let parsed = parse_source("flow opening {\n    alice: おはよう。[p]\n}\n");
 
-    assert!(parsed.is_ok());
+    assert!(parsed.errors().is_empty());
     assert_eq!(
         parsed.identity().revision(),
         arcweft_source::SourceRevision::for_utf8(parsed.source())

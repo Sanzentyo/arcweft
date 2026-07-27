@@ -12,29 +12,6 @@ use super::{
 use std::borrow::Cow;
 use std::ops::{Index, Range};
 
-impl From<&SyntaxNode> for CstLineEvents<'static> {
-    fn from(root: &SyntaxNode) -> Self {
-        let lines = root
-            .children()
-            .filter(|node| node.kind() == SyntaxKind::Line)
-            .map(|node| CstLine::from_node(&node))
-            .collect::<Vec<_>>();
-        let line_owned_bytes = lines.iter().map(|line| line.text.len()).sum();
-        let punctuation_scan_bytes = line_owned_bytes;
-        Self {
-            stats: SyntaxParseStats {
-                cst_lex_passes: 1,
-                punctuation_scans: lines.len(),
-                punctuation_scan_bytes,
-                line_owned_bytes,
-                ..SyntaxParseStats::default()
-            },
-            lines,
-            source: None,
-        }
-    }
-}
-
 impl<'a> CstLineEvents<'a> {
     pub(crate) fn from_root_and_source(root: &SyntaxNode, source: &'a str) -> Self {
         let lines = root
@@ -498,32 +475,6 @@ impl<'a> Index<usize> for CstLineEvents<'a> {
 }
 
 impl<'a> CstLine<'a> {
-    fn from_node(node: &SyntaxNode) -> Self {
-        let start = usize::from(node.text_range().start());
-        let mut end = usize::from(node.text_range().end());
-        let mut text = node.text().to_string();
-        if text.ends_with("\r\n") {
-            text.truncate(text.len() - 2);
-            end -= 2;
-        } else if text.ends_with('\n') || text.ends_with('\r') {
-            text.truncate(text.len() - 1);
-            end -= 1;
-        }
-        let kind = classify_node_line(node, &text);
-        let punctuation = CstLinePunctuationSummary::from_node(node);
-        let trim = line_trim_ranges(&text);
-        Self {
-            text: Cow::Owned(text),
-            start,
-            end,
-            trim_start: trim.trim_start,
-            trim_end: trim.trim_end,
-            leading_trim_start: trim.leading_trim_start,
-            punctuation,
-            kind,
-        }
-    }
-
     fn from_node_and_source(node: &SyntaxNode, source: &'a str) -> Self {
         let start = usize::from(node.text_range().start());
         let mut end = usize::from(node.text_range().end());

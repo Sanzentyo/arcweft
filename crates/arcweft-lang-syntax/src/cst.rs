@@ -399,12 +399,6 @@ pub fn parse_cst(source: &str) -> SyntaxNode {
     SyntaxNode::new_root(builder.finish())
 }
 
-/// Projects CST `Line` nodes into parser input events.
-#[must_use]
-pub fn cst_lines(root: &SyntaxNode) -> CstLineEvents<'static> {
-    CstLineEvents::from(root)
-}
-
 /// Projects CST `Line` nodes using the original source as the text backing.
 #[must_use]
 pub fn cst_lines_for_source<'a>(root: &SyntaxNode, source: &'a str) -> CstLineEvents<'a> {
