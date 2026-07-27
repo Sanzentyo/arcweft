@@ -2,7 +2,14 @@
 
 Date: 2026-07-27
 
-Status: archive integrity accepted; design contract rejected as not ready
+Status: `HISTORICAL_SUPERSEDED_TRANSPORT`
+
+This note records the first 1,305-byte `NOT_READY` return. The canonical path
+below was replaced on 2026-07-27 by the later 64,523-byte redelivery after its
+transport integrity was verified. The original bytes and hash remain in Git
+history; they are not an active design package or compatibility input. See
+[`2026-07-27-proof-01-1-1-4-1-ready-claim-redelivery-intake.md`](2026-07-27-proof-01-1-1-4-1-ready-claim-redelivery-intake.md)
+for the current archive adjudication.
 
 ## Archive
 
@@ -16,7 +23,8 @@ Status: archive integrity accepted; design contract rejected as not ready
 - Sidecars: all six files are inside the ZIP; no external sidecar is required.
 
 The archive was moved intact from the `docs/reviews/` intake root into its
-sequence design-package directory after verification.
+sequence design-package directory after verification. The path now holds the
+later redelivery; this section describes the historical bytes only.
 
 ## Integrity result
 
