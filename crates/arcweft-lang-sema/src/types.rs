@@ -226,6 +226,51 @@ impl EntityKind {
         })
     }
 
+    /// Canonical semantic label for this entity family.
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Agent => "agent",
+            Self::Entry => "entry",
+            Self::Flow => "flow",
+            Self::Choice => "choice",
+            Self::ChoiceOption => "choice_option",
+            Self::Character => "character",
+            Self::View => "view",
+            Self::Action => "action",
+            Self::Activity => "activity",
+            Self::DialogueLine => "dialogue_line",
+            Self::Text => "text",
+            Self::Content => "content",
+            Self::Input => "input",
+            Self::Button => "button",
+            Self::Style => "style",
+            Self::Asset => "asset",
+            Self::Image => "image",
+            Self::Animation => "animation",
+            Self::Capture => "capture",
+            Self::Hook => "hook",
+            Self::Signal => "signal",
+            Self::Metric => "metric",
+            Self::Scene => "scene",
+            Self::Source => "source",
+            Self::Test => "test",
+            Self::Bench => "bench",
+            Self::Layer => "layer",
+            Self::Voice => "voice",
+            Self::Se => "se",
+            Self::Bgm => "bgm",
+            Self::AudioBus => "audio_bus",
+            Self::MixerSnapshot => "mixer_snapshot",
+            Self::Ducking => "ducking",
+            Self::Motion => "motion",
+            Self::Rig => "rig",
+            Self::Slot => "slot",
+            Self::Target => "target",
+            Self::Other(value) => value.as_str(),
+        }
+    }
+
     /// Resolves the canonical Arcweft type name for an entity family.
     #[must_use]
     pub fn from_type_name(name: &str) -> Option<Self> {
@@ -966,6 +1011,56 @@ mod speaker_line_tests {
             None
         );
         assert_eq!(EntityKind::from_type_name("Plugin"), None);
+    }
+
+    #[test]
+    fn entity_family_labels_are_owned_by_the_semantic_kind() {
+        assert_eq!(
+            EntityKind::AUTHORED_FAMILIES
+                .iter()
+                .map(EntityKind::as_str)
+                .collect::<Vec<_>>(),
+            [
+                "agent",
+                "entry",
+                "flow",
+                "choice",
+                "choice_option",
+                "character",
+                "view",
+                "action",
+                "activity",
+                "dialogue_line",
+                "text",
+                "content",
+                "input",
+                "button",
+                "style",
+                "asset",
+                "image",
+                "animation",
+                "capture",
+                "hook",
+                "signal",
+                "metric",
+                "scene",
+                "source",
+                "test",
+                "bench",
+                "layer",
+                "voice",
+                "se",
+                "bgm",
+                "audio_bus",
+                "mixer_snapshot",
+                "ducking",
+                "motion",
+                "rig",
+                "slot",
+                "target",
+            ]
+        );
+        assert_eq!(EntityKind::Other("plugin".to_owned()).as_str(), "plugin");
     }
 
     #[test]

@@ -7,8 +7,6 @@ use arcweft_agent_protocol::protocol::{
 use arcweft_lang_sema::project_index::ProjectSemanticIndex;
 use arcweft_source::SourceAnchor;
 
-use crate::agent_effects::entity_kind_label;
-
 /// Builds the Agent artifact entity compatibility snapshot for a project index.
 pub fn agent_required_entities_from_project(
     project: &ProjectSemanticIndex,
@@ -34,7 +32,7 @@ fn required_agent_entity(
 ) -> Result<RequiredEntity, arcweft_agent_protocol::ids::IdentifierError> {
     Ok(RequiredEntity {
         public_id: AgentPublicId::new(entity.id().as_str().to_owned())?,
-        kind: entity_kind_label(entity.ty().kind()).to_owned(),
+        kind: entity.ty().kind().as_str().to_owned(),
         semantic_hash: StableHash::new(entity.semantic_hash().as_str().to_owned())?,
         source_anchor: required_entity_source_anchor(entity.source()),
     })
@@ -69,13 +67,13 @@ fn agent_project_graph_symbols(
             symbol_id: agent_project_entity_symbol_id(entity.id().as_str()),
             public_id: Some(AgentPublicId::new(entity.id().as_str().to_owned())?),
             qualified_name: None,
-            kind: entity_kind_label(entity.ty().kind()).to_owned(),
+            kind: entity.ty().kind().as_str().to_owned(),
             semantic_hash: Some(entity.semantic_hash().as_str().to_owned()),
             flow_control,
             project_summary: None,
             summary: format!(
                 "{} entity `{}`{}",
-                entity_kind_label(entity.ty().kind()),
+                entity.ty().kind().as_str(),
                 entity.id().as_str(),
                 control_summary
             ),

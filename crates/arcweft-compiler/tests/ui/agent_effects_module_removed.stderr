@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_compiler::agent_effects`
+ --> tests/ui/agent_effects_module_removed.rs:1:5
+  |
+1 | use arcweft_compiler::agent_effects;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `agent_effects` in the root
