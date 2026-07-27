@@ -1,0 +1,23 @@
+error[E0599]: no method named `speaker_preset_entity_kind` found for reference `&arcweft_lang_sema::types::TypeKind` in the current scope
+ --> tests/ui/removed_zero_consumer_type_kind_helpers.rs:4:16
+  |
+4 |     let _ = ty.speaker_preset_entity_kind();
+  |                ^^^^^^^^^^^^^^^^^^^^^^^^^^ method not found in `&arcweft_lang_sema::types::TypeKind`
+
+error[E0599]: no method named `is_speaker_preset_for` found for reference `&arcweft_lang_sema::types::TypeKind` in the current scope
+ --> tests/ui/removed_zero_consumer_type_kind_helpers.rs:5:16
+  |
+5 |     let _ = ty.is_speaker_preset_for(&EntityKind::Character);
+  |                ^^^^^^^^^^^^^^^^^^^^^ method not found in `&arcweft_lang_sema::types::TypeKind`
+
+error[E0599]: no method named `is_unsigned_integer` found for reference `&arcweft_lang_sema::types::TypeKind` in the current scope
+ --> tests/ui/removed_zero_consumer_type_kind_helpers.rs:9:16
+  |
+9 |     let _ = ty.is_unsigned_integer();
+  |                ^^^^^^^^^^^^^^^^^^^
+  |
+help: there is a method `is_signed_integer` with a similar name
+  |
+9 -     let _ = ty.is_unsigned_integer();
+9 +     let _ = ty.is_signed_integer();
+  |

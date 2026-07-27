@@ -37,3 +37,9 @@ fn associated_capacity_no_runtime_receiver_injection() {
     cases.compile_fail("tests/ui/associated_type_receiver_requires_nominal_proof.rs");
     cases.compile_fail("tests/ui/resolved_callable_constructor_is_internal.rs");
 }
+
+#[test]
+fn removed_zero_consumer_type_helpers_are_unavailable() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/removed_zero_consumer_type_kind_helpers.rs");
+}

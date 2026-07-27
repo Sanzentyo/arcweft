@@ -424,21 +424,6 @@ impl EntityType {
 }
 
 impl TypeKind {
-    /// Returns the entity family carried by an actual semantic preset type.
-    #[must_use]
-    pub const fn speaker_preset_entity_kind(&self) -> Option<&EntityKind> {
-        match self {
-            Self::SpeakerPreset(kind) => Some(kind),
-            _ => None,
-        }
-    }
-
-    /// Reports whether this semantic preset targets the expected entity family.
-    #[must_use]
-    pub fn is_speaker_preset_for(&self, expected: &EntityKind) -> bool {
-        self.speaker_preset_entity_kind() == Some(expected)
-    }
-
     /// Classifies only the semantic types accepted by speaker-line sugar.
     #[must_use]
     pub fn speaker_line_classification(&self) -> Option<SpeakerLineType> {
@@ -859,14 +844,6 @@ impl TypeKind {
         matches!(
             self,
             Self::I8 | Self::I16 | Self::I32 | Self::I64 | Self::I128 | Self::ISize
-        )
-    }
-
-    #[must_use]
-    pub const fn is_unsigned_integer(&self) -> bool {
-        matches!(
-            self,
-            Self::U8 | Self::U16 | Self::U32 | Self::U64 | Self::U128 | Self::USize
         )
     }
 
