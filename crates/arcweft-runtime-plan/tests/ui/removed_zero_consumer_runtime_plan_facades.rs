@@ -3,7 +3,7 @@ use arcweft_runtime_plan::{
     flow::{RuntimePlanLowerOptions, lower_runtime_plan},
     fx::lower_fx_definitions,
     host_request, labels, pattern, render_text, source,
-    typed_evidence::RuntimeTypedExpressionId,
+    typed_evidence::{RuntimeTypedExpressionId, RuntimeTypedLoweringEvidenceKind},
 };
 
 fn removed_options(options: &RuntimePlanLowerOptions) {
@@ -13,6 +13,10 @@ fn removed_options(options: &RuntimePlanLowerOptions) {
 
 fn removed_expression_id(id: RuntimeTypedExpressionId) {
     let _ = id.index();
+}
+
+fn removed_expected_function_arity() {
+    let _ = RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: 1 };
 }
 
 fn main() {}

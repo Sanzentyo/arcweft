@@ -42,7 +42,7 @@ pub enum RuntimeTypedLoweringEvidenceKind {
         partial: bool,
     },
     /// An expression was checked in a function-typed expected context.
-    ExpectedFunctionValue { arity: usize },
+    ExpectedFunctionValue,
     /// A top-level function path was referenced as a runtime function value.
     FunctionValueReference { callee: String },
     /// A direct named function signature call returned a partial function.
@@ -230,7 +230,7 @@ impl<'a> RuntimeTypedLoweringEvidenceLookup<'a> {
             self.matches_expression(evidence, expression_id)
                 && matches!(
                     evidence.kind,
-                    RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { .. }
+                    RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue
                 )
         })
     }

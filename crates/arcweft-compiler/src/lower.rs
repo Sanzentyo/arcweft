@@ -119,8 +119,8 @@ fn runtime_typed_lowering_evidence(
                 arg_count: *arg_count,
                 partial: *partial,
             },
-            TypedLoweringEvidenceKind::ExpectedFunctionValue { arity, .. } => {
-                RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: *arity }
+            TypedLoweringEvidenceKind::ExpectedFunctionValue { .. } => {
+                RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue
             }
             TypedLoweringEvidenceKind::FunctionValueReference { callee, .. } => {
                 RuntimeTypedLoweringEvidenceKind::FunctionValueReference {

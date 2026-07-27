@@ -128,3 +128,11 @@ error[E0599]: no method named `index` found for struct `RuntimeTypedExpressionId
    |
 15 |     let _ = id.index();
    |                ^^^^^ method not found in `RuntimeTypedExpressionId`
+
+error[E0559]: variant `RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue` has no field named `arity`
+  --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:19:71
+   |
+19 |     let _ = RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: 1 };
+   |                                                                       ^^^^^ `RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue` does not have this field
+   |
+   = note: all struct fields are already assigned
