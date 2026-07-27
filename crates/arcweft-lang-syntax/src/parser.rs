@@ -170,7 +170,7 @@ pub(crate) fn parse_callback_block_expr_body_recovering_at(
 /// parsing, including recoverable text diagnostics with content-relative
 /// ranges. An owning expression or document parser supplies source projection.
 #[must_use]
-pub fn parse_dialogue_content(raw: impl Into<String>) -> DialogueContent {
+pub(crate) fn parse_dialogue_content(raw: impl Into<String>) -> DialogueContent {
     let raw = raw.into();
     let parsed = parse_dialogue_text(&raw);
     let source_map = DialogueContentSourceMap::identity(raw.len(), 0);

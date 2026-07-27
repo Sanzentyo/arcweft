@@ -1,13 +1,57 @@
-error[E0432]: unresolved imports `arcweft_lang_syntax::cst::path`, `arcweft_lang_syntax::types::parse_where_clause_list`
- --> tests/ui/removed_unused_syntax_facades.rs:2:10
+error[E0432]: unresolved imports `arcweft_lang_syntax::cst::path`, `arcweft_lang_syntax::text::parse_dialogue_tokens`, `arcweft_lang_syntax::types::parse_where_clause_list`
+ --> tests/ui/removed_unused_syntax_facades.rs:3:10
   |
-2 |     cst::path::cst_path_roots,
+3 |     cst::path::cst_path_roots,
   |          ^^^^ could not find `path` in `cst`
-3 |     types::parse_where_clause_list,
+...
+6 |     text::parse_dialogue_tokens,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_dialogue_tokens` in `text`
+7 |     types::parse_where_clause_list,
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_where_clause_list` in `types`
   |
 help: a similar name exists in the module
   |
-3 -     types::parse_where_clause_list,
-3 +     types::parse_where_clauses_at,
+6 -     text::parse_dialogue_tokens,
+6 +     text::parse_dialogue_text,
   |
+help: a similar name exists in the module
+  |
+7 -     types::parse_where_clause_list,
+7 +     types::parse_where_clauses_at,
+  |
+
+error[E0603]: function `cst_lines_for_source` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:2:10
+  |
+2 |     cst::cst_lines_for_source,
+  |          ^^^^^^^^^^^^^^^^^^^^ private function
+  |
+note: the function `cst_lines_for_source` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) fn cst_lines_for_source<'a>(root: &SyntaxNode, source: &'a str) -> CstLineEvents<'a> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: function `parse_flat_fence` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:4:16
+  |
+4 |     cst::text::parse_flat_fence,
+  |                ^^^^^^^^^^^^^^^^ private function
+  |
+note: the function `parse_flat_fence` is defined here
+ --> src/cst/text.rs
+  |
+  | pub(crate) fn parse_flat_fence(source: &str) -> Option<FlatFence<'_>> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: function `parse_dialogue_content` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:5:13
+  |
+5 |     parser::parse_dialogue_content,
+  |             ^^^^^^^^^^^^^^^^^^^^^^ private function
+  |
+note: the function `parse_dialogue_content` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) fn parse_dialogue_content(raw: impl Into<String>) -> DialogueContent {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

@@ -356,9 +356,10 @@ with {
 
 #[test]
 fn dialogue_tokenizer_covers_content_interpolations_and_escapes() {
-    let tokens = parse_dialogue_tokens(
+    let tokens = parse_dialogue_text(
         r#"今日は\｜少し、｜変な夢《へんなゆめ》#[fmt("夢", color=blue)][p][mark .release]"#,
-    );
+    )
+    .into_tokens();
 
     assert!(tokens.iter().any(|token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")));
     assert!(tokens.iter().any(
@@ -378,9 +379,10 @@ fn dialogue_tokenizer_covers_content_interpolations_and_escapes() {
 
 #[test]
 fn dialogue_tokenizer_normalizes_bracket_ruby_to_ruby_token() {
-    let tokens = parse_dialogue_tokens(
+    let tokens = parse_dialogue_text(
         r#"今日は少しだけ、[ruby rt="へんなゆめ"]変な夢[/ruby]を見たんだ。[p]"#,
-    );
+    )
+    .into_tokens();
 
     assert!(tokens.iter().any(
             |token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")
@@ -402,9 +404,10 @@ fn dialogue_tokenizer_normalizes_bracket_ruby_to_ruby_token() {
 
 #[test]
 fn dialogue_tokenizer_normalizes_ascii_ruby_forms_to_ruby_token() {
-    let tokens = parse_dialogue_tokens(
+    let tokens = parse_dialogue_text(
         "今日は|[変な夢](へんなゆめ)と|悪夢{あくむ}と[rb rt=まぼろし]幻[/rb]を見た。[p]",
-    );
+    )
+    .into_tokens();
 
     assert!(tokens.iter().any(
         |token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")
@@ -432,9 +435,10 @@ fn dialogue_tokenizer_reports_invalid_compact_ruby_without_consuming_text() {
 
 #[test]
 fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
-    let tokens = parse_dialogue_tokens(
+    let tokens = parse_dialogue_text(
         r"$(player_name)[! flash(color=#ffffff)][.keyword][w 500ms][page][wait][nl][em:夢][strong:声][color #a8b5ff:夜][raw: [p] literal][p]",
-    );
+    )
+    .into_tokens();
 
     assert!(tokens.iter().any(
         |token| matches!(token, DialogueToken::Expr(expr) if matches!(expr.expr(), Expr::Path(path) if path == "player_name"))
@@ -497,7 +501,7 @@ fn dialogue_tokenizer_normalizes_authoring_sugar_tags() {
 
 #[test]
 fn dialogue_wait_duration_is_typed_at_the_language_boundary() {
-    let tokens = parse_dialogue_tokens("[w 125ms][w time=0.5s][w 2s]");
+    let tokens = parse_dialogue_text("[w 125ms][w time=0.5s][w 2s]").into_tokens();
     let durations = tokens
         .iter()
         .filter_map(|token| match token {
@@ -510,7 +514,8 @@ fn dialogue_wait_duration_is_typed_at_the_language_boundary() {
 
     assert_eq!(durations, [125, 500, 2_000]);
 
-    let speeds = parse_dialogue_tokens("[speed slow][speed cps=28.5][speed fast]")
+    let speeds = parse_dialogue_text("[speed slow][speed cps=28.5][speed fast]")
+        .into_tokens()
         .into_iter()
         .filter_map(|token| match token {
             DialogueToken::Tag(tag) if tag.name() == "speed" => {
@@ -699,7 +704,8 @@ flow @flow.opening opening {
 #[test]
 fn dialogue_tokenizer_normalizes_function_ruby_to_ruby_token() {
     let tokens =
-        parse_dialogue_tokens(r#"今日は少しだけ、#[ruby("変な夢", "へんなゆめ")]を見たんだ。[p]"#);
+        parse_dialogue_text(r#"今日は少しだけ、#[ruby("変な夢", "へんなゆめ")]を見たんだ。[p]"#)
+            .into_tokens();
 
     assert!(tokens.iter().any(
             |token| matches!(token, DialogueToken::Ruby { base, ruby } if base == "変な夢" && ruby == "へんなゆめ")
@@ -716,7 +722,7 @@ fn dialogue_tokenizer_normalizes_function_ruby_to_ruby_token() {
 
 #[test]
 fn dialogue_tokenizer_preserves_escaped_brackets_hash_and_braces() {
-    let tokens = parse_dialogue_tokens(r"\[literal\] \#not_expr \{cue\}");
+    let tokens = parse_dialogue_text(r"\[literal\] \#not_expr \{cue\}").into_tokens();
 
     assert!(matches!(tokens[0], DialogueToken::Escape('[')));
     assert!(matches!(tokens[2], DialogueToken::Escape(']')));
@@ -732,7 +738,7 @@ fn dialogue_tokenizer_preserves_escaped_brackets_hash_and_braces() {
 
 #[test]
 fn dialogue_tokenizer_preserves_raw_spans_without_inner_parsing() {
-    let tokens = parse_dialogue_tokens("[raw]これは[p]も#[expr]も文字。[/raw][p]");
+    let tokens = parse_dialogue_text("[raw]これは[p]も#[expr]も文字。[/raw][p]").into_tokens();
 
     assert!(matches!(
         &tokens[0],
@@ -748,7 +754,7 @@ fn dialogue_tokenizer_preserves_raw_spans_without_inner_parsing() {
         Some(DialogueToken::Tag(tag)) if tag.name() == "p"
     ));
 
-    let block = parse_dialogue_tokens("[raw]\n[p] も文字として表示する。\n[/raw]");
+    let block = parse_dialogue_text("[raw]\n[p] も文字として表示する。\n[/raw]").into_tokens();
     assert!(matches!(
         &block[0],
         DialogueToken::Raw(raw) if raw.contains("[p] も文字")

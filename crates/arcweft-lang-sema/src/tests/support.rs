@@ -40,7 +40,7 @@ pub(super) use arcweft_lang_syntax::{
     lint::{SyntaxLintCode, lint_id_policy},
     parser::{ParseOptions, parse_document_with_source, recovery::ParseError},
     reference::BorrowKind,
-    text::{parse_dialogue_text, parse_dialogue_tokens},
+    text::parse_dialogue_text,
     types::{TypeRef, parse_fn_signature, parse_type_ref},
 };
 

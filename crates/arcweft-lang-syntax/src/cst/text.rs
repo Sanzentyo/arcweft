@@ -60,7 +60,7 @@ pub(crate) fn take_doc_comment_prefix(source: &str) -> Option<CstDocPrefix> {
     (!lines.is_empty()).then_some(CstDocPrefix { lines, consumed })
 }
 /// Parses a flat fence line while preserving the byte offset of the fence head.
-pub fn parse_flat_fence(source: &str) -> Option<FlatFence<'_>> {
+pub(crate) fn parse_flat_fence(source: &str) -> Option<FlatFence<'_>> {
     let trimmed_offset = leading_byte_len(source);
     let trimmed = source.trim();
     let inner_source = trimmed.strip_prefix("===")?.strip_suffix("===")?;

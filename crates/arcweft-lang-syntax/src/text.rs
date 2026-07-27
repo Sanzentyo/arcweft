@@ -79,15 +79,6 @@ impl DialogueTextDiagnosticCode {
     }
 }
 
-/// Parses dialogue-text mode into tokens.
-///
-/// This tokenizer is deliberately permissive: malformed tags are kept as text
-/// so the higher-level parser can continue and attach diagnostics to the
-/// surrounding line.
-pub fn parse_dialogue_tokens(source: &str) -> Vec<DialogueToken> {
-    parse_dialogue_text(source).into_tokens()
-}
-
 /// Parses dialogue-text mode into tokens and recoverable diagnostics.
 ///
 /// Dialogue text has its own markup surface. This parser keeps malformed
