@@ -159,7 +159,8 @@ flow main() -> i64 {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("pipe fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("pipe fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("pipe expressions are typecheck-ready");
     let choice = TypeKind::Named("Choice".to_owned());
     let choices = TypeKind::Vec(Box::new(choice.clone()));
@@ -229,7 +230,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("placeholder fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("placeholder fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("placeholder expression is structured");
 
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())

@@ -16,7 +16,7 @@ ensures no_effect network.request
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     assert_eq!(flow.contracts().len(), 5);
@@ -55,7 +55,7 @@ assume external_plugin_is_deterministic
 ",
     );
 
-    let Item::Function(function) = &tree.items()[0] else {
+    let Item::Function(function) = &tree.typed_tree().items()[0] else {
         panic!("expected function item");
     };
     assert_eq!(function.contracts().len(), 6);
@@ -103,7 +103,7 @@ effects { asset.read }
 ",
     );
 
-    let Item::Function(function) = &tree.items()[0] else {
+    let Item::Function(function) = &tree.typed_tree().items()[0] else {
         panic!("expected function item");
     };
     assert_eq!(function.visibility(), Some(Visibility::Public));
@@ -146,7 +146,8 @@ ensures no_effect network.request
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("contract typecheck fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("contract typecheck fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("delta", TypeKind::I64)
         .with_symbol("progress", TypeKind::F64)

@@ -134,7 +134,7 @@ fn span(range: &TextRange) -> ManifestSpan {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
 
     #[test]
@@ -154,7 +154,8 @@ bench @bench.opening {
 "#,
         );
         assert!(parsed.errors().is_empty());
-        let hir = lower_to_hir(&parsed.into_typed_tree()).expect("HIR lowers");
+        let hir =
+            lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("HIR lowers");
         let manifest = collect_script_tests(&hir);
 
         assert_eq!(manifest.tests[0].id, "test.opening");

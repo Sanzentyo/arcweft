@@ -34,7 +34,8 @@ flow @flow.call_value call_value {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("function value call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("function value call fixture lowers");
     validate_typecheck_ready(&hir).expect("function value call fixture is structured");
     let env =
         TypeCheckEnv::new().with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool));
@@ -84,7 +85,8 @@ flow @flow.partial_call partial_call {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("partial function value fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial function value fixture lowers");
     validate_typecheck_ready(&hir).expect("partial function value fixture is structured");
     let env = TypeCheckEnv::new().with_symbol(
         "f",
@@ -143,7 +145,8 @@ flow @flow.local_function_alias local_function_alias {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("top-level function value fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("top-level function value fixture lowers");
     validate_typecheck_ready(&hir).expect("top-level function value fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -202,7 +205,8 @@ flow @flow.local_pipe local_pipe {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("local pipe fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("local pipe fixture lowers");
     validate_typecheck_ready(&hir).expect("local pipe fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -274,7 +278,8 @@ flow @flow.curried_pipe curried_pipe {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried pipe fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried pipe fixture lowers");
     validate_typecheck_ready(&hir).expect("curried pipe fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -311,7 +316,8 @@ flow @flow.flattened_curried_pipe flattened_curried_pipe {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("flattened curried pipe fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("flattened curried pipe fixture lowers");
     validate_typecheck_ready(&hir).expect("flattened curried pipe fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -336,7 +342,8 @@ flow @flow.pipe_capture pipe_capture {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("pipe capture fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("pipe capture fixture lowers");
     validate_typecheck_ready(&hir).expect("pipe capture fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -378,7 +385,8 @@ flow @flow.curried curried {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried function fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried function fixture lowers");
     validate_typecheck_ready(&hir).expect("curried function fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -418,7 +426,8 @@ flow @flow.curried_spread_literal_group curried_spread_literal_group {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried literal spread fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried literal spread fixture lowers");
     validate_typecheck_ready(&hir).expect("curried literal spread fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -458,7 +467,8 @@ flow @flow.curried_spread_later_group curried_spread_later_group {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried later spread fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried later spread fixture lowers");
     validate_typecheck_ready(&hir).expect("curried later spread fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -510,7 +520,8 @@ flow @flow.curried_spread_first_group curried_spread_first_group {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried first-group spread fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried first-group spread fixture lowers");
     validate_typecheck_ready(&hir).expect("curried first-group spread fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -554,7 +565,8 @@ flow @flow.function_value_named_arg function_value_named_arg {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("function-value named arg fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("function-value named arg fixture lowers");
     validate_typecheck_ready(&hir).expect("function-value named arg fixture is structured");
     let env =
         TypeCheckEnv::new().with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool));
@@ -603,7 +615,8 @@ flow @flow.function_value_arity function_value_arity {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("function-value arity fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("function-value arity fixture lowers");
     validate_typecheck_ready(&hir).expect("function-value arity fixture is structured");
     let env =
         TypeCheckEnv::new().with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool));
@@ -646,7 +659,8 @@ flow @flow.function_value_arg_type function_value_arg_type {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("function-value argument fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("function-value argument fixture lowers");
     validate_typecheck_ready(&hir).expect("function-value argument fixture is structured");
     let env =
         TypeCheckEnv::new().with_symbol("f", TypeKind::function([TypeKind::I64], TypeKind::Bool));
@@ -685,7 +699,8 @@ flow @flow.partial_pure partial_pure {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("pure partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("pure partial fixture lowers");
     validate_typecheck_ready(&hir).expect("pure partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -726,7 +741,8 @@ flow @flow.partial_non_pure partial_non_pure {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("non-pure partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("non-pure partial fixture lowers");
     validate_typecheck_ready(&hir).expect("non-pure partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -783,7 +799,8 @@ flow @flow.fixed_literal_spread_signature_call fixed_literal_spread_signature_ca
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("fixed literal spread signature fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("fixed literal spread signature fixture lowers");
     validate_typecheck_ready(&hir).expect("fixed literal spread signature fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -838,7 +855,8 @@ flow @flow.bad_partial_statement bad_partial_statement {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("bare partial statement fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bare partial statement fixture lowers");
     validate_typecheck_ready(&hir).expect("bare partial statement fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -881,7 +899,8 @@ flow @flow.curried_samples curried_samples {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried sample fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried sample fixture lowers");
     validate_typecheck_ready(&hir).expect("curried sample fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -947,7 +966,8 @@ flow @flow.curried_flattened curried_flattened {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried flattened fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried flattened fixture lowers");
     validate_typecheck_ready(&hir).expect("curried flattened fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -988,7 +1008,8 @@ flow @flow.curried_function_kind_calls curried_function_kind_calls {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("curried ordinary-function fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried ordinary-function fixture lowers");
     validate_typecheck_ready(&hir).expect("curried ordinary-function fixture is structured");
     assert_eq!(
         hir.functions()
@@ -1120,7 +1141,8 @@ flow @flow.closure_return closure_return {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure return fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure return fixture lowers");
     validate_typecheck_ready(&hir).expect("closure return fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1153,7 +1175,8 @@ fn closure_tuple_pattern() -> i64 {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure tuple pattern fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure tuple pattern fixture lowers");
     validate_typecheck_ready(&hir).expect("closure tuple pattern fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1188,7 +1211,8 @@ fn closure_discard_parameter() -> i64 {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure discard fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure discard fixture lowers");
     validate_typecheck_ready(&hir).expect("closure discard fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1213,7 +1237,8 @@ flow @flow.closure_capture_inventory closure_capture_inventory {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure capture fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure capture fixture lowers");
     validate_typecheck_ready(&hir).expect("closure capture fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1260,7 +1285,8 @@ flow @flow.closure_numeric_fallback closure_numeric_fallback {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure numeric fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure numeric fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("closure numeric fallback fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1296,7 +1322,8 @@ flow @flow.closure_numeric_explicit closure_numeric_explicit {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("explicit closure numeric fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("explicit closure numeric fixture lowers");
     validate_typecheck_ready(&hir).expect("explicit closure numeric fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1329,7 +1356,8 @@ flow @flow.closure_borrow_capture closure_borrow_capture {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure borrowed capture fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure borrowed capture fixture lowers");
     validate_typecheck_ready(&hir).expect("closure borrowed capture fixture is structured");
 
     let report = analyze_types(&hir, &borrow_capture_env());
@@ -1368,7 +1396,8 @@ flow @flow.closure_value_capture closure_value_capture {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure value capture fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure value capture fixture lowers");
     validate_typecheck_ready(&hir).expect("closure value capture fixture is structured");
     let env = TypeCheckEnv::new().with_function("load_avatar", load_avatar_need_ty());
 
@@ -1397,7 +1426,8 @@ flow @flow.closure_borrow_capture_boundaries closure_borrow_capture_boundaries {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure borrowed boundary fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure borrowed boundary fixture lowers");
     validate_typecheck_ready(&hir).expect("closure borrowed boundary fixture is structured");
 
     let report = analyze_types(&hir, &borrow_capture_env());
@@ -1435,7 +1465,8 @@ flow @flow.closure_borrow_capture_yield closure_borrow_capture_yield {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure borrowed yield fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure borrowed yield fixture lowers");
     validate_typecheck_ready(&hir).expect("closure borrowed yield fixture is structured");
 
     let report = analyze_types(
@@ -1471,7 +1502,8 @@ flow @flow.closure_return_mismatch closure_return_mismatch {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure mismatch fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure mismatch fixture lowers");
     validate_typecheck_ready(&hir).expect("closure mismatch fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1496,7 +1528,8 @@ fn closure_boundary() -> i64 {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure boundary fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure boundary fixture lowers");
     validate_typecheck_ready(&hir).expect("closure boundary fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1544,7 +1577,8 @@ flow @flow.curried_closure_return curried_closure_return {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried closure return fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried closure return fixture lowers");
     validate_typecheck_ready(&hir).expect("curried closure return fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1606,7 +1640,8 @@ flow @flow.partial_infer partial_infer {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("inferred partial placeholder fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("inferred partial placeholder fixture lowers");
     validate_typecheck_ready(&hir).expect("inferred partial placeholder fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1653,7 +1688,8 @@ flow @flow.partial_infer_grouped partial_infer_grouped {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("grouped inferred partial placeholder fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("grouped inferred partial placeholder fixture lowers");
     validate_typecheck_ready(&hir).expect("grouped partial placeholder fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1686,7 +1722,8 @@ flow @flow.partial_call partial_call {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("partial call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial call fixture lowers");
     validate_typecheck_ready(&hir).expect("partial call fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1719,7 +1756,8 @@ flow @flow.partial_call_repeated partial_call_repeated {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("repeated partial call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("repeated partial call fixture lowers");
     validate_typecheck_ready(&hir).expect("repeated partial call fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1771,7 +1809,8 @@ flow @flow.partial_call_named partial_call_named {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("named partial call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("named partial call fixture lowers");
     validate_typecheck_ready(&hir).expect("named partial call fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1823,7 +1862,8 @@ flow @flow.partial_call_spread_placeholder partial_call_spread_placeholder {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("spread placeholder partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("spread placeholder partial fixture lowers");
     validate_typecheck_ready(&hir).expect("spread placeholder partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1872,7 +1912,8 @@ flow @flow.partial_call_spread_only partial_call_spread_only {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("spread-only partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("spread-only partial fixture lowers");
     validate_typecheck_ready(&hir).expect("spread-only partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1921,7 +1962,8 @@ flow @flow.partial_call_named_spread partial_call_named_spread {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("named spread partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("named spread partial fixture lowers");
     validate_typecheck_ready(&hir).expect("named spread partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -1970,7 +2012,8 @@ flow @flow.partial_call_spread_then_positional partial_call_spread_then_position
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("spread-before-positional partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("spread-before-positional partial fixture lowers");
     validate_typecheck_ready(&hir).expect("spread-before-positional partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -2019,7 +2062,8 @@ flow @flow.partial_call_spread_then_named partial_call_spread_then_named {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("spread-before-named partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("spread-before-named partial fixture lowers");
     validate_typecheck_ready(&hir).expect("spread-before-named partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -2069,7 +2113,8 @@ flow @flow.partial_call_multiple_spreads partial_call_multiple_spreads {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("multiple-spread partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("multiple-spread partial fixture lowers");
     validate_typecheck_ready(&hir).expect("multiple-spread partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
@@ -2119,7 +2164,8 @@ flow @flow.partial_named_missing partial_named_missing {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("named missing partial fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("named missing partial fixture lowers");
     validate_typecheck_ready(&hir).expect("named missing partial fixture is structured");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());

@@ -13,7 +13,7 @@ flow @flow.opening opening {
 "#,
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Choice(choice) = &flow.body()[0] else {
@@ -182,7 +182,8 @@ choice @choice.opening.first {
         "flow.quiet_intro"
     );
 
-    let hir = lower_to_hir(&tree).expect("choice match lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("choice match lowers");
     validate_typecheck_ready(&hir).expect("choice match is typecheck-ready");
     let env = TypeCheckEnv::new()
         .with_symbol(
@@ -204,7 +205,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("choice with raw item lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("choice with raw item lowers");
     let errors = validate_typecheck_ready(&hir).expect_err("raw choice item is rejected");
 
     assert!(
@@ -321,7 +323,8 @@ choice @choice.opening.routes {
 ",
     );
 
-    let hir = lower_to_hir(&tree).expect("dynamic choice option fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("dynamic choice option fixture lowers");
     validate_typecheck_ready(&hir).expect("dynamic choice option fixture is typecheck-ready");
     let env = TypeCheckEnv::new()
         .with_symbol("state", TypeKind::Named("GameState".to_owned()))
@@ -342,7 +345,8 @@ choice @choice.opening.routes {
 "#,
     );
 
-    let hir = lower_to_hir(&tree).expect("choice with dynamic compact arm lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("choice with dynamic compact arm lowers");
     let errors =
         validate_typecheck_ready(&hir).expect_err("dynamic compact arm is not typecheck-ready");
 
@@ -393,7 +397,8 @@ flow @flow.opening opening() -> Result<FlowExit, FlowError> {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("choice plan lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("choice plan lowers");
     validate_typecheck_ready(&hir).expect("choice plan bodies have structured expressions");
     let env = TypeCheckEnv::new()
         .with_function("FlowExit.Goto", TypeKind::Named("FlowExit".to_owned()))
@@ -423,7 +428,7 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Choice(choice) = &flow.body()[0] else {
@@ -438,7 +443,8 @@ flow @flow.opening opening {
             )
     ));
 
-    let hir = lower_to_hir(&tree).expect("choice option select block lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("choice option select block lowers");
     validate_typecheck_ready(&hir).expect("choice option select block is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -479,13 +485,19 @@ flow @flow.quiet_intro quiet_intro {}
     );
 
     assert_eq!(
-        tree.module().expect("module").path(),
+        tree.typed_tree().module().expect("module").path(),
         "crate.game.routes.opening"
     );
-    assert_eq!(tree.uses()[0].tree().source(), "self.characters.{alice}");
-    assert_eq!(tree.uses()[1].tree().source(), "super.common.{route_gate}");
+    assert_eq!(
+        tree.typed_tree().uses()[0].tree().source(),
+        "self.characters.{alice}"
+    );
+    assert_eq!(
+        tree.typed_tree().uses()[1].tree().source(),
+        "super.common.{route_gate}"
+    );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Scope(scope) = &flow.body()[0] else {
@@ -498,7 +510,8 @@ flow @flow.quiet_intro quiet_intro {}
     assert!(choice.id().expect("choice id").is_relative());
     assert!(choice.options()[0].id().expect("option id").is_relative());
 
-    let hir = lower_to_hir(&tree).expect("relative choice ids lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("relative choice ids lower");
     let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
         panic!("expected HIR scope");
     };
@@ -547,7 +560,7 @@ flow @flow.quiet_intro quiet_intro {
 "#,
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected source flow");
     };
     let FlowItem::Stmt(Stmt::LetChoice { pattern, choice }) = &flow.body()[0] else {
@@ -556,7 +569,8 @@ flow @flow.quiet_intro quiet_intro {
     assert_eq!(pattern, &Pattern::Ident("next_flow".to_owned()));
     assert!(choice.id().expect("choice id").is_relative());
 
-    let hir = lower_to_hir(&tree).expect("choice expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("choice expression fixture lowers");
     let HirFlowItem::LetChoice { pattern, choice } = &hir.flows()[0].body()[0] else {
         panic!("expected HIR choice expression binding");
     };
@@ -601,7 +615,8 @@ flow @flow.alice_intro alice_intro {}
 "#,
     );
 
-    let hir = lower_to_hir(&tree).expect("parent relative choice ids lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("parent relative choice ids lower");
     let HirFlowItem::Scope(outer) = &hir.flows()[0].body()[0] else {
         panic!("expected outer scope");
     };

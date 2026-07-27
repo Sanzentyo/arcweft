@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use arcweft_lang_hir::{
-    lower::{lower_document_to_hir, lower_to_hir},
+    lower::lower_document_to_hir,
     project::{HirProject, HirProjectModule},
     symbol::{CallablePackageId, ProjectSymbolWorldId},
 };
@@ -12,12 +12,15 @@ use arcweft_lang_sema::registration::{
     CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
 };
 use arcweft_lang_sema::types::TypeKind;
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source, parse_source},
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 fn diagnostics(source: &str) -> Vec<TypeCheckErrorKind> {
-    let tree = parse_source(source).into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("HIR lowers");
+    let tree = parse_source(source);
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("HIR lowers");
     analyze_types(&hir, &TypeCheckEnv::standard())
         .diagnostics
         .into_iter()
@@ -34,13 +37,14 @@ fn registered_report(source: &str) -> arcweft_lang_sema::checker::TypeCheckRepor
         )
         .expect("source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(
         parsed.errors().is_empty(),
         "trait nominal fixture must parse: {:?}",
         parsed.errors()
     );
-    let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("fixture lowers");
+    let hir =
+        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let package = CallablePackageId::try_new("trait-nominal").expect("package");
     let project = HirProject::new(
         package.as_str(),

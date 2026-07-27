@@ -17,14 +17,14 @@ bench @bench.opening {
     );
 
     assert!(matches!(
-        &tree.items()[0],
+        &tree.typed_tree().items()[0],
         Item::Test(item)
             if item.id().body() == "test.opening"
                 && item.kind() == &TestKind::Scenario
                 && item.body().contains("goto @flow.opening")
     ));
     assert!(matches!(
-        &tree.items()[1],
+        &tree.typed_tree().items()[1],
         Item::Bench(item)
             if item.id().body() == "bench.opening"
                 && item.body().contains("measure iterations")
@@ -45,7 +45,8 @@ bench @bench.choice {
 "#,
     );
 
-    let hir = lower_to_hir(&tree).expect("test and bench lower to HIR declarations");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("test and bench lower to HIR declarations");
     assert!(matches!(
         &hir.declarations()[0],
         HirTopLevelDecl::Test(item) if item.kind() == &TestKind::Visual
@@ -71,14 +72,14 @@ bench @bench:.opening {
     );
 
     assert!(matches!(
-        &tree.items()[0],
+        &tree.typed_tree().items()[0],
         Item::Test(item)
             if item.id().is_relative()
                 && item.id().family_relative_ref().is_some_and(|id| id.family() == "test")
                 && item.id().body() == "opening"
     ));
     assert!(matches!(
-        &tree.items()[1],
+        &tree.typed_tree().items()[1],
         Item::Bench(item)
             if item.id().is_relative()
                 && item.id().family_relative_ref().is_some_and(|id| id.family() == "bench")

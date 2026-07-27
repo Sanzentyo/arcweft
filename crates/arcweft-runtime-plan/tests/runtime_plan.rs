@@ -11,10 +11,7 @@ use arcweft_core::{
     value::{RuntimeCallTarget, RuntimeExpr, RuntimeValue},
 };
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
-use arcweft_lang_hir::{
-    lower::{lower_document_to_hir, lower_to_hir},
-    model::HirModule,
-};
+use arcweft_lang_hir::{lower::lower_document_to_hir, model::HirModule};
 use arcweft_lang_sema::{
     check::{
         ForIterationEvidenceFamily, StandardIteratorFamily, analyze_types, validate_typecheck_ready,
@@ -22,9 +19,9 @@ use arcweft_lang_sema::{
     env::TypeCheckEnv,
 };
 use arcweft_lang_syntax::{
-    ast::items::TypedSyntaxTree,
     expr::{Expr, parse_expr},
     parser::parse_source,
+    source::ParsedSource,
 };
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_plan::{
@@ -95,25 +92,20 @@ fn test_dialogue_revision() -> DialogueProfileRevision {
     )
 }
 
-fn parse_ok(source: impl Into<String>) -> TypedSyntaxTree {
+fn parse_ok(source: impl Into<String>) -> ParsedSource {
     let parsed = parse_source(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
         parsed.errors()
     );
-    parsed.into_typed_tree()
+    parsed
 }
 
 fn lower_bound(source: &str) -> HirModule {
-    let tree = parse_ok(source);
-    let document = SourceDocument::try_new(
-        SourceDocumentId::try_new("arcweft-test://runtime-plan/source").expect("document ID"),
-        SourceName::Generated,
-        source,
-    )
-    .expect("source document");
-    lower_document_to_hir(&document, &tree).expect("revision-bound source lowers to HIR")
+    let parsed = parse_ok(source);
+    lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("revision-bound source lowers to HIR")
 }
 
 fn call(callee: &str, args: &[&str]) -> LineEffectRequest {
@@ -166,7 +158,8 @@ flow test {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("HIR lowers");
+    let hir =
+        lower_document_to_hir(tree.document().as_ref(), tree.typed_tree()).expect("HIR lowers");
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
     let flow = &plan.flows[0];
 
@@ -203,7 +196,8 @@ flow test {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("HIR lowers");
+    let hir =
+        lower_document_to_hir(tree.document().as_ref(), tree.typed_tree()).expect("HIR lowers");
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
     let flow = &plan.flows[0];
 
@@ -253,7 +247,8 @@ flow test {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("HIR lowers");
+    let hir =
+        lower_document_to_hir(tree.document().as_ref(), tree.typed_tree()).expect("HIR lowers");
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
     let flow = &plan.flows[0];
 
@@ -314,7 +309,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("pure function call lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("pure function call lowers to HIR");
 
     lower_runtime_plan(&hir).expect("pure function call lowers to runtime plan");
 }
@@ -328,7 +324,8 @@ flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("entry lowers");
+    let hir =
+        lower_document_to_hir(tree.document().as_ref(), tree.typed_tree()).expect("entry lowers");
 
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with explicit entry");
     assert!(matches!(
@@ -348,7 +345,8 @@ flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("entry goto lowers");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("entry goto lowers");
 
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers with goto entry");
     assert!(matches!(
@@ -383,7 +381,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("runtime plan fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("runtime plan fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("runtime plan fixture is typecheck-ready");
 
     let groups = lower_line_task_groups(&hir).expect("line task group lowers");
@@ -488,7 +487,8 @@ flow @flow.unsupported unsupported {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("unsupported semantic item fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("unsupported semantic item fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("unsupported semantic item fixture is typecheck-ready");
 
     let groups = lower_line_task_groups(&hir).expect("line option lowers to runtime IR");
@@ -513,7 +513,8 @@ flow @flow.grouped grouped {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("group fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("group fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("group fixture is typecheck-ready");
 
     let groups = lower_line_task_groups(&hir).expect("grouped expressions lower");
@@ -549,7 +550,8 @@ flow @flow.effects effects {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("effect fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("effect fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("effect fixture is typecheck-ready");
 
     let groups = lower_line_task_groups(&hir).expect("structured effects lower");
@@ -589,7 +591,8 @@ flow @flow.semantic semantic {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("semantic line plan lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("semantic line plan lowers to HIR");
     validate_typecheck_ready(&hir).expect("semantic line plan is typecheck-ready");
 
     let groups = lower_line_task_groups(&hir).expect("semantic line plan items lower");
@@ -633,7 +636,8 @@ flow @flow.conflict conflict {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("conflict fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("conflict fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("conflict fixture is typecheck-ready");
 
     let errors = lower_line_task_groups(&hir).expect_err("conflicting writes are rejected");
@@ -659,7 +663,8 @@ flow @flow.append append {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("append fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("append fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("append fixture is typecheck-ready");
 
     lower_line_task_groups(&hir).expect("append-only effects do not conflict");
@@ -681,7 +686,8 @@ flow @flow.next next {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("flow fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("flow fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
 
@@ -714,7 +720,8 @@ flow @flow.line_handles line_handles {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("dialogue result let fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("dialogue result let fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("dialogue result let fixture is typecheck-ready");
 
     let source_groups =
@@ -771,7 +778,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("source fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("source fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("source runtime plan lowers");
 
@@ -808,7 +816,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("unsupported source fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("unsupported source fixture lowers to HIR");
 
     let errors = lower_runtime_plan(&hir).expect_err("unsupported source statement is rejected");
     assert!(errors.iter().any(|error| {
@@ -946,7 +955,12 @@ pub source @source.missing: Source<i64, String> {
 
 flow @flow.main main { return "done" }
 "#;
-    let missing_hir = lower_to_hir(&parse_ok(missing_source)).expect("missing fixture lowers");
+    let missing_parsed = parse_ok(missing_source);
+    let missing_hir = lower_document_to_hir(
+        missing_parsed.document().as_ref(),
+        missing_parsed.typed_tree(),
+    )
+    .expect("missing fixture lowers");
     let missing_errors =
         lower_runtime_plan(&missing_hir).expect_err("missing overflow is rejected");
     let missing = missing_errors
@@ -972,7 +986,12 @@ pub source @source.unknown: Source<i64, String> {
 
 flow @flow.main main { return "done" }
 "#;
-    let unknown_hir = lower_to_hir(&parse_ok(unknown_source)).expect("unknown fixture lowers");
+    let unknown_parsed = parse_ok(unknown_source);
+    let unknown_hir = lower_document_to_hir(
+        unknown_parsed.document().as_ref(),
+        unknown_parsed.typed_tree(),
+    )
+    .expect("unknown fixture lowers");
     let unknown_errors =
         lower_runtime_plan(&unknown_hir).expect_err("unknown overflow is rejected");
     let unknown = unknown_errors
@@ -1003,7 +1022,9 @@ pub source @source.duplicate: Source<i64, String> {
 
 flow @flow.main main { return "done" }
 "#;
-    let hir = lower_to_hir(&parse_ok(source)).expect("duplicate source fixture lowers");
+    let parsed = parse_ok(source);
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("duplicate source fixture lowers");
 
     let errors = lower_runtime_plan(&hir).expect_err("duplicate header is rejected");
     let duplicate = errors
@@ -1033,7 +1054,9 @@ pub source @source.private: Source<i64, String> {
 
 flow @flow.main main { return "done" }
 "#;
-    let hir = lower_to_hir(&parse_ok(source)).expect("private source fixture lowers");
+    let parsed = parse_ok(source);
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("private source fixture lowers");
 
     let errors = lower_runtime_plan(&hir).expect_err("private full replay is rejected");
     let incompatible = errors
@@ -1064,7 +1087,8 @@ flow @flow.range range() -> i32 {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("range for fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("range for fixture lowers to HIR");
     validate_typecheck_ready(&hir).expect("range for fixture is typecheck-ready");
     let typecheck = analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
@@ -1122,7 +1146,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("line-plan yield fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("line-plan yield fixture lowers to HIR");
 
     let errors = lower_line_task_groups(&hir).expect_err("line-plan yield is not a core effect");
     assert!(errors.iter().any(|error| {
@@ -1148,7 +1173,8 @@ flow @flow.alice_intro alice_intro {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("choice-await fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("choice-await fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("choice-await runtime plan lowers");
 
@@ -1177,7 +1203,8 @@ flow @flow.loading loading {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("typed host request fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("typed host request fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("typed host requests lower");
     let requests = plan.flows[0]
@@ -1218,7 +1245,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("family-relative asset call lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("family-relative asset call lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("family-relative asset call lowers");
     let FlowOp::Let { expr, .. } = &plan.flows[0].ops[0] else {
@@ -1241,7 +1269,8 @@ flow @flow.loading loading {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("spread host request fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("spread host request fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("spread host request lowers");
     let FlowOp::Await { target, .. } = &plan.flows[0].ops[1] else {
@@ -1306,7 +1335,9 @@ flow @flow.loading loading {
     let contents = try await fs.read_text(try next) with { pending p => progress.set(p.ratio) }
 }
 ";
-    let hir = lower_to_hir(&parse_ok(source)).expect("invalid let-await fixture lowers");
+    let parsed = parse_ok(source);
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("invalid let-await fixture lowers");
 
     let errors = lower_runtime_plan(&hir).expect_err("try argument is not a pure host value");
     let range = errors
@@ -1333,7 +1364,8 @@ flow @flow.loading loading {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("traverse parallel fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("traverse parallel fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("traverse parallel runtime plan lowers");
     let FlowOp::AwaitMany {
@@ -1367,7 +1399,8 @@ flow @flow.next next {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("runtime fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("runtime fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("typed runtime fixture lowers");
 
@@ -1395,7 +1428,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("pure call fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("pure call fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("pure call runtime plan lowers");
 
@@ -1421,7 +1455,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial function fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("partial function fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("partial function runtime plan lowers");
 
@@ -1476,7 +1511,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("local function fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("local function fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("local function runtime plan lowers");
 
@@ -1521,7 +1557,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure return fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("closure return fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("closure return runtime plan lowers");
 
@@ -1563,7 +1600,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("data format fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("data format fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("data format runtime plan lowers");
 
@@ -1608,7 +1646,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("user enum shorthand fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("user enum shorthand fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("user enum shorthand runtime plan lowers");
 
@@ -1680,7 +1719,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("map sum fusion fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("map sum fusion fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("map sum fusion runtime plan lowers");
 
@@ -1719,7 +1759,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("map sum stats fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("map sum stats fixture lowers to HIR");
 
     let report = lower_runtime_plan_with_stats(&hir).expect("map sum stats runtime plan lowers");
 
@@ -1761,7 +1802,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("map sum sequence reuse fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("map sum sequence reuse fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("map sum sequence reuse runtime plan lowers");
 
@@ -1789,7 +1831,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("map body sequence use fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("map body sequence use fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("map body sequence use runtime plan lowers");
 
@@ -1829,7 +1872,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("map sum non-fusion fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("map sum non-fusion fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("map sum non-fusion runtime plan lowers");
 
@@ -1863,7 +1907,8 @@ flow @flow.ready ready {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("structured runtime fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("structured runtime fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("structured runtime plan lowers");
 
@@ -1880,7 +1925,8 @@ flow assertions {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("typed assertion fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("typed assertion fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("check assertion lowers to runtime guards");
     let profiles_and_conditions = plan.flows[0]
@@ -1923,7 +1969,8 @@ flow assertions {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("typed debug assertion fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("typed debug assertion fixture lowers to HIR");
     let options = RuntimePlanLowerOptions::new()
         .with_assertion_build_profile(RuntimeAssertionBuildProfile::Release);
 
@@ -1947,7 +1994,8 @@ flow assertions {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("typed prove assertion fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("typed prove assertion fixture lowers to HIR");
 
     let errors = lower_runtime_plan(&hir).expect_err("unresolved prove blocks code generation");
 
@@ -1976,7 +2024,8 @@ flow @flow.audit audit {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("unsafe lifetime fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("unsafe lifetime fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("audited lifetime region lowers");
 
@@ -1996,7 +2045,8 @@ flow @flow.audio audio {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("audio call fixture lowers to HIR");
+    let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
+        .expect("audio call fixture lowers to HIR");
 
     let plan = lower_runtime_plan(&hir).expect("audio call lowers to runtime plan");
     let [FlowOp::Effect(LineEffectRequest::Audio(command))] = plan.flows[0].ops.as_slice() else {

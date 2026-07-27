@@ -612,7 +612,7 @@ fn pure_helper_output_type(ty: Option<&TypeRef>) -> RuntimePureOutputType {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_hir::symbol::CallablePackageId;
     use arcweft_lang_hir::syntax::parser::parse_source;
 
@@ -632,8 +632,8 @@ fn reduce(state: &GameState, event: GameEvent) -> GameEvent {
 ",
         );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("functions lower to HIR");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("functions lower to HIR");
 
         let ordinary =
             lower_pure_helper_candidates(&hir).expect("ordinary helper discovery succeeds");
@@ -663,8 +663,8 @@ fn score(base: i64, bonus: i64) -> i64 {
 ",
         );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("pure function lowers to HIR");
 
         assert!(hir.functions()[0].has_attribute("pure"));
         let report =
@@ -705,8 +705,8 @@ fn score(base: i32, bonus: i16) -> i32 {
 ",
         );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("pure function lowers to HIR");
 
         let report =
             lower_pure_helper_candidates(&hir).expect("pure function lowers to helper candidate");
@@ -736,8 +736,8 @@ fn pack(byte: u8, index: u32) -> u64 {
 ",
         );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("pure function lowers to HIR");
 
         let report =
             lower_pure_helper_candidates(&hir).expect("pure function lowers to helper candidate");
@@ -768,8 +768,8 @@ fn score(base: f64, gain: f64) -> f64 {
 ",
         );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("pure functions lower to HIR");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("pure functions lower to HIR");
 
         let report =
             lower_pure_helper_candidates(&hir).expect("pure functions lower to helper candidates");
@@ -803,8 +803,8 @@ fn score(base: i64, bonus: i64) -> i64 {
 ",
         );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("pure function lowers to HIR");
 
         let report =
             lower_pure_helper_candidates(&hir).expect("statement body lowers to helper candidate");
@@ -834,8 +834,8 @@ fn score(base: i64, bonus: i64) -> i64 {
 ",
         );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let tree = parsed.into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("pure function lowers to HIR");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("pure function lowers to HIR");
 
         let report =
             lower_pure_helper_candidates(&hir).expect("tail return lowers to helper candidate");

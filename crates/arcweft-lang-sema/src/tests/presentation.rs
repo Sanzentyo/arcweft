@@ -2,7 +2,8 @@ use super::support::*;
 
 fn assert_unknown_presentation_argument(call: &str, command: &str, argument: &str) {
     let tree = parse_ok(format!("flow main {{\n    {call}\n}}\n"));
-    let hir = lower_to_hir(&tree).expect("presentation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("presentation fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("unknown presentation argument must be rejected");
 
@@ -34,7 +35,8 @@ flow main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("canonical presentation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("canonical presentation fixture lowers");
 
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("canonical presentation commands and arguments typecheck");
@@ -53,7 +55,8 @@ fn arbitrary_unknown_presentation_callees_use_normal_resolution_errors() {
         ),
     ] {
         let tree = parse_ok(format!("flow main {{\n    {call}\n}}\n"));
-        let hir = lower_to_hir(&tree).expect("unknown callee fixture lowers");
+        let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+            .expect("unknown callee fixture lowers");
         let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
             .expect_err("unknown presentation callee must be rejected");
 
@@ -99,7 +102,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("mixed numeric presentation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("mixed numeric presentation fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -145,7 +149,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("invalid numeric presentation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("invalid numeric presentation fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("cross-slot presentation numeric types must be rejected");
     assert!(
@@ -175,7 +180,8 @@ flow main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("public-id presentation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("public-id presentation fixture lowers");
 
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("typed locals, entity references, and explicit public-id strings typecheck");
@@ -190,7 +196,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("unknown public-id path fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unknown public-id path fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("unknown bare target/layer paths must not become string atoms");
 
@@ -212,7 +219,8 @@ flow main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("token-scalar presentation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("token-scalar presentation fixture lowers");
 
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("ratio, time, and dimension policies retain authored bare tokens");
@@ -230,7 +238,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("typed token-scalar local fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("typed token-scalar local fixture lowers");
 
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("resolved numeric locals must use the token-scalar expected type");
@@ -246,7 +255,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("invalid token-scalar local fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("invalid token-scalar local fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("resolved Bool local must not be reinterpreted as an authored scalar token");
 
@@ -273,7 +283,8 @@ fn presentation_token_scalar_policies_reject_other_resolved_non_scalar_paths() {
         let tree = parse_ok(format!(
             "{declarations}flow main {{\n    image(asset = @asset:.bg.pulse, opacity = {value})\n}}\n"
         ));
-        let hir = lower_to_hir(&tree).expect("resolved token-scalar path fixture lowers");
+        let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+            .expect("resolved token-scalar path fixture lowers");
         let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
             .expect_err("resolved non-scalar path must not become an authored scalar token");
 
@@ -295,7 +306,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("resolved short-variant token fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("resolved short-variant token fixture lowers");
     let env = TypeCheckEnv::new().with_symbol(".automatic", TypeKind::Bool);
     let errors = typecheck_hir(&hir, &env)
         .expect_err("resolved short-variant symbol must keep its registered type");
@@ -317,7 +329,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("registered function token fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("registered function token fixture lowers");
     let env = TypeCheckEnv::new().with_function("external_flag", TypeKind::Bool);
     let errors = typecheck_hir(&hir, &env)
         .expect_err("registered function value must keep its normal Bool type");
@@ -341,7 +354,8 @@ flow main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("global entity alias member fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("global entity alias member fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("global entity alias member path must use normal path checking");
 

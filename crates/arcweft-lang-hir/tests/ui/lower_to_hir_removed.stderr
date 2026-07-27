@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_hir::lower::lower_to_hir`
+ --> tests/ui/lower_to_hir_removed.rs:1:5
+  |
+1 | use arcweft_lang_hir::lower::lower_to_hir;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `lower_to_hir` in `lower`

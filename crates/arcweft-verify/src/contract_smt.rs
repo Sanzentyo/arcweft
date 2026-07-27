@@ -608,13 +608,14 @@ enum ContractLoweringError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
 
     fn lowered_report(source: &str) -> VerificationReport {
         let parsed = parse_source(source.to_owned());
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_to_hir(&parsed.into_typed_tree()).expect("fixture lowers");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("fixture lowers");
         let mut report = VerificationReport::default();
         collect_function_contract_obligations(&hir, &mut report);
         report

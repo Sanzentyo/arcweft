@@ -38,25 +38,18 @@ fn assert_diagnostic_ranges(
 }
 
 #[test]
-fn propagation_bearing_hir_requires_an_exact_source_document() {
+fn propagation_bearing_hir_retains_its_exact_source_document() {
     let source = r"
 fn accepted(value: Result<i64, String>) -> Result<i64, String> {
     let inner = value?
     Ok(inner)
 }
 ";
-    let tree = parse_ok(source);
-    let unbound = lower_to_hir(&tree).expect("fixture lowers without a source document");
-    let errors = validate_typecheck_ready(&unbound)
-        .expect_err("source-less propagation cannot produce exact diagnostics");
-    assert!(errors.iter().any(|error| {
-        error
-            .message()
-            .contains("requires HIR bound to an exact source document")
-    }));
-
-    let bound = lower_bound_hir("bound-propagation-readiness", source);
-    validate_typecheck_ready(&bound).expect("bound propagation is typecheck-ready");
+    let parsed = parse_ok(source);
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("exact source document lowers");
+    assert_eq!(hir.source_identity(), Some(parsed.identity()));
+    validate_typecheck_ready(&hir).expect("bound propagation is typecheck-ready");
 }
 
 #[test]

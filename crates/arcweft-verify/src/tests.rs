@@ -1,14 +1,14 @@
 use super::*;
 use crate::smt::{ProofExpr, SmtCheck, SmtEmission, SmtOutcome, SmtProblem, SmtSort, SmtSymbol};
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_syntax::parser::parse_source;
 
 fn report(source: &str, mode: VerificationMode) -> VerificationReport {
     let parsed = parse_source(source.to_owned());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let tree = parsed.into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     verify_module(
         &hir,
         VerificationPolicy {
@@ -22,8 +22,7 @@ fn report(source: &str, mode: VerificationMode) -> VerificationReport {
 fn hir(source: &str) -> arcweft_lang_hir::model::HirModule {
     let parsed = parse_source(source.to_owned());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let tree = parsed.into_typed_tree();
-    lower_to_hir(&tree).expect("fixture lowers")
+    lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree()).expect("fixture lowers")
 }
 
 #[test]

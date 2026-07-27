@@ -1,5 +1,5 @@
 use arcweft_lang_hir::{
-    lower::lower_to_hir,
+    lower::lower_document_to_hir,
     model::HirTopLevelDecl,
     style::{
         HirStyleDecl, HirStyleEnvironmentComparison, HirStyleEnvironmentField,
@@ -28,7 +28,7 @@ fn hir_preserves_condition_clause_and_operand_ranges() {
 ";
     let parsed = parse_source(source);
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("style lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("style lowers");
     let environment = style(&hir).sheet().body()[0]
         .as_environment()
         .expect("environment wrapper");
@@ -84,7 +84,7 @@ fn hir_preserves_nested_wrapper_roles_outer_to_inner() {
 ";
     let parsed = parse_source(source);
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("style lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("style lowers");
     let outer = style(&hir).sheet().body()[0]
         .as_environment()
         .expect("outer wrapper");
@@ -119,7 +119,8 @@ fn hir_recovery_is_typed_not_raw_expression() {
             .iter()
             .any(|error| { error.code() == "syntax.parse.style_environment.unsupported_value" })
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("recovered style lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("recovered style lowers");
     let environment = style(&hir).sheet().body()[0]
         .as_environment()
         .expect("environment wrapper");

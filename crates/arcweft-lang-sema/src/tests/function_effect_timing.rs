@@ -5,7 +5,8 @@ fn effect_timing_errors(
     environment: &TypeCheckEnv,
 ) -> Vec<crate::diagnostics::TypeCheckError> {
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("effect timing fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("effect timing fixture lowers");
     validate_typecheck_ready(&hir).expect("effect timing fixture is structured");
     typecheck_hir(&hir, environment).expect_err("called callback must compose body effects")
 }
@@ -64,7 +65,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("curried source effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried source effect fixture lowers");
     validate_typecheck_ready(&hir).expect("curried source effect fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -129,7 +131,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("curried source alias effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried source alias effect fixture lowers");
     validate_typecheck_ready(&hir).expect("curried source alias effect fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -196,7 +199,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial first curried group fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial first curried group fixture lowers");
     validate_typecheck_ready(&hir).expect("partial first curried group fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -246,7 +250,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("first-group callback effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("first-group callback effect fixture lowers");
     validate_typecheck_ready(&hir).expect("first-group callback effect fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -300,7 +305,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial callback effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial callback effect fixture lowers");
     validate_typecheck_ready(&hir).expect("partial callback effect fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -342,7 +348,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("closure effect call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure effect call fixture lowers");
     validate_typecheck_ready(&hir).expect("closure effect call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -372,7 +379,8 @@ ensures no_effect fs.read
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("no-effect closure fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("no-effect closure fixture lowers");
     validate_typecheck_ready(&hir).expect("no-effect closure fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -400,7 +408,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("immediate closure effect call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("immediate closure effect call fixture lowers");
     validate_typecheck_ready(&hir).expect("immediate closure effect call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -431,7 +440,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial closure effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial closure effect fixture lowers");
     validate_typecheck_ready(&hir).expect("partial closure effect fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -465,7 +475,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial immediate closure effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial immediate closure effect fixture lowers");
     validate_typecheck_ready(&hir).expect("partial immediate closure effect fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -501,7 +512,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial closure effect call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial closure effect call fixture lowers");
     validate_typecheck_ready(&hir).expect("partial closure effect call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -532,7 +544,8 @@ ensures no_effect fs.read
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("no-effect partial closure fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("no-effect partial closure fixture lowers");
     validate_typecheck_ready(&hir).expect("no-effect partial closure fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -563,7 +576,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial immediate closure effect call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial immediate closure effect call fixture lowers");
     validate_typecheck_ready(&hir)
         .expect("partial immediate closure effect call fixture is structured");
 
@@ -595,7 +609,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("map closure effect arg fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("map closure effect arg fixture lowers");
     validate_typecheck_ready(&hir).expect("map closure effect arg fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -625,7 +640,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("map closure alias effect arg fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("map closure alias effect arg fixture lowers");
     validate_typecheck_ready(&hir).expect("map closure alias effect arg fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -658,7 +674,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("map partial closure effect arg fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("map partial closure effect arg fixture lowers");
     validate_typecheck_ready(&hir).expect("map partial closure effect arg fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -689,7 +706,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("filter closure effect arg fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("filter closure effect arg fixture lowers");
     validate_typecheck_ready(&hir).expect("filter closure effect arg fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -721,7 +739,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("user higher-order effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("user higher-order effect fixture lowers");
     validate_typecheck_ready(&hir).expect("user higher-order effect fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -756,7 +775,8 @@ effects { }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("kept higher-order effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("kept higher-order effect fixture lowers");
     validate_typecheck_ready(&hir).expect("kept higher-order effect fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -794,7 +814,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("returned closure creation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("returned closure creation fixture lowers");
     validate_typecheck_ready(&hir).expect("returned closure creation fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -833,7 +854,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("returned closure call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("returned closure call fixture lowers");
     validate_typecheck_ready(&hir).expect("returned closure call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -868,7 +890,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("returned closure trace fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("returned closure trace fixture lowers");
     validate_typecheck_ready(&hir).expect("returned closure trace fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -928,7 +951,8 @@ ensures no_effect fs.read
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("no-effect returned closure fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("no-effect returned closure fixture lowers");
     validate_typecheck_ready(&hir).expect("no-effect returned closure fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -964,7 +988,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("stored returned closure call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("stored returned closure call fixture lowers");
     validate_typecheck_ready(&hir).expect("stored returned closure call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1000,7 +1025,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("returned closure alias creation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("returned closure alias creation fixture lowers");
     validate_typecheck_ready(&hir).expect("returned closure alias creation fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -1041,7 +1067,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("returned closure alias call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("returned closure alias call fixture lowers");
     validate_typecheck_ready(&hir).expect("returned closure alias call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1074,7 +1101,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("destructured higher-order fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("destructured higher-order fixture lowers");
     validate_typecheck_ready(&hir).expect("destructured higher-order fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1109,7 +1137,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("destructured kept fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("destructured kept fixture lowers");
     validate_typecheck_ready(&hir).expect("destructured kept fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -1147,7 +1176,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("nested destructured higher-order fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("nested destructured higher-order fixture lowers");
     validate_typecheck_ready(&hir).expect("nested destructured higher-order fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1277,7 +1307,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("option variant destructured fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("option variant destructured fixture lowers");
     validate_typecheck_ready(&hir).expect("option variant destructured fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1311,7 +1342,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("result variant destructured fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("result variant destructured fixture lowers");
     validate_typecheck_ready(&hir).expect("result variant destructured fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1461,7 +1493,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("curried higher-order effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried higher-order effect fixture lowers");
     validate_typecheck_ready(&hir).expect("curried higher-order effect fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1496,7 +1529,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("curried alias higher-order fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried alias higher-order fixture lowers");
     validate_typecheck_ready(&hir).expect("curried alias higher-order fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1531,7 +1565,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial curried creation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial curried creation fixture lowers");
     validate_typecheck_ready(&hir).expect("partial curried creation fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -1571,7 +1606,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("partial curried call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial curried call fixture lowers");
     validate_typecheck_ready(&hir).expect("partial curried call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1608,7 +1644,8 @@ ensures no_effect fs.read
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("no-effect partial curried call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("no-effect partial curried call fixture lowers");
     validate_typecheck_ready(&hir).expect("no-effect partial curried call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1643,7 +1680,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("immediate partial curried call fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("immediate partial curried call fixture lowers");
     validate_typecheck_ready(&hir).expect("immediate partial curried call fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -1684,7 +1722,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("curried returned closure fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried returned closure fixture lowers");
     validate_typecheck_ready(&hir).expect("curried returned closure fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());

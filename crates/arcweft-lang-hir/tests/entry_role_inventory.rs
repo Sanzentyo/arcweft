@@ -1,4 +1,4 @@
-use arcweft_lang_hir::{lower::lower_to_hir, model::HirTopLevelDecl};
+use arcweft_lang_hir::{lower::lower_document_to_hir, model::HirTopLevelDecl};
 use arcweft_lang_syntax::parser::parse_source;
 
 #[test]
@@ -29,7 +29,8 @@ entry game @entry.game.main {
 ",
     );
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let hir = lower_to_hir(parsed.typed_tree()).expect("ordinary role owners lower");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("ordinary role owners lower");
 
     assert_eq!(
         hir.functions()

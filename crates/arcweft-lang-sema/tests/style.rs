@@ -1,4 +1,4 @@
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
     check::{TypeCheckReport, analyze_types},
     diagnostics::TypeCheckErrorKind,
@@ -14,7 +14,8 @@ use arcweft_view::style::{
 fn analyze(source: &str) -> TypeCheckReport {
     let parsed = parse_source(source);
     assert_eq!(parsed.errors(), &[], "syntax errors: {:?}", parsed.errors());
-    let hir = lower_to_hir(parsed.typed_tree()).expect("style source lowers to HIR");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("style source lowers to HIR");
     analyze_types(&hir, &TypeCheckEnv::standard())
 }
 

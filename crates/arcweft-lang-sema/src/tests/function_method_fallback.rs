@@ -34,7 +34,8 @@ flow @flow.method_fallback method_fallback {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("method fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("method fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("method fallback fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -87,7 +88,8 @@ flow @flow.curried_method_fallback curried_method_fallback {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("curried method fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried method fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("curried method fallback fixture is structured");
     let env = TypeCheckEnv::new().with_symbol("score", TypeKind::I64);
 
@@ -129,7 +131,8 @@ flow @flow.method_fallback_named method_fallback_named {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("named method fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("named method fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("named method fallback fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -182,7 +185,8 @@ flow @flow.method_fallback_fixed_spread method_fallback_fixed_spread {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("fixed spread method fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("fixed spread method fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("fixed spread method fallback fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -254,7 +258,8 @@ flow @flow.method_fallback_spread method_fallback_spread {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("spread method fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("spread method fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("spread method fallback fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -302,7 +307,8 @@ flow @flow.method_fallback_spread_then_named method_fallback_spread_then_named {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("spread then named fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("spread then named fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("spread then named fallback fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -355,7 +361,8 @@ flow @flow.method_fallback_multiple_spreads method_fallback_multiple_spreads {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("multiple-spread fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("multiple-spread fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("multiple-spread fallback fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -409,7 +416,8 @@ flow @flow.method_fallback_ambiguous method_fallback_ambiguous {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("ambiguous method fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("ambiguous method fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("ambiguous method fallback fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -471,7 +479,8 @@ flow @flow.method_fallback_spread_ambiguous method_fallback_spread_ambiguous {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("ambiguous spread fallback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("ambiguous spread fallback fixture lowers");
     validate_typecheck_ready(&hir).expect("ambiguous spread fallback fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -538,7 +547,8 @@ flow @flow.method_priority method_priority {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("method priority fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("method priority fixture lowers");
     validate_typecheck_ready(&hir).expect("method priority fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -708,7 +718,8 @@ flow @flow.env_method_value env_method_value {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("environment method value fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("environment method value fixture lowers");
     validate_typecheck_ready(&hir).expect("environment method value fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -766,7 +777,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("data-last function receiver fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("data-last function receiver fixture lowers");
     validate_typecheck_ready(&hir).expect("data-last function receiver fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -812,7 +824,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("data-last alias identity fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("data-last alias identity fixture lowers");
     validate_typecheck_ready(&hir).expect("data-last alias identity fixture is structured");
     let env = read_text_env()
         .with_function_signature(
@@ -851,7 +864,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("method fallback callback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("method fallback callback fixture lowers");
     validate_typecheck_ready(&hir).expect("method fallback callback fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -894,7 +908,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("curried method callback fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("curried method callback fixture lowers");
     validate_typecheck_ready(&hir).expect("curried method callback fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());

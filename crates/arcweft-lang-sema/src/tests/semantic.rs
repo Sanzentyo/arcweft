@@ -2,7 +2,8 @@ use super::support::*;
 
 fn semantic_report(source: &str, env: &TypeCheckEnv) -> SemanticReport {
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("fixture lowers to HIR");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("fixture lowers to HIR");
     analyze_semantics(
         &hir,
         env,

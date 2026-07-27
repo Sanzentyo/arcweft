@@ -24,7 +24,8 @@ flow @flow.opening opening {
 ",
     );
 
-    let hir = lower_to_hir(&tree).expect("scope escape fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("scope escape fixture lowers");
     validate_typecheck_ready(&hir).expect("scope escape fixture is typecheck-ready");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("scoped locals must not escape named or bare lexical scopes");
@@ -73,7 +74,7 @@ flow @flow.alice_intro alice_intro {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected source flow");
     };
     let FlowItem::Stmt(Stmt::LetScope { pattern, scope }) = &flow.body()[0] else {
@@ -84,7 +85,8 @@ flow @flow.alice_intro alice_intro {
     assert_eq!(scope.statements().len(), 2);
     assert!(scope.value().is_some());
 
-    let hir = lower_to_hir(&tree).expect("scope expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("scope expression fixture lowers");
     let HirFlowItem::LetScope { pattern, scope } = &hir.flows()[0].body()[0] else {
         panic!("expected HIR scope expression binding");
     };
@@ -136,7 +138,7 @@ flow @flow.next next {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected source flow");
     };
     let FlowItem::Stmt(Stmt::LetScope { pattern, scope }) = &flow.body()[0] else {
@@ -147,7 +149,8 @@ flow @flow.next next {
     assert_eq!(scope.statements().len(), 1);
     assert!(scope.value().is_some());
 
-    let hir = lower_to_hir(&tree).expect("unnamed scope expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unnamed scope expression fixture lowers");
     let HirFlowItem::LetScope { pattern, scope } = &hir.flows()[0].body()[0] else {
         panic!("expected HIR scope expression binding");
     };
@@ -176,7 +179,7 @@ flow @flow.block_expr block_expr {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Let {
@@ -191,7 +194,8 @@ flow @flow.block_expr block_expr {
     assert_eq!(statements.len(), 2);
     assert!(value.is_some());
 
-    let hir = lower_to_hir(&tree).expect("plain block expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("plain block expression fixture lowers");
     validate_typecheck_ready(&hir).expect("plain block expression is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("plain block expression typechecks");
 }
@@ -212,7 +216,7 @@ flow @flow.title title {
 }
 ",
     );
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected source flow");
     };
     let FlowItem::Stmt(Stmt::LetElse {
@@ -228,7 +232,8 @@ flow @flow.title title {
     assert!(expr_path_eq(expr.expr(), "state.route_override"));
     assert!(matches!(else_body.as_slice(), [Stmt::Goto(_)]));
 
-    let hir = lower_to_hir(&tree).expect("let-else fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("let-else fixture lowers");
     let registry = registry_from_hir(&hir);
     validate_hir_references(&hir, &registry).expect("let-else refs resolve");
     validate_typecheck_ready(&hir).expect("let-else is typecheck-ready");
@@ -253,7 +258,8 @@ flow @flow.title title {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("non-diverging let-else fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("non-diverging let-else fixture lowers");
     let env = TypeCheckEnv::new().with_symbol(
         "state.route_override",
         TypeKind::Named("Option<Ref<Flow>>".to_owned()),
@@ -275,7 +281,8 @@ flow @flow.bad_out bad_out {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("flow out fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("flow out fixture lowers");
     validate_typecheck_ready(&hir).expect("flow out fixture is typecheck-ready");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("flow-level out is rejected");
     assert!(
@@ -305,7 +312,8 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
 "
         );
         let tree = parse_ok(source);
-        let hir = lower_to_hir(&tree).expect("diverging let-else fixture lowers");
+        let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+            .expect("diverging let-else fixture lowers");
         let env = TypeCheckEnv::new()
             .with_symbol(
                 "state.route_override",
@@ -330,14 +338,15 @@ flow @flow.validate validate {
 "#,
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     assert!(matches!(
         &flow.body()[0],
         FlowItem::Stmt(Stmt::Expr { expr: _, .. })
     ));
-    let hir = lower_to_hir(&tree).expect("bail and ensure fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bail and ensure fixture lowers");
     validate_typecheck_ready(&hir).expect("bail and ensure are typecheck-ready");
     let env = TypeCheckEnv::new()
         .with_symbol("score", TypeKind::I64)
@@ -359,7 +368,7 @@ flow @flow.compute compute() -> Result<Unit, ArcError> {
 "#;
     let tree = parse_ok(source);
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Let {
@@ -416,7 +425,7 @@ flow @flow.title title {}
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Let {
@@ -434,7 +443,8 @@ flow @flow.title title {}
     assert_eq!(kind, &ComputationBlockKind::Stream);
     assert_eq!(statements.len(), 1);
 
-    let hir = lower_to_hir(&tree).expect("stream computation block fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("stream computation block fixture lowers");
     validate_typecheck_ready(&hir).expect("stream computation block is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -460,7 +470,8 @@ flow @flow.bad bad {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("yield fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("yield fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("yield in flow is rejected");
 
     assert!(errors.iter().any(|error| {
@@ -481,7 +492,8 @@ flow @flow.bad bad {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("line-plan yield fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line-plan yield fixture lowers");
     let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::Speaker(EntityKind::Character));
     let errors = typecheck_hir(&hir, &env).expect_err("line-plan yield is rejected");
 
@@ -501,7 +513,8 @@ flow @flow.validate validate {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("non-bool ensure fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("non-bool ensure fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new().with_symbol("score", TypeKind::I64),
@@ -533,7 +546,7 @@ flow @flow.loading loading {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::While(block) = &flow.body()[0] else {
@@ -541,7 +554,8 @@ flow @flow.loading loading {
     };
     assert!(matches!(block.condition(), Expr::Path(path) if path == "loading"));
 
-    let hir = lower_to_hir(&tree).expect("while fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("while fixture lowers");
     let HirFlowItem::While(block) = &hir.flows()[0].body()[0] else {
         panic!("expected HIR while block");
     };
@@ -567,7 +581,7 @@ flow @flow.branching branching {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::IfLet(block) = &flow.body()[0] else {
@@ -577,7 +591,8 @@ flow @flow.branching branching {
     assert!(expr_path_eq(block.expr(), "state.route_override"));
     assert!(block.guard().is_some());
 
-    let hir = lower_to_hir(&tree).expect("if-let fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("if-let fixture lowers");
     let HirFlowItem::IfLet(block) = &hir.flows()[0].body()[0] else {
         panic!("expected HIR if-let block");
     };
@@ -607,7 +622,7 @@ flow @flow.branching branching {
 "#,
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Let {
@@ -633,7 +648,8 @@ flow @flow.branching branching {
         } if matches!(value.as_ref(), Expr::Literal(Literal::String(value)) if value == "smile")
     ));
 
-    let hir = lower_to_hir(&tree).expect("value if expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("value if expression fixture lowers");
     validate_typecheck_ready(&hir).expect("value if expression is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -655,7 +671,8 @@ flow @flow.branching branching {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("anonymous sum value if fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("anonymous sum value if fixture lowers");
     let report = analyze_types(
         &hir,
         &TypeCheckEnv::new().with_symbol("ready", TypeKind::Bool),
@@ -688,7 +705,7 @@ flow @flow.branching branching {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Let {
@@ -717,7 +734,8 @@ flow @flow.branching branching {
         } if matches!(value.as_ref(), Expr::Path(path) if path == "route")
     ));
 
-    let hir = lower_to_hir(&tree).expect("value if-let expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("value if-let expression fixture lowers");
     validate_typecheck_ready(&hir).expect("value if-let expression is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -744,7 +762,8 @@ flow @flow.branching branching {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("value if-let guard binding fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("value if-let guard binding fixture lowers");
     validate_typecheck_ready(&hir).expect("value if-let guard binding is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -768,7 +787,8 @@ flow @flow.branching branching {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("non-bool value if-let fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("non-bool value if-let fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
@@ -800,7 +820,7 @@ flow @flow.branching branching {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Let {
@@ -820,7 +840,8 @@ flow @flow.branching branching {
         Expr::EntityRef(entity) if entity.body() == "flow.alice_intro"
     ));
 
-    let hir = lower_to_hir(&tree).expect("value match expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("value match expression fixture lowers");
     validate_typecheck_ready(&hir).expect("value match expression is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -843,7 +864,8 @@ flow @flow.branching branching {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("anonymous sum value match fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("anonymous sum value match fixture lowers");
     let report = analyze_types(
         &hir,
         &TypeCheckEnv::new()
@@ -876,7 +898,7 @@ flow @flow.trying trying() -> Result<Unit, ConfigError> {
 ";
     let tree = parse_ok(source);
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Let {
@@ -938,7 +960,8 @@ flow @flow.branching branching {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("non-bool if-let guard fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("non-bool if-let guard fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol(
             "state.route_override",
@@ -965,7 +988,7 @@ flow @flow.events events {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::WhileLet(block) = &flow.body()[0] else {
@@ -975,7 +998,8 @@ flow @flow.events events {
     assert!(matches!(block.expr(), Expr::Path(path) if path == "next_event"));
     assert!(block.guard().is_some());
 
-    let hir = lower_to_hir(&tree).expect("while-let fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("while-let fixture lowers");
     let HirFlowItem::WhileLet(block) = &hir.flows()[0].body()[0] else {
         panic!("expected HIR while-let block");
     };
@@ -1002,7 +1026,8 @@ flow @flow.loading loading {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("non-bool while fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("non-bool while fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new().with_symbol("loading_count", TypeKind::I64),
@@ -1032,7 +1057,7 @@ flow @flow.title title {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::LetLoop { pattern, block }) = &flow.body()[0] else {
@@ -1047,7 +1072,8 @@ flow @flow.title title {
                 && matches!(expr.expr(), Expr::EntityRef(entity) if entity.body() == "flow.title")
     ));
 
-    let hir = lower_to_hir(&tree).expect("loop expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("loop expression fixture lowers");
     let HirFlowItem::LetLoop { pattern, block } = &hir.flows()[0].body()[0] else {
         panic!("expected HIR loop expression binding");
     };
@@ -1080,7 +1106,8 @@ flow @flow.title title {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("while break-value fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("while break-value fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new().with_symbol("is_loading", TypeKind::Bool),
@@ -1102,7 +1129,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("bare break fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bare break fixture lowers");
     let errors =
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("break outside loops is rejected");
     assert!(errors.iter().any(|error| {
@@ -1135,7 +1163,8 @@ flow @flow.opening opening {
 flow @flow.title title {}
 ",
     );
-    let hir = lower_to_hir(&tree).expect("unresolved label fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unresolved label fixture lowers");
     validate_typecheck_ready(&hir).expect("unresolved label fixture is typecheck-ready");
     let errors = typecheck_hir(
         &hir,
@@ -1189,7 +1218,7 @@ flow @flow.stream stream {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::For(for_block) = &flow.body()[0] else {
@@ -1226,7 +1255,8 @@ flow @flow.stream stream {
         SelectBranchHead::Event(Pattern::Variant { name, payload: None, .. }) if name == "Back"
     ));
 
-    let hir = lower_to_hir(&tree).expect("for and select lower");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("for and select lower");
     assert!(matches!(&hir.flows()[0].body()[0], HirFlowItem::For(_)));
     assert!(matches!(&hir.flows()[0].body()[1], HirFlowItem::Select(_)));
     validate_typecheck_ready(&hir).expect("for and select are typecheck-ready");
@@ -1247,7 +1277,8 @@ flow @flow.borrow borrow {{
 }}
 "
         ));
-        let hir = lower_to_hir(&tree).expect("borrow boundary fixture lowers");
+        let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+            .expect("borrow boundary fixture lowers");
         let env = TypeCheckEnv::new()
             .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
             .with_symbol("frame", TypeKind::Named("Frame".to_owned()))
@@ -1286,7 +1317,7 @@ flow @flow.branching branching {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     assert!(
@@ -1294,7 +1325,8 @@ flow @flow.branching branching {
     );
     assert!(matches!(&flow.body()[1], FlowItem::Match(block) if block.arms().len() == 2));
 
-    let hir = lower_to_hir(&tree).expect("if and match lower");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("if and match lower");
     assert!(matches!(&hir.flows()[0].body()[0], HirFlowItem::If(_)));
     assert!(matches!(&hir.flows()[0].body()[1], HirFlowItem::Match(_)));
 }
@@ -1312,8 +1344,8 @@ flow @flow.main main(input: i32) -> String {
 "#;
     let parsed = parse_source(source.to_owned());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let tree = parsed.into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("if-else lowers");
+    let tree = parsed;
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("if-else lowers");
     let HirFlowItem::If(block) = &hir.flows()[0].body()[0] else {
         panic!("expected if block");
     };
@@ -1337,7 +1369,8 @@ flow @flow.branching branching {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("if and match fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("if and match fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("state.ready", TypeKind::Bool)
         .with_symbol("next", TypeKind::Named("Option<Ref<Flow>>".to_owned()));
@@ -1358,7 +1391,7 @@ flow @flow.branching branching {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Match(block) = &flow.body()[0] else {
@@ -1366,7 +1399,8 @@ flow @flow.branching branching {
     };
     assert!(block.arms()[0].guard().is_some());
 
-    let hir = lower_to_hir(&tree).expect("guarded match fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("guarded match fixture lowers");
     validate_typecheck_ready(&hir).expect("guarded match is typecheck-ready");
     let env = TypeCheckEnv::new()
         .with_symbol(
@@ -1389,7 +1423,8 @@ flow @flow.branching branching {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("non-bool guarded match fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("non-bool guarded match fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol(
             "state.route_override",

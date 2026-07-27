@@ -12,7 +12,7 @@ flow @flow.opening opening {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     assert!(matches!(
@@ -47,7 +47,7 @@ flow @flow.borrow borrow {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     assert!(matches!(
@@ -75,7 +75,7 @@ flow @flow.patterns patterns {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     assert!(matches!(
@@ -137,6 +137,7 @@ flow @flow.patterns patterns {
         } if name == "ChoiceSelected" && fields.len() == 1 && fields[0].name() == "id"
     ));
 
-    let hir = lower_to_hir(&tree).expect("structured pattern fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("structured pattern fixture lowers");
     validate_typecheck_ready(&hir).expect("structured patterns do not introduce raw HIR");
 }

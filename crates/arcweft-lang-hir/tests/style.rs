@@ -1,4 +1,4 @@
-use arcweft_lang_hir::{lower::lower_to_hir, model::HirTopLevelDecl};
+use arcweft_lang_hir::{lower::lower_document_to_hir, model::HirTopLevelDecl};
 use arcweft_lang_syntax::{expr::Expr, parser::parse_source};
 
 #[test]
@@ -11,7 +11,7 @@ fn named_style_lowers_to_hir_owned_selector_and_expression_nodes() {
 ",
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("style lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("style lowers");
     let style = hir
         .declarations()
         .iter()
@@ -55,7 +55,7 @@ fn lowering_extracts_inline_native_patches_in_source_order() {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("View lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("View lowers");
     assert_eq!(hir.style_patches().len(), 2);
     assert_eq!(hir.style_patches()[0].ordinal(), 0);
     assert_eq!(hir.style_patches()[0].declarations().len(), 1);

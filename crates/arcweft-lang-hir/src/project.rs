@@ -507,7 +507,7 @@ fn assign_flow_item_module(item: &mut HirFlowItem, path: &CanonicalModulePath) {
 #[cfg(test)]
 mod tests {
     use super::{HirProject, HirProjectModule, HirProjectModuleError};
-    use crate::lower::{lower_document_to_hir, lower_to_hir};
+    use crate::lower::lower_document_to_hir;
     use crate::model::HirFlowItem;
     use crate::style::HirStylePatch;
     use arcweft_lang_syntax::{
@@ -515,10 +515,10 @@ mod tests {
             common::TextRange,
             module_path::{CanonicalModulePath, ModuleSegment},
         },
-        parser::parse_source,
+        parser::{ParseOptions, parse_document_with_source},
     };
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-    use std::collections::BTreeSet;
+    use std::{collections::BTreeSet, sync::Arc};
 
     struct LinkedStyleProject {
         project: HirProject,
@@ -646,11 +646,7 @@ mod tests {
     }
 }
 ";
-        let parsed = parse_source(source);
-        assert_eq!(parsed.errors(), &[]);
-        let document = source_document("nested-flow", source);
-        let hir =
-            lower_document_to_hir(&document, parsed.typed_tree()).expect("nested flow lowers");
+        let (document, hir) = lower_bound("nested-flow", source);
         let child_path =
             CanonicalModulePath::crate_root().join(ModuleSegment::new("child").unwrap());
         let module =
@@ -723,19 +719,22 @@ mod tests {
         );
     }
 
-    fn source_document(label: &str, source: &str) -> SourceDocument {
-        SourceDocument::try_new(
-            SourceDocumentId::try_new(format!("memory:///{label}.arcw")).unwrap(),
-            SourceName::Generated,
-            source,
+    fn source_document(label: &str, source: &str) -> Arc<SourceDocument> {
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(format!("memory:///{label}.arcw")).unwrap(),
+                SourceName::Generated,
+                source,
+            )
+            .expect("source document"),
         )
-        .expect("source document")
     }
 
-    fn lower_bound(label: &str, source: &str) -> (SourceDocument, crate::model::HirModule) {
+    fn lower_bound(label: &str, source: &str) -> (Arc<SourceDocument>, crate::model::HirModule) {
         let document = source_document(label, source);
-        let parsed = parse_source(source);
-        let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("source lowers");
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
+        let hir =
+            lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("source lowers");
         (document, hir)
     }
 
@@ -752,20 +751,7 @@ mod tests {
             .expect("child module binding");
         assert_eq!(child.hir().module_path(), &child_path);
         assert_eq!(child.hir().source_identity(), Some(document.identity()));
-        assert_eq!(child.hir().source_document(), Some(&document));
-    }
-
-    #[test]
-    fn project_module_rejects_hir_without_a_source_document() {
-        let parsed = parse_source("");
-        let hir = lower_to_hir(parsed.typed_tree()).expect("unbound HIR lowers");
-        let module = CanonicalModulePath::crate_root();
-        let source = source_document("missing-source", "");
-
-        assert_eq!(
-            HirProjectModule::try_new(module.clone(), source.identity().clone(), hir),
-            Err(HirProjectModuleError::MissingSourceDocument { module })
-        );
+        assert_eq!(child.hir().source_document(), Some(document.as_ref()));
     }
 
     #[test]

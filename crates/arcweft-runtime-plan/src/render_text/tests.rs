@@ -4,7 +4,7 @@ use arcweft_dialogue::{
     DialoguePresentationProfile, DialogueProfileRevision, FallbackStylePolicy, InlineFailurePolicy,
     InlineFallback,
 };
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     DialogueHostEvent, FxTarget, Milli, RichTextCascadeLayer, RichTextColor, RichTextControl,
@@ -68,7 +68,8 @@ flow @flow.main main {
 }
 "##,
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -156,7 +157,8 @@ fn canonical_scalar_tags_match_short_and_direct_dialogue_styles() {
             "character @character.alice Alice as alice {{}}\n\nflow @flow.main main {{\n    alice: {content}\n}}\n"
         );
         let parsed = parse_source(&source);
-        let hir = lower_to_hir(parsed.typed_tree()).expect("scalar tag fixture lowers");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("scalar tag fixture lowers");
         let dialogue = hir
             .flows()
             .first()
@@ -224,7 +226,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("valid wait fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("valid wait fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -261,7 +264,7 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree())
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("invalid wait remains available to lowering diagnostics");
     let dialogue = hir
         .flows()
@@ -292,7 +295,7 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree())
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("invalid speed remains available to lowering diagnostics");
     let dialogue = hir
         .flows()
@@ -333,7 +336,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -403,7 +407,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -464,7 +469,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -529,7 +535,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -611,7 +618,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -684,7 +692,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -786,7 +795,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -905,7 +915,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -975,7 +986,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1037,7 +1049,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let defaults = test_dialogue_defaults(&hir);
     let dialogues = hir
         .flows()
@@ -1122,7 +1135,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1171,7 +1185,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1258,7 +1273,8 @@ flow @flow.main main {
 ";
     let default_ruby_size_start = source.find("14px").expect("default ruby size literal");
     let parsed = parse_source(source);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1354,7 +1370,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1391,7 +1408,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1432,7 +1450,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1485,7 +1504,8 @@ flow @flow.main main {
 ";
     let inline_size_start = source.find("11px").expect("inline ruby size literal");
     let parsed = parse_source(source);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1525,7 +1545,8 @@ fn multiline_inline_span_provenance_projects_lf_and_crlf_ranges() {
     for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
         let inline_size_start = source.find("11px").expect("inline ruby size literal");
         let parsed = parse_source(&source);
-        let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("fixture lowers");
         let dialogue = hir
             .flows()
             .first()
@@ -1560,7 +1581,8 @@ flow @flow.main main {
 }
 "#;
     let parsed = parse_source(source);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let dialogue = hir
         .flows()
         .first()
@@ -1614,7 +1636,8 @@ flow @flow.main main {
 }
 "##;
     let parsed = parse_source(source);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let defaults = test_dialogue_defaults(&hir);
     let dialogue = hir
         .flows()
@@ -1688,7 +1711,8 @@ flow @flow.main main {
 }
 "#;
     let parsed = parse_source(source);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let defaults = test_dialogue_defaults(&hir);
     let dialogue = hir
         .flows()

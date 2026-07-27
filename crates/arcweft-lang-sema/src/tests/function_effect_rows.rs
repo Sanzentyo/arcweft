@@ -13,7 +13,8 @@ effects { fs.read }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("source function effect row fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("source function effect row fixture lowers");
     validate_typecheck_ready(&hir).expect("source function effect row fixture is structured");
     let fs_read = crate::effects::EffectSet::from_labels(["fs.read"]).expect("valid effect set");
     let env = TypeCheckEnv::new()
@@ -64,7 +65,8 @@ effects { }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("source function open-row fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("source function open-row fixture lowers");
     validate_typecheck_ready(&hir).expect("source function open-row fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -124,7 +126,8 @@ flow @flow.env_function_value_effect_row env_function_value_effect_row {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("environment function value fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("environment function value fixture lowers");
     validate_typecheck_ready(&hir).expect("environment function value fixture is structured");
     let env = TypeCheckEnv::new()
         .with_function_signature(
@@ -194,7 +197,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("closure effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure effect fixture lowers");
     validate_typecheck_ready(&hir).expect("closure effect fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -238,7 +242,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("closure row fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure row fixture lowers");
     validate_typecheck_ready(&hir).expect("closure row fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -285,7 +290,8 @@ effects { }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("open closure row fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("open closure row fixture lowers");
     validate_typecheck_ready(&hir).expect("open closure row fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -374,7 +380,8 @@ effects { fs.read }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("effect-row report fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("effect-row report fixture lowers");
     validate_typecheck_ready(&hir).expect("effect-row report fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -431,7 +438,8 @@ effects { }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure expected row fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure expected row fixture lowers");
     validate_typecheck_ready(&hir).expect("closure expected row fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -495,7 +503,8 @@ effects { }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure empty expected row fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure empty expected row fixture lowers");
     validate_typecheck_ready(&hir).expect("closure empty expected row fixture is structured");
 
     let errors = typecheck_hir(&hir, &read_text_env())
@@ -527,7 +536,8 @@ effects { }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("closure effect callable fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("closure effect callable fixture lowers");
     validate_typecheck_ready(&hir).expect("closure effect callable fixture is structured");
 
     let report = analyze_types(&hir, &read_text_env());
@@ -598,7 +608,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("borrowed capture effect-row fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("borrowed capture effect-row fixture lowers");
     validate_typecheck_ready(&hir).expect("borrowed capture effect-row fixture is structured");
 
     let report = analyze_types(&hir, &borrow_capture_read_text_env());

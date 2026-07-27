@@ -2152,10 +2152,22 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
     let source = format!(
         "entry cli @entry.test {{ goto @flow.test }}\nflow test {{ return \"{return_value}\" }}"
     );
-    let parsed = arcweft_lang_syntax::parser::parse_source(&source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(source_label).expect("source ID"),
+            SourceName::path(source_label),
+            source,
+        )
+        .expect("source document"),
+    );
+    let parsed = arcweft_lang_syntax::parser::parse_document_with_source(
+        Arc::clone(&document),
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    );
     assert_eq!(parsed.errors(), &[]);
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree())
-        .expect("test source lowers to HIR");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("test source lowers to HIR");
     let runtime_options = RuntimePlanLowerOptions::default().with_dialogue_profile(
         DialoguePresentationProfile::engine_default(),
         test_dialogue_revision(),
@@ -2186,15 +2198,8 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
                 source_plans: stats.source_plans,
             },
         },
-        arcweft_bundle::resource_codec::SourceMapSection::try_from_documents(&[
-            &SourceDocument::try_new(
-                SourceDocumentId::try_new(source_label).expect("source ID"),
-                SourceName::path(source_label),
-                source,
-            )
-            .expect("source document"),
-        ])
-        .expect("source map"),
+        arcweft_bundle::resource_codec::SourceMapSection::try_from_documents(&[document.as_ref()])
+            .expect("source map"),
         program,
         display,
     )

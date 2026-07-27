@@ -15,7 +15,8 @@ flow @flow.alice_intro alice_intro {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("registry fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("registry fixture lowers");
     let registry = registry_from_hir(&hir);
 
     validate_hir_references(&hir, &registry).expect("all local refs resolve");
@@ -30,7 +31,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("missing ref fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("missing ref fixture lowers");
     let registry = NameRegistry::new().with_entity("flow.opening", EntityKind::Flow);
     let errors = validate_hir_references(&hir, &registry).expect_err("missing ref should fail");
 
@@ -46,7 +48,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("external symbol fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("external symbol fixture lowers");
     let env = TypeCheckEnv::new().with_symbol(
         "character.zundamon",
         TypeKind::entity_ref(EntityKind::Character),
@@ -73,7 +76,8 @@ flow @flow.submit submit {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("view input fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("view input fixture lowers");
     let registry = registry_from_hir(&hir);
 
     validate_hir_references(&hir, &registry).expect("view text input resolves");
@@ -91,7 +95,8 @@ flow @flow.submit submit {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("action fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("action fixture lowers");
     let registry = registry_from_hir(&hir);
 
     validate_hir_references(&hir, &registry).expect("declared action entity resolves");
@@ -114,7 +119,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("symbol fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("symbol fixture lowers");
     let uses = collect_symbol_uses(&hir);
 
     assert!(

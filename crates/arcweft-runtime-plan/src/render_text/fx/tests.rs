@@ -1,5 +1,5 @@
 use arcweft_lang_hir::{
-    lower::lower_to_hir,
+    lower::lower_document_to_hir,
     syntax::{
         ast::dialogue::{DialogueTagKind, DialogueToken},
         parser::parse_source,
@@ -12,7 +12,8 @@ use super::FxCatalog;
 fn catalog(source: &str) -> FxCatalog {
     let parsed = parse_source(source);
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("Fx fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("Fx fixture lowers");
     FxCatalog::try_from_module(&hir).expect("Fx catalog compiles")
 }
 
@@ -52,7 +53,8 @@ fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
 "##;
     let parsed = parse_source(source);
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("Fx fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("Fx fixture lowers");
     let catalog = FxCatalog::try_from_module_for_package(&hir, "opening-game")
         .expect("package-scoped Fx catalog compiles");
     let content = parse_dialogue_text("[fx emphasis()]warning[/fx]");

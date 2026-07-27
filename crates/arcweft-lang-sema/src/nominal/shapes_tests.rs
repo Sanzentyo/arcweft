@@ -114,8 +114,9 @@ fn detached_record_checking_does_not_fabricate_a_named_project_type() {
         "struct Local { value: i64 }\nfn make() -> Local\neffects {}\n{ Local { value: 1i64 } }\n",
     );
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let hir = arcweft_lang_hir::lower::lower_to_hir(parsed.typed_tree())
-        .expect("detached project record fixture lowers");
+    let hir =
+        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("detached project record fixture lowers");
     let report = crate::checker::analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         report.diagnostics.iter().any(|error| error

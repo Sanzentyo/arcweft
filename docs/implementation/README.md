@@ -24,6 +24,13 @@ feature readers is tracked in
 The compiler source-free HIR facade deletion and its document-identity
 compile/behavior evidence are tracked in
 `docs/implementation/2026-07-27-proof-compiler-source-free-hir-facade-deletion.md`.
+The subsequent deletion of the HIR crate's public source-free lowering API and
+the workspace-wide exact-document test migration are tracked in
+`docs/implementation/2026-07-27-proof-source-free-hir-lowering-deletion.md`.
+The integrity-valid but explicitly `NOT_READY` Proof `01.1.1.4.1` redelivery is
+classified in
+`docs/implementation/2026-07-27-proof-01-1-1-4-1-not-ready-redelivery-intake.md`;
+the same correction request remains open for another GitHub-aware attempt.
 The final HIR expression authority remains gated on the corrected Proof
 `01.1.1.4.1` redelivery rather than being inferred from these preparatory cuts.
 

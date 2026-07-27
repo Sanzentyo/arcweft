@@ -2,7 +2,7 @@ use super::*;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::value::{RuntimeFieldValue, RuntimeSeq, runtime_sequence_from_literal_values};
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_render_text::{
     RichTextCascadeLayer, RichTextColor, RichTextSettingSource, RichTextStyle,
@@ -124,7 +124,8 @@ flow main {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
     let ops = &plan.flows[0].ops;
 
@@ -188,7 +189,8 @@ flow main {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
     let ops = &plan.flows[0].ops;
 
@@ -259,7 +261,8 @@ flow main {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
     let ops = &plan.flows[0].ops;
 
@@ -324,7 +327,8 @@ flow main {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
     let ops = &plan.flows[0].ops;
 
@@ -390,7 +394,8 @@ flow main {
 "#,
     );
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let plan = lower_runtime_plan(&hir).expect("runtime plan lowers");
     let ops = &plan.flows[0].ops;
 
@@ -450,7 +455,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let profile = DialoguePresentationProfile::new(
         ViewId::try_new("view.MobileDialogue").expect("View ID"),
         Some(ViewStyleSheetId::try_new("style.dialogue.mobile").expect("Style ID")),
@@ -499,7 +505,8 @@ flow @flow.main main {
         .expect("preset value is present in fixture");
     let preset_value_end = preset_value_start + preset_value.len();
     let parsed = parse_source(source);
-    let hir = lower_to_hir(parsed.typed_tree()).expect("fixture lowers");
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+        .expect("fixture lowers");
     let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");
     let spec = report
         .line_display_catalog

@@ -13,7 +13,7 @@ pub(super) use crate::semantic::{
 };
 pub(super) use crate::symbols::{SymbolUseKind, collect_symbol_uses};
 pub(super) use crate::types::{EntityKind, MapKind, TypeKind};
-pub(super) use arcweft_lang_hir::lower::{lower_document_to_hir, lower_to_hir};
+pub(super) use arcweft_lang_hir::lower::lower_document_to_hir;
 pub(super) use arcweft_lang_hir::model::{HirFlowItem, HirTopLevelDecl};
 pub(super) use arcweft_lang_syntax::{
     ast::{
@@ -38,34 +38,40 @@ pub(super) use arcweft_lang_syntax::{
         Literal, Placeholder, UnaryOp, parse_expr,
     },
     lint::{SyntaxLintCode, lint_id_policy},
-    parser::{parse_source, recovery::ParseError},
+    parser::{ParseOptions, parse_document_with_source, parse_source, recovery::ParseError},
     reference::BorrowKind,
     text::{parse_dialogue_text, parse_dialogue_tokens},
     types::{TypeRef, parse_fn_signature, parse_type_ref},
 };
 
-pub(super) fn parse_ok(
-    source: impl Into<String>,
-) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+pub(super) fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
     let parsed = parse_source(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
         parsed.errors()
     );
-    parsed.into_typed_tree()
+    parsed
 }
 
 pub(super) fn lower_bound_hir(label: &str, source: &str) -> arcweft_lang_hir::model::HirModule {
-    let document = arcweft_source::SourceDocument::try_new(
-        arcweft_source::SourceDocumentId::try_new(format!("memory:///{label}.arcw"))
-            .expect("valid test document ID"),
-        arcweft_source::SourceName::Generated,
-        source,
-    )
-    .expect("valid test source document");
-    let tree = parse_ok(source);
-    lower_document_to_hir(&document, &tree).expect("document-bound test source lowers")
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(format!("memory:///{label}.arcw"))
+                .expect("valid test document ID"),
+            arcweft_source::SourceName::Generated,
+            source,
+        )
+        .expect("valid test source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
+    assert!(
+        parsed.errors().is_empty(),
+        "expected {label} source to parse without errors, got {:?}",
+        parsed.errors()
+    );
+    lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .unwrap_or_else(|errors| panic!("{label} document-bound test source fails: {errors:?}"))
 }
 
 pub(super) fn parse_errors(source: impl Into<String>) -> Vec<ParseError> {
@@ -112,12 +118,12 @@ pub(super) fn flow_source(body: &str) -> String {
 
 pub(super) fn parse_flow_body_ok(
     body: impl AsRef<str>,
-) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+) -> arcweft_lang_syntax::source::ParsedSource {
     parse_ok(flow_source(body.as_ref()))
 }
 
-pub(super) fn flow_body(tree: &arcweft_lang_syntax::ast::items::TypedSyntaxTree) -> &[FlowItem] {
-    let [Item::Flow(flow)] = tree.items() else {
+pub(super) fn flow_body(parsed: &arcweft_lang_syntax::source::ParsedSource) -> &[FlowItem] {
+    let [Item::Flow(flow)] = parsed.typed_tree().items() else {
         panic!("expected one flow declaration");
     };
     flow.body()

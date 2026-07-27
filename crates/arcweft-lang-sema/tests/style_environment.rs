@@ -1,4 +1,4 @@
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
     check::{TypeCheckReport, analyze_types},
     diagnostics::TypeCheckErrorKind,
@@ -15,7 +15,8 @@ fn analyze(source: &str) -> (Vec<String>, TypeCheckReport) {
         .iter()
         .map(|error| error.code().to_owned())
         .collect();
-    let hir = lower_to_hir(parsed.typed_tree()).expect("style source lowers to HIR");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("style source lowers to HIR");
     (syntax_codes, analyze_types(&hir, &TypeCheckEnv::standard()))
 }
 

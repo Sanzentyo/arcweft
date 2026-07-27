@@ -1,4 +1,4 @@
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::view_part::{
     CheckedViewPartTargetKind, ViewPartDiagnosticCode, check_view_parts,
 };
@@ -14,7 +14,7 @@ fn checked(
 ) {
     let parsed = parse_source(source);
     assert_eq!(parsed.errors(), &[]);
-    let hir = lower_to_hir(parsed.typed_tree()).unwrap();
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
     check_view_parts(&hir)
 }
 
@@ -35,7 +35,7 @@ fn checked_view_part_catalog_separates_private_and_public_names() {
     );
     let identity = document.identity().clone();
     let parsed = parse_document_with_source(document, ParseOptions::default());
-    let hir = lower_to_hir(parsed.typed_tree()).unwrap();
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
     let (catalog, diagnostics) = check_view_parts(&hir);
     assert_eq!(diagnostics, []);
 

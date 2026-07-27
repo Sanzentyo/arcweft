@@ -9,7 +9,8 @@ pub struct GameState {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("multiline struct field lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("multiline struct field lowers");
     validate_typecheck_ready(&hir).expect("multiline struct field is structured");
 }
 
@@ -26,7 +27,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("pure function call lowers to HIR");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("pure function call lowers to HIR");
     assert!(hir.functions()[0].has_attribute("pure"));
     validate_typecheck_ready(&hir).expect("pure function call is typecheck ready");
 }
@@ -40,7 +42,7 @@ flow @flow.first first { return "wrong" }
 flow @flow.second second { return "right" }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("entry lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("entry lowers");
     validate_typecheck_ready(&hir).expect("explicit entry is typecheck ready");
 }
 
@@ -62,6 +64,7 @@ flow @flow.main main effects { fs.read(save) } {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("capability HIR lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("capability HIR lowers");
     validate_typecheck_ready(&hir).expect("capability calls structured");
 }

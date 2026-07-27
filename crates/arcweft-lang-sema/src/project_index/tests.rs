@@ -1,6 +1,6 @@
 use super::agent_prelude::{agent_prelude_callables, agent_result};
 use super::*;
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_syntax::parser::parse_source;
 use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
@@ -16,13 +16,10 @@ fn public_id(value: &str) -> PublicId {
     PublicId::try_new(value).expect("valid public id")
 }
 
-fn document_for_hir(hir: &arcweft_lang_hir::model::HirModule, path: &str) -> SourceDocument {
-    SourceDocument::try_new(
-        SourceDocumentId::try_new(path).expect("test document id"),
-        SourceName::path(path),
-        " ".repeat(hir.source_len().unwrap_or_default()),
-    )
-    .expect("test source document")
+fn document_for_hir(hir: &arcweft_lang_hir::model::HirModule) -> SourceDocument {
+    hir.source_document()
+        .expect("document-bound HIR retains its source")
+        .clone()
 }
 
 fn test_source_anchor() -> SourceAnchor {
@@ -150,10 +147,9 @@ flow @flow.listen listen {
     return "listen"
 }
 "#,
-    )
-    .into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("source lowers");
-    let document = document_for_hir(&hir, "test.arcw");
+    );
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("source lowers");
+    let document = document_for_hir(&hir);
     let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), &document)
         .expect("project index builds");
 
@@ -196,10 +192,9 @@ flow chapter_two {
     return "chapter two"
 }
 "#,
-    )
-    .into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("source lowers");
-    let document = document_for_hir(&hir, "test.arcw");
+    );
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("source lowers");
+    let document = document_for_hir(&hir);
     let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-test"), &document)
         .expect("project index builds");
 
@@ -295,10 +290,10 @@ flow @flow.opening opening() -> String {
     return "ok"
 }
 "#,
-    )
-    .into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let document = document_for_hir(&hir, "game.arcw");
+    );
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("source lowers to HIR");
+    let document = document_for_hir(&hir);
     let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
         .expect("HIR indexes for Agent Script");
 
@@ -320,10 +315,10 @@ view FeedbackForm() {
     TextField(id: @input:.feedback, value: "")
 }
 "#,
-    )
-    .into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let document = document_for_hir(&hir, "game.arcw");
+    );
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("source lowers to HIR");
+    let document = document_for_hir(&hir);
     let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
         .expect("HIR indexes for Agent Script");
 
@@ -729,15 +724,15 @@ entry agent @entry.agent.smoke {
 #[test]
 fn project_index_from_hir_projects_inline_image_agent_actions() {
     let tree = parse_source(
-            r#"
+        r#"
 flow @flow.opening opening {
     let pulse = image(asset = @asset:.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
 }
 "#,
-        )
-        .into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("source lowers to HIR");
-    let document = document_for_hir(&hir, "game.arcw");
+    );
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("source lowers to HIR");
+    let document = document_for_hir(&hir);
     let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
         .expect("HIR indexes inline image actions");
     let env = index.typecheck_env();
@@ -761,10 +756,10 @@ flow @flow.opening opening {
     mystery_present(asset = @asset:.bg.pulse, target = "target.sample.pulse", action = "action.inspect.pulse")
 }
 "#,
-    )
-    .into_typed_tree();
-    let hir = lower_to_hir(&tree).expect("unknown call lowers to HIR");
-    let document = document_for_hir(&hir, "game.arcw");
+    );
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unknown call lowers to HIR");
+    let document = document_for_hir(&hir);
     let index = project_semantic_index_from_hir(&hir, ProgramHash::new("program-a"), &document)
         .expect("invalid call remains indexable without projecting image metadata");
 

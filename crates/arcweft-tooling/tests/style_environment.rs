@@ -1,5 +1,5 @@
 use arcweft_lang_hir::{
-    lower::lower_to_hir,
+    lower::lower_document_to_hir,
     style::{HirStyleEnvironmentId, HirStyleId},
 };
 use arcweft_lang_sema::{check::analyze_types, env::TypeCheckEnv};
@@ -193,7 +193,7 @@ fn hover_uses_checked_value_and_source_range() {
     let source = valid_environment_source("color-scheme == dark");
     let parsed = parse_source(&source);
     let environment = first_environment(&parsed);
-    let hir = lower_to_hir(parsed.typed_tree()).unwrap();
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
     let report = analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
     let checked = report.style_catalog.sheets()[0].rules()[0]
@@ -349,7 +349,7 @@ fn intrinsic_navigation_returns_typed_target() {
     let source = valid_environment_source("color-scheme == dark");
     let parsed = parse_source(&source);
     let environment = first_environment(&parsed);
-    let hir = lower_to_hir(parsed.typed_tree()).unwrap();
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
     let report = analyze_types(&hir, &TypeCheckEnv::standard());
     let checked = report.style_catalog.sheets()[0].rules()[0]
         .environment()

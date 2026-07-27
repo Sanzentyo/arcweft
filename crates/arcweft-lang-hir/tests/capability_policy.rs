@@ -1,4 +1,4 @@
-use arcweft_lang_hir::{lower::lower_to_hir, model::HirTopLevelDecl};
+use arcweft_lang_hir::{lower::lower_document_to_hir, model::HirTopLevelDecl};
 use arcweft_lang_syntax::{expr::Expr, parser::parse_source};
 
 fn effect_label(effect: &Expr) -> Option<String> {
@@ -30,7 +30,8 @@ pub extern capability fs {
     );
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
 
-    let hir = lower_to_hir(parsed.typed_tree()).expect("canonical capability lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("canonical capability lowers");
     let [HirTopLevelDecl::ExternCapability(capability)] = hir.declarations() else {
         panic!("expected one external capability declaration");
     };
@@ -73,7 +74,8 @@ extern capability fs {
     // The public parser's atomic grammar switch is a later stage. This test
     // only fixes the current HIR boundary: recovery must never synthesize a
     // capability-policy declaration or displace retained functions.
-    let hir = lower_to_hir(parsed.typed_tree()).expect("retained capability function lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("retained capability function lowers");
     let [HirTopLevelDecl::ExternCapability(capability)] = hir.declarations() else {
         panic!("expected one external capability declaration");
     };

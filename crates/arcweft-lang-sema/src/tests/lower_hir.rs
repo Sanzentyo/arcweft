@@ -21,7 +21,7 @@ flow @flow.opening opening {
 "#,
     );
 
-    let hir = lower_to_hir(&tree).expect("edge flow lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("edge flow lowers");
     let flow = &hir.flows()[0];
     assert!(
         flow.body()
@@ -65,8 +65,8 @@ flow @flow.raw_example {
     );
     assert_eq!(parsed.errors().len(), 1);
     assert_eq!(parsed.errors()[0].message(), "unsupported flow item");
-    let tree = parsed.typed_tree().clone();
-    let errors = lower_to_hir(&tree).expect_err("raw flow item cannot lower");
+    let errors = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect_err("raw flow item cannot lower");
     assert!(errors[0].message().contains("FlowItem"));
     assert!(errors[0].range().is_some());
 }

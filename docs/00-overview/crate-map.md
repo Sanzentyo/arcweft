@@ -195,7 +195,9 @@ arcweft-launch
   MCP `resources/read` / tool result 互換の Sans I/O JSON shape へ変換する。
   stdio、HTTP、auth、session lifecycle、renderer readback は持たない。
 - `arcweft-lang-syntax` は rowan-compatible な lossless CST と surface parser を所有する。`SyntaxKind`、`TokenKind`、green tree、`SyntaxNode`、source text / line index、error-tolerant `ParsedSource`、surface AST、expression/type/pattern parsing、syntax lint をここに集約する。HIR lowering、semantic checks、runtime-plan lowering は持たない。
-- `arcweft-lang-hir` は HIR 型と `lower_to_hir` を所有し、semantic passes、verifier、CLI、LSP はこの crate を HIR 入力境界にする。
+- `arcweft-lang-hir` は HIR 型と source-document-bound な
+  `lower_document_to_hir` を所有し、semantic passes、verifier、CLI、LSP
+  は exact source revision を保持したこの crate を HIR 入力境界にする。
 - `arcweft-lang-hir` は syntax/CST 由来の typed ID context も所有する。
   `arcweft-tooling`、CLI、LSP は dialogue ID や choice ID を独自 scan
   せず、この context から edit / hint / code action を作る。

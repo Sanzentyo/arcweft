@@ -68,7 +68,7 @@ flow @flow.opening opening {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let [
@@ -102,7 +102,8 @@ flow @flow.opening opening {
         [LinePlanItem::Out(Expr::Tuple(items))] if items.len() == 2
     ));
 
-    let hir = lower_to_hir(&tree).expect("same-line line plans lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("same-line line plans lower");
     validate_typecheck_ready(&hir).expect("same-line line plans are typecheck-ready");
 }
 
@@ -123,7 +124,7 @@ flow @flow.opening opening {
 ";
     let tree = parse_ok(source);
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let [
@@ -210,7 +211,8 @@ flow @flow.line_handles line_handles() -> String {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("bound timed cue line result lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bound timed cue line result lowers");
     validate_typecheck_ready(&hir).expect("bound timed cue line result is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -310,7 +312,7 @@ flow @flow.opening opening {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::ContentCall(call) = &flow.body()[0] else {
@@ -335,7 +337,8 @@ flow @flow.opening opening {
             } if statements.len() == 1)
     ));
 
-    let hir = lower_to_hir(&tree).expect("line plan fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line plan fixture lowers");
     validate_typecheck_ready(&hir).expect("line plan fixture is typecheck-ready");
     typecheck_hir(
         &hir,
@@ -366,7 +369,7 @@ wait(mark(.release_focus))
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let [FlowItem::ContentCall(call)] = flow.body() else {
@@ -419,7 +422,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let duplicate_hir = lower_to_hir(&duplicate).expect("duplicate mark fixture lowers");
+    let duplicate_hir = lower_document_to_hir(duplicate.document(), duplicate.typed_tree())
+        .expect("duplicate mark fixture lowers");
     let duplicate_errors = typecheck_hir(
         &duplicate_hir,
         &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
@@ -441,7 +445,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let missing_hir = lower_to_hir(&missing).expect("missing mark fixture lowers");
+    let missing_hir = lower_document_to_hir(missing.document(), missing.typed_tree())
+        .expect("missing mark fixture lowers");
     let missing_errors = typecheck_hir(
         &missing_hir,
         &TypeCheckEnv::new()
@@ -465,7 +470,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("open tag fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("open tag fixture lowers");
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
@@ -489,7 +495,7 @@ flow @flow.opening opening {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::ContentCall(call) = &flow.body()[0] else {
@@ -515,7 +521,8 @@ flow @flow.opening opening {
             if matches!(target.expr(), Expr::EntityRef(target) if target.body() == "flow.title")
     ));
 
-    let hir = lower_to_hir(&tree).expect("line plan cancel actions lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line plan cancel actions lower");
     validate_typecheck_ready(&hir).expect("line plan cancel actions are typecheck-ready");
     typecheck_hir(
         &hir,
@@ -545,7 +552,7 @@ flow @flow.opening opening {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::ContentCall(call) = &flow.body()[0] else {
@@ -564,7 +571,8 @@ flow @flow.opening opening {
         ] if selected_call_member(stop) == Some("stop") && selected_call_member(flush) == Some("flush")
     ));
 
-    let hir = lower_to_hir(&tree).expect("line plan cancel commands lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line plan cancel commands lower");
     validate_typecheck_ready(&hir).expect("line plan cancel commands are typecheck-ready");
     typecheck_hir(
         &hir,
@@ -590,7 +598,7 @@ flow @flow.opening opening {
 }
 ",
     );
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
@@ -605,7 +613,8 @@ flow @flow.opening opening {
                 && matches!(assertion.condition(), Expr::Path(path) if path == "dialogue_view_ready")
     ));
 
-    let hir = lower_to_hir(&tree).expect("line plan assertions lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line plan assertions lower");
     validate_typecheck_ready(&hir).expect("line plan assertions are typecheck-ready");
     typecheck_hir(
         &hir,
@@ -636,7 +645,7 @@ flow @flow.opening opening {
 }
 ",
     );
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
@@ -655,7 +664,8 @@ flow @flow.opening opening {
         LinePlanItem::Expr(Expr::Call(_))
     ));
 
-    let hir = lower_to_hir(&tree).expect("line plan parallel groups lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line plan parallel groups lower");
     validate_typecheck_ready(&hir).expect("line plan parallel groups are typecheck-ready");
     typecheck_hir(
         &hir,
@@ -672,7 +682,7 @@ flow @flow.opening opening {
 fn line_plan_block_items_share_brace_and_colon_parsing() {
     fn parse_plan_items(source: &str) -> Vec<LinePlanItem> {
         let tree = parse_ok(source);
-        let Item::Flow(flow) = &tree.items()[0] else {
+        let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
             panic!("expected flow");
         };
         let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
@@ -770,7 +780,7 @@ flow @flow.opening opening {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
@@ -786,7 +796,8 @@ flow @flow.opening opening {
             if matches!(start_items.as_slice(), [LinePlanItem::TogetherGroup(together_items)] if together_items.len() == 2)
     ));
 
-    let hir = lower_to_hir(&tree).expect("flat line plan blocks lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("flat line plan blocks lower");
     validate_typecheck_ready(&hir).expect("flat line plan blocks are typecheck-ready");
     typecheck_hir(
         &hir,
@@ -866,7 +877,7 @@ flow @flow.opening opening {
 }
 ",
     );
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::SpeakerLine(line) = &flow.body()[0] else {
@@ -888,7 +899,8 @@ flow @flow.opening opening {
         matches!(&call.args()[2], CallArg::Named { name, value } if name == "cache" && matches!(value.as_ref(), Expr::ShortVariant(path) if path == "flow"))
     );
 
-    let hir = lower_to_hir(&tree).expect("line plan memo lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("line plan memo lowers");
     validate_typecheck_ready(&hir).expect("line plan memo is typecheck-ready");
     typecheck_hir(
         &hir,

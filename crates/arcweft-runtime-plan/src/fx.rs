@@ -509,7 +509,7 @@ fn simple_path(expr: &Expr) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::lower_fx_definitions;
-    use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
     use arcweft_presentation::fx::{
         FiniteF32, FxEvaluationBudget, FxNode, FxParameterSlot, FxRuntimeType, FxRuntimeValue,
@@ -518,7 +518,7 @@ mod tests {
 
     #[test]
     fn compiles_defaults_and_nested_stack_into_one_graph() {
-        let tree = parse_source(
+        let parsed = parse_source(
             r##"
 #[fx]
 fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
@@ -529,9 +529,9 @@ fn notice(accent: Color = rgb("#ff4050")) -> Fx {
     Fx.stack([emphasis(accent = accent)])
 }
 "##,
-        )
-        .into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("Fx fixture lowers");
+        );
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("Fx fixture lowers");
         let definitions = lower_fx_definitions(&hir).expect("Fx graph compiles");
         let notice = definitions
             .iter()
@@ -555,7 +555,7 @@ fn notice(accent: Color = rgb("#ff4050")) -> Fx {
 
     #[test]
     fn compiles_and_executes_transform_sampler_with_typed_parameter_slots() {
-        let tree = parse_source(
+        let parsed = parse_source(
             r"
 #[fx]
 fn wave(amplitude: Length = 2px, speed: f32 = 1.0) -> Fx {
@@ -567,9 +567,9 @@ fn wave(amplitude: Length = 2px, speed: f32 = 1.0) -> Fx {
     )
 }
 ",
-        )
-        .into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("Fx sampler fixture lowers");
+        );
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("Fx sampler fixture lowers");
         let definitions = lower_fx_definitions(&hir).expect("Fx sampler compiles");
         let [FxNode::Transform { properties, .. }] = definitions[0].graph().nodes() else {
             panic!("wave compiles to a transform node");

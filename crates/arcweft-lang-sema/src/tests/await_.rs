@@ -31,7 +31,8 @@ fn load_bg_result() -> Result<Image, AssetError> {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("ordinary function lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("ordinary function lowers");
     assert!(matches!(
         hir.functions()[0].value().map(AuthoredExpr::expr),
         Some(Expr::Await(awaited))
@@ -131,7 +132,8 @@ flow @flow.loading loading {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("await-with fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("await-with fixture lowers");
     let errors =
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("non-Need await-with is rejected");
     let error = errors
@@ -159,7 +161,7 @@ flow @flow.loading loading {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
@@ -193,7 +195,7 @@ flow @flow.loading loading {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
@@ -212,7 +214,8 @@ flow @flow.loading loading {
         })
     ));
 
-    let hir = lower_to_hir(&tree).expect("await branches lower");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("await branches lower");
     assert!(matches!(
         &hir.flows()[0].body()[0],
         HirFlowItem::Await(await_with) if await_with.branches().len() == 4
@@ -231,7 +234,7 @@ flow @flow.loading loading {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
@@ -260,7 +263,7 @@ flow @flow.loading loading {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::AwaitWith(await_with) = &flow.body()[0] else {
@@ -281,7 +284,7 @@ flow @flow.loading loading {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::LetAwait {
@@ -295,7 +298,8 @@ flow @flow.loading loading {
     assert!(await_with.applies_try());
     assert!(await_with.pending().is_some());
 
-    let hir = lower_to_hir(&tree).expect("bound try-await lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("bound try-await lowers");
     assert!(matches!(
         &hir.flows()[0].body()[0],
         HirFlowItem::LetAwait {
@@ -327,7 +331,8 @@ flow @flow.loading loading {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("bound plain await lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bound plain await lowers");
 
     let env = TypeCheckEnv::new().with_function(
         "load_opening_assets",
@@ -348,7 +353,8 @@ flow @flow.loading loading {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("variant pending patterns lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("variant pending patterns lower");
 
     let env = TypeCheckEnv::new().with_function(
         "run_activity",
@@ -375,7 +381,8 @@ flow @flow.loading loading {
 "#,
     );
 
-    let hir = lower_to_hir(&tree).expect("multiline contextual try-await lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("multiline contextual try-await lowers");
     assert!(matches!(
         &hir.flows()[0].body()[0],
         HirFlowItem::LetAwait { await_with, .. }
@@ -412,7 +419,8 @@ flow @flow.loading loading {
 ",
     );
 
-    let hir = lower_to_hir(&tree).expect("parenthesized await-with lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("parenthesized await-with lowers");
     assert!(matches!(
         &hir.flows()[0].body()[0],
         HirFlowItem::LetAwait { await_with, .. } if await_with.applies_try()
@@ -441,7 +449,8 @@ flow @flow.loading loading {
 "#,
     );
 
-    let hir = lower_to_hir(&tree).expect("post-await context lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("post-await context lowers");
     assert!(matches!(
         &hir.flows()[0].body()[0],
         HirFlowItem::LetAwait { await_with, .. }
@@ -472,7 +481,7 @@ flow @flow.loading loading {
 }
 ",
     );
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     assert!(matches!(
@@ -510,7 +519,8 @@ flow @flow.borrow borrow {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("borrow across await fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("borrow across await fixture lowers");
     let env = TypeCheckEnv::standard()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_method(
@@ -602,7 +612,8 @@ flow @flow.borrow borrow {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("explicit drop borrow fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("explicit drop borrow fixture lowers");
     let pixel_borrow = TypeKind::BorrowRef {
         kind: BorrowKind::Shared,
         lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
@@ -641,7 +652,8 @@ flow @flow.borrow borrow {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("conditional drop borrow fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("conditional drop borrow fixture lowers");
     let pixel_borrow = TypeKind::BorrowRef {
         kind: BorrowKind::Shared,
         lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
@@ -687,7 +699,8 @@ flow @flow.borrow borrow {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("all-arm drop fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("all-arm drop fixture lowers");
     let pixel_borrow = TypeKind::BorrowRef {
         kind: BorrowKind::Shared,
         lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
@@ -725,7 +738,8 @@ flow @flow.borrow borrow {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("use-after-drop fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("use-after-drop fixture lowers");
     let pixel_borrow = TypeKind::BorrowRef {
         kind: BorrowKind::Shared,
         lifetime: Some(LifetimeScopeKind::Named("asset".to_owned())),
@@ -766,7 +780,8 @@ flow @flow.loading loading() -> Result<FlowExit, AvatarError> {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("await branch typecheck fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("await branch typecheck fixture lowers");
     let env = TypeCheckEnv::new()
         .with_function(
             "load_avatar",

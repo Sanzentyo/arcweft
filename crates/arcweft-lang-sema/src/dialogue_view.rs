@@ -310,7 +310,7 @@ mod tests {
         registration::ProjectRegistrationFacts,
         test_support::character_project::{register, root_project_source},
     };
-    use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
 
     fn registered_report(source: &str) -> TypeCheckReport {
@@ -333,7 +333,8 @@ mod tests {
         let source = "#[dialogue_view]\npub struct StoryDialogue {\n speaker: String\n content: DialogueContent\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n}\n";
         let parsed = parse_source(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        lower_to_hir(parsed.typed_tree()).expect("lower dialogue View record");
+        lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("lower dialogue View record");
         let report = registered_report(source);
         assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
         let registry = report.dialogue_view_models;
@@ -349,7 +350,8 @@ mod tests {
         let source = "#[dialogue_view]\npub struct BrokenDialogue {\n speaker: String\n content: String\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n}\n";
         let parsed = parse_source(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        lower_to_hir(parsed.typed_tree()).expect("lower invalid dialogue View record");
+        lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("lower invalid dialogue View record");
         let report = registered_report(source);
         assert!(
             report
@@ -366,7 +368,8 @@ mod tests {
         let source = "#[dialogue_view]\npub struct ExtendedDialogue {\n speaker: String\n content: DialogueContent\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n mood: String\n}\n";
         let parsed = parse_source(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        lower_to_hir(parsed.typed_tree()).expect("lower invalid dialogue View record");
+        lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("lower invalid dialogue View record");
         let report = registered_report(source);
         assert!(
             report
@@ -392,7 +395,8 @@ pub view DialoguePanel(dialogue: DialogueView) {
 "#,
         );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_to_hir(parsed.typed_tree()).expect("lower dialogue View");
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("lower dialogue View");
         typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("typed dialogue projections");
     }
 
@@ -401,7 +405,8 @@ pub view DialoguePanel(dialogue: DialogueView) {
         let parsed =
             parse_source("pub view Broken(dialogue: DialogueView) {\n Text(dialogue.content)\n}\n");
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_to_hir(parsed.typed_tree()).expect("lower invalid dialogue View");
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("lower invalid dialogue View");
         let errors = typecheck_hir(&hir, &TypeCheckEnv::standard())
             .expect_err("plain Text must reject dialogue rich content");
         assert!(
@@ -416,7 +421,8 @@ pub view DialoguePanel(dialogue: DialogueView) {
         let parsed =
             parse_source("pub view @std.view.dialogue Dialogue() {\n Text(\"reserved\")\n}\n");
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_to_hir(parsed.typed_tree()).expect("lower reserved View fixture");
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("lower reserved View fixture");
         let errors = typecheck_hir(&hir, &TypeCheckEnv::standard())
             .expect_err("reserved standard View id must be rejected");
         assert!(

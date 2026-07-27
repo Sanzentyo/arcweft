@@ -1,7 +1,9 @@
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use super::support::*;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 
 /// The check-fixture corpus is authored against these published domain types.
 ///
@@ -112,28 +114,29 @@ fn arcw_files(dir: &Path) -> Vec<PathBuf> {
 
 fn assert_check_pipeline(path: &Path) {
     let source = fs::read_to_string(path).expect("fixture source");
-    let parsed = parse_source(&source);
+    let label = path
+        .file_stem()
+        .and_then(std::ffi::OsStr::to_str)
+        .expect("fixture filename is UTF-8");
+    let document = Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(format!(
+                "memory:///contract-fixtures/{label}.arcw"
+            ))
+            .expect("valid fixture document ID"),
+            arcweft_source::SourceName::Generated,
+            source.as_str(),
+        )
+        .expect("valid fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(
         parsed.errors().is_empty(),
         "{} parse errors: {:?}",
         path.display(),
         parsed.errors(),
     );
-    let tree = parsed.into_typed_tree();
-    let label = path
-        .file_stem()
-        .and_then(std::ffi::OsStr::to_str)
-        .expect("fixture filename is UTF-8");
-    let document = arcweft_source::SourceDocument::try_new(
-        arcweft_source::SourceDocumentId::try_new(format!(
-            "memory:///contract-fixtures/{label}.arcw"
-        ))
-        .expect("valid fixture document ID"),
-        arcweft_source::SourceName::Generated,
-        source.as_str(),
-    )
-    .expect("valid fixture source document");
-    let hir = lower_document_to_hir(&document, &tree)
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
         .unwrap_or_else(|errors| panic!("{} HIR errors: {errors:?}", path.display()));
     let registry = registry_from_hir(&hir);
     validate_hir_references(&hir, &registry)

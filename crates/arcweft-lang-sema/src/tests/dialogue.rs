@@ -19,7 +19,7 @@ pub flow @flow.alice_enters alice_enters {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow item");
     };
     assert_eq!(flow.id().expect("flow id").body(), "flow.alice_enters");
@@ -90,7 +90,8 @@ flow @flow.opening opening {
 ",
     );
 
-    let hir = lower_to_hir(&tree).expect("dialogue callee fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("dialogue callee fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("alice2", TypeKind::SpeakerPreset(EntityKind::Character));
@@ -143,7 +144,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("extensible speaker options lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("extensible speaker options lower");
     let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
     let errors = typecheck_hir(&hir, &env).expect_err("unresolved dialogue atoms are rejected");
     assert!(
@@ -164,7 +166,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("bare atom fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bare atom fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("bare atom is not global");
     assert!(
         errors
@@ -184,7 +187,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("resolved speaker options lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("resolved speaker options lower");
     let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
     typecheck_hir(&hir, &env).expect("short variant atom options typecheck");
 }
@@ -202,7 +206,7 @@ flow @flow.opening opening {
 "#,
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let [FlowItem::ContentCall(call), FlowItem::Scope(block)] = flow.body() else {
@@ -212,7 +216,8 @@ flow @flow.opening opening {
     assert_eq!(block.name(), None);
     assert_eq!(block.body().len(), 2);
 
-    let hir = lower_to_hir(&tree).expect("dialogue plus bare block lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("dialogue plus bare block lowers");
     let [HirFlowItem::Dialogue(dialogue), HirFlowItem::Scope(block)] = hir.flows()[0].body() else {
         panic!("expected HIR dialogue followed by unnamed scope");
     };
@@ -239,7 +244,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("relative dialogue options lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("relative dialogue options lower");
     let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
         panic!("expected HIR scope");
     };
@@ -306,7 +312,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("at-relative dialogue options lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("at-relative dialogue options lower");
     let HirFlowItem::Scope(outer) = &hir.flows()[0].body()[0] else {
         panic!("expected outer scope");
     };
@@ -533,7 +540,8 @@ flow @flow.main main {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("invalid controls still lower for diagnostics");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("invalid controls still lower for diagnostics");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("invalid dialogue controls must fail type checking");
     let messages = errors
@@ -596,7 +604,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("shorthand mark lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("shorthand mark lowers");
 
     typecheck_hir(
         &hir,
@@ -614,7 +623,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("custom effect selectors lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("custom effect selectors lower");
 
     typecheck_hir(
         &hir,
@@ -636,7 +646,8 @@ flow @flow.opening opening {
 ",
     );
 
-    let hir = lower_to_hir(&tree).expect("family-relative dialogue IDs lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("family-relative dialogue IDs lower");
     let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
         panic!("expected scope");
     };
@@ -666,7 +677,8 @@ flow @flow.opening opening {
 ",
     );
 
-    let hir = lower_to_hir(&tree).expect("narrator alias line lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("narrator alias line lowers");
     let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
         panic!("expected scope");
     };
@@ -766,12 +778,12 @@ fn camera_frames() -> Stream<VideoFrame, CameraError> {
 ",
     );
 
-    let Item::Function(flash) = &tree.items()[0] else {
+    let Item::Function(flash) = &tree.typed_tree().items()[0] else {
         panic!("expected ordinary function");
     };
     assert_eq!(flash.signature_text(), "fn flash(color: Color) -> Content");
 
-    let Item::Function(stream) = &tree.items()[1] else {
+    let Item::Function(stream) = &tree.typed_tree().items()[1] else {
         panic!("expected generator function");
     };
     assert_eq!(
@@ -780,7 +792,8 @@ fn camera_frames() -> Stream<VideoFrame, CameraError> {
     );
     assert!(matches!(stream.body_statements()[0], Stmt::Yield(_)));
 
-    let hir = lower_to_hir(&tree).expect("ordinary function bodies lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("ordinary function bodies lower");
     assert_eq!(hir.functions().len(), 2);
     validate_typecheck_ready(&hir).expect("function bodies are structured");
 }

@@ -790,7 +790,7 @@ mod tests {
         RuntimeEntryTarget, RuntimeFlow,
     };
     use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
-    use arcweft_lang_hir::lower::lower_to_hir;
+    use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_sema::check::{
         TypeCheckStats, TypeExpressionId, TypeJudgment, TypeJudgmentExpected, TypeJudgmentId,
         analyze_types,
@@ -985,7 +985,8 @@ mod tests {
 
     fn empty_type_report() -> TypeCheckReport {
         let parsed = parse_source("");
-        let hir = lower_to_hir(parsed.typed_tree()).expect("empty type-report fixture lowers");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("empty type-report fixture lowers");
         analyze_types(&hir, &TypeCheckEnv::default())
     }
 }

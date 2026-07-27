@@ -9,8 +9,8 @@ It keeps file I/O in the CLI adapter and runs the Sans I/O compiler stages over
 the source text:
 
 ```text
-parse_source
-lower_to_hir
+parse_document_with_source
+lower_document_to_hir
 registry_from_hir
 validate_hir_references
 lint_id_policy

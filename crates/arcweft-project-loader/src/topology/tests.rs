@@ -15,7 +15,7 @@ use arcweft_adapter_metadata::{
     ProcessAbi, ProcessTarget, ProcessTransport, WasmAbi, WasmTarget,
 };
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
     check::typecheck_hir, diagnostics::TypeCheckErrorKind,
     effect_diagnostics::EffectDiagnosticCode, env::TypeCheckEnv,
@@ -559,7 +559,8 @@ flow @flow.main main effects { fs.read } {
 ",
     );
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let hir = lower_to_hir(parsed.typed_tree()).expect("capability fixture lowers");
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("capability fixture lowers");
 
     let read_env = AdapterSemanticRegistration::new(read.adapter())
         .declare_target_effects(TypeCheckEnv::new());

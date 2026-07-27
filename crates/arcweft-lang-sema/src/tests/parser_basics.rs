@@ -3,7 +3,7 @@ use super::support::*;
 #[test]
 fn stub_is_now_real_source_parser() {
     let tree = parse_flow_body_ok("alice: おはよう。[p]");
-    assert_eq!(tree.items().len(), 1);
+    assert_eq!(tree.typed_tree().items().len(), 1);
     assert!(matches!(flow_body(&tree), [FlowItem::SpeakerLine(_)]));
 }
 
@@ -21,9 +21,12 @@ use game.prelude.*
 ",
     );
 
-    assert_eq!(tree.module().expect("module").path(), "game.routes.opening");
-    assert_eq!(tree.uses().len(), 1);
-    let Item::Flow(flow) = &tree.items()[0] else {
+    assert_eq!(
+        tree.typed_tree().module().expect("module").path(),
+        "game.routes.opening"
+    );
+    assert_eq!(tree.typed_tree().uses().len(), 1);
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow item");
     };
     assert_eq!(flow.visibility(), Some(Visibility::Public));
@@ -76,7 +79,8 @@ flow @flow:. shared {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("relative flow ids lower");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("relative flow ids lower");
 
     assert_eq!(hir.flows()[0].id().expect("flow id").body(), "flow.opening");
     assert_eq!(hir.flows()[0].name(), Some("opening"));
@@ -120,7 +124,7 @@ flow @flow.opening opening {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let FlowItem::Stmt(Stmt::Expr {
@@ -155,7 +159,7 @@ flow @<flow.alice_intro@sem:b3_9f2a1c> opening {
 ",
     );
 
-    let Item::Flow(flow) = &tree.items()[0] else {
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     let id = flow
@@ -184,7 +188,8 @@ flow @flow.opening opening {
 ",
     );
 
-    let hir = lower_to_hir(&tree).expect("family-relative include lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("family-relative include lowers");
     let HirFlowItem::Scope(scope) = &hir.flows()[0].body()[0] else {
         panic!("expected scope");
     };
@@ -263,7 +268,7 @@ flow @flow.title title {
 }
 ",
     );
-    let lints = lint_id_policy(&tree);
+    let lints = lint_id_policy(tree.typed_tree());
 
     assert!(
         lints
@@ -294,7 +299,7 @@ flow @flow.opening start {
 }
 ",
     );
-    let lints = lint_id_policy(&tree);
+    let lints = lint_id_policy(tree.typed_tree());
 
     assert!(
         !lints
@@ -317,8 +322,14 @@ use parent.common.{route_gate}
 ",
     );
 
-    assert_eq!(tree.module().expect("module").path(), "super.shared");
-    assert_eq!(tree.uses()[0].tree().source(), "super.common.{route_gate}");
+    assert_eq!(
+        tree.typed_tree().module().expect("module").path(),
+        "super.shared"
+    );
+    assert_eq!(
+        tree.typed_tree().uses()[0].tree().source(),
+        "super.common.{route_gate}"
+    );
 }
 
 #[test]
@@ -337,7 +348,7 @@ flow @flow.title title {}
 ",
     );
     let rejected = !parsed.errors().is_empty()
-        || lower_to_hir(parsed.typed_tree()).map_or(true, |hir| {
+        || lower_document_to_hir(parsed.document(), parsed.typed_tree()).map_or(true, |hir| {
             validate_typecheck_ready(&hir).is_err()
                 || typecheck_hir(&hir, &TypeCheckEnv::new()).is_err()
         });
@@ -358,11 +369,11 @@ fn parses_attributes_and_wiki_links() {
 ",
     );
 
-    assert_eq!(tree.attrs().len(), 1);
-    assert_eq!(tree.attrs()[0].name(), "generated");
-    assert_eq!(tree.attrs()[0].args(), Some("tool"));
-    assert_eq!(tree.wiki_links()[0].body(), "flow.alice_intro");
-    let Item::Flow(flow) = &tree.items()[0] else {
+    assert_eq!(tree.typed_tree().attrs().len(), 1);
+    assert_eq!(tree.typed_tree().attrs()[0].name(), "generated");
+    assert_eq!(tree.typed_tree().attrs()[0].args(), Some("tool"));
+    assert_eq!(tree.typed_tree().wiki_links()[0].body(), "flow.alice_intro");
+    let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow");
     };
     assert_eq!(flow.attrs().len(), 1);

@@ -59,7 +59,8 @@ effects {}
 }
 ",
     );
-    let valid_hir = lower_to_hir(&valid).expect("Reduction constructor fixture lowers");
+    let valid_hir = lower_document_to_hir(valid.document(), valid.typed_tree())
+        .expect("Reduction constructor fixture lowers");
     typecheck_hir(&valid_hir, &TypeCheckEnv::standard())
         .expect("Reduction.unchanged preserves its shared state-borrow type");
 
@@ -76,7 +77,8 @@ effects {}
 }
 ",
     );
-    let invalid_hir = lower_to_hir(&invalid).expect("invalid Reduction fixture lowers");
+    let invalid_hir = lower_document_to_hir(invalid.document(), invalid.typed_tree())
+        .expect("invalid Reduction fixture lowers");
     let errors = typecheck_hir(&invalid_hir, &TypeCheckEnv::standard())
         .expect_err("Reduction.unchanged rejects an owned state value");
     assert!(errors.iter().any(|error| {
@@ -95,7 +97,8 @@ flow mutable_deref_assignment {
 }
 ",
     );
-    let mutable_hir = lower_to_hir(&mutable).expect("mutable deref assignment lowers");
+    let mutable_hir = lower_document_to_hir(mutable.document(), mutable.typed_tree())
+        .expect("mutable deref assignment lowers");
     let mutable_env = TypeCheckEnv::new().with_symbol(
         "target",
         TypeKind::BorrowRef {
@@ -114,7 +117,8 @@ flow borrow_assignment {
 }
 ",
     );
-    let borrow_hir = lower_to_hir(&borrow).expect("borrow assignment fixture lowers");
+    let borrow_hir = lower_document_to_hir(borrow.document(), borrow.typed_tree())
+        .expect("borrow assignment fixture lowers");
     let errors = typecheck_hir(&borrow_hir, &mutable_env)
         .expect_err("borrow expression is not an assignment place");
     assert!(errors.iter().any(|error| {
@@ -138,7 +142,8 @@ effects { fs.read }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("assertion semantic fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("assertion semantic fixture lowers");
     let env = TypeCheckEnv::new()
         .with_function_signature("adapter.ready", FunctionSignature::new(TypeKind::Bool, []))
         .with_function_effects("adapter.ready", ["fs.read".to_owned()]);
@@ -191,7 +196,8 @@ flow numeric_bounds {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("numeric bounds fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("numeric bounds fixture lowers");
     validate_typecheck_ready(&hir).expect("numeric bounds fixture is structured");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
 
@@ -239,7 +245,8 @@ flow float_bounds {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("float bounds fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("float bounds fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     let overflow = report
         .diagnostics
@@ -272,7 +279,8 @@ flow numeric_evidence {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("numeric evidence fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("numeric evidence fixture lowers");
     validate_typecheck_ready(&hir).expect("numeric evidence fixture is structured");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
@@ -324,7 +332,8 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("flow signature fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("flow signature fixture lowers");
     assert!(hir.flows()[0].signature().is_some());
     validate_typecheck_ready(&hir).expect("flow signature fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("flow parameters bind as locals");
@@ -344,7 +353,8 @@ flow main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("view mount fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("view mount fixture lowers");
     validate_hir_references(&hir, &registry_from_hir(&hir)).expect("view mount references resolve");
     typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("view mount builtin typechecks");
 }
@@ -363,7 +373,8 @@ flow main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("view handle fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("view handle fixture lowers");
     validate_hir_references(&hir, &registry_from_hir(&hir))
         .expect("view handle references resolve");
     typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("view handle release typechecks");
@@ -383,7 +394,8 @@ flow main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("view handle fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("view handle fixture lowers");
     validate_hir_references(&hir, &registry_from_hir(&hir))
         .expect("view handle references resolve");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::standard())
@@ -412,7 +424,8 @@ flow main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("overlay handle fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("overlay handle fixture lowers");
     validate_hir_references(&hir, &registry_from_hir(&hir))
         .expect("overlay handle references resolve");
     typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("overlay pop typechecks");
@@ -431,7 +444,8 @@ flow action_wait() -> String {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("receive action fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("receive action fixture lowers");
     validate_hir_references(&hir, &registry_from_hir(&hir))
         .expect("receive action target resolves");
     validate_typecheck_ready(&hir).expect("receive action fixture is typecheck-ready");
@@ -458,7 +472,8 @@ view FeedbackForm() {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("view action fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("view action fixture lowers");
     validate_typecheck_ready(&hir).expect("view action fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::standard())
         .expect("view action payload matches declaration signature");
@@ -478,7 +493,8 @@ view SettingsPanel() {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("view action fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("view action fixture lowers");
     validate_typecheck_ready(&hir).expect("view action fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::standard())
         .expect("view action without payload matches declaration signature");
@@ -498,7 +514,8 @@ view FeedbackForm() {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("generic callback action fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("generic callback action fixture lowers");
     validate_typecheck_ready(&hir).expect("generic callback action fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::standard())
         .expect("generic callback action payload matches declaration signature");
@@ -518,7 +535,8 @@ view FeedbackForm() {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("generic callback action fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("generic callback action fixture lowers");
     validate_typecheck_ready(&hir).expect("generic callback action fixture is typecheck-ready");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::standard())
         .expect_err("generic callback action payload name mismatch is rejected");
@@ -549,7 +567,8 @@ flow @flow.iter iter {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("iterator evidence fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("iterator evidence fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
 
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);
@@ -586,7 +605,8 @@ flow opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("canonical character fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("canonical character fixture lowers");
     validate_typecheck_ready(&hir).expect("canonical character fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("bare character identity suffix binds as dialogue callee");
@@ -605,7 +625,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("data codec fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("data codec fixture lowers");
     validate_typecheck_ready(&hir).expect("data codec fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::standard()).expect("data codec builtins typecheck");
 }
@@ -623,7 +644,7 @@ flow formats {{
 "#
         );
         let tree = parse_ok(&source);
-        let hir = lower_to_hir(&tree)
+        let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
             .unwrap_or_else(|errors| panic!("DataFormat.{variant} lowers: {errors:?}"));
         validate_typecheck_ready(&hir)
             .unwrap_or_else(|errors| panic!("DataFormat.{variant} is typecheck-ready: {errors:?}"));
@@ -653,7 +674,8 @@ effects { content.load, content.release, control.suspend }
 flow chapter_two {}
 ",
     );
-    let hir = lower_to_hir(&tree).expect("content availability fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("content availability fixture lowers");
     validate_typecheck_ready(&hir).expect("content availability fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::standard())
         .expect("content availability builtins typecheck");
@@ -665,7 +687,8 @@ flow bad_content_ref {
 }
 ",
     );
-    let bad_hir = lower_to_hir(&bad).expect("bad content ref fixture lowers");
+    let bad_hir = lower_document_to_hir(bad.document(), bad.typed_tree())
+        .expect("bad content ref fixture lowers");
     let errors = typecheck_hir(&bad_hir, &TypeCheckEnv::standard())
         .expect_err("content builtins reject non-content ids");
     assert!(errors.iter().any(|error| matches!(
@@ -691,7 +714,8 @@ fn inspect_collection(route: ProjectCollection<Asset>) {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("open nominal fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("open nominal fixture lowers");
     validate_typecheck_ready(&hir).expect("open nominal fixture is typecheck-ready");
 
     typecheck_hir(&hir, &TypeCheckEnv::new())
@@ -707,7 +731,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("adapter signature fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("adapter signature fixture lowers");
     let env = TypeCheckEnv::new().with_function_signature(
         "mini_games.truck.score_to_rank",
         FunctionSignature::new(
@@ -724,7 +749,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let bad_hir = lower_to_hir(&bad).expect("bad adapter signature fixture lowers");
+    let bad_hir = lower_document_to_hir(bad.document(), bad.typed_tree())
+        .expect("bad adapter signature fixture lowers");
     let errors = typecheck_hir(&bad_hir, &env).expect_err("argument mismatch is rejected");
     assert!(errors.iter().any(|error| matches!(
         error.kind(),
@@ -748,7 +774,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("adapter effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("adapter effect fixture lowers");
     let env = TypeCheckEnv::new()
         .with_function_signature(
             "adapter.read_text",
@@ -780,7 +807,8 @@ effects { fs.read }
 }
 "#,
     );
-    let allowed_hir = lower_to_hir(&allowed_tree).expect("allowed adapter effect fixture lowers");
+    let allowed_hir = lower_document_to_hir(allowed_tree.document(), allowed_tree.typed_tree())
+        .expect("allowed adapter effect fixture lowers");
     typecheck_hir(&allowed_hir, &env).expect("flow effect contract grants adapter call");
 }
 
@@ -801,7 +829,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("transitive effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("transitive effect fixture lowers");
     let env = TypeCheckEnv::new()
         .with_function_signature(
             "adapter.read_text",
@@ -831,7 +860,8 @@ effects { }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("availability separation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("availability separation fixture lowers");
     let env = TypeCheckEnv::new()
         .with_function_signature(
             "adapter.read_text",
@@ -863,7 +893,8 @@ flow @flow.main main {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("entry effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("entry effect fixture lowers");
 
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
@@ -902,7 +933,8 @@ flow @flow.noop noop effects { } {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("capability effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("capability effect fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
 
     assert!(
@@ -936,7 +968,8 @@ flow @flow.load load effects { storage.read } {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("operation-local effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("operation-local effect fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
 
     assert!(
@@ -962,7 +995,8 @@ effects { fs.read }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("availability fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("availability fixture lowers");
     let env = TypeCheckEnv::new()
         .with_function_signature(
             "adapter.read_text",
@@ -997,7 +1031,8 @@ effects { fs.read(save) }
 }
 "#,
     );
-    let read_hir = lower_to_hir(&read_tree).expect("scoped availability fixture lowers");
+    let read_hir = lower_document_to_hir(read_tree.document(), read_tree.typed_tree())
+        .expect("scoped availability fixture lowers");
     let read_env = TypeCheckEnv::new()
         .with_function_signature(
             "adapter.read_text",
@@ -1054,7 +1089,8 @@ ensures no_effect fs.read
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("no_effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("no_effect fixture lowers");
     let env = TypeCheckEnv::new()
         .with_function_signature(
             "adapter.read_text",
@@ -1083,7 +1119,8 @@ effects { fs.read }
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("overdeclared effect fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("overdeclared effect fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
 
     assert!(
@@ -1115,7 +1152,8 @@ flow @flow.borrow_stats borrow_stats() -> String {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("borrow stats fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("borrow stats fixture lowers");
     validate_typecheck_ready(&hir).expect("borrow stats fixture is typecheck-ready");
     let report = analyze_types(
         &hir,
@@ -1172,7 +1210,8 @@ flow @flow.float_std float_std() -> f32 {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("std float fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("std float fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("std float calls typecheck");
 }
 
@@ -1199,7 +1238,8 @@ flow @flow.expected_values expected_values {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("expected propagation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("expected propagation fixture lowers");
     typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
@@ -1234,7 +1274,8 @@ flow @flow.enum_shorthand enum_shorthand {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("user enum shorthand fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("user enum shorthand fixture lowers");
     validate_typecheck_ready(&hir).expect("user enum shorthand fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("expected type resolves user enum short variants");
@@ -1254,7 +1295,8 @@ fn result_constructors(cond: bool) -> Result<i64, i64> {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("result constructor fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("result constructor fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("Ok and Err payloads use expected Result view types");
 }
@@ -1300,7 +1342,8 @@ fn numeric_choice_items() -> Unit {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("numeric choice sequence fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("numeric choice sequence fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("integer sequence uses the unique numeric expected item alternative");
 }
@@ -1314,7 +1357,8 @@ fn ambiguous_numeric_choice_items() -> Unit {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("ambiguous numeric choice fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("ambiguous numeric choice fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("ambiguous numeric choice item is rejected");
     assert!(errors.iter().any(|error| {
@@ -1334,7 +1378,8 @@ fn bad_comparisons() -> Unit {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("bad comparison fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bad comparison fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("incompatible comparison operands are rejected");
     assert!(errors.iter().any(|error| {
@@ -1363,7 +1408,8 @@ flow @flow.borrow_branch_delta borrow_branch_delta {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("borrow branch fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("borrow branch fixture lowers");
     validate_typecheck_ready(&hir).expect("borrow branch fixture is typecheck-ready");
     let report = analyze_types(
         &hir,
@@ -1405,7 +1451,8 @@ flow @flow.for_pure for_pure() -> String {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("for pure fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("for pure fixture lowers");
     validate_typecheck_ready(&hir).expect("for pure fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("for item binds as i64");
 }
@@ -1421,7 +1468,8 @@ fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorIte
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("stream for fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("stream for fixture lowers");
     validate_typecheck_ready(&hir).expect("stream for fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("stream for item binds as stream item");
 }
@@ -1480,7 +1528,8 @@ flow @flow.good good {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("unsuffixed literal fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unsuffixed literal fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -1519,7 +1568,8 @@ flow @flow.source_ranges source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -1595,7 +1645,8 @@ impl i64 {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("function-like body source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("function-like body source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -1635,7 +1686,8 @@ flow @flow.nested_source_ranges nested_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("nested source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("nested source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -1703,7 +1755,8 @@ flow @flow.numeric_source_ranges numeric_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("numeric bracket source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("numeric bracket source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -1728,7 +1781,8 @@ flow @flow.thread_source_ranges thread_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("thread expression source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("thread expression source range fixture lowers");
     validate_typecheck_ready(&hir).expect("thread expression source range fixture is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("state", TypeKind::String)
@@ -1800,7 +1854,8 @@ flow @flow.desugared_source_ranges desugared_source_ranges {
 fn desugared_function_stack_expression_judgments_keep_authored_source_ranges() {
     let source = DESUGARED_FUNCTION_STACK_SOURCE;
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("desugared source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("desugared source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::standard());
     assert!(
         report.diagnostics.is_empty(),
@@ -1995,7 +2050,8 @@ fn branch_source_ranges(maybe: Option<i64>, ready: bool) -> i64 {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("typed branch source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("typed branch source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -2046,7 +2102,8 @@ flow @flow.lifetime_set_source_ranges lifetime_set_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("lifetime-set source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("lifetime-set source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -2082,7 +2139,8 @@ flow @flow.action_defer_source_ranges action_defer_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("action/defer source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("action/defer source range fixture lowers");
     validate_hir_references(&hir, &registry_from_hir(&hir))
         .expect("action/defer source range references resolve");
     let report = analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2126,7 +2184,8 @@ fn ret() -> i64 {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("statement source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("statement source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -2205,7 +2264,8 @@ fn sample_stream(frames: Stream<i64, String>) -> Stream<i64, String> {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("control-transfer source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("control-transfer source range fixture lowers");
     let report = analyze_types(
         &hir,
         &TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
@@ -2304,7 +2364,8 @@ flow @flow.control_stmt_source_ranges control_stmt_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("control statement source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("control statement source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -2381,7 +2442,8 @@ flow @flow.dialogue_source_ranges dialogue_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("dialogue source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("dialogue source range fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("score", TypeKind::I64)
@@ -2430,7 +2492,8 @@ fn multiline_dialogue_interpolation_judgments_project_lf_and_crlf_ranges() {
     let source_lf = "flow @flow.dialogue_multiline_ranges dialogue_multiline_ranges {\n    alice: Score #[\n        score + 1i64\n    ][p]\n}\n";
     for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
         let tree = parse_ok(&source);
-        let hir = lower_to_hir(&tree).expect("multiline dialogue range fixture lowers");
+        let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+            .expect("multiline dialogue range fixture lowers");
         let env = TypeCheckEnv::new()
             .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
             .with_symbol("score", TypeKind::I64);
@@ -2469,7 +2532,8 @@ flow @flow.dialogue_call_plan_source_ranges dialogue_call_plan_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("dialogue call line-plan source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("dialogue call line-plan source range fixture lowers");
     let report = analyze_types(
         &hir,
         &TypeCheckEnv::new()
@@ -2574,7 +2638,8 @@ flow @flow.container_source_ranges container_source_ranges {
 }
 "#;
     let tree = parse_ok(source);
-    lower_to_hir(&tree).expect("container/control source range fixture lowers");
+    lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("container/control source range fixture lowers");
     let (document, project, world) = crate::test_support::character_project::root_project_source(
         "container-source-ranges",
         source,
@@ -2758,7 +2823,8 @@ flow @flow.container_child_source_ranges container_child_source_ranges {
 }
 "#;
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("container child source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("container child source range fixture lowers");
     let record_type = TypeKind::Named("Record".to_owned());
     let report = analyze_types(
         &hir,
@@ -2819,7 +2885,8 @@ flow @flow.block_value_source_ranges block_value_source_ranges {
 }
 ";
     let tree = parse_ok(source);
-    let hir = lower_to_hir(&tree).expect("block value source range fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("block value source range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -2986,7 +3053,8 @@ flow @flow.range range {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("range fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("range fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -3020,7 +3088,8 @@ flow @flow.good good(input: i32) -> i32 {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("expected numeric fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("expected numeric fixture lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -3063,7 +3132,8 @@ flow @flow.ok ok {
 }
 ",
     );
-    let hir = lower_to_hir(&ok).expect("suffixed numeric fixture lowers");
+    let hir = lower_document_to_hir(ok.document(), ok.typed_tree())
+        .expect("suffixed numeric fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("matching numeric suffixes typecheck");
 
     let bad = parse_ok(
@@ -3073,7 +3143,8 @@ flow @flow.bad bad {
 }
 ",
     );
-    let hir = lower_to_hir(&bad).expect("mismatched suffix fixture lowers");
+    let hir = lower_document_to_hir(bad.document(), bad.typed_tree())
+        .expect("mismatched suffix fixture lowers");
     let errors =
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("mismatched suffix is rejected");
     assert!(errors.iter().any(|error| {
@@ -3097,7 +3168,8 @@ flow @flow.numeric_seq numeric_seq() -> String {{
 }}
 "#
     ));
-    let hir = lower_to_hir(&tree).expect("numeric sequence fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("numeric sequence fixture lowers");
     validate_typecheck_ready(&hir).expect("numeric sequence fixture is typecheck-ready");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
@@ -3118,7 +3190,8 @@ flow @flow.bad bad {
 }
 ",
     );
-    let hir = lower_to_hir(&bad).expect("mismatched sequence fixture lowers");
+    let hir = lower_document_to_hir(bad.document(), bad.typed_tree())
+        .expect("mismatched sequence fixture lowers");
     let errors =
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("mismatched item is rejected");
     assert!(errors.iter().any(|error| {
@@ -3141,7 +3214,8 @@ flow @flow.hello hello(name: String) -> String {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("route fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("route fixture lowers");
     validate_typecheck_ready(&hir).expect("route fixture is typecheck-ready");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("explicit route binding typechecks");
 }
@@ -3159,7 +3233,8 @@ flow @flow.hello hello(name: String) -> String {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("bad route fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bad route fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("route mismatch is rejected");
     assert!(errors.iter().any(|error| {
         error
@@ -3187,7 +3262,8 @@ flow @flow.trying trying {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("bad try fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("bad try fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new().with_symbol("score", TypeKind::I64),
@@ -3209,7 +3285,7 @@ fn bad_score() -> bool {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("function lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("function lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("return mismatch");
     assert!(
         errors
@@ -3229,7 +3305,8 @@ flow @flow.branching branching {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("unary not fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unary not fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new().with_symbol("state.count", TypeKind::I64),
@@ -3252,7 +3329,8 @@ alice[
 ]
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("raw dialogue expression still lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("raw dialogue expression still lowers");
     let errors = validate_typecheck_ready(&hir).expect_err("raw expr blocks type checking");
 
     assert!(errors[0].message().contains("raw expression"));
@@ -3278,7 +3356,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("typecheck fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("typecheck fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol("alice.stage", TypeKind::Named("StageActor".to_owned()))
@@ -3332,7 +3411,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("inline policy fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("inline policy fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
@@ -3362,7 +3442,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("inline string function fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("inline string function fixture lowers");
 
     typecheck_hir(
         &hir,
@@ -3395,7 +3476,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("diverging if-else fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("diverging if-else fixture lowers");
 
     typecheck_hir(
         &hir,
@@ -3415,7 +3497,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("inline policy fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("inline policy fixture lowers");
 
     typecheck_hir(
         &hir,
@@ -3438,7 +3521,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("inline default policy fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("inline default policy fixture lowers");
 
     typecheck_hir(
         &hir,
@@ -3461,7 +3545,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("inline policy fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("inline policy fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
@@ -3491,7 +3576,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("inline policy fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("inline policy fixture lowers");
     let errors = typecheck_hir(
         &hir,
         &TypeCheckEnv::new()
@@ -3526,7 +3612,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("presentation fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("presentation fixture lowers");
 
     typecheck_hir(
         &hir,
@@ -3568,7 +3655,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("presentation image fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("presentation image fixture lowers");
 
     let registry = registry_from_hir(&hir)
         .with_entity("asset.bg.room", EntityKind::Asset)
@@ -3587,7 +3675,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("family-relative asset refs lower");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("family-relative asset refs lower");
 
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("family-relative asset refs typecheck");
 }
@@ -3601,7 +3690,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("presentation slot fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("presentation slot fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("wrong slot family");
 
     assert!(
@@ -3621,7 +3711,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("presentation default fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("presentation default fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("duplicate default slot");
 
     assert!(errors.iter().any(|error| {
@@ -3642,7 +3733,8 @@ flow @flow.map_kinds map_kinds {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("map-kind fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("map-kind fixture lowers");
     let map = |kind| TypeKind::Map {
         kind,
         key: Box::new(TypeKind::String),
@@ -3698,7 +3790,8 @@ flow @flow.opening opening {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("flow include fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("flow include fixture lowers");
     let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
 
     typecheck_hir(&hir, &env).expect("flow include fixture typechecks");
@@ -3715,7 +3808,8 @@ flow @flow.opening opening {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("bad choice target lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("bad choice target lowers");
     let errors =
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("choice target must be a flow ref");
 
@@ -3735,7 +3829,8 @@ flow @flow.registry registry {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("flow registry write lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("flow registry write lowers");
     let report = analyze_types(&hir, &TypeCheckEnv::new());
     assert!(
         report.diagnostics.is_empty(),
@@ -3761,7 +3856,8 @@ effects { state.write('flow) }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("flow registry write with effects lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("flow registry write with effects lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("matching source upper bound permits flow lifetime registry writes");
 
@@ -3774,7 +3870,8 @@ effects {}
 }
 ",
     );
-    let missing_hir = lower_to_hir(&missing).expect("empty-bound lifetime write lowers");
+    let missing_hir = lower_document_to_hir(missing.document(), missing.typed_tree())
+        .expect("empty-bound lifetime write lowers");
     let errors =
         typecheck_hir(&missing_hir, &TypeCheckEnv::new()).expect_err("empty bound is exceeded");
     assert!(errors.iter().any(|error| {
@@ -3800,7 +3897,8 @@ flow @flow.borrow_escape borrow_escape {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("borrow escape fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("borrow escape fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_method(
@@ -3834,7 +3932,8 @@ effects { state.write('flow) }
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("borrow registry fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("borrow registry fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("bg", TypeKind::Named("ImageHandle".to_owned()))
         .with_method(
@@ -3865,7 +3964,8 @@ flow @flow.registry registry {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("line registry read lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line registry read lowers");
     let errors =
         typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("line lifetime is not in scope");
     assert!(
@@ -3887,7 +3987,8 @@ flow @flow.thread_capture thread_capture {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("thread capture fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("thread capture fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol(".soft", TypeKind::FocusPatch);
@@ -3909,7 +4010,8 @@ flow @flow.patch patch {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("patch merge fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("patch merge fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol(".smile", TypeKind::CharacterPatch(EntityKind::Character))
         .with_symbol(".casual", TypeKind::CharacterPatch(EntityKind::Character))
@@ -3927,7 +4029,8 @@ flow @flow.thread_expr thread_expr {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("thread expression fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("thread expression fixture lowers");
     validate_typecheck_ready(&hir).expect("thread expression body is structured");
     let env = TypeCheckEnv::new()
         .with_symbol("state", TypeKind::Named("GameState".to_owned()))
@@ -3944,7 +4047,8 @@ flow @flow.char_literal char_literal {
 }
 "#,
     );
-    let hir = lower_to_hir(&ok).expect("char literal fixture lowers");
+    let hir =
+        lower_document_to_hir(ok.document(), ok.typed_tree()).expect("char literal fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("char literal typechecks");
 
     let bad = parse_ok(
@@ -3954,7 +4058,8 @@ flow @flow.char_literal_bad char_literal_bad {
 }
 "#,
     );
-    let hir = lower_to_hir(&bad).expect("string literal fixture lowers");
+    let hir = lower_document_to_hir(bad.document(), bad.typed_tree())
+        .expect("string literal fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("string is not char");
     assert!(
         errors
@@ -3979,7 +4084,8 @@ flow @flow.collections collections {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("collection fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("collection fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("collection fixture typechecks");
 }
 
@@ -4169,7 +4275,8 @@ flow @flow.map_types map_types {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("map type fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("map type fixture lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("map closure result typechecks");
 }
 
@@ -4195,7 +4302,8 @@ flow @flow.partial partial {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("partial placeholder fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("partial placeholder fixture lowers");
     validate_typecheck_ready(&hir).expect("partial placeholder fixture is structured");
     let env = TypeCheckEnv::new().with_symbol(
         "choices",
@@ -4241,7 +4349,8 @@ flow @flow.arrays arrays() -> i64 {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("array map fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("array map fixture lowers");
     validate_typecheck_ready(&hir).expect("array map fixture is typecheck-ready");
 
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("array map closure result typechecks");
@@ -4260,7 +4369,8 @@ flow @flow.sequence_len sequence_len() -> String {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("sequence len fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("sequence len fixture lowers");
     validate_typecheck_ready(&hir).expect("sequence len fixture is typecheck-ready");
 
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("sequence len typechecks as usize");
@@ -4277,7 +4387,8 @@ flow @flow.bad_sum bad_sum {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("bad sum fixture lowers");
+    let hir =
+        lower_document_to_hir(tree.document(), tree.typed_tree()).expect("bad sum fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("bool sum is rejected");
     assert!(errors.iter().any(|error| {
         error
@@ -4295,7 +4406,8 @@ flow @flow.array_mismatch array_mismatch {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("array mismatch fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("array mismatch fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("length mismatch");
     assert!(
         errors
@@ -4313,7 +4425,8 @@ flow @flow.array_repeat_mismatch array_repeat_mismatch {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("array repeat mismatch fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("array repeat mismatch fixture lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new()).expect_err("length mismatch");
     assert!(
         errors
@@ -4338,7 +4451,8 @@ flow @flow.audit audit {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("unsafe lifetime block lowers as a structured stmt");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unsafe lifetime block lowers as a structured stmt");
     typecheck_hir(&hir, &TypeCheckEnv::new()).expect("audit metadata is complete");
 
     let tree = parse_ok(
@@ -4350,7 +4464,8 @@ flow @flow.audit audit {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("unsafe lifetime block lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unsafe lifetime block lowers");
     typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect("missing audit metadata is a verifier-owned policy obligation");
 }
@@ -4366,7 +4481,8 @@ flow @flow.audit audit {
 }
 "#,
     );
-    let hir = lower_to_hir(&tree).expect("unsafe lifetime block lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("unsafe lifetime block lowers");
     let errors = typecheck_hir(&hir, &TypeCheckEnv::new())
         .expect_err("ordinary type errors still stop before verifier repair actions");
 
@@ -4390,7 +4506,8 @@ flow @flow.handler_leak handler_leak {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("handler leak fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("handler leak fixture lowers");
     let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
     let errors = typecheck_hir(&hir, &env).expect_err("handler locals must not leak");
     assert!(
@@ -4413,7 +4530,8 @@ flow @flow.thread_leak thread_leak {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("thread leak fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("thread leak fixture lowers");
     let env = TypeCheckEnv::new().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character));
     let errors = typecheck_hir(&hir, &env).expect_err("thread locals must not leak");
     assert!(
@@ -4437,7 +4555,8 @@ flow @flow.line_scope line_scope {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("line scope fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line scope fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol(".soft", TypeKind::FocusPatch);
@@ -4463,7 +4582,8 @@ flow @flow.line_drop line_drop {
 }
 ",
     );
-    let hir = lower_to_hir(&tree).expect("line drop fixture lowers");
+    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
+        .expect("line drop fixture lowers");
     let env = TypeCheckEnv::new()
         .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
         .with_symbol(".soft", TypeKind::FocusPatch);

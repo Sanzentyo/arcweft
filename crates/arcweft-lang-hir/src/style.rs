@@ -749,21 +749,18 @@ impl HirStyleExpr {
 
 #[cfg(test)]
 mod tests {
-    use crate::lower::lower_to_hir;
+    use crate::lower::lower_document_to_hir;
     use arcweft_lang_syntax::parser::parse_source;
 
     #[test]
     fn patch_rebase_changes_only_ordinal_identity() {
-        let hir = lower_to_hir(
-            &parse_source(
-                r#"pub view Example() {
+        let parsed = parse_source(
+            r#"pub view Example() {
     Button("OK").style { outline-width = 2px }
 }
 "#,
-            )
-            .into_typed_tree(),
-        )
-        .unwrap();
+        );
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
         let mut patch = hir.style_patches()[0].clone();
         let original_declarations = patch.declarations().to_vec();
         let original_range = patch.range();

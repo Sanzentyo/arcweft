@@ -11,8 +11,17 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_source::SourceDocument;
 
-/// Lowers a parsed syntax tree into HIR-facing structures.
-pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerError>> {
+/// Lowers one exact source document and retains revision-bound project spans.
+pub fn lower_document_to_hir(
+    document: &SourceDocument,
+    tree: &TypedSyntaxTree,
+) -> Result<HirModule, Vec<HirLowerError>> {
+    if tree.source() != document.text() {
+        return Err(vec![HirLowerError::new(
+            "typed syntax tree does not belong to the supplied source document",
+            None,
+        )]);
+    }
     let module_path = tree
         .module()
         .map(|module| {
@@ -41,21 +50,7 @@ pub fn lower_to_hir(tree: &TypedSyntaxTree) -> Result<HirModule, Vec<HirLowerErr
     for item in tree.items() {
         state.lower_item(item);
     }
-    state.finish()
-}
-
-/// Lowers one exact source document and retains revision-bound project spans.
-pub fn lower_document_to_hir(
-    document: &SourceDocument,
-    tree: &TypedSyntaxTree,
-) -> Result<HirModule, Vec<HirLowerError>> {
-    if tree.source() != document.text() {
-        return Err(vec![HirLowerError::new(
-            "typed syntax tree does not belong to the supplied source document",
-            None,
-        )]);
-    }
-    let mut hir = lower_to_hir(tree)?;
+    let mut hir = state.finish()?;
     hir.bind_source_document(document)
         .map_err(|error| vec![error])?;
     Ok(hir)
@@ -308,7 +303,7 @@ fn lower_function(
 
 #[cfg(test)]
 mod tests {
-    use super::lower_to_hir;
+    use super::lower_document_to_hir;
     use arcweft_lang_syntax::{
         ast::flow::Stmt,
         expr::{CallArg, CallExpr, Expr, ParenthesizedCalleeSyntax},
@@ -353,7 +348,8 @@ mod tests {
             let source = format!("fn main() -> Unit {{\n    {fixture}\n    ()\n}}\n");
             let parsed = parse_source(source);
             assert_eq!(parsed.errors(), &[], "{fixture}");
-            let hir = lower_to_hir(parsed.typed_tree()).expect("associated source lowers");
+            let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+                .expect("associated source lowers");
             let cloned = hir.clone();
             let original_call = first_function_statement_call(&hir);
             let cloned_call = first_function_statement_call(&cloned);
@@ -400,7 +396,8 @@ mod tests {
         let source = "fn main() -> Unit {\n    Vec<I32>.with_capacity(8)\n    ()\n}\n";
         let parsed = parse_source(source);
         assert_eq!(parsed.errors(), &[]);
-        let hir = lower_to_hir(parsed.typed_tree()).expect("associated source lowers");
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("associated source lowers");
         let function = hir.functions().first().expect("function lowers");
         let calls = function
             .statements()
@@ -440,17 +437,17 @@ mod tests {
 
     #[test]
     fn lowering_preserves_flow_attributes() {
-        let tree = parse_source(
+        let parsed = parse_source(
             r#"
 #[allow(id::flow_module_mismatch)]
 flow @flow.opening opening {
     return "done"
 }
 "#,
-        )
-        .into_typed_tree();
+        );
 
-        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("source lowers to HIR");
         let flow = hir.flows().first().expect("flow lowers");
         assert_eq!(flow.attributes().len(), 1);
         assert_eq!(flow.attributes()[0].name(), "allow");
@@ -463,7 +460,7 @@ flow @flow.opening opening {
 
     #[test]
     fn lowering_preserves_source_inner_attributes() {
-        let tree = parse_source(
+        let parsed = parse_source(
             r#"
 #![generated(tool)]
 
@@ -471,10 +468,10 @@ flow @flow.opening opening {
     return "done"
 }
 "#,
-        )
-        .into_typed_tree();
+        );
 
-        let hir = lower_to_hir(&tree).expect("source lowers to HIR");
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("source lowers to HIR");
         assert_eq!(hir.attributes().len(), 1);
         assert_eq!(hir.attributes()[0].name(), "generated");
         assert_eq!(hir.attributes()[0].args(), Some("tool"));
@@ -489,8 +486,9 @@ fn main() -> Unit {
     ()
 }
 ";
-        let tree = parse_source(source).into_typed_tree();
-        let hir = lower_to_hir(&tree).expect("numeric spread source lowers to HIR");
+        let parsed = parse_source(source);
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("numeric spread source lowers to HIR");
         let statement = hir.functions()[0]
             .statements()
             .first()
@@ -539,8 +537,8 @@ flow @flow.opening opening {
             ]
         ));
 
-        let errors =
-            lower_to_hir(parsed.typed_tree()).expect_err("recovery-only root item must not lower");
+        let errors = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect_err("recovery-only root item must not lower");
         assert_eq!(errors.len(), 1);
         assert_eq!(
             errors[0].message(),
@@ -558,7 +556,8 @@ flow @flow.opening opening {
         let parsed = parse_source(source);
         assert_eq!(parsed.errors(), &[]);
 
-        let hir = lower_to_hir(parsed.typed_tree()).expect("dialogue source lowers");
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+            .expect("dialogue source lowers");
         let dialogues = hir.flows()[0]
             .body()
             .iter()
@@ -606,7 +605,8 @@ flow @flow.opening opening {
             let source = format!("flow @flow.opening opening {{\n    {line}\n}}\n");
             let parsed = parse_source(&source);
             assert_eq!(parsed.errors(), &[], "source for {line:?}");
-            let errors = lower_to_hir(parsed.typed_tree()).expect_err("wrong family must fail");
+            let errors = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+                .expect_err("wrong family must fail");
             assert!(
                 errors.iter().any(|error| error.message() == expected),
                 "expected {expected:?} for {line:?}, got {errors:?}"
