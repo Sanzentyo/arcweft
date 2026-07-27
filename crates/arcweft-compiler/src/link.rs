@@ -1,7 +1,7 @@
 use crate::object::ModuleObject;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_project::fingerprint::BuildDigest;
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 /// Linker request for a set of module objects.
@@ -102,19 +102,6 @@ fn put_string(out: &mut Vec<u8>, value: &str) {
     let len = u32::try_from(value.len()).expect("link string length fits u32");
     out.extend_from_slice(&len.to_le_bytes());
     out.extend_from_slice(value.as_bytes());
-}
-
-/// Returns the selected entries that are not represented by known stable names.
-pub fn missing_entry_names<'a>(
-    selected_entries: &'a [String],
-    known_entries: impl IntoIterator<Item = &'a str>,
-) -> Vec<&'a str> {
-    let known_entries = known_entries.into_iter().collect::<BTreeSet<_>>();
-    selected_entries
-        .iter()
-        .map(String::as_str)
-        .filter(|entry| !known_entries.contains(entry))
-        .collect()
 }
 
 #[cfg(test)]

@@ -251,10 +251,6 @@ impl ReachabilityReport {
     pub fn domains(&self, node: LinkNodeId) -> Option<&BTreeSet<AvailabilityDomain>> {
         self.domains.get(&node)
     }
-
-    pub fn all_domains(&self) -> &BTreeMap<LinkNodeId, BTreeSet<AvailabilityDomain>> {
-        &self.domains
-    }
 }
 
 const fn edge_kind_rank(kind: &LinkEdgeKind) -> u8 {

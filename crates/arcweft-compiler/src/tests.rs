@@ -3937,7 +3937,7 @@ entry cli @entry.main {
 }
 
 #[test]
-fn lower_source_runtime_plan_with_options_preserves_admitted_dialogue_profile() {
+fn runtime_plan_lowering_preserves_admitted_dialogue_profile() {
     let document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")

@@ -1,17 +1,16 @@
-use arcweft_core::plan::{RuntimeIteratorEvidence, RuntimePlan, RuntimePureHelperOrigin};
-use arcweft_lang_hir::model::{HirFunction, HirModule};
+use arcweft_core::plan::RuntimeIteratorEvidence;
+use arcweft_lang_hir::model::HirModule;
 use arcweft_lang_sema::check::{
     ForIterationEvidence, ForIterationEvidenceFamily, StandardIteratorFamily, TypeCheckReport,
     TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
 use arcweft_runtime_plan::flow::{
     AdmittedRuntimePlanLowerOptions, RuntimeClosureCapture, RuntimeClosureCaptureInventory,
-    RuntimePlanLowerReport, lower_runtime_plan, lower_runtime_plan_with_stats,
+    RuntimePlanLowerReport, lower_runtime_plan_with_stats,
 };
 use arcweft_runtime_plan::line_task::{LoweredLineTaskGroup, lower_line_task_groups};
 use arcweft_runtime_plan::pure::{
-    PureHelperCandidate, PureHelperCandidateReport, PureHelperLowerError,
-    lower_pure_helper_candidate, lower_pure_helper_candidates,
+    PureHelperCandidateReport, PureHelperLowerError, lower_pure_helper_candidates,
 };
 use arcweft_runtime_plan::typed_evidence::{
     RuntimeDataLastMethodFallbackArg, RuntimeNumericType, RuntimeTypedExpressionId,
@@ -29,24 +28,6 @@ pub fn lower_source_line_tasks(
     hir: &HirModule,
 ) -> Result<Vec<LoweredLineTaskGroup>, Vec<arcweft_runtime_plan::errors::LinePlanLowerError>> {
     lower_line_task_groups(hir)
-}
-
-/// Lowers checked HIR into a runtime plan with explicit profile/build-context options.
-pub fn lower_source_runtime_plan_with_options(
-    hir: &HirModule,
-    options: &AdmittedRuntimePlanLowerOptions,
-) -> Result<RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
-    lower_runtime_plan(hir, options)
-}
-
-/// Lowers checked HIR using the `for` iteration evidence recorded by type checking.
-pub fn lower_source_runtime_plan_with_typecheck_and_options(
-    hir: &HirModule,
-    typecheck: &TypeCheckReport,
-    options: &AdmittedRuntimePlanLowerOptions,
-) -> Result<RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
-    let options = runtime_plan_options_with_typecheck_evidence(options, typecheck)?;
-    lower_runtime_plan(hir, &options)
 }
 
 /// Lowers checked HIR into a runtime plan and display catalog with compiler counters.
@@ -275,12 +256,4 @@ pub fn lower_source_pure_helper_candidates(
     hir: &HirModule,
 ) -> Result<PureHelperCandidateReport, Vec<PureHelperLowerError>> {
     lower_pure_helper_candidates(hir)
-}
-
-/// Lowers one checked pure function into a runtime helper candidate.
-pub fn lower_source_pure_helper_candidate(
-    function: &HirFunction,
-    origin: RuntimePureHelperOrigin,
-) -> Result<PureHelperCandidate, PureHelperLowerError> {
-    lower_pure_helper_candidate(function, origin)
 }

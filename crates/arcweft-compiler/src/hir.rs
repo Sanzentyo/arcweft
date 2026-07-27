@@ -4,8 +4,7 @@ use arcweft_lang_sema::check::{TypeCheckReport, analyze_registered_project_types
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_lang_sema::registration::RegisteredSemanticWorld;
 use arcweft_lang_sema::resolve::{
-    registry_from_hir, registry_from_hir_and_env, registry_from_hir_and_registered,
-    validate_hir_references,
+    registry_from_hir_and_env, registry_from_hir_and_registered, validate_hir_references,
 };
 use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
 use arcweft_source::SourceDocument;
@@ -27,14 +26,6 @@ pub fn validate_hir_with_env(
     resolve_hir_references_with_env(hir, env).map_err(ValidateHirError::Resolve)?;
     validate_hir_typecheck_ready(hir).map_err(ValidateHirError::Readiness)?;
     typecheck_hir_with_env(hir, env).map_err(ValidateHirError::Type)
-}
-
-/// Validates HIR entity references against declarations in the same module.
-pub fn resolve_hir_references(
-    hir: &HirModule,
-) -> Result<(), Vec<arcweft_lang_sema::resolve::NameResolutionError>> {
-    let registry = registry_from_hir(hir);
-    validate_hir_references(hir, &registry)
 }
 
 /// Validates HIR entity references against declarations plus supplied semantic symbols.
