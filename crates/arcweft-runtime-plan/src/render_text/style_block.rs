@@ -9,7 +9,7 @@ pub(crate) struct DialogueStyleBlock<'a> {
 
 pub(crate) fn named_style_block<'a>(
     body: &'a str,
-    body_range: Option<&arcweft_lang_hir::syntax::ast::common::TextRange>,
+    body_range: Option<&arcweft_lang_syntax::ast::common::TextRange>,
     name: &str,
 ) -> Option<DialogueStyleBlock<'a>> {
     let start = body.find(name)?;

@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_hir::syntax`
+ --> tests/ui/removed_syntax_forwarding_facade.rs:1:5
+  |
+1 | use arcweft_lang_hir::syntax;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^ no `syntax` in the root

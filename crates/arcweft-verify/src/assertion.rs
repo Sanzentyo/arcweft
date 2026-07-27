@@ -1,7 +1,7 @@
 //! Proof obligations derived from typed assertion statements.
 
 use super::{ObligationCollector, ProofDischarge, ProofObligationKind, span_from_range};
-use arcweft_lang_hir::syntax::assertion::{AssertionMode, AssertionStmt};
+use arcweft_lang_syntax::assertion::{AssertionMode, AssertionStmt};
 
 impl ObligationCollector {
     pub(super) fn collect_assertion(&mut self, assertion: &AssertionStmt) {

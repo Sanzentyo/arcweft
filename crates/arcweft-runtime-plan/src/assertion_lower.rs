@@ -1,10 +1,8 @@
 //! Private typed identity construction for runtime assertion lowering.
 
 use arcweft_core::effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile};
-use arcweft_lang_hir::{
-    symbol::{CallableDeclarationId, CallablePackageId},
-    syntax::ast::module_path::CanonicalModulePath,
-};
+use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
 use crate::assertion_identity::AssertionConditionIndex;
 

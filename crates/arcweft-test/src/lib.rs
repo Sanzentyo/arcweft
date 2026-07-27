@@ -5,7 +5,7 @@
 //! open files, drive a renderer, sleep, or run benchmark timers.
 
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
-use arcweft_lang_hir::syntax::ast::{
+use arcweft_lang_syntax::ast::{
     common::TextRange,
     ids::IdRef,
     proof::{BenchItem, TestItem},

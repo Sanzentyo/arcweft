@@ -11,7 +11,15 @@ use arcweft_lang_hir::model::{
     HirAwait, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop, HirMatch,
     HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
 };
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_sema::{
+    env::TypeCheckEnv,
+    semantic::{
+        SemanticDiagnostic, SemanticDischarge, SemanticMode, SemanticObligation,
+        SemanticObligationKind, SemanticPolicy, SemanticProofTrust, SemanticReport,
+        SemanticSeverity, analyze_semantics,
+    },
+};
+use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceBlock, ChoicePlanItem},
         common::TextRange,
@@ -20,14 +28,6 @@ use arcweft_lang_hir::syntax::{
         line_plan::{LinePlan, LinePlanItem, TriggerPattern},
     },
     expr::{CallArg, Expr, LifetimeKey, LifetimeScopeKind},
-};
-use arcweft_lang_sema::{
-    env::TypeCheckEnv,
-    semantic::{
-        SemanticDiagnostic, SemanticDischarge, SemanticMode, SemanticObligation,
-        SemanticObligationKind, SemanticPolicy, SemanticProofTrust, SemanticReport,
-        SemanticSeverity, analyze_semantics,
-    },
 };
 use arcweft_source::{
     Diagnostic as SourceDiagnostic, DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel,

@@ -2,7 +2,7 @@ use crate::fact_layer::{
     ResourceAccess, resource_accesses_from_expr, resource_write_for_lifetime,
     resource_write_for_signal,
 };
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     ast::{
         flow::{FlowItem, Stmt, WaitTarget},
         line_plan::LinePlanItem,

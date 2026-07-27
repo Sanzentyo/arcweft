@@ -15,7 +15,7 @@ use arcweft_core::source::{
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 use arcweft_lang_hir::model::{HirModule, HirSource};
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     ast::{
         flow::Stmt,
         source::{
@@ -303,12 +303,12 @@ fn source_type_labels(ty: &TypeRef) -> Option<(String, String)> {
 
 struct SourcePolicyLowerError {
     header: &'static str,
-    source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+    source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     reason: String,
 }
 
 struct SourcePolicyValueError {
-    source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+    source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     reason: String,
 }
 
@@ -459,7 +459,7 @@ fn lower_privacy(policy: &SourcePrivacyPolicy) -> Result<PrivacyPolicy, String> 
 #[cfg(test)]
 mod tests {
     use super::{lower_backpressure, lower_source_policy};
-    use arcweft_lang_hir::syntax::{
+    use arcweft_lang_syntax::{
         ast::{
             common::TextRange,
             flow::AuthoredExpr,

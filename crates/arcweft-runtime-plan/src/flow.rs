@@ -62,7 +62,7 @@ use arcweft_lang_hir::model::{
     HirLoop, HirMatch, HirModule, HirScopeExpr, HirThread, HirTopLevelDecl,
 };
 use arcweft_lang_hir::symbol::CallableDeclarationId;
-use arcweft_lang_hir::syntax::ast::{
+use arcweft_lang_syntax::ast::{
     choice::ChoiceAction,
     flow::{
         AuthoredExpr, AwaitBranchKind, FlowItem, ScopeExprBlock, Stmt, StmtMatchArm, ThreadBlock,
@@ -71,8 +71,8 @@ use arcweft_lang_hir::syntax::ast::{
     items::EntryKind,
     pattern::Pattern,
 };
-use arcweft_lang_hir::syntax::expr::Expr;
-use arcweft_lang_hir::syntax::types::TypeRef;
+use arcweft_lang_syntax::expr::Expr;
+use arcweft_lang_syntax::types::TypeRef;
 use arcweft_render_text::LineDisplayCatalog;
 use presentation::{
     presentation_create_args, presentation_explicit_mount_handle_id, presentation_handle_call,
@@ -103,7 +103,7 @@ pub struct RuntimePlanLowerReport {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RuntimePureHelperSource {
     pub helper: arcweft_core::plan::RuntimePureHelperId,
-    pub module: Option<arcweft_lang_hir::syntax::ast::module_path::CanonicalModulePath>,
+    pub module: Option<arcweft_lang_syntax::ast::module_path::CanonicalModulePath>,
     pub name: String,
 }
 
@@ -578,9 +578,9 @@ fn lower_entry_target(items: &[HirEntryItem]) -> RuntimeEntryTarget {
                     .map(|binding| RuntimeRouteBinding {
                         name: binding.name().to_owned(),
                         source: match binding.source() {
-                            arcweft_lang_hir::syntax::ast::items::EntryRouteBindingSource::PathParam(name) => {
-                                RuntimeRouteBindingSource::PathParam(name.clone())
-                            }
+                            arcweft_lang_syntax::ast::items::EntryRouteBindingSource::PathParam(
+                                name,
+                            ) => RuntimeRouteBindingSource::PathParam(name.clone()),
                         },
                     })
                     .collect(),
@@ -796,7 +796,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
         pattern: &Pattern,
         statement_kind: &'static str,
         role: &'static str,
-        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+        source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     ) -> RuntimePattern {
         match lower_runtime_pattern_checked(pattern) {
             Ok(pattern) => pattern,
@@ -1452,7 +1452,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
 
     fn lower_assertion_stmt(
         &mut self,
-        assertion: &arcweft_lang_hir::syntax::assertion::AssertionStmt,
+        assertion: &arcweft_lang_syntax::assertion::AssertionStmt,
     ) -> Vec<FlowOp> {
         let profile = match self.assertion_build_profile.disposition(assertion.mode()) {
             AssertionLoweringDisposition::CompileTimeProof => {
@@ -1502,7 +1502,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
                     flow_index,
                     pattern,
                     ty.as_ref()
-                        .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
+                        .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
                     expr,
                     *expr_range,
                 ),
@@ -1532,7 +1532,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
                     pattern,
                     expr: self.lower_runtime_expr_with_expected_type(
                         ty.as_ref()
-                            .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
+                            .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
                         expr.expr(),
                     ),
                     else_ops: self.lower_flow_stmt_list(flow_id, flow_index, else_body),
@@ -1565,7 +1565,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
         flow_id: &FlowRuntimeId,
         statement: &Stmt,
         expr: &Expr,
-        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+        source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     ) -> Vec<FlowOp> {
         if let Some(ops) = self.lower_presentation_handle_method(expr) {
             return ops;
@@ -1803,7 +1803,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
         pattern: &Pattern,
         ty: Option<&TypeRef>,
         expr: &Expr,
-        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+        source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     ) -> Vec<FlowOp> {
         let binding = self.lower_let_binding(flow_id, flow_index, pattern, ty, expr, source_range);
         self.record_function_local_binding(pattern, binding.function_arity());
@@ -1817,7 +1817,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
         pattern: &Pattern,
         ty: Option<&TypeRef>,
         expr: &Expr,
-        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+        source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     ) -> LoweredLetBinding {
         if let Some(ops) = self.lower_dialogue_result_let(flow_id, flow_index, pattern, expr) {
             return LoweredLetBinding::non_function(ops);
@@ -1995,7 +1995,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
         &mut self,
         pattern: &Pattern,
         expr: &Expr,
-        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+        source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     ) -> Option<FlowOp> {
         if !self.agent_controller {
             return None;
@@ -2028,7 +2028,7 @@ impl FlowRuntimeLowerer<'_, '_, '_, '_> {
     fn lower_agent_host_call_expr(
         &mut self,
         expr: &Expr,
-        source_range: Option<arcweft_lang_hir::syntax::ast::common::TextRange>,
+        source_range: Option<arcweft_lang_syntax::ast::common::TextRange>,
     ) -> Option<Vec<FlowOp>> {
         if !self.agent_controller {
             return None;

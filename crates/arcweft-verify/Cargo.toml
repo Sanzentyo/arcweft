@@ -11,12 +11,10 @@ arcweft-core = { workspace = true }
 arcweft-compiler = { workspace = true }
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-sema = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
 arcweft-source = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
-
-[dev-dependencies]
-arcweft-lang-syntax = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

@@ -8,9 +8,9 @@ use arcweft_core::plan::{
     RuntimeTraitMethodId, RuntimeTraitMethodIdentity,
 };
 use arcweft_core::value::RuntimeExpr;
-use arcweft_lang_hir::syntax::ast::flow::Stmt;
-use arcweft_lang_hir::syntax::ast::pattern::Pattern;
-use arcweft_lang_hir::syntax::expr::Expr;
+use arcweft_lang_syntax::ast::flow::Stmt;
+use arcweft_lang_syntax::ast::pattern::Pattern;
+use arcweft_lang_syntax::expr::Expr;
 use std::collections::BTreeMap;
 use thiserror::Error;
 

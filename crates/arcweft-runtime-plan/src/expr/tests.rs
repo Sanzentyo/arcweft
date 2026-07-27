@@ -6,7 +6,7 @@ use crate::typed_evidence::{
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType};
 use arcweft_core::value::RuntimeIntrinsic;
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     expr::{IntSuffix, Placeholder},
     types::parse_type_ref,
 };
@@ -16,7 +16,7 @@ fn int(value: u128, suffix: Option<IntSuffix>) -> Expr {
 }
 
 fn parsed_expr(source: &str) -> Expr {
-    arcweft_lang_hir::syntax::expr::parse_expr(source)
+    arcweft_lang_syntax::expr::parse_expr(source)
         .expect("test fixture must use valid authored expression syntax")
 }
 
@@ -676,19 +676,19 @@ fn strict_runtime_bracket_seq_folds_literal_values_to_dense_storage() {
     let duration_expr = Expr::BracketSeq(vec![
         Expr::Literal(Literal::Duration {
             amount: "5".to_owned(),
-            unit: arcweft_lang_hir::syntax::expr::DurationUnit::Nanos,
+            unit: arcweft_lang_syntax::expr::DurationUnit::Nanos,
         }),
         Expr::Literal(Literal::Duration {
             amount: "16_666".to_owned(),
-            unit: arcweft_lang_hir::syntax::expr::DurationUnit::Micros,
+            unit: arcweft_lang_syntax::expr::DurationUnit::Micros,
         }),
         Expr::Literal(Literal::Duration {
             amount: "2".to_owned(),
-            unit: arcweft_lang_hir::syntax::expr::DurationUnit::Minutes,
+            unit: arcweft_lang_syntax::expr::DurationUnit::Minutes,
         }),
         Expr::Literal(Literal::Duration {
             amount: "1".to_owned(),
-            unit: arcweft_lang_hir::syntax::expr::DurationUnit::Hours,
+            unit: arcweft_lang_syntax::expr::DurationUnit::Hours,
         }),
     ]);
     let lowered = lower_runtime_expr_strict(&duration_expr).expect("duration bracket seq lowers");
@@ -910,9 +910,8 @@ fn lower_suffixed_numeric_seq(suffix: &str) -> RuntimeExpr {
 
 #[test]
 fn resolved_numeric_evidence_controls_unsuffixed_runtime_widths() {
-    let wide =
-        arcweft_lang_hir::syntax::expr::parse_expr("340282366920938463463374607431768211455")
-            .expect("u128 magnitude parses");
+    let wide = arcweft_lang_syntax::expr::parse_expr("340282366920938463463374607431768211455")
+        .expect("u128 magnitude parses");
     assert_eq!(
         lower_with_numeric_evidence(
             &wide,
@@ -922,7 +921,7 @@ fn resolved_numeric_evidence_controls_unsuffixed_runtime_widths() {
     );
 
     let precise =
-        arcweft_lang_hir::syntax::expr::parse_expr("1_2.5_0").expect("underscored float parses");
+        arcweft_lang_syntax::expr::parse_expr("1_2.5_0").expect("underscored float parses");
     assert_eq!(
         lower_with_numeric_evidence(
             &precise,
@@ -934,7 +933,7 @@ fn resolved_numeric_evidence_controls_unsuffixed_runtime_widths() {
 
 #[test]
 fn resolved_numeric_sequence_evidence_controls_dense_item_width() {
-    let expr = arcweft_lang_hir::syntax::expr::parse_expr("[4294967296, 4294967297]")
+    let expr = arcweft_lang_syntax::expr::parse_expr("[4294967296, 4294967297]")
         .expect("wide numeric sequence parses");
     let lowered = lower_with_numeric_evidence(
         &expr,
@@ -950,8 +949,8 @@ fn resolved_numeric_sequence_evidence_controls_dense_item_width() {
 
 #[test]
 fn resolved_numeric_evidence_preserves_expected_signed_minimum() {
-    let expr = arcweft_lang_hir::syntax::expr::parse_expr("-32768")
-        .expect("signed minimum expression parses");
+    let expr =
+        arcweft_lang_syntax::expr::parse_expr("-32768").expect("signed minimum expression parses");
     let lowered = lower_with_numeric_evidence(
         &expr,
         &[resolved_numeric_evidence(1, RuntimeNumericType::I16)],

@@ -15,7 +15,7 @@ use arcweft_core::line_task::{
 };
 use arcweft_core::task::{TaskId, TaskKey, TaskPriority};
 use arcweft_lang_hir::model::{HirDialogue, HirFlowItem, HirModule};
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     ast::{
         flow::{FlowItem, Stmt, WaitTarget},
         ids::EntityRef,

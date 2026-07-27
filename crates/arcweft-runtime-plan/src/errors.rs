@@ -1,8 +1,8 @@
 //! Diagnostics emitted while lowering HIR into core runtime plans.
 
 use crate::lowering_context::ExecutableLoweringLocation;
-use arcweft_lang_hir::syntax::assertion::AssertionStmt;
-use arcweft_lang_hir::syntax::ast::common::TextRange;
+use arcweft_lang_syntax::assertion::AssertionStmt;
+use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
 use std::fmt;
 use thiserror::Error;

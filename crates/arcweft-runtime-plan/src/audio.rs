@@ -6,7 +6,7 @@ use arcweft_core::value::{RuntimeExpr, RuntimeValue};
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal};
+use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
 
 use crate::expr::lower_runtime_expr_strict;
 use crate::labels::expr_label;
@@ -285,9 +285,8 @@ impl<'a> AudioCall<'a> {
             Expr::Literal(Literal::Int(literal)) => literal
                 .magnitude()
                 .and_then(|value| {
-                    u64::try_from(value).map_err(|_| {
-                        arcweft_lang_hir::syntax::expr::IntLiteralValueError::OutOfRange
-                    })
+                    u64::try_from(value)
+                        .map_err(|_| arcweft_lang_syntax::expr::IntLiteralValueError::OutOfRange)
                 })
                 .map_err(|_| format!("{} argument `{name}` must fit u64", self.callee)),
             _ => Err(format!(

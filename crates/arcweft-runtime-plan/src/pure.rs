@@ -12,18 +12,18 @@ use arcweft_core::{
 use arcweft_lang_hir::{
     model::{HirFunction, HirModule},
     symbol::CallableDeclarationId,
-    syntax::{
-        ast::{flow::Stmt, pattern::Pattern},
-        expr::Expr,
-        types::{FnParam, TypeRef},
-    },
+};
+use arcweft_lang_syntax::{
+    ast::{flow::Stmt, pattern::Pattern},
+    expr::Expr,
+    types::{FnParam, TypeRef},
 };
 use thiserror::Error;
 
 /// Runtime-ready pure helper candidate lowered from a checked HIR function.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PureHelperCandidate {
-    module: Option<arcweft_lang_hir::syntax::ast::module_path::CanonicalModulePath>,
+    module: Option<arcweft_lang_syntax::ast::module_path::CanonicalModulePath>,
     name: String,
     input_names: Vec<String>,
     input_types: Vec<RuntimePureInputType>,
@@ -82,7 +82,7 @@ impl PureHelperCandidate {
     /// Canonical source module retained for checked entry-role projection.
     pub const fn module(
         &self,
-    ) -> Option<&arcweft_lang_hir::syntax::ast::module_path::CanonicalModulePath> {
+    ) -> Option<&arcweft_lang_syntax::ast::module_path::CanonicalModulePath> {
         self.module.as_ref()
     }
 
@@ -281,7 +281,7 @@ fn lower_pure_helper_candidate_with_input_policy(
             function
                 .signature()
                 .return_type()
-                .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
+                .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
         ),
         expr,
         shape,
@@ -516,7 +516,7 @@ fn pure_helper_inputs(
         .signature()
         .param_groups()
         .iter()
-        .flat_map(arcweft_lang_hir::syntax::types::FnParamGroup::params)
+        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
         .map(|param| pure_helper_param(function.name(), param, input_policy))
         .collect()
 }
@@ -616,7 +616,7 @@ mod tests {
 
     use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_hir::symbol::CallablePackageId;
-    use arcweft_lang_hir::syntax::{
+    use arcweft_lang_syntax::{
         parser::{ParseOptions, parse_document_with_source},
         source::ParsedSource,
     };

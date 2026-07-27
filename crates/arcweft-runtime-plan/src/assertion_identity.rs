@@ -1,10 +1,8 @@
 //! Session-local typed identity vocabulary for runtime assertions.
 
 use arcweft_core::effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile};
-use arcweft_lang_hir::{
-    symbol::{CallableDeclarationId, CallablePackageId},
-    syntax::{assertion::AssertionMode, ast::module_path::CanonicalModulePath},
-};
+use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
+use arcweft_lang_syntax::{assertion::AssertionMode, ast::module_path::CanonicalModulePath};
 use thiserror::Error;
 
 /// Derives the artifact-stable guard for one typed runtime assertion condition.
@@ -111,7 +109,7 @@ mod tests {
         AssertionConditionIndex, AssertionConditionIndexError, RuntimeAssertionMode,
         RuntimeAssertionModeError,
     };
-    use arcweft_lang_hir::syntax::assertion::AssertionMode;
+    use arcweft_lang_syntax::assertion::AssertionMode;
 
     #[test]
     fn only_runtime_capable_typed_modes_convert() {

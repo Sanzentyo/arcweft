@@ -1,4 +1,4 @@
-use arcweft_lang_hir::syntax::{ast::flow::Stmt, expr::Expr};
+use arcweft_lang_syntax::{ast::flow::Stmt, expr::Expr};
 
 #[derive(Clone, Copy)]
 pub(super) struct FlowValueBlock<'a> {

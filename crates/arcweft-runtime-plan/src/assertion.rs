@@ -1,7 +1,7 @@
 //! Runtime emission policy for typed assertion statements.
 
 use arcweft_core::effect::RuntimeAssertionProfile;
-use arcweft_lang_hir::syntax::assertion::AssertionMode;
+use arcweft_lang_syntax::assertion::AssertionMode;
 
 /// Build-time selection for debug assertion instructions.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -44,7 +44,7 @@ impl RuntimeAssertionBuildProfile {
 mod tests {
     use super::{AssertionLoweringDisposition, RuntimeAssertionBuildProfile};
     use arcweft_core::effect::RuntimeAssertionProfile;
-    use arcweft_lang_hir::syntax::assertion::AssertionMode;
+    use arcweft_lang_syntax::assertion::AssertionMode;
 
     #[test]
     fn build_profile_maps_typed_modes_to_runtime_dispositions() {

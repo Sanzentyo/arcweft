@@ -1,4 +1,4 @@
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
+use arcweft_lang_syntax::expr::{CallArg, Expr};
 use arcweft_render_text::{
     RichTextColor, RichTextFontFamily, RichTextInlineDirection, RichTextJlreqStrictness,
     RichTextLayout, RichTextRubyPosition, RichTextStyle, RichTextVerticalLatinMode,

@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 use std::ops::Range;
 
 use arcweft_lang_hir::model::HirDialogue;
-use arcweft_lang_hir::syntax::ast::common::TextRange;
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
+use arcweft_lang_syntax::ast::common::TextRange;
+use arcweft_lang_syntax::expr::{CallArg, Expr};
 use arcweft_render_text::{
     RichTextAssignOp, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
 };

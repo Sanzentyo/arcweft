@@ -1,5 +1,5 @@
-use arcweft_lang_hir::syntax::ast::items::EntityDeclItem;
-use arcweft_lang_hir::syntax::expr::{Expr, Literal, parse_expr};
+use arcweft_lang_syntax::ast::items::EntityDeclItem;
+use arcweft_lang_syntax::expr::{Expr, Literal, parse_expr};
 use arcweft_render_text::{
     RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource, RichTextStyleContribution,
 };

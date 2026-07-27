@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_lang_hir::model::{HirModule, HirTopLevelDecl};
-use arcweft_lang_hir::syntax::ast::items::{Attribute, EntityDeclKind, StructItem};
+use arcweft_lang_syntax::ast::items::{Attribute, EntityDeclKind, StructItem};
 use arcweft_render_text::{
     Milli, RichTextObjectProxyDeclaration, RichTextParam, RichTextStyle, RichTextStyleContribution,
     parse_milli_token,

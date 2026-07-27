@@ -1,5 +1,5 @@
 use super::*;
-use arcweft_lang_hir::syntax::expr::parse_expr;
+use arcweft_lang_syntax::expr::parse_expr;
 use std::collections::BTreeMap;
 
 fn lower(source: &str) -> Result<LoweredRuntimeEffect, String> {

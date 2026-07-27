@@ -3,7 +3,7 @@ use super::{
     lower_runtime_record_expr_strict,
 };
 use arcweft_core::value::RuntimeExpr;
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     expr::{CallArg, Expr},
     types::TypeRef,
 };

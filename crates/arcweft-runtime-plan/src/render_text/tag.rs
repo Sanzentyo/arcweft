@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use arcweft_dialogue::InlineFailurePolicy;
-use arcweft_lang_hir::syntax::ast::dialogue::{DialogueTag, DialogueToken};
+use arcweft_lang_syntax::ast::dialogue::{DialogueTag, DialogueToken};
 use arcweft_presentation::rich_text::{RichTextTagFamily, canonical_tag_name, inferred_tag_family};
 use arcweft_render_text::{
     DialogueHostEvent, FxTarget, Milli, RichTextAngle, RichTextControl, RichTextInlineDirection,

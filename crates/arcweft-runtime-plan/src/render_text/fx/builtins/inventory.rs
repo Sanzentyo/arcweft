@@ -2,10 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::{
-    model::{HirFlowItem, HirModule},
-    syntax::ast::dialogue::{DialogueContent, DialogueTag, DialogueToken},
-};
+use arcweft_lang_hir::model::{HirFlowItem, HirModule};
+use arcweft_lang_syntax::ast::dialogue::{DialogueContent, DialogueTag, DialogueToken};
 use arcweft_presentation::fx::{FxDefinition, FxId};
 use arcweft_presentation::rich_text::{RichTextTagFamily, inferred_tag_family};
 

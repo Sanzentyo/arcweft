@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     expr::{CallArg, DurationUnit, Expr, Literal, UnitNumberSuffix},
     types::TypeRef,
 };
@@ -420,7 +420,7 @@ fn runtime_length(expr: &Expr) -> Result<Length, RuntimePlanLowerError> {
 fn signed_literal(expr: &Expr) -> Result<(bool, &Literal), RuntimePlanLowerError> {
     match expr {
         Expr::Unary {
-            op: arcweft_lang_hir::syntax::expr::UnaryOp::Neg,
+            op: arcweft_lang_syntax::expr::UnaryOp::Neg,
             expr,
         } => match expr.as_ref() {
             Expr::Literal(literal) => Ok((true, literal)),
@@ -440,7 +440,7 @@ fn signed_literal(expr: &Expr) -> Result<(bool, &Literal), RuntimePlanLowerError
 fn strip_negation(expr: &Expr) -> &Expr {
     match expr {
         Expr::Unary {
-            op: arcweft_lang_hir::syntax::expr::UnaryOp::Neg,
+            op: arcweft_lang_syntax::expr::UnaryOp::Neg,
             expr,
         } => expr,
         _ => expr,

@@ -1,6 +1,6 @@
 use crate::labels::expr_label;
 use arcweft_core::plan::FlowRuntimeId;
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     ast::{dialogue::DialogueContent, ids::EntityRef, line_plan::LinePlan},
     expr::{CallArg, Expr, Literal},
 };

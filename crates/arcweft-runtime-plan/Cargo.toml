@@ -12,6 +12,7 @@ arcweft-core = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-interaction-model = { workspace = true }
 arcweft-lang-hir = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
 arcweft-presentation = { workspace = true }
 arcweft-render-text = { workspace = true }
 arcweft-source = { workspace = true }
@@ -20,7 +21,6 @@ thiserror.workspace = true
 
 [dev-dependencies]
 arcweft-lang-sema = { workspace = true }
-arcweft-lang-syntax = { workspace = true }
 arcweft-resource-model = { workspace = true }
 
 [lib]

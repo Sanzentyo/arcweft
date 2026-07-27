@@ -1,13 +1,11 @@
 use std::sync::Arc;
 
-use arcweft_lang_hir::{
-    lower::lower_document_to_hir,
-    syntax::{
-        ast::dialogue::{DialogueTagKind, DialogueToken},
-        parser::{ParseOptions, parse_document_with_source},
-        source::ParsedSource,
-        text::parse_dialogue_text,
-    },
+use arcweft_lang_hir::lower::lower_document_to_hir;
+use arcweft_lang_syntax::{
+    ast::dialogue::{DialogueTagKind, DialogueToken},
+    parser::{ParseOptions, parse_document_with_source},
+    source::ParsedSource,
+    text::parse_dialogue_text,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 

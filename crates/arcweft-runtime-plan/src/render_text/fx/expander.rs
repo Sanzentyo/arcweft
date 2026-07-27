@@ -3,7 +3,7 @@
 use std::collections::BTreeMap;
 
 use arcweft_dialogue::InlineFailurePolicy;
-use arcweft_lang_hir::syntax::ast::dialogue::{DialogueTagKind, DialogueToken};
+use arcweft_lang_syntax::ast::dialogue::{DialogueTagKind, DialogueToken};
 use arcweft_presentation::rich_text::canonical_tag_name;
 use arcweft_render_text::{RichTextControl, RichTextNode, RichTextStyle};
 

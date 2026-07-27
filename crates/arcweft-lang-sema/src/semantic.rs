@@ -9,7 +9,7 @@ use arcweft_lang_hir::model::{
     HirModule, HirScope, HirScopeExpr, HirSelect, HirThread, HirTopLevelDecl, HirWhile,
     HirWhileLet,
 };
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     ast::{
         choice::{ChoiceBlock, ChoicePlanItem},
         common::TextRange,

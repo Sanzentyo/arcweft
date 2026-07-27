@@ -1,4 +1,4 @@
-use arcweft_lang_hir::syntax::expr::{Expr, Literal};
+use arcweft_lang_syntax::expr::{Expr, Literal};
 
 use crate::labels::{entity_ref_label as syntax_entity_ref_label, expr_label, literal_label};
 

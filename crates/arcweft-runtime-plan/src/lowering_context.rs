@@ -1,10 +1,8 @@
 //! Structured authored locations for executable runtime-plan lowering.
 
 use crate::errors::{RuntimePlanLowerContext, RuntimePlanLowerError};
-use arcweft_lang_hir::{
-    model::HirModule,
-    syntax::ast::{common::TextRange, flow::Stmt, module_path::CanonicalModulePath},
-};
+use arcweft_lang_hir::model::HirModule;
+use arcweft_lang_syntax::ast::{common::TextRange, flow::Stmt, module_path::CanonicalModulePath};
 use arcweft_source::SourceSpan;
 
 #[derive(Clone, Debug)]

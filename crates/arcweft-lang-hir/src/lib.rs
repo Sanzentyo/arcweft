@@ -24,11 +24,4 @@ pub mod style;
 pub mod symbol;
 pub mod view_part;
 
-/// Syntax types intentionally exposed through a namespace instead of flat
-/// crate-root re-exports, so downstream crates can see which layer owns a type.
-pub mod syntax {
-    pub use arcweft_lang_syntax::{
-        assertion, ast, cst, expr, lint, parser, pattern, reference, source, text, types,
-    };
-}
 pub mod callable_source;

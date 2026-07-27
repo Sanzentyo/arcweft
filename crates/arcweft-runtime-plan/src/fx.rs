@@ -2,13 +2,11 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arcweft_lang_hir::{
-    model::{HirFunction, HirModule},
-    syntax::{
-        ast::{flow::Stmt, pattern::Pattern},
-        expr::{CallArg, Expr},
-        types::FnParam,
-    },
+use arcweft_lang_hir::model::{HirFunction, HirModule};
+use arcweft_lang_syntax::{
+    ast::{flow::Stmt, pattern::Pattern},
+    expr::{CallArg, Expr},
+    types::FnParam,
 };
 use arcweft_presentation::fx::{
     FxDefinition, FxGraph, FxId, FxNode, FxNodeKind, FxParameter, FxParameterSlot, FxProperty,
@@ -411,7 +409,7 @@ fn function_params(
         .signature()
         .param_groups()
         .iter()
-        .flat_map(arcweft_lang_hir::syntax::types::FnParamGroup::params)
+        .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
         .map(|param| match param.pattern() {
             Pattern::Ident(name) => Ok((name.to_owned(), param)),
             _ => Err(RuntimePlanLowerError::new(format!(
@@ -425,7 +423,7 @@ fn function_params(
 fn function_value(function: &HirFunction) -> Option<&Expr> {
     function
         .value()
-        .map(arcweft_lang_hir::syntax::ast::flow::AuthoredExpr::expr)
+        .map(arcweft_lang_syntax::ast::flow::AuthoredExpr::expr)
         .or_else(|| {
             function
                 .statements()

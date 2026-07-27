@@ -4,16 +4,14 @@ use crate::expr::{
     RuntimePureHelperLookup, lower_runtime_expr_strict_with_function_locals_and_pure,
 };
 use arcweft_core::value::RuntimeExpr;
-use arcweft_lang_hir::{
-    model::{HirFunction, HirModule},
-    syntax::{
-        ast::{
-            flow::Stmt,
-            pattern::{Pattern, VariantPatternPayload},
-        },
-        expr::{CallArg, CallExpr, ClosureParam, Expr, MatchExprArm},
-        types::TypeRef,
+use arcweft_lang_hir::model::{HirFunction, HirModule};
+use arcweft_lang_syntax::{
+    ast::{
+        flow::Stmt,
+        pattern::{Pattern, VariantPatternPayload},
     },
+    expr::{CallArg, CallExpr, ClosureParam, Expr, MatchExprArm},
+    types::TypeRef,
 };
 use std::collections::BTreeMap;
 
@@ -447,13 +445,13 @@ fn runtime_function_value_expr_supported(
         }
         Expr::Call(call) => runtime_function_value_call_supported(call, context),
         Expr::Pipe { lhs, rhs } => runtime_function_value_pipe_supported(lhs, rhs, context),
-        Expr::Placeholder(arcweft_lang_hir::syntax::expr::Placeholder::PipeLeft) => {
+        Expr::Placeholder(arcweft_lang_syntax::expr::Placeholder::PipeLeft) => {
             context.pipe_binding_depth > 0
         }
         Expr::LifetimePath { .. }
         | Expr::Borrow(_)
         | Expr::Deref(_)
-        | Expr::Placeholder(arcweft_lang_hir::syntax::expr::Placeholder::Partial)
+        | Expr::Placeholder(arcweft_lang_syntax::expr::Placeholder::Partial)
         | Expr::DialogueCall { .. }
         | Expr::Try(_)
         | Expr::Await(_)
@@ -693,7 +691,7 @@ fn runtime_function_value_expr_function_signature(
                 params,
                 return_type
                     .as_ref()
-                    .map(arcweft_lang_hir::syntax::types::AuthoredTypeRef::value),
+                    .map(arcweft_lang_syntax::types::AuthoredTypeRef::value),
             )
         }),
         Expr::Call(call)

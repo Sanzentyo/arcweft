@@ -7,7 +7,7 @@ use arcweft_core::effect::{
     RuntimeEvent, RuntimeField, RuntimeLog,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
+use arcweft_lang_syntax::expr::{CallArg, Expr};
 
 #[cfg(test)]
 mod tests;

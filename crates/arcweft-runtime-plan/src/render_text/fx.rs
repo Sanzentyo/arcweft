@@ -2,13 +2,10 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::{
-    fx::FxConst,
-    model::HirModule,
-    syntax::{
-        ast::dialogue::DialogueTag,
-        expr::{CallArg, Expr, parse_expr},
-    },
+use arcweft_lang_hir::{fx::FxConst, model::HirModule};
+use arcweft_lang_syntax::{
+    ast::dialogue::DialogueTag,
+    expr::{CallArg, Expr, parse_expr},
 };
 use arcweft_presentation::fx::{FxApplication, FxDefinition, FxRuntimeValue, FxSourceRange};
 
@@ -205,7 +202,7 @@ fn callee_name(expr: &Expr) -> Option<&str> {
     };
     path.segments()
         .last()
-        .map(arcweft_lang_hir::syntax::expr::Name::as_str)
+        .map(arcweft_lang_syntax::expr::Name::as_str)
 }
 
 fn rich_text_value_is_closed(expr: &Expr) -> bool {

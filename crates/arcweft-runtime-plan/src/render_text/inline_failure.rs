@@ -1,6 +1,6 @@
 use arcweft_dialogue::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
-use arcweft_lang_hir::syntax::ast::dialogue::LineArg;
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal};
+use arcweft_lang_syntax::ast::dialogue::LineArg;
+use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
 
 use crate::labels::expr_label;
 

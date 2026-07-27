@@ -16,7 +16,7 @@ use arcweft_core::value::{
     runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
     runtime_sequence_dense_usize, runtime_sequence_from_literal_values,
 };
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     ast::{flow::Stmt, line_plan::LinePlanItem, pattern::Pattern},
     expr::{
         BinaryOp, CallArg, ClosureParam, DecodedStringLiteral, Expr, FloatSuffix, IntLiteral,
@@ -1912,7 +1912,7 @@ fn unsupported_runtime_control_value(value: RuntimeControlValue) -> Result<Runti
 }
 
 fn lower_dialogue_call_value(
-    plan: Option<&arcweft_lang_hir::syntax::ast::line_plan::LinePlan>,
+    plan: Option<&arcweft_lang_syntax::ast::line_plan::LinePlan>,
 ) -> RuntimeExpr {
     let Some(plan) = plan else {
         return RuntimeExpr::Value(RuntimeValue::Unit);

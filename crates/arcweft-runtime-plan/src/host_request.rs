@@ -9,8 +9,8 @@ use crate::expr::lower_runtime_expr_strict;
 use crate::labels::{entity_ref_label, expr_label};
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
 use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
-use arcweft_lang_hir::syntax::ast::common::TextRange;
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Literal};
+use arcweft_lang_syntax::ast::common::TextRange;
+use arcweft_lang_syntax::expr::{CallArg, Expr, Literal};
 use thiserror::Error;
 
 const AGENT_NAMED_ARGS_VARIANT: &str = "named_args";
@@ -584,7 +584,7 @@ mod tests {
     };
     use arcweft_core::task::HostTaskArgTemplate;
     use arcweft_core::value::{RuntimeCallTarget, RuntimeExpr};
-    use arcweft_lang_hir::syntax::expr::{Expr, parse_expr};
+    use arcweft_lang_syntax::expr::{Expr, parse_expr};
 
     #[test]
     fn host_request_rejects_non_call_target_instead_of_synthesizing_payload() {

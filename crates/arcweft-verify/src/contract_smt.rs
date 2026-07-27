@@ -11,7 +11,7 @@ use crate::{
     smt::{ProofExpr, SmtError, SmtProblem, SmtSort, SmtSymbol, SmtSymbolId},
 };
 use arcweft_lang_hir::model::{HirFunction, HirModule};
-use arcweft_lang_hir::syntax::{
+use arcweft_lang_syntax::{
     ast::{flow::ContractClause, module_path::ModulePathRoot},
     expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp},
     types::{FnParamGroup, TypeRef},

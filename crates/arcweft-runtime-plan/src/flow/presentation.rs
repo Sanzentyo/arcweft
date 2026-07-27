@@ -1,7 +1,7 @@
 use crate::labels::expr_label;
 use arcweft_core::effect::RuntimeCall;
 use arcweft_core::plan::FlowRuntimeId;
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
+use arcweft_lang_syntax::expr::{CallArg, Expr};
 
 pub(super) struct PresentationMountCall<'a> {
     pub(super) kind: &'static str,

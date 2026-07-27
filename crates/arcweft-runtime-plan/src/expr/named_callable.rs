@@ -1,7 +1,7 @@
 use super::{RuntimePureHelperLookup, lower_runtime_expr_strict_with_helpers};
 use crate::function_values::RuntimeFunctionValueCandidate;
 use arcweft_core::{plan::RuntimePureHelper, value::RuntimeExpr};
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr};
+use arcweft_lang_syntax::expr::{CallArg, Expr};
 
 #[derive(Clone, Debug)]
 pub(super) struct PureHelperNamedPartialCall {

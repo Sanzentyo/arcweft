@@ -1,6 +1,7 @@
 //! Cascade provenance emitted for typed `RichText` Fx applications.
 
-use arcweft_lang_hir::{model::HirDialogue, syntax::ast::common::TextRange};
+use arcweft_lang_hir::model::HirDialogue;
+use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_presentation::fx::{
     FxApplication, FxCapabilitySet, FxDefinition, FxEvaluationBinding, FxEvaluationBudget,
     FxGraphChildPath, FxGraphEvaluator, FxInstanceSnapshot, FxLogicalTime, FxRendererInterface,

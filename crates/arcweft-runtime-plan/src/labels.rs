@@ -1,9 +1,9 @@
 //! Stable textual labels used by runtime-plan lowering.
 
 use arcweft_core::time::LogicalDuration;
-use arcweft_lang_hir::syntax::ast::{ids::EntityRefSyntax, pattern::Pattern};
-use arcweft_lang_hir::syntax::expr::{BinaryOp, CallArg, DurationUnit, Expr, Literal, UnaryOp};
-use arcweft_lang_hir::syntax::types::{TypeEffectRow, TypeRef};
+use arcweft_lang_syntax::ast::{ids::EntityRefSyntax, pattern::Pattern};
+use arcweft_lang_syntax::expr::{BinaryOp, CallArg, DurationUnit, Expr, Literal, UnaryOp};
+use arcweft_lang_syntax::types::{TypeEffectRow, TypeRef};
 
 pub(crate) fn named_arg_label(value: &str) -> Option<String> {
     value.split_once(" = ").map(|(name, _)| name.to_owned())
@@ -80,7 +80,7 @@ pub(crate) fn expr_label(expr: &Expr) -> String {
             let values = seq
                 .literals()
                 .iter()
-                .map(arcweft_lang_hir::syntax::expr::IntLiteral::raw)
+                .map(arcweft_lang_syntax::expr::IntLiteral::raw)
                 .collect::<Vec<_>>()
                 .join(", ");
             format!("[{values}]")

@@ -4,7 +4,7 @@ use crate::expr::{lower_runtime_expr, lower_runtime_expr_strict};
 use crate::labels::expr_label;
 use arcweft_core::pattern::{RuntimePattern, RuntimeRecordPatternField};
 use arcweft_core::value::{RuntimeExpr, RuntimeValue};
-use arcweft_lang_hir::syntax::ast::pattern::{Pattern, VariantPatternPayload};
+use arcweft_lang_syntax::ast::pattern::{Pattern, VariantPatternPayload};
 
 /// Converts parser/HIR patterns into the Sans I/O runtime pattern model.
 pub(crate) fn lower_runtime_pattern(pattern: &Pattern) -> RuntimePattern {
@@ -91,7 +91,7 @@ fn lower_runtime_pattern_with_policy(
 }
 
 fn lower_literal_pattern(
-    expr: &arcweft_lang_hir::syntax::expr::Expr,
+    expr: &arcweft_lang_syntax::expr::Expr,
     policy: PatternLoweringPolicy,
 ) -> Result<RuntimePattern, String> {
     let lowered = match policy {

@@ -1,8 +1,8 @@
 use arcweft_core::effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile};
-use arcweft_lang_hir::{
-    symbol::{CallableDeclarationId, CallableDeclarationOwner, CallablePackageId},
-    syntax::ast::module_path::{CanonicalModulePath, ModuleSegment},
+use arcweft_lang_hir::symbol::{
+    CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
 };
+use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use arcweft_runtime_plan::assertion_identity::{
     AssertionConditionIndex, derive_runtime_assertion_guard,
 };

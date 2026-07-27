@@ -1,4 +1,4 @@
-use arcweft_lang_hir::syntax::expr::{CallArg, Expr, Placeholder};
+use arcweft_lang_syntax::expr::{CallArg, Expr, Placeholder};
 
 pub(super) fn expr_contains_partial_placeholder(expr: &Expr) -> bool {
     match expr {
