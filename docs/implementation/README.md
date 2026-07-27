@@ -17,6 +17,13 @@ metadata catalogs, semantic/environment digests, persistent-query identity,
 and typed LSP projection are tracked in
 `docs/implementation/2026-07-23-lang-01-1-1-2-2-adapter-callable-nominal-publication.md`.
 
+The current Proof source-identity convergence boundary for LSP diagnostics and
+feature readers is tracked in
+`docs/implementation/2026-07-27-proof-lsp-diagnostic-exact-source-lease.md` and
+`docs/implementation/2026-07-27-proof-lsp-feature-exact-source-lease.md`.
+The final HIR expression authority remains gated on the corrected Proof
+`01.1.1.4.1` redelivery rather than being inferred from these preparatory cuts.
+
 The current unified text, authored dialogue View, and Fx acceptance boundary is
 tracked in
 `docs/implementation/unified-text-dialogue-view-fx-2026-07-12.md`.

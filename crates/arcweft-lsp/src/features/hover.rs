@@ -4,7 +4,7 @@ use crate::features::character_metadata::character_hover_markdown;
 use crate::features::dialogue_view_metadata::{DialogueViewTypeMetadata, dialogue_view_types};
 use crate::features::view_part_metadata::ViewPartMetadataIndex;
 use crate::profiles::LspProfile;
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
     check::{
         EffectRow, EffectRowTail, TypeCheckReport, TypeJudgmentSubject, analyze_types,
@@ -18,13 +18,14 @@ use arcweft_lang_syntax::ast::{
     common::TextRange,
     items::{Item, TypedSyntaxTree},
 };
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_render_text::{
     LineDisplaySpec, RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource,
     RichTextStyleContribution,
 };
 use arcweft_verify_lsp::{LspPositionMapper, profile_hover};
 use lsp_types::{Hover, HoverContents, MarkedString, Position};
+use std::sync::Arc;
 
 /// Computes hover text for the word under the cursor.
 pub fn hover(
@@ -89,11 +90,14 @@ fn character_nominal_type_at(
     document: &DocumentSnapshot,
     word_range: TextRange,
 ) -> Option<TypeKind> {
-    let parsed = parse_source(document.text().to_owned());
+    let parsed = parse_document_with_source(
+        Arc::clone(document.source_document()),
+        ParseOptions::default(),
+    );
     if !parsed.errors().is_empty() {
         return None;
     }
-    let hir = lower_to_hir(parsed.typed_tree()).ok()?;
+    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree()).ok()?;
     let registry = registry_from_hir(&hir);
     if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
     {
@@ -187,12 +191,15 @@ fn closure_effect_row_hover(
     if !source_offset_may_be_closure_header(document.text(), offset) {
         return None;
     }
-    let parsed = parse_source(document.text().to_owned());
+    let parsed = parse_document_with_source(
+        Arc::clone(document.source_document()),
+        ParseOptions::default(),
+    );
     if !parsed.errors().is_empty() {
         return None;
     }
     let tree = parsed.typed_tree();
-    let hir = lower_to_hir(tree).ok()?;
+    let hir = lower_document_to_hir(parsed.document().as_ref(), tree).ok()?;
     let registry = registry_from_hir(&hir);
     if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
     {
@@ -300,13 +307,16 @@ fn callable_effect_row_hover(
     word: &str,
     word_range: TextRange,
 ) -> Option<Hover> {
-    let parsed = parse_source(document.text().to_owned());
+    let parsed = parse_document_with_source(
+        Arc::clone(document.source_document()),
+        ParseOptions::default(),
+    );
     if !parsed.errors().is_empty() {
         return None;
     }
     let tree = parsed.typed_tree();
     let callable = callable_at_word(tree, document.text(), word, word_range)?;
-    let hir = lower_to_hir(tree).ok()?;
+    let hir = lower_document_to_hir(parsed.document().as_ref(), tree).ok()?;
     let registry = registry_from_hir(&hir);
     if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
     {

@@ -13,7 +13,10 @@ use arcweft_lang_sema::{
     },
     check::analyze_registered_project_types,
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::{SourceDocument, SourceDocumentIdentity, SourceSpan};
 use arcweft_verify_lsp::LspPositionMapper;
 use lsp_types::{GotoDefinitionResponse, LocationLink};
@@ -359,9 +362,9 @@ fn character_reference_inventory(
     }
     let checkpoint = budget.checkpoint();
     budget.charge(CharacterDefinitionWorkKind::ParserFact)?;
-    let parsed = parse_source(context.rebound.text());
+    let parsed = parse_document_with_source(Arc::clone(&context.rebound), ParseOptions::default());
     budget.charge(CharacterDefinitionWorkKind::ParserFact)?;
-    let Ok(hir) = lower_document_to_hir(&context.rebound, parsed.typed_tree()) else {
+    let Ok(hir) = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree()) else {
         return Ok(None);
     };
     budget.charge(CharacterDefinitionWorkKind::ParserFact)?;

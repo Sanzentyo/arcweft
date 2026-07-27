@@ -1,7 +1,7 @@
 use crate::diagnostics::DocumentAnalysis;
 use crate::documents::DocumentSnapshot;
 use crate::profiles::LspProfile;
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
     check::analyze_types,
     effect_diagnostics::{EffectDiagnosticKind, EffectSeverity},
@@ -13,7 +13,7 @@ use arcweft_lang_syntax::{
         common::TextRange,
         items::{FunctionItem, Item},
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_tooling::model::{TextEdit, ToolingError};
 use arcweft_verify_lsp::{
@@ -21,6 +21,7 @@ use arcweft_verify_lsp::{
     workspace_edit_from_tooling_edit,
 };
 use lsp_types::{CodeAction, CodeActionKind, Position, Uri};
+use std::sync::Arc;
 
 /// Computes code actions for one open Arcweft document.
 pub fn actions(
@@ -48,11 +49,14 @@ fn effect_contract_actions(
     uri: &Uri,
     document: &DocumentSnapshot,
 ) -> Vec<CodeAction> {
-    let parsed = parse_source(document.text().to_owned());
+    let parsed = parse_document_with_source(
+        Arc::clone(document.source_document()),
+        ParseOptions::default(),
+    );
     if !parsed.errors().is_empty() {
         return Vec::new();
     }
-    let Ok(hir) = lower_to_hir(parsed.typed_tree()) else {
+    let Ok(hir) = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree()) else {
         return Vec::new();
     };
     let report = analyze_types(&hir, &profile.typecheck_env());

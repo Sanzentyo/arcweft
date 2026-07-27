@@ -1,7 +1,7 @@
 //! Shared typed metadata for View-part language-server features.
 
 use crate::{documents::DocumentSnapshot, profiles::LspProfile};
-use arcweft_lang_hir::lower::lower_to_hir;
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::{
     check::analyze_types,
     view_part::{
@@ -9,8 +9,6 @@ use arcweft_lang_sema::{
         CheckedViewPartTargetKind,
     },
 };
-#[cfg(test)]
-use arcweft_lang_syntax::parser::parse_source;
 use arcweft_lang_syntax::{
     ast::common::TextRange,
     parser::{ParseOptions, parse_document_with_source},
@@ -70,17 +68,11 @@ impl ViewPartMetadataIndex {
         Self::from_parsed(profile, &parsed)
     }
 
-    #[cfg(test)]
-    fn from_source(profile: &LspProfile, source: &str) -> Option<Self> {
-        let parsed = parse_source(source);
-        Self::from_parsed(profile, &parsed)
-    }
-
     fn from_parsed(
         profile: &LspProfile,
         parsed: &arcweft_lang_syntax::source::ParsedSource,
     ) -> Option<Self> {
-        let hir = lower_to_hir(parsed.typed_tree()).ok()?;
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree()).ok()?;
         let report = analyze_types(&hir, &profile.typecheck_env());
         Some(Self::from_catalog(&report.view_part_catalog))
     }
@@ -318,22 +310,36 @@ const fn target_kind_label(kind: CheckedViewPartTargetKind) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{documents::DocumentStore, positions::PositionEncoding};
     use arcweft_runtime_host::RuntimeHostRunnerKind;
+    use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem};
 
     const SOURCE: &str =
         "pub view Card() {\n    export part title as heading\n    Text(\"Title\").part(title)\n}\n";
 
-    fn metadata() -> ViewPartMetadataIndex {
-        ViewPartMetadataIndex::from_source(
+    fn metadata_for_source(source: &str) -> ViewPartMetadataIndex {
+        let mut store = DocumentStore::default();
+        let document = store.open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: "file:///view-part-metadata.arcw".parse().expect("URI"),
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: source.to_owned(),
+                },
+            },
+            PositionEncoding::Utf16,
+        );
+        ViewPartMetadataIndex::for_document(
             &LspProfile::default_for_runner(RuntimeHostRunnerKind::Native),
-            SOURCE,
+            &document,
         )
         .expect("typed View-part metadata")
     }
 
     #[test]
     fn local_and_public_symbols_keep_disjoint_definitions_and_references() {
-        let metadata = metadata();
+        let metadata = metadata_for_source(SOURCE);
         let target = SOURCE.rfind("title").expect("local definition");
         let local_use = SOURCE.find("title as").expect("export local use");
         let public = SOURCE.find("heading").expect("public definition");
@@ -353,11 +359,7 @@ mod tests {
     #[test]
     fn export_completion_uses_unexported_owner_local_inventory() {
         let source = "pub view Card() {\n    export part \n    Text(\"A\").part(alpha)\n    Text(\"B\").part(beta)\n}\n";
-        let metadata = ViewPartMetadataIndex::from_source(
-            &LspProfile::default_for_runner(RuntimeHostRunnerKind::Native),
-            source,
-        )
-        .expect("typed View-part metadata");
+        let metadata = metadata_for_source(source);
         let offset = source.find("export part ").unwrap() + "export part ".len();
         let labels = metadata
             .completions(source, offset)
