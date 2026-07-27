@@ -5,7 +5,7 @@
 //! crates do not depend on it.
 
 pub mod assertion;
-pub mod borrow;
+mod borrow;
 pub mod callable;
 pub mod character_definition;
 pub mod check;
@@ -22,8 +22,8 @@ pub mod effect_row;
 pub mod effects;
 pub mod entry;
 pub mod env;
-pub mod fact_layer;
-pub mod lifetime;
+mod fact_layer;
+mod lifetime;
 pub mod nominal;
 pub mod project_index;
 pub mod propagation;

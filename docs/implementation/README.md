@@ -1770,8 +1770,9 @@ Current high-confidence state:
   `engine.rs` owns only the engine state types, construction, frame stepping,
   and shared diagnostics/observation plumbing. The
   `arcweft-lang-sema` split now has public `check`, `checker`, `types`, `env`,
-  `diagnostics`, `borrow`, and `lifetime` modules, and the checker body has
-  started language-family child modules for `choice`, `effects`, `expr`,
+  and `diagnostics` modules. Crate-private `borrow`, `fact_layer`, and
+  `lifetime` modules own checker internals, and the checker body has started
+  language-family child modules for `choice`, `effects`, `expr`,
   `flow`, `line_plan`, `presentation`, `source`, `suspension`, and `stmt`,
   plus `lifetime_access` for lifetime registry reads/writes/drops, `module`
   for module/top-level entry checks, and `borrow_state` for borrow binding and

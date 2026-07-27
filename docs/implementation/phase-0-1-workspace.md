@@ -47,8 +47,9 @@ implementation split into `engine/eval.rs`, `engine/flow.rs`,
 `engine/line.rs`, `engine/source.rs`, `engine/stream.rs`, and
 `engine/suspend.rs`.
 `arcweft-lang-sema` split has started with public `check`, `checker`, `types`,
-`env`, `diagnostics`, `borrow`, and `lifetime` modules, while the larger
-language-family checker split now includes `choice`, `expr`, `flow`,
+`env`, and `diagnostics` modules. Crate-private `borrow`, `fact_layer`, and
+`lifetime` modules own checker internals, while the larger language-family
+checker split now includes `choice`, `expr`, `flow`,
 `line_plan`, `source`, `suspension`, `stmt`, `effects`, `module`,
 `borrow_state`, and `helpers` child modules. Semantic-analysis traversal
 helpers are now isolated under `semantic/traversal.rs`, with flow-fact state

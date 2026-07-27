@@ -49,3 +49,9 @@ fn removed_zero_consumer_nominal_index_helper_is_unavailable() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/removed_zero_consumer_nominal_index_helper.rs");
 }
+
+#[test]
+fn internal_checker_modules_are_unavailable() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/internal_checker_modules_private.rs");
+}
