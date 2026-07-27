@@ -114,6 +114,15 @@ and `T-CRB-*` identifiers absent as rows from `TEST_MATRIX.tsv`. The main rows
 contain source/rollback assertions, so their behavior is readable, but the
 package's claim that every referenced test ID is closed is not exact.
 
+### 5. Elided-region synthetic ownership is not representable
+
+The returned schema requires `HirElidedRegion` to carry a `SyntheticKey`
+owned by TypeId with role `ElidedRegion` and ordinal zero. The accepted Proof
+`SyntheticOwner` inventory has no Type owner, while the current private
+substrate stores only a raw HIR ID and cannot prove the owner's kind. The
+package does not state the exact owner-enum extension, constructor, validation,
+or migration. Adding one locally would change qualified synthetic identity.
+
 ## Implementation boundary
 
 The contradictions stop only their affected source/public switch. They do not
@@ -121,7 +130,8 @@ justify preserving or repairing an old production reader.
 
 Permitted before the follow-up return:
 
-1. private canonical scalar/name/path/region/registry owners;
+1. private canonical scalar/name/path and runtime-registry owners, excluding
+   type-region/elision ownership;
 2. deletion of duplicate private provisional owners in the same compiling
    slice;
 3. private unambiguous numeric leaf records other than the conflicting
@@ -133,6 +143,7 @@ Blocked pending the narrow correction:
 
 - Pattern arena publication involving pathless variants;
 - PatternId/TypeId component source-table publication;
+- Type-region/elision publication and its SyntheticOwner extension;
 - Duration equality/ordering and checker-failure publication;
 - matrix-complete exact/one-over limits affected by the missing budgets; and
 - the final public authority switch and old-reader deletion.
