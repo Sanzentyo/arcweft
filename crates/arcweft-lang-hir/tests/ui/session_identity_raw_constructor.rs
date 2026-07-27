@@ -1,8 +1,8 @@
-use arcweft_lang_hir::identity::HirModuleId;
+use arcweft_lang_hir::identity::HirDatabaseId;
 use arcweft_source::identity::SourceGeneration;
-use core::num::NonZeroU32;
+use core::num::{NonZeroU32, NonZeroU64};
 
 fn main() {
-    let _forged_module = HirModuleId(NonZeroU32::MIN);
+    let _forged_database = HirDatabaseId(NonZeroU64::MIN);
     let _forged_generation = SourceGeneration(NonZeroU32::MIN);
 }

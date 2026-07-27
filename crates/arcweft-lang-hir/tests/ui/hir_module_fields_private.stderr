@@ -1,0 +1,9 @@
+error[E0451]: fields `database` and `slot` of struct `HirModuleId` are private
+ --> tests/ui/hir_module_fields_private.rs:8:9
+  |
+7 |     HirModuleId {
+  |     ----------- in this type
+8 |         database,
+  |         ^^^^^^^^ private field
+9 |         slot: NonZeroU32::MIN,
+  |         ^^^^ private field

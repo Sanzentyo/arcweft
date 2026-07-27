@@ -1,11 +1,18 @@
-//! Session-local HIR identities and stale-ID diagnostics.
+//! Database-qualified session-local HIR identities and stale-ID diagnostics.
 
-use core::num::NonZeroU32;
+use core::num::{NonZeroU32, NonZeroU64};
 use thiserror::Error;
+
+/// Process-local identity of one in-memory HIR database.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirDatabaseId(NonZeroU64);
 
 /// Stable module identity within one in-memory HIR database.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct HirModuleId(NonZeroU32);
+pub struct HirModuleId {
+    database: HirDatabaseId,
+    slot: NonZeroU32,
+}
 
 /// Monotonic immutable snapshot revision for one HIR module.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -31,9 +38,40 @@ impl HirSnapshotId {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct RawHirId {
+struct RawHirId {
     module: HirModuleId,
     slot: NonZeroU32,
+    kind: HirIdKind,
+}
+
+/// Non-forgeable diagnostic projection of a raw HIR identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RawHirIdView {
+    module: HirModuleId,
+    kind: HirIdKind,
+    slot: NonZeroU32,
+}
+
+impl RawHirIdView {
+    /// Returns the module that owns the projected identity.
+    pub const fn module(&self) -> HirModuleId {
+        self.module
+    }
+
+    /// Returns the arena kind recorded for the projected identity.
+    pub const fn kind(&self) -> HirIdKind {
+        self.kind
+    }
+}
+
+impl From<RawHirId> for RawHirIdView {
+    fn from(value: RawHirId) -> Self {
+        Self {
+            module: value.module,
+            kind: value.kind,
+            slot: value.slot,
+        }
+    }
 }
 
 /// Top-level declaration identity.
@@ -41,8 +79,14 @@ pub(crate) struct RawHirId {
 pub struct ItemId(RawHirId);
 
 impl ItemId {
+    /// Returns the module that owns this item.
     pub const fn module(self) -> HirModuleId {
         self.0.module
+    }
+
+    /// Returns this identity's arena kind.
+    pub const fn kind(self) -> HirIdKind {
+        HirIdKind::Item
     }
 }
 
@@ -51,8 +95,14 @@ impl ItemId {
 pub struct ScopeId(RawHirId);
 
 impl ScopeId {
+    /// Returns the module that owns this scope.
     pub const fn module(self) -> HirModuleId {
         self.0.module
+    }
+
+    /// Returns this identity's arena kind.
+    pub const fn kind(self) -> HirIdKind {
+        HirIdKind::Scope
     }
 }
 
@@ -61,8 +111,14 @@ impl ScopeId {
 pub struct LocalId(RawHirId);
 
 impl LocalId {
+    /// Returns the module that owns this local.
     pub const fn module(self) -> HirModuleId {
         self.0.module
+    }
+
+    /// Returns this identity's arena kind.
+    pub const fn kind(self) -> HirIdKind {
+        HirIdKind::Local
     }
 }
 
@@ -71,8 +127,14 @@ impl LocalId {
 pub struct ExprId(RawHirId);
 
 impl ExprId {
+    /// Returns the module that owns this expression.
     pub const fn module(self) -> HirModuleId {
         self.0.module
+    }
+
+    /// Returns this identity's arena kind.
+    pub const fn kind(self) -> HirIdKind {
+        HirIdKind::Expr
     }
 }
 
@@ -81,8 +143,14 @@ impl ExprId {
 pub struct StmtId(RawHirId);
 
 impl StmtId {
+    /// Returns the module that owns this statement.
     pub const fn module(self) -> HirModuleId {
         self.0.module
+    }
+
+    /// Returns this identity's arena kind.
+    pub const fn kind(self) -> HirIdKind {
+        HirIdKind::Stmt
     }
 }
 
@@ -91,8 +159,14 @@ impl StmtId {
 pub struct TypeId(RawHirId);
 
 impl TypeId {
+    /// Returns the module that owns this type node.
     pub const fn module(self) -> HirModuleId {
         self.0.module
+    }
+
+    /// Returns this identity's arena kind.
+    pub const fn kind(self) -> HirIdKind {
+        HirIdKind::Type
     }
 }
 
@@ -101,8 +175,14 @@ impl TypeId {
 pub struct PatternId(RawHirId);
 
 impl PatternId {
+    /// Returns the module that owns this pattern.
     pub const fn module(self) -> HirModuleId {
         self.0.module
+    }
+
+    /// Returns this identity's arena kind.
+    pub const fn kind(self) -> HirIdKind {
+        HirIdKind::Pattern
     }
 }
 
@@ -111,8 +191,14 @@ impl PatternId {
 pub struct CaptureId(RawHirId);
 
 impl CaptureId {
+    /// Returns the module that owns this capture.
     pub const fn module(self) -> HirModuleId {
         self.0.module
+    }
+
+    /// Returns this identity's arena kind.
+    pub const fn kind(self) -> HirIdKind {
+        HirIdKind::Capture
     }
 }
 
@@ -153,18 +239,21 @@ pub enum IdResolveError {
         expected: HirModuleId,
         actual: HirModuleId,
     },
-    #[error("HIR ID is born at {born:?}, after snapshot {snapshot:?}")]
+    #[error("HIR ID {id:?} is born at {born:?}, after snapshot {snapshot:?}")]
     NotYetLive {
+        id: RawHirIdView,
+        snapshot: HirSnapshotId,
         born: HirRevision,
-        snapshot: HirRevision,
     },
-    #[error("HIR ID was last live at {last_live:?}, before snapshot {snapshot:?}")]
+    #[error("HIR ID {id:?} retired at {retired_at:?} in snapshot {snapshot:?}")]
     Retired {
-        last_live: HirRevision,
-        snapshot: HirRevision,
+        id: RawHirIdView,
+        snapshot: HirSnapshotId,
+        retired_at: HirRevision,
     },
-    #[error("HIR slot contains {actual:?}, expected {expected:?}")]
+    #[error("HIR ID {id:?} contains {actual:?}, expected {expected:?}")]
     KindMismatch {
+        id: RawHirIdView,
         expected: HirIdKind,
         actual: HirIdKind,
     },
@@ -229,24 +318,6 @@ impl SyntheticRole {
     }
 }
 
-/// Deterministic allocation key for a synthetic child of a source-backed node.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SyntheticKey {
-    owner: RawHirId,
-    role: SyntheticRole,
-    ordinal: u32,
-}
-
-impl SyntheticKey {
-    pub const fn role(self) -> SyntheticRole {
-        self.role
-    }
-
-    pub const fn ordinal(self) -> u32 {
-        self.ordinal
-    }
-}
-
 /// Inclusive HIR allocation limit.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirLimit {
@@ -286,24 +357,38 @@ impl HirLimit {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExprId, HirIdKind, HirLimit, HirModuleId, HirRevision, HirSnapshotId, RawHirId,
-        SyntheticKey, SyntheticRole,
+        ExprId, HirDatabaseId, HirIdKind, HirLimit, HirModuleId, HirRevision, HirSnapshotId,
+        IdResolveError, RawHirId, RawHirIdView, SyntheticRole,
     };
-    use core::num::NonZeroU32;
+    use core::num::{NonZeroU32, NonZeroU64};
+
+    fn module_id(database: u64, slot: u32) -> HirModuleId {
+        HirModuleId {
+            database: HirDatabaseId(NonZeroU64::new(database).unwrap()),
+            slot: NonZeroU32::new(slot).unwrap(),
+        }
+    }
+
+    fn expression(module: HirModuleId, slot: u32) -> ExprId {
+        ExprId(RawHirId {
+            module,
+            slot: NonZeroU32::new(slot).unwrap(),
+            kind: HirIdKind::Expr,
+        })
+    }
 
     #[test]
-    fn typed_ids_order_by_module_then_global_slot() {
-        let module = HirModuleId(NonZeroU32::new(2).unwrap());
-        let first = ExprId(RawHirId {
-            module,
-            slot: NonZeroU32::new(3).unwrap(),
-        });
-        let second = ExprId(RawHirId {
-            module,
-            slot: NonZeroU32::new(4).unwrap(),
-        });
+    fn typed_ids_include_database_module_kind_and_global_slot() {
+        let module = module_id(1, 2);
+        let first = expression(module, 3);
+        let second = expression(module, 4);
+        let foreign_database = expression(module_id(2, 2), 3);
+
         assert!(first < second);
+        assert!(first < foreign_database);
+        assert_ne!(first, foreign_database);
         assert_eq!(first.module(), module);
+        assert_eq!(first.kind(), HirIdKind::Expr);
 
         let snapshot = HirSnapshotId {
             module,
@@ -314,22 +399,103 @@ mod tests {
     }
 
     #[test]
+    fn id_resolve_error_variants_preserve_exact_payload_shapes() {
+        let module = module_id(7, 11);
+        let id = RawHirIdView::from(RawHirId {
+            module,
+            slot: NonZeroU32::new(13).unwrap(),
+            kind: HirIdKind::Expr,
+        });
+        let snapshot = HirSnapshotId {
+            module,
+            revision: HirRevision(NonZeroU32::new(3).unwrap()),
+        };
+
+        assert_eq!(id.module(), module);
+        assert_eq!(id.kind(), HirIdKind::Expr);
+        assert_eq!(id.slot.get(), 13);
+
+        let corrupted_wrapper = ExprId(RawHirId {
+            module,
+            slot: NonZeroU32::new(14).unwrap(),
+            kind: HirIdKind::Stmt,
+        });
+        assert_eq!(corrupted_wrapper.kind(), HirIdKind::Expr);
+        assert_eq!(
+            RawHirIdView::from(corrupted_wrapper.0).kind(),
+            HirIdKind::Stmt
+        );
+
+        match (IdResolveError::WrongModule {
+            expected: module,
+            actual: module_id(8, 11),
+        }) {
+            IdResolveError::WrongModule { expected, actual } => {
+                assert_eq!(expected, module);
+                assert_eq!(actual, module_id(8, 11));
+            }
+            other => panic!("unexpected resolver error: {other:?}"),
+        }
+
+        match (IdResolveError::NotYetLive {
+            id,
+            snapshot,
+            born: HirRevision(NonZeroU32::new(4).unwrap()),
+        }) {
+            IdResolveError::NotYetLive {
+                id: actual_id,
+                snapshot: actual_snapshot,
+                born,
+            } => {
+                assert_eq!(actual_id, id);
+                assert_eq!(actual_snapshot, snapshot);
+                assert_eq!(born.0.get(), 4);
+            }
+            other => panic!("unexpected resolver error: {other:?}"),
+        }
+
+        match (IdResolveError::Retired {
+            id,
+            snapshot,
+            retired_at: HirRevision(NonZeroU32::new(3).unwrap()),
+        }) {
+            IdResolveError::Retired {
+                id: actual_id,
+                snapshot: actual_snapshot,
+                retired_at,
+            } => {
+                assert_eq!(actual_id, id);
+                assert_eq!(actual_snapshot, snapshot);
+                assert_eq!(retired_at.0.get(), 3);
+            }
+            other => panic!("unexpected resolver error: {other:?}"),
+        }
+
+        match (IdResolveError::KindMismatch {
+            id,
+            expected: HirIdKind::Expr,
+            actual: HirIdKind::Stmt,
+        }) {
+            IdResolveError::KindMismatch {
+                id: actual_id,
+                expected,
+                actual,
+            } => {
+                assert_eq!(actual_id, id);
+                assert_eq!(expected, HirIdKind::Expr);
+                assert_eq!(actual, HirIdKind::Stmt);
+            }
+            other => panic!("unexpected resolver error: {other:?}"),
+        }
+    }
+
+    #[test]
     fn owned_identity_vocabularies_have_stable_behavior() {
         assert_eq!(HirIdKind::Capture.as_str(), "capture");
         assert_eq!(HirLimit::LocalsPerScope.maximum(), 4_096);
         assert_eq!(HirLimit::Captures.maximum(), 65_536);
         assert_eq!(HirLimit::TotalSlotsPerModule.maximum(), 786_432);
-        let owner = RawHirId {
-            module: HirModuleId(NonZeroU32::MIN),
-            slot: NonZeroU32::MIN,
-        };
-        let key = SyntheticKey {
-            owner,
-            role: SyntheticRole::ElidedRegion,
-            ordinal: 2,
-        };
-        assert_eq!(key.role().as_str(), "elided_region");
-        assert_eq!(key.ordinal(), 2);
+        assert_eq!(SyntheticRole::ElidedRegion.as_str(), "elided_region");
         assert_eq!(SyntheticRole::ClosureCapture.as_str(), "closure_capture");
         assert_eq!(
             SyntheticRole::ContractEnsuresScope.as_str(),

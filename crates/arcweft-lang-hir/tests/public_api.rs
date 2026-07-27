@@ -10,6 +10,8 @@ fn removed_and_session_identity_public_api_contract() {
     cases.compile_fail("tests/ui/removed_reference_hir.rs");
     cases.compile_fail("tests/ui/removed_role_hir.rs");
     cases.compile_fail("tests/ui/removed_syntax_forwarding_facade.rs");
+    cases.compile_fail("tests/ui/hir_module_fields_private.rs");
+    cases.compile_fail("tests/ui/raw_hir_id_view_slot_private.rs");
     cases.compile_fail("tests/ui/session_identity_raw_constructor.rs");
     cases.compile_fail("tests/ui/session_identity_serde.rs");
 }

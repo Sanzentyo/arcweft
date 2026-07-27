@@ -1,0 +1,5 @@
+error[E0616]: field `slot` of struct `RawHirIdView` is private
+ --> tests/ui/raw_hir_id_view_slot_private.rs:7:10
+  |
+7 |     view.slot
+  |          ^^^^ private field

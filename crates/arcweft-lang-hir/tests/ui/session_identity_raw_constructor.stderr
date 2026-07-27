@@ -1,14 +1,14 @@
 error[E0423]: cannot initialize a tuple struct which contains private fields
- --> tests/ui/session_identity_raw_constructor.rs:6:26
+ --> tests/ui/session_identity_raw_constructor.rs:6:28
   |
-6 |     let _forged_module = HirModuleId(NonZeroU32::MIN);
-  |                          ^^^^^^^^^^^
+6 |     let _forged_database = HirDatabaseId(NonZeroU64::MIN);
+  |                            ^^^^^^^^^^^^^
   |
 note: constructor is not visible here due to private fields
  --> src/identity.rs
   |
-  | pub struct HirModuleId(NonZeroU32);
-  |                        ^^^^^^^^^^ private field
+  | pub struct HirDatabaseId(NonZeroU64);
+  |                          ^^^^^^^^^^ private field
 
 error[E0423]: cannot initialize a tuple struct which contains private fields
  --> tests/ui/session_identity_raw_constructor.rs:7:30
