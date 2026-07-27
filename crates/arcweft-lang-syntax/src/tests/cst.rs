@@ -1,5 +1,5 @@
 use crate::cst::{
-    CstFlowItemKind, CstLetFlowItemKind, CstLine, CstLineKind, CstPunctuationScan, CstStmtKind,
+    CstFlowItemKind, CstLetFlowItemKind, CstLine, CstPunctuationScan, CstStmtKind,
     CstStructuredFlowBlockKind, CstTopLevelItemKind, CstTopLevelLineKind, SyntaxKind,
     classify_stmt, cst_lines_for_source, find_last_depth_zero_open_punctuation,
     find_last_top_level_punctuation, find_matching_punctuation,
@@ -49,17 +49,20 @@ fn cst_line_events_classify_trivia_docs_and_code() {
     let root = crate::cst::parse_cst(source);
     let lines = cst_lines_for_source(&root, source);
 
-    assert_eq!(lines.get(0).map(CstLine::kind), Some(CstLineKind::Blank));
-    assert_eq!(lines.get(1).map(CstLine::kind), Some(CstLineKind::Comment));
-    assert_eq!(
-        lines.get(2).map(CstLine::kind),
-        Some(CstLineKind::DocComment)
-    );
+    assert!(lines.get(0).is_some_and(CstLine::is_trivia));
+    assert_eq!(lines.get(0).map(CstLine::trimmed), Some(""));
+    assert!(lines.get(1).is_some_and(CstLine::is_trivia));
+    assert_eq!(lines.get(1).map(CstLine::trimmed), Some("// comment"));
+    assert!(lines.get(2).is_some_and(|line| !line.is_trivia()));
     assert_eq!(
         lines.get(2).and_then(CstLine::doc_comment_text),
         Some("Doc")
     );
-    assert_eq!(lines.get(3).map(CstLine::kind), Some(CstLineKind::Code));
+    assert!(lines.get(3).is_some_and(|line| !line.is_trivia()));
+    assert_eq!(
+        lines.get(3).map(CstLine::trimmed),
+        Some("flow @flow.opening opening {}")
+    );
 }
 
 #[test]

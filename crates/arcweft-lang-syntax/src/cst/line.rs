@@ -38,27 +38,22 @@ impl<'a> CstLineEvents<'a> {
     }
 
     /// Number of projected line events.
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.lines.len()
     }
 
-    /// Returns true when the source has no non-empty CST line events.
-    pub fn is_empty(&self) -> bool {
-        self.lines.is_empty()
-    }
-
     /// Iterates over projected CST line events.
-    pub fn iter(&self) -> impl Iterator<Item = &CstLine<'a>> {
+    pub(crate) fn iter(&self) -> impl Iterator<Item = &CstLine<'a>> {
         self.lines.iter()
     }
 
     /// Returns a line event by index.
-    pub fn get(&self, index: usize) -> Option<&CstLine<'a>> {
+    pub(crate) fn get(&self, index: usize) -> Option<&CstLine<'a>> {
         self.lines.get(index)
     }
 
     /// Path-free counters collected while projecting CST lines.
-    pub const fn stats(&self) -> SyntaxParseStats {
+    pub(crate) const fn stats(&self) -> SyntaxParseStats {
         self.stats
     }
 
@@ -500,32 +495,27 @@ impl<'a> CstLine<'a> {
     }
 
     /// Line text without a trailing newline.
-    pub fn text(&self) -> &str {
+    pub(crate) fn text(&self) -> &str {
         &self.text
     }
 
-    /// Coarse line-event kind.
-    pub const fn kind(&self) -> CstLineKind {
-        self.kind
-    }
-
     /// Trimmed line text.
-    pub fn trimmed(&self) -> &str {
+    pub(crate) fn trimmed(&self) -> &str {
         &self.text[self.trim_start..self.trim_end]
     }
 
     /// Line text with leading whitespace removed.
-    pub fn trim_start(&self) -> &str {
+    pub(crate) fn trim_start(&self) -> &str {
         &self.text[self.leading_trim_start..]
     }
 
     /// Returns true when the line should be skipped as trivia by grammar parsing.
-    pub const fn is_trivia(&self) -> bool {
+    pub(crate) const fn is_trivia(&self) -> bool {
         matches!(self.kind, CstLineKind::Blank | CstLineKind::Comment)
     }
 
     /// Extracts a documentation-comment payload from a doc-comment line.
-    pub fn doc_comment_text(&self) -> Option<&str> {
+    pub(crate) fn doc_comment_text(&self) -> Option<&str> {
         let text = self.trim_start().strip_prefix("///")?;
         Some(text.strip_prefix(' ').unwrap_or(text))
     }
@@ -546,12 +536,12 @@ impl<'a> CstLine<'a> {
     }
 
     /// Start byte offset in the original source.
-    pub const fn start(&self) -> usize {
+    pub(crate) const fn start(&self) -> usize {
         self.start
     }
 
     /// End byte offset before the line terminator.
-    pub const fn end(&self) -> usize {
+    pub(crate) const fn end(&self) -> usize {
         self.end
     }
 

@@ -1,0 +1,35 @@
+error[E0599]: no method named `is_crate_rooted` found for enum `ModulePathRoot` in the current scope
+  --> tests/ui/removed_zero_consumer_syntax_accessors.rs:11:18
+   |
+11 |     let _ = root.is_crate_rooted();
+   |                  ^^^^^^^^^^^^^^^ method not found in `ModulePathRoot`
+
+error[E0599]: no method named `super_levels` found for enum `ModulePathRoot` in the current scope
+  --> tests/ui/removed_zero_consumer_syntax_accessors.rs:12:18
+   |
+12 |     let _ = root.super_levels();
+   |                  ^^^^^^^^^^^^ method not found in `ModulePathRoot`
+
+error[E0599]: no method named `ancestors_inclusive` found for reference `&CanonicalModulePath` in the current scope
+  --> tests/ui/removed_zero_consumer_syntax_accessors.rs:13:18
+   |
+13 |     let _ = path.ancestors_inclusive();
+   |                  ^^^^^^^^^^^^^^^^^^^ method not found in `&CanonicalModulePath`
+
+error[E0599]: no method named `is_point` found for enum `DialogueTagKind` in the current scope
+  --> tests/ui/removed_zero_consumer_syntax_accessors.rs:17:17
+   |
+17 |     let _ = tag.is_point();
+   |                 ^^^^^^^^ method not found in `DialogueTagKind`
+
+error[E0599]: no method named `as_select` found for reference `&arcweft_lang_syntax::expr::Expr` in the current scope
+  --> tests/ui/removed_zero_consumer_syntax_accessors.rs:18:18
+   |
+18 |     let _ = expr.as_select();
+   |                  ^^^^^^^^^ method not found in `&arcweft_lang_syntax::expr::Expr`
+
+error[E0599]: no method named `view_calls` found for reference `&ViewBody` in the current scope
+  --> tests/ui/removed_zero_consumer_syntax_accessors.rs:19:18
+   |
+19 |     let _ = view.view_calls();
+   |                  ^^^^^^^^^^ method not found in `&ViewBody`

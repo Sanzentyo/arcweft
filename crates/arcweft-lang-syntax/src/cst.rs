@@ -9,12 +9,12 @@ use rowan::{GreenNodeBuilder, Language};
 use std::borrow::Cow;
 use std::ops::Range;
 
-pub mod classify;
-pub mod entity_ref;
-pub mod lexer;
-pub mod line;
-pub mod punctuation;
-pub mod text;
+pub(crate) mod classify;
+pub(crate) mod entity_ref;
+pub(crate) mod lexer;
+pub(crate) mod line;
+pub(crate) mod punctuation;
+pub(crate) mod text;
 
 /// Rowan language marker for Arcweft syntax nodes.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -35,17 +35,8 @@ impl Language for ArcweftLanguage {
 /// Lossless syntax node.
 pub type SyntaxNode = rowan::SyntaxNode<ArcweftLanguage>;
 
-/// Lossless syntax token.
-pub type SyntaxToken = rowan::SyntaxToken<ArcweftLanguage>;
-
 /// Lossless syntax element.
 pub type SyntaxElement = rowan::SyntaxElement<ArcweftLanguage>;
-
-/// Rowan text range type used by CST nodes and tokens.
-pub type RowanTextRange = rowan::TextRange;
-
-/// Rowan text size type used by CST nodes and tokens.
-pub type TextSize = rowan::TextSize;
 
 /// Returns whether `value` is exactly one canonical Arcweft identifier token.
 ///
@@ -64,7 +55,7 @@ pub fn is_identifier(value: &str) -> bool {
 /// separate raw-source line splitter, so source offsets stay tied to the
 /// lossless tree.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CstLine<'a> {
+pub(crate) struct CstLine<'a> {
     pub(crate) text: Cow<'a, str>,
     pub(crate) start: usize,
     pub(crate) end: usize,
@@ -127,11 +118,11 @@ pub(crate) struct CstPunctuationDeltas {
 
 /// Parsed `=== ... ===` fence used by flat dialogue and scope sugar.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FlatFence<'a> {
-    pub kind: &'a str,
-    pub head: &'a str,
-    pub close: bool,
-    pub head_start: usize,
+pub(crate) struct FlatFence<'a> {
+    pub(crate) kind: &'a str,
+    pub(crate) head: &'a str,
+    pub(crate) close: bool,
+    pub(crate) head_start: usize,
 }
 
 /// Relative ID token split from an ID-bearing context.
@@ -183,7 +174,7 @@ pub(crate) struct CstEntityRef<'a> {
 /// comment/doc/blank classification from the typed parser while the parser is
 /// migrating toward richer rowan events.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CstLineKind {
+pub(crate) enum CstLineKind {
     Blank,
     Comment,
     DocComment,
@@ -312,7 +303,7 @@ pub(crate) struct CstBlockEvent<'a> {
 /// keeps the current line-event bridge explicit while later parser work moves
 /// toward grammar-level rowan events.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct CstLineEvents<'a> {
+pub(crate) struct CstLineEvents<'a> {
     lines: Vec<CstLine<'a>>,
     source: Option<&'a str>,
     stats: SyntaxParseStats,

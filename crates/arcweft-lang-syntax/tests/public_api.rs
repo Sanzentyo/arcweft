@@ -13,4 +13,5 @@ fn removed_public_api_contract() {
     cases.compile_fail("tests/ui/removed_into_typed_tree.rs");
     cases.compile_fail("tests/ui/removed_fragment_payloads.rs");
     cases.compile_fail("tests/ui/removed_unused_syntax_facades.rs");
+    cases.compile_fail("tests/ui/removed_zero_consumer_syntax_accessors.rs");
 }

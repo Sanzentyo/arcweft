@@ -109,11 +109,6 @@ impl DialogueTagKind {
             _ => Self::Other,
         }
     }
-
-    /// Whether this tag has no matching close operation.
-    pub const fn is_point(self) -> bool {
-        matches!(self, Self::Point | Self::Reset)
-    }
 }
 
 /// Authored dialogue end tag or a typed synthetic end from inline span sugar.

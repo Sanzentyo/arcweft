@@ -606,14 +606,6 @@ impl Expr {
         Self::Select(SelectExpr::new(target, Name::new(member.into())))
     }
 
-    /// Returns the selector payload when this expression is a dot selector.
-    pub fn as_select(&self) -> Option<&SelectExpr> {
-        match self {
-            Self::Select(select) => Some(select),
-            _ => None,
-        }
-    }
-
     /// Returns a dotted syntax label when this expression is only path/select nodes.
     pub fn dotted_selector_label(&self) -> Option<String> {
         self.dotted_path().map(|path| path.as_label().to_owned())

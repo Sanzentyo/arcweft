@@ -7,7 +7,7 @@
 pub mod assertion;
 pub mod ast;
 mod attachment;
-pub mod cache_facts;
+mod cache_facts;
 pub mod cst;
 pub mod expr;
 mod grammar;

@@ -47,21 +47,6 @@ pub enum ModulePathError {
     },
 }
 
-impl ModulePathRoot {
-    /// Whether this spelling starts at the crate root.
-    pub const fn is_crate_rooted(self) -> bool {
-        matches!(self, Self::ImplicitCrate | Self::Crate)
-    }
-
-    /// Number of parent levels requested by this root spelling.
-    pub const fn super_levels(self) -> usize {
-        match self {
-            Self::Super(levels) => levels,
-            Self::ImplicitCrate | Self::Crate | Self::SelfModule => 0,
-        }
-    }
-}
-
 impl ModuleSegment {
     /// Creates a validated identifier-like module segment.
     pub fn new(value: impl Into<String>) -> Result<Self, ModulePathError> {
@@ -190,13 +175,6 @@ impl CanonicalModulePath {
         let mut segments = self.segments.clone();
         segments.push(segment);
         Self { segments }
-    }
-
-    /// Returns this module followed by its parents, ending at the crate root.
-    pub fn ancestors_inclusive(&self) -> impl Iterator<Item = Self> + '_ {
-        (0..=self.segments.len()).rev().map(|length| Self {
-            segments: self.segments[..length].to_vec(),
-        })
     }
 }
 

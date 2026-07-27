@@ -1,57 +1,396 @@
-error[E0432]: unresolved imports `arcweft_lang_syntax::cst::path`, `arcweft_lang_syntax::text::parse_dialogue_tokens`, `arcweft_lang_syntax::types::parse_where_clause_list`
- --> tests/ui/removed_unused_syntax_facades.rs:3:10
+error[E0432]: unresolved imports `arcweft_lang_syntax::cst::RowanTextRange`, `arcweft_lang_syntax::cst::SyntaxToken`, `arcweft_lang_syntax::cst::TextSize`
+ --> tests/ui/removed_unused_syntax_facades.rs:4:57
   |
-3 |     cst::path::cst_path_roots,
-  |          ^^^^ could not find `path` in `cst`
-...
-6 |     text::parse_dialogue_tokens,
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_dialogue_tokens` in `text`
-7 |     types::parse_where_clause_list,
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_where_clause_list` in `types`
+4 |         CstLine, CstLineEvents, CstLineKind, FlatFence, RowanTextRange, SyntaxToken, TextSize,
+  |                                                         ^^^^^^^^^^^^^^  ^^^^^^^^^^^  ^^^^^^^^ no `TextSize` in `cst`
+  |                                                         |               |
+  |                                                         |               no `SyntaxToken` in `cst`
+  |                                                         no `RowanTextRange` in `cst`
   |
 help: a similar name exists in the module
   |
-6 -     text::parse_dialogue_tokens,
-6 +     text::parse_dialogue_text,
-  |
-help: a similar name exists in the module
-  |
-7 -     types::parse_where_clause_list,
-7 +     types::parse_where_clauses_at,
+4 -         CstLine, CstLineEvents, CstLineKind, FlatFence, RowanTextRange, SyntaxToken, TextSize,
+4 +         CstLine, CstLineEvents, CstLineKind, FlatFence, RowanTextRange, SyntaxNode, TextSize,
   |
 
-error[E0603]: function `cst_lines_for_source` is private
- --> tests/ui/removed_unused_syntax_facades.rs:2:10
+error[E0432]: unresolved imports `arcweft_lang_syntax::cst::path`, `arcweft_lang_syntax::text::parse_dialogue_tokens`, `arcweft_lang_syntax::types::parse_where_clause_list`
+  --> tests/ui/removed_unused_syntax_facades.rs:14:10
+   |
+14 |     cst::path::cst_path_roots,
+   |          ^^^^ could not find `path` in `cst`
+...
+17 |     text::parse_dialogue_tokens,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_dialogue_tokens` in `text`
+18 |     types::parse_where_clause_list,
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_where_clause_list` in `types`
+   |
+help: a similar name exists in the module
+   |
+17 -     text::parse_dialogue_tokens,
+17 +     text::parse_dialogue_text,
+   |
+help: a similar name exists in the module
+   |
+18 -     types::parse_where_clause_list,
+18 +     types::parse_where_clauses_at,
+   |
+
+error[E0603]: module `cache_facts` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:2:5
   |
-2 |     cst::cst_lines_for_source,
-  |          ^^^^^^^^^^^^^^^^^^^^ private function
+2 |     cache_facts,
+  |     ^^^^^^^^^^^ private module
   |
-note: the function `cst_lines_for_source` is defined here
+note: the module `cache_facts` is defined here
+ --> src/lib.rs
+  |
+  | mod cache_facts;
+  | ^^^^^^^^^^^^^^^
+
+error[E0603]: struct `CstLine` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:4:9
+  |
+4 |         CstLine, CstLineEvents, CstLineKind, FlatFence, RowanTextRange, SyntaxToken, TextSize,
+  |         ^^^^^^^ private struct
+  |
+note: the struct `CstLine` is defined here
  --> src/cst.rs
   |
-  | pub(crate) fn cst_lines_for_source<'a>(root: &SyntaxNode, source: &'a str) -> CstLineEvents<'a> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | pub(crate) struct CstLine<'a> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0603]: function `parse_flat_fence` is private
- --> tests/ui/removed_unused_syntax_facades.rs:4:16
+error[E0603]: struct `CstLineEvents` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:4:18
   |
-4 |     cst::text::parse_flat_fence,
-  |                ^^^^^^^^^^^^^^^^ private function
+4 |         CstLine, CstLineEvents, CstLineKind, FlatFence, RowanTextRange, SyntaxToken, TextSize,
+  |                  ^^^^^^^^^^^^^ private struct
   |
-note: the function `parse_flat_fence` is defined here
- --> src/cst/text.rs
+note: the struct `CstLineEvents` is defined here
+ --> src/cst.rs
   |
-  | pub(crate) fn parse_flat_fence(source: &str) -> Option<FlatFence<'_>> {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | pub(crate) struct CstLineEvents<'a> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0603]: function `parse_dialogue_content` is private
- --> tests/ui/removed_unused_syntax_facades.rs:5:13
+error[E0603]: enum `CstLineKind` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:4:33
   |
-5 |     parser::parse_dialogue_content,
-  |             ^^^^^^^^^^^^^^^^^^^^^^ private function
+4 |         CstLine, CstLineEvents, CstLineKind, FlatFence, RowanTextRange, SyntaxToken, TextSize,
+  |                                 ^^^^^^^^^^^ private enum
   |
-note: the function `parse_dialogue_content` is defined here
+note: the enum `CstLineKind` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) enum CstLineKind {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: struct `FlatFence` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:4:46
+  |
+4 |         CstLine, CstLineEvents, CstLineKind, FlatFence, RowanTextRange, SyntaxToken, TextSize,
+  |                                              ^^^^^^^^^ private struct
+  |
+note: the struct `FlatFence` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) struct FlatFence<'a> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `classify` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:5:9
+  |
+5 |         classify, entity_ref, lexer, line, punctuation, text as cst_text,
+  |         ^^^^^^^^ private module
+  |
+note: the module `classify` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) mod classify;
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `entity_ref` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:5:19
+  |
+5 |         classify, entity_ref, lexer, line, punctuation, text as cst_text,
+  |                   ^^^^^^^^^^ private module
+  |
+note: the module `entity_ref` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) mod entity_ref;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `lexer` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:5:31
+  |
+5 |         classify, entity_ref, lexer, line, punctuation, text as cst_text,
+  |                               ^^^^^ private module
+  |
+note: the module `lexer` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) mod lexer;
+  | ^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `line` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:5:38
+  |
+5 |         classify, entity_ref, lexer, line, punctuation, text as cst_text,
+  |                                      ^^^^ private module
+  |
+note: the module `line` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) mod line;
+  | ^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `punctuation` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:5:44
+  |
+5 |         classify, entity_ref, lexer, line, punctuation, text as cst_text,
+  |                                            ^^^^^^^^^^^ private module
+  |
+note: the module `punctuation` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) mod punctuation;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `text` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:5:57
+  |
+5 |         classify, entity_ref, lexer, line, punctuation, text as cst_text,
+  |                                                         ^^^^ private module
+  |
+note: the module `text` is defined here
+ --> src/cst.rs
+  |
+  | pub(crate) mod text;
+  | ^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `assertion` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:9
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |         ^^^^^^^^^ private module
+  |
+note: the module `assertion` is defined here
  --> src/parser.rs
   |
-  | pub(crate) fn parse_dialogue_content(raw: impl Into<String>) -> DialogueContent {
-  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  | pub(crate) mod assertion;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `await_` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:20
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |                    ^^^^^^ private module
+  |
+note: the module `await_` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod await_;
+  | ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `choice` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:28
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |                            ^^^^^^ private module
+  |
+note: the module `choice` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod choice;
+  | ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `control_flow` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:36
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |                                    ^^^^^^^^^^^^ private module
+  |
+note: the module `control_flow` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod control_flow;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `dialogue` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:50
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |                                                  ^^^^^^^^ private module
+  |
+note: the module `dialogue` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod dialogue;
+  | ^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `flow` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:60
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |                                                            ^^^^ private module
+  |
+note: the module `flow` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod flow;
+  | ^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `headers` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:66
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |                                                                  ^^^^^^^ private module
+  |
+note: the module `headers` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod headers;
+  | ^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `helpers` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:75
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |                                                                           ^^^^^^^ private module
+  |
+note: the module `helpers` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod helpers;
+  | ^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `items` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:8:84
+  |
+8 |         assertion, await_, choice, control_flow, dialogue, flow, headers, helpers, items,
+  |                                                                                    ^^^^^ private module
+  |
+note: the module `items` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod items;
+  | ^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `line_plan` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:9:9
+  |
+9 |         line_plan, proof, source as parser_source, statements, style, top_level, view,
+  |         ^^^^^^^^^ private module
+  |
+note: the module `line_plan` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod line_plan;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `proof` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:9:20
+  |
+9 |         line_plan, proof, source as parser_source, statements, style, top_level, view,
+  |                    ^^^^^ private module
+  |
+note: the module `proof` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod proof;
+  | ^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `source` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:9:27
+  |
+9 |         line_plan, proof, source as parser_source, statements, style, top_level, view,
+  |                           ^^^^^^ private module
+  |
+note: the module `source` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod source;
+  | ^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `statements` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:9:52
+  |
+9 |         line_plan, proof, source as parser_source, statements, style, top_level, view,
+  |                                                    ^^^^^^^^^^ private module
+  |
+note: the module `statements` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod statements;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `style` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:9:64
+  |
+9 |         line_plan, proof, source as parser_source, statements, style, top_level, view,
+  |                                                                ^^^^^ private module
+  |
+note: the module `style` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod style;
+  | ^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `top_level` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:9:71
+  |
+9 |         line_plan, proof, source as parser_source, statements, style, top_level, view,
+  |                                                                       ^^^^^^^^^ private module
+  |
+note: the module `top_level` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod top_level;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `view` is private
+ --> tests/ui/removed_unused_syntax_facades.rs:9:82
+  |
+9 |         line_plan, proof, source as parser_source, statements, style, top_level, view,
+  |                                                                                  ^^^^ private module
+  |
+note: the module `view` is defined here
+ --> src/parser.rs
+  |
+  | pub(crate) mod view;
+  | ^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: function `cst_lines_for_source` is private
+  --> tests/ui/removed_unused_syntax_facades.rs:13:10
+   |
+13 |     cst::cst_lines_for_source,
+   |          ^^^^^^^^^^^^^^^^^^^^ private function
+   |
+note: the function `cst_lines_for_source` is defined here
+  --> src/cst.rs
+   |
+   | pub(crate) fn cst_lines_for_source<'a>(root: &SyntaxNode, source: &'a str) -> CstLineEvents<'a> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `text` is private
+  --> tests/ui/removed_unused_syntax_facades.rs:15:10
+   |
+15 |     cst::text::parse_flat_fence,
+   |          ^^^^ private module
+   |
+note: the module `text` is defined here
+  --> src/cst.rs
+   |
+   | pub(crate) mod text;
+   | ^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: function `parse_dialogue_content` is private
+  --> tests/ui/removed_unused_syntax_facades.rs:16:13
+   |
+16 |     parser::parse_dialogue_content,
+   |             ^^^^^^^^^^^^^^^^^^^^^^ private function
+   |
+note: the function `parse_dialogue_content` is defined here
+  --> src/parser.rs
+   |
+   | pub(crate) fn parse_dialogue_content(raw: impl Into<String>) -> DialogueContent {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

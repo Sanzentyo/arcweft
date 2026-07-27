@@ -34,15 +34,15 @@ mod action_grammar_tests;
 mod activity_grammar;
 #[cfg(test)]
 mod activity_grammar_tests;
-pub mod assertion;
-pub mod await_;
+pub(crate) mod assertion;
+pub(crate) mod await_;
 mod character_grammar;
 #[cfg(test)]
 mod character_grammar_tests;
-pub mod choice;
-pub mod control_flow;
+pub(crate) mod choice;
+pub(crate) mod control_flow;
 mod declaration;
-pub mod dialogue;
+pub(crate) mod dialogue;
 #[cfg(test)]
 mod dialogue_expression_tests;
 mod document;
@@ -54,22 +54,22 @@ mod expression;
 mod extern_capability_grammar;
 #[cfg(test)]
 mod extern_capability_grammar_tests;
-pub mod flow;
+pub(crate) mod flow;
 pub mod fragment;
 mod function_grammar;
 #[cfg(test)]
 mod function_grammar_tests;
-pub mod headers;
-pub mod helpers;
+pub(crate) mod headers;
+pub(crate) mod helpers;
 mod item;
 #[cfg(test)]
 mod item_tests;
-pub mod items;
+pub(crate) mod items;
 mod layer_grammar;
 #[cfg(test)]
 mod layer_grammar_tests;
 mod lexer;
-pub mod line_plan;
+pub(crate) mod line_plan;
 mod metric_grammar;
 #[cfg(test)]
 mod metric_grammar_tests;
@@ -81,7 +81,7 @@ mod pattern;
 mod predicate_proof;
 #[cfg(test)]
 mod predicate_proof_tests;
-pub mod proof;
+pub(crate) mod proof;
 pub mod recovery;
 mod resource_grammar;
 #[cfg(test)]
@@ -98,20 +98,20 @@ mod shadow_recovery;
 mod signal_grammar;
 #[cfg(test)]
 mod signal_grammar_tests;
-pub mod source;
+pub(crate) mod source;
 mod source_grammar;
 #[cfg(test)]
 mod source_grammar_tests;
 mod statement;
-pub mod statements;
-pub mod style;
+pub(crate) mod statements;
+pub(crate) mod style;
 mod style_grammar;
 #[cfg(test)]
 mod style_grammar_tests;
 mod test_bench_grammar;
 #[cfg(test)]
 mod test_bench_grammar_tests;
-pub mod top_level;
+pub(crate) mod top_level;
 mod trait_impl_grammar;
 #[cfg(test)]
 mod trait_impl_grammar_tests;
@@ -120,7 +120,7 @@ mod type_declaration_grammar;
 mod type_declaration_grammar_tests;
 mod type_ref;
 pub(crate) mod unbound_fragment;
-pub mod view;
+pub(crate) mod view;
 mod view_grammar;
 #[cfg(test)]
 mod view_grammar_tests;
