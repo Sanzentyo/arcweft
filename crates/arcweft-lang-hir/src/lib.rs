@@ -9,6 +9,7 @@ mod cache_facts;
 mod dialogue_application;
 mod dialogue_identity;
 pub mod entry;
+mod expr;
 pub mod fx;
 pub mod identity;
 pub mod lower;

@@ -1,7 +1,7 @@
 error[E0603]: module `cache_facts` is private
  --> tests/ui/internal_lowering_modules_private.rs:2:5
   |
-2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
+2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
   |     ^^^^^^^^^^^ private module
   |
 note: the module `cache_facts` is defined here
@@ -10,11 +10,35 @@ note: the module `cache_facts` is defined here
   | mod cache_facts;
   | ^^^^^^^^^^^^^^^
 
-error[E0603]: module `lower_choice` is private
+error[E0603]: module `dialogue_application` is private
  --> tests/ui/internal_lowering_modules_private.rs:2:18
   |
-2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
-  |                  ^^^^^^^^^^^^ private module
+2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
+  |                  ^^^^^^^^^^^^^^^^^^^^ private module
+  |
+note: the module `dialogue_application` is defined here
+ --> src/lib.rs
+  |
+  | mod dialogue_application;
+  | ^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `expr` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:40
+  |
+2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
+  |                                        ^^^^ private module
+  |
+note: the module `expr` is defined here
+ --> src/lib.rs
+  |
+  | mod expr;
+  | ^^^^^^^^
+
+error[E0603]: module `lower_choice` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:46
+  |
+2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
+  |                                              ^^^^^^^^^^^^ private module
   |
 note: the module `lower_choice` is defined here
  --> src/lib.rs
@@ -23,10 +47,10 @@ note: the module `lower_choice` is defined here
   | ^^^^^^^^^^^^^^^^
 
 error[E0603]: module `lower_context` is private
- --> tests/ui/internal_lowering_modules_private.rs:2:32
+ --> tests/ui/internal_lowering_modules_private.rs:2:60
   |
-2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
-  |                                ^^^^^^^^^^^^^ private module
+2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
+  |                                                            ^^^^^^^^^^^^^ private module
   |
 note: the module `lower_context` is defined here
  --> src/lib.rs
@@ -35,10 +59,10 @@ note: the module `lower_context` is defined here
   | ^^^^^^^^^^^^^^^^^
 
 error[E0603]: module `lower_dialogue` is private
- --> tests/ui/internal_lowering_modules_private.rs:2:47
+ --> tests/ui/internal_lowering_modules_private.rs:2:75
   |
-2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
-  |                                               ^^^^^^^^^^^^^^ private module
+2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
+  |                                                                           ^^^^^^^^^^^^^^ private module
   |
 note: the module `lower_dialogue` is defined here
  --> src/lib.rs
@@ -47,10 +71,10 @@ note: the module `lower_dialogue` is defined here
   | ^^^^^^^^^^^^^^^^^^
 
 error[E0603]: module `lower_flow` is private
- --> tests/ui/internal_lowering_modules_private.rs:2:63
+ --> tests/ui/internal_lowering_modules_private.rs:3:5
   |
-2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
-  |                                                               ^^^^^^^^^^ private module
+3 |     lower_flow, lower_ids,
+  |     ^^^^^^^^^^ private module
   |
 note: the module `lower_flow` is defined here
  --> src/lib.rs
@@ -59,10 +83,10 @@ note: the module `lower_flow` is defined here
   | ^^^^^^^^^^^^^^
 
 error[E0603]: module `lower_ids` is private
- --> tests/ui/internal_lowering_modules_private.rs:2:75
+ --> tests/ui/internal_lowering_modules_private.rs:3:17
   |
-2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
-  |                                                                           ^^^^^^^^^ private module
+3 |     lower_flow, lower_ids,
+  |                 ^^^^^^^^^ private module
   |
 note: the module `lower_ids` is defined here
  --> src/lib.rs

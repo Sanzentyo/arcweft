@@ -7,7 +7,10 @@
 
 #![allow(dead_code)]
 
-use crate::identity::{ExprId, HirModuleId, PatternId, ScopeId, StmtId};
+use crate::{
+    expr::HirName,
+    identity::{ExprId, HirModuleId, PatternId, ScopeId, StmtId},
+};
 use arcweft_lang_syntax::{
     ast::line_plan::TimelineAssertPolicy, cst::is_identifier, expr::MAX_CALL_ARGUMENTS,
 };
@@ -98,10 +101,6 @@ pub(crate) struct HirLinePlan {
     items: Box<[HirLinePlanItem]>,
 }
 
-/// Semantic name retained without source range ownership.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct HirName(Box<str>);
-
 /// Direct ID projection of the current line-plan item family.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum HirLinePlanItem {
@@ -139,13 +138,6 @@ pub(crate) enum HirLinePlanItem {
 pub(crate) struct HirLinePlanInvariantError {
     expected: HirModuleId,
     actual: HirModuleId,
-}
-
-/// Invalid semantic name supplied by lowering.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("HIR name `{value}` is not one canonical identifier")]
-pub(crate) struct HirNameInvariantError {
-    value: Box<str>,
 }
 
 /// Bounded unresolved postfix candidates.
@@ -361,20 +353,6 @@ impl HirDialogueCoordinate {
 
     pub(crate) const fn value(&self) -> ExprId {
         self.value
-    }
-}
-
-impl HirName {
-    pub(crate) fn try_new(value: impl Into<Box<str>>) -> Result<Self, HirNameInvariantError> {
-        let value = value.into();
-        if !is_identifier(&value) {
-            return Err(HirNameInvariantError { value });
-        }
-        Ok(Self(value))
-    }
-
-    pub(crate) fn as_str(&self) -> &str {
-        &self.0
     }
 }
 
