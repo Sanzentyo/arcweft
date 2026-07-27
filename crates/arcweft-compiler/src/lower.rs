@@ -30,14 +30,6 @@ pub fn lower_source_line_tasks(
     lower_line_task_groups(hir)
 }
 
-/// Lowers checked HIR into a runtime plan and display catalog with compiler counters.
-pub fn lower_source_runtime_plan_with_stats_and_options(
-    hir: &HirModule,
-    options: &AdmittedRuntimePlanLowerOptions,
-) -> Result<RuntimePlanLowerReport, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>> {
-    lower_runtime_plan_with_stats(hir, options)
-}
-
 /// Lowers checked HIR into a runtime plan and display catalog with type-checker
 /// iteration evidence.
 pub fn lower_source_runtime_plan_with_typecheck_stats_and_options(

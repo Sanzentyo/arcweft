@@ -43,12 +43,7 @@ use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewProgramId, ViewStyle
 
 use crate::{
     agent_project::agent_project_graph_from_project,
-    hir::validate_hir_with_env,
-    lower::{
-        lower_source_runtime_plan_with_stats_and_options,
-        lower_source_runtime_plan_with_typecheck_stats_and_options,
-    },
-    source::compile_source,
+    lower::lower_source_runtime_plan_with_typecheck_stats_and_options, source::compile_source,
 };
 
 fn public_id(value: &str) -> PublicId {
@@ -531,17 +526,6 @@ flow @flow.main main() -> String {
             if matches!(callee.as_ref(), RuntimeExpr::Local(name) if name == "f")
                 && args.len() == 1
     ));
-
-    let plain_report = lower_source_runtime_plan_with_stats_and_options(&hir, &admitted_options())
-        .expect("runtime plan lowers without typecheck evidence");
-    let FlowOp::Let { expr, .. } = &plain_report.plan.flows[0].ops[0] else {
-        panic!("expected first plain op to bind the call");
-    };
-    assert!(matches!(
-        expr,
-        RuntimeExpr::Call { callee, args }
-            if callee.as_label() == "f" && args.len() == 1
-    ));
 }
 
 #[test]
@@ -573,7 +557,7 @@ flow @flow.main main {
         "fixture must produce typed function-call evidence"
     );
 
-    let errors = lower_source_runtime_plan_with_stats_and_options(
+    let errors = arcweft_runtime_plan::flow::lower_runtime_plan_with_stats(
         &hir,
         &admitted_options()
             .with_required_typed_lowering_evidence_len(typecheck.typed_lowering_evidence.len()),
@@ -3956,7 +3940,8 @@ alice: Hello[p]
     let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    validate_hir_with_env(&hir, &TypeCheckEnv::standard()).expect("fixture typechecks");
+    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    assert!(typecheck.diagnostics.is_empty(), "fixture typechecks");
 
     let profile = DialoguePresentationProfile::new(
         ViewId::standard_dialogue(),
@@ -3968,8 +3953,9 @@ alice: Hello[p]
     );
     let revision = test_dialogue_revision();
 
-    let report = lower_source_runtime_plan_with_stats_and_options(
+    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
         &hir,
+        &typecheck,
         &RuntimePlanLowerOptions::default()
             .with_dialogue_profile(profile.clone(), revision.clone()),
     )

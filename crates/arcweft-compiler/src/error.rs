@@ -48,14 +48,3 @@ pub enum CompileAgentError {
     #[error("selected Agent runtime plan failed verification: {0}")]
     RuntimePlanVerification(String),
 }
-
-/// HIR semantic validation diagnostics for the shared compiler driver.
-#[derive(Debug, Error)]
-pub enum ValidateHirError {
-    #[error("reference resolution errors: {0:?}")]
-    Resolve(Vec<arcweft_lang_sema::resolve::NameResolutionError>),
-    #[error("type-check readiness errors: {0:?}")]
-    Readiness(Vec<arcweft_lang_sema::diagnostics::TypeCheckReadinessError>),
-    #[error("type errors: {0:?}")]
-    Type(Vec<arcweft_lang_sema::diagnostics::TypeCheckError>),
-}
