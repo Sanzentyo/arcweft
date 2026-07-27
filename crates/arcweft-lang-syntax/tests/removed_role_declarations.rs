@@ -57,9 +57,6 @@ fn removed_role_declarations_are_rejected_by_the_current_grammar() {
         let fragment = parse_fragment(source, FragmentKind::Items, ParseOptions::default());
         assert_eq!(fragment.completion(), &ParseCompletion::Invalid);
         assert!(!fragment.errors().is_empty());
-        let Some(ParsedFragmentKind::Items(items)) = fragment.kind() else {
-            panic!("item fragment must retain non-executable recovery nodes");
-        };
-        assert!(items.iter().all(|item| matches!(item, Item::Raw(_))));
+        assert_eq!(fragment.kind(), Some(&ParsedFragmentKind::Items));
     }
 }

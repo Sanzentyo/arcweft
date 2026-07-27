@@ -1,0 +1,15 @@
+error[E0618]: expected function, found `ParsedFragmentKind`
+ --> tests/ui/removed_fragment_payloads.rs:8:5
+  |
+8 |     ParsedFragmentKind::Expression(expr)
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^------
+  |     |
+  |     call expression requires function
+
+error[E0618]: expected function, found `ParsedFragmentKind`
+  --> tests/ui/removed_fragment_payloads.rs:12:5
+   |
+12 |     ParsedFragmentKind::Items(items)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^-------
+   |     |
+   |     call expression requires function

@@ -1335,10 +1335,10 @@ pub(super) fn agent_repl_cell_source(
     fragment: &ParsedFragment,
     live_binding_prelude: &str,
 ) -> String {
-    let item_prefix = matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_)))
+    let item_prefix = matches!(fragment.kind(), Some(ParsedFragmentKind::Items))
         .then(|| format!("{input}\n\n"))
         .unwrap_or_default();
-    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
+    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Items)) {
         "    Ok(())".to_owned()
     } else if input.starts_with("return ") || input.contains("\nreturn ") {
         indent_agent_repl_body(input)

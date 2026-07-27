@@ -1,5 +1,5 @@
-use crate::ast::{flow::Stmt, items::Item};
-use crate::expr::{Expr, ExprOp, parse_expr};
+use crate::ast::flow::Stmt;
+use crate::expr::{ExprOp, parse_expr};
 use crate::parser::recovery::ParseError;
 use crate::source::ParsedSource;
 use arcweft_source::SourceDocument;
@@ -31,12 +31,12 @@ pub struct ExpectedToken {
     text: String,
 }
 
-/// Parsed fragment payload.
+/// Parsed fragment family and the statement payload still consumed by tooling.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ParsedFragmentKind {
-    Expression(Box<Expr>),
+    Expression,
     Statements(Vec<Stmt>),
-    Items(Vec<Item>),
+    Items,
 }
 
 /// Result of parsing a source fragment.
@@ -66,7 +66,7 @@ pub fn parse_fragment(source: &str, kind: FragmentKind, options: ParseOptions) -
     match kind {
         FragmentKind::Expression => parse_expr(source).map_or_else(
             |_| ParsedFragment::invalid(),
-            |expr| ParsedFragment::complete(ParsedFragmentKind::Expression(Box::new(expr))),
+            |_| ParsedFragment::complete(ParsedFragmentKind::Expression),
         ),
         FragmentKind::Statements => ParsedFragment::complete(ParsedFragmentKind::Statements(
             super::control_flow::parse_stmt_lines(source),
@@ -74,12 +74,18 @@ pub fn parse_fragment(source: &str, kind: FragmentKind, options: ParseOptions) -
         FragmentKind::Items => {
             let parsed = super::parse_source_with_options(source, options);
             let errors = parsed.errors().to_vec();
-            let items = parsed.typed_tree().items().to_vec();
-            if errors.is_empty() {
-                ParsedFragment::complete(ParsedFragmentKind::Items(items))
+            let has_items = !parsed.typed_tree().items().is_empty();
+            if errors.is_empty() && has_items {
+                ParsedFragment::complete(ParsedFragmentKind::Items)
+            } else if errors.is_empty() {
+                ParsedFragment {
+                    kind: None,
+                    completion: ParseCompletion::Complete,
+                    errors,
+                }
             } else {
                 ParsedFragment {
-                    kind: Some(ParsedFragmentKind::Items(items)),
+                    kind: has_items.then_some(ParsedFragmentKind::Items),
                     completion: ParseCompletion::Invalid,
                     errors,
                 }
@@ -244,6 +250,37 @@ const MULTI_CHAR_CONTINUATION_OPS: &[ExprOp] = &[
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn expression_fragment_publishes_only_its_family() {
+        let parsed = parse_fragment(
+            "score + 1i64",
+            FragmentKind::Expression,
+            ParseOptions::default(),
+        );
+
+        assert_eq!(parsed.completion(), &ParseCompletion::Complete);
+        assert_eq!(parsed.kind(), Some(&ParsedFragmentKind::Expression));
+    }
+
+    #[test]
+    fn item_fragment_requires_a_nonempty_typed_family() {
+        let parsed = parse_fragment(
+            "fn helper(value: i64) -> i64 { value + 1i64 }",
+            FragmentKind::Items,
+            ParseOptions::default(),
+        );
+        assert_eq!(parsed.completion(), &ParseCompletion::Complete);
+        assert_eq!(parsed.kind(), Some(&ParsedFragmentKind::Items));
+
+        let empty = parse_fragment(
+            "// trivia only\n",
+            FragmentKind::Items,
+            ParseOptions::default(),
+        );
+        assert_eq!(empty.completion(), &ParseCompletion::Complete);
+        assert_eq!(empty.kind(), None);
+    }
 
     #[test]
     fn fragment_reports_incomplete_unclosed_expression_boundaries() {

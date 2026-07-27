@@ -250,10 +250,8 @@ fn agent_repl_parse_fragment_with_kind(source: &str) -> (ParsedFragment, AgentRe
         return (expression, AgentReplFragmentKind::Expression);
     }
     let items = parse_agent_fragment(source, AgentReplFragmentKind::Items);
-    if matches!(
-        items.kind(),
-        Some(ParsedFragmentKind::Items(items)) if !items.is_empty()
-    ) && matches!(items.completion(), ParseCompletion::Complete)
+    if matches!(items.kind(), Some(ParsedFragmentKind::Items))
+        && matches!(items.completion(), ParseCompletion::Complete)
     {
         return (items, AgentReplFragmentKind::Items);
     }
@@ -328,9 +326,9 @@ fn agent_repl_classification_from_fragment_with_kind(
 
 fn agent_repl_fragment_kind(fragment: &ParsedFragment) -> AgentReplFragmentKind {
     match fragment.kind() {
-        Some(ParsedFragmentKind::Expression(_)) => AgentReplFragmentKind::Expression,
+        Some(ParsedFragmentKind::Expression) => AgentReplFragmentKind::Expression,
         Some(ParsedFragmentKind::Statements(_)) => AgentReplFragmentKind::Statements,
-        Some(ParsedFragmentKind::Items(_)) => AgentReplFragmentKind::Items,
+        Some(ParsedFragmentKind::Items) => AgentReplFragmentKind::Items,
         None => AgentReplFragmentKind::Unknown,
     }
 }

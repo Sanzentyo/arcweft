@@ -111,9 +111,9 @@ fn ensure_fragment_complete(fragment: &ParsedFragment) -> Result<(), ReplTransac
 
 fn repl_cell_kind(fragment: &ParsedFragment) -> Result<ReplCellKind, ReplTransactionError> {
     match fragment.kind() {
-        Some(ParsedFragmentKind::Items(_)) => Ok(ReplCellKind::Item),
+        Some(ParsedFragmentKind::Items) => Ok(ReplCellKind::Item),
         Some(ParsedFragmentKind::Statements(_)) => Ok(ReplCellKind::Statement),
-        Some(ParsedFragmentKind::Expression(_)) => Ok(ReplCellKind::Expression),
+        Some(ParsedFragmentKind::Expression) => Ok(ReplCellKind::Expression),
         None => Err(ReplTransactionError::IncompleteOrInvalid {
             message: "fragment did not produce a parsed REPL cell family".to_owned(),
         }),
@@ -127,10 +127,10 @@ fn cell_source(
     fragment: &ParsedFragment,
     live_binding_prelude: &str,
 ) -> String {
-    let item_prefix = matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_)))
+    let item_prefix = matches!(fragment.kind(), Some(ParsedFragmentKind::Items))
         .then(|| format!("{input}\n\n"))
         .unwrap_or_default();
-    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Items(_))) {
+    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Items)) {
         "    Ok(())".to_owned()
     } else if input.starts_with("return ") || input.contains("\nreturn ") {
         indent_body(input)

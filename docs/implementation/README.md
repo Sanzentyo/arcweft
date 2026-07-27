@@ -34,6 +34,10 @@ The subsequent deletion of the consuming `ParsedSource::into_typed_tree`
 escape and migration to a retained document/tree parse-product lease are
 tracked in
 `docs/implementation/2026-07-27-proof-parsed-source-owned-tree-lease.md`.
+The deletion of unused detached expression and item payloads from the public
+fragment result, while retaining the statement payload consumed by Agent REPL
+binding projection, is tracked in
+`docs/implementation/2026-07-27-proof-fragment-detached-payload-deletion.md`.
 The integrity-valid but explicitly `NOT_READY` Proof `01.1.1.4.1` redelivery is
 classified in
 `docs/implementation/2026-07-27-proof-01-1-1-4-1-not-ready-redelivery-intake.md`;
