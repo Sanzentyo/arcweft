@@ -232,10 +232,6 @@ impl LoadedProject {
     pub fn module_document(&self, module: &CanonicalModulePath) -> Option<&Arc<SourceDocument>> {
         self.module_documents.get(module)
     }
-
-    pub fn into_sources(self) -> ProjectSources {
-        self.sources
-    }
 }
 
 /// Searches `start` and its parents for `arcw.toml`.
@@ -257,14 +253,6 @@ pub fn discover_manifest(start: &Path) -> Result<PathBuf, ProjectLoadError> {
 /// Discovers and loads the project containing `start`.
 pub fn load_discovered(start: &Path) -> Result<LoadedProject, ProjectLoadError> {
     load(&discover_manifest(start)?)
-}
-
-/// Discovers and loads a project while enforcing one inclusive input budget.
-pub fn load_discovered_with_limits(
-    start: &Path,
-    limits: ProjectLoadLimits,
-) -> Result<LoadedProject, ProjectLoadError> {
-    load_with_limits(&discover_manifest(start)?, limits)
 }
 
 /// Loads one explicit `arcw.toml` and all `.arcw` sources under its source root.

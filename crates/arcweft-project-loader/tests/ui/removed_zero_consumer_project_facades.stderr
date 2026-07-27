@@ -1,0 +1,17 @@
+error[E0432]: unresolved import `arcweft_project_loader::project::load_discovered_with_limits`
+ --> tests/ui/removed_zero_consumer_project_facades.rs:1:54
+  |
+1 | use arcweft_project_loader::project::{LoadedProject, load_discovered_with_limits};
+  |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `load_discovered_with_limits` in `project`
+
+error[E0599]: no method named `into_sources` found for struct `LoadedProject` in the current scope
+ --> tests/ui/removed_zero_consumer_project_facades.rs:4:21
+  |
+4 |     let _ = project.into_sources();
+  |                     ^^^^^^^^^^^^
+  |
+help: there is a method `sources` with a similar name
+  |
+4 -     let _ = project.into_sources();
+4 +     let _ = project.sources();
+  |
