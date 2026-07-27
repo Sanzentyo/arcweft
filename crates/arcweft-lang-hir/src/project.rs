@@ -113,10 +113,6 @@ impl HirProjectModule {
     pub const fn hir(&self) -> &HirModule {
         &self.hir
     }
-
-    pub fn into_parts(self) -> (CanonicalModulePath, SourceDocumentIdentity, HirModule) {
-        (self.module, self.source, self.hir)
-    }
 }
 
 impl HirProject {
@@ -128,7 +124,11 @@ impl HirProject {
         let mut module_map = BTreeMap::new();
         let mut sources = BTreeMap::new();
         for module in modules {
-            let (path, source, hir) = module.into_parts();
+            let HirProjectModule {
+                module: path,
+                source,
+                hir,
+            } = module;
             if module_map.insert(path.clone(), hir).is_some() {
                 return Err(HirProjectError::DuplicateModule { module: path });
             }

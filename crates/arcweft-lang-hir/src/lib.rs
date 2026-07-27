@@ -5,18 +5,18 @@
 //! this crate instead of reaching into parser internals.
 
 pub mod assertion;
-pub mod cache_facts;
+mod cache_facts;
 mod dialogue_application;
 mod dialogue_identity;
 pub mod entry;
 pub mod fx;
 pub mod identity;
 pub mod lower;
-pub mod lower_choice;
-pub mod lower_context;
-pub mod lower_dialogue;
-pub mod lower_flow;
-pub mod lower_ids;
+mod lower_choice;
+mod lower_context;
+mod lower_dialogue;
+mod lower_flow;
+mod lower_ids;
 pub mod model;
 pub mod project;
 pub mod reference;

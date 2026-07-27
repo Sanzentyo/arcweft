@@ -423,14 +423,6 @@ impl HirModule {
         &self.uses
     }
 
-    pub const fn source_len(&self) -> Option<usize> {
-        self.source_len
-    }
-
-    pub fn top_level_ranges(&self) -> &[TextRange] {
-        &self.top_level_ranges
-    }
-
     /// Returns an empty insertion range after the last typed top-level item.
     ///
     /// If HIR was not lowered from one concrete source document, or if there is

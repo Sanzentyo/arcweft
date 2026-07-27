@@ -1,0 +1,23 @@
+error[E0599]: no method named `source_len` found for struct `HirModule` in the current scope
+ --> tests/ui/removed_unused_hir_accessors.rs:4:20
+  |
+4 |     let _ = module.source_len();
+  |                    ^^^^^^^^^^ private field, not a method
+  |
+help: there is a method `source_span` with a similar name, but with different arguments
+ --> src/model.rs
+  |
+  |     pub fn source_span(&self, range: TextRange) -> Option<SourceSpan> {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `top_level_ranges` found for struct `HirModule` in the current scope
+ --> tests/ui/removed_unused_hir_accessors.rs:5:20
+  |
+5 |     let _ = module.top_level_ranges();
+  |                    ^^^^^^^^^^^^^^^^ private field, not a method
+
+error[E0599]: no method named `into_parts` found for struct `HirProjectModule` in the current scope
+ --> tests/ui/removed_unused_hir_accessors.rs:6:28
+  |
+6 |     let _ = project_module.into_parts();
+  |                            ^^^^^^^^^^ method not found in `HirProjectModule`

@@ -1,0 +1,71 @@
+error[E0603]: module `cache_facts` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:5
+  |
+2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
+  |     ^^^^^^^^^^^ private module
+  |
+note: the module `cache_facts` is defined here
+ --> src/lib.rs
+  |
+  | mod cache_facts;
+  | ^^^^^^^^^^^^^^^
+
+error[E0603]: module `lower_choice` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:18
+  |
+2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
+  |                  ^^^^^^^^^^^^ private module
+  |
+note: the module `lower_choice` is defined here
+ --> src/lib.rs
+  |
+  | mod lower_choice;
+  | ^^^^^^^^^^^^^^^^
+
+error[E0603]: module `lower_context` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:32
+  |
+2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
+  |                                ^^^^^^^^^^^^^ private module
+  |
+note: the module `lower_context` is defined here
+ --> src/lib.rs
+  |
+  | mod lower_context;
+  | ^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `lower_dialogue` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:47
+  |
+2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
+  |                                               ^^^^^^^^^^^^^^ private module
+  |
+note: the module `lower_dialogue` is defined here
+ --> src/lib.rs
+  |
+  | mod lower_dialogue;
+  | ^^^^^^^^^^^^^^^^^^
+
+error[E0603]: module `lower_flow` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:63
+  |
+2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
+  |                                                               ^^^^^^^^^^ private module
+  |
+note: the module `lower_flow` is defined here
+ --> src/lib.rs
+  |
+  | mod lower_flow;
+  | ^^^^^^^^^^^^^^
+
+error[E0603]: module `lower_ids` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:75
+  |
+2 |     cache_facts, lower_choice, lower_context, lower_dialogue, lower_flow, lower_ids,
+  |                                                                           ^^^^^^^^^ private module
+  |
+note: the module `lower_ids` is defined here
+ --> src/lib.rs
+  |
+  | mod lower_ids;
+  | ^^^^^^^^^^^^^
