@@ -7,14 +7,14 @@ use arcweft_lang_syntax::{
     expr::Expr,
 };
 
-fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
     let parsed = parse_dialogue_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
         parsed.errors()
     );
-    parsed.into_typed_tree()
+    parsed
 }
 
 #[test]
@@ -41,7 +41,8 @@ flow @flow.opening opening {
     let result = alice.say()[Pick one.] with { out score + 1i64 }
 }
 ";
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -80,7 +81,8 @@ flow @flow.opening opening {
         out score + 1i64
 }
 ";
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -114,7 +116,8 @@ flow @flow.opening opening {
 fn multiline_let_dialogue_call_expr_range_slices_lf_and_crlf_source() {
     let source_lf = "flow @flow.opening opening {\n    let result = alice.say()[\n        Intro\n        [.sparkle amp=2px]effect[/][p]\n    ]\n}\n";
     for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
-        let tree = parse_ok(source.clone());
+        let parsed = parse_ok(source.clone());
+        let tree = parsed.typed_tree();
         let Item::Flow(flow) = &tree.items()[0] else {
             panic!("expected flow");
         };
@@ -155,7 +158,8 @@ flow @flow.opening opening {
     alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, view=@view.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]
 }
 "#;
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -211,7 +215,8 @@ flow opening {
     alice(look = standard_value(1i32)): hello
 }
 ";
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -235,7 +240,8 @@ flow opening {
     alice: |[夢](ゆめ)[p]
 }
 ";
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
 
     let Item::Flow(flow) = &tree.items()[1] else {
         panic!("expected flow");
@@ -256,7 +262,7 @@ flow opening {
 
 #[test]
 fn speaker_line_inline_interpolation_may_span_lines() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 flow opening {
     narrator: Iteration #[
@@ -265,6 +271,7 @@ flow opening {
 }
 ",
     );
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -288,7 +295,8 @@ flow opening {
     alice: Score #[score + 1i64] / $( player_name )[p]
 }
 ";
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -412,8 +420,9 @@ fn multiline_dialogue_ranges_project_across_lf_normalization() {
     ] [effect .warning mood="very urgent"]text[/effect]
 }
 "#;
-    let tree = parse_ok(source);
-    let content = speaker_content(&tree);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
+    let content = speaker_content(tree);
     assert!(content.raw().contains("#[\nscore + 1i64\n]"));
     assert_later_line_dialogue_ranges(source, content);
 }
@@ -421,8 +430,9 @@ fn multiline_dialogue_ranges_project_across_lf_normalization() {
 #[test]
 fn multiline_dialogue_ranges_project_across_crlf_normalization() {
     let source = "flow opening {\r\n    narrator: Iteration #[\r\n        score + 1i64\r\n    ] [effect .warning mood=\"very urgent\"]text[/effect]\r\n}\r\n";
-    let tree = parse_ok(source);
-    let content = speaker_content(&tree);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
+    let content = speaker_content(tree);
     assert!(content.raw().contains("#[\nscore + 1i64\n]"));
     assert_later_line_dialogue_ranges(source, content);
 }
@@ -435,8 +445,9 @@ fn indented_dialogue_ranges_project_from_trimmed_lines() {
         #[score + 1i64] [effect .warning mood="very urgent"]text[/effect]
 }
 "#;
-    let tree = parse_ok(source);
-    let content = speaker_content(&tree);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
+    let content = speaker_content(tree);
     assert_eq!(
         content.raw(),
         "Intro\n#[score + 1i64] [effect .warning mood=\"very urgent\"]text[/effect]"
@@ -452,7 +463,8 @@ fn bracket_content_call_ranges_project_from_normalized_lines() {
     ]
 }
 "#;
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };

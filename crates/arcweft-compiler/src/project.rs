@@ -795,28 +795,34 @@ fn compile_module(
 ) -> Result<CompiledProjectModule, ProjectCompileError> {
     let parsed = parse::parse_source_document(Arc::clone(document));
     if !parsed.errors().is_empty() {
-        return Err(module_parse_error(source, document, parsed.errors()));
+        return Err(module_parse_error(
+            source,
+            parsed.document(),
+            parsed.errors(),
+        ));
     }
     let syntax_stats = parsed.syntax_stats();
-    let tree = parsed.into_typed_tree();
-    let lints = parse::lint_source_tree(&tree);
+    let tree = parsed.typed_tree();
+    let lints = parse::lint_source_tree(tree);
     if parse::has_error_lints(&lints) {
         return Err(module_error(
             source,
-            document,
+            parsed.document(),
             ProjectCompileStage::Lint,
             lints
                 .iter()
                 .filter(|lint| lint.severity() == SyntaxLintSeverity::Error)
-                .map(|lint| lint.diagnostic(document)),
+                .map(|lint| lint.diagnostic(parsed.document())),
         ));
     }
-    let hir = hir::lower_source_document(document, &tree).map_err(|errors| {
+    let hir = hir::lower_source_document(parsed.document(), tree).map_err(|errors| {
         module_error(
             source,
-            document,
+            parsed.document(),
             ProjectCompileStage::HirLower,
-            errors.into_iter().map(|error| error.diagnostic(document)),
+            errors
+                .into_iter()
+                .map(|error| error.diagnostic(parsed.document())),
         )
     })?;
     Ok(CompiledProjectModule {

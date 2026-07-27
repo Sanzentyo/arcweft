@@ -30,6 +30,10 @@ the workspace-wide exact-document test migration are tracked in
 The deletion of the syntax crate's public raw-text full-document parser and the
 workspace-wide stable `SourceDocument` fixture migration are tracked in
 `docs/implementation/2026-07-27-proof-public-raw-text-parse-source-deletion.md`.
+The subsequent deletion of the consuming `ParsedSource::into_typed_tree`
+escape and migration to a retained document/tree parse-product lease are
+tracked in
+`docs/implementation/2026-07-27-proof-parsed-source-owned-tree-lease.md`.
 The integrity-valid but explicitly `NOT_READY` Proof `01.1.1.4.1` redelivery is
 classified in
 `docs/implementation/2026-07-27-proof-01-1-1-4-1-not-ready-redelivery-intake.md`;

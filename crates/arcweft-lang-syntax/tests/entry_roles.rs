@@ -1,18 +1,18 @@
 use arcweft_lang_syntax::{
-    ast::items::{EntryItem, EntryKind, Item},
+    ast::items::{EntryDeclItem, EntryItem, EntryKind, Item},
     parser::recovery::ParseErrorKind,
+    source::ParsedSource,
     types::TypeRef,
 };
 
-fn entry(source: &str) -> arcweft_lang_syntax::ast::items::EntryDeclItem {
-    let parsed = parse_entry_role_fixture(source);
+fn entry(parsed: &ParsedSource) -> &EntryDeclItem {
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     parsed
-        .into_typed_tree()
+        .typed_tree()
         .items()
         .iter()
         .find_map(|item| match item {
-            Item::Entry(entry) => Some(entry.clone()),
+            Item::Entry(entry) => Some(entry),
             _ => None,
         })
         .expect("entry parses")
@@ -56,7 +56,8 @@ fn stateful_entry_roles_are_typed_and_keep_value_and_member_ranges() {
     event = GameEvent
     initializer = game.initial_state
 }";
-    let entry = entry(source);
+    let parsed = parse_entry_role_fixture(source);
+    let entry = entry(&parsed);
     assert_eq!(entry.kind(), &EntryKind::Game);
 
     let [reducer, state, EntryItem::Goto(target), event, initializer] = entry.items() else {
@@ -104,13 +105,18 @@ fn stateful_entry_roles_are_typed_and_keep_value_and_member_ranges() {
 
 #[test]
 fn editor_test_and_agent_are_direct_entry_kinds() {
-    let editor = entry(
+    let editor_parsed = parse_entry_role_fixture(
         "entry editor @entry.editor.main {\nstate = EditorState\ninitializer = init\nevent = EditorEvent\nreducer = reduce\ngoto @flow.home\n}",
     );
-    let test = entry(
+    let editor = entry(&editor_parsed);
+    let test_parsed = parse_entry_role_fixture(
         "entry test @entry.test.main {\nstate = TestState\ninitializer = init\nevent = TestEvent\nreducer = reduce\ngoto @flow.test\n}",
     );
-    let agent = entry("entry agent @entry.agent.smoke {\ncontroller = agents.opening_smoke\n}");
+    let test = entry(&test_parsed);
+    let agent_parsed = parse_entry_role_fixture(
+        "entry agent @entry.agent.smoke {\ncontroller = agents.opening_smoke\n}",
+    );
+    let agent = entry(&agent_parsed);
 
     assert_eq!(editor.kind(), &EntryKind::Editor);
     assert_eq!(test.kind(), &EntryKind::Test);

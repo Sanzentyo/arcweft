@@ -298,7 +298,7 @@ fn g013_b002_crlf_and_indentation_project_all_argument_ranges() {
         "flow opening {\r\n    narrator:\r\n        [.wave\u{3000}amp=\"二 px\"]text[/]\r\n}\r\n";
     let parsed = parse_rich_text_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let tree = parsed.into_typed_tree();
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("flow");
     };

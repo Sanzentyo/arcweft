@@ -91,11 +91,6 @@ impl ParsedSource {
     pub const fn line_index(&self) -> &LineIndex {
         &self.line_index
     }
-
-    /// Consumes the parsed source and returns the typed syntax model.
-    pub fn into_typed_tree(self) -> TypedSyntaxTree {
-        self.typed_tree
-    }
 }
 
 fn normalize_parse_errors(errors: &mut Vec<ParseError>) {

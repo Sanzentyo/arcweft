@@ -10,9 +10,9 @@ trait SourceLike {
     fn current(self) -> Self::Item
 }
 ",
-    )
-    .into_typed_tree();
-    let Item::Trait(item) = &parsed.items()[0] else {
+    );
+    let tree = parsed.typed_tree();
+    let Item::Trait(item) = &tree.items()[0] else {
         panic!("trait item expected")
     };
     assert_eq!(item.name(), "SourceLike");
@@ -33,9 +33,9 @@ where T: SourceLike<Item = ChapterId>
     source.current()
 }
 ",
-    )
-    .into_typed_tree();
-    let Item::Function(function) = &parsed.items()[0] else {
+    );
+    let tree = parsed.typed_tree();
+    let Item::Function(function) = &tree.items()[0] else {
         panic!("function item expected")
     };
     assert!(matches!(
@@ -59,9 +59,9 @@ where T: Copyable
     fn current(self) -> T { self.value }
 }
 ",
-    )
-    .into_typed_tree();
-    let Item::Impl(item) = &parsed.items()[0] else {
+    );
+    let tree = parsed.typed_tree();
+    let Item::Impl(item) = &tree.items()[0] else {
         panic!("impl item expected")
     };
     assert!(matches!(
@@ -89,9 +89,9 @@ impl Threshold for Score {
     }
 }
 ",
-    )
-    .into_typed_tree();
-    let Item::Trait(trait_item) = &parsed.items()[0] else {
+    );
+    let tree = parsed.typed_tree();
+    let Item::Trait(trait_item) = &tree.items()[0] else {
         panic!("trait item expected")
     };
     let TraitMember::Function {
@@ -106,7 +106,7 @@ impl Threshold for Score {
     assert_eq!(trait_signature.param_groups()[0].params().len(), 2);
     assert_eq!(trait_signature.param_groups()[1].params().len(), 1);
 
-    let Item::Impl(impl_item) = &parsed.items()[1] else {
+    let Item::Impl(impl_item) = &tree.items()[1] else {
         panic!("impl item expected")
     };
     let ImplMember::Function {

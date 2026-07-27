@@ -6,20 +6,21 @@ use arcweft_lang_syntax::{
     expr::{ArgumentListTerminatorSyntax, CallRecoveryBoundarySyntax, CallRecoveryTokenKind, Expr},
 };
 
-fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
     let parsed = parse_flow_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
         parsed.errors()
     );
-    parsed.into_typed_tree()
+    parsed
 }
 
 #[test]
 fn flat_scope_body_retains_document_coordinates_for_ordinary_calls() {
     let source = "flow @flow.main main {\n=== scope rain ===\nlet value = standard_value(1i32)\n=== /scope ===\n}\n";
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -46,7 +47,7 @@ fn assert_recovered_flat_scope_call_coordinates(source: &str) {
         !parsed.errors().is_empty(),
         "the malformed flat fence must retain a recovery diagnostic"
     );
-    let tree = parsed.into_typed_tree();
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -95,7 +96,7 @@ fn select_path(expr: &Expr) -> Option<String> {
 
 #[test]
 fn entry_goto_is_the_structured_flow_dispatch_item() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r#"
 entry game @entry.main {
     state = GameState
@@ -110,6 +111,7 @@ flow @flow.opening opening {
 }
 "#,
     );
+    let tree = parsed.typed_tree();
     let arcweft_lang_syntax::ast::items::Item::Entry(entry) = &tree.items()[0] else {
         panic!("expected entry");
     };
@@ -126,7 +128,7 @@ flow @flow.opening opening {
 
 #[test]
 fn indented_defer_body_groups_multiline_statements_from_cst_lines() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 flow @flow.opening opening {
     defer:
@@ -138,6 +140,7 @@ flow @flow.opening opening {
 }
 ",
     );
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -157,7 +160,7 @@ flow @flow.opening opening {
 
 #[test]
 fn flow_receive_action_statement_is_structured() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 pub action feedback.submit(value: String)
 
@@ -167,6 +170,7 @@ flow test {
 }
 ",
     );
+    let tree = parsed.typed_tree();
     let flow = tree
         .items()
         .iter()
@@ -186,7 +190,7 @@ flow test {
 
 #[test]
 fn flow_if_comparison_condition_is_structured() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r#"
 flow main {
     let count = 3usize
@@ -197,6 +201,7 @@ flow main {
 }
 "#,
     );
+    let tree = parsed.typed_tree();
 
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
@@ -210,7 +215,7 @@ flow main {
 
 #[test]
 fn value_if_else_if_is_nested_if_not_raw_recovery() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r#"
 fn label(i: i32) -> String {
     if i == 0 {
@@ -223,6 +228,7 @@ fn label(i: i32) -> String {
 }
 "#,
     );
+    let tree = parsed.typed_tree();
     let Item::Function(function) = &tree.items()[0] else {
         panic!("expected function");
     };
@@ -245,7 +251,7 @@ fn label(i: i32) -> String {
 
 #[test]
 fn function_let_initializer_retains_if_let_expression() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 fn choose_optional(maybe: Option<i64>, fallback: i64) -> i64 {
     let selected = if let .Some(value) = maybe when value > fallback {
@@ -257,6 +263,7 @@ fn choose_optional(maybe: Option<i64>, fallback: i64) -> i64 {
 }
 ",
     );
+    let tree = parsed.typed_tree();
     let Item::Function(function) = &tree.items()[0] else {
         panic!("expected function");
     };

@@ -7,14 +7,14 @@ use arcweft_lang_syntax::{
     types::{AuthoredTypeRef, TypeRef},
 };
 
-fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
     let parsed = parse_declaration_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
         parsed.errors()
     );
-    parsed.into_typed_tree()
+    parsed
 }
 
 #[test]
@@ -167,7 +167,8 @@ use parent.shared.{alpha, beta}
 pub use crate.game.routes.opening as opening_route
 use self.prelude.*
 ";
-    let tree = parse_ok(source);
+    let parsed = parse_ok(source);
+    let tree = parsed.typed_tree();
 
     assert_eq!(tree.uses().len(), 3);
     assert_eq!(tree.uses()[0].tree().source(), "super.shared.{alpha, beta}");
@@ -209,7 +210,7 @@ fn malformed_grouped_use_reports_a_structured_parse_diagnostic() {
 
 #[test]
 fn content_declaration_parses_as_typed_entity_body() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 content chapter_two {
     roots = [
@@ -219,6 +220,7 @@ content chapter_two {
 }
 ",
     );
+    let tree = parsed.typed_tree();
 
     let arcweft_lang_syntax::ast::items::Item::EntityDecl(content) = &tree.items()[0] else {
         panic!("expected content entity declaration");
@@ -237,11 +239,12 @@ content chapter_two {
 
 #[test]
 fn action_declaration_parses_as_typed_entity() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 pub action feedback.submit_name(value: String)
 ",
     );
+    let tree = parsed.typed_tree();
 
     let arcweft_lang_syntax::ast::items::Item::EntityDecl(action) = &tree.items()[0] else {
         panic!("expected action entity declaration");
@@ -258,7 +261,7 @@ pub action feedback.submit_name(value: String)
 
 #[test]
 fn entity_headers_accept_the_shared_typed_tail_grammar() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r#"
 #[generated(tool)]
 pub view GenericPanel<T: Display>(value: T) {
@@ -272,6 +275,7 @@ pub audio bus music parent @bus.master {}
 pub character @character.alice Alice as alice {}
 "#,
     );
+    let tree = parsed.typed_tree();
 
     let entities = tree
         .items()
@@ -362,7 +366,7 @@ fn invalid_entity_line_header_recovers_at_the_next_declaration() {
 
 #[test]
 fn at_is_entity_ref_and_slash_comments_are_comments() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 // ordinary comment
 flow @flow.opening opening {
@@ -370,18 +374,21 @@ flow @flow.opening opening {
 }
 ",
     );
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
     assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
 
-    let tree = parse_ok("// ordinary comment only");
+    let parsed = parse_ok("// ordinary comment only");
+
+    let tree = parsed.typed_tree();
     assert!(tree.items().is_empty());
 }
 
 #[test]
 fn block_comments_are_comments() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 /*
 ordinary block comment
@@ -391,6 +398,7 @@ flow @flow.opening opening {
 }
 ",
     );
+    let tree = parsed.typed_tree();
     let arcweft_lang_syntax::ast::items::Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
@@ -399,7 +407,7 @@ flow @flow.opening opening {
 
 #[test]
 fn doc_comments_attach_to_function_and_parameters() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r#"
 /// Opens a route.
 pub fn open_route(
@@ -410,6 +418,7 @@ pub fn open_route(
 }
 "#,
     );
+    let tree = parsed.typed_tree();
     let Item::Function(function) = &tree.items()[0] else {
         panic!("expected function");
     };
@@ -485,13 +494,14 @@ flow @flow.raw_example {
 
 #[test]
 fn statement_recovery_nodes_keep_family_and_source_range() {
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 fn bad_stmt() -> Unit {
     let broken
 }
 ",
     );
+    let tree = parsed.typed_tree();
     let Item::Function(function) = &tree.items()[0] else {
         panic!("expected function");
     };

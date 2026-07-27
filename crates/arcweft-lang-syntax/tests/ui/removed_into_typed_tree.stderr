@@ -1,0 +1,11 @@
+error[E0599]: no method named `into_typed_tree` found for struct `arcweft_lang_syntax::source::ParsedSource` in the current scope
+ --> tests/ui/removed_into_typed_tree.rs:4:20
+  |
+4 |     let _ = parsed.into_typed_tree();
+  |                    ^^^^^^^^^^^^^^^
+  |
+help: there is a method `typed_tree` with a similar name
+  |
+4 -     let _ = parsed.into_typed_tree();
+4 +     let _ = parsed.typed_tree();
+  |

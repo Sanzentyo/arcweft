@@ -10,14 +10,14 @@ use arcweft_lang_syntax::{
     types::{TypeRef, parse_type_ref},
 };
 
-fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
+fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
     let parsed = parse_expression_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
         parsed.errors()
     );
-    parsed.into_typed_tree()
+    parsed
 }
 
 fn select_path(expr: &Expr) -> Option<String> {
@@ -69,13 +69,14 @@ fn generic_expr_brackets_are_indexes_not_dialogue_calls() {
     let expr = parse_expr("alice.say()[text]").expect("bracket postfix parses");
     assert!(matches!(expr, Expr::Index { .. }));
 
-    let tree = parse_ok(
+    let parsed = parse_ok(
         r"
 flow @flow.opening opening {
     let handles = alice.say()[本文です。[p]]
 }
 ",
     );
+    let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
