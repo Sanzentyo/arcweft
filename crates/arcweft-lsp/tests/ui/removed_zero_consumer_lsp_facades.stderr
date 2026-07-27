@@ -1,0 +1,41 @@
+error[E0432]: unresolved imports `arcweft_lsp::diagnostics::publish_diagnostics`, `arcweft_lsp::features::character_definition::CharacterDefinitionSourceError`
+ --> tests/ui/removed_zero_consumer_lsp_facades.rs:2:5
+  |
+2 |     diagnostics::publish_diagnostics,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `publish_diagnostics` in `diagnostics`
+3 |     features::character_definition::CharacterDefinitionSourceError,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `CharacterDefinitionSourceError` in `features::character_definition`
+  |
+help: a similar name exists in the module
+  |
+2 -     diagnostics::publish_diagnostics,
+2 +     diagnostics::profile_diagnostics,
+  |
+help: a similar name exists in the module
+  |
+3 -     features::character_definition::CharacterDefinitionSourceError,
+3 +     features::character_definition::CharacterDefinitionResourceError,
+  |
+
+error[E0599]: no method named `byte_offset_from_position` found for reference `&LineIndex` in the current scope
+  --> tests/ui/removed_zero_consumer_lsp_facades.rs:17:19
+   |
+17 |     let _ = index.byte_offset_from_position(position);
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+help: there is a method `try_byte_offset_from_position` with a similar name
+   |
+17 |     let _ = index.try_byte_offset_from_position(position);
+   |                   ++++
+
+error[E0599]: no method named `resolve_for_uri` found for reference `&LspProfileResolver` in the current scope
+  --> tests/ui/removed_zero_consumer_lsp_facades.rs:18:22
+   |
+18 |     let _ = resolver.resolve_for_uri(uri);
+   |                      ^^^^^^^^^^^^^^^ method not found in `&LspProfileResolver`
+
+error[E0599]: no method named `endpoint_mut` found for mutable reference `&mut LspReplCommandEndpoint<'_>` in the current scope
+  --> tests/ui/removed_zero_consumer_lsp_facades.rs:19:22
+   |
+19 |     let _ = endpoint.endpoint_mut();
+   |                      ^^^^^^^^^^^^ method not found in `&mut LspReplCommandEndpoint<'_>`

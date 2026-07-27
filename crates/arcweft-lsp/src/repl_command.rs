@@ -190,10 +190,6 @@ impl<'a> LspReplCommandEndpoint<'a> {
             ),
         }
     }
-
-    pub fn endpoint_mut(&mut self) -> &mut ReplCommandEndpoint<'a> {
-        &mut self.endpoint
-    }
 }
 
 impl LspReplCommandExecutor for LspReplCommandEndpoint<'_> {

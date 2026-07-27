@@ -86,17 +86,6 @@ impl LspProfileResolver {
             .with_arbitrary_expression_type_inlays(self.arbitrary_expression_type_inlays)
     }
 
-    /// Constructs a validated profile for one LSP document URI without
-    /// publishing accepted session state.
-    pub fn resolve_for_uri(
-        &self,
-        uri: &lsp_types::Uri,
-    ) -> Result<LspProfileBuild, LspProfileDiagnostic> {
-        let state = Arc::new(LspProfileState::new());
-        let registered = self.resolve_candidate_for_uri(uri, &[], None)?;
-        Ok(self.profile_build_from_registered(registered, state))
-    }
-
     pub(crate) fn resolve_candidate_for_uri(
         &self,
         uri: &lsp_types::Uri,

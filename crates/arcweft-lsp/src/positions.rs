@@ -115,21 +115,6 @@ impl LineIndex {
         Position::new(saturating_u32(line), character)
     }
 
-    /// Converts an LSP position back to a UTF-8 byte offset.
-    pub fn byte_offset_from_position(&self, position: Position) -> usize {
-        let line = usize::try_from(position.line).unwrap_or(usize::MAX);
-        let Some(&line_start) = self.starts.get(line) else {
-            return self.source.len();
-        };
-        let line_end = self
-            .starts
-            .get(line.saturating_add(1))
-            .copied()
-            .unwrap_or(self.source.len());
-        let target = usize::try_from(position.character).unwrap_or(usize::MAX);
-        self.offset_in_line(line_start, line_end, target)
-    }
-
     /// Converts an LSP position to an exact UTF-8 byte offset without clamping.
     ///
     /// Positions use the encoding negotiated for this index. A position in the
@@ -239,21 +224,6 @@ impl LineIndex {
         end
     }
 
-    fn offset_in_line(&self, line_start: usize, line_end: usize, target: usize) -> usize {
-        let mut units = 0usize;
-        for (offset, ch) in self.source[line_start..line_end].char_indices() {
-            if units >= target {
-                return line_start + offset;
-            }
-            units = units.saturating_add(match self.encoding {
-                PositionEncoding::Utf8 => ch.len_utf8(),
-                PositionEncoding::Utf16 => ch.len_utf16(),
-                PositionEncoding::Utf32 => 1,
-            });
-        }
-        line_end
-    }
-
     fn character_units(&self, line_start: usize, offset: usize) -> u32 {
         let units = self.source[line_start..offset]
             .chars()
@@ -306,7 +276,10 @@ mod tests {
         let index = LineIndex::new("a\n😀b\n", PositionEncoding::Utf16);
 
         assert_eq!(index.position_from_byte_offset(6), Position::new(1, 2));
-        assert_eq!(index.byte_offset_from_position(Position::new(1, 2)), 6);
+        assert_eq!(
+            index.try_byte_offset_from_position(Position::new(1, 2)),
+            Ok(6)
+        );
     }
 
     #[test]
@@ -314,7 +287,10 @@ mod tests {
         let index = LineIndex::new("a\n猫b\n", PositionEncoding::Utf8);
 
         assert_eq!(index.position_from_byte_offset(5), Position::new(1, 3));
-        assert_eq!(index.byte_offset_from_position(Position::new(1, 3)), 5);
+        assert_eq!(
+            index.try_byte_offset_from_position(Position::new(1, 3)),
+            Ok(5)
+        );
     }
 
     #[test]

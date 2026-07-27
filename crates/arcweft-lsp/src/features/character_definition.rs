@@ -17,7 +17,7 @@ use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath,
     parser::{ParseOptions, parse_document_with_source},
 };
-use arcweft_source::{SourceDocument, SourceDocumentIdentity, SourceSpan};
+use arcweft_source::{SourceDocument, SourceDocumentIdentity};
 use arcweft_verify_lsp::LspPositionMapper;
 use lsp_types::{GotoDefinitionResponse, LocationLink};
 use thiserror::Error;
@@ -65,16 +65,6 @@ pub enum AcceptedCharacterDefinitionStale {
         expected: AcceptedProfileKey,
         actual: AcceptedProfileKey,
     },
-}
-
-/// Explicit source-adapter failure for one declaration target.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum CharacterDefinitionSourceError {
-    MissingSource { identity: SourceDocumentIdentity },
-    UnreadableSource { identity: SourceDocumentIdentity },
-    UnmappedSource { identity: SourceDocumentIdentity },
-    InvalidUri { identity: SourceDocumentIdentity },
-    RangeConversion { source: SourceSpan },
 }
 
 /// Request failure categories with stable protocol-code mapping.

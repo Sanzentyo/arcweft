@@ -194,15 +194,6 @@ fn syntax_lint_diagnostics(
         .collect()
 }
 
-/// Builds a publishDiagnostics notification payload for one open document.
-pub fn publish_diagnostics(
-    snapshot: &DocumentSnapshot,
-    profile: &LspProfile,
-) -> PublishDiagnosticsParams {
-    let analysis = DocumentAnalysis::analyze_snapshot(snapshot, profile);
-    publish_diagnostics_from_analysis(snapshot, profile, &analysis)
-}
-
 /// Builds diagnostics from the exact analysis shared by the current session cache.
 pub fn publish_diagnostics_from_analysis(
     snapshot: &DocumentSnapshot,

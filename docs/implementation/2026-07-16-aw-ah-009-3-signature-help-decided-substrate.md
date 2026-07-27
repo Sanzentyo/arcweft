@@ -22,8 +22,10 @@ outside artifacts were supplied.
   lines, characters beyond authored line content, UTF-8 scalar splits, UTF-16
   surrogate splits, and checked arithmetic overflow through
   `CheckedPositionError`; it never clamps.
-- Existing clamping `byte_offset_from_position` behavior remains unchanged for
-  unrelated LSP features, as required by the package.
+- At this historical cut, clamping `byte_offset_from_position` behavior
+  remained unchanged for unrelated LSP features. The method later reached zero
+  production consumers and was deleted in favor of the checked API; see
+  [`2026-07-27-proof-lsp-zero-consumer-public-surface-deletion.md`](2026-07-27-proof-lsp-zero-consumer-public-surface-deletion.md).
 - `HirModule::source_identity` exposes only the exact revision-bound
   `SourceDocumentIdentity` established by `lower_document_to_hir`.
 - `HirModule::module_path` always exposes one canonical path, using `crate` for
