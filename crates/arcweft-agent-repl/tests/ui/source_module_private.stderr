@@ -1,0 +1,11 @@
+error[E0603]: module `source` is private
+ --> tests/ui/source_module_private.rs:1:25
+  |
+1 | use arcweft_agent_repl::source;
+  |                         ^^^^^^ private module
+  |
+note: the module `source` is defined here
+ --> src/lib.rs
+  |
+  | mod source;
+  | ^^^^^^^^^^

@@ -16,7 +16,7 @@ pub mod evidence;
 mod hash;
 pub mod runtime;
 pub mod session;
-pub mod source;
+mod source;
 pub mod tier;
 pub mod tiering;
 
