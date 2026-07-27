@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_hir::reference`
+ --> tests/ui/removed_reference_hir.rs:1:23
+  |
+1 | use arcweft_lang_hir::reference::{
+  |                       ^^^^^^^^^ could not find `reference` in `arcweft_lang_hir`

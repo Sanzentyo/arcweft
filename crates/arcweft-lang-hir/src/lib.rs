@@ -20,7 +20,6 @@ mod lower_flow;
 mod lower_ids;
 pub mod model;
 pub mod project;
-pub mod reference;
 pub mod style;
 pub mod symbol;
 pub mod view_part;
