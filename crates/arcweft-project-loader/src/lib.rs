@@ -4,7 +4,7 @@
 //! callers remain responsible for their own error presentation policy.
 
 pub mod cache;
-pub mod character_manifest;
+mod character_manifest;
 pub mod environment;
 pub mod layout;
 pub mod project;

@@ -38,7 +38,6 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceDocumentIdentity};
 use thiserror::Error;
 
 use crate::{
-    character_manifest,
     project::LoadedProject,
     topology::{
         LoadedDocumentAccess, LoadedDocumentOwnership, LoadedProfileTopology,
@@ -79,12 +78,6 @@ pub struct ProfileRegistrationLoadRequest<'a> {
 /// Failure while loading or checking a complete registration-fact set.
 #[derive(Debug, Error)]
 pub enum ProjectRegistrationLoadError {
-    #[error("failed to load character manifest `{path}`: {source}")]
-    CharacterManifest {
-        path: std::path::PathBuf,
-        #[source]
-        source: Box<character_manifest::LoadError>,
-    },
     #[error(transparent)]
     Package(#[from] CallablePackageIdError),
     #[error(transparent)]
@@ -164,14 +157,6 @@ impl<'a> ProfileRegistrationLoadRequest<'a> {
 }
 
 impl LoadedProjectRegistration {
-    pub const fn facts(&self) -> &ProjectRegistrationFacts {
-        &self.facts
-    }
-
-    pub fn file_documents(&self) -> impl ExactSizeIterator<Item = &LoadedFileDocument> {
-        self.file_documents.iter()
-    }
-
     pub fn into_parts(self) -> (ProjectRegistrationFacts, Vec<LoadedFileDocument>) {
         (self.facts, self.file_documents)
     }
@@ -604,7 +589,7 @@ compression = "none"
         let registration =
             load_profile_registration(&ProfileRegistrationLoadRequest::new(&topology))
                 .expect("registration facts");
-        let facts = registration.facts();
+        let (facts, file_documents) = registration.into_parts();
 
         assert!(facts.documents().any(|document| {
             document.identity().id().as_str()
@@ -641,8 +626,8 @@ compression = "none"
                 .collect::<Vec<_>>(),
             [vec!["character", "zundamon"], vec!["zundamon"]]
         );
-        let manifest_file = registration
-            .file_documents()
+        let manifest_file = file_documents
+            .iter()
             .find(|file| file.document().identity() == manifest.source_map().document())
             .expect("manifest file ownership");
         assert_eq!(
@@ -726,10 +711,11 @@ compression = "none"
         let registration =
             load_profile_registration(&ProfileRegistrationLoadRequest::new(&topology))
                 .expect("registration uses retained documents");
+        let (facts, file_documents) = registration.into_parts();
 
-        assert_eq!(registration.file_documents().len(), 3);
-        assert_eq!(registration.facts().catalogs().count(), 1);
-        assert!(registration.file_documents().all(|file| {
+        assert_eq!(file_documents.len(), 3);
+        assert_eq!(facts.catalogs().count(), 1);
+        assert!(file_documents.iter().all(|file| {
             topology.resources().any(|resource| {
                 resource.path() == file.path()
                     && resource

@@ -16,6 +16,7 @@ use arcweft_adapter_context::manifest::{AdapterManifest, AdapterRegistry};
 use arcweft_adapter_metadata::{AdapterTarget, SourceBackedAdapterMetadata};
 use arcweft_character::{
     id::CharacterId,
+    manifest::registration::SourceBackedCharacterManifest,
     package::{CharacterLayerPayload, CharacterPackage},
 };
 use arcweft_lang_syntax::{
@@ -381,20 +382,20 @@ impl<'a> TopologyBuilder<'a> {
                 path: manifest_path.clone(),
             }
         })?);
-        let loaded = character_manifest::decode(manifest_path.clone(), Arc::clone(&document))
+        let source_manifest = SourceBackedCharacterManifest::decode_registration_json(&document)
             .map_err(|source| ProfileTopologyLoadError::CharacterManifest {
                 id: resource.id().clone(),
                 path: manifest_path.clone(),
                 source: Box::new(source),
             })?;
-        if loaded.manifest().manifest().character() != &character {
+        if source_manifest.manifest().character() != &character {
             return Err(ProfileTopologyLoadError::CharacterIdentityMismatch {
                 path: manifest_path,
                 expected: character,
-                actual: loaded.manifest().manifest().character().clone(),
+                actual: source_manifest.manifest().character().clone(),
             });
         }
-        let source_manifest = Arc::new(loaded.manifest().clone());
+        let source_manifest = Arc::new(source_manifest);
         let (payloads, layer_paths) =
             self.load_character_layers(package, &character, &package_path, &source_manifest)?;
         let package_model = Arc::new(

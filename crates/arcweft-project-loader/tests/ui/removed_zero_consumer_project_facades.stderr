@@ -1,17 +1,57 @@
-error[E0432]: unresolved import `arcweft_project_loader::project::load_discovered_with_limits`
- --> tests/ui/removed_zero_consumer_project_facades.rs:1:54
+error[E0432]: unresolved imports `arcweft_project_loader::character_manifest::LoadedCharacterManifest`, `arcweft_project_loader::character_manifest::decode`, `arcweft_project_loader::character_manifest::load`, `arcweft_project_loader::character_manifest::load_for_project`
+ --> tests/ui/removed_zero_consumer_project_facades.rs:2:5
   |
-1 | use arcweft_project_loader::project::{LoadedProject, load_discovered_with_limits};
+2 |     LoadedCharacterManifest, decode, load, load_for_project, manifest_path,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^  ^^^^  ^^^^^^^^^^^^^^^^ no `load_for_project` in `character_manifest`
+  |     |                        |       |
+  |     |                        |       no `load` in `character_manifest`
+  |     |                        no `decode` in `character_manifest`
+  |     no `LoadedCharacterManifest` in `character_manifest`
+
+error[E0432]: unresolved import `arcweft_project_loader::project::load_discovered_with_limits`
+ --> tests/ui/removed_zero_consumer_project_facades.rs:7:54
+  |
+7 | use arcweft_project_loader::project::{LoadedProject, load_discovered_with_limits};
   |                                                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `load_discovered_with_limits` in `project`
 
+error[E0603]: module `character_manifest` is private
+ --> tests/ui/removed_zero_consumer_project_facades.rs:1:29
+  |
+1 | use arcweft_project_loader::character_manifest::{
+  |                             ^^^^^^^^^^^^^^^^^^ private module
+  |
+note: the module `character_manifest` is defined here
+ --> src/lib.rs
+  |
+  | mod character_manifest;
+  | ^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0599]: no method named `facts` found for reference `&LoadedProjectRegistration` in the current scope
+  --> tests/ui/removed_zero_consumer_project_facades.rs:10:26
+   |
+10 |     let _ = registration.facts();
+   |                          ^^^^^ private field, not a method
+
+error[E0599]: no method named `file_documents` found for reference `&LoadedProjectRegistration` in the current scope
+  --> tests/ui/removed_zero_consumer_project_facades.rs:11:26
+   |
+11 |     let _ = registration.file_documents();
+   |                          ^^^^^^^^^^^^^^ private field, not a method
+
+error[E0599]: no variant, associated function, or constant named `CharacterManifest` found for enum `ProjectRegistrationLoadError` in the current scope
+  --> tests/ui/removed_zero_consumer_project_facades.rs:15:43
+   |
+15 |     let _ = ProjectRegistrationLoadError::CharacterManifest;
+   |                                           ^^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `ProjectRegistrationLoadError`
+
 error[E0599]: no method named `into_sources` found for struct `LoadedProject` in the current scope
- --> tests/ui/removed_zero_consumer_project_facades.rs:4:21
-  |
-4 |     let _ = project.into_sources();
-  |                     ^^^^^^^^^^^^
-  |
+  --> tests/ui/removed_zero_consumer_project_facades.rs:19:21
+   |
+19 |     let _ = project.into_sources();
+   |                     ^^^^^^^^^^^^
+   |
 help: there is a method `sources` with a similar name
-  |
-4 -     let _ = project.into_sources();
-4 +     let _ = project.sources();
-  |
+   |
+19 -     let _ = project.into_sources();
+19 +     let _ = project.sources();
+   |

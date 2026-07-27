@@ -1,6 +1,5 @@
 use super::{ProfileTopologyLogicalPath, ProfileTopologyOwnerId, ProfileTopologyResourceId};
 use crate::{
-    character_manifest,
     layout::{ContainedProjectLayout, ProjectLayoutContainmentError},
     project,
 };
@@ -971,7 +970,7 @@ pub enum ProfileTopologyLoadError {
         id: ProfileTopologyResourceId,
         path: PathBuf,
         #[source]
-        source: Box<character_manifest::LoadError>,
+        source: Box<arcweft_character::manifest::diagnostic::CharacterRegistrationDecodeError>,
     },
     #[error("invalid character content root `{reference}`: {source}")]
     CharacterReference {
