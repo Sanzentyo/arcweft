@@ -10,7 +10,10 @@ use arcweft_lang_sema::{
     env::TypeCheckEnv,
     registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 fn analyze_fixture(source: &str) -> arcweft_lang_sema::check::TypeCheckReport {
@@ -22,7 +25,7 @@ fn analyze_fixture(source: &str) -> arcweft_lang_sema::check::TypeCheckReport {
         )
         .expect("source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("fixture lowers to HIR");
     let package = CallablePackageId::try_new("iterator-method-body").expect("package");

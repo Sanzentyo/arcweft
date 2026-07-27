@@ -135,12 +135,18 @@ fn span(range: &TextRange) -> ManifestSpan {
 mod tests {
     use super::*;
     use arcweft_lang_hir::lower::lower_document_to_hir;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
     #[test]
     fn collects_script_test_and_bench_manifest() {
-        let parsed = parse_source(
-            r#"
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://arcweft-test/script-manifest.arcw")
+                    .expect("script manifest fixture source ID"),
+                SourceName::path("arcweft-test/script-manifest.arcw"),
+                r#"
 test @test.opening scenario {
     goto @flow.opening
     expect.no_assertion_failures()
@@ -152,7 +158,10 @@ bench @bench.opening {
     report { cpu_time }
 }
 "#,
+            )
+            .expect("script manifest fixture source document"),
         );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
         let hir =
             lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("HIR lowers");

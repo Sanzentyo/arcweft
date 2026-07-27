@@ -20,13 +20,13 @@ use arcweft_lang_sema::{
     check::typecheck_hir, diagnostics::TypeCheckErrorKind,
     effect_diagnostics::EffectDiagnosticCode, env::TypeCheckEnv,
 };
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_launch::LaunchProfileSelection;
 use arcweft_manifest_model::{
     CapabilityId, FieldName, FunctionName, ManifestVisibility, RawDigest, TypeReference, WitWorldId,
 };
-use arcweft_source::SourceSetRevision;
-use std::{fmt::Write as _, fs, path::PathBuf};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use std::{fmt::Write as _, fs, path::PathBuf, sync::Arc};
 
 const ROOT_SOURCE: &str = "fn main() -> Unit { () }\n";
 const TRUCK_METADATA: &str =
@@ -548,8 +548,14 @@ adapter = "network"
         ["net.read"]
     );
 
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://project-loader/topology/adapter-effects.arcw",
+            )
+            .expect("adapter-effects fixture source ID"),
+            SourceName::path("project-loader/topology/adapter-effects.arcw"),
+            r"
 extern capability fs {
     fn read() -> String effects { fs.read }
 }
@@ -557,7 +563,10 @@ flow @flow.main main effects { fs.read } {
     let body = fs.read()
 }
 ",
+        )
+        .expect("adapter-effects fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
         .expect("capability fixture lowers");

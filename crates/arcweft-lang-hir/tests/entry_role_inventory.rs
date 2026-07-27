@@ -1,10 +1,16 @@
 use arcweft_lang_hir::{lower::lower_document_to_hir, model::HirTopLevelDecl};
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use std::sync::Arc;
 
 #[test]
 fn ordinary_struct_functions_and_entry_are_the_only_role_owners_in_hir() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/entry/role-owners.arcw")
+                .expect("entry role fixture source ID"),
+            SourceName::path("lang-hir/entry/role-owners.arcw"),
+            r"
 struct GameState {
     score: i32
 }
@@ -27,7 +33,10 @@ entry game @entry.game.main {
     goto @flow.opening
 }
 ",
+        )
+        .expect("entry role fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
         .expect("ordinary role owners lower");

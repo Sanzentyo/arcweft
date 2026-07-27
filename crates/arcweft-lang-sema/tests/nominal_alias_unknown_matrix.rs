@@ -19,7 +19,10 @@ use arcweft_lang_sema::{
     },
     types::{ArrayLength, TypeKind},
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 fn registered(id: &str, source: &str) -> RegisteredSemanticWorld {
@@ -32,7 +35,7 @@ fn registered(id: &str, source: &str) -> RegisteredSemanticWorld {
         )
         .unwrap_or_else(|error| panic!("{id}: source document: {error}")),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{id}: fixture parses");
     let hir = lower_document_to_hir(&document, parsed.typed_tree())
         .unwrap_or_else(|error| panic!("{id}: fixture lowers: {error:?}"));

@@ -792,24 +792,28 @@ mod tests {
     };
     use arcweft_lang_syntax::{
         ast::module_path::{CanonicalModulePath, ModuleSegment},
-        parser::parse_source,
+        parser::{ParseOptions, parse_document_with_source},
     };
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
     fn project_module(
         path: CanonicalModulePath,
         document_id: &str,
         source: &str,
     ) -> HirProjectModule {
-        let document = SourceDocument::try_new(
-            SourceDocumentId::try_new(document_id).expect("document ID"),
-            SourceName::path(document_id),
-            source,
-        )
-        .expect("source document");
-        let parsed = parse_source(source);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(document_id).expect("document ID"),
+                SourceName::path(document_id),
+                source,
+            )
+            .expect("source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-        let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
+        let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
+            .expect("lowered HIR");
         HirProjectModule::try_new(path, document.identity().clone(), hir)
             .expect("source-bound HIR module")
     }
@@ -849,7 +853,16 @@ mod tests {
         let source_lf = "flow opening {\n    narrator:\n        Intro\n        [.ruby_over ruby_size=11px]text[/]\n}\n";
         for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
             let offset = source.find("11px").expect("ruby size value") + 1;
-            let parsed = parse_source(&source);
+            let document = Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new("arcweft-test://lsp/cascade/inline-style-paths")
+                        .expect("fixture document ID"),
+                    SourceName::path("inline-style-paths.arcw"),
+                    source.as_str(),
+                )
+                .expect("fixture source document"),
+            );
+            let parsed = parse_document_with_source(document, ParseOptions::default());
             assert!(
                 parsed.errors().is_empty(),
                 "unexpected parser errors: {:?}",
@@ -866,7 +879,16 @@ mod tests {
     fn inline_effect_paths_use_typed_ranges_for_quoted_closing_brackets() {
         let source_lf = "flow opening {\n    narrator:\n        [.sparkle note=\"contains ] safely\" amp=2px]text[/]\n}\n";
         for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
-            let parsed = parse_source(&source);
+            let document = Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new("arcweft-test://lsp/cascade/inline-effect-paths")
+                        .expect("fixture document ID"),
+                    SourceName::path("inline-effect-paths.arcw"),
+                    source.as_str(),
+                )
+                .expect("fixture source document"),
+            );
+            let parsed = parse_document_with_source(document, ParseOptions::default());
             assert!(
                 parsed.errors().is_empty(),
                 "unexpected parser errors: {:?}",
@@ -896,7 +918,18 @@ mod tests {
         let source_lf =
             "flow opening {\n    narrator:\n        [color value=\"#ff4050\"]text[/color]\n}\n";
         for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
-            let parsed = parse_source(&source);
+            let document = Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new(
+                        "arcweft-test://lsp/cascade/inline-direct-style-paths",
+                    )
+                    .expect("fixture document ID"),
+                    SourceName::path("inline-direct-style-paths.arcw"),
+                    source.as_str(),
+                )
+                .expect("fixture source document"),
+            );
+            let parsed = parse_document_with_source(document, ParseOptions::default());
             assert!(
                 parsed.errors().is_empty(),
                 "unexpected parser errors: {:?}",

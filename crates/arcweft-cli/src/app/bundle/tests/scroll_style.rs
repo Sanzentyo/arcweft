@@ -12,7 +12,19 @@ fn assert_scroll_regions_match_unstyled_baseline(
 ) {
     let baseline_source = source.replace(style_modifier, "");
     assert_ne!(baseline_source, source, "Style modifier fixture must exist");
-    let parsed = arcweft_lang_syntax::parser::parse_source(&baseline_source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/scroll-style/unstyled-baseline")
+                .expect("fixture document ID"),
+            SourceName::path("scroll-style-unstyled-baseline.arcw"),
+            baseline_source.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    );
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -65,7 +77,7 @@ flow test {
   view(@view:.StyledScroll)
 }
 "#;
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_bundle_fixture("scroll-style/typed-style-defaults", source);
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -165,7 +177,19 @@ flow test {
   view(@view:.Gallery)
 }
 "#;
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/scroll-style/typed-overflow-x")
+                .expect("fixture document ID"),
+            SourceName::path("scroll-style-typed-overflow-x.arcw"),
+            source,
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    );
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())

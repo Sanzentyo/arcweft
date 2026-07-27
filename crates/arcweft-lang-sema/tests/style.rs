@@ -5,14 +5,24 @@ use arcweft_lang_sema::{
     env::TypeCheckEnv,
     style::StyleDiagnosticCode,
 };
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
     ViewBoxAxisMode, ViewClip, ViewFilter, ViewMask, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleValueKind,
 };
+use std::sync::Arc;
 
 fn analyze(source: &str) -> TypeCheckReport {
-    let parsed = parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://sema/style.arcw").expect("source ID"),
+            SourceName::Generated,
+            source,
+        )
+        .expect("source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[], "syntax errors: {:?}", parsed.errors());
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
         .expect("style source lowers to HIR");

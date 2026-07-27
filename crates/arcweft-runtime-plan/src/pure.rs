@@ -612,13 +612,32 @@ fn pure_helper_output_type(ty: Option<&TypeRef>) -> RuntimePureOutputType {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
     use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_hir::symbol::CallablePackageId;
-    use arcweft_lang_hir::syntax::parser::parse_source;
+    use arcweft_lang_hir::syntax::{
+        parser::{ParseOptions, parse_document_with_source},
+        source::ParsedSource,
+    };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+    fn parse_pure_helper_fixture(source: impl Into<String>) -> ParsedSource {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://runtime-plan/pure-helper.arcw")
+                    .expect("test document ID"),
+                SourceName::Generated,
+                source.into(),
+            )
+            .expect("test source document"),
+        );
+        parse_document_with_source(document, ParseOptions::default())
+    }
 
     #[test]
     fn opaque_entry_inputs_do_not_broaden_ordinary_helper_inference() {
-        let parsed = parse_source(
+        let parsed = parse_pure_helper_fixture(
             r"
 mod game
 
@@ -654,7 +673,7 @@ fn reduce(state: &GameState, event: GameEvent) -> GameEvent {
 
     #[test]
     fn lowers_pure_function_candidate_from_hir_attribute() {
-        let parsed = parse_source(
+        let parsed = parse_pure_helper_fixture(
             r"
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
@@ -696,7 +715,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 
     #[test]
     fn pure_function_candidate_preserves_non_i64_integer_input_types() {
-        let parsed = parse_source(
+        let parsed = parse_pure_helper_fixture(
             r"
 #[pure]
 fn score(base: i32, bonus: i16) -> i32 {
@@ -727,7 +746,7 @@ fn score(base: i32, bonus: i16) -> i32 {
 
     #[test]
     fn pure_function_candidate_preserves_unsigned_integer_input_types() {
-        let parsed = parse_source(
+        let parsed = parse_pure_helper_fixture(
             r"
 #[pure]
 fn pack(byte: u8, index: u32) -> u64 {
@@ -754,7 +773,7 @@ fn pack(byte: u8, index: u32) -> u64 {
 
     #[test]
     fn pure_function_candidate_preserves_typed_float_input_types() {
-        let parsed = parse_source(
+        let parsed = parse_pure_helper_fixture(
             r"
 #[pure]
 fn blend(base: f32, gain: f32) -> f32 {
@@ -792,7 +811,7 @@ fn score(base: f64, gain: f64) -> f64 {
 
     #[test]
     fn lowers_simple_statement_body_pure_helper_candidate() {
-        let parsed = parse_source(
+        let parsed = parse_pure_helper_fixture(
             r"
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {
@@ -824,7 +843,7 @@ fn score(base: i64, bonus: i64) -> i64 {
 
     #[test]
     fn lowers_tail_return_pure_helper_candidate() {
-        let parsed = parse_source(
+        let parsed = parse_pure_helper_fixture(
             r"
 #[pure]
 fn score(base: i64, bonus: i64) -> i64 {

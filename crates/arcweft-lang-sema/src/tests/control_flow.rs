@@ -1342,7 +1342,7 @@ flow @flow.main main(input: i32) -> String {
     }
 }
 "#;
-    let parsed = parse_source(source.to_owned());
+    let parsed = parse_ok(source.to_owned());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let tree = parsed;
     let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("if-else lowers");

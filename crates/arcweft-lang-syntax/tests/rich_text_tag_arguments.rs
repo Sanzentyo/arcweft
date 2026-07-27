@@ -8,7 +8,6 @@ use arcweft_lang_syntax::{
         flow::FlowItem,
         items::Item,
     },
-    parser::parse_source,
     text::{
         DialogueTextDiagnostic, DialogueTextDiagnosticCode, MAX_RICH_TEXT_CONTENT_ARGUMENTS,
         MAX_RICH_TEXT_CONTENT_TAGS, MAX_RICH_TEXT_TAG_ARGUMENTS, MAX_RICH_TEXT_TAG_BODY_BYTES,
@@ -297,7 +296,7 @@ fn g012_unicode_values_preserve_scalar_sequence_and_utf8_ranges() {
 fn g013_b002_crlf_and_indentation_project_all_argument_ranges() {
     let source =
         "flow opening {\r\n    narrator:\r\n        [.wave\u{3000}amp=\"二 px\"]text[/]\r\n}\r\n";
-    let parsed = parse_source(source);
+    let parsed = parse_rich_text_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let tree = parsed.into_typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
@@ -526,4 +525,22 @@ fn source_alias_and_canonical_tag_names_are_both_retained() {
     assert_eq!(tag.name(), "p");
     assert_eq!(tag.canonical_name(), Some("p"));
     assert_eq!(tag.name_range(), TextRange::new(1, 5));
+}
+
+fn parse_rich_text_fixture(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/rich-text-tag-arguments",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("rich-text-tag-arguments.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

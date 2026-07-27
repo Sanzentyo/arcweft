@@ -8,7 +8,7 @@ fn removed_scaffold_declarations_do_not_reach_typechecked_hir() {
         "memo fn route_title(route: Ref<Flow>) -> String { route.title }\n",
         "parser parse_player_command: Parser<PlayerCommand, ParseError> { }\n",
     ] {
-        let parsed = parse_source(source);
+        let parsed = parse_recovered(source);
         let rejected = !parsed.errors().is_empty()
             || lower_document_to_hir(parsed.document(), parsed.typed_tree()).is_err()
             || lower_document_to_hir(parsed.document(), parsed.typed_tree()).is_ok_and(|hir| {
@@ -115,7 +115,7 @@ fn malformed_trust_metadata_and_separate_axiom_declarations_do_not_lower_as_proo
         "#[verify.trusted]\nproof @proof.missing_reason {\n    check valid()\n}\n",
         "trusted axiom @axiom.external {\n    reason = \"external\"\n}\n",
     ] {
-        let parsed = parse_source(source);
+        let parsed = parse_recovered(source);
         assert!(
             !parsed.errors().is_empty(),
             "invalid trust input was accepted"

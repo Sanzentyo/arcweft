@@ -7,12 +7,12 @@ use arcweft_lang_syntax::{
         },
     },
     expr::{Expr, Literal, UnitNumberSuffix},
-    parser::{parse_source, recovery::ParseErrorKind},
+    parser::recovery::ParseErrorKind,
 };
 
 #[test]
 fn style_declarations_are_module_scoped() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r"
 mod hoge
 
@@ -97,7 +97,7 @@ fn native_style_multiline_values_keep_expression_and_source_ranges() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let style = parsed
         .typed_tree()
@@ -128,7 +128,7 @@ fn native_style_multiline_values_keep_expression_and_source_ranges() {
 
 #[test]
 fn style_parser_reports_missing_equals_and_malformed_combinators_with_ranges() {
-    let missing = parse_source("pub style broken {\n token color.text Color\n}\n");
+    let missing = parse_style_fixture("pub style broken {\n token color.text Color\n}\n");
     let missing_error = missing
         .errors()
         .iter()
@@ -136,7 +136,7 @@ fn style_parser_reports_missing_equals_and_malformed_combinators_with_ranges() {
         .expect("missing equals diagnostic");
     assert!(missing_error.range().end() > missing_error.range().start());
 
-    let selector = parse_source(
+    let selector = parse_style_fixture(
         "pub style broken {\n Panel > > Button {\n color = rgba(0, 0, 0, 255)\n }\n}\n",
     );
     let selector_error = selector
@@ -155,7 +155,7 @@ fn unexpected_named_style_head_suffixes_use_ordinary_parser_recovery() {
     let source = r"pub style imported: .ForeignDialect { Button { color = red; } }
 pub style explicit: .UnknownDialect { Button { color = rgba(1, 2, 3, 255) } }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     let head_errors = parsed
         .errors()
         .iter()
@@ -180,7 +180,7 @@ pub view Example() {
     Button("OK").style { opacity 0.9 }
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     let diagnostics = parsed
         .errors()
         .iter()
@@ -218,7 +218,7 @@ pub view Example() {
     }
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     assert_eq!(parsed.errors(), &[], "syntax errors: {:?}", parsed.errors());
 
     let named = parsed
@@ -267,7 +267,7 @@ fn inline_native_style_rejects_only_a_top_level_selector_rule() {
     }
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     let error = parsed
         .errors()
         .iter()
@@ -288,7 +288,7 @@ fn named_style_rejects_nested_selector_with_typed_recovery() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     let error = parsed
         .errors()
         .iter()
@@ -322,7 +322,7 @@ fn unknown_inline_style_head_uses_ordinary_view_modifier_recovery() {
         }
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     let rejected = parsed
         .errors()
         .iter()
@@ -374,7 +374,7 @@ fn inline_style_ranges_survive_same_line_view_chain_expansion() {
     Button("Two").style { outline-width = 2px }
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let patches = parsed
         .typed_tree()
@@ -406,7 +406,7 @@ fn same_line_view_modifier_chains_preserve_every_production_property() {
     RichText(line.content).x(48px).y(456px).width(860px).height(140px)
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let view = parsed
         .typed_tree()
@@ -444,7 +444,7 @@ fn same_line_view_chain_ignores_nested_call_selection_boundaries() {
     Text(resolve(line).speaker).x(48px).y(416px).width(860px).height(32px)
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let view = parsed
         .typed_tree()
@@ -498,7 +498,7 @@ fn same_line_view_chain_ignores_modifier_like_text_inside_strings() {
     Text(").not_modifier(").x(48px)
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let text = parsed
         .typed_tree()
@@ -543,7 +543,7 @@ fn inline_native_style_diagnostic_starts_at_the_original_repeated_modifier() {
         }
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     let error = parsed
         .errors()
         .iter()
@@ -558,7 +558,7 @@ fn inline_native_style_diagnostic_starts_at_the_original_repeated_modifier() {
 
 #[test]
 fn style_parser_reports_an_unclosed_style_block() {
-    let parsed = parse_source("pub style broken {\n Button { opacity = 900milli }\n");
+    let parsed = parse_style_fixture("pub style broken {\n Button { opacity = 900milli }\n");
     assert!(
         parsed
             .errors()
@@ -569,7 +569,7 @@ fn style_parser_reports_an_unclosed_style_block() {
 
 #[test]
 fn inline_and_named_native_styles_share_expression_ast() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"pub style named {
     Button { opacity = 900milli }
 }
@@ -611,7 +611,7 @@ pub view Example() {
 
 #[test]
 fn view_button_on_click_action_invoke_parses() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub action feedback.submit(value: String)
 
@@ -659,7 +659,7 @@ pub view FeedbackForm() {
 
 #[test]
 fn view_button_on_click_action_invoke_block_parses() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub action feedback.submit(value: String)
 
@@ -700,7 +700,7 @@ pub view FeedbackForm() {
 
 #[test]
 fn view_text_field_on_submit_action_invoke_block_parses() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub action feedback.submit(value: String)
 
@@ -737,7 +737,7 @@ pub view FeedbackForm() {
 
 #[test]
 fn view_generic_callback_block_modifier_parses() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub action feedback.focus(value: String)
 
@@ -779,7 +779,7 @@ pub view FeedbackForm() {
 
 #[test]
 fn view_button_on_click_multi_statement_block_uses_final_action() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub action feedback.submit(value: String)
 
@@ -818,7 +818,7 @@ pub view FeedbackForm() {
 
 #[test]
 fn view_local_let_input_handle_parses() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub view FeedbackForm() {
   let visitor_name = input.text(@input:.visitor_name, initial = "")
@@ -867,7 +867,7 @@ pub view RecoveredText() {
   Text(format(α, β)
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_fixture(source);
     let view = parsed
         .typed_tree()
         .items()
@@ -903,7 +903,7 @@ pub view RecoveredText() {
 
 #[test]
 fn view_reactive_if_match_for_parse_to_structured_view_exprs() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r"
 pub view ReactivePanel() {
   Column {
@@ -963,7 +963,7 @@ pub view ReactivePanel() {
 
 #[test]
 fn view_await_parse_to_structured_branches() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r"
 pub view AvatarPanel() {
   Column {
@@ -1018,7 +1018,7 @@ pub view AvatarPanel() {
 
 #[test]
 fn view_box_and_scroll_parse_as_canonical_elements() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub style glass_shell {
   Box {
@@ -1072,7 +1072,7 @@ pub view FeedbackForm() {
 
 #[test]
 fn view_fx_modifiers_keep_typed_calls_keys_and_authored_ordinals() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub view Warning(state: WarningState) {
   Text("WARNING")
@@ -1118,7 +1118,7 @@ pub view Warning(state: WarningState) {
 
 #[test]
 fn view_fx_rejects_positional_function_arguments_and_open_modifier_options() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub view InvalidFx() {
   Text("WARNING")
@@ -1147,7 +1147,7 @@ pub view InvalidFx() {
 
 #[test]
 fn unsupported_view_block_element_names_are_rejected() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub view FeedbackForm() {
   Card {
@@ -1171,7 +1171,7 @@ pub view FeedbackForm() {
 
 #[test]
 fn non_intrinsic_view_calls_are_preserved_for_typed_resolution() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 mod game.opening
 
@@ -1266,7 +1266,7 @@ fn find_element<'a>(
 
 #[test]
 fn view_style_references_are_module_scoped() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 mod hoge
 
@@ -1332,7 +1332,7 @@ pub view ButtonRow() {
 
 #[test]
 fn view_container_accepts_a_trailing_modifier_chain() {
-    let parsed = parse_source(
+    let parsed = parse_style_fixture(
         r#"
 pub view DialoguePanel() {
     Panel(width = 400px, height = 160px) {
@@ -1358,4 +1358,20 @@ pub view DialoguePanel() {
         panel.modifiers(),
         [ViewModifier::Part(part)] if part.local_name().text() == "dialogue_panel"
     ));
+}
+
+fn parse_style_fixture(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/style-view")
+                .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("style-view.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

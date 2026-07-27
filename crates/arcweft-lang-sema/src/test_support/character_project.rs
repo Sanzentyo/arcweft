@@ -24,7 +24,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
@@ -101,7 +101,7 @@ pub(crate) fn root_project_source(
     source: &str,
 ) -> (Arc<SourceDocument>, HirProject, ProjectSymbolWorldId) {
     let document = source_document("arcweft-project://registration-tests/src/main.arcw", source);
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
     let project = HirProject::new(
@@ -140,7 +140,7 @@ pub(crate) fn project_modules(
                 &format!("arcweft-project://registration-tests/src/{file}.arcw"),
                 *source,
             );
-            let parsed = parse_source(*source);
+            let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
             assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
             let hir =
                 lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered module HIR");
@@ -445,7 +445,7 @@ impl CharacterProjectFixture {
         world: &RegisteredSemanticWorld,
         budget: &mut CharacterDefinitionRequestBudget,
     ) -> Result<CharacterReferenceInventory, CharacterReferenceInventoryError> {
-        let parsed = parse_source(self.source.text());
+        let parsed = parse_document_with_source(Arc::clone(&self.source), ParseOptions::default());
         let hir = lower_document_to_hir(&self.source, parsed.typed_tree())
             .expect("fixture source lowers to document-bound HIR");
         let project = HirProject::new(

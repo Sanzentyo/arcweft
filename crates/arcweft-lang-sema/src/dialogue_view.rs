@@ -304,6 +304,8 @@ pub enum DialogueViewModelError {
 #[cfg(test)]
 mod tests {
     use super::DialogueViewProjection;
+    use std::sync::Arc;
+
     use crate::{
         checker::{TypeCheckReport, analyze_registered_project_types, typecheck_hir},
         env::TypeCheckEnv,
@@ -311,7 +313,24 @@ mod tests {
         test_support::character_project::{register, root_project_source},
     };
     use arcweft_lang_hir::lower::lower_document_to_hir;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::{
+        parser::{ParseOptions, parse_document_with_source},
+        source::ParsedSource,
+    };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+    fn parse_dialogue_view_fixture(source: impl Into<String>) -> ParsedSource {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://sema/dialogue-view.arcw")
+                    .expect("test document ID"),
+                SourceName::Generated,
+                source.into(),
+            )
+            .expect("test source document"),
+        );
+        parse_document_with_source(document, ParseOptions::default())
+    }
 
     fn registered_report(source: &str) -> TypeCheckReport {
         let (document, project, world) = root_project_source("dialogue-view-model", source);
@@ -331,7 +350,7 @@ mod tests {
     #[test]
     fn attributed_public_record_registers_the_dialogue_view_role() {
         let source = "#[dialogue_view]\npub struct StoryDialogue {\n speaker: String\n content: DialogueContent\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n}\n";
-        let parsed = parse_source(source);
+        let parsed = parse_dialogue_view_fixture(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
         lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("lower dialogue View record");
@@ -348,7 +367,7 @@ mod tests {
     #[test]
     fn attributed_record_must_satisfy_the_closed_field_contract() {
         let source = "#[dialogue_view]\npub struct BrokenDialogue {\n speaker: String\n content: String\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n}\n";
-        let parsed = parse_source(source);
+        let parsed = parse_dialogue_view_fixture(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
         lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("lower invalid dialogue View record");
@@ -366,7 +385,7 @@ mod tests {
     #[test]
     fn attributed_record_rejects_fields_outside_the_closed_runtime_projection() {
         let source = "#[dialogue_view]\npub struct ExtendedDialogue {\n speaker: String\n content: DialogueContent\n occurrence: DialogueOccurrenceId\n stage: DialogueStage\n reveal: DialogueReveal\n primary_action: DialogueAction\n mood: String\n}\n";
-        let parsed = parse_source(source);
+        let parsed = parse_dialogue_view_fixture(source);
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
         lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("lower invalid dialogue View record");
@@ -383,7 +402,7 @@ mod tests {
 
     #[test]
     fn standard_model_types_text_and_primary_action_projections() {
-        let parsed = parse_source(
+        let parsed = parse_dialogue_view_fixture(
             r#"
 pub view DialoguePanel(dialogue: DialogueView) {
     Column {
@@ -402,8 +421,9 @@ pub view DialoguePanel(dialogue: DialogueView) {
 
     #[test]
     fn dialogue_content_requires_the_rich_text_surface() {
-        let parsed =
-            parse_source("pub view Broken(dialogue: DialogueView) {\n Text(dialogue.content)\n}\n");
+        let parsed = parse_dialogue_view_fixture(
+            "pub view Broken(dialogue: DialogueView) {\n Text(dialogue.content)\n}\n",
+        );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("lower invalid dialogue View");
@@ -418,8 +438,9 @@ pub view DialoguePanel(dialogue: DialogueView) {
 
     #[test]
     fn authored_view_cannot_redeclare_the_standard_dialogue_resource() {
-        let parsed =
-            parse_source("pub view @std.view.dialogue Dialogue() {\n Text(\"reserved\")\n}\n");
+        let parsed = parse_dialogue_view_fixture(
+            "pub view @std.view.dialogue Dialogue() {\n Text(\"reserved\")\n}\n",
+        );
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("lower reserved View fixture");

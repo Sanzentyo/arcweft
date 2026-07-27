@@ -5,11 +5,22 @@ use arcweft_lang_sema::{
     env::TypeCheckEnv,
     style::{CheckedStyleEnvironmentClause, StyleDiagnosticCode},
 };
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::ViewTextScaleComparison;
+use std::sync::Arc;
 
 fn analyze(source: &str) -> (Vec<String>, TypeCheckReport) {
-    let parsed = parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://sema/style-environment.arcw")
+                .expect("source ID"),
+            SourceName::Generated,
+            source,
+        )
+        .expect("source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let syntax_codes = parsed
         .errors()
         .iter()

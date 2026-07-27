@@ -609,10 +609,21 @@ enum ContractLoweringError {
 mod tests {
     use super::*;
     use arcweft_lang_hir::lower::lower_document_to_hir;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
     fn lowered_report(source: &str) -> VerificationReport {
-        let parsed = parse_source(source.to_owned());
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://verify/contract-smt.arcw")
+                    .expect("contract SMT fixture source ID"),
+                SourceName::path("verify/contract-smt.arcw"),
+                source,
+            )
+            .expect("contract SMT fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
         let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
             .expect("fixture lowers");

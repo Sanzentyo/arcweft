@@ -36,7 +36,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
     types::{TypePath, TypeRef, parse_type_ref},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -86,8 +86,7 @@ fn external_rust_project(
     package: &CallablePackageId,
     module: &CanonicalModulePath,
 ) -> HirProject {
-    const SOURCE: &str = "pub struct Use { value: rust.Packet }";
-    let parsed = parse_source(SOURCE);
+    let parsed = parse_document_with_source(Arc::clone(document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "matrix fixture parses");
     let hir = lower_document_to_hir(document, parsed.typed_tree()).expect("matrix fixture lowers");
     HirProject::new(
@@ -275,7 +274,7 @@ fn accepted_field_report(source: &str) -> arcweft_lang_sema::nominal::TypeResolu
         )
         .expect("source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "projection fixture parses");
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("projection lowers");
     let package = CallablePackageId::try_new("projection-unknown-matrix").expect("package");

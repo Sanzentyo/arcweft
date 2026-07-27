@@ -717,7 +717,7 @@ source @source.values: Source<i64, String> {
         ),
     ];
     for (label, source, environment) in cases {
-        let parsed = parse_source(source);
+        let parsed = parse_ok(source);
         assert!(parsed.errors().is_empty(), "{label}: {:?}", parsed.errors());
         let errors = typecheck_errors(label, source, &environment);
         let error = errors

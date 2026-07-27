@@ -2,10 +2,21 @@ use super::*;
 use crate::smt::{ProofExpr, SmtCheck, SmtEmission, SmtOutcome, SmtProblem, SmtSort, SmtSymbol};
 use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use std::sync::Arc;
 
 fn report(source: &str, mode: VerificationMode) -> VerificationReport {
-    let parsed = parse_source(source.to_owned());
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://verify/report.arcw")
+                .expect("report fixture source ID"),
+            SourceName::path("verify/report.arcw"),
+            source,
+        )
+        .expect("report fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("fixture lowers");
@@ -20,7 +31,16 @@ fn report(source: &str, mode: VerificationMode) -> VerificationReport {
 }
 
 fn hir(source: &str) -> arcweft_lang_hir::model::HirModule {
-    let parsed = parse_source(source.to_owned());
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://verify/hir.arcw")
+                .expect("HIR fixture source ID"),
+            SourceName::path("verify/hir.arcw"),
+            source,
+        )
+        .expect("HIR fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree()).expect("fixture lowers")
 }

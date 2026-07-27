@@ -1,8 +1,8 @@
 use annotate_snippets::Renderer;
 use arcweft_agent_repl::{AgentDiagnosticProjector, AgentParserDiagnosticProjection};
 use arcweft_lang_syntax::{
-    parser::parse_source,
     parser::recovery::{ParseError, ParseErrorKind},
+    parser::{ParseOptions, parse_document_with_source},
     source::ParsedSource,
 };
 use arcweft_lsp::{
@@ -11,9 +11,11 @@ use arcweft_lsp::{
 };
 use arcweft_source::{
     Diagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticSeverity, DiagnosticSuggestion,
-    SourceDocument, SourceEdit, SourceName, SourceRange, SourceSpanValidationError,
+    SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange,
+    SourceSpanValidationError,
 };
 use serde_json::{Value, json};
+use std::sync::Arc;
 
 use super::{DiagnosticSource, diagnostic_groups};
 
@@ -33,7 +35,16 @@ struct TestOnlyEditFixture {
 }
 
 fn logical_fixture() -> LogicalFixture {
-    let parsed = parse_source(SOURCE);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/diagnostics/logical-fixture")
+                .expect("fixture document ID"),
+            SourceName::path("logical-fixture.arcw"),
+            SOURCE,
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let matching = parsed
         .errors()
         .iter()

@@ -7,7 +7,7 @@ use arcweft_lang_syntax::{
 };
 
 fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_flow_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
@@ -41,7 +41,7 @@ fn flat_scope_body_retains_document_coordinates_for_ordinary_calls() {
 }
 
 fn assert_recovered_flat_scope_call_coordinates(source: &str) {
-    let parsed = arcweft_lang_syntax::parser::parse_source(source.to_owned());
+    let parsed = parse_flow_fixture(source.to_owned());
     assert!(
         !parsed.errors().is_empty(),
         "the malformed flat fence must retain a recovery diagnostic"
@@ -283,7 +283,7 @@ fn choose_optional(maybe: Option<i64>, fallback: i64) -> i64 {
 #[test]
 fn function_tail_bracket_owner_retains_recovered_call_and_close_bracket() {
     let source = "fn demo() {\n    [f(α, β]\n}\n";
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_flow_fixture(source);
     let Item::Function(function) = &parsed.typed_tree().items()[0] else {
         panic!("expected function");
     };
@@ -329,7 +329,7 @@ fn function_tail_bracket_owner_retains_recovered_call_and_close_bracket() {
 #[test]
 fn function_tail_record_owner_retains_recovered_call_and_close_brace() {
     let source = "fn demo() {\n    Record { value: f(α, β }\n}\n";
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_flow_fixture(source);
     let Item::Function(function) = &parsed.typed_tree().items()[0] else {
         panic!("expected function");
     };
@@ -371,7 +371,7 @@ fn function_tail_record_owner_retains_recovered_call_and_close_brace() {
 #[test]
 fn function_statement_owner_retains_recovered_call_before_semicolon() {
     let source = "fn demo() {\n    f(α, β;\n    let next = next()\n    next\n}\n";
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_flow_fixture(source);
     let Item::Function(function) = &parsed.typed_tree().items()[0] else {
         panic!("expected function");
     };
@@ -425,7 +425,7 @@ fn function_statement_owner_retains_recovered_call_before_semicolon() {
 fn function_owner_rejects_invalid_call_without_publishing_typed_call() {
     for invalid in ["f(,x)", "f(x,,y)", "f(x y)", "f(name =)", "f(...)"] {
         let source = format!("fn demo() {{\n    {invalid}\n}}\n");
-        let parsed = arcweft_lang_syntax::parser::parse_source(source);
+        let parsed = parse_flow_fixture(source);
         let Item::Function(function) = &parsed.typed_tree().items()[0] else {
             panic!("expected function");
         };
@@ -442,4 +442,22 @@ fn function_owner_rejects_invalid_call_without_publishing_typed_call() {
             "{invalid} must retain its full-source parser error"
         );
     }
+}
+
+fn parse_flow_fixture(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/parser-flow-statements-and-body",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("parser-flow-statements-and-body.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

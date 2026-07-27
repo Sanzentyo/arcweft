@@ -32,7 +32,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSpan};
 
@@ -121,7 +121,7 @@ fn register(manifests: &[CharacterManifest]) -> RegisteredSemanticWorld {
         )
         .expect("source document"),
     );
-    let parsed = parse_source("");
+    let parsed = parse_document_with_source(Arc::clone(&source), ParseOptions::default());
     let hir = lower_document_to_hir(&source, parsed.typed_tree()).expect("source lowers");
     let project = HirProject::new(
         package.as_str(),

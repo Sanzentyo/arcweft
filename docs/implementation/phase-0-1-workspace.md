@@ -226,10 +226,12 @@ surface.
 
 Syntax parser:
 
-- `parse_source` returns `ParsedSource`, an always-available parsed-source
-  container with original source text, a lossless rowan CST, the current typed
-  `TypedSyntaxTree` view, recoverable parse diagnostics, a line index, and a
-  deterministic source hash. `parse_stub` has been removed.
+- `parse_document_with_source(Arc<SourceDocument>, ParseOptions)` is the only
+  public full-document parser. It returns `ParsedSource`, an always-available
+  revision-bound container with the exact source document, a lossless rowan
+  CST, the current typed `TypedSyntaxTree` view, recoverable parse diagnostics,
+  and a line index. The raw-text `parse_source` facade and `parse_stub` have
+  been removed.
 - The typed source model is intentionally named `TypedSyntaxTree` so it is not
   confused with rowan `SyntaxNode` / CST ownership.
 - The lossless CST is built from `SyntaxKind`, `ArcweftLanguage`, and rowan

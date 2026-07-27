@@ -672,15 +672,31 @@ fn tier_invalidation_reason_label(value: ReplTierInvalidationReason) -> &'static
 #[cfg(test)]
 mod tests {
     use crate::ReplParseCoordinateSpace;
-    use arcweft_lang_syntax::parser::{parse_source, recovery::ParseErrorKind};
+    use arcweft_lang_syntax::parser::{
+        ParseOptions, parse_document_with_source, recovery::ParseErrorKind,
+    };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use serde_json::{Value, json};
+    use std::sync::Arc;
 
     use super::{ReplTransactionError, repl_transaction_error_json};
 
     #[test]
     fn transaction_parse_json_preserves_typed_diagnostic_payload() {
-        let parsed =
-            parse_source("pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n");
+        let parsed = parse_document_with_source(
+            Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new(
+                        "arcweft-test://agent-repl/command-json/typed-diagnostic-payload",
+                    )
+                    .expect("fixture document ID"),
+                    SourceName::path("typed-diagnostic-payload.arcw"),
+                    "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n",
+                )
+                .expect("fixture source document"),
+            ),
+            ParseOptions::default(),
+        );
         let error = ReplTransactionError::Parse {
             diagnostics: parsed.errors().to_vec(),
             coordinate_space: ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
@@ -712,7 +728,20 @@ mod tests {
     #[test]
     fn transaction_parse_json_preserves_related_parser_ranges() {
         let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
-        let parsed = parse_source(source);
+        let parsed = parse_document_with_source(
+            Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new(
+                        "arcweft-test://agent-repl/command-json/related-parser-ranges",
+                    )
+                    .expect("fixture document ID"),
+                    SourceName::path("related-parser-ranges.arcw"),
+                    source,
+                )
+                .expect("fixture source document"),
+            ),
+            ParseOptions::default(),
+        );
         let diagnostic = parsed
             .errors()
             .iter()

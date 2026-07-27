@@ -57,7 +57,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
 
@@ -87,7 +87,7 @@ impl SignatureFixture {
             )
             .expect("source document"),
         );
-        let parsed = parse_source(source);
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(
             parsed.errors().is_empty(),
             "signature parity fixture must parse: {:?}",

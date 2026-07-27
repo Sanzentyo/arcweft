@@ -1,7 +1,4 @@
-use arcweft_lang_syntax::{
-    ast::{common::TextRange, items::Item},
-    parser::parse_source,
-};
+use arcweft_lang_syntax::ast::{common::TextRange, items::Item};
 
 fn text(source: &str, range: TextRange) -> &str {
     &source[range.start()..range.end()]
@@ -20,7 +17,7 @@ fn nominal_declarations_retain_exact_typed_sources_without_payload_reparse() {
         "type Alias<T> = Result<T, Missing>\n",
         "where T: Bound\n",
     );
-    let parsed = parse_source(source);
+    let parsed = parse_nominal_type_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let items = parsed.typed_tree().items();
 
@@ -92,7 +89,7 @@ fn nominal_declarations_retain_exact_typed_sources_without_payload_reparse() {
 #[test]
 fn malformed_nominal_payload_is_retained_as_type_recovery() {
     let source = "enum Old {\n    Row { value: Missing },\n}\n";
-    let parsed = parse_source(source);
+    let parsed = parse_nominal_type_fixture(source);
     assert!(!parsed.errors().is_empty());
     let Item::Enum(enumeration) = &parsed.typed_tree().items()[0] else {
         panic!("enum owner remains available during ordinary recovery")
@@ -108,4 +105,22 @@ fn malformed_nominal_payload_is_retained_as_type_recovery() {
         text(source, *payload.root_source().whole()),
         "{ value: Missing }"
     );
+}
+
+fn parse_nominal_type_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/nominal-type-sources")
+                .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("nominal-type-sources.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

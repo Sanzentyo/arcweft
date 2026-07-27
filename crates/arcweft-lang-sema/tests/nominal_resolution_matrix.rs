@@ -36,7 +36,7 @@ use arcweft_lang_syntax::{
         common::TextRange,
         module_path::{CanonicalModulePath, ModuleSegment},
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
     types::{TypePath, TypeRef, parse_type_ref},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -92,7 +92,7 @@ fn registered(source: &str, profile: &str) -> RegisteredSemanticWorld {
         )
         .expect("matrix source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(
         parsed.errors().is_empty(),
         "matrix fixture parses: {profile}"

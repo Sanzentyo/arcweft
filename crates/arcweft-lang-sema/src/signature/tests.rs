@@ -15,7 +15,10 @@ use arcweft_lang_hir::{
     project::{HirProject, HirProjectModule},
     symbol::{CallablePackageId, ProjectSymbolWorldId},
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
 use crate::{
@@ -157,7 +160,8 @@ impl SignatureFixture {
             "arcweft-project://registration-tests/src/recovered-signature.arcw",
             source,
         );
-        let parsed = parse_source(source);
+        let parsed =
+            parse_document_with_source(std::sync::Arc::clone(&document), ParseOptions::default());
         assert!(
             !parsed.errors().is_empty(),
             "recovery fixture must retain a parser diagnostic"

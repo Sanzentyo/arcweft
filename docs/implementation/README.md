@@ -27,6 +27,9 @@ compile/behavior evidence are tracked in
 The subsequent deletion of the HIR crate's public source-free lowering API and
 the workspace-wide exact-document test migration are tracked in
 `docs/implementation/2026-07-27-proof-source-free-hir-lowering-deletion.md`.
+The deletion of the syntax crate's public raw-text full-document parser and the
+workspace-wide stable `SourceDocument` fixture migration are tracked in
+`docs/implementation/2026-07-27-proof-public-raw-text-parse-source-deletion.md`.
 The integrity-valid but explicitly `NOT_READY` Proof `01.1.1.4.1` redelivery is
 classified in
 `docs/implementation/2026-07-27-proof-01-1-1-4-1-not-ready-redelivery-intake.md`;
@@ -907,7 +910,7 @@ Current high-confidence state:
   longer duplicated in parser methods. Block open/close offsets come from the
   per-line punctuation summary built during CST line projection, so collecting a
   complete brace block does not re-lex the assembled block text.
-  Normal `parse_source` line events borrow from the original source buffer
+  Normal `parse_document_with_source` line events borrow from the original source buffer
   instead of allocating a second owned `String` for every line, so parser bench
   JSON reports `line_owned_bytes = 0`. The old source-free `cst_lines(root)`
   projection has been deleted; every line-event consumer must provide the exact

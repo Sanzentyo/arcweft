@@ -20,7 +20,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_lang_syntax::{
     expr::{Expr, parse_expr},
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
     source::ParsedSource,
 };
 use arcweft_resource_model::registry::ResourceTypeRegistry;
@@ -93,7 +93,16 @@ fn test_dialogue_revision() -> DialogueProfileRevision {
 }
 
 fn parse_ok(source: impl Into<String>) -> ParsedSource {
-    let parsed = parse_source(source);
+    let document = std::sync::Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://runtime-plan/integration.arcw")
+                .expect("test document ID"),
+            SourceName::Generated,
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
@@ -459,15 +468,22 @@ flow @flow.opening opening {
 
 #[test]
 fn line_plan_parser_rejects_items_outside_the_current_grammar() {
-    let parsed = parse_source(
-        r"
+    let document = std::sync::Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://runtime-plan/line-plan-recovery.arcw")
+                .expect("test document ID"),
+            SourceName::Generated,
+            r"
 flow @flow.raw raw {
     alice[待って。[p]]
     with:
         @bad raw item
 }
 ",
+        )
+        .expect("test source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
 
     assert!(parsed.errors().iter().any(|error| {
         error

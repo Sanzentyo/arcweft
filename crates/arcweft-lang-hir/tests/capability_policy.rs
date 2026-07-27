@@ -1,5 +1,10 @@
 use arcweft_lang_hir::{lower::lower_document_to_hir, model::HirTopLevelDecl};
-use arcweft_lang_syntax::{expr::Expr, parser::parse_source};
+use arcweft_lang_syntax::{
+    expr::Expr,
+    parser::{ParseOptions, parse_document_with_source},
+};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use std::sync::Arc;
 
 fn effect_label(effect: &Expr) -> Option<String> {
     match effect {
@@ -15,8 +20,12 @@ fn effect_label(effect: &Expr) -> Option<String> {
 
 #[test]
 fn retained_capability_lowers_only_function_effect_facts() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/capability/retained-functions.arcw")
+                .expect("retained capability fixture source ID"),
+            SourceName::path("lang-hir/capability/retained-functions.arcw"),
+            r"
 pub extern capability fs {
     type Path
 
@@ -27,7 +36,10 @@ pub extern capability fs {
         effects { fs.write }
 }
 ",
+        )
+        .expect("retained capability fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
 
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -62,14 +74,21 @@ pub extern capability fs {
 
 #[test]
 fn candidate_member_never_contributes_a_hir_policy_fact() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/capability/recovered-policy.arcw")
+                .expect("recovered capability fixture source ID"),
+            SourceName::path("lang-hir/capability/recovered-policy.arcw"),
+            r"
 extern capability fs {
     policy legacy { allow = fs.read }
     fn read_text(path: String) -> String effects { fs.read }
 }
 ",
+        )
+        .expect("recovered capability fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
 
     // The public parser's atomic grammar switch is a later stage. This test
     // only fixes the current HIR boundary: recovery must never synthesize a

@@ -1,6 +1,9 @@
 use std::{fmt::Write as _, sync::Arc, sync::atomic::AtomicBool};
 
-use arcweft_lang_syntax::{expr::MAX_NESTED_CALLS, parser::parse_source};
+use arcweft_lang_syntax::{
+    expr::MAX_NESTED_CALLS,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use crate::{
@@ -105,7 +108,16 @@ fn accepted_syntax_nesting_maximum_is_below_the_defensive_query_limit() {
             <= PRODUCTION_CALLABLE_LIMITS.max_query_work()
     );
 
-    let parsed = parse_source(low_overload_nested_call_source(MAX_NESTED_CALLS + 1));
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://sema/signature/nested-call-limit.arcw")
+                .expect("test document ID"),
+            SourceName::Generated,
+            low_overload_nested_call_source(MAX_NESTED_CALLS + 1),
+        )
+        .expect("test source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert!(
         parsed
             .errors()

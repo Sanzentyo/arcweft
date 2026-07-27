@@ -750,16 +750,25 @@ impl HirStyleExpr {
 #[cfg(test)]
 mod tests {
     use crate::lower::lower_document_to_hir;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
     #[test]
     fn patch_rebase_changes_only_ordinal_identity() {
-        let parsed = parse_source(
-            r#"pub view Example() {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://lang-hir/style/rebase.arcw")
+                    .expect("style rebase fixture source ID"),
+                SourceName::path("lang-hir/style/rebase.arcw"),
+                r#"pub view Example() {
     Button("OK").style { outline-width = 2px }
 }
 "#,
+            )
+            .expect("style rebase fixture source document"),
         );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
         let mut patch = hir.style_patches()[0].clone();
         let original_declarations = patch.declarations().to_vec();

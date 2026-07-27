@@ -157,12 +157,6 @@ use statements::{
     parse_value_scope_stmt_with_stats_and_base, raw_stmt,
 };
 
-/// Parses an Arcweft source string.
-#[must_use]
-pub fn parse_source(source: impl Into<String>) -> ParsedSource {
-    parse_source_with_options(source, ParseOptions::default())
-}
-
 pub(crate) fn parse_callback_block_expr_body_recovering_at(
     body: &str,
     base: usize,

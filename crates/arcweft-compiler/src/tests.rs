@@ -33,7 +33,7 @@ use arcweft_lang_sema::{
     registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_plan::flow::{AdmittedRuntimePlanLowerOptions, RuntimePlanLowerOptions};
 use arcweft_source::{
@@ -62,6 +62,21 @@ fn test_source_document(path: &str, source_len: usize) -> SourceDocument {
         " ".repeat(source_len),
     )
     .expect("test source document")
+}
+
+fn parse_runtime_plan_fixture(
+    source: impl Into<Arc<str>>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            source,
+        )
+        .expect("runtime-plan fixture source document"),
+    );
+    parse_document_with_source(document, ParseOptions::default())
 }
 
 fn test_source_anchor() -> SourceAnchor {
@@ -266,8 +281,12 @@ fn agent_project_graph_snapshot_preserves_project_callables() {
 
 #[test]
 fn agent_project_graph_snapshot_preserves_flow_control_summary() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/agent-project-graph.arcw")
+                .expect("agent project graph fixture source ID"),
+            SourceName::path("compiler/agent-project-graph.arcw"),
+            r#"
 pub fn current_route() -> Ref<Flow> {
 return @flow.done
 }
@@ -282,7 +301,10 @@ flow @flow.done done() -> String {
 return "done"
 }
 "#,
+        )
+        .expect("agent project graph fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
         .expect("source lowers to HIR");
     let project =
@@ -395,7 +417,7 @@ flow @flow.main main {
         )
         .expect("source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("fixture lowers");
     let package = CallablePackageId::try_new("compiler-iterator-witness").expect("package ID");
@@ -470,14 +492,21 @@ flow @flow.main main {
 
 #[test]
 fn runtime_plan_uses_typecheck_evidence_for_function_value_calls() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 flow @flow.main main() -> String {
     let ok: bool = f(1i64)
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(
@@ -517,14 +546,21 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_reports_missing_typed_lowering_evidence() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 flow @flow.main main {
     let ok: bool = f(1i64)
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(
@@ -554,14 +590,21 @@ flow @flow.main main {
 
 #[test]
 fn runtime_plan_uses_expected_function_evidence_for_placeholder_args() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 flow @flow.main main() -> String {
     let accepted: bool = accept(_ > 80i64)
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let predicate = TypeKind::function([TypeKind::I64], TypeKind::Bool);
@@ -613,8 +656,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_report_carries_closure_capture_metadata() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 flow @flow.main main() -> String {
     let limit: i64 = 80i64
     let is_high = |score: i64| -> bool {
@@ -624,7 +671,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -665,8 +715,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_inferred_partial_placeholder_functions() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 #[pure]
 fn add(left: i64, right: i64) -> i64 {
     return left + right
@@ -681,7 +735,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -764,8 +821,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_named_missing_inferred_helper_input() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r"
 fn add(left: i64, right: i64) -> i64 {
     return left + right
 }
@@ -775,7 +836,10 @@ flow @flow.main main() -> i64 {
     return named_missing(2i64)
 }
 ",
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -812,8 +876,12 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn runtime_plan_lowers_typed_data_last_method_fallback() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 #[pure]
 fn above(min: i64, value: i64) -> bool {
     return value > min
@@ -826,7 +894,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -894,8 +965,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_keeps_curried_source_and_local_method_fallback_staged() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 #[pure]
 fn above(min: i64)(value: i64) -> bool {
     return value > min
@@ -915,7 +990,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -983,8 +1061,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_fixed_literal_spread_data_last_method_fallback() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 #[pure]
 fn between(min: i64, max: i64, value: i64) -> bool {
     return value > min
@@ -997,7 +1079,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1084,8 +1169,12 @@ fn assert_mixed_spread_data_last_stage(expr: &RuntimeExpr) {
 
 #[test]
 fn runtime_plan_lowers_data_last_pipe_call_with_typecheck() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 #[pure]
 fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
@@ -1099,7 +1188,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1166,8 +1258,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_binds_pipe_left_once_inside_if_let_expression() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r"
 flow @flow.main main() -> i64 {
     let maybe = Some(7i64)
     let selected: i64 = maybe |> if let .Some(value) = ^ when value > 1i64 {
@@ -1178,7 +1274,10 @@ flow @flow.main main() -> i64 {
     return selected
 }
 ",
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1233,8 +1332,12 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn runtime_plan_binds_pipe_left_once_inside_match_expression() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r"
 flow @flow.main main() -> i64 {
     let ready = true
     let selected: i64 = ready |> match ^ {
@@ -1244,7 +1347,10 @@ flow @flow.main main() -> i64 {
     return selected
 }
 ",
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1299,8 +1405,12 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn runtime_plan_lowers_non_annotated_function_prefix_partial_with_typecheck() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
 }
@@ -1311,7 +1421,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1359,8 +1472,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_source_function_named_data_last_pipe_to_apply() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn choose(left: String, right: String) -> (String, String) {
     return (left, right)
 }
@@ -1371,7 +1488,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1442,15 +1562,22 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_destructured_closure_parameter_application() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 flow @flow.main main() -> String {
     let choose = |(left, right): (String, String)| right
     let value: String = choose(("head", "tail"))
     return value
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1497,8 +1624,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_named_missing_source_function_partial_call() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn choose(left: String, right: String) -> String {
     return right
 }
@@ -1509,7 +1640,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1571,8 +1705,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_lowers_signature_fixed_literal_spread_apply() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn add(left: i64, right: i64) -> i64 {
     return left + right
 }
@@ -1584,7 +1722,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1663,8 +1804,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_curried_source_function_value() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn pair(left: String)(right: String) -> (String, String) {
     return (left, right)
 }
@@ -1676,7 +1821,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1756,8 +1904,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_lowers_function_value_fixed_literal_spread_apply() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn add(a: i64)(b: i64) -> i64 {
     return a + b
 }
@@ -1768,7 +1920,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1833,8 +1988,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn function_value_numeric_spread_keeps_following_typed_evidence_aligned() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn sum(a: i64, b: i64) -> i64 {
     return a + b
 }
@@ -1846,7 +2005,10 @@ flow main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1870,8 +2032,12 @@ flow main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_returned_closure() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn pairer(left: String) -> String -> (String, String) {
     return |right: String| (left, right)
 }
@@ -1882,7 +2048,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -1951,8 +2120,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_destructured_closure_let() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn choose_right(pair: (String, String)) -> String {
     let choose = |(left, right): (String, String)| right
     return choose(pair)
@@ -1963,7 +2136,10 @@ flow @flow.main main() -> String {
     return value
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2048,7 +2224,7 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_pure_helper_call_body() {
-    let parsed = parse_source(
+    let parsed = parse_runtime_plan_fixture(
         r"
 #[pure]
 fn add(left: i64, right: i64) -> i64 {
@@ -2152,7 +2328,7 @@ flow @flow.main main() -> i64 {
 }
 
 fn assert_source_fn_pure_helper_alias_body_lowers() {
-    let parsed = parse_source(
+    let parsed = parse_runtime_plan_fixture(
         r#"
 #[pure]
 fn add(left: i64, right: i64) -> i64 {
@@ -2258,8 +2434,12 @@ flow @flow.main main() -> (String, i64) {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_exact_source_call_body() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn pair(left: String, right: String) -> (String, String) {
     return (left, right)
 }
@@ -2273,7 +2453,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2343,8 +2526,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_exact_source_alias_body() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn pair(left: String, right: String) -> (String, String) {
     return (left, right)
 }
@@ -2359,7 +2546,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2434,8 +2624,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_pure_helper_pipe_body() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 #[pure]
 fn add(left: i64, right: i64) -> i64 {
     left + right
@@ -2452,7 +2646,10 @@ flow @flow.main main() -> (String, i64, i64) {
     return value
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2556,8 +2753,12 @@ fn runtime_pipe_body_has_partial_and_exact_helper_apply(expr: &RuntimeExpr) -> b
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_named_source_pipe_body() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn pair(left: String, right: String) -> (String, String) {
     return (left, right)
 }
@@ -2571,7 +2772,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2620,8 +2824,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_control_expression_body() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r"
 fn choose_score(value: i64, ready: bool) -> i64 {
     let boosted = if ready { value + 10i64 } else { value }
     return match ready {
@@ -2636,7 +2844,10 @@ flow @flow.main main() -> i64 {
     return value
 }
 ",
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2711,8 +2922,12 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_if_let_expression_body() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r"
 fn choose_optional(maybe: Option<i64>, fallback: i64) -> i64 {
     let selected = if let .Some(value) = maybe when value > fallback {
         value
@@ -2727,7 +2942,10 @@ flow @flow.main main() -> i64 {
     return value
 }
 ",
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2810,8 +3028,12 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_callback_param_call() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn use_loader(path: String, load: String -> String) -> String {
     return load(path)
 }
@@ -2822,7 +3044,10 @@ flow @flow.main main() -> String {
     return body
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2883,8 +3108,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_materializes_source_function_callback_partial_let() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn apply_suffix(prefix: String, combine: String -> String -> String, suffix: String) -> String {
     let with_prefix = combine(prefix)
     return with_prefix(suffix)
@@ -2898,7 +3127,10 @@ flow @flow.main main() -> String {
     return body
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -2979,8 +3211,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_source_function_partial_when_body_calls() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -2991,7 +3227,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3023,8 +3262,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_source_function_partial_when_body_calls_unaccepted_source() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3039,7 +3282,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3071,8 +3317,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_prefix_source_function_partial_when_body_calls() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3083,7 +3333,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3115,8 +3368,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_bare_source_function_value_when_body_calls() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3127,7 +3384,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3158,8 +3418,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_bare_source_function_value_when_body_calls_unaccepted_source() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3174,7 +3438,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3205,8 +3472,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3217,7 +3488,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3250,8 +3524,12 @@ flow @flow.main main() -> String {
 #[test]
 fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls_unaccepted_source()
  {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3266,7 +3544,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3298,8 +3579,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_lowers_local_function_data_last_pipe_to_apply() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 fn add(lhs: i64, rhs: i64) -> i64 {
     return lhs + rhs
 }
@@ -3311,7 +3596,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3367,8 +3655,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_keeps_curried_data_last_pipe_groups_staged() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r"
 #[pure]
 fn add(left: i64)(right: i64) -> i64 {
     return left + right
@@ -3379,7 +3671,10 @@ flow @flow.main main() -> i64 {
     return sum
 }
 ",
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3413,8 +3708,12 @@ flow @flow.main main() -> i64 {
 
 #[test]
 fn runtime_plan_preserves_curried_call_group_application_samples() {
-    let parsed = parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r#"
 #[pure]
 fn tuple_tail(a: i64, b: i64)(c: i64) -> (i64, i64, i64) {
     return (a, b, c)
@@ -3431,7 +3730,10 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3462,8 +3764,12 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_uses_typecheck_evidence_across_source_exprs() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r"
 flow @flow.main main() -> i64 {
     let warmup = 1i64
     return warmup
@@ -3478,7 +3784,10 @@ pub source @source.values: Source<i64, String> {
     on item value => yield f(value)
 }
 ",
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     let function_ty = TypeKind::function([TypeKind::I64], TypeKind::I64);
@@ -3521,14 +3830,21 @@ pub source @source.values: Source<i64, String> {
 
 #[test]
 fn runtime_plan_keeps_presentation_named_numeric_evidence_aligned() {
-    let parsed = parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
         r#"
 flow main() -> String {
     image(asset = @asset:.bg.pulse, id = "image.pulse", x = 1px, opacity = 0.5, depth = 7, param.count = 9, visible = true)
     return "done"
 }
 "#,
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
         .expect("presentation fixture lowers");
     let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
@@ -3622,15 +3938,22 @@ entry cli @entry.main {
 
 #[test]
 fn lower_source_runtime_plan_with_options_preserves_admitted_dialogue_profile() {
-    let parsed = parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
+                .expect("runtime-plan fixture source ID"),
+            SourceName::path("compiler/runtime-plan/main.arcw"),
+            r"
 character @character.alice Alice as alice {}
 
 flow @flow.main main {
 alice: Hello[p]
 }
 ",
+        )
+        .expect("runtime-plan fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir =
         lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
     validate_hir_with_env(&hir, &TypeCheckEnv::standard()).expect("fixture typechecks");

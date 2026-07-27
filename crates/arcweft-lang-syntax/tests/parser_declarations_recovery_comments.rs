@@ -8,7 +8,7 @@ use arcweft_lang_syntax::{
 };
 
 fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_declaration_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
@@ -19,7 +19,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::Typed
 
 #[test]
 fn flow_body_attributes_are_explicit_recovery_diagnostics() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_declaration_fixture(
         r"
 flow opening {
     #![generated(tool)]
@@ -49,7 +49,7 @@ flow opening {
 
 #[test]
 fn unrecognized_import_prefixes_use_generic_top_level_recovery() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_declaration_fixture(
         r"
 deferred use game.heavy.{shader}
 scheduled use game.generated.{RouteMap}
@@ -71,7 +71,7 @@ use game.prelude.*
 
 #[test]
 fn unknown_braced_top_level_item_uses_generic_recovery() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_declaration_fixture(
         r#"
 pub unknown_panel alice {
     display = "Alice"
@@ -101,7 +101,7 @@ pub character bob {}
 
 #[test]
 fn arbitrary_unknown_braced_item_recovers_to_the_next_declaration() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_declaration_fixture(
         "pub unknown_widget legacy {\n color = rgb(\"#fff\")\n}\npub view DialoguePanel() {\n Text(\"ok\")\n}\n",
     );
 
@@ -120,7 +120,7 @@ fn arbitrary_unknown_braced_item_recovers_to_the_next_declaration() {
 
 #[test]
 fn policy_shaped_top_level_text_uses_ordinary_context_recovery() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_declaration_fixture(
         "policy capability host {\n    allow = fs.read\n}\npub character bob {}\n",
     );
 
@@ -148,9 +148,8 @@ fn policy_shaped_top_level_text_uses_ordinary_context_recovery() {
 
 #[test]
 fn namespace_separator_is_rejected_in_module_paths() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        "mod game::opening\nflow @flow.opening opening { return }\n",
-    );
+    let parsed =
+        parse_declaration_fixture("mod game::opening\nflow @flow.opening opening { return }\n");
 
     assert_eq!(parsed.errors().len(), 1);
     assert!(
@@ -201,7 +200,7 @@ use self.prelude.*
 
 #[test]
 fn malformed_grouped_use_reports_a_structured_parse_diagnostic() {
-    let parsed = arcweft_lang_syntax::parser::parse_source("use game.effects.{wave,,pulse}\n");
+    let parsed = parse_declaration_fixture("use game.effects.{wave,,pulse}\n");
 
     assert_eq!(parsed.errors().len(), 1);
     assert!(parsed.errors()[0].message().contains("empty name"));
@@ -298,7 +297,7 @@ fn invalid_entity_block_header_is_not_an_ast_node_and_recovers_after_its_block()
 }
 pub character bob {}
 "#;
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_declaration_fixture(source);
 
     assert_eq!(parsed.errors().len(), 1);
     let error = &parsed.errors()[0];
@@ -323,7 +322,7 @@ fn non_declaration_block_is_raw_recovery_and_does_not_hide_the_next_declaration(
 }
 pub character bob {}
 "#;
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_declaration_fixture(source);
 
     assert_eq!(parsed.errors().len(), 1);
     let error = &parsed.errors()[0];
@@ -343,7 +342,7 @@ pub character bob {}
 fn invalid_entity_line_header_recovers_at_the_next_declaration() {
     let source =
         "pub action feedback.submit payload junk\npub view StatusPanel() { Text(\"ok\") }\n";
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_declaration_fixture(source);
 
     assert_eq!(parsed.errors().len(), 1);
     let error = &parsed.errors()[0];
@@ -446,7 +445,7 @@ fn documented_body() -> Unit {
     consume(value)
 }
 ";
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_declaration_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "comments must not produce expression diagnostics: {:?}",
@@ -463,7 +462,7 @@ fn documented_body() -> Unit {
 
 #[test]
 fn flow_recovery_nodes_keep_family_and_source_range() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_declaration_fixture(
         r"
 flow @flow.raw_example {
     unknown surface form
@@ -502,4 +501,24 @@ fn bad_stmt() -> Unit {
     assert_eq!(raw.family(), RawSyntaxFamily::Stmt);
     assert_eq!(raw.source(), "let broken");
     assert!(raw.range().is_some());
+}
+
+fn parse_declaration_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/parser-declarations-recovery-comments",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("parser-declarations-recovery-comments.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

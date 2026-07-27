@@ -594,14 +594,28 @@ fn cli_repl_base_snapshot(path: Option<&str>) -> Result<ReplBaseSnapshot, ReplCo
 #[cfg(test)]
 mod parse_diagnostic_tests {
     use arcweft_agent_repl::{ReplParseCoordinateSpace, ReplTransactionError};
-    use arcweft_lang_syntax::parser::{parse_source, recovery::ParseErrorKind};
+    use arcweft_lang_syntax::parser::{
+        ParseOptions, parse_document_with_source, recovery::ParseErrorKind,
+    };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
     use super::agent_repl_transaction_error_report;
 
     #[test]
     fn agent_repl_parse_failure_json_preserves_typed_diagnostics() {
-        let parsed =
-            parse_source("pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n");
+        let parsed = parse_document_with_source(
+            Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new("arcweft-test://cli/agent-repl/parse-failure-json")
+                        .expect("fixture document ID"),
+                    SourceName::path("parse-failure-json.arcw"),
+                    "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n",
+                )
+                .expect("fixture source document"),
+            ),
+            ParseOptions::default(),
+        );
         let error = ReplTransactionError::Parse {
             diagnostics: parsed.errors().to_vec(),
             coordinate_space: ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
@@ -636,7 +650,18 @@ mod parse_diagnostic_tests {
     #[test]
     fn agent_repl_parse_failure_human_output_preserves_related_ranges() {
         let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
-        let parsed = parse_source(source);
+        let parsed = parse_document_with_source(
+            Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new("arcweft-test://cli/agent-repl/related-ranges")
+                        .expect("fixture document ID"),
+                    SourceName::path("related-ranges.arcw"),
+                    source,
+                )
+                .expect("fixture source document"),
+            ),
+            ParseOptions::default(),
+        );
         let diagnostic = parsed
             .errors()
             .iter()

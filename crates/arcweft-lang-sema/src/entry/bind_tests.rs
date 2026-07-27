@@ -5,7 +5,10 @@ use arcweft_lang_hir::{
     project::{HirProject, HirProjectModule},
     symbol::{CallablePackageId, ProjectSymbolWorldId},
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 
 use crate::{
     env::{FunctionParam, FunctionSignature, TypeCheckEnv},
@@ -68,7 +71,8 @@ fn checked_project_ignoring_syntax_errors(
         &format!("arcweft-project://registration-tests/src/{profile}.arcw"),
         source,
     );
-    let parsed = parse_source(source);
+    let parsed =
+        parse_document_with_source(std::sync::Arc::clone(&document), ParseOptions::default());
     assert!(
         !parsed.errors().is_empty(),
         "fixture is expected to exercise a semantic backstop after parser recovery"
@@ -537,7 +541,12 @@ fn bind_024_initializer_value_must_be_a_declaration_path() {
             "initializer = initial_game_state",
             &format!("initializer = {rhs}"),
         );
-        let parsed = parse_source(&source);
+        let document = source_document(
+            "arcweft-test://sema/entry/bind-024-initializer.arcw",
+            source.as_str(),
+        );
+        let parsed =
+            parse_document_with_source(std::sync::Arc::clone(&document), ParseOptions::default());
         assert!(
             !parsed.errors().is_empty(),
             "non-path initializer value `{rhs}` must be rejected before HIR"

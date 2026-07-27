@@ -11,7 +11,10 @@ use arcweft_lang_sema::{
     registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
     types::TypeKind,
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 fn registered_report(id: &str, source: &str) -> TypeCheckReport {
@@ -24,7 +27,7 @@ fn registered_report(id: &str, source: &str) -> TypeCheckReport {
         )
         .unwrap_or_else(|error| panic!("{id}: source document: {error}")),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(
         parsed.errors().is_empty(),
         "{id}: fixture parses: {:?}",

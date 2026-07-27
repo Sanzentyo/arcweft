@@ -3,7 +3,7 @@ use arcweft_lang_syntax::{
         items::Item,
         view::{ViewBody, ViewExpr, ViewModifier},
     },
-    parser::{parse_source, recovery::ParseErrorKind},
+    parser::recovery::ParseErrorKind,
     source::ParsedSource,
 };
 use arcweft_source::DiagnosticApplicability;
@@ -14,7 +14,7 @@ const CANONICAL_AS_SOURCE: &str =
     "pub view Card() {\n    export part タイトル as heading\n    Panel()\n}\n";
 
 fn first_view(source: &str) -> (ParsedSource, &str) {
-    (parse_source(source), source)
+    (parse_view_export_fixture(source), source)
 }
 
 fn view_body(parsed: &ParsedSource) -> &ViewBody {
@@ -61,7 +61,7 @@ fn view_export_part_parses_canonical_declaration_with_exact_ranges() {
 #[test]
 fn export_part_excludes_trailing_comment_from_its_declaration_span() {
     let source = "pub view Card() {\n    export part header-row as card.heading // public API\n    Panel().part(header-row)\n}\n";
-    let parsed = parse_source(source);
+    let parsed = parse_view_export_fixture(source);
     assert_eq!(parsed.errors(), &[]);
 
     let declaration = &view_body(&parsed).exports()[0];
@@ -75,7 +75,7 @@ fn export_part_excludes_trailing_comment_from_its_declaration_span() {
 #[test]
 fn part_operand_span_starts_after_the_modifier_name() {
     let source = "pub view Card() {\n    Panel().part(part)\n}\n";
-    let parsed = parse_source(source);
+    let parsed = parse_view_export_fixture(source);
     assert_eq!(parsed.errors(), &[]);
 
     let ViewExpr::Element(element) = view_body(&parsed).value() else {
@@ -104,7 +104,7 @@ fn malformed_export_recovers_without_creating_partial_declaration() {
     Panel().part(header)
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_view_export_fixture(source);
     let error = parsed
         .errors()
         .iter()
@@ -118,7 +118,7 @@ fn malformed_export_recovers_without_creating_partial_declaration() {
 #[test]
 fn missing_as_producer_preserves_its_exact_editless_payload_and_view_recovery() {
     assert_eq!(MISSING_AS_SOURCE.len(), 69);
-    let parsed = parse_source(MISSING_AS_SOURCE);
+    let parsed = parse_view_export_fixture(MISSING_AS_SOURCE);
     let matching = parsed
         .errors()
         .iter()
@@ -172,7 +172,7 @@ fn missing_as_producer_preserves_its_exact_editless_payload_and_view_recovery() 
 
 #[test]
 fn missing_as_canonical_correction_parses_as_current_grammar() {
-    let parsed = parse_source(CANONICAL_AS_SOURCE);
+    let parsed = parse_view_export_fixture(CANONICAL_AS_SOURCE);
 
     assert!(
         parsed
@@ -207,7 +207,7 @@ fn export_after_view_expression_is_misplaced_and_does_not_lower() {
     export part header as heading
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_view_export_fixture(source);
     let error = parsed
         .errors()
         .iter()
@@ -261,7 +261,7 @@ fn malformed_export_families_have_structured_recovery() {
         ),
     ] {
         let source = format!("pub view Card() {{\n    {line}\n    Panel()\n}}\n");
-        let parsed = parse_source(&source);
+        let parsed = parse_view_export_fixture(&source);
         let error = parsed
             .errors()
             .iter()
@@ -297,7 +297,7 @@ fn malformed_and_duplicate_part_modifiers_do_not_create_partial_labels() {
         ),
     ] {
         let source = format!("pub view Card() {{\n    Panel()\n        {modifier}\n}}\n");
-        let parsed = parse_source(&source);
+        let parsed = parse_view_export_fixture(&source);
         let error = parsed
             .errors()
             .iter()
@@ -317,7 +317,7 @@ fn malformed_and_duplicate_part_modifiers_do_not_create_partial_labels() {
         }
     }
 
-    let parsed = parse_source(
+    let parsed = parse_view_export_fixture(
         "pub view Card() {\n    Panel()\n        .part(first)\n        .part(second)\n}\n",
     );
     let error = parsed
@@ -337,4 +337,22 @@ fn malformed_and_duplicate_part_modifiers_do_not_create_partial_labels() {
             .iter()
             .all(|modifier| !matches!(modifier, ViewModifier::Part(_)))
     );
+}
+
+fn parse_view_export_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/view-export-part")
+                .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("view-export-part.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

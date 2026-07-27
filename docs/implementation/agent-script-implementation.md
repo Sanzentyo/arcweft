@@ -6,7 +6,10 @@ It is implementation state, not the stable language specification.
 ## Current cut point
 
 - `.awfagent` uses the same Arcweft grammar and parser as `.arcw`; the extension selects the Agent Script CLI workflow, not a source dialect.
-- The syntax parser exposes the ordinary `parse_source`, identity-preserving `parse_document_with_source`, and `parse_fragment` entrypoints; it has no path- or extension-selected grammar mode.
+- The syntax parser exposes the identity-preserving
+  `parse_document_with_source` full-document entrypoint and `parse_fragment`;
+  it has no raw-text full-document facade and no path- or extension-selected
+  grammar mode.
 - Agent source declares an ordinary zero-parameter `fn` plus an explicit `entry agent @entry.* { controller = function_name }`.
 - HIR preserves the controller as an ordinary `HirFunction` and the role selection as `HirEntryDecl`; there is no Agent-specific top-level declaration family.
 - Project compilation resolves and type-checks the exact `entry agent`, and `compile_agent_project_bundle` lowers only its accepted ordinary controller declaration.

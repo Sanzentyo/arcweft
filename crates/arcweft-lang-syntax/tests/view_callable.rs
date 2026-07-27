@@ -1,12 +1,11 @@
 use arcweft_lang_syntax::{
     ast::items::{EntityDeclKind, Item},
     ast::view::{ViewBody, ViewExpr, ViewModifier, ViewStyleModifier},
-    parser::parse_source,
 };
 
 #[test]
 fn typed_view_declaration_is_the_only_view_callable_owner() {
-    let parsed = parse_source("pub view Card() {\n    Panel()\n}\n");
+    let parsed = parse_view_callable_fixture("pub view Card() {\n    Panel()\n}\n");
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let view = parsed
         .typed_tree()
@@ -45,7 +44,7 @@ fn malformed_nested_view_values_remain_recovery_not_executable_syntax() {
         "pub view Broken() {\n    Button(\"x\").nav(@button:.next)\n}\n",
         "pub view Broken() {\n    Button(\"x\").nav(right: auto, right: none)\n}\n",
     ] {
-        let parsed = parse_source(source);
+        let parsed = parse_view_callable_fixture(source);
         let body = parsed
             .typed_tree()
             .items()
@@ -73,7 +72,7 @@ fn same_shaped_view_nodes_and_style_modifiers_keep_distinct_authored_ranges() {
     }
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_view_callable_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let body = parsed
         .typed_tree()
@@ -136,7 +135,7 @@ fn malformed_for_keys_and_navigation_arguments_remain_non_executable_recovery() 
             "must name a direction",
         ),
     ] {
-        let parsed = parse_source(source);
+        let parsed = parse_view_callable_fixture(source);
         assert!(
             parsed
                 .errors()
@@ -162,7 +161,7 @@ fn malformed_for_keys_and_navigation_arguments_remain_non_executable_recovery() 
 
 #[test]
 fn view_without_a_body_retains_a_non_executable_typed_owner() {
-    let parsed = parse_source("pub view Broken()\n");
+    let parsed = parse_view_callable_fixture("pub view Broken()\n");
     assert!(!parsed.errors().is_empty());
     let body = parsed
         .typed_tree()
@@ -176,4 +175,22 @@ fn view_without_a_body_retains_a_non_executable_typed_owner() {
     assert!(body.signature().is_some());
     assert!(body.view().is_none());
     assert!(body.has_recovery());
+}
+
+fn parse_view_callable_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/view-callable")
+                .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("view-callable.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

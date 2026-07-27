@@ -7,22 +7,10 @@ use arcweft_lang_hir::{
 use arcweft_lang_syntax::{
     ast::{common::TextRange, items::ImplMember, module_path::CanonicalModulePath},
     expr::Expr,
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-
-fn lower_bound(label: &str, source: &str) -> (SourceDocument, arcweft_lang_hir::model::HirModule) {
-    let document = SourceDocument::try_new(
-        SourceDocumentId::try_new(format!("memory:///{label}.arcw")).expect("document ID"),
-        SourceName::Generated,
-        source,
-    )
-    .expect("source document");
-    let parsed = parse_source(source);
-    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("source lowers");
-    (document, hir)
-}
+use std::sync::Arc;
 
 fn range_of(source: &str, needle: &str) -> TextRange {
     let start = source
@@ -39,7 +27,19 @@ fn try_source_survives_document_bound_hir_unchanged() {
         "    value?\n",
         "}\n",
     );
-    let (_, hir) = lower_bound("try-source-hir", source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/propagation/try-source.arcw")
+                .expect("Try source fixture source ID"),
+            SourceName::path("lang-hir/propagation/try-source.arcw"),
+            source,
+        )
+        .expect("Try source fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("Try source fixture lowers");
     let Expr::Try(try_expr) = hir.functions()[0]
         .value()
         .expect("function tail value")
@@ -67,7 +67,19 @@ fn try_source_survives_document_bound_hir_unchanged() {
 #[test]
 fn function_result_source_survives_document_bound_hir_unchanged() {
     let source = "fn demo(value: Result<i64, String>) -> Result<i64, i64> {\n    Ok(value?)\n}\n";
-    let (_, hir) = lower_bound("function-result-source-hir", source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/propagation/function-result.arcw")
+                .expect("function result fixture source ID"),
+            SourceName::path("lang-hir/propagation/function-result.arcw"),
+            source,
+        )
+        .expect("function result fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("function result fixture lowers");
 
     assert_eq!(
         hir.functions()[0].signature_source().result(),
@@ -91,7 +103,19 @@ fn flow_method_and_closure_sources_survive_hir_with_exact_result_ranges() {
         "    |value: Result<i64, String>| -> Result<i64, String> { value? }\n",
         "}\n",
     );
-    let (_, hir) = lower_bound("boundary-source-hir", source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/propagation/boundary-source.arcw")
+                .expect("boundary source fixture source ID"),
+            SourceName::path("lang-hir/propagation/boundary-source.arcw"),
+            source,
+        )
+        .expect("boundary source fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("boundary source fixture lowers");
 
     let flow = &hir.flows()[0];
     let flow_header = "flow @flow.audit audit(value: Result<i64, String>) -> Result<i64, String>";
@@ -176,7 +200,19 @@ fn propagation_does_not_publish_a_second_callable_catalog_record() {
         "    value?\n",
         "}\n",
     );
-    let (document, hir) = lower_bound("single-callable-source", source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/propagation/single-callable.arcw")
+                .expect("single callable fixture source ID"),
+            SourceName::path("lang-hir/propagation/single-callable.arcw"),
+            source,
+        )
+        .expect("single callable fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
+        .expect("single callable fixture lowers");
     let module = HirProjectModule::try_new(
         CanonicalModulePath::crate_root(),
         document.identity().clone(),

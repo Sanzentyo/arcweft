@@ -1,7 +1,10 @@
 use super::agent_prelude::{agent_prelude_callables, agent_result};
 use super::*;
 use arcweft_lang_hir::lower::lower_document_to_hir;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::{
+    parser::{ParseOptions, parse_document_with_source},
+    source::ParsedSource,
+};
 use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use crate::{
@@ -20,6 +23,19 @@ fn document_for_hir(hir: &arcweft_lang_hir::model::HirModule) -> SourceDocument 
     hir.source_document()
         .expect("document-bound HIR retains its source")
         .clone()
+}
+
+fn parse_project_index_fixture(source: impl Into<String>) -> ParsedSource {
+    let document = std::sync::Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://sema/project-index.arcw")
+                .expect("test document id"),
+            SourceName::Generated,
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    parse_document_with_source(document, ParseOptions::default())
 }
 
 fn test_source_anchor() -> SourceAnchor {
@@ -120,7 +136,7 @@ fn project_index_preserves_entity_payload_type() {
 
 #[test]
 fn project_index_records_entry_and_flow_entity_relations() {
-    let tree = parse_source(
+    let tree = parse_project_index_fixture(
         r#"
 entry cli @entry.main {
     goto @flow.opening
@@ -182,7 +198,7 @@ flow @flow.listen listen {
 
 #[test]
 fn project_index_records_content_root_relations() {
-    let tree = parse_source(
+    let tree = parse_project_index_fixture(
         r#"
 content chapter_two {
     roots = [ @flow.chapter_two, @asset:.bg ]
@@ -283,7 +299,7 @@ fn agent_prelude_marks_structured_intrinsic_lowering() {
 
 #[test]
 fn project_index_from_hir_does_not_reparse_raw_signal_type_tails() {
-    let tree = parse_source(
+    let tree = parse_project_index_fixture(
         r#"
 signal @signal.current_flow: Watch<Ref<Flow>>
 flow @flow.opening opening() -> String {
@@ -309,7 +325,7 @@ flow @flow.opening opening() -> String {
 
 #[test]
 fn project_index_from_hir_preserves_view_text_control_inputs() {
-    let tree = parse_source(
+    let tree = parse_project_index_fixture(
         r#"
 view FeedbackForm() {
     TextField(id: @input:.feedback, value: "")
@@ -723,7 +739,7 @@ entry agent @entry.agent.smoke {
 
 #[test]
 fn project_index_from_hir_projects_inline_image_agent_actions() {
-    let tree = parse_source(
+    let tree = parse_project_index_fixture(
         r#"
 flow @flow.opening opening {
     let pulse = image(asset = @asset:.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
@@ -750,7 +766,7 @@ flow @flow.opening opening {
 
 #[test]
 fn project_index_does_not_project_unknown_call_actions() {
-    let tree = parse_source(
+    let tree = parse_project_index_fixture(
         r#"
 flow @flow.opening opening {
     mystery_present(asset = @asset:.bg.pulse, target = "target.sample.pulse", action = "action.inspect.pulse")

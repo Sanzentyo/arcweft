@@ -3,7 +3,10 @@ use arcweft_bundle::{
     BundleImageObject, BundleImageObjectBounds, BundleImageObjectFit,
     container::{BundleView, ReadBudget},
     patch::{BundlePatchArtifact, encode_patch_bundle},
-    resource_codec::{ViewInputResource, ViewProgramResource, ViewStyleResource},
+    resource_codec::{
+        ViewInputResource, ViewProgramResource, ViewStyleResource,
+        view::{ViewActionButtonActionResource, ViewParameterRole},
+    },
 };
 use arcweft_compiler::project::{ProjectCompilationContext, compile_project};
 use arcweft_core::bytecode::BytecodeProgram;
@@ -18,11 +21,15 @@ use arcweft_lang_hir::{
     symbol::{CallablePackageId, ProjectSymbolWorldId},
 };
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_runtime_driver::view_runtime::BundleViewRuntime;
+use arcweft_runtime_driver::{
+    dialogue::{DialoguePresentationOperation, DialoguePresentationStore},
+    view_runtime::{BundleViewRuntime, BundleViewTextValue},
+};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
@@ -34,6 +41,22 @@ use std::{
 
 mod scroll_style;
 mod view_part_recovery;
+
+fn parse_bundle_fixture(
+    logical_name: &str,
+    source: impl Into<Arc<str>>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!("arcweft-test://cli/bundle/{logical_name}"))
+                .expect("fixture document ID"),
+            SourceName::path(format!("{logical_name}.arcw")),
+            source,
+        )
+        .expect("fixture source document"),
+    );
+    parse_document_with_source(document, ParseOptions::default())
+}
 
 #[derive(Clone, Debug)]
 struct TestCompiledViewResources {
@@ -280,8 +303,12 @@ fn view_dsl_lowers_to_view_sidecars() {
     use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewProgramInstruction};
     use arcweft_view::style::{ViewStyleApplicationTarget, ViewStylePatchId, ViewStyleSheetId};
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-dsl-lowers-to-view-sidecars")
+                .expect("fixture document ID"),
+            SourceName::path("view-dsl-lowers-to-view-sidecars.arcw"),
+            r#"
 style primary_button {
   Button:hover {
     background-color = rgba(54, 190, 170, 255)
@@ -300,7 +327,10 @@ flow test {
   view(@view:.FeedbackForm)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -357,7 +387,8 @@ fn nested_view_calls_retain_definition_spans_typed_parameters_and_reachability()
     use arcweft_presentation::fx::FxRuntimeType;
     use arcweft_view::ViewValueProgramInventory;
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_bundle_fixture(
+        "nested-view-calls-retain-definition-spans-typed-parameters-and-reachability",
         r#"
 view Child(value: i32 = 2) {
   if value > 0 {
@@ -480,8 +511,14 @@ fn assert_nested_view_call_bindings(
 fn view_fx_modifier_lowers_typed_bindings_key_and_ordinal() {
     use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-fx-modifier-lowers-typed-bindings-key-and-ordinal",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-fx-modifier-lowers-typed-bindings-key-and-ordinal.arcw"),
+            r#"
 #[fx]
 fn notice(accent: Color) -> Fx {
   Fx.text(color = accent)
@@ -507,7 +544,10 @@ flow test {
   view(@view:.Warning)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -603,7 +643,11 @@ source = "demo.arcw"
 fn view_local_let_input_handle_lowers_without_a_fabricated_scalar_program() {
     use arcweft_bundle::resource_codec::view::{ViewProgramInstruction, ViewTextSourceKind};
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-local-let-input-handle-lowers-without-a-fabricated-scalar-program")
+                .expect("fixture document ID"),
+            SourceName::path("view-local-let-input-handle-lowers-without-a-fabricated-scalar-program.arcw"),
         r#"
 view FeedbackForm() {
   let visitor_name = input.text(@input:.visitor_name, initial = "")
@@ -617,7 +661,10 @@ flow test {
   view(@view:.FeedbackForm)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -661,7 +708,8 @@ flow test {
 fn view_box_and_scroll_lower_to_typed_view_resources() {
     use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewProgramInstruction};
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_bundle_fixture(
+        "view-box-and-scroll-lower-to-typed-view-resources",
         r#"
 style glass_shell {
   Box {
@@ -763,7 +811,11 @@ flow test {
 
 #[test]
 fn view_scroll_lowers_policy_options_from_authoring() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-scroll-lowers-policy-options-from-authoring")
+                .expect("fixture document ID"),
+            SourceName::path("view-scroll-lowers-policy-options-from-authoring.arcw"),
         r#"
 view PolicyScroll() {
   Scroll(id = @scroll:.policy, width = 180px, height = 96px, indicators = .visible, overscroll = .elastic, auto_scroll_focus = .end) {
@@ -775,7 +827,10 @@ flow test {
   view(@view:.PolicyScroll)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -802,8 +857,14 @@ flow test {
 
 #[test]
 fn view_scroll_rejects_both_axis_authoring() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-scroll-rejects-both-axis-authoring",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-scroll-rejects-both-axis-authoring.arcw"),
+            r#"
 view BothAxisScroll() {
   Scroll(axis = .both, width = 120px, height = 72px) {
     Text("One")
@@ -814,7 +875,10 @@ flow test {
   view(@view:.BothAxisScroll)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -825,7 +889,11 @@ flow test {
 
 #[test]
 fn view_lazy_row_and_column_require_a_future_typed_runtime_contract() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-lazy-row-and-column-require-a-future-typed-runtime-contract")
+                .expect("fixture document ID"),
+            SourceName::path("view-lazy-row-and-column-require-a-future-typed-runtime-contract.arcw"),
         r#"
 view LazyList() {
   Scroll(width = 240px, height = 120px) {
@@ -844,7 +912,10 @@ flow test {
   view(@view:.LazyList)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert!(parsed.errors().iter().any(|error| {
         error
             .message()
@@ -859,7 +930,11 @@ flow test {
 
 #[test]
 fn view_style_rule_rejects_interactive_overflow_on_non_scroll_element() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-style-rule-rejects-interactive-overflow-on-non-scroll-element")
+                .expect("fixture document ID"),
+            SourceName::path("view-style-rule-rejects-interactive-overflow-on-non-scroll-element.arcw"),
         r#"
 style invalid_button_scroll {
   Button {
@@ -875,7 +950,10 @@ flow test {
   view(@view:.Actions)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -886,7 +964,11 @@ flow test {
 
 #[test]
 fn view_scroll_without_axis_defaults_to_vertical_in_authoring() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-scroll-without-axis-defaults-to-vertical-in-authoring")
+                .expect("fixture document ID"),
+            SourceName::path("view-scroll-without-axis-defaults-to-vertical-in-authoring.arcw"),
         r#"
 view DefaultScrollAxis() {
   Scroll(width = 120px, height = 72px) {
@@ -898,7 +980,10 @@ flow test {
   view(@view:.DefaultScrollAxis)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -914,7 +999,11 @@ flow test {
 
 #[test]
 fn view_scroll_axis_horizontal_lowers_to_typed_scroll_region() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-scroll-axis-horizontal-lowers-to-typed-scroll-region")
+                .expect("fixture document ID"),
+            SourceName::path("view-scroll-axis-horizontal-lowers-to-typed-scroll-region.arcw"),
         r#"
 view Gallery() {
   Scroll(id = @scroll:.gallery, axis = .horizontal, width = 120px, height = 72px) {
@@ -929,7 +1018,10 @@ flow test {
   view(@view:.Gallery)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -951,8 +1043,14 @@ flow test {
 
 #[test]
 fn view_scroll_contains_nested_image_element() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-scroll-contains-nested-image-element",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-scroll-contains-nested-image-element.arcw"),
+            r#"
 pub image @image.sample.pulse {
   asset = @asset.bg.pulse
   x = 12px
@@ -974,7 +1072,10 @@ flow test {
   view(@view:.Gallery)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1000,8 +1101,14 @@ flow test {
 
 #[test]
 fn view_scroll_contains_nested_text_element() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-scroll-contains-nested-text-element",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-scroll-contains-nested-text-element.arcw"),
+            r#"
 view NotesPanel() {
   Scroll(id = @scroll:.notes, width = 280px, height = 64px) {
     Text("Arcweft Concierge")
@@ -1012,7 +1119,10 @@ flow test {
   view(@view:.NotesPanel)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1039,8 +1149,14 @@ flow test {
 
 #[test]
 fn view_static_text_bounds_account_for_wrapped_lines() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-static-text-bounds-account-for-wrapped-lines",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-static-text-bounds-account-for-wrapped-lines.arcw"),
+            r#"
 view StatusPanel() {
   Column {
     Text("aaaaaaaaaaa")
@@ -1053,7 +1169,10 @@ flow test {
   view(@view:.StatusPanel)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1122,7 +1241,11 @@ fn modern_feedback_view_subtitle_text_block_reserves_wrapped_height() {
 fn view_reactive_if_match_for_lower_to_view_program_instructions() {
     use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-reactive-if-match-for-lower-to-view-program-instructions")
+                .expect("fixture document ID"),
+            SourceName::path("view-reactive-if-match-for-lower-to-view-program-instructions.arcw"),
         r#"
 view ReactivePanel() {
   Column {
@@ -1147,7 +1270,10 @@ flow test {
   view(@view:.ReactivePanel)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1266,8 +1392,14 @@ fn assert_reactive_view_value_programs(
 fn view_text_state_projection_is_retained_as_typed_source() {
     use arcweft_bundle::resource_codec::view::ViewTextSourceKind;
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-text-state-projection-is-retained-as-typed-source",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-text-state-projection-is-retained-as-typed-source.arcw"),
+            r"
 struct StatusState {
   message: String
 }
@@ -1280,7 +1412,10 @@ flow test {
   view(@view:.StatusPanel)
 }
 ",
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1304,7 +1439,8 @@ fn dialogue_view_text_style_and_primary_action_lower_to_typed_resources() {
     };
     use arcweft_view::style::{ViewStyleApplicationTarget, ViewStyleSheetId};
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_bundle_fixture(
+        "dialogue-view-text-style-and-primary-action-lower-to-typed-resources",
         r#"
 pub style dialogue_text {}
 
@@ -1401,7 +1537,6 @@ pub view DialoguePanel(dialogue: DialogueView) {
 #[test]
 fn authored_export_part_lowers_to_typed_product_inventory() {
     use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
-    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::sync::Arc;
 
@@ -1477,7 +1612,8 @@ fn subtree_sheet_styles_survive_standard_resource_linking() {
         ViewStyleApplicationTarget, ViewStyleSheetId,
     };
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_bundle_fixture(
+        "subtree-sheet-styles-survive-standard-resource-linking",
         r#"
 style showcase {
   .speaker {
@@ -1625,13 +1761,10 @@ pub view StoryPanel(line: StoryDialogue) {
 
 #[test]
 fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
-    use arcweft_bundle::resource_codec::view::{ViewActionButtonActionResource, ViewParameterRole};
-    use arcweft_runtime_driver::dialogue::{
-        DialoguePresentationOperation, DialoguePresentationStore,
-    };
-    use arcweft_runtime_driver::view_runtime::{BundleViewRuntime, BundleViewTextValue};
-
-    let parsed = arcweft_lang_syntax::parser::parse_source(CUSTOM_DIALOGUE_VIEW_SOURCE);
+    let parsed = parse_bundle_fixture(
+        "custom-dialogue-view-role-lowers-and-evaluates-through-the-bundle-runtime",
+        CUSTOM_DIALOGUE_VIEW_SOURCE,
+    );
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1732,14 +1865,21 @@ fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
 
 #[test]
 fn view_declaration_is_catalogued_without_creating_a_runtime_mount() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-declaration-is-catalogued-without-creating-a-runtime-mount")
+                .expect("fixture document ID"),
+            SourceName::path("view-declaration-is-catalogued-without-creating-a-runtime-mount.arcw"),
         r#"
 view FeedbackForm() {
   TextField(@input:.feedback)
     .label("Message")
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1768,7 +1908,8 @@ view FeedbackForm() {
 
 #[test]
 fn view_button_lowers_to_action_button_sidecar() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_bundle_fixture(
+        "view-button-lowers-to-action-button-sidecar",
         r#"
 pub action feedback.submit(value: String)
 
@@ -1877,7 +2018,11 @@ flow test {
 fn view_text_control_submit_uses_only_the_input_writeback_route() {
     use arcweft_bundle::resource_codec::view::ViewProgramInstruction;
 
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://cli/bundle/view-text-control-submit-uses-only-the-input-writeback-route")
+                .expect("fixture document ID"),
+            SourceName::path("view-text-control-submit-uses-only-the-input-writeback-route.arcw"),
         r#"
 pub action feedback.submit(value: String)
 
@@ -1893,7 +2038,10 @@ flow test {
   view(@view:.FeedbackForm)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1916,8 +2064,14 @@ flow test {
 
 #[test]
 fn view_text_area_and_secure_field_emit_layout_bounds() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-text-area-and-secure-field-emit-layout-bounds",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-text-area-and-secure-field-emit-layout-bounds.arcw"),
+            r#"
 view Credentials() {
   Column {
     TextArea(@input:.bio, value: "")
@@ -1933,7 +2087,10 @@ flow test {
   view(@view:.Credentials)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -1977,8 +2134,14 @@ flow test {
 
 #[test]
 fn view_submit_buttons_follow_target_text_control_slots() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-submit-buttons-follow-target-text-control-slots",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-submit-buttons-follow-target-text-control-slots.arcw"),
+            r#"
 pub action feedback.submit_name(value: String)
 pub action feedback.submit_brief(value: String)
 
@@ -2022,7 +2185,10 @@ flow test {
   view(@view:.FeedbackForm)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -2057,8 +2223,14 @@ flow test {
 
 #[test]
 fn view_action_invoke_button_lowers_to_action_resource() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
-        r#"
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://cli/bundle/view-action-invoke-button-lowers-to-action-resource",
+            )
+            .expect("fixture document ID"),
+            SourceName::path("view-action-invoke-button-lowers-to-action-resource.arcw"),
+            r#"
 pub action feedback.submit(value: String)
 
 view FeedbackForm() {
@@ -2072,7 +2244,10 @@ flow test {
   view(@view:.FeedbackForm)
 }
 "#,
+        )
+        .expect("fixture source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir =
         arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())

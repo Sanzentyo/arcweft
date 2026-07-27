@@ -1098,11 +1098,13 @@ struct HirBodyCounts {
 mod tests {
     use super::*;
     use crate::hir::lower_source_document;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
     use arcweft_project::{
         fingerprint::NamedDigest,
         persistent_object::{AwboEnvelope, AwboError, CompilerBuildIdentity},
     };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
     const SOURCE: &str = r#"
 pub fn current_route() -> Ref<Flow> {
@@ -1151,7 +1153,16 @@ return "done"
 
     #[test]
     fn persistent_parse_facts_encode_deterministically() {
-        let parsed = parse_source(SOURCE);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compiler/persistent/game.arcw")
+                    .expect("persistent fixture source ID"),
+                SourceName::path("compiler/persistent/game.arcw"),
+                SOURCE,
+            )
+            .expect("persistent fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
         let key = key(CompilerObjectKind::ParsedSyntax, &parsed);
         let input = ParsedSyntaxFactsInput {
@@ -1185,7 +1196,16 @@ return "done"
 
     #[test]
     fn persistent_hir_body_facts_round_trip_without_hir_serialization() {
-        let parsed = parse_source(SOURCE);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compiler/persistent/game.arcw")
+                    .expect("persistent fixture source ID"),
+                SourceName::path("compiler/persistent/game.arcw"),
+                SOURCE,
+            )
+            .expect("persistent fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
         let hir = lower_source_document(parsed.document(), parsed.typed_tree())
             .expect("source lowers to HIR");
@@ -1212,7 +1232,16 @@ return "done"
 
     #[test]
     fn persistent_interface_summary_facts_round_trip_without_hir_serialization() {
-        let parsed = parse_source(SOURCE);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compiler/persistent/game.arcw")
+                    .expect("persistent fixture source ID"),
+                SourceName::path("compiler/persistent/game.arcw"),
+                SOURCE,
+            )
+            .expect("persistent fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
         let hir = lower_source_document(parsed.document(), parsed.typed_tree())
             .expect("source lowers to HIR");
@@ -1250,7 +1279,16 @@ return "done"
     #[test]
     fn persistent_function_signature_digest_tracks_entity_family_arguments() {
         fn digest_for(source: &str) -> BuildDigest {
-            let parsed = parse_source(source);
+            let document = Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new("arcweft-test://compiler/persistent/signature.arcw")
+                        .expect("signature fixture source ID"),
+                    SourceName::path("compiler/persistent/signature.arcw"),
+                    source,
+                )
+                .expect("signature fixture source document"),
+            );
+            let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
             assert!(parsed.errors().is_empty());
             let hir = lower_source_document(parsed.document(), parsed.typed_tree())
                 .expect("source lowers to HIR");
@@ -1281,7 +1319,16 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
     #[test]
     fn persistent_fact_builder_rejects_wrong_key_kind() {
-        let parsed = parse_source(SOURCE);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compiler/persistent/game.arcw")
+                    .expect("persistent fixture source ID"),
+                SourceName::path("compiler/persistent/game.arcw"),
+                SOURCE,
+            )
+            .expect("persistent fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         let key = key(CompilerObjectKind::HirBody, &parsed);
         let error = parsed_syntax_object(&ParsedSyntaxFactsInput {
             key: &key,
@@ -1301,7 +1348,16 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
     #[test]
     fn persistent_query_soft_miss_does_not_block_source_rebuild() {
-        let parsed = parse_source(SOURCE);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compiler/persistent/game.arcw")
+                    .expect("persistent fixture source ID"),
+                SourceName::path("compiler/persistent/game.arcw"),
+                SOURCE,
+            )
+            .expect("persistent fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
         let key = key(CompilerObjectKind::ParsedSyntax, &parsed);
         let bytes = AwboEnvelope::new(
@@ -1325,7 +1381,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
             AwboError::KeyDigestMismatch,
         );
 
-        let rebuilt = parse_source(SOURCE);
+        let rebuilt = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(rebuilt.errors().is_empty());
         lower_source_document(rebuilt.document(), rebuilt.typed_tree())
             .expect("source rebuild still lowers to HIR");
@@ -1333,7 +1389,16 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
     #[test]
     fn persistent_query_actual_bytecode_builder_produces_verified_reusable_payload() {
-        let parsed = parse_source(SOURCE);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compiler/persistent/game.arcw")
+                    .expect("persistent fixture source ID"),
+                SourceName::path("compiler/persistent/game.arcw"),
+                SOURCE,
+            )
+            .expect("persistent fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
         let hir = lower_source_document(parsed.document(), parsed.typed_tree())
             .expect("source lowers to HIR");
@@ -1395,7 +1460,16 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
     #[test]
     fn persistent_query_actual_link_builder_keeps_ordered_descriptor() {
-        let parsed = parse_source(SOURCE);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compiler/persistent/game.arcw")
+                    .expect("persistent fixture source ID"),
+                SourceName::path("compiler/persistent/game.arcw"),
+                SOURCE,
+            )
+            .expect("persistent fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
         let key = key(CompilerObjectKind::LinkPlan, &parsed);
         let ordered = vec![

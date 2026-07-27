@@ -5,12 +5,13 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::{check::analyze_types, env::TypeCheckEnv};
 use arcweft_lang_syntax::{
     ast::{common::TextRange, items::Item, style::StyleEnvironmentBlock},
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
     source::ParsedSource,
 };
 use arcweft_presentation::appearance::{
     PresentationEnvironmentField, PresentationEnvironmentFieldSet,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_tooling::{
     edit::apply_text_edits,
     model::FormatOptions,
@@ -26,6 +27,7 @@ use arcweft_tooling::{
     },
 };
 mod support;
+use std::sync::Arc;
 use support::format_fixture;
 
 #[test]
@@ -77,7 +79,16 @@ fn single_node_formatter_returns_a_condition_content_edit() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/single-node-formatter-returns-a-condition-content-edit")
+                .expect("fixture document ID"),
+            SourceName::path("single-node-formatter-returns-a-condition-content-edit.arcw"),
+            source,
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let environment = parsed
         .typed_tree()
@@ -96,7 +107,16 @@ fn single_node_formatter_returns_a_condition_content_edit() {
     let output = apply_text_edits(source, &result.edits).expect("valid edit");
     assert!(output.contains("when environment(text-scale >= 125%)"));
 
-    let reparsed = parse_source(output);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/single-node-formatter-returns-a-condition-content-edit")
+                .expect("fixture document ID"),
+            SourceName::path("single-node-formatter-returns-a-condition-content-edit.arcw"),
+            output.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let reparsed = parse_document_with_source(document, ParseOptions::default());
     let environment = reparsed
         .typed_tree()
         .items()
@@ -191,7 +211,16 @@ fn completion_values_are_closed_and_canonical() {
 #[test]
 fn hover_uses_checked_value_and_source_range() {
     let source = valid_environment_source("color-scheme == dark");
-    let parsed = parse_source(&source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/hover-uses-checked-value-and-source-range")
+                .expect("fixture document ID"),
+            SourceName::path("hover-uses-checked-value-and-source-range.arcw"),
+            source.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let environment = first_environment(&parsed);
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
     let report = analyze_types(&hir, &TypeCheckEnv::standard());
@@ -213,7 +242,16 @@ fn hover_uses_checked_value_and_source_range() {
 #[test]
 fn wrapper_hover_uses_complete_environment_scope() {
     let source = valid_environment_source("color-scheme == dark");
-    let parsed = parse_source(&source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/wrapper-hover-uses-complete-environment-scope")
+                .expect("fixture document ID"),
+            SourceName::path("wrapper-hover-uses-complete-environment-scope.arcw"),
+            source.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let environment = first_environment(&parsed);
     let hover = hover_style_environment(StyleEnvironmentHoverInput {
         position: environment.when_range().start(),
@@ -229,7 +267,16 @@ fn wrapper_hover_uses_complete_environment_scope() {
 #[test]
 fn hover_on_recovered_value_remains_typed_partial() {
     let source = valid_environment_source("text-scale == clamp(50%, 100%)");
-    let parsed = parse_source(&source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/hover-on-recovered-value-remains-typed-partial")
+                .expect("fixture document ID"),
+            SourceName::path("hover-on-recovered-value-remains-typed-partial.arcw"),
+            source.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let environment = first_environment(&parsed);
     let value = environment.clauses()[0].value_range();
     let hover = hover_style_environment(StyleEnvironmentHoverInput {
@@ -246,7 +293,16 @@ fn hover_on_recovered_value_remains_typed_partial() {
 #[test]
 fn semantic_spans_cover_keyword_field_operator_value_unit() {
     let source = valid_environment_source("text-scale >= 125.5%");
-    let parsed = parse_source(&source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/semantic-spans-cover-keyword-field-operator-value-unit")
+                .expect("fixture document ID"),
+            SourceName::path("semantic-spans-cover-keyword-field-operator-value-unit.arcw"),
+            source.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let environment = first_environment(&parsed);
     let spans = style_environment_semantic_spans(environment);
     let kinds = spans.iter().map(|span| span.kind).collect::<Vec<_>>();
@@ -266,7 +322,16 @@ fn semantic_spans_cover_keyword_field_operator_value_unit() {
 #[test]
 fn canonicalize_action_requires_complete_distinct_clauses() {
     let complete = valid_environment_source("text-scale >= 125%, color-scheme == dark");
-    let parsed = parse_source(&complete);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/canonicalize-action-requires-complete-distinct-clauses")
+                .expect("fixture document ID"),
+            SourceName::path("canonicalize-action-requires-complete-distinct-clauses.arcw"),
+            complete.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let actions = style_environment_code_actions(StyleEnvironmentCodeActionInput {
         node: first_environment(&parsed),
         source: &complete,
@@ -283,7 +348,16 @@ fn canonicalize_action_requires_complete_distinct_clauses() {
         "unknown == dark",
     ] {
         let source = valid_environment_source(clauses);
-        let parsed = parse_source(&source);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://tooling/style-environment/canonicalize-action-requires-complete-distinct-clauses")
+                    .expect("fixture document ID"),
+                SourceName::path("canonicalize-action-requires-complete-distinct-clauses.arcw"),
+                source.as_str(),
+            )
+            .expect("fixture source document"),
+        );
+        let parsed = parse_document_with_source(document, ParseOptions::default());
         let actions = style_environment_code_actions(StyleEnvironmentCodeActionInput {
             node: first_environment(&parsed),
             source: &source,
@@ -300,7 +374,16 @@ fn equality_action_only_for_enum_and_boolean() {
     let source = valid_environment_source(
         "color-scheme != dark, reduced-motion != true, text-scale != 125%",
     );
-    let parsed = parse_source(&source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/equality-action-only-for-enum-and-boolean")
+                .expect("fixture document ID"),
+            SourceName::path("equality-action-only-for-enum-and-boolean.arcw"),
+            source.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let actions = style_environment_code_actions(StyleEnvironmentCodeActionInput {
         node: first_environment(&parsed),
         source: &source,
@@ -328,7 +411,16 @@ fn percent_action_only_for_checked_unsigned_decimal() {
         ("125.55", false),
     ] {
         let source = valid_environment_source(&format!("text-scale == {value}"));
-        let parsed = parse_source(&source);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://tooling/style-environment/percent-action-only-for-checked-unsigned-decimal")
+                    .expect("fixture document ID"),
+                SourceName::path("percent-action-only-for-checked-unsigned-decimal.arcw"),
+                source.as_str(),
+            )
+            .expect("fixture source document"),
+        );
+        let parsed = parse_document_with_source(document, ParseOptions::default());
         let actions = style_environment_code_actions(StyleEnvironmentCodeActionInput {
             node: first_environment(&parsed),
             source: &source,
@@ -347,7 +439,16 @@ fn percent_action_only_for_checked_unsigned_decimal() {
 #[test]
 fn intrinsic_navigation_returns_typed_target() {
     let source = valid_environment_source("color-scheme == dark");
-    let parsed = parse_source(&source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://tooling/style-environment/intrinsic-navigation-returns-typed-target")
+                .expect("fixture document ID"),
+            SourceName::path("intrinsic-navigation-returns-typed-target.arcw"),
+            source.as_str(),
+        )
+        .expect("fixture source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let environment = first_environment(&parsed);
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
     let report = analyze_types(&hir, &TypeCheckEnv::standard());

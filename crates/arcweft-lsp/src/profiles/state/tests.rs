@@ -54,7 +54,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_launch::ProfileId;
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
@@ -268,7 +268,7 @@ fn project_fixture() -> (Arc<SourceDocument>, Arc<HirProject>) {
         )
         .expect("source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
     let project = Arc::new(
@@ -408,7 +408,7 @@ fn main() -> Unit {
         )
         .expect("recovered source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(!parsed.errors().is_empty(), "recovery fixture diagnostic");
     let hir = lower_document_to_hir(&document, parsed.typed_tree())
         .expect("recovered source lowers to HIR");

@@ -11,7 +11,7 @@ use arcweft_lang_syntax::{
 };
 
 fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_expression_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
@@ -275,4 +275,24 @@ fn integer_literals_preserve_u128_magnitudes_without_host_narrowing() {
         overflow.magnitude(),
         Err(arcweft_lang_syntax::expr::IntLiteralValueError::OutOfRange)
     );
+}
+
+fn parse_expression_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/parser-expressions-literals-select",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("parser-expressions-literals-select.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

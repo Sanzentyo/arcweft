@@ -5,7 +5,10 @@ use arcweft_lang_hir::{
     project::{HirProject, HirProjectModule},
     symbol::{CallablePackageId, ProjectSymbolWorldId},
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRevision};
 
 use crate::{
@@ -69,7 +72,7 @@ fn checked_single(
     source: &str,
 ) -> Result<(CheckedEntryBinding, SourceRevision), Vec<CheckedEntryDiagnostic>> {
     let document = source_document(document_id, source);
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).unwrap();
     let project = HirProject::new(

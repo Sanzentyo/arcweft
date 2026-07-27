@@ -21,7 +21,10 @@ use arcweft_lang_sema::{
     },
     types::TypeKind,
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 fn registered_fixture(source: &str) -> (Arc<SourceDocument>, HirProject, RegisteredSemanticWorld) {
@@ -33,7 +36,7 @@ fn registered_fixture(source: &str) -> (Arc<SourceDocument>, HirProject, Registe
         )
         .expect("source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(
         parsed.errors().is_empty(),
         "public fact fixture must parse: {:?}",

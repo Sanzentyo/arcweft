@@ -1552,7 +1552,7 @@ fn associated_malformed_receiver_checks_retained_arguments_once() {
         "Vec<,T>.with_capacity(8usize)",
     ] {
         let source = format!("fn main<T>() -> Unit {{\n    let _ = {malformed}\n    ()\n}}\n");
-        let parsed = parse_source(&source);
+        let parsed = parse_recovered(&source);
         assert!(
             !parsed.errors().is_empty(),
             "malformed receiver must remain ordinary syntax failure: {malformed}"
@@ -1585,7 +1585,7 @@ fn associated_malformed_receiver_checks_retained_arguments_once() {
 fn associated_missing_member_checks_arguments_once() {
     for malformed in ["Vec<i32>.(8usize)", "Vec<i32>::(8usize)"] {
         let source = format!("fn main() -> Unit {{\n    let _ = {malformed}\n    ()\n}}\n");
-        let parsed = parse_source(&source);
+        let parsed = parse_recovered(&source);
         assert!(
             !parsed.errors().is_empty(),
             "missing associated member must remain ordinary syntax failure: {malformed}"

@@ -12,13 +12,12 @@ use crate::cst::{
 use crate::{
     ast::flow::{FlowItem, Stmt},
     ast::items::Item,
-    parser::parse_source,
     types::TypeRef,
 };
 
 #[test]
 fn parsed_source_always_keeps_lossless_syntax() {
-    let parsed = parse_source("flow @flow.bad bad {");
+    let parsed = parse_cst_fixture("flow @flow.bad bad {");
 
     assert!(!parsed.errors().is_empty());
     assert_eq!(parsed.syntax().kind(), SyntaxKind::Root);
@@ -29,7 +28,7 @@ fn parsed_source_always_keeps_lossless_syntax() {
 #[test]
 fn cst_preserves_comments_doc_comments_entity_refs_and_newlines() {
     let source = "/// Doc\n// comment\nflow @flow.opening opening {}\n";
-    let parsed = parse_source(source);
+    let parsed = parse_cst_fixture(source);
     let token_kinds = parsed
         .syntax()
         .descendants_with_tokens()
@@ -115,7 +114,7 @@ fn cst_line_events_classify_top_level_dispatch() {
 
 #[test]
 fn parses_retained_style_item() {
-    let parsed = parse_source(
+    let parsed = parse_cst_fixture(
         r#"
 style native_text_input_sample {
   token font.jp_sans_stack: FontFamilyList = ["Yu Gothic", system_font(.Ui)]
@@ -272,7 +271,7 @@ fn cst_flow_block_event_reuses_complete_body_line_events_only() {
 
 #[test]
 fn successful_parse_exposes_typed_tree_and_document_revision() {
-    let parsed = parse_source("flow opening {\n    alice: おはよう。[p]\n}\n");
+    let parsed = parse_cst_fixture("flow opening {\n    alice: おはよう。[p]\n}\n");
 
     assert!(parsed.errors().is_empty());
     assert_eq!(
@@ -284,7 +283,7 @@ fn successful_parse_exposes_typed_tree_and_document_revision() {
 
 #[test]
 fn project_source_rejects_bare_flow_items_and_recovers_to_the_next_declaration() {
-    let parsed = parse_source("alice: おはよう。[p]\npub character bob {}\n");
+    let parsed = parse_cst_fixture("alice: おはよう。[p]\npub character bob {}\n");
 
     assert_eq!(parsed.errors().len(), 1);
     let error = &parsed.errors()[0];
@@ -310,7 +309,7 @@ fn project_source_rejects_bare_flow_items_and_recovers_to_the_next_declaration()
 
 #[test]
 fn project_recovery_ignores_braces_inside_strings_and_retains_the_next_declaration() {
-    let parsed = parse_source("let text = \"{\"\npub character bob {}\n");
+    let parsed = parse_cst_fixture("let text = \"{\"\npub character bob {}\n");
 
     assert_eq!(parsed.errors().len(), 1);
     assert_eq!(parsed.errors()[0].code(), "syntax.parse");
@@ -429,7 +428,7 @@ fn cst_top_level_matching_punctuation_uses_one_fragment_scan() {
 
 #[test]
 fn cst_line_projection_records_path_free_parse_stats() {
-    let parsed = parse_source(
+    let parsed = parse_cst_fixture(
         r"
 flow @flow.opening opening {
     alice.say()[本文です。[p]]
@@ -448,7 +447,7 @@ flow @flow.opening opening {
 
 #[test]
 fn parse_stats_count_numeric_sequence_summaries_from_flow_body() {
-    let parsed = parse_source(
+    let parsed = parse_cst_fixture(
         r"
 flow @flow.opening opening {
     let values: Vec<i64> = [1i64, 2i64, 3i64]
@@ -461,7 +460,7 @@ flow @flow.opening opening {
 
 #[test]
 fn flow_let_value_continuation_keeps_effect_row_type_ascription_with_closure() {
-    let parsed = parse_source(
+    let parsed = parse_cst_fixture(
         r"
 flow @flow.closure_expected_row closure_expected_row
 effects { }
@@ -595,4 +594,17 @@ fn cst_string_literal_split_returns_body_and_tail() {
 
     assert_eq!(body, "quoted value");
     assert_eq!(tail, " if enabled");
+}
+
+fn parse_cst_fixture(source: impl Into<String>) -> crate::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/cst")
+                .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("cst.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    crate::parser::parse_document_with_source(document, crate::parser::ParseOptions::default())
 }

@@ -1,6 +1,9 @@
 use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_syntax::{
-    ast::pattern::Pattern, expr::LifetimeScopeKind, parser::parse_source, reference::BorrowKind,
+    ast::pattern::Pattern,
+    expr::LifetimeScopeKind,
+    parser::{ParseOptions, parse_document_with_source},
+    reference::BorrowKind,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
@@ -14,7 +17,9 @@ fn with_checker(check: impl FnOnce(&mut TypeChecker<'_>)) {
         "fn main() -> Unit { () }",
     )
     .expect("source document");
-    let parsed = parse_source(document.text());
+    let document = std::sync::Arc::new(document);
+    let parsed =
+        parse_document_with_source(std::sync::Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "transaction fixture parses");
     let module = lower_document_to_hir(&document, parsed.typed_tree()).expect("fixture lowers");
     let environment = TypeCheckEnv::standard();

@@ -11,7 +11,7 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_syntax::{
     ast::module_path::{CanonicalModulePath, ModuleSegment},
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceDocumentIdentity, SourceName, SourceRange,
@@ -502,20 +502,22 @@ fn semantic_help(
 
 fn empty_module_project(module_count: usize, profile: &str) -> (HirProject, ProjectSymbolTable) {
     let source = " ";
-    let parsed = parse_source(source);
-    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let mut identities = Vec::<SourceDocumentIdentity>::with_capacity(module_count);
     let mut modules = Vec::with_capacity(module_count);
     for index in 0..module_count {
-        let document = SourceDocument::try_new(
-            SourceDocumentId::try_new(format!(
-                "arcweft-project://production-module-limits/{profile}/{index}.arcw"
-            ))
-            .expect("module document id"),
-            SourceName::path(format!("src/{profile}/{index}.arcw")),
-            source,
-        )
-        .expect("module source document");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(format!(
+                    "arcweft-project://production-module-limits/{profile}/{index}.arcw"
+                ))
+                .expect("module document id"),
+                SourceName::path(format!("src/{profile}/{index}.arcw")),
+                source,
+            )
+            .expect("module source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
         let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("empty module HIR");
         let module = if index == 0 {
             CanonicalModulePath::crate_root()

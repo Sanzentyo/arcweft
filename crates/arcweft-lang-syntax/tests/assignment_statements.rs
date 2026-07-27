@@ -4,13 +4,12 @@ use arcweft_lang_syntax::{
         items::{ImplMember, Item},
     },
     expr::Expr,
-    parser::parse_source,
     types::FnReceiverKind,
 };
 
 #[test]
 fn parses_impl_assignment_tail_if_without_raw_fallback() {
-    let parsed = parse_source(include_str!(
+    let parsed = parse_assignment_fixture(include_str!(
         "../../../fixtures/iterator-witness/user-defined.arcw"
     ));
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
@@ -60,7 +59,7 @@ fn parses_impl_assignment_tail_if_without_raw_fallback() {
 
 #[test]
 fn parses_flow_body_assignment_without_raw_fallback() {
-    let parsed = parse_source(
+    let parsed = parse_assignment_fixture(
         r"
 flow @flow.assignment_demo {
     let out = Box { index: 0 }
@@ -84,7 +83,7 @@ flow @flow.assignment_demo {
 
 #[test]
 fn function_tail_control_roles_follow_typed_statement_ownership() {
-    let parsed = parse_source(
+    let parsed = parse_assignment_fixture(
         r"
 fn tail_match(value: i64) -> i64 {
     match value {
@@ -135,4 +134,24 @@ fn terminal_select(value: i64) {
         terminal_select.body_statements(),
         [Stmt::Select(_)]
     ));
+}
+
+fn parse_assignment_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/assignment-statements",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("assignment-statements.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

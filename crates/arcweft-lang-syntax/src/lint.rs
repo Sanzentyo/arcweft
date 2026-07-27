@@ -609,13 +609,23 @@ impl SyntaxLintSuggestion {
 mod tests {
     use std::collections::BTreeSet;
 
-    use arcweft_source::{SourceDocumentId, SourceName};
-
     use super::*;
-    use crate::parser::parse_source;
+
+    fn parse_lint_fixture(source: impl Into<String>) -> crate::source::ParsedSource {
+        let document = std::sync::Arc::new(
+            arcweft_source::SourceDocument::try_new(
+                arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/lint")
+                    .expect("fixed test document ID is valid"),
+                arcweft_source::SourceName::path("lint.arcw"),
+                source.into(),
+            )
+            .expect("test source document"),
+        );
+        crate::parser::parse_document_with_source(document, crate::parser::ParseOptions::default())
+    }
 
     fn lint_codes(source: &str) -> Vec<SyntaxLintCode> {
-        let parsed = parse_source(source);
+        let parsed = parse_lint_fixture(source);
         lint_id_policy(parsed.typed_tree())
             .into_iter()
             .map(|lint| lint.code())
@@ -826,7 +836,7 @@ flow @flow.prologue prologue {
 
     #[test]
     fn misplaced_inner_attribute_does_not_apply_to_source_lints() {
-        let parsed = parse_source(
+        let parsed = parse_lint_fixture(
             r"
 flow @flow.opening opening {
 }
@@ -857,7 +867,7 @@ flow @flow.generated generated {
 flow @flow.opening {
 }
 ";
-        let parsed = parse_source(source);
+        let parsed = parse_lint_fixture(source);
         let lint = lint_id_policy(parsed.typed_tree())
             .into_iter()
             .find(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
@@ -866,14 +876,7 @@ flow @flow.opening {
         assert_eq!(lint.code().stable_code(), "AWF0103");
         assert_eq!(lint.code().domain_name(), "style::explicit_decl_id");
         assert_eq!(lint.severity(), SyntaxLintSeverity::Hint);
-        let document = SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-generated://syntax-lint-projection/0")
-                .expect("valid generated source id"),
-            SourceName::Generated,
-            source,
-        )
-        .expect("valid source document");
-        let diagnostic = lint.diagnostic(&document);
+        let diagnostic = lint.diagnostic(parsed.document());
         assert_eq!(diagnostic.severity(), DiagnosticSeverity::Hint);
         assert_eq!(
             diagnostic
@@ -894,7 +897,7 @@ flow @flow.opening {
 
     #[test]
     fn explicit_entity_decl_id_prefers_compact_authoring_form() {
-        let parsed = parse_source(
+        let parsed = parse_lint_fixture(
             r"
 image @image.sample.pulse_sprite {
 }
@@ -958,7 +961,7 @@ flow opening {
 
     #[test]
     fn explicit_id_lint_carries_machine_applicable_suggestion() {
-        let parsed = parse_source("flow @flow.opening {\n}\n");
+        let parsed = parse_lint_fixture("flow @flow.opening {\n}\n");
         let lint = lint_id_policy(parsed.typed_tree())
             .into_iter()
             .find(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)
@@ -970,7 +973,7 @@ flow opening {
 
     #[test]
     fn deep_dot_run_lint_carries_explicit_super_suggestion() {
-        let parsed = parse_source(
+        let parsed = parse_lint_fixture(
             r#"
 flow @flow.opening opening {
     choice {

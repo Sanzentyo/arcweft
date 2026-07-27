@@ -307,8 +307,10 @@ mod tests {
     use arcweft_lang_syntax::{
         ast::flow::Stmt,
         expr::{CallArg, CallExpr, Expr, ParenthesizedCalleeSyntax},
-        parser::parse_source,
+        parser::{ParseOptions, parse_document_with_source},
     };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
     fn first_function_statement_call(hir: &crate::model::HirModule) -> &CallExpr {
         let statement = hir
@@ -346,7 +348,18 @@ mod tests {
 
         for fixture in fixtures {
             let source = format!("fn main() -> Unit {{\n    {fixture}\n    ()\n}}\n");
-            let parsed = parse_source(source);
+            let document = Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new(
+                        "arcweft-test://lang-hir/lower/associated-clone.arcw",
+                    )
+                    .expect("associated clone fixture source ID"),
+                    SourceName::path("lang-hir/lower/associated-clone.arcw"),
+                    source,
+                )
+                .expect("associated clone fixture source document"),
+            );
+            let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
             assert_eq!(parsed.errors(), &[], "{fixture}");
             let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
                 .expect("associated source lowers");
@@ -394,7 +407,18 @@ mod tests {
     #[test]
     fn associated_call_has_no_parallel_hir_call_enum() {
         let source = "fn main() -> Unit {\n    Vec<I32>.with_capacity(8)\n    ()\n}\n";
-        let parsed = parse_source(source);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(
+                    "arcweft-test://lang-hir/lower/associated-call-owner.arcw",
+                )
+                .expect("associated call fixture source ID"),
+                SourceName::path("lang-hir/lower/associated-call-owner.arcw"),
+                source,
+            )
+            .expect("associated call fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert_eq!(parsed.errors(), &[]);
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("associated source lowers");
@@ -437,14 +461,21 @@ mod tests {
 
     #[test]
     fn lowering_preserves_flow_attributes() {
-        let parsed = parse_source(
-            r#"
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://lang-hir/lower/flow-attributes.arcw")
+                    .expect("flow attribute fixture source ID"),
+                SourceName::path("lang-hir/lower/flow-attributes.arcw"),
+                r#"
 #[allow(id::flow_module_mismatch)]
 flow @flow.opening opening {
     return "done"
 }
 "#,
+            )
+            .expect("flow attribute fixture source document"),
         );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
 
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("source lowers to HIR");
@@ -460,15 +491,22 @@ flow @flow.opening opening {
 
     #[test]
     fn lowering_preserves_source_inner_attributes() {
-        let parsed = parse_source(
-            r#"
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://lang-hir/lower/source-attributes.arcw")
+                    .expect("source attribute fixture source ID"),
+                SourceName::path("lang-hir/lower/source-attributes.arcw"),
+                r#"
 #![generated(tool)]
 
 flow @flow.opening opening {
     return "done"
 }
 "#,
+            )
+            .expect("source attribute fixture source document"),
         );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
 
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("source lowers to HIR");
@@ -486,7 +524,16 @@ fn main() -> Unit {
     ()
 }
 ";
-        let parsed = parse_source(source);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://lang-hir/lower/numeric-spread.arcw")
+                    .expect("numeric spread fixture source ID"),
+                SourceName::path("lang-hir/lower/numeric-spread.arcw"),
+                source,
+            )
+            .expect("numeric spread fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("numeric spread source lowers to HIR");
         let statement = hir.functions()[0]
@@ -516,15 +563,22 @@ fn main() -> Unit {
 
     #[test]
     fn lowering_rejects_recovery_only_project_root_items() {
-        let parsed = parse_source(
-            r"
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://lang-hir/lower/recovery-root.arcw")
+                    .expect("recovery root fixture source ID"),
+                SourceName::path("lang-hir/lower/recovery-root.arcw"),
+                r"
 alice: Hello[p]
 
 flow @flow.opening opening {
     return
 }
 ",
+            )
+            .expect("recovery root fixture source document"),
         );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
 
         assert_eq!(parsed.errors().len(), 1);
         assert_eq!(parsed.errors()[0].code(), "syntax.parse");
@@ -553,7 +607,16 @@ flow @flow.opening opening {
     alice.say()[Again[p]]
 }
 ";
-        let parsed = parse_source(source);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://lang-hir/lower/speaker-surface.arcw")
+                    .expect("speaker surface fixture source ID"),
+                SourceName::path("lang-hir/lower/speaker-surface.arcw"),
+                source,
+            )
+            .expect("speaker surface fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert_eq!(parsed.errors(), &[]);
 
         let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
@@ -603,7 +666,18 @@ flow @flow.opening opening {
             ),
         ] {
             let source = format!("flow @flow.opening opening {{\n    {line}\n}}\n");
-            let parsed = parse_source(&source);
+            let document = Arc::new(
+                SourceDocument::try_new(
+                    SourceDocumentId::try_new(
+                        "arcweft-test://lang-hir/lower/dialogue-id-family.arcw",
+                    )
+                    .expect("dialogue ID family fixture source ID"),
+                    SourceName::path("lang-hir/lower/dialogue-id-family.arcw"),
+                    source,
+                )
+                .expect("dialogue ID family fixture source document"),
+            );
+            let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
             assert_eq!(parsed.errors(), &[], "source for {line:?}");
             let errors = lower_document_to_hir(parsed.document(), parsed.typed_tree())
                 .expect_err("wrong family must fail");

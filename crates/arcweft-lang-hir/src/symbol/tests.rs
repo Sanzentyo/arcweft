@@ -11,7 +11,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
     types::{TypePath, TypeRef, TypeRefNodePath, parse_type_ref},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
@@ -45,7 +45,7 @@ fn project(source: &str) -> (Arc<SourceDocument>, HirProject) {
         )
         .expect("source document"),
     );
-    let parsed = parse_source(source);
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
     let project = HirProject::new(
@@ -91,7 +91,7 @@ fn project_modules(sources: &[(&str, &str)]) -> (Vec<Arc<SourceDocument>>, HirPr
                 )
                 .expect("source document"),
             );
-            let parsed = parse_source(*source);
+            let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
             assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
             let hir =
                 lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered module HIR");

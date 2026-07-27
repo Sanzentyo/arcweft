@@ -8,7 +8,7 @@ use arcweft_lang_syntax::{
 };
 
 fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::TypedSyntaxTree {
-    let parsed = arcweft_lang_syntax::parser::parse_source(source);
+    let parsed = parse_dialogue_fixture(source);
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
@@ -19,7 +19,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::ast::items::Typed
 
 #[test]
 fn dialogue_trailing_brace_plan_avoids_owned_block_for_same_line() {
-    let same_line = arcweft_lang_syntax::parser::parse_source(
+    let same_line = parse_dialogue_fixture(
         r"
 flow @flow.opening opening {
     alice.say()[本文です。[p]] with { out handles }
@@ -460,4 +460,22 @@ fn bracket_content_call_ranges_project_from_normalized_lines() {
         panic!("expected content call");
     };
     assert_later_line_dialogue_ranges(source, call.content());
+}
+
+fn parse_dialogue_fixture(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/parser-dialogue-syntax",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("parser-dialogue-syntax.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

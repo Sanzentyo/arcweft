@@ -1,16 +1,33 @@
+use std::sync::Arc;
+
 use arcweft_lang_hir::{
     lower::lower_document_to_hir,
     syntax::{
         ast::dialogue::{DialogueTagKind, DialogueToken},
-        parser::parse_source,
+        parser::{ParseOptions, parse_document_with_source},
+        source::ParsedSource,
         text::parse_dialogue_text,
     },
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::FxCatalog;
 
+fn parse_fx_fixture(source: &str) -> ParsedSource {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://runtime-plan/render-text-fx.arcw")
+                .expect("test document ID"),
+            SourceName::Generated,
+            source,
+        )
+        .expect("test source document"),
+    );
+    parse_document_with_source(document, ParseOptions::default())
+}
+
 fn catalog(source: &str) -> FxCatalog {
-    let parsed = parse_source(source);
+    let parsed = parse_fx_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("Fx fixture lowers");
@@ -51,7 +68,7 @@ fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
     Fx.text(weight = .strong, color = accent)
 }
 "##;
-    let parsed = parse_source(source);
+    let parsed = parse_fx_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("Fx fixture lowers");

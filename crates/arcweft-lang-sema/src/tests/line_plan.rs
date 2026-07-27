@@ -239,7 +239,7 @@ with:
 ",
     ] {
         let source = flow_source(source);
-        let parsed = parse_source(&source);
+        let parsed = parse_recovered(&source);
         let [error] = parsed.errors() else {
             panic!(
                 "inline line-plan group head should produce one ordinary parse error: {:?}",

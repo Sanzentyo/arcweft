@@ -110,8 +110,20 @@ effects {}
 
 #[test]
 fn detached_record_checking_does_not_fabricate_a_named_project_type() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://sema/nominal/detached-record.arcw",
+            )
+            .expect("test document ID"),
+            arcweft_source::SourceName::Generated,
         "struct Local { value: i64 }\nfn make() -> Local\neffects {}\n{ Local { value: 1i64 } }\n",
+        )
+        .expect("test source document"),
+    );
+    let parsed = arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
     );
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir =

@@ -10,7 +10,7 @@ use arcweft_lang_hir::{
 };
 use arcweft_lang_syntax::{
     ast::module_path::{CanonicalModulePath, ModuleSegment},
-    parser::parse_source,
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
@@ -216,8 +216,8 @@ fn source_document(id: &str, source: &str) -> Arc<SourceDocument> {
     )
 }
 
-fn project_module(module: CanonicalModulePath, document: &SourceDocument) -> HirProjectModule {
-    let parsed = parse_source(document.text());
+fn project_module(module: CanonicalModulePath, document: &Arc<SourceDocument>) -> HirProjectModule {
+    let parsed = parse_document_with_source(Arc::clone(document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(document, parsed.typed_tree()).expect("lowered HIR module");
     HirProjectModule::try_new(module, document.identity().clone(), hir)

@@ -127,7 +127,7 @@ expression. Detailed fields that would require timing, tracing, or extra scans
 remain zero until a detailed instrumentation mode is added. CST line punctuation
 summaries are built from the existing rowan line-token walk, not by re-lexing
 each line for stats. The parser's line events borrow slices from the original
-source during normal `parse_source`, so line projection no longer owns a second
+source during normal `parse_document_with_source`, so line projection no longer owns a second
 copy of every line; `cst_lines(root)` still owns text for standalone CST tooling
 that has no source buffer. Balanced brace-block extraction now also reuses those line
 summaries for body-open and body-close offsets, so the hot block collector no

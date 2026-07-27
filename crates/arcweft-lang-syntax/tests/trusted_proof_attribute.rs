@@ -1,11 +1,11 @@
 use arcweft_lang_syntax::{
     ast::common::TextRange,
     ast::{items::Item, proof::ProofTrust},
-    parser::{parse_source, recovery::ParseErrorKind},
+    parser::recovery::ParseErrorKind,
 };
 
 fn assert_trusted_proof_rejected(source: &str, expected: ParseErrorKind) {
-    let parsed = parse_source(source);
+    let parsed = parse_trusted_proof_fixture(source);
     assert!(
         parsed.errors().iter().any(|error| error.kind() == expected),
         "missing {expected:?} in {:?}",
@@ -23,7 +23,7 @@ fn assert_trusted_proof_rejected(source: &str, expected: ParseErrorKind) {
 
 #[test]
 fn trusted_proof_retains_the_exact_nonempty_reason() {
-    let parsed = parse_source(
+    let parsed = parse_trusted_proof_fixture(
         r#"
 #[verify.trusted(reason = "  signed external review  ")]
 proof @proof.external_review {
@@ -43,7 +43,7 @@ proof @proof.external_review {
                 && *attribute_range == TextRange::new(1, 57)
     ));
 
-    let escaped = parse_source(
+    let escaped = parse_trusted_proof_fixture(
         r#"
 #[verify.trusted(reason = "line\nreview $(literal text)")]
 proof @proof.escaped_review {
@@ -162,7 +162,7 @@ proof @proof.positional_argument {
 
 #[test]
 fn trusted_attribute_is_reserved_for_proofs() {
-    let parsed = parse_source(
+    let parsed = parse_trusted_proof_fixture(
         r#"
 #[verify.trusted(reason = "external")]
 fn ordinary() {}
@@ -183,7 +183,7 @@ fn ordinary() {}
             .all(|attribute| attribute.name() != "verify.trusted")
     );
 
-    let source_attribute = parse_source(
+    let source_attribute = parse_trusted_proof_fixture(
         r#"
 #![verify.trusted(reason = "external")]
 fn ordinary() {}
@@ -200,7 +200,7 @@ fn ordinary() {}
 
 #[test]
 fn removed_trusted_axiom_tokens_use_ordinary_grammar_recovery() {
-    let parsed = parse_source(
+    let parsed = parse_trusted_proof_fixture(
         r#"
 trusted axiom @axiom.external {
     reason = "external"
@@ -222,4 +222,24 @@ trusted axiom @axiom.external {
             .iter()
             .any(|item| matches!(item, Item::Proof(_)))
     );
+}
+
+fn parse_trusted_proof_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/trusted-proof-attribute",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("trusted-proof-attribute.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

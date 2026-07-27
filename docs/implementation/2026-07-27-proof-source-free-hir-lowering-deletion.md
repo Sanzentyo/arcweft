@@ -68,7 +68,7 @@ This cut is not the final HIR arena or accepted-project authority switch.
 corrected `01.1.1.4.1` package fixes the final semantic leaf payload.
 
 The syntax crate's public raw-text `parse_source` facade now also has zero
-production callers, but still has 385 test/fixture callers. It is the next
+production callers, but still has 379 direct test/fixture callers. It is the next
 leaf-independent deletion cut. The private item-fragment parser remains on the
 Agent REPL production path and must not be hidden behind another wrapper; its
 removal belongs to the atomic attached-fragment tooling switch after the

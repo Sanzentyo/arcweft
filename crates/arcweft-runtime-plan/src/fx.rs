@@ -509,16 +509,35 @@ fn simple_path(expr: &Expr) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::lower_fx_definitions;
+    use std::sync::Arc;
+
     use arcweft_lang_hir::lower::lower_document_to_hir;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::{
+        parser::{ParseOptions, parse_document_with_source},
+        source::ParsedSource,
+    };
     use arcweft_presentation::fx::{
         FiniteF32, FxEvaluationBudget, FxNode, FxParameterSlot, FxRuntimeType, FxRuntimeValue,
         FxSampleContext, FxStaticValue, Length, Seconds, ValueProgramInputs,
     };
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+
+    fn parse_fx_fixture(source: impl Into<String>) -> ParsedSource {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://runtime-plan/fx.arcw")
+                    .expect("test document ID"),
+                SourceName::Generated,
+                source.into(),
+            )
+            .expect("test source document"),
+        );
+        parse_document_with_source(document, ParseOptions::default())
+    }
 
     #[test]
     fn compiles_defaults_and_nested_stack_into_one_graph() {
-        let parsed = parse_source(
+        let parsed = parse_fx_fixture(
             r##"
 #[fx]
 fn emphasis(accent: Color = rgb("#ffd060")) -> Fx {
@@ -555,7 +574,7 @@ fn notice(accent: Color = rgb("#ff4050")) -> Fx {
 
     #[test]
     fn compiles_and_executes_transform_sampler_with_typed_parameter_slots() {
-        let parsed = parse_source(
+        let parsed = parse_fx_fixture(
             r"
 #[fx]
 fn wave(amplitude: Length = 2px, speed: f32 = 1.0) -> Fx {

@@ -334,8 +334,14 @@ use parent.common.{route_gate}
 
 #[test]
 fn removed_memo_block_does_not_reach_typechecked_hir() {
-    let parsed = parse_source(
-        r"
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://sema/parser-basics/removed-memo-block.arcw",
+            )
+            .expect("test document ID"),
+            arcweft_source::SourceName::Generated,
+            r"
 flow @flow.memo memo_example {
     let value = memo(scope=scene, key=(score)) {
         let next = score
@@ -346,7 +352,10 @@ flow @flow.memo memo_example {
 
 flow @flow.title title {}
 ",
+        )
+        .expect("test source document"),
     );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     let rejected = !parsed.errors().is_empty()
         || lower_document_to_hir(parsed.document(), parsed.typed_tree()).map_or(true, |hir| {
             validate_typecheck_ready(&hir).is_err()

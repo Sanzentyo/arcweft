@@ -38,14 +38,23 @@ pub(super) use arcweft_lang_syntax::{
         Literal, Placeholder, UnaryOp, parse_expr,
     },
     lint::{SyntaxLintCode, lint_id_policy},
-    parser::{ParseOptions, parse_document_with_source, parse_source, recovery::ParseError},
+    parser::{ParseOptions, parse_document_with_source, recovery::ParseError},
     reference::BorrowKind,
     text::{parse_dialogue_text, parse_dialogue_tokens},
     types::{TypeRef, parse_fn_signature, parse_type_ref},
 };
 
 pub(super) fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
-    let parsed = parse_source(source);
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("memory:///sema/parse-ok.arcw")
+                .expect("valid test document ID"),
+            arcweft_source::SourceName::Generated,
+            source.into(),
+        )
+        .expect("valid test source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert!(
         parsed.errors().is_empty(),
         "expected source to parse without errors, got {:?}",
@@ -75,12 +84,27 @@ pub(super) fn lower_bound_hir(label: &str, source: &str) -> arcweft_lang_hir::mo
 }
 
 pub(super) fn parse_errors(source: impl Into<String>) -> Vec<ParseError> {
-    let parsed = parse_source(source);
+    parse_recovered(source).errors().to_vec()
+}
+
+pub(super) fn parse_recovered(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("memory:///sema/parse-recovered.arcw")
+                .expect("valid test document ID"),
+            arcweft_source::SourceName::Generated,
+            source.into(),
+        )
+        .expect("valid test source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert!(
         !parsed.errors().is_empty(),
         "expected source to produce parse errors"
     );
-    parsed.errors().to_vec()
+    parsed
 }
 
 pub(super) fn typecheck_registered_source(

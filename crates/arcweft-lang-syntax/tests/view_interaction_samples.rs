@@ -1,5 +1,3 @@
-use arcweft_lang_syntax::parser::parse_source;
-
 const SAMPLES: &[(&str, &str)] = &[
     (
         "settings-menu",
@@ -44,11 +42,32 @@ const SAMPLES: &[(&str, &str)] = &[
 #[test]
 fn view_interaction_samples_parse_without_recovery_errors() {
     for (name, source) in SAMPLES {
-        let parsed = parse_source(*source);
+        let parsed = parse_view_interaction_fixture(name, *source);
         assert!(
             parsed.errors().is_empty(),
             "{name} parse errors: {:?}",
             parsed.errors()
         );
     }
+}
+
+fn parse_view_interaction_fixture(
+    logical_name: &str,
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(format!(
+                "arcweft-test://syntax/view-interaction/{logical_name}"
+            ))
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path(format!("{logical_name}.arcw")),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

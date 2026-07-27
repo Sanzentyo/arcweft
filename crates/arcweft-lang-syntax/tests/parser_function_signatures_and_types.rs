@@ -1,7 +1,6 @@
 use arcweft_lang_syntax::{
     ast::{common::TextRange, items::Item},
     expr::{Expr, TryOperatorSource},
-    parser::parse_source,
     reference::BorrowKind,
     types::{
         AuthoredTypeRef, FnParamKind, GenericParam, TypeRef, parse_fn_signature, parse_type_ref,
@@ -266,7 +265,7 @@ fn source_parser_uses_the_same_open_nominal_grammar_on_owned_type_surfaces() {
         "trait Bad { fn value(input: ProjectFlag) -> Unit }",
         "impl Bad for Thing { fn value(input: ProjectFlag) -> Unit {} }",
     ] {
-        let parsed = parse_source(source);
+        let parsed = parse_signature_fixture(source);
         assert!(
             parsed.errors().is_empty(),
             "nominal type path should parse uniformly for `{source}`: {:?}",
@@ -334,7 +333,7 @@ fn function_types_keep_closed_effect_rows() {
 
 #[test]
 fn flow_signatures_reject_curried_parameter_groups() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_signature_fixture(
         r"
 flow opening(x: i32)(y: i32) {
   return x
@@ -352,7 +351,7 @@ flow opening(x: i32)(y: i32) {
 
 #[test]
 fn flow_signature_separates_inline_effect_contract_after_return_type() {
-    let parsed = parse_source(
+    let parsed = parse_signature_fixture(
         r"
 flow health(req: HttpRequest) -> HttpResponse effects { http.respond } {
   return req
@@ -416,7 +415,7 @@ fn source_function_annotations_keep_document_absolute_type_ranges() {
         "    pair\n",
         "}\n",
     );
-    let parsed = parse_source(source);
+    let parsed = parse_signature_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let Item::Function(function) = &parsed.typed_tree().items()[0] else {
         panic!("fixture must parse as a function")
@@ -492,7 +491,7 @@ fn source_function_defaults_keep_document_absolute_expression_ranges() {
         "#[fx]\n",
         "fn inspect(value: i64 = input?) -> Unit {}\n",
     );
-    let parsed = parse_source(source);
+    let parsed = parse_signature_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let Item::Function(function) = &parsed.typed_tree().items()[0] else {
         panic!("fixture must parse as a function")
@@ -520,7 +519,7 @@ fn source_function_defaults_keep_document_absolute_expression_ranges() {
 #[test]
 fn function_signature_source_keeps_exact_result_range_without_a_prefix_line() {
     let source = "fn demo(value: Result<i64, String>) -> Result<i64, i64> {\n    Ok(value?)\n}\n";
-    let parsed = parse_source(source);
+    let parsed = parse_signature_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let Item::Function(function) = &parsed.typed_tree().items()[0] else {
         panic!("fixture must parse as a function")
@@ -532,4 +531,22 @@ fn function_signature_source_keeps_exact_result_range_without_a_prefix_line() {
 
     assert_eq!(result, TextRange::new(39, 55));
     assert_eq!(&source[result.start()..result.end()], "Result<i64, i64>");
+}
+
+fn parse_signature_fixture(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/parser-function-signatures-and-types",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("parser-function-signatures-and-types.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

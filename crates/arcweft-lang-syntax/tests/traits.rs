@@ -1,10 +1,9 @@
 use arcweft_lang_syntax::ast::items::{ImplMember, Item, TraitMember};
-use arcweft_lang_syntax::parser::parse_source;
 use arcweft_lang_syntax::types::{AuthoredTypeRef, TypeRef};
 
 #[test]
 fn trait_item_preserves_associated_type_and_method_requirement() {
-    let parsed = parse_source(
+    let parsed = parse_trait_fixture(
         r"
 trait SourceLike {
     type Item
@@ -26,7 +25,7 @@ trait SourceLike {
 
 #[test]
 fn parses_projection_and_assoc_equality_bound() {
-    let parsed = parse_source(
+    let parsed = parse_trait_fixture(
         r"
 fn exact<T>(source: T) -> T::Item
 where T: SourceLike<Item = ChapterId>
@@ -51,7 +50,7 @@ where T: SourceLike<Item = ChapterId>
 
 #[test]
 fn impl_item_preserves_where_clause_and_associated_assignment() {
-    let parsed = parse_source(
+    let parsed = parse_trait_fixture(
         r"
 impl<T> SourceLike for Box<T>
 where T: Copyable
@@ -78,7 +77,7 @@ where T: Copyable
 
 #[test]
 fn trait_and_impl_members_preserve_curried_param_groups() {
-    let parsed = parse_source(
+    let parsed = parse_trait_fixture(
         r"
 trait Threshold {
     fn above(self, min: i64)(value: i64) -> bool
@@ -121,4 +120,20 @@ impl Threshold for Score {
     assert_eq!(impl_signature.param_groups().len(), 2);
     assert_eq!(impl_signature.param_groups()[0].params().len(), 2);
     assert_eq!(impl_signature.param_groups()[1].params().len(), 1);
+}
+
+fn parse_trait_fixture(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/traits")
+                .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("traits.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

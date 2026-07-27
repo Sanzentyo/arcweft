@@ -8,7 +8,6 @@ use arcweft_lang_syntax::{
         AwaitPropagation, AwaitPropagationSource, Expr, TryOperatorSource,
         collect_expr_source_ranges, parse_expr,
     },
-    parser::parse_source,
 };
 
 fn range_of(source: &str, needle: &str) -> TextRange {
@@ -31,7 +30,7 @@ fn flow_signature_source_excludes_visibility_contract_and_trivia_at_utf8_offset(
         "        return input\n",
         "    }\n",
     );
-    let parsed = parse_source(source);
+    let parsed = parse_propagation_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let Item::Flow(flow) = &parsed.typed_tree().items()[0] else {
         panic!("expected flow item")
@@ -59,7 +58,7 @@ fn impl_method_reuses_exact_function_signature_source_at_utf8_offset() {
         "    }\n",
         "}\n",
     );
-    let parsed = parse_source(source);
+    let parsed = parse_propagation_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let Item::Impl(item) = &parsed.typed_tree().items()[0] else {
         panic!("expected impl item")
@@ -93,7 +92,7 @@ fn closure_source_excludes_surrounding_trivia_and_keeps_utf8_byte_ranges() {
         "  }  \n",
         "}\n",
     );
-    let parsed = parse_source(source);
+    let parsed = parse_propagation_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let Item::Function(function) = &parsed.typed_tree().items()[0] else {
         panic!("expected function item")
@@ -251,7 +250,7 @@ flow @flow.dialogue dialogue() -> Result<Unit, LineError> {
     let result = try alice.say()[hello]
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_propagation_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let Item::Flow(flow) = &parsed.typed_tree().items()[0] else {
         panic!("expected flow")
@@ -311,4 +310,24 @@ fn malformed_try_and_await_use_ordinary_zero_width_recovery() {
     let error = parse_expr(&over_limit).expect_err("prefix depth is bounded");
     assert_eq!(error.code(), "syntax.expr.prefix_depth_limit");
     assert_eq!(error.range(), TextRange::new(256, 259));
+}
+
+fn parse_propagation_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new(
+                "arcweft-test://syntax/propagation-source-ranges",
+            )
+            .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("propagation-source-ranges.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

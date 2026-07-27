@@ -797,7 +797,9 @@ mod tests {
     };
     use arcweft_lang_sema::env::TypeCheckEnv;
     use arcweft_lang_sema::types::TypeKind;
-    use arcweft_lang_syntax::parser::parse_source;
+    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use std::sync::Arc;
 
     fn flow_id(value: &str) -> FlowRuntimeId {
         FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
@@ -984,7 +986,16 @@ mod tests {
     }
 
     fn empty_type_report() -> TypeCheckReport {
-        let parsed = parse_source("");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://verify/empty-type-report.arcw")
+                    .expect("empty type-report fixture source ID"),
+                SourceName::path("verify/empty-type-report.arcw"),
+                "",
+            )
+            .expect("empty type-report fixture source document"),
+        );
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
             .expect("empty type-report fixture lowers");
         analyze_types(&hir, &TypeCheckEnv::default())

@@ -6,7 +6,10 @@ use arcweft_lang_hir::{
     lower::lower_document_to_hir,
     project::{HirProject, HirProjectModule},
 };
-use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_presentation::image::ImageObjectId;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
@@ -28,7 +31,7 @@ fn image_project(source: &str) -> ImageProjectFixture {
         .expect("source document"),
     );
     let module = CanonicalModulePath::crate_root();
-    let syntax = parse_source(document.text());
+    let syntax = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert_eq!(
         syntax.errors(),
         &[],
@@ -224,16 +227,19 @@ fn unpublished_body_identity_and_enabled_fields_are_rejected_not_shimmed() {
 fn image_lowering_rejects_a_hir_project_bound_to_another_source_revision() {
     let source = absolute_image("");
     let fixture = image_project(&source);
-    let detached = SourceDocument::try_new(
-        SourceDocumentId::try_new("arcweft-test://detached-compiler-image-catalog")
-            .expect("detached source ID"),
-        SourceName::path("main.arcw"),
-        source,
-    )
-    .expect("detached source document");
-    let syntax = parse_source(detached.text());
+    let detached = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://detached-compiler-image-catalog")
+                .expect("detached source ID"),
+            SourceName::path("main.arcw"),
+            source,
+        )
+        .expect("detached source document"),
+    );
+    let syntax = parse_document_with_source(Arc::clone(&detached), ParseOptions::default());
     assert_eq!(syntax.errors(), &[]);
-    let lowered = lower_document_to_hir(&detached, syntax.typed_tree()).expect("detached HIR");
+    let lowered =
+        lower_document_to_hir(detached.as_ref(), syntax.typed_tree()).expect("detached HIR");
     let detached_hir = HirProject::new(
         "local.arcweft.image-catalog-test",
         vec![

@@ -1,11 +1,11 @@
 use arcweft_lang_syntax::{
     ast::items::{EntryItem, EntryKind, Item},
-    parser::{parse_source, recovery::ParseErrorKind},
+    parser::recovery::ParseErrorKind,
     types::TypeRef,
 };
 
 fn entry(source: &str) -> arcweft_lang_syntax::ast::items::EntryDeclItem {
-    let parsed = parse_source(source);
+    let parsed = parse_entry_role_fixture(source);
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     parsed
         .into_typed_tree()
@@ -24,7 +24,7 @@ fn source_range(source: &str, fragment: &str) -> std::ops::Range<usize> {
 }
 
 fn assert_parser_kind(source: &str, kind: ParseErrorKind) {
-    let parsed = parse_source(source);
+    let parsed = parse_entry_role_fixture(source);
     assert!(
         parsed.errors().iter().any(|error| error.kind() == kind),
         "expected {kind:?} for {source:?}, got {:?}",
@@ -33,7 +33,7 @@ fn assert_parser_kind(source: &str, kind: ParseErrorKind) {
 }
 
 fn assert_parser_range(source: &str, kind: ParseErrorKind, expected: std::ops::Range<usize>) {
-    let parsed = parse_source(source);
+    let parsed = parse_entry_role_fixture(source);
     let error = parsed
         .errors()
         .iter()
@@ -128,7 +128,7 @@ fn entry_kind_and_id_are_both_explicit() {
         "entry game { goto @flow.main }",
         "entry game @flow.main { goto @flow.main }",
     ] {
-        let parsed = parse_source(source);
+        let parsed = parse_entry_role_fixture(source);
         assert!(!parsed.errors().is_empty(), "{source}");
         assert!(
             parsed
@@ -152,7 +152,7 @@ fn duplicate_roles_relate_the_first_and_duplicate_members() {
         let duplicate_member = format!("{role} = {second}");
         let source =
             format!("entry game @entry.game.main {{\n{first_member}\n{duplicate_member}\n}}");
-        let parsed = parse_source(&source);
+        let parsed = parse_entry_role_fixture(&source);
         let duplicate = parsed
             .errors()
             .iter()
@@ -177,7 +177,7 @@ state = Vec<
 reducer = reduce()
 controller controller_fn
 }";
-    let parsed = parse_source(source);
+    let parsed = parse_entry_role_fixture(source);
     let entry = parsed
         .typed_tree()
         .items()
@@ -209,7 +209,7 @@ controller controller_fn
 
 #[test]
 fn entry_kind_rejects_incompatible_typed_roles_and_routes() {
-    let parsed = parse_source(
+    let parsed = parse_entry_role_fixture(
         "entry game @entry.game.main {\ncontroller = smoke\nroute GET \"/\" -> @flow.main\n}",
     );
     assert!(
@@ -228,7 +228,7 @@ fn entry_kind_rejects_incompatible_typed_roles_and_routes() {
 
 #[test]
 fn stateful_entry_requires_exactly_one_initial_goto() {
-    let missing = parse_source(
+    let missing = parse_entry_role_fixture(
         "entry game @entry.game.main {\nstate = GameState\ninitializer = init\nevent = GameEvent\nreducer = reduce\n}",
     );
     assert!(
@@ -239,7 +239,7 @@ fn stateful_entry_requires_exactly_one_initial_goto() {
     );
 
     let source = "entry game @entry.game.main {\nstate = GameState\ninitializer = init\nevent = GameEvent\nreducer = reduce\ngoto @flow.first\ngoto @flow.second\n}";
-    let duplicate = parse_source(source);
+    let duplicate = parse_entry_role_fixture(source);
     let error = duplicate
         .errors()
         .iter()
@@ -354,7 +354,7 @@ fn malformed_nominal_generic_parameters_have_a_typed_group_range() {
         "struct Broken<,> {\nvalue: i32\n}\n",
         "enum Broken<,> {\nValue\n}\n",
     ] {
-        let parsed = parse_source(source);
+        let parsed = parse_entry_role_fixture(source);
         let error = parsed
             .errors()
             .iter()
@@ -363,4 +363,22 @@ fn malformed_nominal_generic_parameters_have_a_typed_group_range() {
         assert_eq!(error.code(), "syntax.nominal.invalid_generic_parameters");
         assert_eq!(error.range().as_range(), source_range(source, "<,>"));
     }
+}
+
+fn parse_entry_role_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/entry-roles")
+                .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("entry-roles.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

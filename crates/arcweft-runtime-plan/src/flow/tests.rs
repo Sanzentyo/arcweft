@@ -1,15 +1,33 @@
 use super::*;
+use std::sync::Arc;
+
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::value::{RuntimeFieldValue, RuntimeSeq, runtime_sequence_from_literal_values};
 use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
 use arcweft_lang_hir::lower::lower_document_to_hir;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::{
+    parser::{ParseOptions, parse_document_with_source},
+    source::ParsedSource,
+};
 use arcweft_render_text::{
     RichTextCascadeLayer, RichTextColor, RichTextSettingSource, RichTextStyle,
 };
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewProgramId, ViewStyleSheetId};
+
+fn parse_flow_fixture(source: impl Into<String>) -> ParsedSource {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://runtime-plan/flow.arcw")
+                .expect("test document ID"),
+            SourceName::Generated,
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    parse_document_with_source(document, ParseOptions::default())
+}
 
 fn test_dialogue_revision() -> DialogueProfileRevision {
     let manifest = SourceDocument::try_new(
@@ -107,7 +125,7 @@ fn optimizer_rewrites_local_record_field_to_ordinal_projection() {
 
 #[test]
 fn value_position_view_handle_lowers_to_create_cleanup_and_release_cancel() {
-    let parsed = parse_source(
+    let parsed = parse_flow_fixture(
         r#"
 view ModernPanel() {
   Panel {
@@ -167,7 +185,7 @@ flow main {
 
 #[test]
 fn value_position_image_handle_lowers_lifecycle_methods_and_cleanup_cancel() {
-    let parsed = parse_source(
+    let parsed = parse_flow_fixture(
         r#"
 pub image card {
   asset = @asset:.bg.card
@@ -245,7 +263,7 @@ flow main {
 
 #[test]
 fn value_position_overlay_handle_lowers_pop_to_dispose_and_cleanup_cancel() {
-    let parsed = parse_source(
+    let parsed = parse_flow_fixture(
         r#"
 view MenuOverlay() {
   Panel {
@@ -301,7 +319,7 @@ flow main {
 
 #[test]
 fn explicit_view_and_image_mount_exprs_lower_to_scoped_handle_create() {
-    let parsed = parse_source(
+    let parsed = parse_flow_fixture(
         r#"
 pub image card {
   asset = @asset:.bg.card
@@ -378,7 +396,7 @@ flow main {
 
 #[test]
 fn explicit_menu_and_overlay_mount_exprs_lower_to_scoped_handle_create() {
-    let parsed = parse_source(
+    let parsed = parse_flow_fixture(
         r#"
 view ModernPanel() {
   Panel {
@@ -446,7 +464,7 @@ flow main {
 
 #[test]
 fn admitted_dialogue_profile_propagates_typed_owner_style_policy_and_revision() {
-    let parsed = parse_source(
+    let parsed = parse_flow_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -504,7 +522,7 @@ flow @flow.main main {
         .find(preset_value)
         .expect("preset value is present in fixture");
     let preset_value_end = preset_value_start + preset_value.len();
-    let parsed = parse_source(source);
+    let parsed = parse_flow_fixture(source);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("fixture lowers");
     let report = lower_runtime_plan_with_stats(&hir).expect("runtime plan lowers");

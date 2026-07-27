@@ -56,7 +56,7 @@ fn parser_rejects_unstructured_top_level_syntax() {
 
 #[test]
 fn lowering_rejects_flow_recovery_nodes_with_span() {
-    let parsed = arcweft_lang_syntax::parser::parse_source(
+    let parsed = parse_recovered(
         r"
 flow @flow.raw_example {
     unknown surface form

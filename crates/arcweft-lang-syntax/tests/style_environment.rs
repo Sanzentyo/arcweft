@@ -6,7 +6,7 @@ use arcweft_lang_syntax::{
             StyleEnvironmentUnsupportedValueKind, StyleEnvironmentValueSyntax,
         },
     },
-    parser::{parse_source, recovery::ParseErrorKind},
+    parser::recovery::ParseErrorKind,
     source::ParsedSource,
 };
 
@@ -35,7 +35,7 @@ fn environment_wrapper_parses_all_four_fields() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_environment_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let environment = style(&parsed).sheet().body()[0]
         .as_environment()
@@ -103,7 +103,7 @@ fn environment_wrapper_parses_nested_implicit_conjunction() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_environment_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let outer = style(&parsed).sheet().body()[0]
         .as_environment()
@@ -149,7 +149,7 @@ fn text_scale_parses_all_six_comparisons() {
     when environment(text-scale >= 100%) { Button { opacity = 1 } }
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_environment_fixture(source);
     assert_eq!(parsed.errors(), &[]);
     let comparisons = style(&parsed)
         .sheet()
@@ -176,7 +176,7 @@ fn arbitrarily_long_percentage_integer_never_overflows_ast() {
     let source = format!(
         "pub style adaptive {{\n when environment(text-scale >= {digits}%) {{ Button {{ opacity = 1 }} }}\n}}\n"
     );
-    let parsed = parse_source(&source);
+    let parsed = parse_style_environment_fixture(&source);
     assert_eq!(parsed.errors(), &[]);
     let value = style(&parsed).sheet().body()[0]
         .as_environment()
@@ -221,7 +221,7 @@ fn unsupported_percentage_families_are_typed_without_expression_fallback() {
         let source = format!(
             "pub style adaptive {{\n when environment(text-scale == {value}) {{ Button {{ opacity = 1 }} }}\n}}\n"
         );
-        let parsed = parse_source(source);
+        let parsed = parse_style_environment_fixture(source);
         assert!(parsed.errors().iter().any(|error| {
             error.kind() == ParseErrorKind::StyleEnvironmentUnsupportedValue
                 && error.code() == "syntax.parse.style_environment.unsupported_value"
@@ -245,7 +245,7 @@ fn arbitrarily_long_fraction_never_overflows_ast() {
     let source = format!(
         "pub style adaptive {{\n when environment(text-scale == 125.{fractional}%) {{ Button {{ opacity = 1 }} }}\n}}\n"
     );
-    let parsed = parse_source(source);
+    let parsed = parse_style_environment_fixture(source);
     assert!(parsed.errors().iter().any(|error| {
         error.kind() == ParseErrorKind::StyleEnvironmentUnsupportedValue
             && error.code() == "syntax.parse.style_environment.unsupported_value"
@@ -270,7 +270,7 @@ fn missing_clause_comma_has_dedicated_code() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_environment_fixture(source);
     let error = parsed
         .errors()
         .iter()
@@ -292,7 +292,7 @@ fn unterminated_condition_recovers_at_matching_wrapper_brace() {
     Panel { opacity = 800milli }
 }
 ";
-    let parsed = parse_source(source);
+    let parsed = parse_style_environment_fixture(source);
     let error = parsed
         .errors()
         .iter()
@@ -368,7 +368,7 @@ fn environment_diagnostic_families_are_typed_with_exact_ranges() {
     ];
 
     for (source, kind, marker, zero_width) in cases {
-        let parsed = parse_source(source);
+        let parsed = parse_style_environment_fixture(source);
         let error = parsed
             .errors()
             .iter()
@@ -403,7 +403,7 @@ fn environment_parser_produces_exactly_the_nine_registered_codes() {
     ];
     let produced = sources
         .into_iter()
-        .flat_map(|source| parse_source(source).errors().to_vec())
+        .flat_map(|source| parse_style_environment_fixture(source).errors().to_vec())
         .filter(|error| {
             matches!(
                 error.kind(),
@@ -435,4 +435,22 @@ fn environment_parser_produces_exactly_the_nine_registered_codes() {
     .collect::<std::collections::BTreeSet<_>>();
 
     assert_eq!(produced, expected);
+}
+
+fn parse_style_environment_fixture(
+    source: impl Into<String>,
+) -> arcweft_lang_syntax::source::ParsedSource {
+    let document = std::sync::Arc::new(
+        arcweft_source::SourceDocument::try_new(
+            arcweft_source::SourceDocumentId::try_new("arcweft-test://syntax/style-environment")
+                .expect("fixed test document ID is valid"),
+            arcweft_source::SourceName::path("style-environment.arcw"),
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    arcweft_lang_syntax::parser::parse_document_with_source(
+        document,
+        arcweft_lang_syntax::parser::ParseOptions::default(),
+    )
 }

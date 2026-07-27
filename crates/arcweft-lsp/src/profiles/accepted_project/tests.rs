@@ -8,7 +8,10 @@ use arcweft_lang_sema::{
     env::TypeCheckEnv,
     registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
 };
-use arcweft_lang_syntax::{ast::module_path::ModuleSegment, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::module_path::ModuleSegment,
+    parser::{ParseOptions, parse_document_with_source},
+};
 use arcweft_source::SourceName;
 
 mod production_limits;
@@ -25,7 +28,7 @@ fn document(id: &str, text: &str) -> Arc<SourceDocument> {
 }
 
 fn module(path: CanonicalModulePath, document: &Arc<SourceDocument>) -> HirProjectModule {
-    let parsed = parse_source(document.text());
+    let parsed = parse_document_with_source(Arc::clone(document), ParseOptions::default());
     assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
     let hir = lower_document_to_hir(document, parsed.typed_tree()).expect("lowered HIR");
     HirProjectModule::try_new(path, document.identity().clone(), hir).expect("source-bound module")

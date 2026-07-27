@@ -6,7 +6,12 @@ use arcweft_lang_hir::{
         HirStyleEnvironmentRecovery, HirStyleEnvironmentValue,
     },
 };
-use arcweft_lang_syntax::{ast::style::StyleEnvironmentUnsupportedValueKind, parser::parse_source};
+use arcweft_lang_syntax::{
+    ast::style::StyleEnvironmentUnsupportedValueKind,
+    parser::{ParseOptions, parse_document_with_source},
+};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use std::sync::Arc;
 
 fn style(hir: &arcweft_lang_hir::model::HirModule) -> &HirStyleDecl {
     hir.declarations()
@@ -26,7 +31,16 @@ fn hir_preserves_condition_clause_and_operand_ranges() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/style-environment/ranges.arcw")
+                .expect("style environment range fixture source ID"),
+            SourceName::path("lang-hir/style-environment/ranges.arcw"),
+            source,
+        )
+        .expect("style environment range fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("style lowers");
     let environment = style(&hir).sheet().body()[0]
@@ -82,7 +96,16 @@ fn hir_preserves_nested_wrapper_roles_outer_to_inner() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/style-environment/nested.arcw")
+                .expect("nested style environment fixture source ID"),
+            SourceName::path("lang-hir/style-environment/nested.arcw"),
+            source,
+        )
+        .expect("nested style environment fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("style lowers");
     let outer = style(&hir).sheet().body()[0]
@@ -112,7 +135,16 @@ fn hir_recovery_is_typed_not_raw_expression() {
     }
 }
 ";
-    let parsed = parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/style-environment/recovery.arcw")
+                .expect("style environment recovery fixture source ID"),
+            SourceName::path("lang-hir/style-environment/recovery.arcw"),
+            source,
+        )
+        .expect("style environment recovery fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert!(
         parsed
             .errors()

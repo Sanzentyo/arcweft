@@ -1,11 +1,16 @@
 use super::*;
+use std::sync::Arc;
+
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_dialogue::{
     DialoguePresentationProfile, DialogueProfileRevision, FallbackStylePolicy, InlineFailurePolicy,
     InlineFallback,
 };
 use arcweft_lang_hir::lower::lower_document_to_hir;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::{
+    parser::{ParseOptions, parse_document_with_source},
+    source::ParsedSource,
+};
 use arcweft_render_text::{
     DialogueHostEvent, FxTarget, Milli, RichTextCascadeLayer, RichTextColor, RichTextControl,
     RichTextFontFamily, RichTextJlreqStrictness, RichTextLayout, RichTextNode, RichTextParam,
@@ -15,6 +20,19 @@ use arcweft_render_text::{
 use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+fn parse_render_text_fixture(source: impl Into<String>) -> ParsedSource {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://runtime-plan/render-text.arcw")
+                .expect("test document ID"),
+            SourceName::Generated,
+            source.into(),
+        )
+        .expect("test source document"),
+    );
+    parse_document_with_source(document, ParseOptions::default())
+}
 
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
@@ -59,7 +77,7 @@ fn lower_dialogue_display_with_module_fx(
 
 #[test]
 fn lowers_full_tag_families_to_render_text_nodes() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r##"
 character @character.alice Alice as alice {}
 
@@ -156,7 +174,7 @@ fn canonical_scalar_tags_match_short_and_direct_dialogue_styles() {
         let source = format!(
             "character @character.alice Alice as alice {{}}\n\nflow @flow.main main {{\n    alice: {content}\n}}\n"
         );
-        let parsed = parse_source(&source);
+        let parsed = parse_render_text_fixture(&source);
         let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
             .expect("scalar tag fixture lowers");
         let dialogue = hir
@@ -217,7 +235,7 @@ fn canonical_scalar_tags_match_short_and_direct_dialogue_styles() {
 
 #[test]
 fn lowers_typed_dialogue_wait_and_rejects_invalid_duration() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -255,7 +273,7 @@ flow @flow.main main {
         } if value == "56"
     )));
 
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -286,7 +304,7 @@ flow @flow.main main {
 
     assert!(error.message().contains("requires a duration"));
 
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -327,7 +345,7 @@ fn assert_has_host_event(nodes: &[RichTextNode], predicate: impl Fn(&DialogueHos
 
 #[test]
 fn inferred_dot_builtin_without_attrs_lowers_to_typed_fx_application() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -398,7 +416,7 @@ flow @flow.main main {
 
 #[test]
 fn host_event_phase_effect_lowers_to_typed_host_event() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -460,7 +478,7 @@ flow @flow.main main {
 
 #[test]
 fn hard_break_before_styled_interpolation_preserves_value_run() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -526,7 +544,7 @@ flow @flow.main main {
 
 #[test]
 fn explicit_object_tag_lowers_text_proxy_metadata_to_presentation() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -604,7 +622,7 @@ flow @flow.main main {
 
 #[test]
 fn text_proxy_struct_attribute_supplies_object_proxy_defaults() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r#"
 #[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
 pub struct KeywordHit {
@@ -673,7 +691,7 @@ flow @flow.main main {
 
 #[test]
 fn nested_text_proxy_struct_attributes_accumulate_with_inline_overrides() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r#"
 #[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
 pub struct KeywordHit {
@@ -776,7 +794,7 @@ flow @flow.main main {
 
 #[test]
 fn inferred_text_proxy_struct_shorthand_lowers_to_object_proxy() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r#"
 #[text_proxy(kind="keyword", default_hit=true, depth=4, channel=choice)]
 pub struct KeywordHit {
@@ -901,7 +919,7 @@ fn assert_run_has_fx_without_object_proxy(
 
 #[test]
 fn rich_text_proxy_struct_attribute_supplies_object_proxy_defaults() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r#"
 #[rich_text_proxy(kind="quest", default_hit=true, depth=6, layer=hud, channel=quest)]
 pub struct QuestHit {
@@ -977,7 +995,7 @@ flow @flow.main main {
 
 #[test]
 fn presentation_scalar_style_sets_opacity_and_z_index() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -1039,7 +1057,7 @@ flow @flow.main main {
 
 #[test]
 fn builtin_and_unknown_shorthand_retain_exact_fx_identity() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -1126,7 +1144,7 @@ flow @flow.main main {
 
 #[test]
 fn explicit_effect_selector_end_tag_closes_effect_span() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -1176,7 +1194,7 @@ flow @flow.main main {
 
 #[test]
 fn rotate_transform_selector_accepts_named_and_positional_angles() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -1272,7 +1290,7 @@ flow @flow.main main {
 }
 ";
     let default_ruby_size_start = source.find("14px").expect("default ruby size literal");
-    let parsed = parse_source(source);
+    let parsed = parse_render_text_fixture(source);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("fixture lowers");
     let dialogue = hir
@@ -1361,7 +1379,7 @@ flow @flow.main main {
 
 #[test]
 fn inferred_layout_selector_lowers_jlreq_strictness_preset() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -1399,7 +1417,7 @@ flow @flow.main main {
 
 #[test]
 fn inferred_layout_selector_lowers_ruby_under_position() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -1441,7 +1459,7 @@ flow @flow.main main {
 
 #[test]
 fn ruby_layout_selector_lowers_typography_attrs() {
-    let parsed = parse_source(
+    let parsed = parse_render_text_fixture(
         r"
 character @character.alice Alice as alice {}
 
@@ -1503,7 +1521,7 @@ flow @flow.main main {
 }
 ";
     let inline_size_start = source.find("11px").expect("inline ruby size literal");
-    let parsed = parse_source(source);
+    let parsed = parse_render_text_fixture(source);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("fixture lowers");
     let dialogue = hir
@@ -1544,7 +1562,7 @@ fn multiline_inline_span_provenance_projects_lf_and_crlf_ranges() {
     let source_lf = "character @character.alice Alice as alice {}\n\nflow @flow.main main {\n    alice:\n        Intro\n        [.ruby_over ruby_size=11px]|[夢](ゆめ)[/][p]\n}\n";
     for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
         let inline_size_start = source.find("11px").expect("inline ruby size literal");
-        let parsed = parse_source(&source);
+        let parsed = parse_render_text_fixture(&source);
         let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
             .expect("fixture lowers");
         let dialogue = hir
@@ -1580,7 +1598,7 @@ flow @flow.main main {
     alice: [.sparkle seed="contains ] safely" amp=2px]text[/][p]
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_render_text_fixture(source);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("fixture lowers");
     let dialogue = hir
@@ -1635,7 +1653,7 @@ flow @flow.main main {
     alice(text_color=rgb("#303132")): Hello #[missing][p]
 }
 "##;
-    let parsed = parse_source(source);
+    let parsed = parse_render_text_fixture(source);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("fixture lowers");
     let defaults = test_dialogue_defaults(&hir);
@@ -1710,7 +1728,7 @@ flow @flow.main main {
     concierge: Welcome back.
 }
 "#;
-    let parsed = parse_source(source);
+    let parsed = parse_render_text_fixture(source);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("fixture lowers");
     let defaults = test_dialogue_defaults(&hir);

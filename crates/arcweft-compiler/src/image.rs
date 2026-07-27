@@ -1003,7 +1003,10 @@ fn f32_to_u32_milli(value: f32) -> u32 {
 mod tests {
     use super::*;
     use arcweft_lang_hir::{lower::lower_document_to_hir, project::HirProjectModule};
-    use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, parser::parse_source};
+    use arcweft_lang_syntax::{
+        ast::module_path::CanonicalModulePath,
+        parser::{ParseOptions, parse_document_with_source},
+    };
     use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
     use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
@@ -1029,7 +1032,7 @@ pub image @image.glass_bg {
             .expect("document"),
         );
         let module = CanonicalModulePath::crate_root();
-        let syntax = parse_source(document.text());
+        let syntax = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(syntax.errors().is_empty());
         let hir = lower_document_to_hir(document.as_ref(), syntax.typed_tree())
             .expect("source lowers to HIR");

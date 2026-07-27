@@ -4,13 +4,24 @@ use arcweft_compiler::{
 };
 use arcweft_lang_sema::diagnostics::TypeCheckError;
 use arcweft_lang_sema::env::TypeCheckEnv;
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use std::sync::Arc;
 
 #[test]
 fn compiler_hir_validation_surfaces_trait_diagnostic_code() {
-    let parsed = parse_source(include_str!(
-        "../../../fixtures/traits/err-missing-associated-type.arcw"
-    ));
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-test://compiler/traits/err-missing-associated-type.arcw",
+            )
+            .expect("trait diagnostic fixture source ID"),
+            SourceName::path("fixtures/traits/err-missing-associated-type.arcw"),
+            include_str!("../../../fixtures/traits/err-missing-associated-type.arcw"),
+        )
+        .expect("trait diagnostic fixture source document"),
+    );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     let hir = lower_source_document(parsed.document(), parsed.typed_tree()).expect("HIR lowers");
     assert_eq!(hir.source_identity(), Some(parsed.document().identity()));
     let err = validate_hir_with_env(&hir, &TypeCheckEnv::standard()).expect_err("trait error");

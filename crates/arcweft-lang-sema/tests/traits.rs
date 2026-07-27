@@ -14,12 +14,21 @@ use arcweft_lang_sema::registration::{
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_lang_syntax::{
     ast::module_path::CanonicalModulePath,
-    parser::{ParseOptions, parse_document_with_source, parse_source},
+    parser::{ParseOptions, parse_document_with_source},
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 fn diagnostics(source: &str) -> Vec<TypeCheckErrorKind> {
-    let tree = parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://sema/traits-diagnostics.arcw")
+                .expect("source ID"),
+            SourceName::Generated,
+            source,
+        )
+        .expect("source document"),
+    );
+    let tree = parse_document_with_source(document, ParseOptions::default());
     let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("HIR lowers");
     analyze_types(&hir, &TypeCheckEnv::standard())
         .diagnostics

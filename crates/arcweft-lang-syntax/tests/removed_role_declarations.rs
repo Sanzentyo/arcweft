@@ -1,16 +1,22 @@
 use arcweft_lang_syntax::ast::items::Item;
 use arcweft_lang_syntax::parser::{
     FragmentKind, ParseCompletion, ParseOptions, ParsedFragmentKind, parse_document_with_source,
-    parse_fragment, parse_source,
+    parse_fragment,
 };
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::sync::Arc;
 
-const REMOVED_DECLARATIONS: [&str; 4] = [
-    "state GameState {\n    value: i32\n}\n",
-    "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
-    "agent @agent.smoke smoke() {\n    Ok(())\n}\n",
-    "dialogue defaults {\n    view = @view.main\n}\n",
+const REMOVED_DECLARATIONS: [(&str, &str); 4] = [
+    ("state", "state GameState {\n    value: i32\n}\n"),
+    (
+        "reducer",
+        "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
+    ),
+    ("agent", "agent @agent.smoke smoke() {\n    Ok(())\n}\n"),
+    (
+        "dialogue-defaults",
+        "dialogue defaults {\n    view = @view.main\n}\n",
+    ),
 ];
 
 fn assert_rejected(parsed: &arcweft_lang_syntax::source::ParsedSource, source: &str) {
@@ -31,14 +37,14 @@ fn assert_rejected(parsed: &arcweft_lang_syntax::source::ParsedSource, source: &
 
 #[test]
 fn removed_role_declarations_are_rejected_by_the_current_grammar() {
-    for source in REMOVED_DECLARATIONS {
-        assert_rejected(&parse_source(source), source);
-
+    for (logical_name, source) in REMOVED_DECLARATIONS {
         let document = Arc::new(
             SourceDocument::try_new(
-                SourceDocumentId::try_new(format!("arcweft-test://removed-role/{}", source.len()))
-                    .expect("test source ID"),
-                SourceName::path("removed.arcw"),
+                SourceDocumentId::try_new(format!(
+                    "arcweft-test://syntax/removed-role/{logical_name}"
+                ))
+                .expect("test source ID"),
+                SourceName::path(format!("removed-{logical_name}.arcw")),
                 source,
             )
             .expect("test source document"),

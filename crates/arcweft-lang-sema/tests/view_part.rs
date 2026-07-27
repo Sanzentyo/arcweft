@@ -2,7 +2,7 @@ use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_sema::view_part::{
     CheckedViewPartTargetKind, ViewPartDiagnosticCode, check_view_parts,
 };
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source, parse_source};
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::sync::Arc;
 
@@ -12,7 +12,15 @@ fn checked(
     arcweft_lang_sema::view_part::CheckedViewPartCatalog,
     Vec<arcweft_lang_sema::view_part::ViewPartDiagnostic>,
 ) {
-    let parsed = parse_source(source);
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://sema/view-part-check.arcw").unwrap(),
+            SourceName::Generated,
+            source,
+        )
+        .unwrap(),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).unwrap();
     check_view_parts(&hir)

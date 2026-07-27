@@ -338,13 +338,16 @@ const fn severity_name(severity: DiagnosticSeverity) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use arcweft_lang_syntax::parser::{parse_source, recovery::ParseErrorKind};
+    use arcweft_lang_syntax::parser::{
+        ParseOptions, parse_document_with_source, recovery::ParseErrorKind,
+    };
     use arcweft_source::{
         Diagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticSeverity,
         DiagnosticSuggestion, SourceDocument, SourceDocumentId, SourceEdit, SourceName,
         SourceRange, SourceSpanValidationError,
     };
     use serde_json::{Value, json};
+    use std::sync::Arc;
 
     use super::{AgentDiagnosticProjector, AgentParserDiagnosticProjection};
 
@@ -361,7 +364,13 @@ mod tests {
 
     #[test]
     fn parser_diagnostic_projection_preserves_the_editless_source_payload() {
-        let parsed = parse_source(SOURCE);
+        let parsed = parse_document_with_source(
+            Arc::new(document(
+                "arcweft-test://agent-repl/diagnostics/editless-source-payload",
+                SOURCE,
+            )),
+            ParseOptions::default(),
+        );
         let diagnostic = parsed
             .errors()
             .iter()
@@ -402,7 +411,13 @@ mod tests {
     fn parser_diagnostic_projection_dewraps_an_exact_synthetic_prefix() {
         let prefix = "// synthetic wrapper\n";
         let synthetic_source = format!("{prefix}{SOURCE}");
-        let parsed = parse_source(&synthetic_source);
+        let parsed = parse_document_with_source(
+            Arc::new(document(
+                "arcweft-test://agent-repl/diagnostics/synthetic-prefix",
+                &synthetic_source,
+            )),
+            ParseOptions::default(),
+        );
         let diagnostic = parsed
             .errors()
             .iter()
@@ -430,7 +445,13 @@ mod tests {
     #[test]
     fn parser_diagnostic_projection_preserves_and_validates_related_ranges() {
         let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
-        let parsed = parse_source(source);
+        let parsed = parse_document_with_source(
+            Arc::new(document(
+                "arcweft-test://agent-repl/diagnostics/related-ranges",
+                source,
+            )),
+            ParseOptions::default(),
+        );
         let diagnostic = parsed
             .errors()
             .iter()

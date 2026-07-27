@@ -248,7 +248,16 @@ arcweft-launch
   として所有する Sans I/O crate とする。ファイル探索、current directory、
   process 環境、network binding、adapter execution は CLI / player adapter 側の
   責務。
-- `parse_source` は `ParsedSource { syntax, typed_tree, errors, source_hash, line_index }` のように常に lossless CST と diagnostics を返す。typed source model は `TypedSyntaxTree` として CST / rowan `SyntaxNode` と区別する。内部の行単位 parser は短期 MVP であり、delimiter recovery、top-level punctuation / keyword split、binding split、multi-token punctuation sequence split などの構文走査は CST helper へ集約し、これ以上 `split_top_level` 型の ad hoc parser を拡張しない。
+- full-document parse の public authority は
+  `parse_document_with_source(Arc<SourceDocument>, ParseOptions)` だけとし、返る
+  `ParsedSource` が exact document revision、lossless CST、typed tree、diagnostics、
+  line index を一体で所有する。raw text だけを受け取り content hash から
+  document identity を捏造する facade は置かない。typed source model は
+  `TypedSyntaxTree` として CST / rowan `SyntaxNode` と区別する。内部の行単位
+  parser は短期 MVP であり、delimiter recovery、top-level punctuation /
+  keyword split、binding split、multi-token punctuation sequence split などの
+  構文走査は CST helper へ集約し、これ以上 `split_top_level` 型の ad hoc
+  parser を拡張しない。
 - Cranelift は `arcweft-lang-jit-cranelift` の native-only 最適化 backend に閉じ込める。`arcweft-core` に `jit-cranelift` feature や Cranelift 依存を置かない。
 - Wasmtime は `arcweft-wasm-wasmtime` の native plugin/activity sandbox 用 adapter であり、Arcweft runtime の主実行系ではない。WIT ABI は `arcweft-wasm-abi`、Wasm validation/generation/inspection は `arcweft-wasm-tools` が担当する。
 

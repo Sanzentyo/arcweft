@@ -1,15 +1,27 @@
 use arcweft_lang_hir::{lower::lower_document_to_hir, model::HirTopLevelDecl};
-use arcweft_lang_syntax::{expr::Expr, parser::parse_source};
+use arcweft_lang_syntax::{
+    expr::Expr,
+    parser::{ParseOptions, parse_document_with_source},
+};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use std::sync::Arc;
 
 #[test]
 fn named_style_lowers_to_hir_owned_selector_and_expression_nodes() {
-    let parsed = parse_source(
-        r"pub style controls {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/style/named-style.arcw")
+                .expect("named style fixture source ID"),
+            SourceName::path("lang-hir/style/named-style.arcw"),
+            r"pub style controls {
     token metric.radius: Length = 12px
     Button:hover { border-radius = token(metric.radius) }
 }
 ",
+        )
+        .expect("named style fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("style lowers");
     let style = hir
@@ -46,14 +58,21 @@ fn named_style_lowers_to_hir_owned_selector_and_expression_nodes() {
 
 #[test]
 fn lowering_extracts_inline_native_patches_in_source_order() {
-    let parsed = parse_source(
-        r#"pub view Example() {
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-test://lang-hir/style/inline-patches.arcw")
+                .expect("inline patch fixture source ID"),
+            SourceName::path("lang-hir/style/inline-patches.arcw"),
+            r#"pub view Example() {
     Button("OK")
         .style { opacity = 900milli }
         .style { outline-width = 2px }
 }
 "#,
+        )
+        .expect("inline patch fixture source document"),
     );
+    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
     assert_eq!(parsed.errors(), &[]);
     let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("View lowers");
     assert_eq!(hir.style_patches().len(), 2);

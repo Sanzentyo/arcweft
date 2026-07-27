@@ -1,18 +1,31 @@
 use std::fs;
 use std::path::Path;
+use std::sync::Arc;
 
-use arcweft_lang_syntax::parser::parse_source;
+use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_lang_syntax::{
     ast::{items::Item, style::StyleBodyItem},
     expr::Expr,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 #[test]
 fn native_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source = fs::read_to_string(root.join("samples/native-style-parity/src/main.arcw"))
         .expect("native Style parity sample source");
-    let parsed = parse_source(source.clone());
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(
+                "arcweft-project://samples/native-style-parity/src/main.arcw",
+            )
+            .expect("sample document ID"),
+            SourceName::path("samples/native-style-parity/src/main.arcw"),
+            source.as_str(),
+        )
+        .expect("sample source document"),
+    );
+    let parsed = parse_document_with_source(document, ParseOptions::default());
 
     assert!(
         parsed.errors().is_empty(),

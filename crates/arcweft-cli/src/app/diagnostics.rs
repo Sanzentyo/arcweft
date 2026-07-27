@@ -221,11 +221,14 @@ fn level_for(severity: DiagnosticSeverity) -> Level<'static> {
 #[cfg(test)]
 mod renderer_tests {
     use super::*;
-    use arcweft_lang_syntax::parser::{parse_source, recovery::ParseErrorKind};
+    use arcweft_lang_syntax::parser::{
+        ParseOptions, parse_document_with_source, recovery::ParseErrorKind,
+    };
     use arcweft_source::{
         DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel, DiagnosticSuggestion,
         SourceDocumentId, SourceEdit, SourceName, SourceRange,
     };
+    use std::sync::Arc;
 
     fn document(text: &str) -> SourceDocument {
         SourceDocument::try_new(
@@ -340,15 +343,15 @@ mod renderer_tests {
     #[test]
     fn plain_renderer_preserves_typed_parser_code_without_injecting_kind_label() {
         let source = "pub view Card() {\n    export part as heading\n    Panel()\n}\n";
-        let document = document(source);
-        let parsed = parse_source(source);
+        let document = Arc::new(document(source));
+        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         let error = parsed
             .errors()
             .iter()
             .find(|error| error.kind() == ParseErrorKind::ViewExportPartMissingLocal)
             .expect("typed parser error");
-        let diagnostic = error.diagnostic(&document);
-        let source = DiagnosticSource::new(&document);
+        let diagnostic = error.diagnostic(document.as_ref());
+        let source = DiagnosticSource::new(document.as_ref());
         let groups = diagnostic_groups(&diagnostic, &source);
         let rendered = Renderer::plain().render(&groups);
 
