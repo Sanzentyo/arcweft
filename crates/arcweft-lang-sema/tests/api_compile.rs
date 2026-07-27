@@ -43,3 +43,9 @@ fn removed_zero_consumer_type_helpers_are_unavailable() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/removed_zero_consumer_type_kind_helpers.rs");
 }
+
+#[test]
+fn removed_zero_consumer_nominal_index_helper_is_unavailable() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/removed_zero_consumer_nominal_index_helper.rs");
+}

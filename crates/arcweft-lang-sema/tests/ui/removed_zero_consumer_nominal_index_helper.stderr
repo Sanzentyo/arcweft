@@ -1,0 +1,11 @@
+error[E0599]: no method named `recovered_node_type` found for reference `&NominalResolutionIndex` in the current scope
+  --> tests/ui/removed_zero_consumer_nominal_index_helper.rs:10:19
+   |
+10 |     let _ = index.recovered_node_type(root, node);
+   |                   ^^^^^^^^^^^^^^^^^^^
+   |
+help: there is a method `recovered_type` with a similar name, but with different arguments
+  --> src/nominal/index.rs
+   |
+   |     pub fn recovered_type(&self, root: &SourceSpan) -> Option<&TypeKind> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

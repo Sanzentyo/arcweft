@@ -100,18 +100,6 @@ impl NominalResolutionIndex {
             .get(&NominalTypeNodeKey::new(root.clone(), node.clone()))
     }
 
-    /// Returns the semantic type recovered for one exact nested type node.
-    ///
-    /// Constant and entity-family argument nodes do not denote types and
-    /// therefore return `None` even when their structural fact exists.
-    pub fn recovered_node_type(
-        &self,
-        root: &SourceSpan,
-        node: &TypeRefNodePath,
-    ) -> Option<&TypeKind> {
-        self.node(root, node).and_then(ResolvedTypeNode::recovered)
-    }
-
     /// Accepted roots in deterministic source order.
     pub fn roots(&self) -> impl ExactSizeIterator<Item = &SourceSpan> {
         self.reports.keys()
