@@ -28,7 +28,7 @@ use arcweft_runtime_plan::{
     assertion::RuntimeAssertionBuildProfile,
     errors::{RuntimeHostRequestArgument, RuntimePlanLowerContext, RuntimePlanLowerErrorKind},
     flow::{
-        RuntimePlanLowerOptions, lower_runtime_plan as lower_runtime_plan_admitted,
+        RuntimePlanLowerOptions,
         lower_runtime_plan_with_stats as lower_runtime_plan_with_stats_admitted,
     },
     line_task::lower_line_task_groups,
@@ -49,7 +49,11 @@ fn lower_runtime_plan(
     hir: &HirModule,
 ) -> Result<arcweft_core::plan::RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>>
 {
-    lower_runtime_plan_admitted(hir, &admitted_options(RuntimePlanLowerOptions::default()))
+    lower_runtime_plan_with_stats_admitted(
+        hir,
+        &admitted_options(RuntimePlanLowerOptions::default()),
+    )
+    .map(|report| report.plan)
 }
 
 fn lower_runtime_plan_with_options(
@@ -57,7 +61,8 @@ fn lower_runtime_plan_with_options(
     options: &RuntimePlanLowerOptions,
 ) -> Result<arcweft_core::plan::RuntimePlan, Vec<arcweft_runtime_plan::errors::RuntimePlanLowerError>>
 {
-    lower_runtime_plan_admitted(hir, &admitted_options(options.clone()))
+    lower_runtime_plan_with_stats_admitted(hir, &admitted_options(options.clone()))
+        .map(|report| report.plan)
 }
 
 fn lower_runtime_plan_with_stats(
@@ -1987,7 +1992,7 @@ flow assertions {
     );
     let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
         .expect("typed debug assertion fixture lowers to HIR");
-    let options = RuntimePlanLowerOptions::new()
+    let options = RuntimePlanLowerOptions::default()
         .with_assertion_build_profile(RuntimeAssertionBuildProfile::Release);
 
     let plan = lower_runtime_plan_with_options(&hir, &options)

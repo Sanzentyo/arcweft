@@ -2347,8 +2347,9 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
         DialoguePresentationProfile::engine_default(),
         test_dialogue_revision(),
     );
-    let plan = arcweft_runtime_plan::flow::lower_runtime_plan(&hir, &runtime_options)
-        .expect("test source lowers to a runtime plan");
+    let plan = arcweft_runtime_plan::flow::lower_runtime_plan_with_stats(&hir, &runtime_options)
+        .expect("test source lowers to a runtime plan")
+        .plan;
     let display = LineDisplayCatalog::new(test_dialogue_revision());
     let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
         .lower()

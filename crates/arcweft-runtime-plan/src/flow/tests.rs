@@ -53,10 +53,11 @@ fn admitted_options(profile: DialoguePresentationProfile) -> AdmittedRuntimePlan
 }
 
 fn lower_runtime_plan(module: &HirModule) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
-    super::lower_runtime_plan(
+    super::lower_runtime_plan_with_stats(
         module,
         &admitted_options(DialoguePresentationProfile::engine_default()),
     )
+    .map(|report| report.plan)
 }
 
 fn lower_runtime_plan_with_stats(

@@ -21,13 +21,6 @@ mod value_lowering;
 use sampler::lower_sampler;
 use value_lowering::{lower_closed_runtime_value, lower_static_value, runtime_type};
 
-/// Compiles all Fx graph factories in one linked HIR module.
-pub fn lower_fx_definitions(
-    module: &HirModule,
-) -> Result<Vec<FxDefinition>, RuntimePlanLowerError> {
-    lower_fx_definitions_for_package(module, "crate")
-}
-
 /// Compiles all Fx graph factories using the owning package identity.
 pub fn lower_fx_definitions_for_package(
     module: &HirModule,
@@ -506,7 +499,7 @@ fn simple_path(expr: &Expr) -> Option<&str> {
 
 #[cfg(test)]
 mod tests {
-    use super::lower_fx_definitions;
+    use super::lower_fx_definitions_for_package;
     use std::sync::Arc;
 
     use arcweft_lang_hir::lower::lower_document_to_hir;
@@ -549,7 +542,8 @@ fn notice(accent: Color = rgb("#ff4050")) -> Fx {
         );
         let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
             .expect("Fx fixture lowers");
-        let definitions = lower_fx_definitions(&hir).expect("Fx graph compiles");
+        let definitions =
+            lower_fx_definitions_for_package(&hir, "crate").expect("Fx graph compiles");
         let notice = definitions
             .iter()
             .find(|definition| definition.id().function() == "notice")
@@ -587,7 +581,8 @@ fn wave(amplitude: Length = 2px, speed: f32 = 1.0) -> Fx {
         );
         let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
             .expect("Fx sampler fixture lowers");
-        let definitions = lower_fx_definitions(&hir).expect("Fx sampler compiles");
+        let definitions =
+            lower_fx_definitions_for_package(&hir, "crate").expect("Fx sampler compiles");
         let [FxNode::Transform { properties, .. }] = definitions[0].graph().nodes() else {
             panic!("wave compiles to a transform node");
         };

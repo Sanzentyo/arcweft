@@ -148,12 +148,6 @@ pub struct RuntimePlanLowerOptions {
 }
 
 impl RuntimePlanLowerOptions {
-    /// Creates default source-local lowering options.
-    #[must_use]
-    pub fn new() -> Self {
-        Self::default()
-    }
-
     /// Selects the canonical package identity used by compiled cross-section
     /// references such as source-defined Fx applications.
     #[must_use]
@@ -265,10 +259,6 @@ impl RuntimePlanLowerOptions {
 
     pub fn for_iteration_evidence(&self) -> &[RuntimeIteratorEvidence] {
         &self.for_iteration_evidence
-    }
-
-    pub fn trait_methods(&self) -> &[RuntimeTraitMethod] {
-        &self.trait_methods
     }
 
     pub fn typed_lowering_evidence(&self) -> &[RuntimeTypedLoweringEvidence] {
@@ -415,18 +405,6 @@ pub struct RuntimePlanLowerStats {
     pub map_sum_fusions: usize,
     pub sequence_source_inlines: usize,
     pub pure_call_exprs: usize,
-}
-
-/// Lowers checked HIR flows to the Sans I/O core runtime program.
-///
-/// This pass is intentionally stricter than line-task-only lowering: it must
-/// not silently skip flow syntax because the engine would otherwise execute a
-/// different story than the source describes.
-pub fn lower_runtime_plan(
-    module: &HirModule,
-    options: &AdmittedRuntimePlanLowerOptions,
-) -> Result<RuntimePlan, Vec<RuntimePlanLowerError>> {
-    lower_runtime_plan_with_stats(module, options).map(|report| report.plan)
 }
 
 /// Lowers checked HIR to a runtime plan and records lowering-time counters.

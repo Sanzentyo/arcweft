@@ -1434,6 +1434,7 @@ dependencies = [
  "arcweft-view",
  "blake3",
  "thiserror 2.0.18",
+ "trybuild",
 ]
 
 [[package]]
