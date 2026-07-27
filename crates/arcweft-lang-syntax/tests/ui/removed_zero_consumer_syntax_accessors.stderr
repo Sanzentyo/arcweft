@@ -33,3 +33,11 @@ error[E0599]: no method named `view_calls` found for reference `&ViewBody` in th
    |
 19 |     let _ = view.view_calls();
    |                  ^^^^^^^^^^ method not found in `&ViewBody`
+
+error[E0277]: `IntSuffix` doesn't implement `std::fmt::Display`
+  --> tests/ui/removed_zero_consumer_syntax_accessors.rs:23:37
+   |
+23 |     let _: &dyn std::fmt::Display = &IntSuffix::I32;
+   |                                     ^^^^^^^^^^^^^^^ the trait `std::fmt::Display` is not implemented for `IntSuffix`
+   |
+   = note: required for the cast from `&IntSuffix` to `&dyn std::fmt::Display`

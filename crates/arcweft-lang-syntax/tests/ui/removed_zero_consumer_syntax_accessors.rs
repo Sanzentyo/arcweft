@@ -4,7 +4,7 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot},
         view::ViewBody,
     },
-    expr::Expr,
+    expr::{Expr, IntSuffix},
 };
 
 fn removed_module_path_accessors(root: ModulePathRoot, path: &CanonicalModulePath) {
@@ -17,6 +17,10 @@ fn removed_typed_accessors(tag: DialogueTagKind, expr: &Expr, view: &ViewBody) {
     let _ = tag.is_point();
     let _ = expr.as_select();
     let _ = view.view_calls();
+}
+
+fn removed_numeric_surfaces() {
+    let _: &dyn std::fmt::Display = &IntSuffix::I32;
 }
 
 fn main() {}

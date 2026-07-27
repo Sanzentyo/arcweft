@@ -4,8 +4,6 @@
 //! integer-only bracket representation. Expected-type inference and range
 //! policy remain semantic-layer responsibilities.
 
-use std::fmt;
-
 use thiserror::Error;
 
 use crate::ast::common::TextRange;
@@ -209,12 +207,6 @@ impl IntSuffix {
             Self::U128 => "u128",
             Self::USize => "usize",
         }
-    }
-}
-
-impl fmt::Display for IntSuffix {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
     }
 }
 
