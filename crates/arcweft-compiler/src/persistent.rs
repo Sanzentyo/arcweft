@@ -1097,7 +1097,7 @@ struct HirBodyCounts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hir::lower_source_document;
+    use arcweft_lang_hir::lower::lower_document_to_hir;
     use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
     use arcweft_project::{
         fingerprint::NamedDigest,
@@ -1207,7 +1207,7 @@ return "done"
         );
         let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
-        let hir = lower_source_document(parsed.document(), parsed.typed_tree())
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("source lowers to HIR");
         let key = key(CompilerObjectKind::HirBody, &parsed);
         let object = hir_body_object(&HirBodyFactsInput {
@@ -1243,7 +1243,7 @@ return "done"
         );
         let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
-        let hir = lower_source_document(parsed.document(), parsed.typed_tree())
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("source lowers to HIR");
         let key = key(CompilerObjectKind::InterfaceSummary, &parsed);
         let object = interface_summary_object(&InterfaceSummaryFactsInput {
@@ -1290,7 +1290,7 @@ return "done"
             );
             let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
             assert!(parsed.errors().is_empty());
-            let hir = lower_source_document(parsed.document(), parsed.typed_tree())
+            let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
                 .expect("source lowers to HIR");
             let function = hir.functions().first().expect("function is present");
             signature_digest("function", function.name(), Some(function.signature()))
@@ -1383,7 +1383,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
 
         let rebuilt = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(rebuilt.errors().is_empty());
-        lower_source_document(rebuilt.document(), rebuilt.typed_tree())
+        lower_document_to_hir(rebuilt.document(), rebuilt.typed_tree())
             .expect("source rebuild still lowers to HIR");
     }
 
@@ -1400,7 +1400,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
         );
         let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         assert!(parsed.errors().is_empty());
-        let hir = lower_source_document(parsed.document(), parsed.typed_tree())
+        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
             .expect("source lowers to HIR");
         let interface_key = key(CompilerObjectKind::InterfaceSummary, &parsed);
         let hir_key = key(CompilerObjectKind::HirBody, &parsed);

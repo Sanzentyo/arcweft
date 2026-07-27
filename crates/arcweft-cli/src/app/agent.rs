@@ -29,7 +29,7 @@ use arcweft_agent_runner::{
     session::{AgentSession, NoopRagService},
 };
 use arcweft_bundle::{ArcweftBundle, BundleKind};
-use arcweft_compiler::{agent, agent_project, hir};
+use arcweft_compiler::{agent, agent_project};
 use arcweft_core::value::RuntimeBinding;
 use arcweft_debug_model::{
     chunk::{

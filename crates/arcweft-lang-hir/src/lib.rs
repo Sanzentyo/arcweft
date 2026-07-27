@@ -4,7 +4,6 @@
 //! passes, runtime-plan lowering, CLI, and LSP tooling should import HIR through
 //! this crate instead of reaching into parser internals.
 
-pub mod assertion;
 mod cache_facts;
 mod dialogue_application;
 mod dialogue_identity;

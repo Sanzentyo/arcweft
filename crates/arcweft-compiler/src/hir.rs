@@ -1,18 +1,8 @@
-use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_hir::model::HirModule;
 use arcweft_lang_sema::check::{TypeCheckReport, analyze_registered_project_types};
 use arcweft_lang_sema::registration::RegisteredSemanticWorld;
 use arcweft_lang_sema::resolve::{registry_from_hir_and_registered, validate_hir_references};
-use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
-use arcweft_source::SourceDocument;
 
-/// Lowers a typed syntax tree while binding every retained range to one source revision.
-pub fn lower_source_document(
-    document: &SourceDocument,
-    tree: &TypedSyntaxTree,
-) -> Result<HirModule, Vec<arcweft_lang_hir::model::HirLowerError>> {
-    lower_document_to_hir(document, tree)
-}
 /// Validates HIR entity references through the committed project semantic world.
 pub fn resolve_registered_hir_references(
     hir: &HirModule,

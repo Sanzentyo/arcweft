@@ -5,8 +5,9 @@ use super::{
     ProjectSemanticIndex, QualifiedName, RagQuery, SearchChannel, SearchHit, SemaPublicId,
     SessionId, SourceAnchor, StableHash, agent_graph_edge_kind_counts,
     agent_graph_symbol_has_dynamic_control, agent_graph_symbol_kind_counts,
-    agent_program_graph_summary, agent_trace_kind_name, fs, hir, project_semantic_index_from_hir,
+    agent_program_graph_summary, agent_trace_kind_name, fs, project_semantic_index_from_hir,
 };
+use arcweft_lang_hir::lower::lower_document_to_hir;
 use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use std::sync::Arc;
 
@@ -97,7 +98,7 @@ pub(in crate::app::agent) fn agent_source_rag_index(
             parsed.errors()
         ));
     }
-    let hir = hir::lower_source_document(document.as_ref(), parsed.typed_tree())
+    let hir = lower_document_to_hir(document.as_ref(), parsed.typed_tree())
         .map_err(|errors| format!("agent rag query source HIR errors: {errors:?}"))?;
     let source_hash = agent_content_hash(&source);
     let project = project_semantic_index_from_hir(

@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_hir::assertion`
+ --> tests/ui/standalone_hir_assertion_removed.rs:1:23
+  |
+1 | use arcweft_lang_hir::assertion::HirAssertion;
+  |                       ^^^^^^^^^ could not find `assertion` in `arcweft_lang_hir`

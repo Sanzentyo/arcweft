@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_compiler::hir::lower_source_document`
+ --> tests/ui/lower_source_document_removed.rs:1:5
+  |
+1 | use arcweft_compiler::hir::lower_source_document;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `lower_source_document` in `hir`

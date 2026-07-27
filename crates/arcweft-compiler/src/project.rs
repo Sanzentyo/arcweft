@@ -28,6 +28,7 @@ pub use registration::{
 use crate::{hir, image, lower, parse, style, view};
 use crate::{image::CompiledImageCatalog, view::CompiledViewProduct};
 use arcweft_lang_hir::{
+    lower::lower_document_to_hir,
     model::HirModule,
     project::{HirProject, HirProjectModule},
     symbol::ProjectSymbolTable,
@@ -815,7 +816,7 @@ fn compile_module(
                 .map(|lint| lint.diagnostic(parsed.document())),
         ));
     }
-    let hir = hir::lower_source_document(parsed.document(), tree).map_err(|errors| {
+    let hir = lower_document_to_hir(parsed.document(), tree).map_err(|errors| {
         module_error(
             source,
             parsed.document(),
