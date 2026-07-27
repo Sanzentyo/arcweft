@@ -614,10 +614,6 @@ pub(crate) fn parse_generic_params_at(
         .collect()
 }
 
-pub fn parse_where_clause_list(source: &str) -> Result<Vec<WhereClause>, TypeParseError> {
-    parse_where_clauses_at(source, 0)
-}
-
 pub(crate) fn parse_where_clauses_at(
     source: &str,
     base: usize,

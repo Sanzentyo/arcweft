@@ -13,7 +13,6 @@ pub mod classify;
 pub mod entity_ref;
 pub mod lexer;
 pub mod line;
-pub mod path;
 pub mod punctuation;
 pub mod text;
 

@@ -1,0 +1,13 @@
+error[E0432]: unresolved imports `arcweft_lang_syntax::cst::path`, `arcweft_lang_syntax::types::parse_where_clause_list`
+ --> tests/ui/removed_unused_syntax_facades.rs:2:10
+  |
+2 |     cst::path::cst_path_roots,
+  |          ^^^^ could not find `path` in `cst`
+3 |     types::parse_where_clause_list,
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_where_clause_list` in `types`
+  |
+help: a similar name exists in the module
+  |
+3 -     types::parse_where_clause_list,
+3 +     types::parse_where_clauses_at,
+  |
