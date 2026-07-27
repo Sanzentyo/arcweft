@@ -2,8 +2,17 @@
 
 Date: 2026-07-27
 
-Status: `PARTIALLY_IMPLEMENTATION_READY`; public source/arena switch remains
-`DESIGN_BLOCKED`
+Status: `HISTORICAL_PARTIAL_INTAKE_SUPERSEDED`; the public source/arena switch
+is released by the accepted v6.1.1.4.1.1 correction
+
+## Supersession
+
+This note preserves the adjudication of the original v6.1.1.4.1 return. Its
+five blockers are now closed by the accepted standalone
+[v6.1.1.4.1.1 correction intake](2026-07-28-proof-01-1-1-4-1-1-source-owner-consistency-intake.md).
+The `DESIGN_BLOCKED` and `Blocked pending` statements below describe only the
+historical parent package before that correction; they are not current
+implementation blockers.
 
 ## Archive integrity
 
