@@ -2,7 +2,20 @@
 
 Date: 2026-07-28
 
-Status: `ACCEPTED_READY_FOR_IMPLEMENTATION`
+Status: `REJECTED_NOT_IMPLEMENTATION_READY`
+
+## Adjudication correction
+
+The archive is mechanically complete, and its fingerprint transcript is
+decision-complete, but its overall `READY_FOR_IMPLEMENTATION` claim is not
+accepted. A predecessor-body audit after the initial package-self-consistency
+check found a result-changing owner contradiction and incomplete production
+generator evidence.
+
+The repository correction request is
+[Proof 01.1.1.4.1.1.1.1](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1.1-tail-owner-and-generator-evidence-correction.md).
+No `SyntheticKey` admission or fingerprint production API is implemented from
+this rejected return while the complete role table remains unresolved.
 
 ## Archive integrity
 
@@ -27,35 +40,59 @@ The retained predecessor hashes were recomputed from repository archives and
 match the package: Proof v6.1.1 is `1b7de5f2...`, AW-AH-009.4.2 is
 `05e825dd...`, and Proof 01.1.1.4.1.1 is `2bcd3f78...`.
 
-## Accepted correction
+## Result-changing blockers
 
-The package closes the complete 21-role structural admission table. Exact-zero
-roles accept only ordinal `0`. The six source-ordered roles
-`RecoveryOperand`, `DesugaredTemporary`, `DestructuredBinding`,
-`ClosureCapture`, `PostfixIndexCandidateExpression`, and
-`DialogueContentCandidateExpression` accept `0..=1_023`; `1_024` and
-`u32::MAX` are rejected. This structural bound is separate from the aggregate
-transaction limit of 1,024 live or staged descendants for one exact owner.
+### Tail owners do not cover accepted HIR body shapes
 
-The four former syntax owners are replaced directly by final typed HIR owners:
+The returned table makes both `ImplicitUnitTail` and `MissingRequiredTail`
+Expr-only. That works for the final ordinary `Block`, `ComputationBlock`,
+`NamedBlock`, closure, `If`, and `IfLet` expression families, but it cannot
+represent every retained producer:
 
-- `ImplicitUnitTail` and `MissingRequiredTail` use `ExprId`;
-- `PredicateBoolReturn` and `ProofUnitReturn` use `ItemId`.
+- base Proof `HirPredicateBody::Block` and `HirProofBody::Block` contain
+  `{ scope: ScopeId, statements: Box<[StmtId]>, tail: ExprId }`; the block
+  itself has no source-backed `ExprId`;
+- base `PROOF_BLOCK.md` requires Unit proof, non-Unit proof, and predicate
+  omitted tails to allocate the tail from the block owner; using the tail being
+  allocated as its own owner would be circular; and
+- final `HirMatchArm` has no independent expression ID, multiple arms can miss
+  values under one match expression, and exact-zero `MissingRequiredTail`
+  keys owned only by the shared match `ExprId` would collide. Each arm already
+  has a distinct typed `ScopeId`.
 
-Only `RecoveryOperand`, `DesugaredTemporary`, `IfLetScrutinee`, and
-`MatchScrutinee` accept both expression and statement owners. No current role
-accepts `LocalId` or `CaptureId`; those variants remain part of the final typed
-owner vocabulary without forming a valid current key.
+The correction must therefore give the exact typed owner and allocation order
+for ordinary expression tails, predicate/proof block tails, and each match-arm
+tail. It must preserve existing final HIR payload shapes and must not restore a
+Syntax/raw owner or invent a compatibility carrier. The existing body/arm
+scope is the evident typed candidate, but this rejected package does not
+authorize that result.
 
-`SyntheticKey::try_new` checks owner kind before ordinal, so a doubly invalid
-input returns `WrongOwnerKind`; a valid kind with an invalid ordinal returns
-`InvalidOrdinal`. Structural construction performs no liveness lookup. The
-owning transaction separately preserves
-`WrongModule -> NotYetLive -> Retired -> KindMismatch`, staged-owner admission,
-checked descendant accounting, exact reuse by `(SyntheticKey, child
-HirIdKind)`, and atomic rollback.
+### Generator tests do not exercise production ordering
 
-The identity layer emits an opaque, read-only 51-byte fingerprint transcript:
+The archive specifies canonical ordinal generators for `RecoveryOperand`,
+`DesugaredTemporary`, `DestructuredBinding`, and `ClosureCapture`, but its
+corresponding test rows are identity-table unit tests. Those rows can prove
+boolean admission boundaries; they cannot prove semantic child-role order,
+source-token plus fixed-recipe order, pattern preorder, first-use capture
+order, or independence from map/vector iteration. The corrected matrix must
+require direct lowering/transaction tests for those four producer families,
+as it already does for postfix candidate preorder.
+
+`TEST_MATRIX.tsv` also describes `T-LIVE-03` using an obsolete "last-live"
+field name. The retained and current exact payload is
+`Retired { id, snapshot, retired_at }`; the corrected liveness rows must use
+the exact `NotYetLive` and `Retired` payload fields.
+
+## Retained non-blocking decisions
+
+The exact-zero/source-ordered ordinal domains, owner-kind-before-ordinal error
+precedence, liveness separation, aggregate descendant accounting, and
+candidate-only source-backed postfix rules are internally consistent for the
+owner rows that are actually representable. They remain useful input to the
+correction but are not sufficient to construct the complete final key.
+
+The proposed identity layer emits an opaque, read-only 51-byte fingerprint
+transcript:
 
 ```text
 "arcweft-hir-synthetic-key-v1\0"
@@ -70,38 +107,36 @@ ordinal as u32 little-endian
 Owner tags are exactly `0x01..=0x08`; role tags are exactly
 `0x01..=0x15`. Both supplied fixed vectors independently recompute to the
 documented bytes. This layer owns no digest algorithm, decoder, persisted wire
-format, raw constructor, or numeric slot accessor.
+format, raw constructor, or numeric slot accessor. No flaw was found in this
+focused transcript design; it may be retained unchanged by the correction.
 
-## Precedence and implementation boundary
+## Correction and implementation boundary
 
-The package changes only role admission, arbitrary-ordinal predicates,
-constructor precedence, and fingerprint bytes. It retains the final eight
+The package intended to change only role admission, arbitrary-ordinal
+predicates, constructor precedence, and fingerprint bytes. The unresolved tail
+rows prevent that focused change from becoming authority. The final eight
 typed owners, database-qualified IDs, typed source query, Type-owned elision,
 AW-AH-009.4.2 source-backed postfix candidate ownership, and deletion-driven
-consumer migration.
+consumer migration remain unchanged.
 
-Implementation proceeds directly from the already-landed typed owner. The
-deleted raw-owner `SyntheticKey` is not restored. No Syntax/raw owner, alias,
-wrapper, extension trait, dual reader, source reparse, source gate,
-CSS/Takumi path, old Dialogue repair, or removed-syntax-specific final
-diagnostic is authorized.
-
-The first coherent production cut adds the final structural key and transcript
-with direct typed and compile-fail evidence. Transaction liveness/allocation,
-role producers, postfix candidates, source index, and the public HIR authority
-switch follow in dependency order; old consumers are deleted in the same
-public switch that activates their final replacement.
+Implementation remains blocked on Proof 01.1.1.4.1.1.1.1. The deleted
+raw-owner `SyntheticKey` is not restored while waiting. No partial admission
+table, Syntax/raw owner, alias, wrapper, extension trait, dual reader, source
+reparse, source gate, CSS/Takumi path, old Dialogue repair, or
+removed-syntax-specific final diagnostic is authorized.
 
 ## Intake validation
 
 - every ZIP member was opened and every manifest row was recomputed;
 - request, predecessor archives, status, questions, baseline, and archive name
   were checked directly;
-- all 21 role rows partition the eight owner kinds without gaps or duplicates;
+- all 21 role rows mechanically partition the eight owner kinds without gaps
+  or duplicates, but predecessor consumers disprove two Expr-only rows;
 - the role and owner tags are unique, contiguous, and match the complete
   explicit tag tables;
 - both 51-byte fixed vectors were independently reconstructed;
 - `TEST_MATRIX.tsv` contains `56` unique rows;
-- `REQUIREMENTS_TRACEABILITY.tsv` contains `21` rows, all `CLOSED`; and
+- `REQUIREMENTS_TRACEABILITY.tsv` contains `21` rows marked `CLOSED`, but the
+  owner and generator findings above invalidate that readiness conclusion; and
 - no production source, Cargo manifest, runtime, renderer, Agent, MCP,
   persistence, or codec behavior changed in this docs-only intake cut.

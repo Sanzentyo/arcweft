@@ -2,18 +2,18 @@
 
 Date: 2026-07-28
 
-Status: `IMPLEMENTATION_READY_WITH_01.1.1.4.1.1.1`; the dependent public HIR
-switch remains implementation-pending
+Status: `PARTIALLY_IMPLEMENTATION_READY`; full typed `SyntheticKey` and the
+dependent public HIR switch remain `DESIGN_BLOCKED`
 
-## Correction return accepted
+## Correction return rejected
 
 The focused [Proof 01.1.1.4.1.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-1-synthetic-role-admission-intake.md)
-accepts the returned role-admission correction as `READY_FOR_IMPLEMENTATION`.
-It now fixes the complete 21-role typed owner table, every arbitrary-`u32`
-ordinal predicate, deterministic constructor error precedence, and the exact
-51-byte session-qualified fingerprint transcript. The design blocker described
-below is therefore released; it remains useful as the audit trail explaining
-why the narrower correction was required.
+rejects the returned role-admission correction as not implementation-ready.
+Its Expr-only tail rows cannot own retained predicate/proof block tails or
+uniquely own multiple missing match-arm values, and four source-ordered
+producer families lack direct lowering-order tests. The narrower
+[Proof 01.1.1.4.1.1.1.1 request](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1.1-tail-owner-and-generator-evidence-correction.md)
+must close those remaining decisions. The original blocker therefore remains.
 
 ## Post-intake correction
 
@@ -39,7 +39,7 @@ was not accepted without correction. The final `SyntheticOwner` enum and
 `SyntheticKey::try_new` would have required guessing inherited behavior. The
 narrow, independently throwable correction request was
 [`Proof 01.1.1.4.1.1.1`](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1-synthetic-role-owner-admission-correction.md).
-Its accepted return now supplies the missing authority.
+Its first return did not supply complete authority.
 
 ## Archive integrity
 
@@ -127,8 +127,8 @@ does not yet release the full public HIR switch that depends on a complete
 synthetic-key policy. The intended implementation order remains:
 
 1. typed `SyntheticOwner` projection and qualified arena identity;
-2. typed `SyntheticKey` admission/fingerprint under the accepted
-   01.1.1.4.1.1.1 correction;
+2. after 01.1.1.4.1.1.1.1 returns, typed `SyntheticKey`
+   admission/fingerprint;
 3. one typed source index and source query;
 4. type region and pathless variant payloads;
 5. literal, Duration, limit, call, Thread, Dialogue, and RichText records;
