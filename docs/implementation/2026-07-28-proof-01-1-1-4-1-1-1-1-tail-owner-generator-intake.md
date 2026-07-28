@@ -96,7 +96,7 @@ diagnostic, and accounting state back together.
 
 The fingerprint member is byte-identical to the rejected return: `4,463`
 bytes, SHA-256
-`8b8598bf219803819fb0c1077219d0c34274aa90ae19d0412d339fb58d6edb8e`.
+`8b8598bf26b938526092c38460c523c10fbb50d8daa75ad006f8e6e3006edb8e`.
 Both fixed 51-byte vectors were independently reconstructed. The transcript
 is session-qualified identity input only; it is not a decoder, persisted wire
 format, portable digest, or authorization to add a hashing dependency.
