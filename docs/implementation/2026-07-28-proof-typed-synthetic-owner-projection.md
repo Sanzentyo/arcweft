@@ -42,8 +42,11 @@ Therefore this cut deliberately does not add:
 - liveness, rollback, or synthetic-descendant allocation; or
 - any consumer migration.
 
-Those results remain blocked on the independently throwable
+Those results were blocked on the independently throwable
 [Proof 01.1.1.4.1.1.1 request](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1-synthetic-role-owner-admission-correction.md).
+The [accepted return intake](2026-07-28-proof-01-1-1-4-1-1-1-synthetic-role-admission-intake.md)
+now releases the final typed key admission and fingerprint transcript for the
+next coherent cut.
 The private `RawHirId` remains only as the backing storage of typed HIR IDs; it
 is not a synthetic owner and remains inaccessible outside `identity.rs`.
 

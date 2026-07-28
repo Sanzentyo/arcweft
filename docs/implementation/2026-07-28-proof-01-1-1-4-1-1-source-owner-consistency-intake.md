@@ -2,8 +2,18 @@
 
 Date: 2026-07-28
 
-Status: `PARTIALLY_IMPLEMENTATION_READY`; full typed `SyntheticKey` and the
-dependent public HIR switch remain `DESIGN_BLOCKED`
+Status: `IMPLEMENTATION_READY_WITH_01.1.1.4.1.1.1`; the dependent public HIR
+switch remains implementation-pending
+
+## Correction return accepted
+
+The focused [Proof 01.1.1.4.1.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-1-synthetic-role-admission-intake.md)
+accepts the returned role-admission correction as `READY_FOR_IMPLEMENTATION`.
+It now fixes the complete 21-role typed owner table, every arbitrary-`u32`
+ordinal predicate, deterministic constructor error precedence, and the exact
+51-byte session-qualified fingerprint transcript. The design blocker described
+below is therefore released; it remains useful as the audit trail explaining
+why the narrower correction was required.
 
 ## Post-intake correction
 
@@ -23,12 +33,13 @@ The stable-fingerprint paragraph likewise names ingredients without fixing
 the typed encoder/API, discriminant values, integer widths/endianness, or
 hash/transcript owner. Rust `Hash` output is explicitly not a substitute.
 
-Therefore the package's full `READY_FOR_IMPLEMENTATION` claim is not accepted.
-The final `SyntheticOwner` enum and `kind()` / `module()` projections are
-concrete, and `ElidedRegion` itself is concrete, but implementing full
-`SyntheticKey::try_new` would require guessing inherited behavior. The narrow,
-independently throwable correction request is
+Therefore the package's original standalone `READY_FOR_IMPLEMENTATION` claim
+was not accepted without correction. The final `SyntheticOwner` enum and
+`kind()` / `module()` projections were concrete, but implementing full
+`SyntheticKey::try_new` would have required guessing inherited behavior. The
+narrow, independently throwable correction request was
 [`Proof 01.1.1.4.1.1.1`](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1-synthetic-role-owner-admission-correction.md).
+Its accepted return now supplies the missing authority.
 
 ## Archive integrity
 
@@ -116,7 +127,8 @@ does not yet release the full public HIR switch that depends on a complete
 synthetic-key policy. The intended implementation order remains:
 
 1. typed `SyntheticOwner` projection and qualified arena identity;
-2. after 01.1.1.4.1.1.1 returns, typed `SyntheticKey` admission/fingerprint;
+2. typed `SyntheticKey` admission/fingerprint under the accepted
+   01.1.1.4.1.1.1 correction;
 3. one typed source index and source query;
 4. type region and pathless variant payloads;
 5. literal, Duration, limit, call, Thread, Dialogue, and RichText records;
