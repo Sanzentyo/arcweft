@@ -2,17 +2,19 @@
 
 Date: 2026-07-27
 
-Status: `HISTORICAL_PARTIAL_INTAKE_SUPERSEDED`; the public source/arena switch
-is released by the accepted v6.1.1.4.1.1 correction
+Status: `HISTORICAL_PARTIAL_INTAKE_SUPERSEDED`; v6.1.1.4.1.1 closes the five
+original blocker shapes, but its dependent public switch still awaits the
+synthetic-role admission correction
 
 ## Supersession
 
 This note preserves the adjudication of the original v6.1.1.4.1 return. Its
-five blockers are now closed by the accepted standalone
-[v6.1.1.4.1.1 correction intake](2026-07-28-proof-01-1-1-4-1-1-source-owner-consistency-intake.md).
-The `DESIGN_BLOCKED` and `Blocked pending` statements below describe only the
-historical parent package before that correction; they are not current
-implementation blockers.
+five blocker shapes are corrected by the standalone
+[v6.1.1.4.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-source-owner-consistency-intake.md),
+but that intake records a later-discovered gap in the inherited
+`SyntheticRole::accepts_owner` and stable-fingerprint contract. The original
+blocker details below remain historical; the current narrow blocker and
+throwable request are authoritative in the v6.1.1.4.1.1 intake.
 
 ## Archive integrity
 

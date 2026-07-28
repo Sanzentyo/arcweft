@@ -2,7 +2,33 @@
 
 Date: 2026-07-28
 
-Status: `ACCEPTED_READY_FOR_IMPLEMENTATION`
+Status: `PARTIALLY_IMPLEMENTATION_READY`; full typed `SyntheticKey` and the
+dependent public HIR switch remain `DESIGN_BLOCKED`
+
+## Post-intake correction
+
+A deeper predecessor-policy audit after the initial package integrity and
+five-blocker review found one additional result-changing omission. The package
+defines the final eight-variant `SyntheticOwner` and exact
+`ElidedRegion = Type + ordinal 0`, but does not restate a complete
+`SyntheticRole::accepts_owner(HirIdKind, u32)` policy:
+
+- four inherited roles were owned by `SyntaxNodeId`, which the final enum no
+  longer contains;
+- `DesugaredTemporary` names only a generic "lowering owner"; and
+- six source-ordered role families define generation order but not boolean
+  admission for an arbitrary `u32`.
+
+The stable-fingerprint paragraph likewise names ingredients without fixing
+the typed encoder/API, discriminant values, integer widths/endianness, or
+hash/transcript owner. Rust `Hash` output is explicitly not a substitute.
+
+Therefore the package's full `READY_FOR_IMPLEMENTATION` claim is not accepted.
+The final `SyntheticOwner` enum and `kind()` / `module()` projections are
+concrete, and `ElidedRegion` itself is concrete, but implementing full
+`SyntheticKey::try_new` would require guessing inherited behavior. The narrow,
+independently throwable correction request is
+[`Proof 01.1.1.4.1.1.1`](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1-synthetic-role-owner-admission-correction.md).
 
 ## Archive integrity
 
@@ -33,11 +59,12 @@ repository primary request only by two indentation spaces (`22,460` versus
 `22,458` bytes). The package does not claim byte identity for this historical
 copy, and the difference changes no requirement or implementation result.
 
-## Adjudication
+## Initial adjudication and retained ready portions
 
-The return is accepted as the standalone normative correction to the retained
-Proof v6.1.1.4.1 package. It closes every result-changing blocker recorded by
-the parent intake:
+The return remains the standalone normative correction to the retained Proof
+v6.1.1.4.1 package for the concrete areas below. It closes the originally
+recorded blocker shapes, subject to the additional synthetic-role policy
+omission above:
 
 1. `HirModule::source_site(expected_source, HirSourceQuery)` is the sole typed
    Expr/Pattern/Type source query. The old Expr-only reader is deleted in the
@@ -84,16 +111,18 @@ retained parent ZIP SHA-256 is
 
 ## Deletion-driven implementation boundary
 
-The correction releases the parent intake's `DESIGN_BLOCKED` public HIR
-boundary. Implementation proceeds in the package order:
+The correction releases the independently concrete private substrates, but
+does not yet release the full public HIR switch that depends on a complete
+synthetic-key policy. The intended implementation order remains:
 
-1. typed `SyntheticOwner` / `SyntheticKey` and qualified arena identity;
-2. one typed source index and source query;
-3. type region and pathless variant payloads;
-4. literal, Duration, limit, call, Thread, Dialogue, and RichText records;
-5. attached-syntax lowering plus sema/checker products;
-6. consumer migration; and
-7. one compiling public authority switch that deletes all old readers and
+1. typed `SyntheticOwner` projection and qualified arena identity;
+2. after 01.1.1.4.1.1.1 returns, typed `SyntheticKey` admission/fingerprint;
+3. one typed source index and source query;
+4. type region and pathless variant payloads;
+5. literal, Duration, limit, call, Thread, Dialogue, and RichText records;
+6. attached-syntax lowering plus sema/checker products;
+7. consumer migration; and
+8. one compiling public authority switch that deletes all old readers and
    provisional variants.
 
 Private compiling substrate may land before the public switch, but no
@@ -118,7 +147,7 @@ same authority switch; their defects are not repaired.
 - retained-package ledger: `31` archives, zero unrecorded hashes, and zero ZIPs
   left in the `docs/reviews/` root inbox;
 - `git diff --check`: passed; and
-- canonical structural audit: `3,806` files, `1,965` Rust files, `906,111`
+- canonical structural audit: `3,807` files, `1,965` Rust files, `906,111`
   physical Rust LOC, and `95` manifests; zero errors and `146` pre-existing
   warnings.
 
