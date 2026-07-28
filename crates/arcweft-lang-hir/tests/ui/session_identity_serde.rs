@@ -1,5 +1,6 @@
 use arcweft_lang_hir::identity::{
     ExprId, HirDatabaseId, HirModuleId, HirSnapshotId, LocalGeneration, RawHirIdView,
+    SyntheticOwner,
 };
 use arcweft_source::identity::{SourceGeneration, SourceSnapshotId};
 
@@ -15,4 +16,6 @@ fn main() {
     requires_serialize::<LocalGeneration>();
     requires_serialize::<SourceGeneration>();
     requires_deserialize::<SourceSnapshotId>();
+    requires_serialize::<SyntheticOwner>();
+    requires_deserialize::<SyntheticOwner>();
 }

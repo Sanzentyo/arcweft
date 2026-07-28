@@ -202,6 +202,57 @@ impl CaptureId {
     }
 }
 
+/// Typed owner of one source-derived synthetic HIR identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SyntheticOwner {
+    /// Top-level declaration owner.
+    Item(ItemId),
+    /// Lexical scope owner.
+    Scope(ScopeId),
+    /// Local binding owner.
+    Local(LocalId),
+    /// Expression owner.
+    Expr(ExprId),
+    /// Statement owner.
+    Stmt(StmtId),
+    /// Type-node owner.
+    Type(TypeId),
+    /// Pattern-node owner.
+    Pattern(PatternId),
+    /// Closure-capture owner.
+    Capture(CaptureId),
+}
+
+impl SyntheticOwner {
+    /// Returns the typed arena kind proven by this owner variant.
+    pub const fn kind(self) -> HirIdKind {
+        match self {
+            Self::Item(_) => HirIdKind::Item,
+            Self::Scope(_) => HirIdKind::Scope,
+            Self::Local(_) => HirIdKind::Local,
+            Self::Expr(_) => HirIdKind::Expr,
+            Self::Stmt(_) => HirIdKind::Stmt,
+            Self::Type(_) => HirIdKind::Type,
+            Self::Pattern(_) => HirIdKind::Pattern,
+            Self::Capture(_) => HirIdKind::Capture,
+        }
+    }
+
+    /// Returns the database-qualified module owning this identity.
+    pub const fn module(self) -> HirModuleId {
+        match self {
+            Self::Item(id) => id.module(),
+            Self::Scope(id) => id.module(),
+            Self::Local(id) => id.module(),
+            Self::Expr(id) => id.module(),
+            Self::Stmt(id) => id.module(),
+            Self::Type(id) => id.module(),
+            Self::Pattern(id) => id.module(),
+            Self::Capture(id) => id.module(),
+        }
+    }
+}
+
 /// Kind recorded for one globally unique module slot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirIdKind {
@@ -357,9 +408,12 @@ impl HirLimit {
 #[cfg(test)]
 mod tests {
     use super::{
-        ExprId, HirDatabaseId, HirIdKind, HirLimit, HirModuleId, HirRevision, HirSnapshotId,
-        IdResolveError, RawHirId, RawHirIdView, SyntheticRole,
+        CaptureId, ExprId, HirDatabaseId, HirIdKind, HirLimit, HirModuleId, HirRevision,
+        HirSnapshotId, IdResolveError, ItemId, LocalId, PatternId, RawHirId, RawHirIdView, ScopeId,
+        StmtId, SyntheticOwner, SyntheticRole, TypeId,
     };
+    use core::fmt::Debug;
+    use core::hash::Hash;
     use core::num::{NonZeroU32, NonZeroU64};
 
     fn module_id(database: u64, slot: u32) -> HirModuleId {
@@ -375,6 +429,14 @@ mod tests {
             slot: NonZeroU32::new(slot).unwrap(),
             kind: HirIdKind::Expr,
         })
+    }
+
+    fn raw_id(module: HirModuleId, slot: u32, kind: HirIdKind) -> RawHirId {
+        RawHirId {
+            module,
+            slot: NonZeroU32::new(slot).unwrap(),
+            kind,
+        }
     }
 
     #[test]
@@ -487,6 +549,65 @@ mod tests {
             }
             other => panic!("unexpected resolver error: {other:?}"),
         }
+    }
+
+    #[test]
+    fn synthetic_owner_projects_every_typed_id_family() {
+        fn assert_structural_traits<
+            T: Clone + Copy + Debug + Eq + Hash + Ord + PartialEq + PartialOrd,
+        >() {
+        }
+
+        assert_structural_traits::<SyntheticOwner>();
+
+        let module = module_id(17, 19);
+        let owners = [
+            (
+                SyntheticOwner::Item(ItemId(raw_id(module, 1, HirIdKind::Item))),
+                HirIdKind::Item,
+            ),
+            (
+                SyntheticOwner::Scope(ScopeId(raw_id(module, 2, HirIdKind::Scope))),
+                HirIdKind::Scope,
+            ),
+            (
+                SyntheticOwner::Local(LocalId(raw_id(module, 3, HirIdKind::Local))),
+                HirIdKind::Local,
+            ),
+            (
+                SyntheticOwner::Expr(ExprId(raw_id(module, 4, HirIdKind::Expr))),
+                HirIdKind::Expr,
+            ),
+            (
+                SyntheticOwner::Stmt(StmtId(raw_id(module, 5, HirIdKind::Stmt))),
+                HirIdKind::Stmt,
+            ),
+            (
+                SyntheticOwner::Type(TypeId(raw_id(module, 6, HirIdKind::Type))),
+                HirIdKind::Type,
+            ),
+            (
+                SyntheticOwner::Pattern(PatternId(raw_id(module, 7, HirIdKind::Pattern))),
+                HirIdKind::Pattern,
+            ),
+            (
+                SyntheticOwner::Capture(CaptureId(raw_id(module, 8, HirIdKind::Capture))),
+                HirIdKind::Capture,
+            ),
+        ];
+
+        for (owner, expected_kind) in owners {
+            assert_eq!(owner.kind(), expected_kind);
+            assert_eq!(owner.module(), module);
+        }
+
+        let shared_raw = raw_id(module, 21, HirIdKind::Expr);
+        let item = SyntheticOwner::Item(ItemId(shared_raw));
+        let expression = SyntheticOwner::Expr(ExprId(shared_raw));
+        assert_eq!(item.kind(), HirIdKind::Item);
+        assert_eq!(expression.kind(), HirIdKind::Expr);
+        assert_ne!(item, expression);
+        assert!(item < expression);
     }
 
     #[test]
