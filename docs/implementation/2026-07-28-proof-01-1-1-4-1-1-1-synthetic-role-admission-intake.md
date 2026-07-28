@@ -2,7 +2,18 @@
 
 Date: 2026-07-28
 
-Status: `REJECTED_NOT_IMPLEMENTATION_READY`
+Status: `HISTORICAL_REJECTED_RETURN_SUPERSEDED_BY_ACCEPTED_CORRECTION`
+
+## Supersession
+
+This note remains the rejection record for the v6.1.1.4.1.1.1 archive. The
+standalone
+[v6.1.1.4.1.1.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-1-1-tail-owner-generator-intake.md)
+accepts the corrected return. It supplies non-circular Expr/Scope tail owners,
+per-arm Scope identity, direct production generator evidence, and the exact
+current liveness payloads. The complete typed `SyntheticKey` identity slice is
+therefore no longer design-blocked; the rejection findings below are retained
+as historical evidence and must not be implemented from this superseded ZIP.
 
 ## Adjudication correction
 
@@ -119,11 +130,12 @@ typed owners, database-qualified IDs, typed source query, Type-owned elision,
 AW-AH-009.4.2 source-backed postfix candidate ownership, and deletion-driven
 consumer migration remain unchanged.
 
-Implementation remains blocked on Proof 01.1.1.4.1.1.1.1. The deleted
-raw-owner `SyntheticKey` is not restored while waiting. No partial admission
-table, Syntax/raw owner, alias, wrapper, extension trait, dual reader, source
-reparse, source gate, CSS/Takumi path, old Dialogue repair, or
-removed-syntax-specific final diagnostic is authorized.
+Implementation authority now comes from the accepted Proof
+01.1.1.4.1.1.1.1 correction, not this archive. The deleted raw-owner
+`SyntheticKey` remains deleted; no partial admission table, Syntax/raw owner,
+alias, wrapper, extension trait, dual reader, source reparse, source gate,
+CSS/Takumi path, old Dialogue repair, or removed-syntax-specific final
+diagnostic is authorized.
 
 ## Intake validation
 

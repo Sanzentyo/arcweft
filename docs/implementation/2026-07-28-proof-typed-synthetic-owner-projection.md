@@ -42,12 +42,15 @@ Therefore this cut deliberately does not add:
 - liveness, rollback, or synthetic-descendant allocation; or
 - any consumer migration.
 
-Those results remain blocked after the first return to the independently throwable
-[Proof 01.1.1.4.1.1.1 request](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1-synthetic-role-owner-admission-correction.md).
-The [return intake](2026-07-28-proof-01-1-1-4-1-1-1-synthetic-role-admission-intake.md)
-records the remaining tail-owner and production-generator defects. The
-[Proof 01.1.1.4.1.1.1.1 correction](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1.1-tail-owner-and-generator-evidence-correction.md)
-must return before the final typed key is implemented.
+The first return to the independently throwable
+[Proof 01.1.1.4.1.1.1 request](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1-synthetic-role-owner-admission-correction.md)
+remains rejected by its
+[return intake](2026-07-28-proof-01-1-1-4-1-1-1-synthetic-role-admission-intake.md).
+The later
+[Proof 01.1.1.4.1.1.1.1 correction](2026-07-28-proof-01-1-1-4-1-1-1-1-tail-owner-generator-intake.md)
+is accepted and releases the final typed key identity slice. Tail/generator
+transaction consumers remain ordered after the final HIR arena owner rather
+than being backported into provisional HIR.
 The private `RawHirId` remains only as the backing storage of typed HIR IDs; it
 is not a synthetic owner and remains inaccessible outside `identity.rs`.
 

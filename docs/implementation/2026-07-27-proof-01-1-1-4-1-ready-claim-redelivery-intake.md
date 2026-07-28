@@ -3,18 +3,18 @@
 Date: 2026-07-27
 
 Status: `HISTORICAL_PARTIAL_INTAKE_SUPERSEDED`; v6.1.1.4.1.1 closes the five
-original blocker shapes, but its dependent public switch still awaits the
-synthetic-role admission correction
+original blocker shapes and the accepted v6.1.1.4.1.1.1.1 correction closes
+the later synthetic-role admission blocker
 
 ## Supersession
 
 This note preserves the adjudication of the original v6.1.1.4.1 return. Its
 five blocker shapes are corrected by the standalone
-[v6.1.1.4.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-source-owner-consistency-intake.md),
-but that intake records a later-discovered gap in the inherited
-`SyntheticRole::accepts_owner` and stable-fingerprint contract. The original
-blocker details below remain historical; the current narrow blocker and
-throwable request are authoritative in the v6.1.1.4.1.1 intake.
+[v6.1.1.4.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-source-owner-consistency-intake.md).
+The later-discovered `SyntheticRole` admission and fingerprint gap is closed
+by the accepted
+[v6.1.1.4.1.1.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-1-1-tail-owner-generator-intake.md).
+The original blocker details below remain historical implementation evidence.
 
 ## Archive integrity
 

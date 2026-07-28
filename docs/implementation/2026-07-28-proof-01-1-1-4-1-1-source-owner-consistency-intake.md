@@ -2,18 +2,21 @@
 
 Date: 2026-07-28
 
-Status: `PARTIALLY_IMPLEMENTATION_READY`; full typed `SyntheticKey` and the
-dependent public HIR switch remain `DESIGN_BLOCKED`
+Status: `ACCEPTED_READY_FOR_IMPLEMENTATION`; the typed `SyntheticKey` identity
+slice is released, while the dependent public HIR switch remains ordered after
+the final arena/transaction owner
 
-## Correction return rejected
+## Synthetic-key correction accepted
 
-The focused [Proof 01.1.1.4.1.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-1-synthetic-role-admission-intake.md)
-rejects the returned role-admission correction as not implementation-ready.
-Its Expr-only tail rows cannot own retained predicate/proof block tails or
-uniquely own multiple missing match-arm values, and four source-ordered
-producer families lack direct lowering-order tests. The narrower
-[Proof 01.1.1.4.1.1.1.1 request](../reviews/requests/2026-07-28-seq-proof-01.1.1.4.1.1.1.1-tail-owner-and-generator-evidence-correction.md)
-must close those remaining decisions. The original blocker therefore remains.
+The first role-admission return remains rejected in its focused
+[Proof 01.1.1.4.1.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-1-synthetic-role-admission-intake.md).
+The later standalone
+[Proof 01.1.1.4.1.1.1.1 intake](2026-07-28-proof-01-1-1-4-1-1-1-1-tail-owner-generator-intake.md)
+accepts the corrected return. It closes the Expr-only tail contradiction with
+reserved Expr/Scope owners, gives each missing match-arm value its arm Scope,
+adds direct production generator evidence, and uses the exact retained
+liveness payload. The full typed `SyntheticKey` identity contract is therefore
+released without restoring a raw or Syntax owner.
 
 ## Post-intake correction
 
@@ -127,8 +130,8 @@ does not yet release the full public HIR switch that depends on a complete
 synthetic-key policy. The intended implementation order remains:
 
 1. typed `SyntheticOwner` projection and qualified arena identity;
-2. after 01.1.1.4.1.1.1.1 returns, typed `SyntheticKey`
-   admission/fingerprint;
+2. typed `SyntheticKey` admission/fingerprint from the accepted
+   01.1.1.4.1.1.1.1 correction;
 3. one typed source index and source query;
 4. type region and pathless variant payloads;
 5. literal, Duration, limit, call, Thread, Dialogue, and RichText records;
