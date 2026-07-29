@@ -68,6 +68,14 @@ public switch must delete the old authority rather than leave a parallel path.
 
 ## Dispatch state
 
-The request is ready to send to one design assignee using latest GitHub `main`.
-No return has been received or adjudicated yet. TTS remains separately on hold
-under its existing skip decision; this Flow request does not resume it.
+The first return was received on 2026-08-02 and rejected as not
+implementation-ready. Although mechanically readable, it inspected no
+repository revision or predecessor and supplied none of the exact schemas or
+exhaustive matrices requested. Its intake is recorded in
+[`2026-08-02-proof-ordinary-flow-return-intake.md`](2026-08-02-proof-ordinary-flow-return-intake.md).
+
+The independently throwable full-redelivery correction is
+[`2026-08-02-seq-proof-01.1.1.2.1.1.1-ordinary-flow-evidence-schema-redelivery-correction.md`](../reviews/requests/2026-08-02-seq-proof-01.1.1.2.1.1.1-ordinary-flow-evidence-schema-redelivery-correction.md).
+Ordinary Flow and the shared Thread/Flow-item public projection remain frozen
+until that corrected return is accepted. TTS remains separately on hold under
+its existing skip decision.
