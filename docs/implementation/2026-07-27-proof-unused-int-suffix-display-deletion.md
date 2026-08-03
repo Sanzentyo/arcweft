@@ -7,11 +7,11 @@ Status: `IMPLEMENTED_VALIDATED_WITH_KNOWN_WORKSPACE_BASELINE`
 ## Boundary
 
 This deletion-driven cut removes the unreleased `Display` implementation from
-`arcweft_lang_syntax::expr::IntSuffix`. Workspace-wide consumer discovery found
-no production formatting, `to_string`, or trait-bound use of that
-implementation. The active explicit spelling authority remains
-`IntSuffix::as_str`, which every current consumer can call without an implicit
-string conversion.
+the type now owned at `arcweft_lang_syntax::literal::IntSuffix`.
+Workspace-wide consumer discovery found no production formatting, `to_string`,
+or trait-bound use of that implementation. The active explicit spelling
+authority remains `IntSuffix::as_str`, which every current consumer can call
+without an implicit string conversion.
 
 The existing syntax public-API compile-fail fixture now proves that downstream
 code cannot recover the discarded trait surface. This is Rust type-check
