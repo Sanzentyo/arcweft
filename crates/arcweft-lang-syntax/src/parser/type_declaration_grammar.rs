@@ -2,15 +2,15 @@
 
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::{
     emit_generic_parameters, emit_name, emit_outer_prefixes, emit_visibility, emit_where_clause,
 };
-use super::document::ShadowDocumentParser;
 use super::lexer::LexToken;
 use super::shadow_recovery::{
-    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
-    find_matching_close, find_top_level_boundary, first_significant, token_count, token_text,
-    trimmed_end,
+    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
+    emit_required_punctuation, expected, find_matching_close, find_top_level_boundary,
+    first_significant, token_count, token_text, trimmed_end,
 };
 use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
@@ -69,20 +69,16 @@ pub(super) fn emit_declaration(
 }
 
 fn emit_type_alias_tail(parser: &mut ShadowDocumentParser<'_, '_>) {
-    if parser.at("=") {
-        parser.bump();
+    let has_equals = emit_required_punctuation(
+        parser,
+        SyntaxKind::EqualsNode,
+        SyntaxRole::Equals,
+        "=",
+        "syntax.type_alias.missing_equals",
+        "type alias requires `=` before its target type",
+    );
+    if has_equals {
         parser.bump_trivia();
-    } else {
-        let at = parser.current_offset();
-        parser.push(SyntaxEvent::MissingToken {
-            expected: expected(SyntaxKind::PunctuationToken),
-            at,
-        });
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.type_alias.missing_equals",
-            SourceRange::new(at, at),
-            "type alias requires `=` before its target type",
-        )));
     }
 
     let target_end = find_top_level_boundary(parser, parser.cursor(), &["where"]);
@@ -146,8 +142,7 @@ fn emit_nominal_body(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: Synta
 fn emit_fields(parser: &mut ShadowDocumentParser<'_, '_>, close: usize, item_kind: SyntaxKind) {
     let mut ordinal = 0_u16;
     while parser.cursor() < close {
-        emit_outer_prefixes(parser);
-        parser.bump_trivia();
+        bump_nominal_member_leading_trivia(parser);
         if parser.cursor() >= close {
             break;
         }
@@ -155,7 +150,17 @@ fn emit_fields(parser: &mut ShadowDocumentParser<'_, '_>, close: usize, item_kin
             parser.bump();
             continue;
         }
-
+        parser.start(SyntaxKind::RecordField, SyntaxRole::Field(ordinal));
+        emit_outer_prefixes(parser);
+        parser.bump_trivia();
+        if parser.cursor() >= close {
+            emit_missing_field_name(parser, "field requires an ordinary name");
+            if item_kind == SyntaxKind::StructItem {
+                emit_missing_field_type(parser, "field requires `: Type`");
+            }
+            parser.finish();
+            break;
+        }
         let end = field_boundary(parser, parser.cursor(), close);
         if item_kind == SyntaxKind::StructItem {
             emit_named_field(parser, end, ordinal);
@@ -166,16 +171,24 @@ fn emit_fields(parser: &mut ShadowDocumentParser<'_, '_>, close: usize, item_kin
         if parser.at(",") {
             parser.bump();
         }
+        parser.finish();
         ordinal = ordinal.saturating_add(1);
     }
 }
 
-fn emit_enum_variant(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
-    parser.start(SyntaxKind::RecordField, SyntaxRole::Field(ordinal));
+fn bump_nominal_member_leading_trivia(parser: &mut ShadowDocumentParser<'_, '_>) {
+    while matches!(
+        parser.current_kind(),
+        Some(SyntaxKind::WhitespaceToken | SyntaxKind::NewlineToken | SyntaxKind::CommentToken)
+    ) {
+        parser.bump();
+    }
+}
+
+fn emit_enum_variant(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, _ordinal: u16) {
     let significant_end = trimmed_end(parser, parser.cursor(), end);
     let Some(name) = first_significant(parser, parser.cursor(), significant_end) else {
         emit_missing_field_name(parser, "enum variant requires an ordinary name");
-        parser.finish();
         return;
     };
     bump_until(parser, name);
@@ -192,16 +205,13 @@ fn emit_enum_variant(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordi
         emit_type(parser, significant_end, SyntaxRole::Type);
     }
     bump_until(parser, significant_end);
-    parser.finish();
 }
 
-fn emit_named_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
-    parser.start(SyntaxKind::RecordField, SyntaxRole::Field(ordinal));
+fn emit_named_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, _ordinal: u16) {
     let significant_end = trimmed_end(parser, parser.cursor(), end);
     let Some(name) = first_significant(parser, parser.cursor(), significant_end) else {
         emit_missing_field_name(parser, "field requires an ordinary name");
         emit_missing_field_type(parser, "field requires `: Type`");
-        parser.finish();
         return;
     };
     bump_until(parser, name);
@@ -217,10 +227,13 @@ fn emit_named_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordin
     let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]);
     if colon < significant_end && token_text(parser, colon) == Some(":") {
         bump_until(parser, colon);
+        parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
         parser.bump();
+        parser.finish();
         parser.bump_trivia();
         emit_type(parser, significant_end, SyntaxRole::Type);
     } else {
+        emit_missing_delimiter(parser, SyntaxKind::ColonNode, SyntaxRole::Colon);
         emit_missing_field_type(parser, "field requires `: Type`");
         if parser.cursor() < significant_end {
             parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
@@ -229,7 +242,6 @@ fn emit_named_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordin
         }
     }
     bump_until(parser, significant_end);
-    parser.finish();
 }
 
 fn emit_missing_field_name(parser: &mut ShadowDocumentParser<'_, '_>, message: &'static str) {
@@ -249,8 +261,7 @@ fn emit_missing_field_name(parser: &mut ShadowDocumentParser<'_, '_>, message: &
 
 fn emit_missing_field_type(parser: &mut ShadowDocumentParser<'_, '_>, message: &'static str) {
     let at = parser.current_offset();
-    parser.start(SyntaxKind::MissingType, SyntaxRole::Type);
-    parser.finish();
+    emit_type(parser, parser.cursor(), SyntaxRole::Type);
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         "syntax.nominal.missing_field_type",
         SourceRange::new(at, at),

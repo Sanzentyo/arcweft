@@ -2,12 +2,12 @@
 
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::{
-    emit_contract_clauses, emit_extra_parameter_group_recovery, emit_fixed_parameters,
-    emit_generic_parameters, emit_missing_parameter_group, emit_name, emit_outer_prefixes,
-    emit_return_type, emit_visibility, emit_where_clause,
+    FixedParameterGrammar, emit_callable_contract_clauses, emit_extra_parameter_group_recovery,
+    emit_fixed_parameters, emit_generic_parameters, emit_missing_parameter_group, emit_name,
+    emit_outer_prefixes, emit_return_type, emit_visibility, emit_where_clause,
 };
-use super::document::ShadowDocumentParser;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::shadow_recovery::{bump_until, token_count, trimmed_end};
@@ -54,6 +54,7 @@ pub(super) fn emit_declaration(
     if parser.at("(") {
         emit_fixed_parameters(
             &mut parser,
+            FixedParameterGrammar::TypedPattern,
             "predicate and proof parameters require an authored type",
             if kind == SyntaxKind::PredicateItem {
                 "syntax.predicate.missing_parameter_close"
@@ -65,7 +66,12 @@ pub(super) fn emit_declaration(
         emit_missing_parameter_group(&mut parser, keyword, "exactly one fixed parameter group");
     }
     parser.bump_trivia();
-    emit_extra_parameter_group_recovery(&mut parser, keyword);
+    emit_extra_parameter_group_recovery(
+        &mut parser,
+        keyword,
+        FixedParameterGrammar::TypedPattern,
+        "predicate and proof recovery parameters require an authored type",
+    );
 
     if parser.at("->") {
         emit_return_type(&mut parser, kind);
@@ -76,7 +82,7 @@ pub(super) fn emit_declaration(
         parser.bump_trivia();
     }
 
-    emit_contract_clauses(&mut parser);
+    emit_callable_contract_clauses(&mut parser);
     emit_body(&mut parser, kind, keyword);
     while parser.bump().is_some() {}
     parser.finish();

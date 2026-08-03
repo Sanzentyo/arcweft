@@ -41,6 +41,7 @@ mod character_grammar;
 mod character_grammar_tests;
 pub(crate) mod choice;
 pub(crate) mod control_flow;
+mod cursor;
 mod declaration;
 pub(crate) mod dialogue;
 #[cfg(test)]
@@ -78,6 +79,7 @@ mod module_use_grammar;
 mod module_use_grammar_tests;
 mod path;
 mod pattern;
+mod pattern_projection;
 mod predicate_proof;
 #[cfg(test)]
 mod predicate_proof_tests;

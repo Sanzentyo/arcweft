@@ -4,14 +4,14 @@ error[E0432]: unresolved import `arcweft_lang_syntax::ast::items::CapabilityPoli
 1 | use arcweft_lang_syntax::ast::items::{CapabilityPolicyDecl, ExternCapabilityItem};
   |                                       ^^^^^^^^^^^^^^^^^^^^ no `CapabilityPolicyDecl` in `ast::items`
 
-error[E0599]: no method named `policy` found for reference `&ExternCapabilityItem` in the current scope
+error[E0599]: no method named `policy` found for reference `&arcweft_lang_syntax::ast::items::ExternCapabilityItem` in the current scope
  --> tests/ui/capability_policy_absent.rs:4:18
   |
 4 |     let _ = item.policy();
-  |                  ^^^^^^ method not found in `&ExternCapabilityItem`
+  |                  ^^^^^^ method not found in `&arcweft_lang_syntax::ast::items::ExternCapabilityItem`
 
-error[E0599]: no method named `policies` found for reference `&ExternCapabilityItem` in the current scope
+error[E0599]: no method named `policies` found for reference `&arcweft_lang_syntax::ast::items::ExternCapabilityItem` in the current scope
  --> tests/ui/capability_policy_absent.rs:5:18
   |
 5 |     let _ = item.policies();
-  |                  ^^^^^^^^ method not found in `&ExternCapabilityItem`
+  |                  ^^^^^^^^ method not found in `&arcweft_lang_syntax::ast::items::ExternCapabilityItem`

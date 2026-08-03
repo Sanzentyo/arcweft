@@ -2,6 +2,7 @@
 
 use super::{TypeToken, TypeTokenKind};
 use crate::ast::common::TextRange;
+use crate::name::{is_identifier_continue, is_identifier_start};
 use crate::types::TypeParseError;
 
 pub(super) fn lex_source(source: &str, base: usize) -> Result<Vec<TypeToken<'_>>, TypeParseError> {
@@ -136,12 +137,4 @@ fn single<'source>(
 ) -> TypeTokenKind<'source> {
     *cursor += ch.len_utf8();
     kind
-}
-
-fn is_identifier_start(ch: char) -> bool {
-    ch == '_' || ch.is_alphabetic()
-}
-
-fn is_identifier_continue(ch: char) -> bool {
-    ch == '_' || ch.is_alphanumeric()
 }

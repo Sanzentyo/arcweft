@@ -1,6 +1,7 @@
 //! Exact source-literal conversion for typed View value programs.
 
-use arcweft_lang_syntax::expr::{DurationUnit, Expr, Literal, UnitNumberSuffix};
+use arcweft_lang_syntax::expr::{Expr, Literal};
+use arcweft_lang_syntax::literal::{DurationUnit, UnitNumberSuffix};
 use arcweft_presentation::fx::{
     Angle, FiniteF32, FxRuntimeType, FxRuntimeValue, Length, Seconds, ValueInstruction,
 };

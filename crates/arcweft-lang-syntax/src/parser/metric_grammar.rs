@@ -4,18 +4,23 @@ use std::collections::BTreeMap;
 
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::emit_metric_declaration_header;
-use super::document::ShadowDocumentParser;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::shadow_recovery::{
-    bump_until, emit_close_delimiter, emit_open_delimiter, expected, find_matching_close,
-    find_statement_terminator, find_top_level_boundary, token_count, trimmed_end,
+    bump_until, emit_close_delimiter, emit_open_delimiter, emit_required_punctuation, expected,
+    find_matching_close, find_statement_terminator, find_top_level_boundary, token_count,
+    trimmed_end,
 };
 use super::type_ref::emit_type;
+use crate::expressions::{
+    ExpressionComponentRole, ExpressionProjection, PendingExpressionComponent,
+    PendingExpressionProjection,
+};
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
-use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::grammar::kinds::{MetricKindSyntaxValue, SyntaxKind, SyntaxRole};
 
 pub(super) fn emit_declaration(
     source: &str,
@@ -34,7 +39,13 @@ pub(super) fn emit_declaration(
 }
 
 fn emit_metric_kind(parser: &mut ShadowDocumentParser<'_, '_>) {
-    parser.start(SyntaxKind::MetricKind, SyntaxRole::Kind);
+    let role = match parser.current_text() {
+        Some("counter") => SyntaxRole::MetricKindValue(MetricKindSyntaxValue::Counter),
+        Some("gauge") => SyntaxRole::MetricKindValue(MetricKindSyntaxValue::Gauge),
+        Some("histogram") => SyntaxRole::MetricKindValue(MetricKindSyntaxValue::Histogram),
+        _ => SyntaxRole::Kind,
+    };
+    parser.start(SyntaxKind::MetricKind, role);
     match parser.current_text() {
         Some("counter" | "gauge" | "histogram") => {
             parser.bump();
@@ -65,20 +76,14 @@ fn emit_metric_kind(parser: &mut ShadowDocumentParser<'_, '_>) {
 }
 
 fn emit_metric_value_type(parser: &mut ShadowDocumentParser<'_, '_>) {
-    if parser.at(":") {
-        parser.bump();
-    } else {
-        let at = parser.current_offset();
-        parser.push(SyntaxEvent::MissingToken {
-            expected: expected(SyntaxKind::PunctuationToken),
-            at,
-        });
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.metric.missing_type_separator",
-            SourceRange::new(at, at),
-            "Metric declaration requires `: ValueType`",
-        )));
-    }
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::ColonNode,
+        SyntaxRole::Colon,
+        ":",
+        "syntax.metric.missing_type_separator",
+        "Metric declaration requires `: ValueType`",
+    );
     parser.bump_trivia();
     let end = find_top_level_boundary(parser, parser.cursor(), &["{"]);
     emit_type(parser, end, SyntaxRole::Type);
@@ -323,20 +328,21 @@ fn emit_metric_label(
         )));
     }
     parser.bump_trivia();
-    if parser.at(":") {
-        parser.bump();
-        parser.bump_trivia();
-        emit_type(parser, label_end, SyntaxRole::Type);
+    let authored_colon = emit_required_punctuation(
+        parser,
+        SyntaxKind::ColonNode,
+        SyntaxRole::Colon,
+        ":",
+        "syntax.metric.missing_label_type",
+        "Metric label requires `: Type`",
+    );
+    parser.bump_trivia();
+    let type_end = if authored_colon {
+        label_end
     } else {
-        let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingType, SyntaxRole::Type);
-        parser.finish();
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.metric.missing_label_type",
-            SourceRange::new(at, at),
-            "Metric label requires `: Type`",
-        )));
-    }
+        parser.cursor()
+    };
+    emit_type(parser, type_end, SyntaxRole::Type);
     bump_until(parser, label_end);
     parser.finish();
 }
@@ -378,12 +384,14 @@ fn emit_buckets_member(
 fn emit_bucket_sequence(parser: &mut ShadowDocumentParser<'_, '_>, line_end: usize) {
     let close = find_matching_close(parser, parser.cursor() + 1, "[")
         .map_or(line_end, |index| index.min(line_end));
-    parser.start(
+    let owner = parser.start_projected_owner(
         SyntaxKind::BracketSequenceExpression,
         SyntaxRole::Initializer,
     );
     emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
     parser.start(SyntaxKind::ExpressionList, SyntaxRole::Element(0));
+    let mut slots = Vec::new();
+    let mut components = Vec::new();
     let mut ordinal = 0_u16;
     loop {
         parser.bump_trivia();
@@ -391,12 +399,20 @@ fn emit_bucket_sequence(parser: &mut ShadowDocumentParser<'_, '_>, line_end: usi
             break;
         }
         let bucket_end = find_top_level_boundary(parser, parser.cursor(), &[",", "]"]).min(close);
+        let (slot, range) = super::expression::expression_slot(parser, bucket_end);
         emit_expression(parser, bucket_end, SyntaxRole::Bucket(ordinal));
         bump_until(parser, bucket_end);
         if parser.budget_failed() {
             bump_until(parser, close);
             break;
         }
+        slots.push(slot);
+        components.push(PendingExpressionComponent::new(
+            ExpressionComponentRole::Element {
+                ordinal: u32::from(ordinal),
+            },
+            range,
+        ));
         ordinal = ordinal
             .checked_add(1)
             .expect("Metric bucket budget is below the role index range");
@@ -421,6 +437,13 @@ fn emit_bucket_sequence(parser: &mut ShadowDocumentParser<'_, '_>, line_end: usi
         "]",
         "syntax.metric.missing_buckets_close",
     );
+    parser.set_expression_projection(
+        owner,
+        PendingExpressionProjection::new(
+            ExpressionProjection::BracketSequence(slots.into_boxed_slice()),
+            components,
+        ),
+    );
     parser.finish();
 }
 
@@ -444,8 +467,10 @@ fn emit_unknown_member(
 }
 
 fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>, code: &'static str) {
+    parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
     if parser.at("=") {
         parser.bump();
+        parser.finish();
         return;
     }
     let at = parser.current_offset();
@@ -453,6 +478,7 @@ fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>, code: &'static str
         expected: expected(SyntaxKind::PunctuationToken),
         at,
     });
+    parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         code,
         SourceRange::new(at, at),

@@ -65,7 +65,7 @@ fn lowering_extracts_inline_native_patches_in_source_order() {
             SourceName::path("lang-hir/style/inline-patches.arcw"),
             r#"pub view Example() {
     Button("OK")
-        .style { opacity = 900milli }
+        .style { opacity = 90% }
         .style { outline-width = 2px }
 }
 "#,

@@ -34,7 +34,7 @@ use support::format_fixture;
 fn formatter_orders_fields_canonically_and_normalizes_percentage() {
     let source = r"pub style adaptive {
     when environment(text-scale>=125.0%, color-scheme == DARK) {
-        Button { opacity = 900milli }
+        Button { opacity = 90% }
     }
 }
 ";
@@ -46,7 +46,7 @@ fn formatter_orders_fields_canonically_and_normalizes_percentage() {
         color-scheme == dark,
         text-scale >= 125%,
     ) {
-        Button { opacity = 900milli }
+        Button { opacity = 90% }
     }
 }
 "
@@ -60,7 +60,7 @@ fn formatter_orders_fields_canonically_and_normalizes_percentage() {
 fn formatter_is_idempotent_for_recovered_environment_nodes() {
     let source = r"pub style adaptive {
     when environment(text-scale == clamp(50%, 100%)) {
-        Button { opacity = 900milli }
+        Button { opacity = 90% }
     }
 }
 ";
@@ -75,7 +75,7 @@ fn formatter_is_idempotent_for_recovered_environment_nodes() {
 fn single_node_formatter_returns_a_condition_content_edit() {
     let source = r"pub style adaptive {
     when environment(text-scale>=125.0%) {
-        Button { opacity = 900milli }
+        Button { opacity = 90% }
     }
 }
 ";
@@ -493,7 +493,7 @@ fn typed_environment_edit_invalidation_is_field_local() {
 
 fn valid_environment_source(clauses: &str) -> String {
     format!(
-        "pub style adaptive {{\n    when environment({clauses}) {{\n        Button {{ opacity = 900milli }}\n    }}\n}}\n"
+        "pub style adaptive {{\n    when environment({clauses}) {{\n        Button {{ opacity = 90% }}\n    }}\n}}\n"
     )
 }
 

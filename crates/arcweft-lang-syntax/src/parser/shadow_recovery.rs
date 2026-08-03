@@ -2,7 +2,7 @@
 
 use arcweft_source::SourceRange;
 
-use super::document::ShadowDocumentParser;
+use super::cursor::ShadowDocumentParser;
 use crate::grammar::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -53,6 +53,39 @@ pub(super) fn emit_missing_delimiter(
         at: parser.current_offset(),
     });
     parser.finish();
+}
+
+/// Emits one required punctuation owner as either authored bytes or the exact
+/// parser-selected insertion site.  The caller supplies the domain role, so
+/// attached consumers never need to search source text for the token.
+pub(super) fn emit_required_punctuation(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    kind: SyntaxKind,
+    role: SyntaxRole,
+    spelling: &'static str,
+    diagnostic: &'static str,
+    message: &'static str,
+) -> bool {
+    parser.start(kind, role);
+    let authored = if parser.at(spelling) {
+        parser.bump();
+        true
+    } else {
+        let at = parser.current_offset();
+        parser.push(SyntaxEvent::MissingToken {
+            expected: ExpectedToken::try_with_spelling(SyntaxKind::PunctuationToken, spelling)
+                .expect("real grammar punctuation token"),
+            at,
+        });
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            diagnostic,
+            SourceRange::new(at, at),
+            message,
+        )));
+        false
+    };
+    parser.finish();
+    authored
 }
 
 pub(super) fn expected(kind: SyntaxKind) -> ExpectedToken {
@@ -106,6 +139,17 @@ pub(super) fn find_matching_close(
     start: usize,
     opening: &str,
 ) -> Option<usize> {
+    find_matching_close_before(parser, start, token_count(parser), opening)
+}
+
+/// Finds the close paired with an already-consumed opening delimiter without
+/// crossing a caller-selected grammar recovery boundary.
+pub(super) fn find_matching_close_before(
+    parser: &ShadowDocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+    opening: &str,
+) -> Option<usize> {
     let (open, close) = match opening {
         "(" => ("(", ")"),
         "[" => ("[", "]"),
@@ -114,15 +158,14 @@ pub(super) fn find_matching_close(
         _ => return None,
     };
     let mut depth = 0_usize;
-    let mut index = start;
-    while let Some(token) = parser.token_at(index) {
+    for index in start..end {
+        let token = parser.token_at(index)?;
         match parser.text_of(token) {
             text if text == open => depth += 1,
             text if text == close && depth == 0 => return Some(index),
             text if text == close => depth = depth.saturating_sub(1),
             _ => {}
         }
-        index += 1;
     }
     None
 }
@@ -154,15 +197,6 @@ pub(super) fn find_statement_terminator(
         }
     }
     None
-}
-
-pub(super) fn range_contains(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-    spelling: &str,
-) -> bool {
-    (start..end).any(|index| token_text(parser, index) == Some(spelling))
 }
 
 pub(super) fn first_significant(

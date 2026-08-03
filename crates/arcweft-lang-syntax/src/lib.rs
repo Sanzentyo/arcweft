@@ -6,15 +6,20 @@
 
 pub mod assertion;
 pub mod ast;
-mod attachment;
+pub mod attachment;
 mod cache_facts;
 pub mod cst;
 pub mod expr;
-mod grammar;
+pub mod expressions;
+pub mod grammar;
+pub mod id_ref;
 pub mod incremental;
 pub mod lint;
+pub mod literal;
+pub mod name;
 pub mod parser;
 pub mod pattern;
+pub mod patterns;
 pub mod reference;
 pub mod source;
 pub mod text;

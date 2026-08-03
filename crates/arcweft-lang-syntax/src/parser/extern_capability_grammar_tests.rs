@@ -26,9 +26,32 @@ fn kind_roles(entries: &[UnattachedGrammarEntry], kind: SyntaxKind) -> Vec<Synta
 }
 
 #[test]
+fn capability_function_receiver_shape_requires_a_typed_pattern_annotation() {
+    let source = "extern capability host {\n    fn invalid(self) -> Unit\n}\n";
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let entries = built.index().entries();
+    let pattern = entries
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::BindingPattern)
+        .expect("receiver-shaped source retains a Binding Pattern");
+
+    assert!(pattern.pattern_projection().is_some());
+    assert_eq!(kind_count(entries, SyntaxKind::MissingType), 1);
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.parameter.missing_type")
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn empty_capability_is_lossless_and_has_no_members() {
     let source = "extern capability empty {}\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ExternCapabilityItem), 1);
@@ -52,7 +75,8 @@ pub extern capability fs {
     fn combine<T>(left: T)(right: T) -> T
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ExternCapabilityItem), 1);
@@ -64,7 +88,37 @@ pub extern capability fs {
     assert_eq!(kind_count(entries, SyntaxKind::FixedParameterGroup), 3);
     assert_eq!(kind_count(entries, SyntaxKind::GenericParameterGroup), 1);
     assert_eq!(kind_count(entries, SyntaxKind::ReturnType), 2);
-    assert_eq!(kind_count(entries, SyntaxKind::PathExpression), 2);
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| {
+                entry.kind() == SyntaxKind::PathExpression && entry.role() == SyntaxRole::Target
+            })
+            .count(),
+        2
+    );
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn effect_braces_do_not_steal_grouped_expression_ordinals() {
+    let source = r"extern capability host {
+    fn send() effects { (net.connect), net.send }
+}
+";
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let entries = built.index().entries();
+
+    assert_eq!(
+        kind_roles(entries, SyntaxKind::SelectExpression),
+        vec![SyntaxRole::Element(0), SyntaxRole::Element(1)]
+    );
+    assert_eq!(
+        kind_roles(entries, SyntaxKind::PathExpression),
+        vec![SyntaxRole::Target, SyntaxRole::Target]
+    );
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
 }
@@ -87,7 +141,8 @@ pub extern capability host {
     pub fn finish(request: Request)(response: Response) -> Unit
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(
@@ -99,7 +154,15 @@ pub extern capability host {
         vec![SyntaxRole::Element(1), SyntaxRole::Element(3)]
     );
     assert_eq!(kind_count(entries, SyntaxKind::FixedParameterGroup), 3);
-    assert_eq!(kind_count(entries, SyntaxKind::PathExpression), 2);
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| {
+                entry.kind() == SyntaxKind::PathExpression && entry.role() == SyntaxRole::Target
+            })
+            .count(),
+        2
+    );
     assert_eq!(kind_count(entries, SyntaxKind::ErrorItem), 0);
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
@@ -112,7 +175,8 @@ fn missing_capability_name_and_body_have_zero_width_owned_recovery() {
         "extern capability fs\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ExternCapabilityItem), 2);
@@ -139,7 +203,8 @@ fn invalid_members_and_unbraced_effects_recover_before_later_functions() {
     fn valid(path: String) -> String
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ExternCapabilityItem), 1);
@@ -183,7 +248,9 @@ fn deleted_candidate_shapes_are_one_generic_error_member_each() {
     for candidate in candidates {
         let source =
             format!("extern capability host {{\n    {candidate}\n    fn valid() -> Unit\n}}\n");
-        let built = parse_shadow_document(&document(&source)).unwrap();
+        let built =
+            parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+                .unwrap();
         let entries = built.index().entries();
         let invalid = built
             .diagnostics()
@@ -235,7 +302,8 @@ fn duplicate_contradictory_and_prefixed_candidates_remain_ordinary_members() {
     fn valid() -> Unit
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let invalid = built
         .diagnostics()
@@ -279,7 +347,8 @@ fn candidate_tails_stay_inside_retained_type_and_function_members() {
     fn valid() -> Unit
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let tails = built
         .diagnostics()
@@ -310,7 +379,8 @@ fn unclosed_effects_recover_before_the_next_member_without_stealing_the_outer_cl
     fn valid(path: String) -> String
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ExternCapabilityItem), 1);
@@ -337,7 +407,8 @@ fn unclosed_capability_body_synchronizes_before_the_following_proof() {
         "    type FsError\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ExternCapabilityItem), 1);

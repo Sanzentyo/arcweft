@@ -29,12 +29,12 @@ pub style coverage_panel {
         background-color = token(color.panel)
         color = token(color.accent)
         border-radius = token(metric.corner)
-        opacity = 1000milli
+        opacity = 100%
         z-index = 1
     }
 
     Button:hover {
-        opacity = 920milli
+        opacity = 92%
         z-index = 2
     }
 

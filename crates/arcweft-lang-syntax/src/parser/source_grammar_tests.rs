@@ -4,9 +4,10 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::document::parse_shadow_document;
-use crate::attachment::{BlockKind, ExpressionStatementKind, SourceItemKind, SyntaxLookupError};
+use crate::attachment::{BlockKind, ExpressionStatementKind, TypedItemNode};
+use crate::grammar::build::GrammarBuildError;
 use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole};
-use crate::incremental::SyntaxDatabase;
+use crate::incremental::{SyntaxDatabase, SyntaxLimit};
 
 fn document(text: &str) -> SourceDocument {
     SourceDocument::try_new(
@@ -23,7 +24,7 @@ fn attached(text: &str) -> Arc<crate::attachment::SyntaxSnapshotData> {
     let mut database = SyntaxDatabase::try_new().unwrap();
     Arc::clone(
         database
-            .parse_initial(snapshot, document)
+            .parse_initial(snapshot, document, crate::parser::ParseOptions::default())
             .unwrap()
             .attached(),
     )
@@ -44,7 +45,9 @@ fn source_header_accepts_canonical_identity_forms_and_retains_exact_type() {
         "source @. events: Source<Event, Error> {}\n",
         "source @source:. events: Source<Event, Error> {}\n",
     ] {
-        let built = parse_shadow_document(&document(source)).unwrap();
+        let built =
+            parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+                .unwrap();
         assert!(
             built.diagnostics().is_empty(),
             "{source:?}: {:?}",
@@ -62,12 +65,62 @@ fn source_header_accepts_canonical_identity_forms_and_retains_exact_type() {
 }
 
 #[test]
+fn source_declaration_member_limit_is_enforced_by_the_real_parser_transaction() {
+    let maximum = SyntaxLimit::DeclarationMembers.maximum();
+    let exact = source_with_members(maximum);
+    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+        .expect("exact Source declaration-member limit builds");
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::OnStatement)
+            .count(),
+        maximum - 4
+    );
+
+    let one_over = source_with_members(maximum + 1);
+    assert!(matches!(
+        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        Err(GrammarBuildError::LimitExceeded(
+            SyntaxLimit::DeclarationMembers
+        ))
+    ));
+    assert!(
+        parse_shadow_document(
+            &document("source events: Source<Event, Error> {}\n"),
+            crate::parser::ParseOptions::default()
+        )
+        .is_ok()
+    );
+}
+
+fn source_with_members(count: usize) -> String {
+    assert!(count >= 4);
+    let mut source = String::from(concat!(
+        "source events: Source<Event, Error> {\n",
+        "    from events()\n",
+        "    backpressure = latest\n",
+        "    replay = none\n",
+        "    privacy = private\n",
+    ));
+    for _ in 4..count {
+        source.push_str("    on end => finish()\n");
+    }
+    source.push_str("}\n");
+    source
+}
+
+#[test]
 fn source_identity_markers_require_names_and_wrong_families_stay_typed() {
     for source in [
         "source @.: Source<Event, Error> {}\n",
         "source @source:.: Source<Event, Error> {}\n",
     ] {
-        let built = parse_shadow_document(&document(source)).unwrap();
+        let built =
+            parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+                .unwrap();
         assert!(built.index().entries().iter().any(|entry| {
             entry.kind() == SyntaxKind::MissingName && entry.role() == SyntaxRole::Name
         }));
@@ -85,7 +138,9 @@ fn source_identity_markers_require_names_and_wrong_families_stay_typed() {
         "source @flow:.events: Source<Event, Error> {}\n",
         "source @<flow.events>: Source<Event, Error> {}\n",
     ] {
-        let built = parse_shadow_document(&document(source)).unwrap();
+        let built =
+            parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+                .unwrap();
         assert!(built.index().entries().iter().any(|entry| {
             entry.kind() == SyntaxKind::WrongFamilyReference
                 && entry.role() == SyntaxRole::Reference(0)
@@ -100,7 +155,8 @@ fn source_identity_markers_require_names_and_wrong_families_stay_typed() {
     }
 
     let malformed = "source @..: Source<Event, Error> {}\n";
-    let built = parse_shadow_document(&document(malformed)).unwrap();
+    let built = parse_shadow_document(&document(malformed), crate::parser::ParseOptions::default())
+        .unwrap();
     assert!(built.index().entries().iter().any(|entry| {
         entry.kind() == SyntaxKind::ErrorNode && entry.role() == SyntaxRole::Recovery(0)
     }));
@@ -108,7 +164,9 @@ fn source_identity_markers_require_names_and_wrong_families_stay_typed() {
         built
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.source.malformed_id")
+            .any(|diagnostic| diagnostic.code() == "syntax.source.malformed_id"),
+        "{:?}",
+        built.diagnostics()
     );
     assert_eq!(built.green().to_string(), malformed);
 
@@ -116,12 +174,15 @@ fn source_identity_markers_require_names_and_wrong_families_stay_typed() {
         "source @<source.events: Source<Event, Error> {}\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(unclosed)).unwrap();
+    let built =
+        parse_shadow_document(&document(unclosed), crate::parser::ParseOptions::default()).unwrap();
     assert!(
         built
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.source.malformed_id")
+            .any(|diagnostic| diagnostic.code() == "syntax.source.malformed_id"),
+        "{:?}",
+        built.diagnostics()
     );
     assert!(built.index().entries().iter().any(|entry| {
         entry.kind() == SyntaxKind::ProofItem && entry.role() == SyntaxRole::Element(1)
@@ -137,20 +198,24 @@ fn source_contract_clauses_use_the_shared_typed_contract_owner() {
         "    ensures result.is_ok()\n",
         "}\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
-    assert!(!built.has_recovery(), "{:?}", built.diagnostics());
+    assert!(
+        built.has_recovery(),
+        "Source contracts stay typed but unsupported until Lang-01.3 removes Source"
+    );
     assert!(entries.iter().any(|entry| {
-        entry.kind() == SyntaxKind::RequiresClause && entry.role() == SyntaxRole::RequiresClause(0)
+        entry.kind() == SyntaxKind::RequiresClause && entry.role() == SyntaxRole::ContractClause(0)
     }));
     assert!(entries.iter().any(|entry| {
-        entry.kind() == SyntaxKind::EnsuresClause && entry.role() == SyntaxRole::EnsuresClause(0)
+        entry.kind() == SyntaxKind::EnsuresClause && entry.role() == SyntaxRole::ContractClause(1)
     }));
     assert_eq!(
         entries
             .iter()
-            .filter(|entry| entry.role() == SyntaxRole::Condition)
+            .filter(|entry| entry.role() == SyntaxRole::ContractOperand(0))
             .count(),
         2
     );
@@ -168,17 +233,19 @@ fn source_unclosed_generic_recovers_its_body_and_following_declaration() {
         "}\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert!(entries.iter().any(|entry| {
         entry.kind() == SyntaxKind::SourceItem && entry.role() == SyntaxRole::Element(0)
     }));
+    assert!(!entries.iter().any(|entry| matches!(
+        entry.kind(),
+        SyntaxKind::GenericApplicationType | SyntaxKind::CloseAngleNode
+    )));
     assert!(entries.iter().any(|entry| {
-        entry.kind() == SyntaxKind::GenericApplicationType && entry.role() == SyntaxRole::Type
-    }));
-    assert!(entries.iter().any(|entry| {
-        entry.kind() == SyntaxKind::CloseAngleNode && entry.role() == SyntaxRole::CloseDelimiter
+        entry.kind() == SyntaxKind::ErrorType && entry.role() == SyntaxRole::Type
     }));
     assert!(
         entries
@@ -197,7 +264,7 @@ fn source_unclosed_generic_recovers_its_body_and_following_declaration() {
         built
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.type.missing_generic_close")
+            .any(|diagnostic| diagnostic.code() == "syntax.type.invalid")
     );
     assert_eq!(built.green().to_string(), source);
 }
@@ -209,7 +276,9 @@ fn source_public_id_colon_partition_and_attached_accessors_are_exact() {
     let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
     assert_eq!(item.kind(), SyntaxKind::SourceItem);
     assert_eq!(item.syntax().tag(), AstTag::Item);
-    let source_item = item.cast::<SourceItemKind>().unwrap();
+    let TypedItemNode::Source(source_item) = &item else {
+        panic!("expected source item");
+    };
 
     let public_id = source_item.public_id().unwrap().unwrap();
     assert_eq!(public_id.range(), SourceRange::new(11, 25));
@@ -233,10 +302,7 @@ fn source_public_id_colon_partition_and_attached_accessors_are_exact() {
         "pub source @source.events: Source<Event, Error>"
     );
     assert!(!source_item.body().unwrap().range().is_empty());
-    assert!(matches!(
-        item.cast::<crate::attachment::ProofItemKind>(),
-        Err(SyntaxLookupError::KindMismatch { .. })
-    ));
+    assert!(!matches!(item, TypedItemNode::Proof(_)));
 }
 
 #[test]
@@ -252,7 +318,8 @@ fn source_body_uses_shared_typed_statement_expression_and_pattern_owners() {
         "    on error error => { log.warn(error) }\n",
         "}\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert!(!built.has_recovery(), "{:?}", built.diagnostics());
@@ -288,14 +355,10 @@ fn source_body_uses_shared_typed_statement_expression_and_pattern_owners() {
     assert_eq!(built.green().to_string(), source);
 
     let snapshot = attached(source);
-    let item = snapshot
-        .typed_tree()
-        .unwrap()
-        .items()
-        .unwrap()
-        .remove(0)
-        .cast::<SourceItemKind>()
-        .unwrap();
+    let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+    let TypedItemNode::Source(item) = item else {
+        panic!("expected source item");
+    };
     let block = item
         .syntax()
         .child(SyntaxRole::Body)
@@ -323,7 +386,8 @@ fn source_handler_family_matrix_uses_shared_pattern_condition_and_body_owners() 
         "    on end => { finish() }\n",
         "}\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert!(!built.has_recovery(), "{:?}", built.diagnostics());
@@ -363,7 +427,8 @@ fn source_handler_recovery_preserves_later_handlers_and_items() {
         "}\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert!(entries.iter().any(|entry| {
@@ -414,7 +479,8 @@ fn source_recovery_keeps_missing_components_and_following_items_exact() {
         "    on end =>\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     for expected in [
@@ -454,7 +520,11 @@ fn source_recovery_keeps_missing_components_and_following_items_exact() {
 #[test]
 fn source_missing_body_and_noncanonical_function_shape_are_ordinary_recovery() {
     let missing_body = "source events: Source<Event, Error>\nproof next() = ()\n";
-    let built = parse_shadow_document(&document(missing_body)).unwrap();
+    let built = parse_shadow_document(
+        &document(missing_body),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert!(built.index().entries().iter().any(|entry| {
         entry.kind() == SyntaxKind::MissingBody && entry.role() == SyntaxRole::Body
     }));
@@ -464,7 +534,11 @@ fn source_missing_body_and_noncanonical_function_shape_are_ordinary_recovery() {
     assert_eq!(built.green().to_string(), missing_body);
 
     let function_like = "source events() -> Source<Event, Error> {}\n";
-    let built = parse_shadow_document(&document(function_like)).unwrap();
+    let built = parse_shadow_document(
+        &document(function_like),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert!(built.has_recovery());
     assert!(built.index().entries().iter().any(|entry| {
         entry.kind() == SyntaxKind::SourceItem && entry.role() == SyntaxRole::Element(0)
@@ -478,7 +552,11 @@ fn source_missing_body_and_noncanonical_function_shape_are_ordinary_recovery() {
     assert_eq!(built.green().to_string(), function_like);
 
     let malformed_id = "source @ : Source<Event, Error> {}\n";
-    let built = parse_shadow_document(&document(malformed_id)).unwrap();
+    let built = parse_shadow_document(
+        &document(malformed_id),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert!(built.has_recovery());
     assert!(built.index().entries().iter().any(|entry| {
         entry.kind() == SyntaxKind::SourceItem && entry.role() == SyntaxRole::Element(0)
@@ -487,7 +565,9 @@ fn source_missing_body_and_noncanonical_function_shape_are_ordinary_recovery() {
         built
             .diagnostics()
             .iter()
-            .any(|diagnostic| diagnostic.code() == "syntax.source.missing_name")
+            .any(|diagnostic| diagnostic.code() == "syntax.source.malformed_id"),
+        "unexpected diagnostics: {:?}",
+        built.diagnostics()
     );
     assert_eq!(built.green().to_string(), malformed_id);
 }

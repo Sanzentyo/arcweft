@@ -12,247 +12,24 @@ use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar_text}
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
+use super::cursor::{ShadowDocumentParser, is_trivia_kind};
 use super::expression::emit_expression;
+use super::fragment::ParseOptions;
 use super::item::{classify_top_level_item, is_declaration_item_kind};
 use super::lexer::{DocumentLexer, LexToken};
 use super::pattern::emit_pattern;
 use super::statement::emit_statement_fragment;
 use super::type_ref::emit_type;
 
-/// Shared cursor and event sink for every private shadow grammar parser.
-pub(super) struct ShadowDocumentParser<'source, 'events> {
-    source: &'source str,
-    tokens: &'source [LexToken],
-    cursor: usize,
-    empty_offset: usize,
-    events: &'events mut Vec<SyntaxEvent>,
-    budget: &'events mut GrammarBudget,
-}
-
-impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
-    pub(super) fn new(
-        source: &'source str,
-        tokens: &'source [LexToken],
-        events: &'events mut Vec<SyntaxEvent>,
-        budget: &'events mut GrammarBudget,
-    ) -> Self {
-        Self {
-            source,
-            tokens,
-            cursor: 0,
-            empty_offset: 0,
-            events,
-            budget,
-        }
-    }
-
-    fn for_fragment(
-        source: &'source str,
-        tokens: &'source [LexToken],
-        empty_offset: usize,
-        events: &'events mut Vec<SyntaxEvent>,
-        budget: &'events mut GrammarBudget,
-    ) -> Self {
-        Self {
-            source,
-            tokens,
-            cursor: 0,
-            empty_offset,
-            events,
-            budget,
-        }
-    }
-
-    pub(super) fn is_at_end(&self) -> bool {
-        self.cursor == self.tokens.len()
-    }
-
-    pub(super) fn current(&self) -> Option<LexToken> {
-        self.tokens.get(self.cursor).copied()
-    }
-
-    pub(super) fn current_kind(&self) -> Option<SyntaxKind> {
-        self.current().map(LexToken::kind)
-    }
-
-    pub(super) fn current_text(&self) -> Option<&'source str> {
-        self.current()
-            .map(|token| &self.source[token.range().as_range()])
-    }
-
-    pub(super) const fn source(&self) -> &'source str {
-        self.source
-    }
-
-    pub(super) fn current_offset(&self) -> usize {
-        self.current().map_or_else(
-            || {
-                self.tokens
-                    .last()
-                    .map_or(self.empty_offset, |token| token.range().end())
-            },
-            |token| token.range().start(),
-        )
-    }
-
-    pub(super) fn at(&self, spelling: &str) -> bool {
-        self.current_text() == Some(spelling)
-    }
-
-    pub(super) fn bump(&mut self) -> Option<LexToken> {
-        let token = self.current()?;
-        let event = SyntaxEvent::token(token.kind(), token.range());
-        if self.budget.event(&event) {
-            self.events.push(event);
-        }
-        self.cursor += 1;
-        Some(token)
-    }
-
-    /// Advances one already-lexed token without emitting it.
-    ///
-    /// `RichText` uses this only when the same token is partitioned into exact
-    /// quote/content ranges in the current event transaction. The caller must
-    /// emit lossless replacement token events before building the tree.
-    pub(super) fn take_for_partition(&mut self) -> Option<LexToken> {
-        let token = self.current()?;
-        self.cursor += 1;
-        Some(token)
-    }
-
-    pub(super) fn start(&mut self, kind: SyntaxKind, role: SyntaxRole) {
-        if self.budget.start(kind, role) {
-            self.events.push(SyntaxEvent::start(kind, role));
-        }
-    }
-
-    pub(super) fn event_position(&self) -> usize {
-        self.events.len()
-    }
-
-    pub(super) fn started_kind_since(&self, position: usize, kind: SyntaxKind) -> bool {
-        self.events[position..].iter().any(
-            |event| matches!(event, SyntaxEvent::StartNode { kind: actual, .. } if *actual == kind),
-        )
-    }
-
-    pub(super) fn insert_start(&mut self, position: usize, kind: SyntaxKind, role: SyntaxRole) {
-        if self.budget.start(kind, role) {
-            self.events.insert(position, SyntaxEvent::start(kind, role));
-        }
-    }
-
-    pub(super) fn set_start_role(&mut self, position: usize, role: SyntaxRole) {
-        if self.budget.failure().is_some() {
-            return;
-        }
-        let Some(SyntaxEvent::StartNode {
-            role: current_role, ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("completed grammar marker must point to a node start event");
-        };
-        *current_role = role;
-    }
-
-    pub(super) fn finish(&mut self) {
-        if self.budget.finish() {
-            self.events.push(SyntaxEvent::FinishNode);
-        }
-    }
-
-    pub(super) fn push(&mut self, event: SyntaxEvent) {
-        if self.budget.event(&event) {
-            self.events.push(event);
-        }
-    }
-
-    pub(super) fn charge_assertion_condition(&mut self) {
-        self.budget.assertion_condition();
-    }
-
-    pub(super) fn enter_prefix_expression(&mut self) -> bool {
-        self.budget.enter_prefix_expression()
-    }
-
-    pub(super) fn leave_prefix_expression(&mut self) {
-        self.budget.leave_prefix_expression();
-    }
-
-    pub(super) const fn budget_failed(&self) -> bool {
-        self.budget.failure().is_some()
-    }
-
-    pub(super) fn bump_trivia(&mut self) {
-        while self.current_kind().is_some_and(is_trivia_kind) {
-            self.bump();
-        }
-    }
-
-    pub(super) fn next_significant(&self) -> Option<(usize, LexToken, &'source str)> {
-        self.tokens[self.cursor..]
-            .iter()
-            .copied()
-            .enumerate()
-            .find(|(_, token)| !is_trivia_kind(token.kind()))
-            .map(|(relative, token)| {
-                (
-                    self.cursor + relative,
-                    token,
-                    &self.source[token.range().as_range()],
-                )
-            })
-    }
-
-    pub(super) fn bump_through(&mut self, inclusive_index: usize) {
-        while self.cursor <= inclusive_index && !self.is_at_end() {
-            self.bump();
-        }
-    }
-
-    pub(super) const fn cursor(&self) -> usize {
-        self.cursor
-    }
-
-    pub(super) fn token_at(&self, index: usize) -> Option<LexToken> {
-        self.tokens.get(index).copied()
-    }
-
-    pub(super) fn offset_at_token_boundary(&self, index: usize) -> Option<usize> {
-        if let Some(token) = self.tokens.get(index) {
-            return Some(token.range().start());
-        }
-        (index == self.tokens.len()).then(|| {
-            self.tokens
-                .last()
-                .map_or(self.empty_offset, |token| token.range().end())
-        })
-    }
-
-    pub(super) fn token_boundary_index(&self, offset: usize) -> Option<usize> {
-        if offset
-            == self
-                .tokens
-                .last()
-                .map_or(self.empty_offset, |token| token.range().end())
-        {
-            return Some(self.tokens.len());
-        }
-        self.tokens[self.cursor..]
-            .iter()
-            .position(|token| token.range().start() == offset)
-            .map(|relative| self.cursor + relative)
-    }
-
-    pub(super) fn text_of(&self, token: LexToken) -> &'source str {
-        &self.source[token.range().as_range()]
-    }
-}
-
 /// Builds the private lossless root tree without allocating syntax identity.
 pub(crate) fn parse_shadow_document(
     document: &SourceDocument,
+    options: ParseOptions,
 ) -> Result<GrammarBuild, GrammarBuildError> {
+    // The accepted option type is currently fieldless. Destructuring it at
+    // the canonical grammar entry makes a future option an explicit parser
+    // migration instead of letting the transaction silently discard it.
+    let ParseOptions {} = options;
     let tokens = DocumentLexer::new(document.text()).lex();
     build_shadow_root(document, &tokens, |tokens, events, budget| {
         start_event(events, budget, SyntaxKind::ItemList, SyntaxRole::Element(0));
@@ -339,7 +116,7 @@ fn build_shadow_root_text(
     );
     finish_event(&mut events, &mut budget);
     budget_failure(&budget)?;
-    build_grammar_text(source, &events)
+    build_grammar_text(source, &events, tokens.len())
 }
 
 fn emit_logical_lines(
@@ -351,18 +128,23 @@ fn emit_logical_lines(
     let lines = logical_token_ranges(source, tokens);
     let mut line = 0_usize;
     let mut ordinal = 0_u32;
+    let mut root_state = SourceRootState::default();
     while line < lines.len() {
         if let Some((declaration_line, kind)) =
             structured_declaration_after_outer_prefixes(source, tokens, &lines, line)
         {
             let last = declaration_group_end(source, tokens, &lines, declaration_line, kind);
             let grouped = &tokens[lines[line].start..lines[last].end];
-            emit_declaration_item(source, grouped, kind, ordinal, events, budget)?;
+            let item = root_state.classify(kind)?;
+            debug_assert!(item.recovery.is_none());
+            emit_declaration_item(source, grouped, item.kind, item.role, events, budget)?;
             line = last + 1;
         } else {
             let range = lines[line];
             let line_tokens = &tokens[range.start..range.end];
-            emit_logical_line(source, line_tokens, ordinal, events, budget)?;
+            let item = classify_top_level_item(source, line_tokens);
+            let item = item.map(|kind| root_state.classify(kind)).transpose()?;
+            emit_logical_line(source, line_tokens, item, ordinal, events, budget)?;
             line += 1;
         }
         ordinal = ordinal
@@ -370,6 +152,104 @@ fn emit_logical_lines(
             .ok_or(GrammarBuildError::ChildIndexExhausted)?;
     }
     Ok(())
+}
+
+#[derive(Default)]
+struct SourceRootState {
+    attributes: u16,
+    uses: u16,
+    items: u32,
+    phase: SourceRootPhase,
+    module_seen: bool,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum SourceRootPhase {
+    #[default]
+    Header,
+    Uses,
+    Items,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceRootRecovery {
+    DuplicateModule,
+    LateModule,
+    LateUse,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct SourceRootItem {
+    kind: SyntaxKind,
+    role: SyntaxRole,
+    recovery: Option<SourceRootRecovery>,
+}
+
+impl SourceRootState {
+    fn classify(&mut self, kind: SyntaxKind) -> Result<SourceRootItem, GrammarBuildError> {
+        let (kind, role, recovery) = match kind {
+            SyntaxKind::InnerAttribute | SyntaxKind::OuterAttribute => {
+                let ordinal = self.attributes;
+                self.attributes = ordinal
+                    .checked_add(1)
+                    .ok_or(GrammarBuildError::ChildIndexExhausted)?;
+                (kind, SyntaxRole::Attribute(ordinal), None)
+            }
+            SyntaxKind::ModuleDeclaration => {
+                let recovery = if self.module_seen {
+                    Some(SourceRootRecovery::DuplicateModule)
+                } else if self.phase != SourceRootPhase::Header {
+                    Some(SourceRootRecovery::LateModule)
+                } else {
+                    None
+                };
+                self.module_seen = true;
+                if let Some(recovery) = recovery {
+                    self.phase = SourceRootPhase::Items;
+                    (
+                        SyntaxKind::ErrorItem,
+                        self.next_item_role()?,
+                        Some(recovery),
+                    )
+                } else {
+                    (kind, SyntaxRole::Target, None)
+                }
+            }
+            SyntaxKind::UseDeclaration => {
+                if self.phase == SourceRootPhase::Items {
+                    (
+                        SyntaxKind::ErrorItem,
+                        self.next_item_role()?,
+                        Some(SourceRootRecovery::LateUse),
+                    )
+                } else {
+                    self.phase = SourceRootPhase::Uses;
+                    let ordinal = self.uses;
+                    self.uses = ordinal
+                        .checked_add(1)
+                        .ok_or(GrammarBuildError::ChildIndexExhausted)?;
+                    (kind, SyntaxRole::Reference(ordinal), None)
+                }
+            }
+            _ => {
+                self.phase = SourceRootPhase::Items;
+                (kind, self.next_item_role()?, None)
+            }
+        };
+        Ok(SourceRootItem {
+            kind,
+            role,
+            recovery,
+        })
+    }
+
+    fn next_item_role(&mut self) -> Result<SyntaxRole, GrammarBuildError> {
+        let ordinal = self.items;
+        self.items = ordinal
+            .checked_add(1)
+            .ok_or(GrammarBuildError::ChildIndexExhausted)?;
+        Ok(SyntaxRole::Element(ordinal))
+    }
 }
 
 fn structured_declaration_after_outer_prefixes(
@@ -640,63 +520,32 @@ fn emit_declaration_item(
     source: &str,
     tokens: &[LexToken],
     kind: SyntaxKind,
-    ordinal: u32,
+    role: SyntaxRole,
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) -> Result<(), GrammarBuildError> {
     let item_start = events.len();
     match kind {
-        SyntaxKind::FlowItem => super::shadow_flow::emit_declaration(
-            source,
-            tokens,
-            SyntaxRole::Element(ordinal),
-            events,
-            budget,
-        ),
-        SyntaxKind::FunctionItem => super::function_grammar::emit_declaration(
-            source,
-            tokens,
-            SyntaxRole::Element(ordinal),
-            events,
-            budget,
-        ),
+        SyntaxKind::FlowItem => {
+            super::shadow_flow::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::FunctionItem => {
+            super::function_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
         SyntaxKind::PredicateItem | SyntaxKind::ProofItem => {
-            super::predicate_proof::emit_declaration(
-                source,
-                tokens,
-                kind,
-                SyntaxRole::Element(ordinal),
-                events,
-                budget,
-            );
+            super::predicate_proof::emit_declaration(source, tokens, kind, role, events, budget);
         }
         SyntaxKind::EnumItem | SyntaxKind::StructItem | SyntaxKind::TypeAliasItem => {
             super::type_declaration_grammar::emit_declaration(
-                source,
-                tokens,
-                kind,
-                SyntaxRole::Element(ordinal),
-                events,
-                budget,
+                source, tokens, kind, role, events, budget,
             );
         }
         SyntaxKind::TraitItem | SyntaxKind::ImplItem => {
-            super::trait_impl_grammar::emit_declaration(
-                source,
-                tokens,
-                kind,
-                SyntaxRole::Element(ordinal),
-                events,
-                budget,
-            );
+            super::trait_impl_grammar::emit_declaration(source, tokens, kind, role, events, budget);
         }
-        SyntaxKind::ResourceDeclarationItem => super::resource_grammar::emit_declaration(
-            source,
-            tokens,
-            SyntaxRole::Element(ordinal),
-            events,
-            budget,
-        ),
+        SyntaxKind::ResourceDeclarationItem => {
+            super::resource_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
         SyntaxKind::CharacterDeclarationItem
         | SyntaxKind::ViewDeclarationItem
         | SyntaxKind::ActionDeclarationItem
@@ -704,46 +553,25 @@ fn emit_declaration_item(
         | SyntaxKind::SignalDeclarationItem
         | SyntaxKind::MetricDeclarationItem
         | SyntaxKind::LayerDeclarationItem => {
-            emit_retained_declaration_item(source, tokens, kind, ordinal, events, budget);
+            emit_retained_declaration_item(source, tokens, kind, role, events, budget);
         }
-        SyntaxKind::EntryDeclarationItem => super::entry_grammar::emit_declaration(
-            source,
-            tokens,
-            SyntaxRole::Element(ordinal),
-            events,
-            budget,
-        ),
-        SyntaxKind::ExternCapabilityItem => super::extern_capability_grammar::emit_declaration(
-            source,
-            tokens,
-            SyntaxRole::Element(ordinal),
-            events,
-            budget,
-        ),
-        SyntaxKind::TestItem | SyntaxKind::BenchItem => {
-            super::test_bench_grammar::emit_declaration(
-                source,
-                tokens,
-                kind,
-                SyntaxRole::Element(ordinal),
-                events,
-                budget,
+        SyntaxKind::EntryDeclarationItem => {
+            super::entry_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::ExternCapabilityItem => {
+            super::extern_capability_grammar::emit_declaration(
+                source, tokens, role, events, budget,
             );
         }
-        SyntaxKind::SourceItem => super::source_grammar::emit_declaration(
-            source,
-            tokens,
-            SyntaxRole::Element(ordinal),
-            events,
-            budget,
-        ),
-        SyntaxKind::StyleItem => super::style_grammar::emit_declaration(
-            source,
-            tokens,
-            SyntaxRole::Element(ordinal),
-            events,
-            budget,
-        ),
+        SyntaxKind::TestItem | SyntaxKind::BenchItem => {
+            super::test_bench_grammar::emit_declaration(source, tokens, kind, role, events, budget);
+        }
+        SyntaxKind::SourceItem => {
+            super::source_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
+        SyntaxKind::StyleItem => {
+            super::style_grammar::emit_declaration(source, tokens, role, events, budget);
+        }
         _ => unreachable!("only structured declaration kinds are grouped"),
     }
     budget_failure(budget)?;
@@ -755,11 +583,10 @@ fn emit_retained_declaration_item(
     source: &str,
     tokens: &[LexToken],
     kind: SyntaxKind,
-    ordinal: u32,
+    role: SyntaxRole,
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let role = SyntaxRole::Element(ordinal);
     match kind {
         SyntaxKind::CharacterDeclarationItem => {
             super::character_grammar::emit_declaration(source, tokens, role, events, budget);
@@ -879,6 +706,7 @@ fn wrap_declaration_logical_lines(source: &str, item_start: usize, events: &mut 
 fn emit_logical_line(
     source: &str,
     tokens: &[LexToken],
+    item: Option<SourceRootItem>,
     ordinal: u32,
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
@@ -889,29 +717,27 @@ fn emit_logical_line(
         SyntaxKind::LogicalLine,
         SyntaxRole::Element(ordinal),
     );
-    let item = classify_top_level_item(source, tokens);
     match item {
-        Some(kind @ (SyntaxKind::ModuleDeclaration | SyntaxKind::UseDeclaration)) => {
-            super::module_use_grammar::emit_declaration(
-                source,
-                tokens,
-                kind,
-                SyntaxRole::Element(ordinal),
-                events,
-                budget,
-            );
+        Some(SourceRootItem {
+            kind: kind @ (SyntaxKind::ModuleDeclaration | SyntaxKind::UseDeclaration),
+            role,
+            recovery: None,
+        }) => {
+            super::module_use_grammar::emit_declaration(source, tokens, kind, role, events, budget);
         }
-        Some(SyntaxKind::FlowItem) => {
-            super::shadow_flow::emit_declaration(
-                source,
-                tokens,
-                SyntaxRole::Element(ordinal),
-                events,
-                budget,
-            );
+        Some(SourceRootItem {
+            kind: SyntaxKind::FlowItem,
+            role,
+            recovery: None,
+        }) => {
+            super::shadow_flow::emit_declaration(source, tokens, role, events, budget);
         }
-        Some(kind) => {
-            start_event(events, budget, kind, SyntaxRole::Element(ordinal));
+        Some(SourceRootItem {
+            kind,
+            role,
+            recovery,
+        }) => {
+            start_event(events, budget, kind, role);
             for token in tokens {
                 push_event(events, budget, SyntaxEvent::token(token.kind, token.range));
             }
@@ -925,13 +751,31 @@ fn emit_logical_line(
                     .rev()
                     .find(|token| !is_trivia_kind(token.kind))
                     .expect("classified error item has a significant token");
+                let (code, message) = match recovery {
+                    Some(SourceRootRecovery::DuplicateModule) => (
+                        "syntax.source.duplicate_module_declaration",
+                        "a source file accepts at most one leading module declaration",
+                    ),
+                    Some(SourceRootRecovery::LateModule) => (
+                        "syntax.source.late_module_declaration",
+                        "a module declaration must precede use declarations and ordinary items",
+                    ),
+                    Some(SourceRootRecovery::LateUse) => (
+                        "syntax.source.late_use_declaration",
+                        "a use declaration must precede ordinary items",
+                    ),
+                    None => (
+                        "syntax.item.expected_declaration",
+                        "regular Arcweft source accepts declarations at the top level",
+                    ),
+                };
                 push_event(
                     events,
                     budget,
                     SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                        "syntax.item.expected_declaration",
+                        code,
                         SourceRange::new(first.range.start(), last.range.end()),
-                        "regular Arcweft source accepts declarations at the top level",
+                        message,
                     )),
                 );
             }
@@ -990,16 +834,6 @@ fn delimiter_depth_after(
         ")" | "]" | "}" => depth.saturating_sub(1),
         _ => depth,
     }
-}
-
-const fn is_trivia_kind(kind: SyntaxKind) -> bool {
-    matches!(
-        kind,
-        SyntaxKind::WhitespaceToken
-            | SyntaxKind::NewlineToken
-            | SyntaxKind::CommentToken
-            | SyntaxKind::DocCommentToken
-    )
 }
 
 #[cfg(test)]

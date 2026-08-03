@@ -5,8 +5,8 @@ use std::collections::BTreeMap;
 use arcweft_id::RetainedIdentityFamily;
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::emit_retained_declaration_header;
-use super::document::ShadowDocumentParser;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::shadow_recovery::{
@@ -14,9 +14,13 @@ use super::shadow_recovery::{
     find_statement_terminator, find_top_level_boundary, token_count, trimmed_end,
 };
 use super::type_ref::emit_type;
+use crate::expressions::{
+    ExpressionComponentRole, ExpressionProjection, PendingExpressionComponent,
+    PendingExpressionProjection,
+};
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
-use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::grammar::kinds::{ActivityPolicySyntaxValue, SyntaxKind, SyntaxRole};
 
 pub(super) fn emit_declaration(
     source: &str,
@@ -29,16 +33,16 @@ pub(super) fn emit_declaration(
     parser.start(SyntaxKind::ActivityDeclarationItem, role);
     emit_retained_declaration_header(&mut parser, RetainedIdentityFamily::Activity, |_| {});
     parser.bump_trivia();
-    reject_unexpected_header(&mut parser);
+    let has_unexpected_header = reject_unexpected_header(&mut parser);
     parser.bump_trivia();
     emit_activity_body(&mut parser);
-    emit_trailing_recovery(&mut parser);
+    emit_trailing_recovery(&mut parser, u32::from(has_unexpected_header));
     parser.finish();
 }
 
-fn reject_unexpected_header(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn reject_unexpected_header(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
     if parser.at("{") || parser.is_at_end() {
-        return;
+        return false;
     }
     let body = find_top_level_boundary(parser, parser.cursor(), &["{"]);
     let start = parser.current_offset();
@@ -50,6 +54,7 @@ fn reject_unexpected_header(parser: &mut ShadowDocumentParser<'_, '_>) {
         SourceRange::new(start, parser.current_offset()),
         "Activity accepts no generics, origin clauses, where clause, or contracts in its header",
     )));
+    true
 }
 
 #[derive(Default)]
@@ -80,7 +85,7 @@ impl ActivitySectionLedger {
         }
         if self.highest_rank.is_some_and(|highest| rank < highest) {
             parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                "syntax.activity.out_of_order_member",
+                "syntax.activity.section_order",
                 range,
                 "Activity sections must be ordered as mode, lifecycle, input, output, contract",
             )));
@@ -215,13 +220,21 @@ impl ActivityPolicy {
         }
     }
 
-    fn accepts(self, value: &str) -> bool {
+    fn value(self, spelling: &str) -> Option<ActivityPolicySyntaxValue> {
         match self {
-            Self::Mode => matches!(
-                value,
-                "deterministic" | "checkpointed_realtime" | "external_realtime"
-            ),
-            Self::Lifecycle => matches!(value, "stateless" | "snapshot"),
+            Self::Mode => match spelling {
+                "deterministic" => Some(ActivityPolicySyntaxValue::ModeDeterministic),
+                "checkpointed_realtime" => {
+                    Some(ActivityPolicySyntaxValue::ModeCheckpointedRealtime)
+                }
+                "external_realtime" => Some(ActivityPolicySyntaxValue::ModeExternalRealtime),
+                _ => None,
+            },
+            Self::Lifecycle => match spelling {
+                "stateless" => Some(ActivityPolicySyntaxValue::LifecycleStateless),
+                "snapshot" => Some(ActivityPolicySyntaxValue::LifecycleSnapshot),
+                _ => None,
+            },
         }
     }
 }
@@ -241,16 +254,25 @@ fn emit_policy_member(
     emit_assignment(parser, "syntax.activity.missing_policy_assignment");
     parser.bump_trivia();
 
-    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+    if parser.cursor() < section_end && parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
         let value = parser.current().expect("checked Activity policy value");
-        if !policy.accepts(parser.text_of(value)) {
+        if let Some(value) = policy.value(parser.text_of(value)) {
+            parser.start(
+                SyntaxKind::NameReference,
+                SyntaxRole::ActivityPolicyValue(value),
+            );
+            parser.bump();
+            parser.finish();
+        } else {
+            parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+            parser.bump();
+            parser.finish();
             parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
                 "syntax.activity.unknown_policy",
                 value.range(),
                 format!("unknown Activity {} policy", policy.keyword()),
             )));
         }
-        parser.bump();
     } else {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingMemberValue, SyntaxRole::Recovery(0));
@@ -411,10 +433,15 @@ fn emit_port(
 }
 
 fn emit_port_type(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize) {
+    parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
     if !parser.at(":") {
         let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingType, SyntaxRole::Type);
+        parser.push(SyntaxEvent::MissingToken {
+            expected: expected(SyntaxKind::PunctuationToken),
+            at,
+        });
         parser.finish();
+        emit_type(parser, parser.cursor(), SyntaxRole::Type);
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.activity.missing_port_type",
             SourceRange::new(at, at),
@@ -423,6 +450,7 @@ fn emit_port_type(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize) {
         return;
     }
     parser.bump();
+    parser.finish();
     parser.bump_trivia();
     let default = find_top_level_boundary(parser, parser.cursor(), &["="]).min(entry_end);
     emit_type(parser, default, SyntaxRole::Type);
@@ -430,6 +458,9 @@ fn emit_port_type(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize) {
     if parser.at("=") {
         let start = parser.current_offset();
         parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+        parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
+        parser.bump();
+        parser.finish();
         bump_until(parser, entry_end);
         parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
@@ -476,8 +507,8 @@ fn emit_contract_block(
 }
 
 fn emit_activity_contract_clauses(parser: &mut ShadowDocumentParser<'_, '_>, block_end: usize) {
-    let mut requires = 0_u16;
-    let mut ensures = 0_u16;
+    let mut contract_ordinal = 0_u16;
+    let mut recovery_ordinal = 0_u32;
     let mut saw_ensures = false;
     while parser.cursor() < block_end {
         parser.bump_trivia();
@@ -493,7 +524,7 @@ fn emit_activity_contract_clauses(parser: &mut ShadowDocumentParser<'_, '_>, blo
                     parser,
                     entry_end,
                     SyntaxKind::RequiresClause,
-                    SyntaxRole::RequiresClause(requires),
+                    SyntaxRole::ContractClause(contract_ordinal),
                 );
                 if saw_ensures {
                     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
@@ -502,7 +533,7 @@ fn emit_activity_contract_clauses(parser: &mut ShadowDocumentParser<'_, '_>, blo
                         "`requires` clauses must precede `ensures` clauses",
                     )));
                 }
-                requires = requires
+                contract_ordinal = contract_ordinal
                     .checked_add(1)
                     .expect("contract clause budget is below the role index range");
             }
@@ -512,13 +543,18 @@ fn emit_activity_contract_clauses(parser: &mut ShadowDocumentParser<'_, '_>, blo
                     parser,
                     entry_end,
                     SyntaxKind::EnsuresClause,
-                    SyntaxRole::EnsuresClause(ensures),
+                    SyntaxRole::ContractClause(contract_ordinal),
                 );
-                ensures = ensures
+                contract_ordinal = contract_ordinal
                     .checked_add(1)
                     .expect("contract clause budget is below the role index range");
             }
-            _ => emit_contract_error(parser, entry_end),
+            _ => {
+                emit_contract_error(parser, entry_end, recovery_ordinal);
+                recovery_ordinal = recovery_ordinal
+                    .checked_add(1)
+                    .expect("contract recovery count fits the role index range");
+            }
         }
         bump_until(parser, entry_end);
         if parser.at(";") || parser.current_kind() == Some(SyntaxKind::NewlineToken) {
@@ -543,7 +579,20 @@ fn emit_activity_contract_clause(
     let expression_end = trimmed_end(parser, parser.cursor(), entry_end);
     if parser.cursor() == expression_end {
         let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingExpression, SyntaxRole::Condition);
+        let owner = parser.start_projected_owner(
+            SyntaxKind::MissingExpression,
+            SyntaxRole::ContractOperand(0),
+        );
+        parser.set_expression_projection(
+            owner,
+            PendingExpressionProjection::new(
+                ExpressionProjection::Error,
+                vec![PendingExpressionComponent::new(
+                    ExpressionComponentRole::Recovery,
+                    SourceRange::new(at, at),
+                )],
+            ),
+        );
         parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.activity.missing_contract_expression",
@@ -551,15 +600,22 @@ fn emit_activity_contract_clause(
             "Activity contract clause requires an expression",
         )));
     } else {
-        emit_expression(parser, expression_end, SyntaxRole::Condition);
+        emit_expression(parser, expression_end, SyntaxRole::ContractOperand(0));
     }
     bump_until(parser, entry_end);
     parser.finish();
 }
 
-fn emit_contract_error(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize) {
+fn emit_contract_error(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    entry_end: usize,
+    recovery_ordinal: u32,
+) {
     let range = parser.current().expect("invalid contract member").range();
-    parser.start(SyntaxKind::ErrorDeclarationMember, SyntaxRole::Recovery(0));
+    parser.start(
+        SyntaxKind::ErrorDeclarationMember,
+        SyntaxRole::Recovery(recovery_ordinal),
+    );
     bump_until(parser, entry_end);
     parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
@@ -589,8 +645,10 @@ fn emit_unknown_section(
 }
 
 fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>, code: &'static str) {
+    parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
     if parser.at("=") {
         parser.bump();
+        parser.finish();
         return;
     }
     let at = parser.current_offset();
@@ -598,6 +656,7 @@ fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>, code: &'static str
         expected: expected(SyntaxKind::PunctuationToken),
         at,
     });
+    parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         code,
         SourceRange::new(at, at),
@@ -616,13 +675,16 @@ fn emit_missing_section_body(parser: &mut ShadowDocumentParser<'_, '_>, section:
     )));
 }
 
-fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>, recovery_ordinal: u32) {
     parser.bump_trivia();
     if parser.is_at_end() {
         return;
     }
     let start = parser.current_offset();
-    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+    parser.start(
+        SyntaxKind::ErrorNode,
+        SyntaxRole::Recovery(recovery_ordinal),
+    );
     while parser.bump().is_some() {}
     parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(

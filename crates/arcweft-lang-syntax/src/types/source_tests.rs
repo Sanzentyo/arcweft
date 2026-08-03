@@ -312,7 +312,12 @@ fn type_source_map_rejects_missing_duplicate_and_out_of_order_lexemes() {
         !(lexeme.owner() == &root && lexeme.kind() == &TypeRefLexemeKind::OpenAngle)
     });
     assert_eq!(
-        TypeRefSourceMap::try_new(authored.value(), authored.source.nodes.to_vec(), missing),
+        TypeRefSourceMap::try_new(
+            authored.value(),
+            authored.source.nodes.to_vec(),
+            missing,
+            authored.source.components.to_vec(),
+        ),
         Err(TypeRefSourceMapError::MissingLexeme {
             owner: root.clone(),
             kind: TypeRefLexemeKind::OpenAngle,
@@ -322,7 +327,12 @@ fn type_source_map_rejects_missing_duplicate_and_out_of_order_lexemes() {
     let mut duplicate = authored.source.lexemes.to_vec();
     duplicate.push(duplicate[0].clone());
     assert_eq!(
-        TypeRefSourceMap::try_new(authored.value(), authored.source.nodes.to_vec(), duplicate),
+        TypeRefSourceMap::try_new(
+            authored.value(),
+            authored.source.nodes.to_vec(),
+            duplicate,
+            authored.source.components.to_vec(),
+        ),
         Err(TypeRefSourceMapError::DuplicateLexeme {
             owner: root.clone(),
             kind: TypeRefLexemeKind::PathSegment { ordinal: 0 },
@@ -335,7 +345,8 @@ fn type_source_map_rejects_missing_duplicate_and_out_of_order_lexemes() {
         TypeRefSourceMap::try_new(
             authored.value(),
             authored.source.nodes.to_vec(),
-            out_of_order
+            out_of_order,
+            authored.source.components.to_vec(),
         ),
         Err(TypeRefSourceMapError::LexemeOutOfOrder {
             owner: root,
@@ -351,7 +362,12 @@ fn source_map_constructor_rejects_missing_extra_and_duplicate_paths() {
     let missing_path = path(&[TypeRefNodeStep::GenericArgument(0)]);
     missing.retain(|(candidate, _)| candidate != &missing_path);
     assert_eq!(
-        TypeRefSourceMap::try_new(authored.value(), missing, authored.source.lexemes.to_vec()),
+        TypeRefSourceMap::try_new(
+            authored.value(),
+            missing,
+            authored.source.lexemes.to_vec(),
+            authored.source.components.to_vec(),
+        ),
         Err(TypeRefSourceMapError::MissingNode(missing_path.clone()))
     );
 
@@ -362,7 +378,12 @@ fn source_map_constructor_rejects_missing_extra_and_duplicate_paths() {
         TypeRefNodeSource::new(TextRange::new(0, 0), None),
     ));
     assert_eq!(
-        TypeRefSourceMap::try_new(authored.value(), extra, authored.source.lexemes.to_vec()),
+        TypeRefSourceMap::try_new(
+            authored.value(),
+            extra,
+            authored.source.lexemes.to_vec(),
+            authored.source.components.to_vec(),
+        ),
         Err(TypeRefSourceMapError::ExtraNode(extra_path))
     );
 
@@ -372,7 +393,8 @@ fn source_map_constructor_rejects_missing_extra_and_duplicate_paths() {
         TypeRefSourceMap::try_new(
             authored.value(),
             duplicate,
-            authored.source.lexemes.to_vec()
+            authored.source.lexemes.to_vec(),
+            authored.source.components.to_vec(),
         ),
         Err(TypeRefSourceMapError::DuplicateNode(TypeRefNodePath::root()))
     );
@@ -399,7 +421,8 @@ fn source_map_constructor_rejects_heads_and_children_outside_their_owner() {
         TypeRefSourceMap::try_new(
             authored.value(),
             head_outside,
-            authored.source.lexemes.to_vec()
+            authored.source.lexemes.to_vec(),
+            authored.source.components.to_vec(),
         ),
         Err(TypeRefSourceMapError::HeadOutsideWhole(
             TypeRefNodePath::root()
@@ -418,7 +441,8 @@ fn source_map_constructor_rejects_heads_and_children_outside_their_owner() {
         TypeRefSourceMap::try_new(
             authored.value(),
             child_outside,
-            authored.source.lexemes.to_vec()
+            authored.source.lexemes.to_vec(),
+            authored.source.components.to_vec(),
         ),
         Err(TypeRefSourceMapError::ChildOutsideParent(generic_argument)),
         "{TEST_ID}: child structural ranges cannot escape their parent",

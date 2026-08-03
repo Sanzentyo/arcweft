@@ -1,91 +1,39 @@
-//! Crate-private bound parse product staged before the atomic public switch.
-//!
-//! This type is deliberately not exported from `incremental`. It lets the
-//! grammar transaction retain one immutable document/snapshot/diagnostic
-//! product without adapting the attached grammar back into the detached AST
-//! that still feeds HIR. The public replacement must delete that detached
-//! authority instead of wrapping it.
-
-#![cfg_attr(
-    not(test),
-    allow(
-        dead_code,
-        reason = "the bound product remains crate-private until the atomic syntax/HIR public switch"
-    )
-)]
+//! Immutable data owned by one source-bound parsed snapshot.
 
 use std::sync::Arc;
 
 use arcweft_source::{SourceDocument, SourceSpan, SourceSpanError};
 
 use crate::attachment::{SyntaxSnapshotData, SyntaxSnapshotId};
+use crate::grammar::budget::SyntaxParseStats;
 use crate::grammar::build::GrammarBuild;
 use crate::grammar::event::PendingSyntaxDiagnostic;
 
 use super::ParseStatus;
 
-/// One immutable, source-bound result of the accepted private grammar.
+/// Data shared by every cheap clone of one accepted parsed source.
 #[derive(Clone, Debug)]
-pub(crate) struct BoundParsedSource {
-    product: BoundSyntaxProduct,
-}
-
-#[derive(Clone, Debug)]
-struct BoundSyntaxProduct {
+pub(crate) struct ParsedSourceData {
     syntax: Arc<SyntaxSnapshotData>,
+    document: Arc<SourceDocument>,
     diagnostics: Arc<[SyntaxDiagnostic]>,
     status: ParseStatus,
+    stats: SyntaxParseStats,
 }
 
 /// Recoverable grammar diagnostic bound to one immutable source revision.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct SyntaxDiagnostic {
+pub struct SyntaxDiagnostic {
     code: &'static str,
     primary: SourceSpan,
     related: Option<SourceSpan>,
     message: String,
 }
 
-impl BoundParsedSource {
+impl ParsedSourceData {
     /// Binds a successfully attached snapshot to the diagnostics produced by
     /// the same grammar event transaction.
     pub(crate) fn try_new(
-        syntax: Arc<SyntaxSnapshotData>,
-        build: &GrammarBuild,
-    ) -> Result<Self, SourceSpanError> {
-        Ok(Self {
-            product: BoundSyntaxProduct::try_new(syntax, build)?,
-        })
-    }
-
-    /// Qualified grammar snapshot committed by this parse transaction.
-    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
-        self.product.snapshot_id()
-    }
-
-    /// Exact immutable source document owned by the grammar snapshot.
-    pub(crate) fn document(&self) -> &Arc<SourceDocument> {
-        self.product.document()
-    }
-
-    /// Attached grammar and syntax identity inventory.
-    pub(crate) const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
-        self.product.syntax()
-    }
-
-    /// Recoverable diagnostics emitted by this exact grammar transaction.
-    pub(crate) fn diagnostics(&self) -> &[SyntaxDiagnostic] {
-        self.product.diagnostics()
-    }
-
-    /// Whether the attached tree contains recovery evidence.
-    pub(crate) const fn status(&self) -> ParseStatus {
-        self.product.status()
-    }
-}
-
-impl BoundSyntaxProduct {
-    fn try_new(
         syntax: Arc<SyntaxSnapshotData>,
         build: &GrammarBuild,
     ) -> Result<Self, SourceSpanError> {
@@ -93,40 +41,75 @@ impl BoundSyntaxProduct {
             .diagnostics()
             .iter()
             .map(|diagnostic| SyntaxDiagnostic::bind(syntax.document(), diagnostic))
-            .collect::<Result<Arc<[_]>, _>>()?;
-        Ok(Self {
+            .collect::<Result<Vec<_>, _>>()?;
+        let diagnostics = retain_first_diagnostic_identities(diagnostics);
+        let document = Arc::clone(syntax.document());
+        let data = Self {
             syntax,
-            diagnostics,
+            document,
+            diagnostics: diagnostics.into(),
             status: if build.has_recovery() {
                 ParseStatus::Recovered
             } else {
                 ParseStatus::Clean
             },
-        })
+            stats: build.stats(),
+        };
+        debug_assert!(
+            data.stats
+                .matches_publication(data.document.text().len(), data.diagnostics.len()),
+            "validated grammar statistics must match publication",
+        );
+        Ok(data)
     }
 
-    fn snapshot_id(&self) -> &SyntaxSnapshotId {
+    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
         self.syntax.snapshot_id()
     }
 
-    fn document(&self) -> &Arc<SourceDocument> {
-        self.syntax.document()
+    pub(crate) const fn document(&self) -> &Arc<SourceDocument> {
+        &self.document
     }
 
-    const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
+    pub(crate) const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
         &self.syntax
     }
 
-    fn diagnostics(&self) -> &[SyntaxDiagnostic] {
+    pub(crate) fn diagnostics(&self) -> &[SyntaxDiagnostic] {
         &self.diagnostics
     }
 
-    const fn status(&self) -> ParseStatus {
+    pub(crate) const fn status(&self) -> ParseStatus {
         self.status
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn stats(&self) -> SyntaxParseStats {
+        self.stats
     }
 }
 
+/// Removes diagnostics with the same structured identity while retaining the
+/// first parser event and its presentation message.
+fn retain_first_diagnostic_identities(diagnostics: Vec<SyntaxDiagnostic>) -> Vec<SyntaxDiagnostic> {
+    diagnostics
+        .into_iter()
+        .fold(Vec::new(), |mut unique, item| {
+            if !unique
+                .iter()
+                .any(|existing| item.has_same_deduplication_identity(existing))
+            {
+                unique.push(item);
+            }
+            unique
+        })
+}
+
 impl SyntaxDiagnostic {
+    fn has_same_deduplication_identity(&self, other: &Self) -> bool {
+        self.code == other.code && self.primary == other.primary && self.related == other.related
+    }
+
     fn bind(
         document: &SourceDocument,
         diagnostic: &PendingSyntaxDiagnostic,
@@ -143,22 +126,75 @@ impl SyntaxDiagnostic {
     }
 
     /// Stable diagnostic code emitted by the attached grammar transaction.
-    pub(crate) const fn code(&self) -> &'static str {
+    pub const fn code(&self) -> &'static str {
         self.code
     }
 
     /// Primary span in the exact immutable source revision.
-    pub(crate) const fn primary(&self) -> &SourceSpan {
+    pub const fn primary(&self) -> &SourceSpan {
         &self.primary
     }
 
     /// Optional related span in the same immutable source revision.
-    pub(crate) const fn related(&self) -> Option<&SourceSpan> {
+    pub const fn related(&self) -> Option<&SourceSpan> {
         self.related.as_ref()
     }
 
     /// Human-readable diagnostic detail; never an identity key.
-    pub(crate) fn message(&self) -> &str {
+    pub fn message(&self) -> &str {
         &self.message
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{SyntaxDiagnostic, retain_first_diagnostic_identities};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
+    use std::sync::Arc;
+
+    #[test]
+    fn diagnostic_dedup_uses_structured_identity_and_preserves_first_event_order() {
+        let name = SourceName::path("diagnostics.arcw");
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(name.display_name()).expect("valid source document ID"),
+            name,
+            Arc::<str>::from("abc"),
+        )
+        .expect("test source document");
+        let diagnostic =
+            |code, range, related: Option<SourceRange>, message: &str| SyntaxDiagnostic {
+                code,
+                primary: document.span(range).expect("valid diagnostic span"),
+                related: related.map(|range| document.span(range).expect("valid related span")),
+                message: message.to_owned(),
+            };
+        let second = diagnostic("E_SECOND", SourceRange::new(2, 3), None, "second");
+        let first = diagnostic("E_FIRST", SourceRange::new(0, 1), None, "first");
+        let same_position_different_message =
+            diagnostic("E_FIRST", SourceRange::new(0, 1), None, "different");
+        let distinct_related = diagnostic(
+            "E_FIRST",
+            SourceRange::new(0, 1),
+            Some(SourceRange::new(1, 2)),
+            "first with related evidence",
+        );
+
+        let retained = retain_first_diagnostic_identities(vec![
+            second.clone(),
+            first.clone(),
+            second,
+            same_position_different_message,
+            distinct_related.clone(),
+            first,
+        ]);
+
+        assert_eq!(
+            retained,
+            vec![
+                diagnostic("E_SECOND", SourceRange::new(2, 3), None, "second"),
+                diagnostic("E_FIRST", SourceRange::new(0, 1), None, "first"),
+                distinct_related,
+            ]
+        );
     }
 }

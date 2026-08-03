@@ -1,14 +1,10 @@
 //! Private native Style grammar over the shared lossless document cursor.
-//!
-//! This deliberately does not reuse the public Style AST parser.  Stage 1
-//! needs a typed, lossless event tree that can be validated independently
-//! before the atomic syntax switch chooses its public representation.
 
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::{emit_outer_prefixes, emit_visibility};
-use super::document::ShadowDocumentParser;
-use super::expression::emit_expression;
+use super::expression::{emit_entity_reference, emit_expression};
 use super::lexer::LexToken;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
@@ -19,6 +15,29 @@ use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::grammar::style_projection::{
+    PendingStyleBodyProjection, PendingStyleDeclarationProjection, PendingStyleEnvironmentClause,
+    PendingStyleEnvironmentComparison, PendingStyleEnvironmentCondition,
+    PendingStyleEnvironmentConditionRecovery, PendingStyleEnvironmentField,
+    PendingStyleEnvironmentProjection, PendingStyleId, PendingStyleMemberProjection,
+    PendingStyleName, PendingStylePredicate, PendingStylePropertyProjection,
+    PendingStylePunctuation, PendingStyleRuleProjection, PendingStyleSelectorPart,
+    PendingStyleSelectorProjection, PendingStyleSelectorRelation, PendingStyleSelectorSequence,
+    PendingStyleTokenProjection, PendingStyleTypeAnnotation, StyleEnvironmentComparison,
+    StyleEnvironmentConditionIssue, StyleEnvironmentField, StyleIdForm, StylePropertyOperation,
+    StyleSelectorRelation, StyleSyntaxName,
+};
+use crate::id_ref::{
+    AuthoredIdRef, AuthoredIdRoot, AuthoredIdSegment, SyntaxIdRefIssue, SyntaxIdRefShape,
+    SyntaxIdRefSyntax,
+};
+use crate::name::SyntaxName;
+
+mod environment;
+mod selector;
+
+use self::environment::emit_environment_block;
+use self::selector::emit_rule;
 
 pub(super) fn emit_declaration(
     source: &str,
@@ -28,7 +47,7 @@ pub(super) fn emit_declaration(
     budget: &mut GrammarBudget,
 ) {
     let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
-    parser.start(SyntaxKind::StyleItem, role);
+    let owner = parser.start_projected_owner(SyntaxKind::StyleItem, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
     emit_visibility(&mut parser);
@@ -37,26 +56,54 @@ pub(super) fn emit_declaration(
         parser.bump();
     }
     parser.bump_trivia();
-    emit_style_name(&mut parser);
+    let id = emit_style_id(&mut parser);
     parser.bump_trivia();
-    emit_style_body(&mut parser);
+    let trailing_header_recovery = recover_header_tail(&mut parser);
+    let body = emit_style_body(&mut parser);
+    parser.set_style_projection(
+        owner,
+        PendingStyleDeclarationProjection {
+            id,
+            trailing_header_recovery,
+            body,
+        },
+    );
     while parser.bump().is_some() {}
     parser.finish();
 }
 
-fn emit_style_name(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_style_id(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleId {
     if parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
-        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
-        parser.bump();
-        parser.finish();
-        return;
+        let source = parser.current().expect("Style ID token").range();
+        let (_, authored) = emit_entity_reference(parser, SyntaxRole::Reference(0));
+        let (value, canonical_style_family) = authored.normalized_for_family(
+            &SyntaxName::try_new("style").expect("fixed Style family is an identifier"),
+        );
+        if !canonical_style_family {
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                "syntax.style.id_family",
+                source,
+                "style declaration IDs must resolve through the `style` family",
+            )));
+        }
+        return PendingStyleId::Authored {
+            value,
+            source,
+            form: StyleIdForm::Explicit,
+            canonical_style_family,
+        };
     }
 
-    let end = find_top_level_boundary(parser, parser.cursor(), &["{"]);
-    let end = trimmed_end(parser, parser.cursor(), end);
-    if parser.cursor() >= end {
+    if matches!(
+        parser.current_kind(),
+        Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
+    ) {
+        return emit_bare_style_id(parser);
+    }
+
+    if parser.at("{") || parser.is_at_end() {
         let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
+        parser.start(SyntaxKind::MissingName, SyntaxRole::Reference(0));
         parser.push(SyntaxEvent::MissingToken {
             expected: expected(SyntaxKind::IdentifierToken),
             at,
@@ -67,30 +114,130 @@ fn emit_style_name(parser: &mut ShadowDocumentParser<'_, '_>) {
             SourceRange::new(at, at),
             "style declaration requires a name or canonical style ID",
         )));
-        return;
+        return PendingStyleId::Missing {
+            value: recovered_style_id(SyntaxIdRefIssue::MissingSuffix, 0),
+            insertion: SourceRange::new(at, at),
+        };
     }
 
-    parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
-    let mut saw_name = false;
-    while parser.cursor() < end {
-        if parser.current_kind().is_some_and(|kind| {
-            matches!(kind, SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
-        }) {
-            saw_name = true;
-        }
-        parser.bump();
-    }
+    let start = parser.current_offset();
+    let end = trimmed_end(
+        parser,
+        parser.cursor(),
+        find_top_level_boundary(parser, parser.cursor(), &["{"]),
+    );
+    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Reference(0));
+    bump_until(parser, end);
     parser.finish();
-    if !saw_name {
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.style.invalid_name",
-            token_range(parser, 0, end),
-            "style declaration name must be a dotted identifier path",
-        )));
+    let source = SourceRange::new(start, parser.current_offset());
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.style.invalid_name",
+        source,
+        "style declaration name must be a dotted identifier path",
+    )));
+    PendingStyleId::Invalid {
+        value: recovered_style_id(SyntaxIdRefIssue::InvalidSegment { ordinal: 0 }, 0),
+        source,
+        authored_name: false,
     }
 }
 
-fn emit_style_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_bare_style_id(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleId {
+    let start = parser.current_offset();
+    parser.start(SyntaxKind::NameDefinition, SyntaxRole::Reference(0));
+    let mut segments = Vec::new();
+    let mut valid = true;
+    while let Some(token) = parser.current().filter(|token| {
+        matches!(
+            token.kind(),
+            SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
+        )
+    }) {
+        segments.push(
+            AuthoredIdSegment::try_new(parser.text_of(token))
+                .expect("identifier tokens are non-empty ID segments"),
+        );
+        parser.bump();
+        if !parser.at(".") {
+            break;
+        }
+        parser.bump();
+        if !matches!(
+            parser.current_kind(),
+            Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
+        ) {
+            valid = false;
+            break;
+        }
+    }
+    parser.finish();
+    let source = SourceRange::new(start, parser.current_offset());
+    if valid {
+        let segment_count = u32::try_from(segments.len()).unwrap_or(u32::MAX);
+        return PendingStyleId::Authored {
+            value: SyntaxIdRefSyntax::new(
+                Ok(AuthoredIdRef::new(style_family_root(0), segments)),
+                SyntaxIdRefShape::new(false, false, 0, segment_count),
+            ),
+            source,
+            form: StyleIdForm::Bare,
+            canonical_style_family: true,
+        };
+    }
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.style.invalid_name",
+        source,
+        "style declaration name must be a dotted identifier path",
+    )));
+    PendingStyleId::Invalid {
+        value: recovered_style_id(
+            SyntaxIdRefIssue::InvalidSegment {
+                ordinal: u32::try_from(segments.len()).unwrap_or(u32::MAX),
+            },
+            u32::try_from(segments.len().saturating_add(1)).unwrap_or(u32::MAX),
+        ),
+        source,
+        authored_name: true,
+    }
+}
+
+fn recovered_style_id(issue: SyntaxIdRefIssue, segment_count: u32) -> SyntaxIdRefSyntax {
+    SyntaxIdRefSyntax::new(
+        Err(issue),
+        SyntaxIdRefShape::new(false, false, 0, segment_count),
+    )
+}
+
+fn style_family_root(parent_depth: usize) -> AuthoredIdRoot {
+    AuthoredIdRoot::FamilyRelative {
+        family: SyntaxName::try_new("style").expect("fixed Style family is an identifier"),
+        parent_depth,
+    }
+}
+
+fn recover_header_tail(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
+    if parser.at("{") || parser.is_at_end() {
+        return false;
+    }
+    let end = trimmed_end(
+        parser,
+        parser.cursor(),
+        find_top_level_boundary(parser, parser.cursor(), &["{"]),
+    );
+    let start = parser.current_offset();
+    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+    bump_until(parser, end);
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.style.trailing_head",
+        SourceRange::new(start, parser.current_offset()),
+        "unexpected text after the Style declaration ID",
+    )));
+    parser.bump_trivia();
+    true
+}
+
+fn emit_style_body(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleBodyProjection {
     if !parser.at("{") {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -104,108 +251,124 @@ fn emit_style_body(parser: &mut ShadowDocumentParser<'_, '_>) {
             SourceRange::new(at, at),
             "style declaration requires a braced body",
         )));
-        return;
+        return PendingStyleBodyProjection::Missing;
     }
 
     parser.start(SyntaxKind::StyleBody, SyntaxRole::Body);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
     let end = token_count(parser);
-    let close = find_matching_close(parser, parser.cursor(), "{").unwrap_or(end);
+    let matched_close = find_matching_close(parser, parser.cursor(), "{");
+    let close = matched_close.unwrap_or(end);
     parser.start(SyntaxKind::ItemList, SyntaxRole::Element(0));
-    emit_style_members(parser, close, true);
+    let members = emit_style_members(parser, close, true);
     bump_until(parser, close);
     parser.finish();
-    if parser.at("}") {
-        emit_close_delimiter(
-            parser,
-            SyntaxKind::CloseBraceNode,
-            "}",
-            "syntax.style.missing_body_close",
-        );
-    } else {
-        let at = parser.current_offset();
-        emit_missing_delimiter(
-            parser,
-            SyntaxKind::CloseBraceNode,
-            SyntaxRole::CloseDelimiter,
-        );
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.style.missing_body_close",
-            SourceRange::new(at, at),
-            "style declaration body requires a closing `}`",
-        )));
-    }
+    let closed = parser.at("}");
+    emit_close_delimiter(
+        parser,
+        SyntaxKind::CloseBraceNode,
+        "}",
+        "syntax.style.missing_body_close",
+    );
     parser.finish();
+    PendingStyleBodyProjection::Braced {
+        members: members.into_boxed_slice(),
+        closed,
+    }
 }
 
-fn emit_style_members(parser: &mut ShadowDocumentParser<'_, '_>, close: usize, allow_tokens: bool) {
-    let mut ordinal = 0_u32;
+fn emit_style_members(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    close: usize,
+    allow_tokens: bool,
+) -> Vec<PendingStyleMemberProjection> {
+    let mut members = Vec::new();
     while parser.cursor() < close {
         bump_member_separators(parser, close);
         if parser.cursor() >= close {
             break;
         }
+        let source_ordinal = u32::try_from(members.len()).unwrap_or(u32::MAX);
         let start = parser.cursor();
-        if parser.at("token") {
-            emit_token_declaration(
+        let member = if parser.at("token") {
+            PendingStyleMemberProjection::Token(emit_token_declaration(
                 parser,
                 member_boundary(parser, start, close),
-                ordinal,
+                source_ordinal,
                 allow_tokens,
-            );
+            ))
         } else if parser.at("when")
             && next_significant_text(parser, start + 1, close) == Some("environment")
         {
-            emit_environment_block(parser, close, ordinal);
+            PendingStyleMemberProjection::Environment(emit_environment_block(
+                parser,
+                close,
+                source_ordinal,
+            ))
         } else if find_top_level_boundary(parser, start, &["{"]) < close {
-            emit_rule(parser, close, ordinal);
+            PendingStyleMemberProjection::Rule(emit_rule(parser, close, source_ordinal))
         } else {
             let end = member_boundary(parser, start, close);
-            emit_invalid_member(parser, end, ordinal);
-        }
+            emit_invalid_member(parser, end, source_ordinal);
+            PendingStyleMemberProjection::Recovery { source_ordinal }
+        };
         if parser.cursor() == start {
             parser.bump();
         }
-        ordinal = ordinal.saturating_add(1);
+        members.push(member);
     }
+    members
 }
 
 fn emit_token_declaration(
     parser: &mut ShadowDocumentParser<'_, '_>,
     end: usize,
-    ordinal: u32,
-    allow_tokens: bool,
-) {
+    source_ordinal: u32,
+    allowed_at_this_depth: bool,
+) -> PendingStyleTokenProjection {
     let start = parser.cursor();
     parser.start(
         SyntaxKind::StyleTokenDeclaration,
-        SyntaxRole::Element(ordinal),
+        SyntaxRole::Element(source_ordinal),
     );
     parser.bump();
     bump_trivia_before(parser, end);
-    emit_member_name(parser, end);
+    let name = emit_style_name(
+        parser,
+        end,
+        SyntaxKind::NameDefinition,
+        SyntaxRole::Name,
+        true,
+        "syntax.style.member_name",
+        "style token requires a name",
+    );
+    let id = name.token_id();
     bump_trivia_before(parser, end);
 
-    if parser.at(":") {
+    let type_annotation = if parser.at(":") {
+        let colon = parser.current().expect("Style type colon").range();
+        parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
         parser.bump();
+        parser.finish();
         bump_trivia_before(parser, end);
-        let type_end = find_top_level_boundary(parser, parser.cursor(), &["="]).min(end);
+        let type_end =
+            find_top_level_boundary(parser, parser.cursor(), &["=", "+=", "-="]).min(end);
         if parser.cursor() < type_end {
             emit_type(parser, type_end, SyntaxRole::Type);
             bump_until(parser, type_end);
         } else {
             emit_missing_type(parser);
         }
-    }
+        PendingStyleTypeAnnotation::Present { colon }
+    } else {
+        PendingStyleTypeAnnotation::Absent
+    };
     bump_trivia_before(parser, end);
-    emit_assignment_and_expression(
-        parser,
-        end,
-        SyntaxRole::Initializer,
-        "syntax.style.token_initializer",
-    );
+    let assignment = emit_assignment(parser, "syntax.style.token_initializer");
+    bump_trivia_before(parser, end);
+    emit_expression(parser, end, SyntaxRole::Initializer);
     bump_until(parser, end);
-    if !allow_tokens {
+    if !allowed_at_this_depth {
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.style.environment_token",
             token_range(parser, start, end),
@@ -213,326 +376,125 @@ fn emit_token_declaration(
         )));
     }
     parser.finish();
+    PendingStyleTokenProjection {
+        source_ordinal,
+        name,
+        id,
+        type_annotation,
+        assignment,
+        allowed_at_this_depth,
+    }
 }
 
-fn emit_rule(parser: &mut ShadowDocumentParser<'_, '_>, close: usize, ordinal: u32) {
-    let start = parser.cursor();
-    let open = find_top_level_boundary(parser, start, &["{"]).min(close);
-    parser.start(SyntaxKind::StyleRule, SyntaxRole::Element(ordinal));
-    emit_selector(parser, open);
-    bump_until(parser, open);
-    if !parser.at("{") {
-        emit_invalid_member(parser, member_boundary(parser, start, close), ordinal);
-        parser.finish();
-        return;
-    }
-    emit_style_rule_body(parser, close);
-    parser.finish();
-}
-
-fn emit_selector(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
-    parser.start(SyntaxKind::StyleSelector, SyntaxRole::Target);
-    let mut ordinal = 0_u32;
-    while parser.cursor() < end {
-        if parser.current_kind().is_some_and(is_trivia) {
-            parser.bump();
-            continue;
-        }
-        let sequence_end = selector_sequence_end(parser, end);
-        parser.start(
-            SyntaxKind::StyleSelectorSequence,
-            SyntaxRole::Element(ordinal),
-        );
-        bump_until(parser, sequence_end);
-        parser.finish();
-        ordinal = ordinal.saturating_add(1);
-    }
-    if ordinal == 0 {
-        let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingName, SyntaxRole::Target);
-        parser.push(SyntaxEvent::MissingToken {
-            expected: expected(SyntaxKind::IdentifierToken),
-            at,
-        });
-        parser.finish();
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.style.missing_selector",
-            SourceRange::new(at, at),
-            "style rule requires a selector before `{`",
-        )));
-    }
-    parser.finish();
-}
-
-fn emit_style_rule_body(parser: &mut ShadowDocumentParser<'_, '_>, enclosing_close: usize) {
-    parser.start(SyntaxKind::StyleBody, SyntaxRole::Body);
-    emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
-    let end = find_matching_close(parser, parser.cursor(), "{")
-        .unwrap_or(enclosing_close)
-        .min(enclosing_close);
-    parser.start(SyntaxKind::FieldList, SyntaxRole::Element(0));
-    let mut ordinal = 0_u32;
-    while parser.cursor() < end {
-        bump_member_separators(parser, end);
-        if parser.cursor() >= end {
-            break;
-        }
-        let member_end = member_boundary(parser, parser.cursor(), end);
-        emit_property_declaration(parser, member_end, ordinal);
-        bump_until(parser, member_end);
-        ordinal = ordinal.saturating_add(1);
-    }
-    parser.finish();
-    bump_until(parser, end);
-    if parser.at("}") {
-        emit_close_delimiter(
-            parser,
-            SyntaxKind::CloseBraceNode,
-            "}",
-            "syntax.style.missing_rule_close",
-        );
-    } else {
-        let at = parser.current_offset();
-        emit_missing_delimiter(
-            parser,
-            SyntaxKind::CloseBraceNode,
-            SyntaxRole::CloseDelimiter,
-        );
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.style.missing_rule_close",
-            SourceRange::new(at, at),
-            "style rule requires a closing `}`",
-        )));
-    }
-    parser.finish();
-}
-
-fn emit_property_declaration(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
-    let start = parser.cursor();
-    parser.start(
-        SyntaxKind::StylePropertyDeclaration,
-        SyntaxRole::Element(ordinal),
-    );
-    emit_member_name(parser, end);
-    bump_trivia_before(parser, end);
-    emit_assignment_and_expression(
-        parser,
-        end,
-        SyntaxRole::Initializer,
-        "syntax.style.property_initializer",
-    );
-    bump_until(parser, end);
-    if start == parser.cursor() {
-        parser.bump();
-    }
-    parser.finish();
-}
-
-fn emit_environment_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    enclosing_close: usize,
-    ordinal: u32,
-) {
-    parser.start(
-        SyntaxKind::StyleEnvironmentBlock,
-        SyntaxRole::Element(ordinal),
-    );
-    parser.bump();
-    bump_trivia_before(parser, enclosing_close);
-    if parser.at("environment") {
-        parser.start(SyntaxKind::NameReference, SyntaxRole::Target);
-        parser.bump();
-        parser.finish();
-    } else {
-        emit_missing_name(
-            parser,
-            SyntaxRole::Target,
-            "syntax.style.environment_name",
-            "style environment block requires `environment`",
-        );
-    }
-    bump_trivia_before(parser, enclosing_close);
-    emit_environment_condition(parser, enclosing_close);
-    bump_trivia_before(parser, enclosing_close);
-    if parser.at("{") {
-        emit_environment_body(parser, enclosing_close);
-    } else {
-        let at = parser.current_offset();
-        emit_missing_delimiter(parser, SyntaxKind::OpenBraceNode, SyntaxRole::OpenDelimiter);
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.style.environment_body",
-            SourceRange::new(at, at),
-            "style environment block requires a braced body",
-        )));
-    }
-    parser.finish();
-}
-
-fn emit_environment_condition(parser: &mut ShadowDocumentParser<'_, '_>, enclosing_close: usize) {
-    parser.start(SyntaxKind::StyleEnvironmentCondition, SyntaxRole::Condition);
-    if !parser.at("(") {
-        let at = parser.current_offset();
-        emit_missing_delimiter(parser, SyntaxKind::OpenParenNode, SyntaxRole::OpenDelimiter);
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.style.environment_condition",
-            SourceRange::new(at, at),
-            "style environment condition requires `(`",
-        )));
-        parser.finish();
-        return;
-    }
-    emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
-    let end = find_matching_close(parser, parser.cursor(), "(")
-        .unwrap_or_else(|| {
-            find_top_level_boundary(parser, parser.cursor(), &["{"]).min(enclosing_close)
-        })
-        .min(enclosing_close);
-    parser.start(SyntaxKind::FieldList, SyntaxRole::Element(0));
-    let mut ordinal = 0_u16;
-    while parser.cursor() < end {
-        bump_member_separators(parser, end);
-        if parser.cursor() >= end {
-            break;
-        }
-        let clause_end = find_top_level_boundary(parser, parser.cursor(), &[","]).min(end);
-        parser.start(
-            SyntaxKind::StyleEnvironmentClause,
-            SyntaxRole::Field(ordinal),
-        );
-        emit_expression(parser, clause_end, SyntaxRole::Condition);
-        bump_until(parser, clause_end);
-        parser.finish();
-        if parser.at(",") {
-            parser.bump();
-        }
-        ordinal = ordinal.saturating_add(1);
-    }
-    parser.finish();
-    bump_until(parser, end);
-    if parser.at(")") {
-        emit_close_delimiter(
-            parser,
-            SyntaxKind::CloseParenNode,
-            ")",
-            "syntax.style.environment_condition_close",
-        );
-    } else {
-        let at = parser.current_offset();
-        emit_missing_delimiter(
-            parser,
-            SyntaxKind::CloseParenNode,
-            SyntaxRole::CloseDelimiter,
-        );
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.style.environment_condition_close",
-            SourceRange::new(at, at),
-            "style environment condition requires a closing `)`",
-        )));
-    }
-    parser.finish();
-}
-
-fn emit_environment_body(parser: &mut ShadowDocumentParser<'_, '_>, enclosing_close: usize) {
-    parser.start(SyntaxKind::StyleBody, SyntaxRole::Body);
-    emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
-    let end = find_matching_close(parser, parser.cursor(), "{")
-        .unwrap_or(enclosing_close)
-        .min(enclosing_close);
-    parser.start(SyntaxKind::ItemList, SyntaxRole::Element(0));
-    emit_style_members(parser, end, false);
-    bump_until(parser, end);
-    parser.finish();
-    if parser.at("}") {
-        emit_close_delimiter(
-            parser,
-            SyntaxKind::CloseBraceNode,
-            "}",
-            "syntax.style.environment_body_close",
-        );
-    } else {
-        let at = parser.current_offset();
-        emit_missing_delimiter(
-            parser,
-            SyntaxKind::CloseBraceNode,
-            SyntaxRole::CloseDelimiter,
-        );
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.style.environment_body_close",
-            SourceRange::new(at, at),
-            "style environment body requires a closing `}`",
-        )));
-    }
-    parser.finish();
-}
-
-fn emit_member_name(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
-    if parser.cursor() < end
-        && parser.current_kind().is_some_and(|kind| {
-            matches!(kind, SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
-        })
-    {
-        parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
-        parser.bump();
-        while parser.at(".") {
-            parser.bump();
-            if parser.current_kind().is_some_and(|kind| {
-                matches!(kind, SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
-            }) {
-                parser.bump();
-            } else {
-                break;
-            }
-        }
-        parser.finish();
-        return;
-    }
-    emit_missing_name(
-        parser,
-        SyntaxRole::Name,
-        "syntax.style.member_name",
-        "style member requires a name",
-    );
-}
-
-fn emit_assignment_and_expression(
+fn emit_style_name(
     parser: &mut ShadowDocumentParser<'_, '_>,
     end: usize,
+    kind: SyntaxKind,
     role: SyntaxRole,
-    diagnostic: &'static str,
-) {
-    if matches!(parser.current_text(), Some("=" | "+=" | "-=")) {
-        parser.bump();
-    } else {
-        let at = parser.current_offset();
-        emit_missing_delimiter(
-            parser,
-            SyntaxKind::MissingTokenNode,
-            SyntaxRole::Recovery(0),
-        );
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            diagnostic,
-            SourceRange::new(at, at),
-            "style member requires an assignment operator",
-        )));
-        return;
+    allow_dot: bool,
+    code: &'static str,
+    message: &'static str,
+) -> PendingStyleName {
+    if parser.cursor() >= end
+        || !matches!(
+            parser.current_kind(),
+            Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
+        )
+    {
+        return emit_missing_name(parser, role, code, message);
     }
-    bump_trivia_before(parser, end);
-    if parser.cursor() < end {
-        emit_expression(parser, end, role);
-    } else {
-        let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingExpression, role);
-        parser.push(SyntaxEvent::MissingToken {
-            expected: expected(SyntaxKind::TextToken),
-            at,
-        });
+
+    let start = parser.current_offset();
+    let mut spelling = String::new();
+    let mut dotted_component_count = 1_usize;
+    parser.start(kind, role);
+    while let Some(token) = parser.current().filter(|token| {
+        matches!(
+            token.kind(),
+            SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
+        )
+    }) {
+        spelling.push_str(parser.text_of(token));
+        parser.bump();
+
+        if parser.cursor() >= end {
+            break;
+        }
+        let separator = match parser.current_text() {
+            Some("-") => Some('-'),
+            Some(".") if allow_dot => Some('.'),
+            _ => None,
+        };
+        let Some(separator) = separator else {
+            break;
+        };
+        if separator == '.' {
+            dotted_component_count = dotted_component_count.saturating_add(1);
+        }
+        spelling.push(separator);
+        parser.bump();
+        if !matches!(
+            parser.current_kind(),
+            Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
+        ) {
+            break;
+        }
+    }
+    parser.finish();
+    let source = SourceRange::new(start, parser.current_offset());
+    let value = StyleSyntaxName::try_new(&spelling);
+    if value.is_err() {
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            code, source, message,
+        )));
+    }
+    PendingStyleName::Authored {
+        value,
+        dotted_component_count: u32::try_from(dotted_component_count).unwrap_or(u32::MAX),
+        source,
+    }
+}
+
+fn emit_assignment(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    diagnostic: &'static str,
+) -> PendingStylePunctuation {
+    if parser.at("=") {
+        let source = parser.current().expect("Style assignment").range();
+        parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
+        parser.bump();
+        parser.finish();
+        return PendingStylePunctuation::Authored(source);
+    }
+
+    let at = parser.current_offset();
+    parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
+    parser.push(SyntaxEvent::MissingToken {
+        expected: expected(SyntaxKind::PunctuationToken),
+        at,
+    });
+    parser.finish();
+    if matches!(parser.current_text(), Some("+=" | "-=")) {
+        let source = parser
+            .current()
+            .expect("unsupported Style assignment")
+            .range();
+        parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+        parser.bump();
         parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             diagnostic,
-            SourceRange::new(at, at),
-            "style member requires an initializer expression",
+            source,
+            "native Style assignment uses `=` or the `append` keyword",
         )));
+        return PendingStylePunctuation::Unsupported(source);
     }
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        diagnostic,
+        SourceRange::new(at, at),
+        "style member requires `=`",
+    )));
+    PendingStylePunctuation::Missing(SourceRange::new(at, at))
 }
 
 fn emit_invalid_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
@@ -567,7 +529,7 @@ fn emit_missing_name(
     role: SyntaxRole,
     code: &'static str,
     message: &'static str,
-) {
+) -> PendingStyleName {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingName, role);
     parser.push(SyntaxEvent::MissingToken {
@@ -580,6 +542,9 @@ fn emit_missing_name(
         SourceRange::new(at, at),
         message,
     )));
+    PendingStyleName::Missing {
+        insertion: SourceRange::new(at, at),
+    }
 }
 
 fn bump_member_separators(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
@@ -596,6 +561,22 @@ fn bump_trivia_before(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     while parser.cursor() < end && parser.current_kind().is_some_and(is_trivia) {
         parser.bump();
     }
+}
+
+fn bump_selector_trivia(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+) -> Option<SourceRange> {
+    let start = parser
+        .current()
+        .filter(|token| parser.cursor() < end && is_trivia(token.kind()))
+        .map(LexToken::range)?;
+    let mut finish = start.end();
+    while parser.cursor() < end && parser.current_kind().is_some_and(is_trivia) {
+        finish = parser.current().expect("selector trivia").range().end();
+        parser.bump();
+    }
+    Some(SourceRange::new(start.start(), finish))
 }
 
 fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
@@ -617,6 +598,37 @@ fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usi
     end
 }
 
+fn environment_clause_end(
+    parser: &ShadowDocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> usize {
+    let mut delimiters = Vec::new();
+    for index in start..end {
+        let Some(token) = parser.token_at(index) else {
+            return end;
+        };
+        let text = parser.text_of(token);
+        if delimiters.is_empty() && text == "," {
+            return index;
+        }
+        match text {
+            "(" | "[" | "{" => delimiters.push(text),
+            ")" if delimiters.last() == Some(&"(") => {
+                delimiters.pop();
+            }
+            "]" if delimiters.last() == Some(&"[") => {
+                delimiters.pop();
+            }
+            "}" if delimiters.last() == Some(&"{") => {
+                delimiters.pop();
+            }
+            _ => {}
+        }
+    }
+    end
+}
+
 fn selector_sequence_end(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> usize {
     let mut index = parser.cursor();
     while index < end {
@@ -628,11 +640,22 @@ fn selector_sequence_end(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> u
         }
         index += 1;
     }
-    if index == parser.cursor() {
-        index.saturating_add(1).min(end)
-    } else {
-        index
+    index.max(parser.cursor().saturating_add(1)).min(end)
+}
+
+fn next_nontrivia(
+    parser: &ShadowDocumentParser<'_, '_>,
+    mut index: usize,
+    end: usize,
+) -> Option<usize> {
+    while index < end {
+        let token = parser.token_at(index)?;
+        if !is_trivia(token.kind()) {
+            return Some(index);
+        }
+        index += 1;
     }
+    None
 }
 
 fn next_significant_text<'a>(
@@ -641,6 +664,13 @@ fn next_significant_text<'a>(
     end: usize,
 ) -> Option<&'a str> {
     first_significant(parser, start, end).and_then(|index| token_text(parser, index))
+}
+
+fn pending_name_range(name: &PendingStyleName) -> SourceRange {
+    match name {
+        PendingStyleName::Authored { source, .. } => *source,
+        PendingStyleName::Missing { insertion } => *insertion,
+    }
 }
 
 const fn is_trivia(kind: SyntaxKind) -> bool {

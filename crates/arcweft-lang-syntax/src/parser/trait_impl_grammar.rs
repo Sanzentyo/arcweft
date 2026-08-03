@@ -2,11 +2,12 @@
 
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::{
-    emit_fixed_parameters, emit_generic_parameters, emit_missing_parameter_group, emit_name,
-    emit_outer_prefixes, emit_visibility, emit_where_clause,
+    FixedParameterGrammar, emit_fixed_parameters, emit_generic_parameters,
+    emit_missing_parameter_group, emit_name, emit_outer_prefixes, emit_visibility,
+    emit_where_clause,
 };
-use super::document::ShadowDocumentParser;
 use super::lexer::LexToken;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
@@ -45,7 +46,7 @@ pub(super) fn emit_declaration(
         parser.bump_trivia();
     }
     emit_member_body(&mut parser, kind);
-    while parser.bump().is_some() {}
+    emit_trailing_recovery(&mut parser);
     parser.finish();
 }
 
@@ -217,6 +218,10 @@ fn emit_associated_type(
     } else if target_required {
         emit_missing_associated_type_target(parser);
     }
+    parser.bump_trivia();
+    if parser.cursor() < content_end {
+        emit_member_tail_error(parser, content_end, "associated type");
+    }
     bump_until(parser, end);
     parser.finish();
 }
@@ -227,8 +232,7 @@ fn emit_missing_associated_type_target(parser: &mut ShadowDocumentParser<'_, '_>
         expected: expected(SyntaxKind::PunctuationToken),
         at,
     });
-    parser.start(SyntaxKind::MissingType, SyntaxRole::Type);
-    parser.finish();
+    emit_type(parser, parser.cursor(), SyntaxRole::Type);
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         "syntax.impl.missing_associated_type_target",
         SourceRange::new(at, at),
@@ -258,6 +262,7 @@ fn emit_function_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, o
     while parser.at("(") && parser.cursor() < end {
         emit_fixed_parameters(
             parser,
+            FixedParameterGrammar::MethodReceiver,
             "trait and impl function parameters require a type",
             "syntax.decl.unclosed_parameters",
         );
@@ -289,8 +294,44 @@ fn emit_function_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, o
         );
         parser.finish();
     }
+    parser.bump_trivia();
+    if parser.cursor() < content_end {
+        emit_member_tail_error(parser, content_end, "method");
+    }
     bump_until(parser, end);
     parser.finish();
+}
+
+fn emit_member_tail_error(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    owner: &'static str,
+) {
+    let start = parser.current_offset();
+    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+    bump_until(parser, end);
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.trait_impl.invalid_member_tail",
+        SourceRange::new(start, parser.current_offset()),
+        format!("unexpected token in Trait/Impl {owner} declaration"),
+    )));
+}
+
+fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
+    parser.bump_trivia();
+    if parser.is_at_end() {
+        return;
+    }
+    let start = parser.current_offset();
+    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+    while parser.bump().is_some() {}
+    parser.finish();
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        "syntax.declaration.trailing_syntax",
+        SourceRange::new(start, parser.current_offset()),
+        "unexpected syntax after Trait/Impl declaration body",
+    )));
 }
 
 fn emit_member_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
@@ -416,7 +457,6 @@ fn member_payload_index(
 fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let mut depth = 0_usize;
     let payload = member_payload_index(parser, start, end);
-    let mut saw_body = false;
     for index in start..end {
         let Some(token) = parser.token_at(index) else {
             return index;
@@ -437,16 +477,8 @@ fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usi
         match text {
             "(" | "[" | "<" => depth += 1,
             ")" | "]" | ">" => depth = depth.saturating_sub(1),
-            "{" => {
-                saw_body = true;
-                depth += 1;
-            }
-            "}" if depth != 0 => {
-                depth -= 1;
-                if saw_body && depth == 0 {
-                    return index + 1;
-                }
-            }
+            "{" => depth += 1,
+            "}" if depth != 0 => depth -= 1,
             _ => {}
         }
     }

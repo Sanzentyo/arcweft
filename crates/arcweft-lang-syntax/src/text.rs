@@ -1,17 +1,20 @@
-mod dialogue_opaque;
+mod dialogue_surface;
 mod rich_text_tag;
 
-pub(crate) use dialogue_opaque::scan_dialogue_opaque_surface;
+pub(crate) use dialogue_surface::{
+    ScannedDialogueSurface, ScannedDialogueSurfaceKind, ScannedInlineStyle, ScannedInlineStyleKind,
+    scan_dialogue_surface,
+};
 
 pub use rich_text_tag::{
     DialogueTagBoundary, MAX_RICH_TEXT_CONTENT_ARGUMENTS, MAX_RICH_TEXT_CONTENT_TAGS,
     MAX_RICH_TEXT_TAG_ARGUMENTS, MAX_RICH_TEXT_TAG_BODY_BYTES, MAX_RICH_TEXT_TAG_KEY_BYTES,
-    MAX_RICH_TEXT_TAG_VALUE_BYTES, find_dialogue_tag_boundary,
+    MAX_RICH_TEXT_TAG_VALUE_BYTES, RichTextArgumentIssue, find_dialogue_tag_boundary,
 };
 pub(crate) use rich_text_tag::{
-    ScannedTagArgValue, ScannedTagArgValueSurface, ScannedTagArgument, ScannedTagArguments,
-    find_dialogue_tag_boundary_before, is_rich_text_whitespace, scan_tag_arg_value,
-    scan_tag_arguments, trim_rich_text_whitespace, utf8_boundary_at_or_before,
+    ScannedTagArgValue, ScannedTagArgument, ScannedTagArgumentParts, ScannedTagArguments,
+    find_dialogue_tag_boundary_before, is_rich_text_whitespace, scan_tag_arguments,
+    trim_rich_text_whitespace, utf8_boundary_at_or_before,
 };
 use rich_text_tag::{parse_tag, parse_tag_arguments, split_tag_name_attrs, tag_arg_value};
 

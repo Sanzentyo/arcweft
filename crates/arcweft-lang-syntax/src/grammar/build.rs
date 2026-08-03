@@ -10,8 +10,31 @@ use rowan::{GreenNode, GreenNodeBuilder};
 use std::sync::Arc;
 use thiserror::Error;
 
-use super::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
+use super::budget::SyntaxParseStats;
+use super::event::{
+    ExpectedToken, PendingPatternProjection, PendingSyntaxDiagnostic, PendingTypeProjection,
+    SyntaxEvent,
+};
 use super::kinds::{IdentityClass, SyntaxKind, SyntaxRole};
+use super::source_projection::{
+    PendingPathProjection, PendingUseProjection, PendingVisibilityKind,
+};
+use crate::expressions::PendingExpressionProjection;
+use crate::grammar::assertion_projection::PendingAssertionProjection;
+use crate::grammar::attribute_projection::PendingOuterAttributeProjection;
+use crate::grammar::callable_projection::PendingMethodReceiverProjection;
+use crate::grammar::contract_projection::PendingFlowContractClauseProjection;
+use crate::grammar::declaration_projection::{
+    PendingCharacterDeclarationProjection, PendingLayerDeclarationProjection,
+    PendingRetainedHeaderProjection,
+};
+use crate::grammar::entry_projection::PendingEntryDeclarationProjection;
+use crate::grammar::flow_projection::PendingFlowDeclarationProjection;
+use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
+use crate::grammar::source_declaration_projection::PendingSourceDeclarationProjection;
+use crate::grammar::style_projection::PendingStyleDeclarationProjection;
+use crate::grammar::test_projection::PendingTestKindProjection;
+use crate::grammar::view_projection::PendingViewExportProjection;
 use crate::incremental::SyntaxLimit;
 
 /// Element-index path from the green root to one identity-bearing node.
@@ -34,6 +57,26 @@ pub(crate) struct UnattachedGrammarEntry {
     kind: SyntaxKind,
     role: SyntaxRole,
     path: GrammarEventPath,
+    expression_projection: Option<PendingExpressionProjection>,
+    assertion_projection: Option<PendingAssertionProjection>,
+    keyword_statement_projection: Option<PendingKeywordStatementProjection>,
+    type_projection: Option<PendingTypeProjection>,
+    pattern_projection: Option<PendingPatternProjection>,
+    path_projection: Option<PendingPathProjection>,
+    use_projection: Option<PendingUseProjection>,
+    visibility_projection: Option<PendingVisibilityKind>,
+    attribute_projection: Option<PendingOuterAttributeProjection>,
+    retained_header_projection: Option<PendingRetainedHeaderProjection>,
+    character_projection: Option<PendingCharacterDeclarationProjection>,
+    test_kind_projection: Option<PendingTestKindProjection>,
+    layer_projection: Option<PendingLayerDeclarationProjection>,
+    entry_projection: Option<PendingEntryDeclarationProjection>,
+    style_projection: Option<PendingStyleDeclarationProjection>,
+    source_declaration_projection: Option<PendingSourceDeclarationProjection>,
+    method_receiver_projection: Option<PendingMethodReceiverProjection>,
+    contract_clause_projection: Option<PendingFlowContractClauseProjection>,
+    flow_declaration_projection: Option<PendingFlowDeclarationProjection>,
+    view_export_projection: Option<PendingViewExportProjection>,
 }
 
 impl UnattachedGrammarEntry {
@@ -47,6 +90,100 @@ impl UnattachedGrammarEntry {
 
     pub(crate) const fn path(&self) -> &GrammarEventPath {
         &self.path
+    }
+
+    pub(crate) const fn expression_projection(&self) -> Option<&PendingExpressionProjection> {
+        self.expression_projection.as_ref()
+    }
+
+    pub(crate) const fn assertion_projection(&self) -> Option<PendingAssertionProjection> {
+        self.assertion_projection
+    }
+
+    pub(crate) const fn keyword_statement_projection(
+        &self,
+    ) -> Option<&PendingKeywordStatementProjection> {
+        self.keyword_statement_projection.as_ref()
+    }
+
+    pub(crate) const fn type_projection(&self) -> Option<&PendingTypeProjection> {
+        self.type_projection.as_ref()
+    }
+
+    pub(crate) const fn pattern_projection(&self) -> Option<&PendingPatternProjection> {
+        self.pattern_projection.as_ref()
+    }
+
+    pub(crate) const fn path_projection(&self) -> Option<&PendingPathProjection> {
+        self.path_projection.as_ref()
+    }
+
+    pub(crate) const fn use_projection(&self) -> Option<&PendingUseProjection> {
+        self.use_projection.as_ref()
+    }
+
+    pub(crate) const fn visibility_projection(&self) -> Option<PendingVisibilityKind> {
+        self.visibility_projection
+    }
+
+    pub(crate) const fn attribute_projection(&self) -> Option<&PendingOuterAttributeProjection> {
+        self.attribute_projection.as_ref()
+    }
+
+    pub(crate) const fn character_projection(
+        &self,
+    ) -> Option<&PendingCharacterDeclarationProjection> {
+        self.character_projection.as_ref()
+    }
+
+    pub(crate) const fn test_kind_projection(&self) -> Option<&PendingTestKindProjection> {
+        self.test_kind_projection.as_ref()
+    }
+
+    pub(crate) const fn layer_projection(&self) -> Option<&PendingLayerDeclarationProjection> {
+        self.layer_projection.as_ref()
+    }
+
+    pub(crate) const fn entry_projection(&self) -> Option<&PendingEntryDeclarationProjection> {
+        self.entry_projection.as_ref()
+    }
+
+    pub(crate) const fn style_projection(&self) -> Option<&PendingStyleDeclarationProjection> {
+        self.style_projection.as_ref()
+    }
+
+    pub(crate) const fn source_declaration_projection(
+        &self,
+    ) -> Option<&PendingSourceDeclarationProjection> {
+        self.source_declaration_projection.as_ref()
+    }
+
+    pub(crate) const fn method_receiver_projection(
+        &self,
+    ) -> Option<&PendingMethodReceiverProjection> {
+        self.method_receiver_projection.as_ref()
+    }
+
+    pub(crate) const fn contract_clause_projection(
+        &self,
+    ) -> Option<&PendingFlowContractClauseProjection> {
+        self.contract_clause_projection.as_ref()
+    }
+
+    pub(crate) const fn flow_declaration_projection(
+        &self,
+    ) -> Option<&PendingFlowDeclarationProjection> {
+        self.flow_declaration_projection.as_ref()
+    }
+
+    pub(crate) const fn view_export_projection(&self) -> Option<&PendingViewExportProjection> {
+        self.view_export_projection.as_ref()
+    }
+
+    pub(crate) const fn retained_header_projection(
+        &self,
+    ) -> Option<&PendingRetainedHeaderProjection> {
+        self.retained_header_projection.as_ref()
     }
 }
 
@@ -92,6 +229,7 @@ pub(crate) struct GrammarBuild {
     index: UnattachedGrammarIndex,
     missing_tokens: Box<[MissingTokenSite]>,
     diagnostics: Box<[PendingSyntaxDiagnostic]>,
+    stats: SyntaxParseStats,
 }
 
 impl GrammarBuild {
@@ -115,15 +253,54 @@ impl GrammarBuild {
         &self.diagnostics
     }
 
+    pub(crate) const fn stats(&self) -> SyntaxParseStats {
+        self.stats
+    }
+
     /// Whether this complete grammar transaction contains recoverable syntax.
     pub(crate) fn has_recovery(&self) -> bool {
         !self.missing_tokens.is_empty()
             || !self.diagnostics.is_empty()
-            || self
-                .index
-                .entries()
-                .iter()
-                .any(|entry| entry.kind().is_missing_node() || entry.kind().is_error_node())
+            || self.index.entries().iter().any(|entry| {
+                entry.kind().is_missing_node()
+                    || entry.kind().is_error_node()
+                    || entry
+                        .expression_projection()
+                        .is_some_and(PendingExpressionProjection::has_recovery)
+                    || entry
+                        .assertion_projection()
+                        .is_some_and(PendingAssertionProjection::has_recovery)
+                    || entry
+                        .keyword_statement_projection()
+                        .is_some_and(PendingKeywordStatementProjection::has_recovery)
+                    || entry
+                        .attribute_projection()
+                        .is_some_and(PendingOuterAttributeProjection::has_recovery)
+                    || entry
+                        .retained_header_projection()
+                        .is_some_and(PendingRetainedHeaderProjection::has_recovery)
+                    || entry
+                        .character_projection()
+                        .is_some_and(PendingCharacterDeclarationProjection::has_recovery)
+                    || entry
+                        .test_kind_projection()
+                        .is_some_and(PendingTestKindProjection::has_recovery)
+                    || entry
+                        .layer_projection()
+                        .is_some_and(PendingLayerDeclarationProjection::has_recovery)
+                    || entry
+                        .entry_projection()
+                        .is_some_and(PendingEntryDeclarationProjection::has_recovery)
+                    || entry
+                        .source_declaration_projection()
+                        .is_some_and(PendingSourceDeclarationProjection::has_recovery)
+                    || entry
+                        .flow_declaration_projection()
+                        .is_some_and(PendingFlowDeclarationProjection::has_recovery)
+                    || entry
+                        .view_export_projection()
+                        .is_some_and(PendingViewExportProjection::has_recovery)
+            })
     }
 }
 
@@ -175,6 +352,70 @@ pub(crate) enum GrammarBuildError {
     IncompleteTokenCoverage { covered: usize, source_len: usize },
     #[error("grammar child count exceeds the u32 event-path domain")]
     ChildIndexExhausted,
+    #[error("expression node event {event} with kind {kind:?} has no required semantic projection")]
+    MissingExpressionProjection { event: usize, kind: SyntaxKind },
+    #[error("node event {event} with kind {kind:?} carries an incompatible expression projection")]
+    InvalidExpressionProjection { event: usize, kind: SyntaxKind },
+    #[error("AssertionStatement event {event} has no required semantic projection")]
+    MissingAssertionProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries an assertion projection")]
+    InvalidAssertionProjection { event: usize, kind: SyntaxKind },
+    #[error(
+        "keyword statement event {event} with kind {kind:?} has no required semantic projection"
+    )]
+    MissingKeywordStatementProjection { event: usize, kind: SyntaxKind },
+    #[error(
+        "node event {event} with kind {kind:?} carries an incompatible keyword-statement projection"
+    )]
+    InvalidKeywordStatementProjection { event: usize, kind: SyntaxKind },
+    #[error("OuterAttribute event {event} has no required semantic projection")]
+    MissingAttributeProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries an outer-attribute projection")]
+    InvalidAttributeProjection { event: usize, kind: SyntaxKind },
+    #[error("node event {event} with kind {kind:?} carries a retained-header projection")]
+    InvalidRetainedHeaderProjection { event: usize, kind: SyntaxKind },
+    #[error("Character item event {event} has no required semantic projection")]
+    MissingCharacterProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries a Character projection")]
+    InvalidCharacterProjection { event: usize, kind: SyntaxKind },
+    #[error("Test item event {event} has no required adapter-kind projection")]
+    MissingTestKindProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries a Test adapter-kind projection")]
+    InvalidTestKindProjection { event: usize, kind: SyntaxKind },
+    #[error("Layer item event {event} has no required semantic projection")]
+    MissingLayerProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries a Layer projection")]
+    InvalidLayerProjection { event: usize, kind: SyntaxKind },
+    #[error("Entry item event {event} has no required semantic projection")]
+    MissingEntryProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries an Entry projection")]
+    InvalidEntryProjection { event: usize, kind: SyntaxKind },
+    #[error("Style item event {event} has no required semantic projection")]
+    MissingStyleProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries a Style projection")]
+    InvalidStyleProjection { event: usize, kind: SyntaxKind },
+    #[error("Source item event {event} has no required semantic projection")]
+    MissingSourceDeclarationProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries a Source projection")]
+    InvalidSourceDeclarationProjection { event: usize, kind: SyntaxKind },
+    #[error("node event {event} with kind {kind:?} carries a method-receiver projection")]
+    InvalidMethodReceiverProjection { event: usize, kind: SyntaxKind },
+    #[error("Flow contract event {event} with kind {kind:?} has no source projection")]
+    MissingFlowContractProjection { event: usize, kind: SyntaxKind },
+    #[error(
+        "node event {event} with kind {kind:?} carries an incompatible Flow contract projection"
+    )]
+    InvalidFlowContractProjection { event: usize, kind: SyntaxKind },
+    #[error("Flow item event {event} has no required declaration projection")]
+    MissingFlowDeclarationProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries a Flow declaration projection")]
+    InvalidFlowDeclarationProjection { event: usize, kind: SyntaxKind },
+    #[error("View export event {event} has no required structural projection")]
+    MissingViewExportProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries a View export projection")]
+    InvalidViewExportProjection { event: usize, kind: SyntaxKind },
+    #[error("node event {event} marks non-group kind {kind:?} as a transparent expression group")]
+    InvalidTransparentExpressionGroup { event: usize, kind: SyntaxKind },
     #[error("syntax limit {0:?} was exceeded while staging the grammar tree")]
     LimitExceeded(SyntaxLimit),
 }
@@ -183,6 +424,9 @@ pub(crate) enum GrammarBuildError {
 struct OpenNode {
     path: Vec<u32>,
     next_element: u32,
+    role: SyntaxRole,
+    identity_bearing: bool,
+    transparent_expression_group: bool,
 }
 
 /// Validates a complete event stream and constructs its lossless green tree.
@@ -190,16 +434,28 @@ pub(crate) fn build_grammar(
     document: &SourceDocument,
     events: &[SyntaxEvent],
 ) -> Result<GrammarBuild, GrammarBuildError> {
-    build_grammar_text(document.text(), events)
+    let lexer_tokens = events
+        .iter()
+        .filter(|event| {
+            matches!(
+                event,
+                SyntaxEvent::Token { kind, .. } if *kind != SyntaxKind::EofToken
+            )
+        })
+        .count();
+    build_grammar_text(document.text(), events, lexer_tokens)
 }
 
 /// Builds one validated grammar tree from source-relative events.
 pub(crate) fn build_grammar_text(
     source: &str,
     events: &[SyntaxEvent],
+    lexer_tokens: usize,
 ) -> Result<GrammarBuild, GrammarBuildError> {
     validate_events(source, events)?;
-    super::budget::validate_events(events).map_err(GrammarBuildError::LimitExceeded)?;
+    let budget =
+        super::budget::validate_events(events).map_err(GrammarBuildError::LimitExceeded)?;
+    let stats = budget.final_stats(source.len(), lexer_tokens, events.len());
 
     let mut builder = GreenNodeBuilder::new();
     let mut stack = Vec::<OpenNode>::new();
@@ -209,30 +465,23 @@ pub(crate) fn build_grammar_text(
 
     for (event_index, event) in events.iter().enumerate() {
         match event {
-            SyntaxEvent::StartNode { kind, role } => {
-                let path = if let Some(parent) = stack.last_mut() {
-                    let child = parent.next_element;
-                    parent.next_element = parent
-                        .next_element
-                        .checked_add(1)
-                        .ok_or(GrammarBuildError::ChildIndexExhausted)?;
-                    let mut path = parent.path.clone();
-                    path.push(child);
-                    path
-                } else {
-                    Vec::new()
-                };
+            SyntaxEvent::StartNode {
+                kind,
+                role,
+                transparent_expression_group,
+                ..
+            } => {
+                let (navigation_role, path) = begin_node(&mut stack, *kind, *role)?;
                 builder.start_node(rowan::SyntaxKind(*kind as u16));
-                if kind.identity_class() == IdentityClass::IdentityBearing {
-                    entries.push(UnattachedGrammarEntry {
-                        kind: *kind,
-                        role: *role,
-                        path: GrammarEventPath(path.clone().into_boxed_slice()),
-                    });
+                if let Some(entry) = unattached_entry(event, navigation_role, &path) {
+                    entries.push(entry);
                 }
                 stack.push(OpenNode {
                     path,
                     next_element: 0,
+                    role: *role,
+                    identity_bearing: kind.identity_class() == IdentityClass::IdentityBearing,
+                    transparent_expression_group: *transparent_expression_group,
                 });
             }
             SyntaxEvent::Token { kind, range } => {
@@ -273,7 +522,105 @@ pub(crate) fn build_grammar_text(
         },
         missing_tokens: missing_tokens.into_boxed_slice(),
         diagnostics: diagnostics.into_boxed_slice(),
+        stats,
     })
+}
+
+fn unattached_entry(
+    event: &SyntaxEvent,
+    role: SyntaxRole,
+    path: &[u32],
+) -> Option<UnattachedGrammarEntry> {
+    let SyntaxEvent::StartNode {
+        kind,
+        expression_projection,
+        assertion_projection,
+        keyword_statement_projection,
+        type_projection,
+        pattern_projection,
+        path_projection,
+        use_projection,
+        visibility_projection,
+        attribute_projection,
+        retained_header_projection,
+        character_projection,
+        test_kind_projection,
+        layer_projection,
+        entry_projection,
+        style_projection,
+        source_declaration_projection,
+        method_receiver_projection,
+        contract_clause_projection,
+        flow_declaration_projection,
+        view_export_projection,
+        ..
+    } = event
+    else {
+        return None;
+    };
+    (kind.identity_class() == IdentityClass::IdentityBearing).then(|| UnattachedGrammarEntry {
+        kind: *kind,
+        role,
+        path: GrammarEventPath(path.into()),
+        expression_projection: expression_projection.clone(),
+        assertion_projection: *assertion_projection,
+        keyword_statement_projection: keyword_statement_projection.clone(),
+        type_projection: type_projection.clone(),
+        pattern_projection: pattern_projection.clone(),
+        path_projection: path_projection.clone(),
+        use_projection: use_projection.clone(),
+        visibility_projection: *visibility_projection,
+        attribute_projection: attribute_projection.clone(),
+        retained_header_projection: retained_header_projection.clone(),
+        character_projection: character_projection.clone(),
+        test_kind_projection: test_kind_projection.clone(),
+        layer_projection: layer_projection.clone(),
+        entry_projection: entry_projection.clone(),
+        style_projection: style_projection.clone(),
+        source_declaration_projection: source_declaration_projection.clone(),
+        method_receiver_projection: method_receiver_projection.clone(),
+        contract_clause_projection: contract_clause_projection.clone(),
+        flow_declaration_projection: flow_declaration_projection.clone(),
+        view_export_projection: view_export_projection.clone(),
+    })
+}
+
+fn begin_node(
+    stack: &mut [OpenNode],
+    kind: SyntaxKind,
+    role: SyntaxRole,
+) -> Result<(SyntaxRole, Vec<u32>), GrammarBuildError> {
+    // `DelimitedGroup` is a lossless structural wrapper, not a second
+    // expression identity. Its outer role is therefore the navigation role of
+    // the first identity-bearing semantic child below it. Reading the final
+    // event here also observes Pratt rewrites that retarget a completed group.
+    let navigation_role = if kind.is_expression() {
+        stack
+            .iter()
+            .rposition(|open| open.identity_bearing)
+            .and_then(|parent| {
+                stack[parent + 1..]
+                    .iter()
+                    .find(|open| open.transparent_expression_group)
+                    .map(|open| open.role)
+            })
+            .unwrap_or(role)
+    } else {
+        role
+    };
+    let path = if let Some(parent) = stack.last_mut() {
+        let child = parent.next_element;
+        parent.next_element = parent
+            .next_element
+            .checked_add(1)
+            .ok_or(GrammarBuildError::ChildIndexExhausted)?;
+        let mut path = parent.path.clone();
+        path.push(child);
+        path
+    } else {
+        Vec::new()
+    };
+    Ok((navigation_role, path))
 }
 
 fn advance_element(stack: &mut [OpenNode], event: usize) -> Result<(), GrammarBuildError> {
@@ -314,7 +661,7 @@ impl<'a> EventValidator<'a> {
 
     fn accept(&mut self, event_index: usize, event: &SyntaxEvent) -> Result<(), GrammarBuildError> {
         match event {
-            SyntaxEvent::StartNode { kind, role } => self.accept_start(event_index, *kind, *role),
+            SyntaxEvent::StartNode { .. } => self.accept_start(event_index, event),
             SyntaxEvent::Token { kind, range } => self.accept_token(event_index, *kind, *range),
             SyntaxEvent::MissingToken { at, .. } => {
                 self.require_open_root(event_index)?;
@@ -338,14 +685,23 @@ impl<'a> EventValidator<'a> {
         }
     }
 
-    fn accept_start(
-        &mut self,
-        event: usize,
-        kind: SyntaxKind,
-        role: SyntaxRole,
-    ) -> Result<(), GrammarBuildError> {
+    fn accept_start(&mut self, event: usize, start: &SyntaxEvent) -> Result<(), GrammarBuildError> {
+        let SyntaxEvent::StartNode {
+            kind,
+            role,
+            transparent_expression_group,
+            ..
+        } = start
+        else {
+            unreachable!("accept_start receives only StartNode events")
+        };
+        let (kind, role, transparent_expression_group) =
+            (*kind, *role, *transparent_expression_group);
         if kind.is_token() {
             return Err(GrammarBuildError::TokenUsedAsNode { event, kind });
+        }
+        if transparent_expression_group && kind != SyntaxKind::DelimitedGroup {
+            return Err(GrammarBuildError::InvalidTransparentExpressionGroup { event, kind });
         }
         if self.depth == 0 {
             if self.root_seen {
@@ -361,6 +717,7 @@ impl<'a> EventValidator<'a> {
         } else if kind == SyntaxKind::SourceFile {
             return Err(GrammarBuildError::NestedSourceFile { event });
         }
+        validate_start_projections(event, kind, start)?;
         self.depth += 1;
         Ok(())
     }
@@ -459,11 +816,159 @@ impl<'a> EventValidator<'a> {
     }
 }
 
+fn validate_start_projections(
+    event: usize,
+    kind: SyntaxKind,
+    start: &SyntaxEvent,
+) -> Result<(), GrammarBuildError> {
+    let SyntaxEvent::StartNode {
+        expression_projection,
+        assertion_projection,
+        keyword_statement_projection,
+        attribute_projection,
+        retained_header_projection,
+        character_projection,
+        test_kind_projection,
+        layer_projection,
+        entry_projection,
+        style_projection,
+        source_declaration_projection,
+        method_receiver_projection,
+        contract_clause_projection,
+        flow_declaration_projection,
+        view_export_projection,
+        ..
+    } = start
+    else {
+        unreachable!("projection validation receives only StartNode events")
+    };
+    if PendingExpressionProjection::kind_requires_projection(kind)
+        && expression_projection.is_none()
+    {
+        return Err(GrammarBuildError::MissingExpressionProjection { event, kind });
+    }
+    if expression_projection
+        .as_ref()
+        .is_some_and(|projection| !projection.accepts_kind(kind))
+    {
+        return Err(GrammarBuildError::InvalidExpressionProjection { event, kind });
+    }
+    if kind == SyntaxKind::AssertionStatement && assertion_projection.is_none() {
+        return Err(GrammarBuildError::MissingAssertionProjection { event });
+    }
+    if kind != SyntaxKind::AssertionStatement && assertion_projection.is_some() {
+        return Err(GrammarBuildError::InvalidAssertionProjection { event, kind });
+    }
+    if PendingKeywordStatementProjection::kind_requires_projection(kind)
+        && keyword_statement_projection.is_none()
+    {
+        return Err(GrammarBuildError::MissingKeywordStatementProjection { event, kind });
+    }
+    if keyword_statement_projection
+        .as_ref()
+        .is_some_and(|projection| !projection.accepts_kind(kind))
+    {
+        return Err(GrammarBuildError::InvalidKeywordStatementProjection { event, kind });
+    }
+    if kind == SyntaxKind::OuterAttribute && attribute_projection.is_none() {
+        return Err(GrammarBuildError::MissingAttributeProjection { event });
+    }
+    if kind != SyntaxKind::OuterAttribute && attribute_projection.is_some() {
+        return Err(GrammarBuildError::InvalidAttributeProjection { event, kind });
+    }
+    if kind != SyntaxKind::DeclarationHeader && retained_header_projection.is_some() {
+        return Err(GrammarBuildError::InvalidRetainedHeaderProjection { event, kind });
+    }
+    if kind == SyntaxKind::CharacterDeclarationItem && character_projection.is_none() {
+        return Err(GrammarBuildError::MissingCharacterProjection { event });
+    }
+    if kind != SyntaxKind::CharacterDeclarationItem && character_projection.is_some() {
+        return Err(GrammarBuildError::InvalidCharacterProjection { event, kind });
+    }
+    if kind == SyntaxKind::TestItem && test_kind_projection.is_none() {
+        return Err(GrammarBuildError::MissingTestKindProjection { event });
+    }
+    if kind != SyntaxKind::TestItem && test_kind_projection.is_some() {
+        return Err(GrammarBuildError::InvalidTestKindProjection { event, kind });
+    }
+    if kind == SyntaxKind::LayerDeclarationItem && layer_projection.is_none() {
+        return Err(GrammarBuildError::MissingLayerProjection { event });
+    }
+    if kind != SyntaxKind::LayerDeclarationItem && layer_projection.is_some() {
+        return Err(GrammarBuildError::InvalidLayerProjection { event, kind });
+    }
+    if kind == SyntaxKind::EntryDeclarationItem && entry_projection.is_none() {
+        return Err(GrammarBuildError::MissingEntryProjection { event });
+    }
+    if kind != SyntaxKind::EntryDeclarationItem && entry_projection.is_some() {
+        return Err(GrammarBuildError::InvalidEntryProjection { event, kind });
+    }
+    validate_style_projection(event, kind, style_projection.as_ref())?;
+    if kind == SyntaxKind::SourceItem && source_declaration_projection.is_none() {
+        return Err(GrammarBuildError::MissingSourceDeclarationProjection { event });
+    }
+    if kind != SyntaxKind::SourceItem && source_declaration_projection.is_some() {
+        return Err(GrammarBuildError::InvalidSourceDeclarationProjection { event, kind });
+    }
+    if kind != SyntaxKind::Parameter && method_receiver_projection.is_some() {
+        return Err(GrammarBuildError::InvalidMethodReceiverProjection { event, kind });
+    }
+    let flow_only_contract_kind = matches!(
+        kind,
+        SyntaxKind::InvariantClause
+            | SyntaxKind::AssumeClause
+            | SyntaxKind::ReadsClause
+            | SyntaxKind::EffectsClause
+            | SyntaxKind::NoEffectClause
+            | SyntaxKind::ModifiesClause
+            | SyntaxKind::DecreasesClause
+    );
+    if flow_only_contract_kind && contract_clause_projection.is_none() {
+        return Err(GrammarBuildError::MissingFlowContractProjection { event, kind });
+    }
+    if contract_clause_projection
+        .as_ref()
+        .is_some_and(|projection| !projection.accepts_kind(kind))
+    {
+        return Err(GrammarBuildError::InvalidFlowContractProjection { event, kind });
+    }
+    if kind == SyntaxKind::FlowItem && flow_declaration_projection.is_none() {
+        return Err(GrammarBuildError::MissingFlowDeclarationProjection { event });
+    }
+    if kind != SyntaxKind::FlowItem && flow_declaration_projection.is_some() {
+        return Err(GrammarBuildError::InvalidFlowDeclarationProjection { event, kind });
+    }
+    if kind == SyntaxKind::ViewExportDeclaration && view_export_projection.is_none() {
+        return Err(GrammarBuildError::MissingViewExportProjection { event });
+    }
+    if kind != SyntaxKind::ViewExportDeclaration && view_export_projection.is_some() {
+        return Err(GrammarBuildError::InvalidViewExportProjection { event, kind });
+    }
+    Ok(())
+}
+
+fn validate_style_projection(
+    event: usize,
+    kind: SyntaxKind,
+    projection: Option<&PendingStyleDeclarationProjection>,
+) -> Result<(), GrammarBuildError> {
+    if kind == SyntaxKind::StyleItem && projection.is_none() {
+        return Err(GrammarBuildError::MissingStyleProjection { event });
+    }
+    if kind != SyntaxKind::StyleItem && projection.is_some() {
+        return Err(GrammarBuildError::InvalidStyleProjection { event, kind });
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
     use super::{GrammarBuildError, build_grammar, build_grammar_text};
+    use crate::assertion::AssertionMode;
+    use crate::expressions::{ExpressionProjection, PendingExpressionProjection};
+    use crate::grammar::assertion_projection::PendingAssertionProjection;
     use crate::grammar::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
     use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -637,15 +1142,152 @@ mod tests {
     fn source_free_build_retains_the_exact_validated_event_transaction() {
         let events = [
             SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
-            SyntaxEvent::start(SyntaxKind::PathExpression, SyntaxRole::Element(0)),
+            SyntaxEvent::expression_start(
+                SyntaxKind::PathExpression,
+                SyntaxRole::Element(0),
+                PendingExpressionProjection::new(ExpressionProjection::Path, Vec::new()),
+            ),
             SyntaxEvent::token(SyntaxKind::IdentifierToken, SourceRange::new(0, 1)),
             SyntaxEvent::FinishNode,
             SyntaxEvent::token(SyntaxKind::EofToken, SourceRange::new(1, 1)),
             SyntaxEvent::FinishNode,
         ];
 
-        let built = build_grammar_text("x", &events).expect("source-free grammar build");
+        let built = build_grammar_text("x", &events, 1).expect("source-free grammar build");
         assert_eq!(built.green().to_string(), "x");
         assert_eq!(built.events(), events);
+    }
+
+    #[test]
+    fn expression_leaf_events_require_one_kind_consistent_projection() {
+        let missing = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::start(SyntaxKind::LiteralExpression, SyntaxRole::Element(0)),
+            SyntaxEvent::token(SyntaxKind::NumberToken, SourceRange::new(0, 1)),
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::FinishNode,
+        ];
+        assert_eq!(
+            build_grammar_text("1", &missing, 1).unwrap_err(),
+            GrammarBuildError::MissingExpressionProjection {
+                event: 1,
+                kind: SyntaxKind::LiteralExpression,
+            }
+        );
+
+        let wrong = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::expression_start(
+                SyntaxKind::CallExpression,
+                SyntaxRole::Element(0),
+                PendingExpressionProjection::new(ExpressionProjection::Path, Vec::new()),
+            ),
+            SyntaxEvent::token(SyntaxKind::IdentifierToken, SourceRange::new(0, 1)),
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::FinishNode,
+        ];
+        assert_eq!(
+            build_grammar_text("x", &wrong, 1).unwrap_err(),
+            GrammarBuildError::InvalidExpressionProjection {
+                event: 1,
+                kind: SyntaxKind::CallExpression,
+            }
+        );
+    }
+
+    #[test]
+    fn assertion_events_require_one_projection_on_the_exact_statement_kind() {
+        let missing = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::start(SyntaxKind::AssertionStatement, SyntaxRole::Statement(0)),
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::FinishNode,
+        ];
+        assert_eq!(
+            build_grammar_text("", &missing, 0).unwrap_err(),
+            GrammarBuildError::MissingAssertionProjection { event: 1 }
+        );
+
+        let wrong = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::StartNode {
+                kind: SyntaxKind::ExpressionList,
+                role: SyntaxRole::Element(0),
+                transparent_expression_group: false,
+                expression_projection: None,
+                assertion_projection: Some(PendingAssertionProjection::new(Some(
+                    AssertionMode::Check,
+                ))),
+                keyword_statement_projection: None,
+                type_projection: None,
+                pattern_projection: None,
+                path_projection: None,
+                use_projection: None,
+                visibility_projection: None,
+                attribute_projection: None,
+                retained_header_projection: None,
+                character_projection: None,
+                test_kind_projection: None,
+                layer_projection: None,
+                entry_projection: None,
+                source_declaration_projection: None,
+                method_receiver_projection: None,
+                contract_clause_projection: None,
+                flow_declaration_projection: None,
+                view_export_projection: None,
+                style_projection: None,
+            },
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::FinishNode,
+        ];
+        assert_eq!(
+            build_grammar_text("", &wrong, 0).unwrap_err(),
+            GrammarBuildError::InvalidAssertionProjection {
+                event: 1,
+                kind: SyntaxKind::ExpressionList,
+            }
+        );
+    }
+
+    #[test]
+    fn transparent_expression_group_marker_rejects_every_other_node_kind() {
+        let events = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::StartNode {
+                kind: SyntaxKind::ExpressionList,
+                role: SyntaxRole::Element(0),
+                transparent_expression_group: true,
+                expression_projection: None,
+                assertion_projection: None,
+                keyword_statement_projection: None,
+                type_projection: None,
+                pattern_projection: None,
+                path_projection: None,
+                use_projection: None,
+                visibility_projection: None,
+                attribute_projection: None,
+                retained_header_projection: None,
+                character_projection: None,
+                test_kind_projection: None,
+                layer_projection: None,
+                entry_projection: None,
+                source_declaration_projection: None,
+                method_receiver_projection: None,
+                contract_clause_projection: None,
+                flow_declaration_projection: None,
+                view_export_projection: None,
+                style_projection: None,
+            },
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::FinishNode,
+        ];
+
+        assert_eq!(
+            build_grammar_text("", &events, 0).unwrap_err(),
+            GrammarBuildError::InvalidTransparentExpressionGroup {
+                event: 1,
+                kind: SyntaxKind::ExpressionList,
+            }
+        );
     }
 }

@@ -67,7 +67,7 @@ pub style main_dialogue {
     .main_dialogue {
         font-family = text("Noto Sans JP")
         color = rgba(247, 232, 255, 255)
-        font-size = 30000milli
+        font-size = 30px
     }
 }
 

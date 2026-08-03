@@ -527,7 +527,7 @@ pub style unified_text_panel {
     .unified_text_panel {
         font-family = text("Noto Sans JP")
         color = rgba(238, 247, 255, 255)
-        font-size = 30000milli
+        font-size = 30px
     }
 }
 

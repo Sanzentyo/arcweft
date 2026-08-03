@@ -8,8 +8,8 @@ mod rich_text;
 mod source_map;
 
 pub use rich_text::{
-    DialogueCallSurface, DialogueExprSurface, DialogueTagArg, DialogueTagArgSyntaxIssue,
-    DialogueTagArgValue, DialogueTagArgValueSurface, DialogueTagPayload, QuoteStyle,
+    DialogueCallSurface, DialogueExprSurface, DialogueTagArg, DialogueTagArgValue,
+    DialogueTagArgValueSurface, DialogueTagPayload, QuoteStyle,
 };
 pub use source_map::{
     DialogueContentSourceMap, DialogueContentSourceSegment, DialogueContentSourceSegmentKind,

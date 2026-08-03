@@ -186,7 +186,7 @@ pub(crate) enum ViewSidecarError {
         value: String,
     },
     #[error(
-        "View layout property `{property}` requires a static px, milli, or integer literal; dynamic layout requires a typed layout-value contract"
+        "View layout property `{property}` requires a static px or integer literal; dynamic layout requires a typed layout-value contract"
     )]
     UnsupportedLayoutValue { property: String },
     #[error(

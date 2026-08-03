@@ -1,8 +1,17 @@
 //! Exact one-pass tokenization for the private lossless document grammar.
 
+mod id_ref;
+mod lifetime;
+mod literal;
+
 use arcweft_source::SourceRange;
 
+pub(super) use id_ref::typed_entity_reference;
+pub(super) use lifetime::typed_lifetime_registry_path;
+pub(super) use literal::typed_literal;
+
 use crate::grammar::kinds::SyntaxKind;
+use crate::name::{is_identifier_continue, is_identifier_start};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct LexToken {
@@ -18,6 +27,49 @@ impl LexToken {
     pub(super) const fn range(self) -> SourceRange {
         self.range
     }
+}
+
+/// One source component of the current lexer-owned literal token.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct LiteralLexemeComponent {
+    part: LiteralLexemePart,
+    range: SourceRange,
+}
+
+impl LiteralLexemeComponent {
+    pub(super) const fn part(self) -> LiteralLexemePart {
+        self.part
+    }
+
+    pub(super) const fn range(self) -> SourceRange {
+        self.range
+    }
+}
+
+/// Closed lexical role inventory shared by literal semantic owners.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum LiteralLexemePart {
+    Body,
+    Prefix,
+    Suffix,
+    Unit,
+}
+
+fn token_local_range(token: LexToken, start: usize, end: usize) -> SourceRange {
+    debug_assert!(start <= end);
+    debug_assert!(end <= token.range().end().saturating_sub(token.range().start()));
+    SourceRange::new(
+        token
+            .range()
+            .start()
+            .checked_add(start)
+            .expect("token-local range start remains in the source document"),
+        token
+            .range()
+            .start()
+            .checked_add(end)
+            .expect("token-local range end remains in the source document"),
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -96,13 +148,30 @@ impl<'a> DocumentLexer<'a> {
             self.block_comment = Some(BlockCommentKind::Ordinary);
             return Some(self.block_comment_token(source, BlockCommentKind::Ordinary));
         }
-        if let Some(len) = raw_string_len(source) {
-            return Some((SyntaxKind::RawStringToken, len));
+        if let Some((len, closed)) = raw_string_len(source) {
+            return Some((
+                if closed {
+                    SyntaxKind::RawStringToken
+                } else {
+                    SyntaxKind::UnterminatedStringToken
+                },
+                len,
+            ));
         }
         if first == '"' {
             let (len, closed) = quoted_token(source, '"');
             return Some(if closed {
-                (SyntaxKind::StringToken, len)
+                let suffix_end = len.saturating_add('c'.len_utf8());
+                if source.as_bytes().get(len) == Some(&b'c')
+                    && source
+                        .get(suffix_end..)
+                        .and_then(|tail| tail.chars().next())
+                        .is_none_or(|character| !is_identifier_continue(character))
+                {
+                    (SyntaxKind::CharacterToken, suffix_end)
+                } else {
+                    (SyntaxKind::StringToken, len)
+                }
             } else {
                 (
                     SyntaxKind::UnterminatedStringToken,
@@ -111,12 +180,13 @@ impl<'a> DocumentLexer<'a> {
             });
         }
         if first == '\'' {
-            return Some(character_or_lifetime(source));
+            return Some((SyntaxKind::LifetimeToken, lifetime_token_len(source)));
         }
-        if first == '@'
-            && let Some(len) = entity_reference_len(source)
-        {
-            return Some((SyntaxKind::EntityReferenceToken, len));
+        if first == '@' {
+            return Some((
+                SyntaxKind::EntityReferenceToken,
+                entity_reference_len(source),
+            ));
         }
         if is_identifier_start(first) {
             let len = take_while(source, is_identifier_continue);
@@ -193,7 +263,7 @@ fn take_while(source: &str, predicate: impl Fn(char) -> bool) -> usize {
         .unwrap_or(0)
 }
 
-fn raw_string_len(source: &str) -> Option<usize> {
+fn raw_string_len(source: &str) -> Option<(usize, bool)> {
     let bytes = source.as_bytes();
     if bytes.first() != Some(&b'r') {
         return None;
@@ -216,11 +286,11 @@ fn raw_string_len(source: &str) -> Option<usize> {
                 .iter()
                 .all(|byte| *byte == b'#')
         {
-            return Some(suffix_end);
+            return Some((suffix_end, true));
         }
         search = close_quote + 1;
     }
-    Some(source.len())
+    Some((source.len(), false))
 }
 
 fn quoted_token(source: &str, delimiter: char) -> (usize, bool) {
@@ -258,85 +328,78 @@ fn unescaped_recovery_square_close(source: &str) -> Option<usize> {
     })
 }
 
-fn character_or_lifetime(source: &str) -> (SyntaxKind, usize) {
-    if let Some(len) = character_literal_len(source) {
-        return (SyntaxKind::CharacterToken, len);
-    }
-    let rest = &source[1..];
-    let Some(first) = rest.chars().next() else {
-        return (SyntaxKind::PunctuationToken, 1);
-    };
-    if is_identifier_start(first) {
-        return (
-            SyntaxKind::LifetimeToken,
-            1 + take_while(rest, is_identifier_continue),
-        );
-    }
-    (SyntaxKind::PunctuationToken, 1)
-}
-
-fn character_literal_len(source: &str) -> Option<usize> {
-    let rest = source.strip_prefix('\'')?;
-    let first = rest.chars().next()?;
-    let content_end = if first != '\\' {
-        first.len_utf8()
-    } else if let Some(body) = rest.strip_prefix("\\u{") {
-        let close = body.find('}')?;
-        let digits = &body[..close];
-        if digits.is_empty()
-            || !digits
-                .chars()
-                .all(|character| character == '_' || character.is_ascii_hexdigit())
-        {
-            return None;
-        }
-        "\\u{".len() + close + 1
-    } else if let Some(body) = rest.strip_prefix("\\x") {
-        let digits = body.get(..2)?;
-        if !digits
-            .chars()
-            .all(|character| character.is_ascii_hexdigit())
-        {
-            return None;
-        }
-        4
-    } else {
-        '\\'.len_utf8() + rest['\\'.len_utf8()..].chars().next()?.len_utf8()
-    };
-    (rest.as_bytes().get(content_end) == Some(&b'\'')).then_some(content_end + 2)
-}
-
-fn entity_reference_len(source: &str) -> Option<usize> {
-    let rest = source.strip_prefix('@')?;
+fn entity_reference_len(source: &str) -> usize {
+    let rest = source
+        .strip_prefix('@')
+        .expect("entity-reference dispatch retains its leading marker");
     if let Some(delimited) = rest.strip_prefix('<') {
-        return Some(delimited.find('>').map_or_else(
-            || 2 + take_while(delimited, |character| !character.is_whitespace()),
-            |close| close + 3,
-        ));
+        let recovery = take_while(delimited, |character| !character.is_whitespace());
+        return delimited
+            .find('>')
+            .filter(|close| *close < recovery)
+            .map_or(2 + recovery, |close| close + 3);
     }
     let len = take_while(rest, |character| {
         is_identifier_continue(character) || matches!(character, '.' | ':' | '-' | '/')
     });
-    (len > 0).then_some(len + 1)
+    let mut token_len = len + 1;
+    // A terminal colon introduces an authored suite or declaration type; it
+    // is not part of the entity reference. Colons followed by another ID
+    // segment (for example `@asset:.room`) remain inside the token.
+    while token_len > '@'.len_utf8() && source.as_bytes().get(token_len - 1) == Some(&b':') {
+        token_len -= 1;
+    }
+    let spelling = &source[..token_len];
+    if let Some(reference) = spelling.strip_suffix("...")
+        && reference.len() > '@'.len_utf8()
+        && reference
+            .chars()
+            .next_back()
+            .is_some_and(|character| !matches!(character, '.' | ':'))
+    {
+        return reference.len();
+    }
+    token_len
 }
 
 fn number_len(source: &str) -> usize {
     let bytes = source.as_bytes();
-    let mut cursor = 1;
-
-    if bytes.first() == Some(&b'0')
-        && matches!(bytes.get(1), Some(b'x' | b'X' | b'b' | b'B' | b'o' | b'O'))
+    let (_, mut cursor) = number_body_bounds(source);
+    while bytes
+        .get(cursor)
+        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
     {
-        cursor = 2;
+        cursor += 1;
+    }
+    if bytes.get(cursor) == Some(&b'%') {
+        cursor += 1;
+    }
+    cursor
+}
+
+fn number_body_bounds(source: &str) -> (usize, usize) {
+    let bytes = source.as_bytes();
+    if bytes.first() == Some(&b'0')
+        && let Some(prefix) = bytes.get(1).copied()
+        && matches!(prefix, b'x' | b'X' | b'b' | b'B' | b'o' | b'O')
+    {
+        let radix = match prefix {
+            b'x' | b'X' => 16,
+            b'b' | b'B' => 2,
+            b'o' | b'O' => 8,
+            _ => unreachable!("matched the closed radix-prefix inventory"),
+        };
+        let mut cursor = 2;
         while bytes
             .get(cursor)
-            .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
+            .is_some_and(|byte| *byte == b'_' || char::from(*byte).is_digit(radix))
         {
             cursor += 1;
         }
-        return cursor;
+        return (2, cursor);
     }
 
+    let mut cursor = 1;
     while bytes
         .get(cursor)
         .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'_')
@@ -353,38 +416,24 @@ fn number_len(source: &str) -> usize {
         }
     }
     if matches!(bytes.get(cursor), Some(b'e' | b'E')) {
-        let exponent = cursor;
         cursor += 1;
         if matches!(bytes.get(cursor), Some(b'+' | b'-')) {
             cursor += 1;
         }
-        let digits = cursor;
         while bytes
             .get(cursor)
             .is_some_and(|byte| byte.is_ascii_digit() || *byte == b'_')
         {
             cursor += 1;
         }
-        if !bytes[digits..cursor].iter().any(u8::is_ascii_digit) {
-            cursor = exponent;
-        }
     }
-    while bytes
-        .get(cursor)
-        .is_some_and(|byte| byte.is_ascii_alphanumeric() || *byte == b'_')
-    {
-        cursor += 1;
-    }
-    if bytes.get(cursor) == Some(&b'%') {
-        cursor += 1;
-    }
-    cursor
+    (0, cursor)
 }
 
 fn punctuation_len(source: &str) -> Option<usize> {
     const MULTI: &[&str] = &[
-        "..=", "===", "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "??", "?.", "..", "+=",
-        "-=", "*=", "/=", "%=", "**", "|>", "<-",
+        "...", "..=", "===", "::", "->", "=>", "==", "!=", "<=", ">=", "&&", "||", "??", "..",
+        "+=", "-=", "*=", "/=", "%=", "**", "|>", "<-",
     ];
     MULTI
         .iter()
@@ -398,12 +447,29 @@ fn punctuation_len(source: &str) -> Option<usize> {
         })
 }
 
-fn is_identifier_start(character: char) -> bool {
-    character == '_' || character.is_alphabetic()
+fn is_recovery_lifetime_continue(character: char) -> bool {
+    character == '_' || character.is_alphanumeric()
 }
 
-fn is_identifier_continue(character: char) -> bool {
-    is_identifier_start(character) || character.is_ascii_digit()
+fn lifetime_token_len(source: &str) -> usize {
+    let mut cursor = '\''.len_utf8();
+    let bytes = source.as_bytes();
+    while cursor < source.len() {
+        let tail = &source[cursor..];
+        let character = tail
+            .chars()
+            .next()
+            .expect("cursor remains on a source character boundary");
+        if is_recovery_lifetime_continue(character) || character == '.' {
+            cursor += character.len_utf8();
+            continue;
+        }
+        if bytes.get(cursor) == Some(&b'?') {
+            cursor += '?'.len_utf8();
+        }
+        break;
+    }
+    cursor
 }
 
 fn is_keyword(spelling: &str) -> bool {
@@ -531,5 +597,75 @@ mod tests {
         assert_eq!(&source[tokens[0].range().as_range()], "@<source.events>");
         assert_eq!(tokens[1].kind(), SyntaxKind::PunctuationToken);
         assert_eq!(&source[tokens[1].range().as_range()], ":");
+    }
+
+    #[test]
+    fn unclosed_delimited_entity_reference_stops_at_its_first_recovery_boundary() {
+        let source = "@<source.events: Source<Event, Error>";
+        let tokens = DocumentLexer::new(source).lex();
+
+        assert_eq!(tokens[0].kind(), SyntaxKind::EntityReferenceToken);
+        assert_eq!(&source[tokens[0].range().as_range()], "@<source.events:");
+        assert!(tokens.iter().any(|token| {
+            token.kind() == SyntaxKind::PunctuationToken && &source[token.range().as_range()] == ">"
+        }));
+    }
+
+    #[test]
+    fn entity_reference_suffix_stops_before_an_ordinary_spread_operator() {
+        for source in ["@flow.main...", "@flow:..opening..."] {
+            let tokens = DocumentLexer::new(source).lex();
+
+            assert_eq!(tokens.len(), 2, "{source}");
+            assert_eq!(
+                tokens[0].kind(),
+                SyntaxKind::EntityReferenceToken,
+                "{source}"
+            );
+            assert_eq!(tokens[1].kind(), SyntaxKind::PunctuationToken, "{source}");
+            assert_eq!(&source[tokens[1].range().as_range()], "...", "{source}");
+        }
+
+        for source in ["@...", "@...outer.leaf", "@flow:...outer.leaf"] {
+            let tokens = DocumentLexer::new(source).lex();
+
+            assert_eq!(tokens.len(), 1, "{source}");
+            assert_eq!(
+                tokens[0].kind(),
+                SyntaxKind::EntityReferenceToken,
+                "{source}"
+            );
+            assert_eq!(&source[tokens[0].range().as_range()], source, "{source}");
+        }
+    }
+
+    #[test]
+    fn lifetime_tokens_retain_valid_and_recoverable_names_as_one_token() {
+        for source in [
+            "'scene",
+            "'9",
+            "'a١",
+            "'line.focus?",
+            "'line..focus",
+            "'line.",
+            "'",
+        ] {
+            let tokens = DocumentLexer::new(source).lex();
+
+            assert_eq!(tokens.len(), 1, "{source}");
+            assert_eq!(tokens[0].kind(), SyntaxKind::LifetimeToken, "{source}");
+            assert_eq!(&source[tokens[0].range().as_range()], source);
+        }
+    }
+
+    #[test]
+    fn ordinary_postfix_question_remains_separate_from_a_value_token() {
+        let source = "value?";
+        let tokens = DocumentLexer::new(source).lex();
+
+        assert_eq!(tokens.len(), 2);
+        assert_eq!(tokens[0].kind(), SyntaxKind::IdentifierToken);
+        assert_eq!(tokens[1].kind(), SyntaxKind::PunctuationToken);
+        assert_eq!(&source[tokens[1].range().as_range()], "?");
     }
 }

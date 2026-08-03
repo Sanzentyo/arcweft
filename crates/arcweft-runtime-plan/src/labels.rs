@@ -2,7 +2,8 @@
 
 use arcweft_core::time::LogicalDuration;
 use arcweft_lang_syntax::ast::{ids::EntityRefSyntax, pattern::Pattern};
-use arcweft_lang_syntax::expr::{BinaryOp, CallArg, DurationUnit, Expr, Literal, UnaryOp};
+use arcweft_lang_syntax::expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp};
+use arcweft_lang_syntax::literal::DurationUnit;
 use arcweft_lang_syntax::types::{TypeEffectRow, TypeRef};
 
 pub(crate) fn named_arg_label(value: &str) -> Option<String> {

@@ -7,7 +7,8 @@ use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{RuntimePureHelperOrigin, RuntimePureInputType, RuntimePureOutputType};
 use arcweft_core::value::RuntimeIntrinsic;
 use arcweft_lang_syntax::{
-    expr::{IntSuffix, Placeholder},
+    expr::Placeholder,
+    literal::{DurationUnit, IntSuffix},
     types::parse_type_ref,
 };
 
@@ -676,19 +677,19 @@ fn strict_runtime_bracket_seq_folds_literal_values_to_dense_storage() {
     let duration_expr = Expr::BracketSeq(vec![
         Expr::Literal(Literal::Duration {
             amount: "5".to_owned(),
-            unit: arcweft_lang_syntax::expr::DurationUnit::Nanos,
+            unit: DurationUnit::Nanos,
         }),
         Expr::Literal(Literal::Duration {
             amount: "16_666".to_owned(),
-            unit: arcweft_lang_syntax::expr::DurationUnit::Micros,
+            unit: DurationUnit::Micros,
         }),
         Expr::Literal(Literal::Duration {
             amount: "2".to_owned(),
-            unit: arcweft_lang_syntax::expr::DurationUnit::Minutes,
+            unit: DurationUnit::Minutes,
         }),
         Expr::Literal(Literal::Duration {
             amount: "1".to_owned(),
-            unit: arcweft_lang_syntax::expr::DurationUnit::Hours,
+            unit: DurationUnit::Hours,
         }),
     ]);
     let lowered = lower_runtime_expr_strict(&duration_expr).expect("duration bracket seq lowers");

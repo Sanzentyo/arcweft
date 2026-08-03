@@ -3,10 +3,8 @@ use arcweft_lang_syntax::{
         flow::{FlowItem, Stmt},
         items::Item,
     },
-    expr::{
-        BinaryOp, DurationUnit, Expr, IntRadix, IntSuffix, Literal, UnaryOp, UnitNumberSuffix,
-        parse_expr,
-    },
+    expr::{BinaryOp, Expr, Literal, UnaryOp, parse_expr},
+    literal::{DurationUnit, FloatSuffix, IntRadix, IntSuffix, UnitNumberSuffix},
     types::{TypeRef, parse_type_ref},
 };
 
@@ -174,7 +172,7 @@ fn float_suffix_and_unit_number_literals_are_typed_syntax() {
     assert!(matches!(
         f32_lit,
         Expr::Literal(Literal::Float {
-            suffix: Some(arcweft_lang_syntax::expr::FloatSuffix::F32),
+            suffix: Some(FloatSuffix::F32),
             ..
         })
     ));
@@ -183,7 +181,7 @@ fn float_suffix_and_unit_number_literals_are_typed_syntax() {
     assert!(matches!(
         f64_lit,
         Expr::Literal(Literal::Float {
-            suffix: Some(arcweft_lang_syntax::expr::FloatSuffix::F64),
+            suffix: Some(FloatSuffix::F64),
             ..
         })
     ));
@@ -221,6 +219,11 @@ fn float_suffix_and_unit_number_literals_are_typed_syntax() {
         let expr = parse_expr(source).expect("duration literal parses");
         assert!(matches!(expr, Expr::Literal(Literal::Duration { unit, .. }) if unit == expected));
     }
+
+    assert!(
+        parse_expr("970milli").is_err(),
+        "removed provisional milli suffix uses ordinary unknown-suffix rejection"
+    );
 
     assert!(matches!(
         parse_expr("0xff_u8").expect("hex integer parses"),

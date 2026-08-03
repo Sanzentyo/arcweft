@@ -14,7 +14,8 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source)).expect("retained header grammar builds")
+    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("retained header grammar builds")
 }
 
 fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
@@ -175,7 +176,10 @@ fn retained_headers_are_lossless_for_lf_crlf_and_unicode_identifiers() {
 #[test]
 fn every_retained_family_reports_zero_width_missing_name_without_stealing_a_sibling() {
     for fixture in FAMILY_FIXTURES {
-        let source = format!("{}proof tail() {{ assert true }}\n", fixture.missing_name);
+        let source = format!(
+            "{}proof tail() {{ assert.check(true) }}\n",
+            fixture.missing_name
+        );
         let built = parse(&source);
         let diagnostic = built
             .diagnostics()
@@ -184,7 +188,18 @@ fn every_retained_family_reports_zero_width_missing_name_without_stealing_a_sibl
             .unwrap_or_else(|| panic!("missing diagnostic for {:?}", fixture.kind));
         assert_eq!(diagnostic.range().start(), diagnostic.range().end());
         assert_eq!(count_kind(&built, fixture.kind), 1);
-        assert_eq!(count_kind(&built, SyntaxKind::MissingName), 1);
+        let missing_names = built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::MissingName)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            missing_names.len(),
+            1,
+            "unexpected MissingName owners for {:?}: {missing_names:?}",
+            fixture.kind
+        );
         assert_eq!(count_kind(&built, SyntaxKind::ProofItem), 1);
         assert_eq!(built.green().to_string(), source);
     }
@@ -194,7 +209,7 @@ fn every_retained_family_reports_zero_width_missing_name_without_stealing_a_sibl
 fn every_retained_family_reports_exact_wrong_family_id_and_preserves_a_sibling() {
     for fixture in FAMILY_FIXTURES {
         let source = format!(
-            "{}proof tail() {{ assert true }}\n",
+            "{}proof tail() {{ assert.check(true) }}\n",
             fixture.wrong_family_id
         );
         let built = parse(&source);
@@ -217,7 +232,10 @@ fn every_retained_family_reports_exact_wrong_family_id_and_preserves_a_sibling()
 #[test]
 fn every_retained_family_reports_exact_relative_id_and_preserves_a_sibling() {
     for fixture in FAMILY_FIXTURES {
-        let source = format!("{}proof tail() {{ assert true }}\n", fixture.relative_id);
+        let source = format!(
+            "{}proof tail() {{ assert.check(true) }}\n",
+            fixture.relative_id
+        );
         let built = parse(&source);
         let diagnostic = built
             .diagnostics()
@@ -238,7 +256,10 @@ fn every_retained_family_reports_exact_relative_id_and_preserves_a_sibling() {
 #[test]
 fn every_retained_family_reports_exact_keyword_name_and_preserves_a_sibling() {
     for fixture in FAMILY_FIXTURES {
-        let source = format!("{}proof tail() {{ assert true }}\n", fixture.keyword_name);
+        let source = format!(
+            "{}proof tail() {{ assert.check(true) }}\n",
+            fixture.keyword_name
+        );
         let built = parse(&source);
         let diagnostic = built
             .diagnostics()
@@ -249,7 +270,18 @@ fn every_retained_family_reports_exact_keyword_name_and_preserves_a_sibling() {
             diagnostic.range(),
             source_range(&source, fixture.keyword_text)
         );
-        assert_eq!(count_kind(&built, SyntaxKind::MissingName), 1);
+        let missing_names = built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::MissingName)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            missing_names.len(),
+            1,
+            "unexpected MissingName owners for {:?}: {missing_names:?}",
+            fixture.kind
+        );
         assert_eq!(count_kind(&built, fixture.kind), 1);
         assert_eq!(count_kind(&built, SyntaxKind::ProofItem), 1);
         assert_eq!(built.green().to_string(), source);

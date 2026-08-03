@@ -1,25 +1,24 @@
-//! Final grammar-node and token vocabulary for the staged lossless parser.
+//! Final grammar-node and token vocabulary for the lossless attached parser.
 //!
 //! The identity and typed-family classifiers intentionally enumerate every
 //! grammar kind in one exhaustive match. Their size is the audit surface that
 //! prevents a new kind from silently inheriting identity or attachment policy.
 
-pub(crate) use super::roles::{SyntaxRole, SyntaxRoleClass};
+pub(crate) use super::roles::{
+    ActivityPolicySyntaxValue, LayerKindSyntaxValue, LayerMemberSyntaxKind, LayerPolicySyntaxValue,
+    MetricKindSyntaxValue, SyntaxRole, SyntaxRoleClass,
+};
 
 macro_rules! define_syntax_kinds {
     ($($kind:ident),+ $(,)?) => {
         /// Grammar node and token kinds produced by the final event parser.
         ///
-        /// Raw Rowan conversion remains private until the public syntax switch.
+        /// Raw Rowan conversion remains crate-private.
         /// Tokens never receive syntax identity; structural wrappers retain
         /// layout without becoming a second semantic-parent authority.
-        #[allow(
-            dead_code,
-            reason = "consumed by the staged shadow grammar in the next cut"
-        )]
         #[repr(u16)]
         #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-        pub(crate) enum SyntaxKind {
+        pub enum SyntaxKind {
             $($kind),+
         }
 
@@ -91,11 +90,19 @@ define_syntax_kinds! {
     TypeParameter,
     FixedParameterGroup,
     Parameter,
+    RestParameterMarker,
     WhereClause,
     WherePredicate,
     ReturnType,
     RequiresClause,
     EnsuresClause,
+    InvariantClause,
+    AssumeClause,
+    ReadsClause,
+    EffectsClause,
+    NoEffectClause,
+    ModifiesClause,
+    DecreasesClause,
     ExpressionBody,
     PredicateBody,
     ProofBody,
@@ -149,6 +156,10 @@ define_syntax_kinds! {
     EntryRouteBinding,
     EntryOption,
     Block,
+    ChoiceBody,
+    ChoiceOptionBody,
+    ChoiceViewBody,
+    ChoicePlanBody,
     PredicateBlock,
     ProofBlock,
     OpenBraceNode,
@@ -159,6 +170,8 @@ define_syntax_kinds! {
     CloseBracketNode,
     OpenAngleNode,
     CloseAngleNode,
+    EqualsNode,
+    ColonNode,
     AssertionStatement,
     LetStatement,
     AssignmentStatement,
@@ -188,6 +201,45 @@ define_syntax_kinds! {
     MatchStatement,
     CloseStatement,
     SelectStatement,
+    ChoiceStatement,
+    ChoiceIfItem,
+    ChoiceIfBranch,
+    ChoiceForItem,
+    ChoiceMatchItem,
+    ChoiceMatchArm,
+    ChoiceOption,
+    ChoiceOptionFor,
+    ChoiceLabelField,
+    ChoiceIdField,
+    ChoiceValueField,
+    ChoiceVisibleField,
+    ChoiceEnabledField,
+    ChoiceOrderField,
+    ChoiceHotkeyField,
+    ChoiceViewField,
+    ChoiceSelectField,
+    ChoiceCompactArm,
+    ChoiceGotoAction,
+    ChoiceOutAction,
+    ChoicePlan,
+    ChoicePlanAssignment,
+    ChoicePlanTimeout,
+    ChoicePlanCancel,
+    ChoicePlanOnSelect,
+    InputTriggerPattern,
+    EventTriggerPattern,
+    SignalTriggerPattern,
+    TimeoutTriggerPattern,
+    MarkTriggerPattern,
+    SelectTriggerPattern,
+    TaskTriggerPattern,
+    ScopeTriggerPattern,
+    SourceLocaleStatement,
+    ScopeStatement,
+    IncludeStatement,
+    AwaitWithStatement,
+    SelectBranch,
+    AwaitWithBranch,
     BreakStatement,
     ContinueStatement,
     ExpressionStatement,
@@ -205,7 +257,19 @@ define_syntax_kinds! {
     ArrayRepeatExpression,
     CallExpression,
     SelectExpression,
-    DialogueCallExpression,
+    PostfixBracketExpression,
+    DialogueContentApplicationExpression,
+    PostfixBracketPayload,
+    DialogueContent,
+    DialogueText,
+    DialogueRaw,
+    DialogueEscape,
+    DialogueRuby,
+    DialogueInterpolation,
+    DialogueControl,
+    DialogueMark,
+    DialogueLineBreak,
+    DialogueError,
     RichTextTag,
     RichTextEndTag,
     RichTextTagName,
@@ -224,11 +288,11 @@ define_syntax_kinds! {
     RichTextArgumentQuote,
     RichTextMissingArgumentValue,
     RichTextInvalidArgumentIssue,
-    IndexExpression,
     PipeExpression,
     TryExpression,
     AwaitExpression,
     ThreadExpression,
+    ChoiceExpression,
     RangeExpression,
     RecordExpression,
     RecordLiteralExpression,
@@ -253,6 +317,7 @@ define_syntax_kinds! {
     WildcardPattern,
     BindingPattern,
     MutableBindingPattern,
+    TypedBindingPattern,
     LiteralPattern,
     EntityReferencePattern,
     TuplePattern,
@@ -271,12 +336,8 @@ define_syntax_kinds! {
     TupleType,
     ReferenceType,
     SliceType,
-    ArrayType,
     FunctionType,
     SumType,
-    InferType,
-    LifetimeType,
-    ElidedRegionType,
     TypeArgument,
     MissingType,
     ErrorType,
@@ -305,12 +366,8 @@ define_syntax_kinds! {
 }
 
 /// Whether a grammar kind owns session identity or only lossless structure.
-#[allow(
-    dead_code,
-    reason = "consumed by the staged shadow grammar in the next cut"
-)]
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum IdentityClass {
+pub enum IdentityClass {
     IdentityBearing,
     StructuralWrapper,
     Token,
@@ -323,7 +380,7 @@ pub(crate) enum IdentityClass {
 /// build item/expression/statement/pattern/type inventories without retaining
 /// or reparsing the detached surface AST.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum AstTag {
+pub enum AstTag {
     SourceFile,
     Item,
     Statement,
@@ -342,11 +399,7 @@ pub(crate) enum AstTag {
 
 impl SyntaxKind {
     /// Returns whether this kind is a token rather than a Rowan node.
-    #[allow(
-        dead_code,
-        reason = "consumed by the staged shadow grammar in the next cut"
-    )]
-    pub(crate) const fn is_token(self) -> bool {
+    pub const fn is_token(self) -> bool {
         matches!(self.identity_class(), IdentityClass::Token)
     }
 
@@ -376,14 +429,10 @@ impl SyntaxKind {
 
     /// Returns the identity policy owned by this grammar kind.
     #[allow(
-        dead_code,
-        reason = "consumed by the staged shadow grammar in the next cut"
-    )]
-    #[allow(
         clippy::too_many_lines,
         reason = "the wildcard-free identity table must enumerate every grammar kind explicitly"
     )]
-    pub(crate) const fn identity_class(self) -> IdentityClass {
+    pub const fn identity_class(self) -> IdentityClass {
         match self {
             Self::ItemList
             | Self::StatementList
@@ -462,11 +511,19 @@ impl SyntaxKind {
             | Self::TypeParameter
             | Self::FixedParameterGroup
             | Self::Parameter
+            | Self::RestParameterMarker
             | Self::WhereClause
             | Self::WherePredicate
             | Self::ReturnType
             | Self::RequiresClause
             | Self::EnsuresClause
+            | Self::InvariantClause
+            | Self::AssumeClause
+            | Self::ReadsClause
+            | Self::EffectsClause
+            | Self::NoEffectClause
+            | Self::ModifiesClause
+            | Self::DecreasesClause
             | Self::ExpressionBody
             | Self::PredicateBody
             | Self::ProofBody
@@ -520,6 +577,10 @@ impl SyntaxKind {
             | Self::EntryRouteBinding
             | Self::EntryOption
             | Self::Block
+            | Self::ChoiceBody
+            | Self::ChoiceOptionBody
+            | Self::ChoiceViewBody
+            | Self::ChoicePlanBody
             | Self::PredicateBlock
             | Self::ProofBlock
             | Self::OpenBraceNode
@@ -530,6 +591,8 @@ impl SyntaxKind {
             | Self::CloseBracketNode
             | Self::OpenAngleNode
             | Self::CloseAngleNode
+            | Self::EqualsNode
+            | Self::ColonNode
             | Self::AssertionStatement
             | Self::LetStatement
             | Self::AssignmentStatement
@@ -559,6 +622,45 @@ impl SyntaxKind {
             | Self::MatchStatement
             | Self::CloseStatement
             | Self::SelectStatement
+            | Self::ChoiceStatement
+            | Self::ChoiceIfItem
+            | Self::ChoiceIfBranch
+            | Self::ChoiceForItem
+            | Self::ChoiceMatchItem
+            | Self::ChoiceMatchArm
+            | Self::ChoiceOption
+            | Self::ChoiceOptionFor
+            | Self::ChoiceLabelField
+            | Self::ChoiceIdField
+            | Self::ChoiceValueField
+            | Self::ChoiceVisibleField
+            | Self::ChoiceEnabledField
+            | Self::ChoiceOrderField
+            | Self::ChoiceHotkeyField
+            | Self::ChoiceViewField
+            | Self::ChoiceSelectField
+            | Self::ChoiceCompactArm
+            | Self::ChoiceGotoAction
+            | Self::ChoiceOutAction
+            | Self::ChoicePlan
+            | Self::ChoicePlanAssignment
+            | Self::ChoicePlanTimeout
+            | Self::ChoicePlanCancel
+            | Self::ChoicePlanOnSelect
+            | Self::InputTriggerPattern
+            | Self::EventTriggerPattern
+            | Self::SignalTriggerPattern
+            | Self::TimeoutTriggerPattern
+            | Self::MarkTriggerPattern
+            | Self::SelectTriggerPattern
+            | Self::TaskTriggerPattern
+            | Self::ScopeTriggerPattern
+            | Self::SourceLocaleStatement
+            | Self::ScopeStatement
+            | Self::IncludeStatement
+            | Self::AwaitWithStatement
+            | Self::SelectBranch
+            | Self::AwaitWithBranch
             | Self::BreakStatement
             | Self::ContinueStatement
             | Self::ExpressionStatement
@@ -576,7 +678,19 @@ impl SyntaxKind {
             | Self::ArrayRepeatExpression
             | Self::CallExpression
             | Self::SelectExpression
-            | Self::DialogueCallExpression
+            | Self::PostfixBracketExpression
+            | Self::DialogueContentApplicationExpression
+            | Self::PostfixBracketPayload
+            | Self::DialogueContent
+            | Self::DialogueText
+            | Self::DialogueRaw
+            | Self::DialogueEscape
+            | Self::DialogueRuby
+            | Self::DialogueInterpolation
+            | Self::DialogueControl
+            | Self::DialogueMark
+            | Self::DialogueLineBreak
+            | Self::DialogueError
             | Self::RichTextTag
             | Self::RichTextEndTag
             | Self::RichTextTagName
@@ -595,11 +709,11 @@ impl SyntaxKind {
             | Self::RichTextArgumentQuote
             | Self::RichTextMissingArgumentValue
             | Self::RichTextInvalidArgumentIssue
-            | Self::IndexExpression
             | Self::PipeExpression
             | Self::TryExpression
             | Self::AwaitExpression
             | Self::ThreadExpression
+            | Self::ChoiceExpression
             | Self::RangeExpression
             | Self::RecordExpression
             | Self::RecordLiteralExpression
@@ -624,6 +738,7 @@ impl SyntaxKind {
             | Self::WildcardPattern
             | Self::BindingPattern
             | Self::MutableBindingPattern
+            | Self::TypedBindingPattern
             | Self::LiteralPattern
             | Self::EntityReferencePattern
             | Self::TuplePattern
@@ -642,12 +757,8 @@ impl SyntaxKind {
             | Self::TupleType
             | Self::ReferenceType
             | Self::SliceType
-            | Self::ArrayType
             | Self::FunctionType
             | Self::SumType
-            | Self::InferType
-            | Self::LifetimeType
-            | Self::ElidedRegionType
             | Self::TypeArgument
             | Self::MissingType
             | Self::ErrorType
@@ -663,7 +774,7 @@ impl SyntaxKind {
         clippy::too_many_lines,
         reason = "the wildcard-free typed-family table must enumerate every grammar kind explicitly"
     )]
-    pub(crate) const fn ast_tag(self) -> Option<AstTag> {
+    pub const fn ast_tag(self) -> Option<AstTag> {
         match self {
             Self::SourceFile => Some(AstTag::SourceFile),
             Self::ModuleDeclaration
@@ -721,11 +832,50 @@ impl SyntaxKind {
             | Self::MatchStatement
             | Self::CloseStatement
             | Self::SelectStatement
+            | Self::ChoiceStatement
+            | Self::SourceLocaleStatement
+            | Self::ScopeStatement
+            | Self::IncludeStatement
+            | Self::AwaitWithStatement
             | Self::BreakStatement
             | Self::ContinueStatement
             | Self::ExpressionStatement
             | Self::ProofCallStatement
             | Self::ErrorStatement => Some(AstTag::Statement),
+            Self::SelectBranch
+            | Self::AwaitWithBranch
+            | Self::ChoiceIfItem
+            | Self::ChoiceIfBranch
+            | Self::ChoiceForItem
+            | Self::ChoiceMatchItem
+            | Self::ChoiceMatchArm
+            | Self::ChoiceOption
+            | Self::ChoiceOptionFor
+            | Self::ChoiceLabelField
+            | Self::ChoiceIdField
+            | Self::ChoiceValueField
+            | Self::ChoiceVisibleField
+            | Self::ChoiceEnabledField
+            | Self::ChoiceOrderField
+            | Self::ChoiceHotkeyField
+            | Self::ChoiceViewField
+            | Self::ChoiceSelectField
+            | Self::ChoiceCompactArm
+            | Self::ChoiceGotoAction
+            | Self::ChoiceOutAction
+            | Self::ChoicePlan
+            | Self::ChoicePlanAssignment
+            | Self::ChoicePlanTimeout
+            | Self::ChoicePlanCancel
+            | Self::ChoicePlanOnSelect
+            | Self::InputTriggerPattern
+            | Self::EventTriggerPattern
+            | Self::SignalTriggerPattern
+            | Self::TimeoutTriggerPattern
+            | Self::MarkTriggerPattern
+            | Self::SelectTriggerPattern
+            | Self::TaskTriggerPattern
+            | Self::ScopeTriggerPattern => Some(AstTag::DeclarationPart),
             Self::LiteralExpression
             | Self::EntityReferenceExpression
             | Self::LifetimePathExpression
@@ -738,12 +888,13 @@ impl SyntaxKind {
             | Self::ArrayRepeatExpression
             | Self::CallExpression
             | Self::SelectExpression
-            | Self::DialogueCallExpression
-            | Self::IndexExpression
+            | Self::PostfixBracketExpression
+            | Self::DialogueContentApplicationExpression
             | Self::PipeExpression
             | Self::TryExpression
             | Self::AwaitExpression
             | Self::ThreadExpression
+            | Self::ChoiceExpression
             | Self::RangeExpression
             | Self::RecordExpression
             | Self::RecordLiteralExpression
@@ -786,6 +937,7 @@ impl SyntaxKind {
             Self::WildcardPattern
             | Self::BindingPattern
             | Self::MutableBindingPattern
+            | Self::TypedBindingPattern
             | Self::LiteralPattern
             | Self::EntityReferencePattern
             | Self::TuplePattern
@@ -804,12 +956,8 @@ impl SyntaxKind {
             | Self::TupleType
             | Self::ReferenceType
             | Self::SliceType
-            | Self::ArrayType
             | Self::FunctionType
             | Self::SumType
-            | Self::InferType
-            | Self::LifetimeType
-            | Self::ElidedRegionType
             | Self::TypeArgument
             | Self::MissingType
             | Self::ErrorType => Some(AstTag::Type),
@@ -830,6 +978,10 @@ impl SyntaxKind {
             | Self::StyleBody
             | Self::EntryBody
             | Self::Block
+            | Self::ChoiceBody
+            | Self::ChoiceOptionBody
+            | Self::ChoiceViewBody
+            | Self::ChoicePlanBody
             | Self::PredicateBlock
             | Self::ProofBlock => Some(AstTag::Body),
             Self::OpenBraceNode
@@ -839,7 +991,10 @@ impl SyntaxKind {
             | Self::OpenBracketNode
             | Self::CloseBracketNode
             | Self::OpenAngleNode
-            | Self::CloseAngleNode => Some(AstTag::Delimiter),
+            | Self::CloseAngleNode
+            | Self::EqualsNode
+            | Self::ColonNode
+            | Self::RestParameterMarker => Some(AstTag::Delimiter),
             Self::MissingBody
             | Self::MissingTokenNode
             | Self::ErrorDeclarationMember
@@ -862,6 +1017,13 @@ impl SyntaxKind {
             | Self::ReturnType
             | Self::RequiresClause
             | Self::EnsuresClause
+            | Self::InvariantClause
+            | Self::AssumeClause
+            | Self::ReadsClause
+            | Self::EffectsClause
+            | Self::NoEffectClause
+            | Self::ModifiesClause
+            | Self::DecreasesClause
             | Self::ResourceFieldInitializer
             | Self::CharacterDisplayNameMember
             | Self::ViewExportBlock
@@ -896,7 +1058,18 @@ impl SyntaxKind {
             | Self::EntryGoto
             | Self::EntryRoute
             | Self::EntryRouteBinding
-            | Self::EntryOption => Some(AstTag::DeclarationPart),
+            | Self::EntryOption
+            | Self::PostfixBracketPayload
+            | Self::DialogueContent
+            | Self::DialogueText
+            | Self::DialogueRaw
+            | Self::DialogueEscape
+            | Self::DialogueRuby
+            | Self::DialogueInterpolation
+            | Self::DialogueControl
+            | Self::DialogueMark
+            | Self::DialogueLineBreak
+            | Self::DialogueError => Some(AstTag::DeclarationPart),
             Self::ItemList
             | Self::StatementList
             | Self::ExpressionList
@@ -966,6 +1139,23 @@ impl SyntaxKind {
         )
     }
 
+    /// Returns whether this node is one of the maintained callable contract
+    /// clause families. The heterogeneous parent role owns source order.
+    pub(crate) const fn is_contract_clause(self) -> bool {
+        matches!(
+            self,
+            Self::RequiresClause
+                | Self::EnsuresClause
+                | Self::InvariantClause
+                | Self::AssumeClause
+                | Self::ReadsClause
+                | Self::EffectsClause
+                | Self::NoEffectClause
+                | Self::ModifiesClause
+                | Self::DecreasesClause
+        )
+    }
+
     pub(crate) const fn is_statement(self) -> bool {
         matches!(
             self,
@@ -998,12 +1188,23 @@ impl SyntaxKind {
                 | Self::MatchStatement
                 | Self::CloseStatement
                 | Self::SelectStatement
+                | Self::ChoiceStatement
+                | Self::SourceLocaleStatement
+                | Self::ScopeStatement
+                | Self::IncludeStatement
+                | Self::AwaitWithStatement
                 | Self::BreakStatement
                 | Self::ContinueStatement
                 | Self::ExpressionStatement
                 | Self::ProofCallStatement
                 | Self::ErrorStatement
         )
+    }
+
+    /// Whether this node may be one direct child of a statement-only Flow or
+    /// Thread body. Attachment applies the stricter sixteen-family split.
+    pub(crate) const fn is_thread_flow_item(self) -> bool {
+        self.is_statement() || matches!(self, Self::DialogueContentApplicationExpression)
     }
 
     pub(crate) const fn is_expression(self) -> bool {
@@ -1021,12 +1222,13 @@ impl SyntaxKind {
                 | Self::ArrayRepeatExpression
                 | Self::CallExpression
                 | Self::SelectExpression
-                | Self::DialogueCallExpression
-                | Self::IndexExpression
+                | Self::PostfixBracketExpression
+                | Self::DialogueContentApplicationExpression
                 | Self::PipeExpression
                 | Self::TryExpression
                 | Self::AwaitExpression
                 | Self::ThreadExpression
+                | Self::ChoiceExpression
                 | Self::RangeExpression
                 | Self::RecordExpression
                 | Self::RecordLiteralExpression
@@ -1052,6 +1254,7 @@ impl SyntaxKind {
             Self::WildcardPattern
                 | Self::BindingPattern
                 | Self::MutableBindingPattern
+                | Self::TypedBindingPattern
                 | Self::LiteralPattern
                 | Self::EntityReferencePattern
                 | Self::TuplePattern
@@ -1076,13 +1279,8 @@ impl SyntaxKind {
                 | Self::TupleType
                 | Self::ReferenceType
                 | Self::SliceType
-                | Self::ArrayType
                 | Self::FunctionType
                 | Self::SumType
-                | Self::InferType
-                | Self::LifetimeType
-                | Self::ElidedRegionType
-                | Self::TypeArgument
                 | Self::MissingType
                 | Self::ErrorType
         )
@@ -1154,6 +1352,7 @@ mod tests {
             SyntaxKind::PathSegment.identity_class(),
             IdentityClass::StructuralWrapper
         );
+        assert_eq!(SyntaxKind::PathSegment.ast_tag(), None);
         assert_eq!(
             SyntaxKind::ProofBlock.identity_class(),
             IdentityClass::IdentityBearing
@@ -1167,7 +1366,7 @@ mod tests {
         assert_eq!(SyntaxKind::SourceFile.ast_tag(), Some(AstTag::SourceFile));
         assert_eq!(SyntaxKind::ProofItem.ast_tag(), Some(AstTag::Item));
         assert_eq!(
-            SyntaxKind::DialogueCallExpression.ast_tag(),
+            SyntaxKind::DialogueContentApplicationExpression.ast_tag(),
             Some(AstTag::Expression)
         );
         assert_eq!(

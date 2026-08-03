@@ -4,7 +4,8 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot},
         view::ViewBody,
     },
-    expr::{Expr, IntSuffix},
+    expr::Expr,
+    literal::IntSuffix,
 };
 
 fn removed_module_path_accessors(root: ModulePathRoot, path: &CanonicalModulePath) {

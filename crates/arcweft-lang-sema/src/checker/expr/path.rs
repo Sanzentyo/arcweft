@@ -9,7 +9,8 @@ use super::{
     BorrowLocalState, CallableDeclarationId, TypeCheckError, TypeChecker, TypeExpressionId,
     TypeKind, TypedLoweringEvidence, TypedLoweringEvidenceKind,
 };
-use arcweft_lang_syntax::expr::{DottedPath, FloatSuffix, IntLiteral, Literal};
+use arcweft_lang_syntax::expr::{DottedPath, IntLiteral, Literal};
+use arcweft_lang_syntax::literal::FloatSuffix;
 
 impl TypeChecker<'_> {
     pub(super) fn check_project_callable_path_expr(

@@ -34,7 +34,8 @@ bench @bench.score {
     assert(metric.allocations <= 2)
 }
 "#;
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     for expected in [
@@ -43,6 +44,7 @@ bench @bench.score {
         SyntaxKind::DocBlock,
         SyntaxKind::OuterAttribute,
         SyntaxKind::NameReference,
+        SyntaxKind::EntityReferenceExpression,
         SyntaxKind::Block,
         SyntaxKind::OpenBraceNode,
         SyntaxKind::CloseBraceNode,
@@ -79,7 +81,8 @@ fn missing_plan_header_parts_and_bodies_recover_before_following_proofs() {
         "bench @bench.no_body\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let codes = built
         .diagnostics()
@@ -89,7 +92,8 @@ fn missing_plan_header_parts_and_bodies_recover_before_following_proofs() {
 
     assert_eq!(kind_count(entries, SyntaxKind::TestItem), 3);
     assert_eq!(kind_count(entries, SyntaxKind::BenchItem), 2);
-    assert_eq!(kind_count(entries, SyntaxKind::MissingName), 2);
+    assert_eq!(kind_count(entries, SyntaxKind::MissingExpression), 2);
+    assert_eq!(kind_count(entries, SyntaxKind::MissingName), 1);
     assert_eq!(kind_count(entries, SyntaxKind::MissingBody), 2);
     assert_eq!(kind_count(entries, SyntaxKind::ProofItem), 1);
     for expected in [
@@ -119,7 +123,8 @@ fn unclosed_plan_body_synchronizes_before_the_next_declaration() {
         "    measure { pure(score) }\n",
         "proof after_bench() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::TestItem), 1);
@@ -158,7 +163,8 @@ fn unexpected_plan_header_tokens_are_recovered_without_hiding_the_body() {
         "bench @bench.extra unexpected { report { cpu_time } }\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::TestItem), 1);

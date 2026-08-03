@@ -41,14 +41,25 @@ fn declaration_kind_at_start(source: &str, tokens: &[&LexToken]) -> Option<(usiz
     if token_text(source, tokens, keyword) == Some("pub") {
         keyword += 1;
         if token_text(source, tokens, keyword) == Some("(") {
-            if !matches!(
-                token_text(source, tokens, keyword + 1),
-                Some("crate" | "super")
-            ) || token_text(source, tokens, keyword + 2) != Some(")")
-            {
+            let mut depth = 1_usize;
+            keyword += 1;
+            while let Some(spelling) = token_text(source, tokens, keyword) {
+                match spelling {
+                    "(" => depth += 1,
+                    ")" => {
+                        depth -= 1;
+                        if depth == 0 {
+                            keyword += 1;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+                keyword += 1;
+            }
+            if depth != 0 {
                 return None;
             }
-            keyword += 3;
         }
     }
 

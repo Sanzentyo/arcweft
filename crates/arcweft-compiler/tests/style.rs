@@ -59,7 +59,7 @@ pub view Example() {
         Button("First").style(@style.primary)
         Button("Second")
             .style(@style.secondary)
-            .style { opacity = 900milli }
+            .style { opacity = 90% }
     }
 }
 "#;
@@ -119,7 +119,7 @@ pub view Example() {
 #[test]
 fn style_compiler_keeps_same_shaped_authored_nodes_as_distinct_application_sites() {
     let source = r#"pub style shared {
-    Button { opacity = 900milli }
+    Button { opacity = 90% }
 }
 
 pub view SameShape() {
@@ -149,7 +149,7 @@ fn style_compiler_lowers_flattened_environment_guard_with_exact_sources() {
     let source = r"pub style adaptive {
     when environment(text-scale >= 125.5%) {
         when environment(color-scheme == dark) {
-            Button { opacity = 900milli }
+            Button { opacity = 90% }
         }
     }
 }
@@ -188,27 +188,24 @@ fn style_compiler_lowers_flattened_environment_guard_with_exact_sources() {
     );
     assert_eq!(
         authored_range(outer.body_source()),
-        "\n        when environment(color-scheme == dark) {\n            Button { opacity = 900milli }\n        }\n    "
+        "\n        when environment(color-scheme == dark) {\n            Button { opacity = 90% }\n        }\n    "
     );
     assert_eq!(
         authored_range(outer.scope_source()),
-        "when environment(text-scale >= 125.5%) {\n        when environment(color-scheme == dark) {\n            Button { opacity = 900milli }\n        }\n    }"
+        "when environment(text-scale >= 125.5%) {\n        when environment(color-scheme == dark) {\n            Button { opacity = 90% }\n        }\n    }"
     );
     assert_eq!(
         authored_range(inner.scope_source()),
-        "when environment(color-scheme == dark) {\n            Button { opacity = 900milli }\n        }"
+        "when environment(color-scheme == dark) {\n            Button { opacity = 90% }\n        }"
     );
     assert_eq!(
         authored_range(inner.body_source()),
-        "\n            Button { opacity = 900milli }\n        "
+        "\n            Button { opacity = 90% }\n        "
     );
-    assert_eq!(
-        authored_range(rule.source()),
-        "Button { opacity = 900milli }"
-    );
+    assert_eq!(authored_range(rule.source()), "Button { opacity = 90% }");
     assert_eq!(
         authored_range(rule.declarations()[0].source()),
-        "opacity = 900milli"
+        "opacity = 90%"
     );
     assert_eq!(
         environment.clauses()[0].wrapper().value(),
@@ -354,21 +351,21 @@ fn project_with_shuffled_equal_local_style_patch_ranges()
         );
     let root_body = r#"pub view Root() {
     Column {
-        Button("Root 0").style { opacity = 800milli }
-        Button("Root 1").style { opacity = 810milli }
+        Button("Root 0").style { opacity = 80% }
+        Button("Root 1").style { opacity = 81% }
     }
 }
 "#;
     let a_body = r#"mod a
 
 pub view A() {
-    Button("A").style { opacity = 700milli }
+    Button("A").style { opacity = 70% }
 }
 "#;
     let z_body = r#"mod z
 
 pub view Z() {
-    Button("Z").style { opacity = 600milli }
+    Button("Z").style { opacity = 60% }
 }
 "#;
     let first_style_offset = [root_body, a_body, z_body]

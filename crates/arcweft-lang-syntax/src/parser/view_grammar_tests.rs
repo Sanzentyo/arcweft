@@ -2,7 +2,7 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::document::parse_shadow_document;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
-use crate::grammar::kinds::SyntaxKind;
+use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
 fn document(source: &str) -> SourceDocument {
     SourceDocument::try_new(
@@ -14,7 +14,8 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source)).expect("View grammar builds")
+    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("View grammar builds")
 }
 
 fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
@@ -27,6 +28,15 @@ fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
         .count()
 }
 
+fn entries(built: &GrammarBuild, kind: SyntaxKind) -> Vec<&UnattachedGrammarEntry> {
+    built
+        .index()
+        .entries()
+        .iter()
+        .filter(|entry| entry.kind() == kind)
+        .collect()
+}
+
 fn source_range(source: &str, fragment: &str) -> SourceRange {
     let start = source.find(fragment).expect("fixture fragment");
     SourceRange::new(start, start + fragment.len())
@@ -35,11 +45,11 @@ fn source_range(source: &str, fragment: &str) -> SourceRange {
 #[test]
 fn canonical_view_owns_fixed_signature_exports_fragment_and_typed_values() {
     let source = concat!(
-        "pub view @view.MainDialogue MainDialogue(dialogue: DialogueView) {\n",
+        "pub view @view.MainDialogue MainDialogue(model: DialogueView) {\n",
         "    export part panel as dialogue_panel\n",
         "    Panel {\n",
-        "        Text(dialogue.character.display_name)\n",
-        "        RichText(dialogue.content)\n",
+        "        Text(model.character.display_name)\n",
+        "        RichText(model.content)\n",
         "        Style { opacity = 0.5 }\n",
         "    }.part(panel)\n",
         "}\n",
@@ -78,6 +88,27 @@ fn view_defaults_are_typed_but_destructuring_and_header_extensions_are_rejected(
             .iter()
             .any(|diagnostic| diagnostic.code() == "syntax.view.return_not_allowed")
     );
+    assert_eq!(
+        entries(&built, SyntaxKind::EqualsNode)[0].role(),
+        SyntaxRole::Equals
+    );
+    assert!(
+        entries(&built, SyntaxKind::LiteralExpression)
+            .iter()
+            .any(|entry| entry.role() == SyntaxRole::Value)
+    );
+}
+
+#[test]
+fn keyword_parameter_is_not_admitted_as_a_view_binding() {
+    let built = parse("view Broken(view: u32) { Panel {} }\n");
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.view.invalid_parameter")
+    );
+    assert_eq!(count_kind(&built, SyntaxKind::Parameter), 1);
 }
 
 #[test]
@@ -152,6 +183,17 @@ fn malformed_export_retains_typed_export_recovery_children() {
     let built = parse(source);
     assert_eq!(count_kind(&built, SyntaxKind::ViewExportDeclaration), 1);
     assert!(count_kind(&built, SyntaxKind::MissingName) >= 1);
+    let missing_roles = entries(&built, SyntaxKind::MissingTokenNode)
+        .into_iter()
+        .map(UnattachedGrammarEntry::role)
+        .collect::<Vec<_>>();
+    assert!(missing_roles.contains(&SyntaxRole::Kind));
+    assert!(missing_roles.contains(&SyntaxRole::Alias));
+    assert!(
+        entries(&built, SyntaxKind::ViewExportDeclaration)[0]
+            .view_export_projection()
+            .is_some_and(|projection| projection.has_recovery())
+    );
     for code in [
         "syntax.view.export_missing_part",
         "syntax.view.export_missing_as",
@@ -167,6 +209,16 @@ fn malformed_export_retains_typed_export_recovery_children() {
         );
     }
     assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn view_header_and_trailing_recovery_roles_are_distinct() {
+    let built = parse("view Broken() -> View { Panel {} } trailing\n");
+    let roles = entries(&built, SyntaxKind::ErrorNode)
+        .into_iter()
+        .map(UnattachedGrammarEntry::role)
+        .collect::<Vec<_>>();
+    assert_eq!(roles, [SyntaxRole::Recovery(0), SyntaxRole::Recovery(1)]);
 }
 
 #[test]

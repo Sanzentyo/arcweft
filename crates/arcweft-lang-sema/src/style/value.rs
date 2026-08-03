@@ -6,7 +6,8 @@ use arcweft_id::PublicId;
 use arcweft_lang_hir::style::HirStyleExpr;
 use arcweft_lang_syntax::{
     ast::common::TextRange,
-    expr::{CallArg, DurationUnit, Expr, Literal, UnaryOp, UnitNumberSuffix},
+    expr::{CallArg, Expr, Literal, UnaryOp},
+    literal::{DurationUnit, UnitNumberSuffix},
     types::TypeRef,
 };
 use arcweft_presentation::appearance::{PresentationColor, SystemColor};
@@ -45,7 +46,6 @@ pub(crate) fn infer_value_kind(
         Expr::Literal(Literal::Int(_)) => Some(ViewStyleValueKind::Integer),
         Expr::Literal(Literal::Float { .. }) => Some(ViewStyleValueKind::Scalar),
         Expr::Literal(Literal::UnitNumber { suffix, .. }) => match suffix {
-            UnitNumberSuffix::Milli => Some(ViewStyleValueKind::Scalar),
             UnitNumberSuffix::Percent => Some(ViewStyleValueKind::Ratio),
             UnitNumberSuffix::Px
             | UnitNumberSuffix::Pt
@@ -234,8 +234,8 @@ fn invalid_value_diagnostic(
 
 fn accepted_units(expected: ViewStyleValueKind) -> &'static [&'static str] {
     match expected {
-        ViewStyleValueKind::Ratio => &["milli", "%"],
-        ViewStyleValueKind::Scalar => &["unitless", "milli", "%"],
+        ViewStyleValueKind::Ratio => &["%"],
+        ViewStyleValueKind::Scalar => &["unitless", "%"],
         ViewStyleValueKind::Length | ViewStyleValueKind::BorderRadii => &["px"],
         ViewStyleValueKind::Angle => &["deg"],
         ViewStyleValueKind::BoxAxes
@@ -284,15 +284,6 @@ fn numeric_conversion_overflowed(expr: &Expr, expected: ViewStyleValueKind) -> b
                 .is_ok_and(|value| !value.is_finite())
                 || fixed_milli(raw).is_none()
         }
-        (
-            ViewStyleValueKind::Scalar,
-            Expr::Literal(Literal::UnitNumber {
-                raw,
-                suffix: UnitNumberSuffix::Milli,
-            }),
-        ) => raw
-            .strip_suffix("milli")
-            .is_none_or(|raw| raw.replace('_', "").parse::<u32>().is_err()),
         (
             ViewStyleValueKind::Ratio | ViewStyleValueKind::Scalar,
             Expr::Literal(Literal::UnitNumber {
@@ -352,15 +343,6 @@ fn ratio_value(expr: &Expr) -> Option<ViewRatioMilli> {
     match expr {
         Expr::Literal(Literal::UnitNumber {
             raw,
-            suffix: UnitNumberSuffix::Milli,
-        }) => raw
-            .strip_suffix("milli")?
-            .replace('_', "")
-            .parse::<u16>()
-            .ok()
-            .and_then(ViewRatioMilli::new),
-        Expr::Literal(Literal::UnitNumber {
-            raw,
             suffix: UnitNumberSuffix::Percent,
         }) => {
             let percent = fixed_milli(raw.strip_suffix('%')?)?;
@@ -379,14 +361,6 @@ fn scalar_value(expr: &Expr) -> Option<ViewScalarMilli> {
         Expr::Literal(Literal::Float { raw, suffix: None }) => {
             u32::try_from(fixed_milli(raw)?).ok()?
         }
-        Expr::Literal(Literal::UnitNumber {
-            raw,
-            suffix: UnitNumberSuffix::Milli,
-        }) => raw
-            .strip_suffix("milli")?
-            .replace('_', "")
-            .parse::<u32>()
-            .ok()?,
         Expr::Literal(Literal::UnitNumber {
             raw,
             suffix: UnitNumberSuffix::Percent,

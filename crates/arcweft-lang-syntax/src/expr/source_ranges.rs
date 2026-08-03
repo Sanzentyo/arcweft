@@ -1001,9 +1001,8 @@ mod tests {
     use super::*;
     use crate::{
         ast::pattern::Pattern,
-        expr::{
-            BinaryOp, DottedPath, Expr, IntLiteral, IntRadix, IntSuffix, Literal, MatchExprArm,
-        },
+        expr::{BinaryOp, DottedPath, Expr, IntLiteral, Literal, MatchExprArm},
+        literal::{IntRadix, IntSuffix},
         parser::parse_dialogue_content,
     };
 

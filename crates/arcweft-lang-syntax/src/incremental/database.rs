@@ -1,17 +1,22 @@
 //! Incremental parse database, snapshot transactions, and syntax identities.
 
 use std::collections::BTreeMap;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use arcweft_source::identity::{SourceGeneration, SourceSnapshotId};
 use arcweft_source::{SourceDocument, SourceEdit, SourceName, SourceSpan};
 use thiserror::Error;
 
-use super::bound::BoundParsedSource;
+use super::bound::{ParsedSourceData, SyntaxDiagnostic};
 #[cfg(test)]
 use crate::attachment::SyntaxSnapshotData;
-use crate::parser::fragment::ParseCompletion;
+use crate::attachment::{
+    AstKind, AstNode, AttachedExpressionNode, AttachedPatternNode, AttachedTypeRefNode,
+    AttachmentFailure, StatementNode, SyntaxAccessError, SyntaxDatabaseId, SyntaxLineageId,
+    SyntaxLookupError, SyntaxNode, SyntaxNodeHandle, SyntaxNodeId, SyntaxSnapshotId,
+    TypedSyntaxTree,
+};
+use crate::parser::fragment::{ParseCompletion, ParseOptions};
 use crate::parser::unbound_fragment::{AttachedFragment, FragmentKind, UnboundFragment};
 
 use super::limits::SyntaxLimit;
@@ -19,19 +24,27 @@ use super::transaction;
 
 /// Immutable parse result owned by one incremental syntax database lineage.
 #[derive(Clone, Debug)]
-pub struct ParsedSource {
-    bound: Rc<BoundParsedSource>,
-}
+pub struct ParsedSource(Arc<ParsedSourceData>);
 
 impl ParsedSource {
-    /// Source name and generation accepted by the parse transaction.
-    pub fn snapshot(&self) -> &SourceSnapshotId {
-        self.bound.snapshot_id().source()
+    /// Qualified syntax snapshot committed by this parse transaction.
+    pub fn snapshot_id(&self) -> &SyntaxSnapshotId {
+        self.0.snapshot_id()
+    }
+
+    /// Source name and generation accepted by this syntax snapshot.
+    pub fn source_snapshot_id(&self) -> &SourceSnapshotId {
+        self.snapshot_id().source()
     }
 
     /// Exact content provenance retained independently from session lineage.
     pub fn document(&self) -> &SourceDocument {
-        self.bound.document()
+        self.0.document()
+    }
+
+    /// Shared lease for the exact immutable document accepted by this parse.
+    pub fn document_lease(&self) -> &Arc<SourceDocument> {
+        self.0.document()
     }
 
     /// Exact UTF-8 source bytes for this immutable snapshot.
@@ -41,22 +54,109 @@ impl ParsedSource {
 
     /// Whether two values refer to the exact same immutable grammar snapshot.
     pub fn is_same_snapshot(&self, other: &Self) -> bool {
-        self.bound.snapshot_id() == other.bound.snapshot_id()
+        self.snapshot_id() == other.snapshot_id()
+    }
+
+    /// Attached typed source-file root for this exact immutable snapshot.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if crate-internal construction publishes a snapshot without
+    /// the source-file root validated before transaction commit.
+    pub fn tree(&self) -> TypedSyntaxTree {
+        self.0
+            .syntax()
+            .typed_tree()
+            .expect("committed syntax snapshots retain a typed source-file root")
+    }
+
+    /// Attached raw source-file root for this exact immutable snapshot.
+    pub fn root_syntax(&self) -> SyntaxNodeHandle {
+        self.0.syntax().root_handle()
+    }
+
+    /// Resolves one stable node identity in this snapshot.
+    pub fn syntax_node(&self, id: SyntaxNodeId) -> Result<SyntaxNodeHandle, SyntaxLookupError> {
+        self.0.syntax().syntax_node(id)
+    }
+
+    /// Resolves one stable identity as its exact attached semantic type.
+    pub fn attached_type_ref(
+        &self,
+        id: SyntaxNodeId,
+    ) -> Result<AttachedTypeRefNode, SyntaxAccessError> {
+        AttachedTypeRefNode::from_syntax(self.syntax_node(id)?)
+    }
+
+    /// Resolves one stable identity as its exact attached semantic Pattern.
+    pub fn attached_pattern(
+        &self,
+        id: SyntaxNodeId,
+    ) -> Result<AttachedPatternNode, SyntaxAccessError> {
+        AttachedPatternNode::from_syntax(self.syntax_node(id)?)
+    }
+
+    /// Resolves one stable identity as its exact attached semantic expression.
+    pub fn attached_expression(
+        &self,
+        id: SyntaxNodeId,
+    ) -> Result<AttachedExpressionNode, SyntaxAccessError> {
+        AttachedExpressionNode::from_syntax(self.syntax_node(id)?)
+    }
+
+    /// Resolves one stable identity as an exact attached statement family.
+    pub fn statement_node(&self, id: SyntaxNodeId) -> Result<StatementNode, SyntaxAccessError> {
+        StatementNode::new(self.syntax_node(id)?)
+    }
+
+    /// Resolves one stable identity as a syntax-owned typed node.
+    pub fn typed_node<K: AstKind>(
+        &self,
+        id: SyntaxNodeId,
+    ) -> Result<AstNode<K>, SyntaxLookupError> {
+        self.0.syntax().typed_node(id)
+    }
+
+    /// Binds a Rowan node only when it belongs to this exact root allocation.
+    pub fn bind_rowan(&self, node: &SyntaxNode) -> Result<SyntaxNodeHandle, SyntaxLookupError> {
+        self.0.syntax().bind_rowan(node)
+    }
+
+    /// Resolves a typed handle only when it belongs to this exact snapshot.
+    pub fn resolve_exact<K: AstKind>(
+        &self,
+        node: &AstNode<K>,
+    ) -> Result<AstNode<K>, SyntaxLookupError> {
+        let exact = self.0.syntax().resolve_exact(&node.syntax())?;
+        self.0.syntax().typed_node(exact.id())
+    }
+
+    /// Resolves a raw handle only when it belongs to this exact snapshot.
+    pub fn resolve_exact_syntax(
+        &self,
+        node: &SyntaxNodeHandle,
+    ) -> Result<SyntaxNodeHandle, SyntaxLookupError> {
+        self.0.syntax().resolve_exact(node)
+    }
+
+    /// Recoverable diagnostics emitted by this exact parse transaction.
+    pub fn diagnostics(&self) -> &[SyntaxDiagnostic] {
+        self.0.diagnostics()
     }
 
     /// Whether this snapshot is clean or contains recovered syntax.
     pub fn status(&self) -> ParseStatus {
-        self.bound.status()
+        self.0.status()
     }
 
     #[cfg(test)]
     pub(crate) fn attached(&self) -> &Arc<SyntaxSnapshotData> {
-        self.bound.syntax()
+        self.0.syntax()
     }
 
     #[cfg(test)]
-    pub(super) const fn bound(&self) -> &Rc<BoundParsedSource> {
-        &self.bound
+    pub(super) const fn data(&self) -> &Arc<ParsedSourceData> {
+        &self.0
     }
 }
 
@@ -83,23 +183,6 @@ impl Default for SyntaxTransactionLimits {
     fn default() -> Self {
         Self {
             source_generation: u32::MAX,
-        }
-    }
-}
-
-/// Identity allocation families reported by fatal parse failures.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxIdentityKind {
-    Node,
-    SourceGeneration,
-}
-
-impl SyntaxIdentityKind {
-    /// Stable diagnostic label for this identity family.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Node => "syntax node",
-            Self::SourceGeneration => "source generation",
         }
     }
 }
@@ -132,16 +215,42 @@ pub enum InvalidEditSet {
 /// Fatal parse failures that commit no generation or syntax identities.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ParseFailure {
-    #[error(transparent)]
-    InvalidEdits(#[from] InvalidEditSet),
     #[error("the source does not match the parse database lineage")]
     SourceMismatch,
+    #[error("the supplied syntax snapshot is stale")]
+    StaleSnapshot {
+        current: SyntaxSnapshotId,
+        supplied: SyntaxSnapshotId,
+    },
+    #[error(transparent)]
+    InvalidEdits(#[from] InvalidEditSet),
     #[error("syntax limit {0:?} was exceeded")]
     LimitExceeded(SyntaxLimit),
-    #[error("{} identity allocation is exhausted", .0.as_str())]
-    IdentityExhausted(SyntaxIdentityKind),
-    #[error("the syntax identity transaction violated an internal invariant")]
-    InternalInvariant,
+    #[error("source generation allocation is exhausted")]
+    SourceGenerationExhausted,
+    #[error("syntax database identity allocation is exhausted")]
+    DatabaseIdentityExhausted,
+    #[error("syntax lineage identity allocation is exhausted")]
+    LineageIdentityExhausted,
+    #[error("syntax node identity allocation is exhausted")]
+    NodeIdentityExhausted,
+    #[error("the grammar event stream does not reproduce the exact source bytes")]
+    LosslessnessViolation,
+    #[error(transparent)]
+    Attachment(#[from] AttachmentFailure),
+    #[error(transparent)]
+    Invariant(#[from] SyntaxInvariantFailure),
+}
+
+/// Fatal syntax transaction invariant selected by the owning transaction.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum SyntaxInvariantFailure {
+    #[error("the syntax identity allocator regressed")]
+    AllocatorRegression,
+    #[error("the grammar identity map is inconsistent")]
+    IdentityMapMismatch,
+    #[error("the parsed snapshot does not retain its exact source ownership")]
+    SnapshotOwnershipMismatch,
 }
 
 /// Private predecessor of the final public fragment-attachment error.
@@ -175,6 +284,44 @@ impl SyntaxDatabase {
         })
     }
 
+    /// Process-local identity that qualifies every lineage owned by this database.
+    pub fn database_id(&self) -> SyntaxDatabaseId {
+        self.transaction.database_id()
+    }
+
+    /// Returns the exact current whole-source snapshot for one database lineage.
+    pub fn current(&self, lineage: SyntaxLineageId) -> Result<ParsedSource, SyntaxLookupError> {
+        if lineage.database() != self.database_id() {
+            return Err(SyntaxLookupError::WrongDatabase {
+                expected: self.database_id(),
+                actual: lineage.database(),
+            });
+        }
+        self.lineages
+            .values()
+            .find(|candidate| candidate.current.snapshot_id().lineage() == lineage)
+            .map(|candidate| candidate.current.clone())
+            .ok_or(SyntaxLookupError::UnknownLineage { lineage })
+    }
+
+    /// Resolves a typed node only against the current generation of its lineage.
+    pub fn resolve_current<K: AstKind>(
+        &self,
+        node: &AstNode<K>,
+    ) -> Result<AstNode<K>, SyntaxLookupError> {
+        let supplied = node.snapshot_id();
+        let current = self.current(supplied.lineage())?;
+        let current_generation = current.source_snapshot_id().generation();
+        let supplied_generation = supplied.source().generation();
+        if current_generation != supplied_generation {
+            return Err(SyntaxLookupError::StaleGeneration {
+                current: current_generation,
+                supplied: supplied_generation,
+            });
+        }
+        current.typed_node(node.id())
+    }
+
     #[cfg(test)]
     fn with_test_limits(limits: SyntaxTransactionLimits) -> Self {
         let mut database = Self::try_new().expect("test syntax database identity");
@@ -191,10 +338,12 @@ impl SyntaxDatabase {
         &mut self,
         snapshot: SourceSnapshotId,
         document: Arc<SourceDocument>,
+        options: ParseOptions,
     ) -> Result<ParsedSource, ParseFailure> {
         self.parse_initial_with_transaction_fault(
             &snapshot,
             &document,
+            options,
             transaction::TransactionFault::None,
         )
     }
@@ -259,6 +408,7 @@ impl SyntaxDatabase {
         &mut self,
         snapshot: &SourceSnapshotId,
         document: &Arc<SourceDocument>,
+        options: ParseOptions,
         transaction_fault: transaction::TransactionFault,
     ) -> Result<ParsedSource, ParseFailure> {
         if snapshot.generation() != SourceGeneration::INITIAL
@@ -267,12 +417,10 @@ impl SyntaxDatabase {
         {
             return Err(ParseFailure::SourceMismatch);
         }
-        let staged = self
-            .transaction
-            .stage_initial(snapshot, document, transaction_fault)?;
-        let result = ParsedSource {
-            bound: Rc::clone(staged.current()),
-        };
+        let staged =
+            self.transaction
+                .stage_initial(snapshot, document, options, transaction_fault)?;
+        let result = ParsedSource(Arc::clone(staged.current()));
         let transaction = self.transaction.commit_initial(staged);
         self.lineages.insert(
             snapshot.name().clone(),
@@ -289,25 +437,38 @@ impl SyntaxDatabase {
         &mut self,
         previous: &ParsedSource,
         edits: &[SourceEdit],
+        options: ParseOptions,
     ) -> Result<ParsedSource, ParseFailure> {
-        self.reparse_with_transaction_fault(previous, edits, transaction::TransactionFault::None)
+        self.reparse_with_transaction_fault(
+            previous,
+            edits,
+            options,
+            transaction::TransactionFault::None,
+        )
     }
 
     fn reparse_with_transaction_fault(
         &mut self,
         previous: &ParsedSource,
         edits: &[SourceEdit],
+        options: ParseOptions,
         transaction_fault: transaction::TransactionFault,
     ) -> Result<ParsedSource, ParseFailure> {
         let lineage = self
             .lineages
-            .get(previous.snapshot().name())
+            .get(previous.source_snapshot_id().name())
             .ok_or(ParseFailure::SourceMismatch)?;
-        if lineage.current.snapshot() != previous.snapshot()
-            || lineage.current.source() != previous.source()
-            || !Rc::ptr_eq(lineage.transaction.current(), previous.bound_internal())
-        {
+        if lineage.current.snapshot_id().lineage() != previous.snapshot_id().lineage() {
             return Err(ParseFailure::SourceMismatch);
+        }
+        if !lineage.current.is_same_snapshot(previous)
+            || lineage.current.source() != previous.source()
+            || !Arc::ptr_eq(lineage.transaction.current(), previous.data_internal())
+        {
+            return Err(ParseFailure::StaleSnapshot {
+                current: lineage.current.snapshot_id().clone(),
+                supplied: previous.snapshot_id().clone(),
+            });
         }
         validate_edits(previous, edits)?;
         if edits.is_empty() {
@@ -318,10 +479,8 @@ impl SyntaxDatabase {
             return Ok(lineage.current.clone());
         }
 
-        if previous.snapshot().generation().get() >= self.limits.source_generation {
-            return Err(ParseFailure::IdentityExhausted(
-                SyntaxIdentityKind::SourceGeneration,
-            ));
+        if previous.source_snapshot_id().generation().get() >= self.limits.source_generation {
+            return Err(ParseFailure::SourceGenerationExhausted);
         }
         let document = Arc::new(
             SourceDocument::try_new(
@@ -329,22 +488,21 @@ impl SyntaxDatabase {
                 previous.document().display_name().clone(),
                 Arc::<str>::from(next_text),
             )
-            .map_err(|_| ParseFailure::InternalInvariant)?,
+            .map_err(|_| SyntaxInvariantFailure::SnapshotOwnershipMismatch)?,
         );
         let snapshot = previous
-            .snapshot()
+            .source_snapshot_id()
             .checked_next()
-            .map_err(|_| ParseFailure::IdentityExhausted(SyntaxIdentityKind::SourceGeneration))?;
-        let staged = lineage
-            .transaction
-            .stage_reparse(&snapshot, &document, transaction_fault)?;
-        let result = ParsedSource {
-            bound: Rc::clone(staged.current()),
-        };
+            .map_err(|_| ParseFailure::SourceGenerationExhausted)?;
+        let staged =
+            lineage
+                .transaction
+                .stage_reparse(&snapshot, &document, options, transaction_fault)?;
+        let result = ParsedSource(Arc::clone(staged.current()));
         let lineage = self
             .lineages
-            .get_mut(previous.snapshot().name())
-            .ok_or(ParseFailure::InternalInvariant)?;
+            .get_mut(previous.source_snapshot_id().name())
+            .ok_or(SyntaxInvariantFailure::SnapshotOwnershipMismatch)?;
         lineage.current = result.clone();
         lineage.transaction = staged.into_lineage();
         Ok(result)
@@ -359,6 +517,7 @@ impl SyntaxDatabase {
         self.parse_initial_with_transaction_fault(
             snapshot,
             document,
+            ParseOptions::default(),
             transaction::TransactionFault::MissingAttachment,
         )
     }
@@ -372,6 +531,7 @@ impl SyntaxDatabase {
         self.reparse_with_transaction_fault(
             previous,
             edits,
+            ParseOptions::default(),
             transaction::TransactionFault::MissingAttachment,
         )
     }
@@ -395,8 +555,8 @@ impl SyntaxDatabase {
 }
 
 impl ParsedSource {
-    const fn bound_internal(&self) -> &Rc<BoundParsedSource> {
-        &self.bound
+    const fn data_internal(&self) -> &Arc<ParsedSourceData> {
+        &self.0
     }
 }
 

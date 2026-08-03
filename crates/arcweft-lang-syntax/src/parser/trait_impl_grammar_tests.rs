@@ -41,7 +41,8 @@ impl Threshold for Score {
     }
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::TraitItem), 2);
@@ -68,12 +69,14 @@ fn trait_receivers_use_binding_patterns_without_inventing_parameter_types() {
     fn exclusive(&mut self) -> Self
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::FunctionItem), 4);
     assert_eq!(kind_count(entries, SyntaxKind::BindingPattern), 3);
     assert_eq!(kind_count(entries, SyntaxKind::MutableBindingPattern), 1);
+    assert_eq!(kind_count(entries, SyntaxKind::MissingType), 0);
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
 }
@@ -86,7 +89,8 @@ fn member_prefixes_and_semicolon_separators_keep_distinct_typed_members() {
     type Item; fn current(&self) -> Self::Item;
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::DocBlock), 1);
@@ -106,7 +110,8 @@ fn missing_impl_associated_target_is_typed_without_losing_the_next_item() {
         "}\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ImplItem), 1);
@@ -134,7 +139,8 @@ fn invalid_member_recovers_at_the_next_member_line() {
     fn current(self) -> Self::Item
 }
 ";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ErrorItem), 1);
@@ -156,7 +162,8 @@ fn unclosed_impl_synchronizes_before_the_following_declaration() {
         "proof next() = ()\n",
     );
     let next = source.find("proof next").unwrap();
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ImplItem), 1);
@@ -165,5 +172,29 @@ fn unclosed_impl_synchronizes_before_the_following_declaration() {
         diagnostic.code() == "syntax.trait_impl.missing_body_close"
             && diagnostic.range().start() == next
     }));
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn associated_type_and_method_tails_are_typed_recovery_nodes() {
+    let source = concat!(
+        "trait Broken {\n",
+        "    type Item unexpected\n",
+        "    fn current(self) -> T { self } unexpected\n",
+        "}\n",
+    );
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let entries = built.index().entries();
+
+    assert_eq!(kind_count(entries, SyntaxKind::ErrorNode), 2);
+    assert_eq!(
+        built
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code() == "syntax.trait_impl.invalid_member_tail")
+            .count(),
+        2
+    );
     assert_eq!(built.green().to_string(), source);
 }

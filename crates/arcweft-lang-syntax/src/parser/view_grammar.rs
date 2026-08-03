@@ -3,8 +3,8 @@
 use arcweft_id::RetainedIdentityFamily;
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::emit_retained_declaration_header;
-use super::document::ShadowDocumentParser;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::path::emit_path;
@@ -18,6 +18,7 @@ use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::grammar::view_projection::{PendingViewExportProjection, PendingViewRequiredKeyword};
 
 pub(super) fn emit_declaration(
     source: &str,
@@ -34,10 +35,10 @@ pub(super) fn emit_declaration(
         emit_view_signature,
     );
     parser.bump_trivia();
-    reject_view_header_extensions(&mut parser);
+    let next_recovery_ordinal = u32::from(reject_view_header_extensions(&mut parser));
     parser.bump_trivia();
     emit_view_body(&mut parser);
-    emit_trailing_recovery(&mut parser);
+    emit_trailing_recovery(&mut parser, next_recovery_ordinal);
     parser.finish();
 }
 
@@ -81,16 +82,12 @@ fn emit_view_signature(parser: &mut ShadowDocumentParser<'_, '_>) {
 fn emit_missing_parameter_group(parser: &mut ShadowDocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::FixedParameterGroup, SyntaxRole::ParameterGroup);
-    emit_missing_delimiter(
-        parser,
-        SyntaxKind::MissingTokenNode,
-        SyntaxRole::OpenDelimiter,
-    );
+    emit_missing_delimiter(parser, SyntaxKind::OpenParenNode, SyntaxRole::OpenDelimiter);
     parser.start(SyntaxKind::ParameterList, SyntaxRole::Element(0));
     parser.finish();
     emit_missing_delimiter(
         parser,
-        SyntaxKind::MissingTokenNode,
+        SyntaxKind::CloseParenNode,
         SyntaxRole::CloseDelimiter,
     );
     parser.finish();
@@ -139,10 +136,12 @@ fn emit_view_parameter(
     emit_type(parser, type_end, SyntaxRole::ParameterType);
     bump_until(parser, default);
     if parser.at("=") {
+        parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
         parser.bump();
+        parser.finish();
         parser.bump_trivia();
         let expression_end = trimmed_end(parser, parser.cursor(), parameter_end);
-        emit_expression(parser, expression_end, SyntaxRole::Initializer);
+        emit_expression(parser, expression_end, SyntaxRole::Value);
     }
     bump_until(parser, parameter_end);
     parser.finish();
@@ -150,8 +149,7 @@ fn emit_view_parameter(
 
 fn emit_missing_parameter_type(parser: &mut ShadowDocumentParser<'_, '_>) {
     let at = parser.current_offset();
-    parser.start(SyntaxKind::MissingType, SyntaxRole::ParameterType);
-    parser.finish();
+    emit_type(parser, parser.cursor(), SyntaxRole::ParameterType);
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         "syntax.parameter.missing_type",
         SourceRange::new(at, at),
@@ -168,17 +166,13 @@ fn parameter_is_binding(parser: &ShadowDocumentParser<'_, '_>, start: usize, end
         .collect::<Vec<_>>();
     matches!(
         significant.as_slice(),
-        [token]
-            if matches!(
-                token.kind(),
-                SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
-            )
+        [token] if token.kind() == SyntaxKind::IdentifierToken
     )
 }
 
-fn reject_view_header_extensions(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn reject_view_header_extensions(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
     if parser.at("{") || parser.is_at_end() {
-        return;
+        return false;
     }
     let return_type = parser.at("->");
     let body = find_top_level_boundary(parser, parser.cursor(), &["{"]);
@@ -199,6 +193,7 @@ fn reject_view_header_extensions(parser: &mut ShadowDocumentParser<'_, '_>) {
             "View accepts no generics, where clause, or contracts"
         },
     )));
+    true
 }
 
 fn emit_view_body(parser: &mut ShadowDocumentParser<'_, '_>) {
@@ -272,21 +267,25 @@ fn emit_export(
     misplaced: bool,
 ) {
     let keyword_range = parser.current().expect("export keyword").range();
-    parser.start(
+    let owner = parser.start_projected_owner(
         SyntaxKind::ViewExportDeclaration,
         SyntaxRole::Export(ordinal),
     );
     parser.bump();
     parser.bump_trivia();
-    if parser.at("part") {
+    let part = if parser.at("part") {
+        let source = parser.current().expect("part keyword").range();
         parser.bump();
+        PendingViewRequiredKeyword::Authored(source)
     } else {
-        emit_missing_token_diagnostic(
+        PendingViewRequiredKeyword::Missing(emit_missing_keyword(
             parser,
+            SyntaxRole::Kind,
+            "part",
             "syntax.view.export_missing_part",
             "View export requires `export part`",
-        );
-    }
+        ))
+    };
     parser.bump_trivia();
     let alias = find_top_level_boundary(parser, parser.cursor(), &["as"]).min(entry_end);
     emit_required_path(
@@ -296,15 +295,19 @@ fn emit_export(
         "syntax.view.export_missing_local",
     );
     bump_until(parser, alias);
-    if parser.at("as") {
+    let alias_keyword = if parser.at("as") {
+        let source = parser.current().expect("as keyword").range();
         parser.bump();
+        PendingViewRequiredKeyword::Authored(source)
     } else {
-        emit_missing_token_diagnostic(
+        PendingViewRequiredKeyword::Missing(emit_missing_keyword(
             parser,
+            SyntaxRole::Alias,
+            "as",
             "syntax.view.export_missing_as",
             "View export requires `as` before its public part name",
-        );
-    }
+        ))
+    };
     parser.bump_trivia();
     emit_required_path(
         parser,
@@ -313,6 +316,10 @@ fn emit_export(
         "syntax.view.export_missing_public",
     );
     bump_until(parser, entry_end);
+    parser.set_view_export_projection(
+        owner,
+        PendingViewExportProjection::new(part, alias_keyword, misplaced),
+    );
     parser.finish();
     if misplaced {
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
@@ -340,7 +347,12 @@ fn emit_required_path(
             "View export requires a dotted name",
         )));
     } else {
-        emit_path(parser, end, role);
+        emit_path(
+            parser,
+            end,
+            role,
+            super::path::PathSeparatorGrammar::DottedOrQualified,
+        );
     }
 }
 
@@ -354,7 +366,8 @@ fn emit_view_fragment(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize
             break;
         }
         let entry_end = view_value_end(parser, parser.cursor(), body_end);
-        if parser.at("export") {
+        let is_value = !parser.at("export");
+        if !is_value {
             emit_export(parser, entry_end, misplaced_export_ordinal, true);
             misplaced_export_ordinal = misplaced_export_ordinal
                 .checked_add(1)
@@ -379,9 +392,11 @@ fn emit_view_fragment(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize
             bump_until(parser, body_end);
             break;
         }
-        ordinal = ordinal
-            .checked_add(1)
-            .expect("View fragment role index exhausted");
+        if is_value {
+            ordinal = ordinal
+                .checked_add(1)
+                .expect("View fragment role index exhausted");
+        }
     }
     parser.finish();
 }
@@ -406,21 +421,30 @@ fn view_value_end(parser: &ShadowDocumentParser<'_, '_>, start: usize, body_end:
     }
 }
 
-fn emit_missing_token_diagnostic(
+fn emit_missing_keyword(
     parser: &mut ShadowDocumentParser<'_, '_>,
+    role: SyntaxRole,
+    spelling: &'static str,
     code: &'static str,
     message: &'static str,
-) {
+) -> SourceRange {
     let at = parser.current_offset();
+    parser.start(SyntaxKind::MissingTokenNode, role);
     parser.push(SyntaxEvent::MissingToken {
-        expected: expected(SyntaxKind::IdentifierToken),
+        expected: crate::grammar::event::ExpectedToken::try_with_spelling(
+            SyntaxKind::KeywordToken,
+            spelling,
+        )
+        .expect("real grammar keyword token"),
         at,
     });
+    parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         code,
         SourceRange::new(at, at),
         message,
     )));
+    SourceRange::new(at, at)
 }
 
 fn token_range(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
@@ -454,13 +478,16 @@ const fn is_trivia(kind: SyntaxKind) -> bool {
     )
 }
 
-fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>, recovery_ordinal: u32) {
     parser.bump_trivia();
     if parser.is_at_end() {
         return;
     }
     let start = parser.current_offset();
-    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+    parser.start(
+        SyntaxKind::ErrorNode,
+        SyntaxRole::Recovery(recovery_ordinal),
+    );
     while parser.bump().is_some() {}
     parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(

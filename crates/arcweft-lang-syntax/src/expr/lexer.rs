@@ -1,8 +1,9 @@
 use super::{
-    ExprOp, FloatSuffix, IntLiteral, IntRadix, IntSuffix, LexedToken, LifetimeKey,
-    LifetimeScopeKind, Literal, Token, UnitNumberSuffix, char_literal, digit_matches_radix,
-    is_ident_continue, is_ident_start, parse_duration, parse_entity_expr, split_number_suffix,
+    ExprOp, IntLiteral, LexedToken, LifetimeKey, LifetimeScopeKind, Literal, Token, char_literal,
+    digit_matches_radix, is_ident_continue, is_ident_start, parse_duration, parse_entity_expr,
+    split_number_suffix,
 };
+use crate::literal::{FloatSuffix, IntRadix, IntSuffix, UnitNumberSuffix};
 
 pub(super) struct Lexer<'a> {
     source: &'a str,

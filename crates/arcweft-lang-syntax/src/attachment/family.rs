@@ -4,14 +4,9 @@
 //! family below owns an explicit concrete-kind predicate; [`AstTag`] alone is
 //! never sufficient to construct one.
 
-#![allow(
-    dead_code,
-    reason = "the private family inventory is consumed only after the atomic ParsedSource syntax switch"
-)]
-
 use core::marker::PhantomData;
 
-use arcweft_source::SourceRange;
+use arcweft_source::{SourceRange, SourceSpan};
 
 use super::{
     AstNode, ExactAstKind, SyntaxAccessError, SyntaxNodeHandle, SyntaxNodeId, SyntaxSnapshotId,
@@ -20,8 +15,7 @@ use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
 /// Coarse family named in structured child-access diagnostics.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum AstNodeFamily {
-    Item,
+pub enum AstNodeFamily {
     Statement,
     Expression,
     Pattern,
@@ -36,14 +30,19 @@ pub(crate) enum AstNodeFamily {
     Recovery,
 }
 
-pub(crate) trait FamilySpec: Copy + 'static {
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// Sealed description of one syntax-owned node family.
+pub trait FamilySpec: sealed::Sealed + Copy + 'static {
     const FAMILY: AstNodeFamily;
 
     fn accepts(kind: SyntaxKind) -> bool;
 }
 
 /// Snapshot-bound node whose concrete kind belongs to an explicit family.
-pub(crate) struct FamilyNode<F: FamilySpec> {
+pub struct FamilyNode<F: FamilySpec> {
     syntax: SyntaxNodeHandle,
     marker: PhantomData<fn() -> F>,
 }
@@ -78,7 +77,7 @@ impl<F: FamilySpec> PartialEq for FamilyNode<F> {
 impl<F: FamilySpec> Eq for FamilyNode<F> {}
 
 impl<F: FamilySpec> FamilyNode<F> {
-    pub(super) fn new(syntax: SyntaxNodeHandle) -> Result<Self, SyntaxAccessError> {
+    pub(crate) fn new(syntax: SyntaxNodeHandle) -> Result<Self, SyntaxAccessError> {
         if !F::accepts(syntax.kind()) {
             return Err(SyntaxAccessError::FamilyMismatch {
                 id: syntax.id(),
@@ -93,31 +92,51 @@ impl<F: FamilySpec> FamilyNode<F> {
         })
     }
 
-    pub(crate) fn id(&self) -> SyntaxNodeId {
+    pub fn id(&self) -> SyntaxNodeId {
         self.syntax.id()
     }
 
-    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
+    pub fn snapshot_id(&self) -> &SyntaxSnapshotId {
         self.syntax.snapshot_id()
     }
 
-    pub(crate) fn syntax(&self) -> SyntaxNodeHandle {
+    pub fn syntax(&self) -> SyntaxNodeHandle {
         self.syntax.clone()
     }
 
-    pub(crate) fn kind(&self) -> SyntaxKind {
+    /// Borrows the exact revision-bound handle owned by this family node.
+    ///
+    /// Typed attachment views use this internally to borrow snapshot-owned
+    /// semantic projections without cloning their payloads into a second
+    /// owner. Public navigation continues through the cheap-clone
+    /// [`Self::syntax`] lease.
+    pub(crate) const fn syntax_handle(&self) -> &SyntaxNodeHandle {
+        &self.syntax
+    }
+
+    pub fn kind(&self) -> SyntaxKind {
         self.syntax.kind()
     }
 
-    pub(crate) fn role(&self) -> SyntaxRole {
+    pub fn role(&self) -> SyntaxRole {
         self.syntax.role()
     }
 
-    pub(crate) fn range(&self) -> SourceRange {
+    pub fn range(&self) -> SourceRange {
         self.syntax.range()
     }
 
-    pub(crate) fn cast<K: ExactAstKind>(&self) -> Result<AstNode<K>, super::SyntaxLookupError> {
+    /// Exact revision-bound source span occupied by this family node.
+    pub fn source_span(&self) -> SourceSpan {
+        self.syntax.source_span()
+    }
+
+    /// Exact UTF-8 source slice retained with this family node.
+    pub fn source_text(&self) -> &str {
+        self.syntax.source_text()
+    }
+
+    pub fn cast<K: ExactAstKind>(&self) -> Result<AstNode<K>, super::SyntaxLookupError> {
         self.syntax.cast()
     }
 }
@@ -125,7 +144,10 @@ impl<F: FamilySpec> FamilyNode<F> {
 macro_rules! define_family {
     ($family:ident, $node:ident, $name:ident, $accepts:expr) => {
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        pub(crate) struct $family;
+        #[doc = concat!("Sealed marker for the `", stringify!($name), "` syntax family.")]
+        pub struct $family;
+
+        impl sealed::Sealed for $family {}
 
         impl FamilySpec for $family {
             const FAMILY: AstNodeFamily = AstNodeFamily::$name;
@@ -135,11 +157,10 @@ macro_rules! define_family {
             }
         }
 
-        pub(crate) type $node = FamilyNode<$family>;
+        pub type $node = FamilyNode<$family>;
     };
 }
 
-define_family!(ItemFamily, ItemNode, Item, SyntaxKind::is_item);
 define_family!(
     StatementFamily,
     StatementNode,
@@ -192,6 +213,13 @@ define_family!(
             | SyntaxKind::ReturnType
             | SyntaxKind::RequiresClause
             | SyntaxKind::EnsuresClause
+            | SyntaxKind::InvariantClause
+            | SyntaxKind::AssumeClause
+            | SyntaxKind::ReadsClause
+            | SyntaxKind::EffectsClause
+            | SyntaxKind::NoEffectClause
+            | SyntaxKind::ModifiesClause
+            | SyntaxKind::DecreasesClause
             | SyntaxKind::ResourceFieldInitializer
             | SyntaxKind::CharacterDisplayNameMember
             | SyntaxKind::ViewExportBlock
@@ -300,8 +328,8 @@ define_family!(
 mod tests {
     use super::{
         AstNodeFamily, AttributeFamily, BodyFamily, DeclarationPartFamily, DelimiterFamily,
-        ExpressionFamily, FamilySpec, ItemFamily, NameFamily, PathFamily, PatternFamily,
-        RecoveryFamily, RichTextFamily, StatementFamily, TypeFamily,
+        ExpressionFamily, FamilySpec, NameFamily, PathFamily, PatternFamily, RecoveryFamily,
+        RichTextFamily, StatementFamily, TypeFamily,
     };
     use crate::grammar::kinds::{AstTag, IdentityClass, SyntaxKind};
 
@@ -309,7 +337,6 @@ mod tests {
     fn concrete_family_predicates_accept_only_explicit_identity_kinds() {
         for &kind in SyntaxKind::ALL {
             let accepted = [
-                (AstNodeFamily::Item, ItemFamily::accepts(kind)),
                 (AstNodeFamily::Statement, StatementFamily::accepts(kind)),
                 (AstNodeFamily::Expression, ExpressionFamily::accepts(kind)),
                 (AstNodeFamily::Pattern, PatternFamily::accepts(kind)),

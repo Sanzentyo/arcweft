@@ -19,12 +19,14 @@ mod source;
 mod token;
 
 pub use self::source::{
-    AuthoredTypeRef, TypePath, TypeRecoveryId, TypeRefHeadKind, TypeRefHeadSource,
-    TypeRefLexemeKind, TypeRefLexemeSource, TypeRefNodePath, TypeRefNodeSource, TypeRefNodeStep,
+    AuthoredTypeRef, TypePath, TypeRecoveryId, TypeRefAssociatedBindingPart, TypeRefComponentRole,
+    TypeRefComponentSource, TypeRefHeadKind, TypeRefHeadSource, TypeRefLexemeKind,
+    TypeRefLexemeSource, TypeRefNodePath, TypeRefNodeSource, TypeRefNodeStep, TypeRefRegionPart,
     TypeRefSourceMap, TypeRefSourceMapError,
 };
 pub(crate) use self::token::{
     ParsedGenericCallee, ParsedTypeReceiver, TypeToken, TypeTokenCursor, TypeTokenKind,
+    parse_tokens,
 };
 
 /// Lifetime name used in Arcweft type syntax.

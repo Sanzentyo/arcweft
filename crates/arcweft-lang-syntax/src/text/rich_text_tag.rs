@@ -3,8 +3,8 @@ use crate::ast::{
     common::TextRange,
     dialogue::{
         DialogueCallSurface, DialogueEndTag, DialogueExprSurface, DialogueTag, DialogueTagArg,
-        DialogueTagArgSyntaxIssue, DialogueTagArgValue, DialogueTagArgValueSurface,
-        DialogueTagPayload, DialogueTagRanges, DialogueToken, LineMark, QuoteStyle,
+        DialogueTagArgValue, DialogueTagArgValueSurface, DialogueTagPayload, DialogueTagRanges,
+        DialogueToken, LineMark, QuoteStyle,
     },
 };
 
@@ -20,6 +20,19 @@ pub const MAX_RICH_TEXT_TAG_BODY_BYTES: usize = 16_384;
 pub const MAX_RICH_TEXT_CONTENT_TAGS: usize = 4_096;
 /// Maximum total `RichText` argument entries retained in one dialogue content.
 pub const MAX_RICH_TEXT_CONTENT_ARGUMENTS: usize = 32_768;
+
+/// Owner-neutral recovery selected by the one RichText argument scanner.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum RichTextArgumentIssue {
+    EmptyKey,
+    InvalidKey,
+    InvalidEscape,
+    UnterminatedQuote,
+    KeyTooLong,
+    ValueTooLong,
+    MissingValue,
+    DecoderFailure,
+}
 
 /// Quote-aware closing boundary of one authored dialogue tag.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -359,25 +372,62 @@ pub(crate) struct ScannedTagArguments {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) enum ScannedTagArgument {
     Positional {
-        value: ScannedTagArgValueSurface,
+        value: ScannedTagArgValue,
         range: TextRange,
     },
     Named {
         name_range: TextRange,
         equals_range: TextRange,
-        value: ScannedTagArgValueSurface,
+        value: ScannedTagArgValue,
         range: TextRange,
     },
     Invalid {
         range: TextRange,
-        issue: DialogueTagArgSyntaxIssue,
+        issue: RichTextArgumentIssue,
+        issue_range: TextRange,
+        parts: ScannedTagArgumentParts,
     },
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum ScannedTagArgValueSurface {
-    Present(ScannedTagArgValue),
-    Missing { range: TextRange },
+/// Exact authored parts retained when one RichText argument is invalid.
+///
+/// The attached grammar consumes these ranges directly. It does not infer a
+/// positional/named shape from the diagnostic or rescan the argument text.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub(crate) struct ScannedTagArgumentParts {
+    name: Option<TextRange>,
+    equals: Option<TextRange>,
+    value: Option<TextRange>,
+}
+
+impl ScannedTagArgumentParts {
+    const fn positional(value: TextRange) -> Self {
+        Self {
+            name: None,
+            equals: None,
+            value: Some(value),
+        }
+    }
+
+    const fn named(name: TextRange, equals: TextRange, value: Option<TextRange>) -> Self {
+        Self {
+            name: Some(name),
+            equals: Some(equals),
+            value,
+        }
+    }
+
+    pub(crate) const fn name(self) -> Option<TextRange> {
+        self.name
+    }
+
+    pub(crate) const fn equals(self) -> Option<TextRange> {
+        self.equals
+    }
+
+    pub(crate) const fn value(self) -> Option<TextRange> {
+        self.value
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -412,7 +462,7 @@ impl ScannedTagArgument {
     fn into_dialogue(self, source: &str, base: usize) -> DialogueTagArg {
         match self {
             Self::Positional { value, range } => DialogueTagArg::Positional {
-                value: value.into_dialogue(source, base),
+                value: DialogueTagArgValueSurface::Present(value.into_dialogue(source, base)),
                 range,
             },
             Self::Named {
@@ -424,30 +474,51 @@ impl ScannedTagArgument {
                 name: source[relative_range(base, name_range)].to_owned(),
                 name_range,
                 equals_range,
-                value: value.into_dialogue(source, base),
+                value: DialogueTagArgValueSurface::Present(value.into_dialogue(source, base)),
                 range,
             },
-            Self::Invalid { range, issue } => DialogueTagArg::Invalid {
+            Self::Invalid {
+                range,
+                issue: RichTextArgumentIssue::MissingValue,
+                parts,
+                ..
+            } => {
+                let name_range = parts
+                    .name()
+                    .expect("missing named value retains its authored key");
+                let equals_range = parts
+                    .equals()
+                    .expect("missing named value retains its authored equals token");
+                DialogueTagArg::Named {
+                    name: source[relative_range(base, name_range)].to_owned(),
+                    name_range,
+                    equals_range,
+                    value: DialogueTagArgValueSurface::Missing {
+                        range: TextRange::new(equals_range.end(), equals_range.end()),
+                    },
+                    range,
+                }
+            }
+            Self::Invalid {
+                range,
+                issue,
+                issue_range,
+                ..
+            } => DialogueTagArg::Invalid {
                 source: source[relative_range(base, range)].to_owned(),
                 range,
                 issue,
+                issue_range,
             },
-        }
-    }
-}
-
-impl ScannedTagArgValueSurface {
-    fn into_dialogue(self, source: &str, base: usize) -> DialogueTagArgValueSurface {
-        match self {
-            Self::Present(value) => {
-                DialogueTagArgValueSurface::Present(value.into_dialogue(source, base))
-            }
-            Self::Missing { range } => DialogueTagArgValueSurface::Missing { range },
         }
     }
 }
 
 impl ScannedTagArgValue {
+    pub(crate) fn decoded(&self) -> &str {
+        &self.decoded
+    }
+
     pub(crate) const fn token_range(&self) -> TextRange {
         self.token_range
     }
@@ -545,11 +616,17 @@ pub(crate) fn scan_tag_arguments(
         }
         let range = TextRange::new(base + start, base + cursor);
         let argument = if let Some(quote_start) = boundary.unterminated_quote_start {
-            let issue = DialogueTagArgSyntaxIssue::UnterminatedQuote {
-                range: TextRange::new(base + quote_start, base + cursor),
-            };
-            parsed.diagnostics.push(argument_issue_diagnostic(&issue));
-            ScannedTagArgument::Invalid { range, issue }
+            let issue = RichTextArgumentIssue::UnterminatedQuote;
+            let issue_range = TextRange::new(base + quote_start, base + cursor);
+            parsed
+                .diagnostics
+                .push(argument_issue_diagnostic(issue, issue_range));
+            ScannedTagArgument::Invalid {
+                range,
+                issue,
+                issue_range,
+                parts: scanned_argument_parts(argument_source, base + start),
+            }
         } else {
             scan_tag_argument(
                 argument_source,
@@ -607,13 +684,15 @@ fn scan_tag_argument(
 ) -> ScannedTagArgument {
     let Some(equal) = unquoted_assignment(source) else {
         return match scan_tag_arg_value(source, start) {
-            Ok(value) => ScannedTagArgument::Positional {
-                value: ScannedTagArgValueSurface::Present(value),
-                range,
-            },
-            Err(issue) => {
-                diagnostics.push(argument_issue_diagnostic(&issue));
-                ScannedTagArgument::Invalid { range, issue }
+            Ok(value) => ScannedTagArgument::Positional { value, range },
+            Err(failure) => {
+                diagnostics.push(argument_issue_diagnostic(failure.issue, failure.range));
+                ScannedTagArgument::Invalid {
+                    range,
+                    issue: failure.issue,
+                    issue_range: failure.range,
+                    parts: ScannedTagArgumentParts::positional(range),
+                }
             }
         };
     };
@@ -622,22 +701,48 @@ fn scan_tag_argument(
     let key_range = TextRange::new(start, start + key.len());
     let equals_range = TextRange::new(start + equal, start + equal + '='.len_utf8());
     if key.is_empty() {
-        let issue = DialogueTagArgSyntaxIssue::EmptyKey { range: key_range };
-        diagnostics.push(argument_issue_diagnostic(&issue));
-        return ScannedTagArgument::Invalid { range, issue };
+        let issue = RichTextArgumentIssue::EmptyKey;
+        diagnostics.push(argument_issue_diagnostic(issue, key_range));
+        return ScannedTagArgument::Invalid {
+            range,
+            issue,
+            issue_range: key_range,
+            parts: ScannedTagArgumentParts::named(
+                key_range,
+                equals_range,
+                authored_value_range(range, equals_range),
+            ),
+        };
     }
     if key.len() > MAX_RICH_TEXT_TAG_KEY_BYTES {
         let limit = utf8_boundary_at_or_before(key, MAX_RICH_TEXT_TAG_KEY_BYTES);
-        let issue = DialogueTagArgSyntaxIssue::KeyTooLong {
-            range: TextRange::new(start + limit, start + key.len()),
+        let issue = RichTextArgumentIssue::KeyTooLong;
+        let issue_range = TextRange::new(start + limit, start + key.len());
+        diagnostics.push(argument_issue_diagnostic(issue, issue_range));
+        return ScannedTagArgument::Invalid {
+            range,
+            issue,
+            issue_range,
+            parts: ScannedTagArgumentParts::named(
+                key_range,
+                equals_range,
+                authored_value_range(range, equals_range),
+            ),
         };
-        diagnostics.push(argument_issue_diagnostic(&issue));
-        return ScannedTagArgument::Invalid { range, issue };
     }
     if !valid_rich_text_key(key) {
-        let issue = DialogueTagArgSyntaxIssue::InvalidKey { range: key_range };
-        diagnostics.push(argument_issue_diagnostic(&issue));
-        return ScannedTagArgument::Invalid { range, issue };
+        let issue = RichTextArgumentIssue::InvalidKey;
+        diagnostics.push(argument_issue_diagnostic(issue, key_range));
+        return ScannedTagArgument::Invalid {
+            range,
+            issue,
+            issue_range: key_range,
+            parts: ScannedTagArgumentParts::named(
+                key_range,
+                equals_range,
+                authored_value_range(range, equals_range),
+            ),
+        };
     }
 
     let value_start = equal + '='.len_utf8();
@@ -651,15 +756,27 @@ fn scan_tag_argument(
             format!("dialogue RichText attribute `{key}` is missing a value"),
             "insert an authored value after `=`",
         ));
-        ScannedTagArgValueSurface::Missing {
-            range: missing_range,
-        }
+        return ScannedTagArgument::Invalid {
+            range,
+            issue: RichTextArgumentIssue::MissingValue,
+            issue_range: missing_range,
+            parts: ScannedTagArgumentParts::named(key_range, equals_range, None),
+        };
     } else {
         match scan_tag_arg_value(authored_value, value_absolute_start) {
-            Ok(value) => ScannedTagArgValueSurface::Present(value),
-            Err(issue) => {
-                diagnostics.push(argument_issue_diagnostic(&issue));
-                return ScannedTagArgument::Invalid { range, issue };
+            Ok(value) => value,
+            Err(failure) => {
+                diagnostics.push(argument_issue_diagnostic(failure.issue, failure.range));
+                return ScannedTagArgument::Invalid {
+                    range,
+                    issue: failure.issue,
+                    issue_range: failure.range,
+                    parts: ScannedTagArgumentParts::named(
+                        key_range,
+                        equals_range,
+                        Some(TextRange::new(value_absolute_start, range.end())),
+                    ),
+                };
             }
         }
     };
@@ -669,6 +786,20 @@ fn scan_tag_argument(
         value,
         range,
     }
+}
+
+fn authored_value_range(range: TextRange, equals: TextRange) -> Option<TextRange> {
+    (equals.end() < range.end()).then(|| TextRange::new(equals.end(), range.end()))
+}
+
+fn scanned_argument_parts(source: &str, start: usize) -> ScannedTagArgumentParts {
+    let whole = TextRange::new(start, start + source.len());
+    let Some(equal) = unquoted_assignment(source) else {
+        return ScannedTagArgumentParts::positional(whole);
+    };
+    let name = TextRange::new(start, start + equal);
+    let equals = TextRange::new(start + equal, start + equal + '='.len_utf8());
+    ScannedTagArgumentParts::named(name, equals, authored_value_range(whole, equals))
 }
 
 fn unquoted_assignment(source: &str) -> Option<usize> {
@@ -698,10 +829,22 @@ fn unquoted_assignment(source: &str) -> Option<usize> {
     })
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct RichTextArgumentFailure {
+    issue: RichTextArgumentIssue,
+    range: TextRange,
+}
+
+impl RichTextArgumentFailure {
+    const fn new(issue: RichTextArgumentIssue, range: TextRange) -> Self {
+        Self { issue, range }
+    }
+}
+
 pub(super) fn tag_arg_value(
     source: &str,
     start: usize,
-) -> Result<DialogueTagArgValue, DialogueTagArgSyntaxIssue> {
+) -> Result<DialogueTagArgValue, RichTextArgumentFailure> {
     scan_tag_arg_value(source, start).map(|value| value.into_dialogue(source, start))
 }
 
@@ -716,24 +859,26 @@ fn relative_range(base: usize, range: TextRange) -> core::ops::Range<usize> {
             .expect("scanned RichText range ends within its source")
 }
 
-pub(crate) fn scan_tag_arg_value(
+pub(super) fn scan_tag_arg_value(
     source: &str,
     start: usize,
-) -> Result<ScannedTagArgValue, DialogueTagArgSyntaxIssue> {
+) -> Result<ScannedTagArgValue, RichTextArgumentFailure> {
     let token_range = TextRange::new(start, start + source.len());
     if source.len() > MAX_RICH_TEXT_TAG_VALUE_BYTES {
         let limit = utf8_boundary_at_or_before(source, MAX_RICH_TEXT_TAG_VALUE_BYTES);
-        return Err(DialogueTagArgSyntaxIssue::ValueTooLong {
-            range: TextRange::new(start + limit, start + source.len()),
-        });
+        return Err(RichTextArgumentFailure::new(
+            RichTextArgumentIssue::ValueTooLong,
+            TextRange::new(start + limit, start + source.len()),
+        ));
     }
     let (quote, content, content_start, opening_quote_range, closing_quote_range) =
         quoted_value_parts(source, start);
     let value = decode_tag_arg_value(content, content_start)?;
     if value.len() > MAX_RICH_TEXT_TAG_VALUE_BYTES {
-        return Err(DialogueTagArgSyntaxIssue::ValueTooLong {
-            range: TextRange::new(content_start, content_start + content.len()),
-        });
+        return Err(RichTextArgumentFailure::new(
+            RichTextArgumentIssue::ValueTooLong,
+            TextRange::new(content_start, content_start + content.len()),
+        ));
     }
     Ok(ScannedTagArgValue {
         decoded: value,
@@ -784,7 +929,7 @@ fn quoted_value_parts(
 fn decode_tag_arg_value(
     source: &str,
     absolute_start: usize,
-) -> Result<String, DialogueTagArgSyntaxIssue> {
+) -> Result<String, RichTextArgumentFailure> {
     let mut decoded = String::with_capacity(source.len());
     let mut chars = source.char_indices();
     while let Some((offset, ch)) = chars.next() {
@@ -793,9 +938,10 @@ fn decode_tag_arg_value(
             continue;
         }
         let Some((next_offset, escaped)) = chars.next() else {
-            return Err(DialogueTagArgSyntaxIssue::InvalidEscape {
-                range: TextRange::new(absolute_start + offset, absolute_start + offset + 1),
-            });
+            return Err(RichTextArgumentFailure::new(
+                RichTextArgumentIssue::InvalidEscape,
+                TextRange::new(absolute_start + offset, absolute_start + offset + 1),
+            ));
         };
         let decoded_escape = match escaped {
             '\\' => '\\',
@@ -809,12 +955,13 @@ fn decode_tag_arg_value(
             '[' => '[',
             ']' => ']',
             _ => {
-                return Err(DialogueTagArgSyntaxIssue::InvalidEscape {
-                    range: TextRange::new(
+                return Err(RichTextArgumentFailure::new(
+                    RichTextArgumentIssue::InvalidEscape,
+                    TextRange::new(
                         absolute_start + offset,
                         absolute_start + next_offset + escaped.len_utf8(),
                     ),
-                });
+                ));
             }
         };
         decoded.push(decoded_escape);
@@ -822,47 +969,56 @@ fn decode_tag_arg_value(
     Ok(decoded)
 }
 
-fn argument_issue_diagnostic(issue: &DialogueTagArgSyntaxIssue) -> DialogueTextDiagnostic {
+fn argument_issue_diagnostic(
+    issue: RichTextArgumentIssue,
+    range: TextRange,
+) -> DialogueTextDiagnostic {
     match issue {
-        DialogueTagArgSyntaxIssue::EmptyKey { range } => DialogueTextDiagnostic::with_code(
+        RichTextArgumentIssue::EmptyKey => DialogueTextDiagnostic::with_code(
             DialogueTextDiagnosticCode::RichTextAttributeEmptyKey,
-            *range,
+            range,
             "dialogue RichText attribute key is empty",
             "insert a key matching `[a-z][a-z0-9_]*` before `=`",
         ),
-        DialogueTagArgSyntaxIssue::InvalidKey { range } => DialogueTextDiagnostic::with_code(
+        RichTextArgumentIssue::InvalidKey => DialogueTextDiagnostic::with_code(
             DialogueTextDiagnosticCode::RichTextAttributeInvalidKey,
-            *range,
+            range,
             "dialogue RichText attribute key is not canonical",
             "use an ASCII lowercase key matching `[a-z][a-z0-9_]*`",
         ),
-        DialogueTagArgSyntaxIssue::InvalidEscape { range } => DialogueTextDiagnostic::with_code(
-            DialogueTextDiagnosticCode::RichTextAttributeInvalidEscape,
-            *range,
-            "dialogue RichText attribute contains an unsupported escape",
-            "use one of `\\\\`, `\\\"`, `\\'`, `\\n`, `\\r`, `\\t`, `\\ `, `\\=`, `\\[`, or `\\]`",
-        ),
-        DialogueTagArgSyntaxIssue::UnterminatedQuote { range } => {
+        RichTextArgumentIssue::InvalidEscape | RichTextArgumentIssue::DecoderFailure => {
             DialogueTextDiagnostic::with_code(
-                DialogueTextDiagnosticCode::RichTextAttributeUnterminatedQuote,
-                *range,
-                "unterminated quote in dialogue tag arguments",
-                "close the quoted tag argument before `]`",
+                DialogueTextDiagnosticCode::RichTextAttributeInvalidEscape,
+                range,
+                "dialogue RichText attribute contains an unsupported escape",
+                "use one of `\\\\`, `\\\"`, `\\'`, `\\n`, `\\r`, `\\t`, `\\ `, `\\=`, `\\[`, or `\\]`",
             )
         }
-        DialogueTagArgSyntaxIssue::KeyTooLong { range } => DialogueTextDiagnostic::with_code(
+        RichTextArgumentIssue::UnterminatedQuote => DialogueTextDiagnostic::with_code(
+            DialogueTextDiagnosticCode::RichTextAttributeUnterminatedQuote,
+            range,
+            "unterminated quote in dialogue tag arguments",
+            "close the quoted tag argument before `]`",
+        ),
+        RichTextArgumentIssue::KeyTooLong => DialogueTextDiagnostic::with_code(
             DialogueTextDiagnosticCode::RichTextAttributeKeyTooLong,
-            *range,
+            range,
             format!("dialogue RichText attribute key exceeds {MAX_RICH_TEXT_TAG_KEY_BYTES} bytes"),
             "shorten the attribute key",
         ),
-        DialogueTagArgSyntaxIssue::ValueTooLong { range } => DialogueTextDiagnostic::with_code(
+        RichTextArgumentIssue::ValueTooLong => DialogueTextDiagnostic::with_code(
             DialogueTextDiagnosticCode::RichTextAttributeValueTooLong,
-            *range,
+            range,
             format!(
                 "dialogue RichText attribute value exceeds {MAX_RICH_TEXT_TAG_VALUE_BYTES} bytes"
             ),
             "shorten the attribute value",
+        ),
+        RichTextArgumentIssue::MissingValue => DialogueTextDiagnostic::with_code(
+            DialogueTextDiagnosticCode::RichTextAttributeMissingValue,
+            range,
+            "dialogue RichText attribute is missing a value",
+            "insert an authored value after `=`",
         ),
     }
 }
@@ -932,5 +1088,123 @@ fn normalize_tag_alias<'a>(name: &'a str, attrs: &'a str) -> (&'a str, &'a str) 
         "wait" => ("l", attrs),
         "nl" => ("r", attrs),
         _ => (name, attrs),
+    }
+}
+
+#[cfg(test)]
+mod scanner_tests {
+    use super::{
+        RichTextArgumentIssue, ScannedTagArgument, parse_tag_arguments, scan_tag_arguments,
+    };
+    use crate::ast::common::TextRange;
+    use crate::ast::dialogue::DialogueTagArgValueSurface;
+
+    #[test]
+    fn scanner_retains_decoded_value_and_exact_authored_ranges() {
+        let source = "mood=\"very\\nurgent\"";
+        let base = 17;
+        let scanned = scan_tag_arguments(source, base, 32);
+
+        assert!(scanned.diagnostics().is_empty());
+        let [
+            ScannedTagArgument::Named {
+                name_range,
+                equals_range,
+                value,
+                range,
+            },
+        ] = scanned.entries()
+        else {
+            panic!("one named RichText argument");
+        };
+        assert_eq!(*name_range, TextRange::new(base, base + 4));
+        assert_eq!(*equals_range, TextRange::new(base + 4, base + 5));
+        assert_eq!(*range, TextRange::new(base, base + source.len()));
+        assert_eq!(value.decoded(), "very\nurgent");
+        assert_eq!(
+            value.token_range(),
+            TextRange::new(base + 5, base + source.len())
+        );
+        assert_eq!(
+            value.content_range(),
+            TextRange::new(base + 6, base + source.len() - 1)
+        );
+    }
+
+    #[test]
+    fn scanner_classifies_missing_named_value_as_invalid_without_losing_parts() {
+        let source = "mood=";
+        let base = 23;
+        let scanned = scan_tag_arguments(source, base, 32);
+
+        assert_eq!(scanned.diagnostics().len(), 1);
+        let [argument] = scanned.entries() else {
+            panic!("one missing-value argument");
+        };
+        let ScannedTagArgument::Invalid {
+            issue,
+            issue_range,
+            parts,
+            ..
+        } = argument
+        else {
+            panic!("missing value remains an invalid argument");
+        };
+        assert_eq!(*issue, RichTextArgumentIssue::MissingValue);
+        assert_eq!(
+            *issue_range,
+            TextRange::new(base + source.len(), base + source.len())
+        );
+        assert_eq!(parts.name(), Some(TextRange::new(base, base + 4)));
+        assert_eq!(parts.equals(), Some(TextRange::new(base + 4, base + 5)));
+        assert_eq!(parts.value(), None);
+
+        let dialogue_surface = parse_tag_arguments(source, base, 32);
+        let [dialogue_argument] = dialogue_surface.entries.as_slice() else {
+            panic!("dialogue surface keeps one argument");
+        };
+        assert!(matches!(
+            dialogue_argument.value_surface(),
+            Some(DialogueTagArgValueSurface::Missing { range })
+                if *range == TextRange::new(base + source.len(), base + source.len())
+        ));
+    }
+
+    #[test]
+    fn scanner_retains_named_parts_when_key_or_value_is_invalid() {
+        for (source, issue, issue_range, value_range) in [
+            (
+                "Bad=ok",
+                RichTextArgumentIssue::InvalidKey,
+                TextRange::new(31, 34),
+                Some(TextRange::new(35, 37)),
+            ),
+            (
+                "mood=bad\\q",
+                RichTextArgumentIssue::InvalidEscape,
+                TextRange::new(39, 41),
+                Some(TextRange::new(36, 41)),
+            ),
+        ] {
+            let base = 31;
+            let scanned = scan_tag_arguments(source, base, 32);
+            let [argument] = scanned.entries() else {
+                panic!("one invalid named argument");
+            };
+            let ScannedTagArgument::Invalid {
+                issue: actual_issue,
+                issue_range: actual_issue_range,
+                parts,
+                ..
+            } = argument
+            else {
+                panic!("invalid named argument remains invalid");
+            };
+            assert_eq!(*actual_issue, issue);
+            assert_eq!(*actual_issue_range, issue_range);
+            assert!(parts.name().is_some());
+            assert!(parts.equals().is_some());
+            assert_eq!(parts.value(), value_range);
+        }
     }
 }

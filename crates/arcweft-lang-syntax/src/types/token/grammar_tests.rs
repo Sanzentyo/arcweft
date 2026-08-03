@@ -1,6 +1,64 @@
 use crate::ast::common::TextRange;
 use crate::reference::{BorrowKind, RegionSyntax};
-use crate::types::{LifetimeName, TypeRef, parse_type_ref};
+use crate::types::{
+    LifetimeName, TypeRef, TypeRefComponentRole, TypeRefNodePath, TypeRefNodeStep, parse_type_ref,
+};
+
+#[test]
+fn function_components_follow_the_exact_return_boundary_through_grouping() {
+    let grouped = "(A -> B)";
+    let authored = parse_type_ref(grouped).expect("grouped function type");
+    let root = TypeRefNodePath::root();
+    assert_eq!(
+        authored
+            .source()
+            .component_at(&root, TypeRefComponentRole::FunctionArrow),
+        Some(&TextRange::new(3, 5))
+    );
+    assert!(
+        authored
+            .source()
+            .component_at(&root, TypeRefComponentRole::FunctionOpen)
+            .is_none()
+    );
+
+    let grouped_parameters = "((A, B) -> C)";
+    let authored = parse_type_ref(grouped_parameters).expect("grouped parameter function type");
+    assert_eq!(
+        authored
+            .source()
+            .component_at(&root, TypeRefComponentRole::FunctionOpen),
+        Some(&TextRange::new(1, 2))
+    );
+    assert_eq!(
+        authored
+            .source()
+            .component_at(&root, TypeRefComponentRole::FunctionClose),
+        Some(&TextRange::new(6, 7))
+    );
+    assert_eq!(
+        authored
+            .source()
+            .component_at(&root, TypeRefComponentRole::FunctionArrow),
+        Some(&TextRange::new(8, 10))
+    );
+
+    let nested = "(A -> B) -> C";
+    let authored = parse_type_ref(nested).expect("nested function type");
+    let parameter = root.child(TypeRefNodeStep::FunctionParameter(0));
+    assert_eq!(
+        authored
+            .source()
+            .component_at(&root, TypeRefComponentRole::FunctionArrow),
+        Some(&TextRange::new(9, 11))
+    );
+    assert_eq!(
+        authored
+            .source()
+            .component_at(&parameter, TypeRefComponentRole::FunctionArrow),
+        Some(&TextRange::new(3, 5))
+    );
+}
 
 #[test]
 fn reference_forms_preserve_kind_region_and_operator_ranges() {

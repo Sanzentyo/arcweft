@@ -14,7 +14,7 @@ fn document(text: &str) -> SourceDocument {
 }
 
 fn parse(text: &str) -> GrammarBuild {
-    parse_shadow_document(&document(text)).unwrap()
+    parse_shadow_document(&document(text), crate::parser::ParseOptions::default()).unwrap()
 }
 
 fn kind_count(entries: &[UnattachedGrammarEntry], kind: SyntaxKind) -> usize {
@@ -72,14 +72,14 @@ pub entry game @entry.game.main {
         kind_roles(entries, SyntaxKind::Path),
         vec![
             SyntaxRole::Target,
-            SyntaxRole::Initializer,
             SyntaxRole::Target,
+            SyntaxRole::Initializer,
             SyntaxRole::Initializer,
         ]
     );
     assert_eq!(
         kind_roles(entries, SyntaxKind::EntityReferenceExpression),
-        vec![SyntaxRole::Target]
+        vec![SyntaxRole::Reference(0), SyntaxRole::Target]
     );
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
@@ -118,7 +118,11 @@ fn server_routes_emit_method_path_target_and_bindings() {
     assert_eq!(kind_count(entries, SyntaxKind::LiteralExpression), 2);
     assert_eq!(
         kind_roles(entries, SyntaxKind::EntityReferenceExpression),
-        vec![SyntaxRole::Target, SyntaxRole::Target]
+        vec![
+            SyntaxRole::Reference(0),
+            SyntaxRole::Target,
+            SyntaxRole::Target,
+        ]
     );
     assert_eq!(
         kind_roles(entries, SyntaxKind::EntryRouteBinding),

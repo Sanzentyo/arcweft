@@ -1,12 +1,14 @@
 //! Exact, raw-preserving integer literal syntax.
 //!
-//! This module owns source radix and suffix interpretation plus the compact
-//! integer-only bracket representation. Expected-type inference and range
-//! policy remain semantic-layer responsibilities.
+//! Shared literal syntax owns source radix and suffix interpretation. This
+//! expression module owns the raw integer payload and compact integer-only
+//! bracket representation. Expected-type inference and range policy remain
+//! semantic-layer responsibilities.
 
 use thiserror::Error;
 
 use crate::ast::common::TextRange;
+use crate::literal::{IntRadix, IntSuffix};
 
 /// Compact representation for integer-only bracket sequence literals.
 #[derive(Clone, Debug)]
@@ -112,103 +114,6 @@ impl PartialEq for NumericBracketSeq {
 }
 
 impl Eq for NumericBracketSeq {}
-
-/// Radix used by an integer literal's source spelling.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IntRadix {
-    Binary,
-    Octal,
-    Decimal,
-    Hexadecimal,
-}
-
-impl IntRadix {
-    /// Detects the radix from a numeric body such as `0xff` or `42`.
-    pub fn from_number_source(source: &str) -> Self {
-        if source.starts_with("0x") || source.starts_with("0X") {
-            Self::Hexadecimal
-        } else if source.starts_with("0b") || source.starts_with("0B") {
-            Self::Binary
-        } else if source.starts_with("0o") || source.starts_with("0O") {
-            Self::Octal
-        } else {
-            Self::Decimal
-        }
-    }
-
-    /// Numeric base passed to radix-aware integer parsers.
-    pub const fn base(self) -> u32 {
-        match self {
-            Self::Binary => 2,
-            Self::Octal => 8,
-            Self::Decimal => 10,
-            Self::Hexadecimal => 16,
-        }
-    }
-
-    const fn prefix_len(self) -> usize {
-        match self {
-            Self::Decimal => 0,
-            Self::Binary | Self::Octal | Self::Hexadecimal => 2,
-        }
-    }
-}
-
-/// Explicit integer width suffix accepted by Arcweft source syntax.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum IntSuffix {
-    I8,
-    I16,
-    I32,
-    I64,
-    I128,
-    ISize,
-    U8,
-    U16,
-    U32,
-    U64,
-    U128,
-    USize,
-}
-
-impl IntSuffix {
-    /// Parses a canonical integer suffix.
-    pub fn parse(source: &str) -> Option<Self> {
-        Some(match source {
-            "i8" => Self::I8,
-            "i16" => Self::I16,
-            "i32" => Self::I32,
-            "i64" => Self::I64,
-            "i128" => Self::I128,
-            "isize" => Self::ISize,
-            "u8" => Self::U8,
-            "u16" => Self::U16,
-            "u32" => Self::U32,
-            "u64" => Self::U64,
-            "u128" => Self::U128,
-            "usize" => Self::USize,
-            _ => return None,
-        })
-    }
-
-    /// Canonical source spelling of this suffix.
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::I8 => "i8",
-            Self::I16 => "i16",
-            Self::I32 => "i32",
-            Self::I64 => "i64",
-            Self::I128 => "i128",
-            Self::ISize => "isize",
-            Self::U8 => "u8",
-            Self::U16 => "u16",
-            Self::U32 => "u32",
-            Self::U64 => "u64",
-            Self::U128 => "u128",
-            Self::USize => "usize",
-        }
-    }
-}
 
 /// Raw-preserving integer literal before expected-type inference.
 #[derive(Clone, Debug, Eq, PartialEq)]

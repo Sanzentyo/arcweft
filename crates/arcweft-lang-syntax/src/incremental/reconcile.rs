@@ -2,7 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use super::ParseFailure;
+use super::{ParseFailure, SyntaxInvariantFailure};
 use crate::attachment::{GrammarIdentityMap, SyntaxNodeId as AttachedSyntaxNodeId};
 use crate::grammar::build::GrammarEventPath;
 use crate::grammar::kinds::SyntaxRoleClass;
@@ -25,7 +25,7 @@ pub(super) fn reconcile_grammar(
 ) -> Result<GrammarIdentityMap, ParseFailure> {
     let root_id = old_identities
         .id_for_path(old_root.path())
-        .ok_or(ParseFailure::InternalInvariant)?;
+        .ok_or(SyntaxInvariantFailure::IdentityMapMismatch)?;
     let mut identities = HashMap::new();
     reconcile_grammar_node(
         old_root,
@@ -85,7 +85,7 @@ fn reconcile_grammar_node(
             let old_child = &old_children[old_index];
             let child_id = old_identities
                 .id_for_path(old_child.path())
-                .ok_or(ParseFailure::InternalInvariant)?;
+                .ok_or(SyntaxInvariantFailure::IdentityMapMismatch)?;
             reconcile_grammar_node(
                 old_child,
                 new_child,
@@ -239,7 +239,7 @@ fn first_grammar_match(
         let (old_ordinal, old_node) = old[old_position];
         let old_id = old_identities
             .id_for_path(old_node.path())
-            .ok_or(ParseFailure::InternalInvariant)?;
+            .ok_or(SyntaxInvariantFailure::IdentityMapMismatch)?;
         for new_position in (0..new.len()).rev() {
             if old_node.own() == new[new_position].1.own() {
                 let chain_length = 1 + below[new_position + 1];

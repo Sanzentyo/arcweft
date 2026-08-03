@@ -2,7 +2,7 @@
 
 use std::collections::HashSet;
 
-use crate::attachment::{GrammarSyntaxNode, grammar_node_at_path};
+use crate::attachment::{SyntaxNode, grammar_node_at_path};
 use crate::grammar::build::{GrammarBuild, GrammarEventPath};
 use crate::grammar::event::ExpectedToken;
 use crate::grammar::kinds::{
@@ -51,7 +51,7 @@ impl GrammarShapeNode {
         {
             return Err(GrammarShapeError::MissingRoot);
         }
-        let root = GrammarSyntaxNode::new_root(build.green().clone());
+        let root = SyntaxNode::new_root(build.green().clone());
         let identity_paths = entries
             .iter()
             .map(|entry| entry.path().clone())
@@ -178,7 +178,7 @@ fn build_grammar_shape(
 }
 
 fn own_token_digest(
-    syntax: &GrammarSyntaxNode,
+    syntax: &SyntaxNode,
     path: &GrammarEventPath,
     identity_paths: &HashSet<GrammarEventPath>,
 ) -> Result<[u8; 16], GrammarShapeError> {
@@ -197,7 +197,7 @@ fn own_token_digest(
 }
 
 fn hash_owned_tokens(
-    syntax: &GrammarSyntaxNode,
+    syntax: &SyntaxNode,
     mut path: Vec<u32>,
     identity_paths: &HashSet<GrammarEventPath>,
     hasher: &mut blake3::Hasher,

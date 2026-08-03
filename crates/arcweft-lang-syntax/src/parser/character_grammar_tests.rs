@@ -14,7 +14,8 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source)).expect("Character grammar builds")
+    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("Character grammar builds")
 }
 
 fn nth_source_range(source: &str, fragment: &str, occurrence: usize) -> SourceRange {
@@ -39,7 +40,7 @@ fn has_kind(built: &GrammarBuild, kind: SyntaxKind) -> bool {
 fn canonical_character_owns_typed_header_alias_body_and_expression() {
     let source = concat!(
         "/// Alice\n",
-        "#[test.fixture]\n",
+        "#[verify.fixture]\n",
         "pub character @character.alice Alice as alice {\n",
         "    display_name = \"Alice\"\n",
         "}\n",

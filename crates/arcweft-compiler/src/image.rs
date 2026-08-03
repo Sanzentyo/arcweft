@@ -11,7 +11,8 @@ use arcweft_id::{IdError, PublicId, RetainedIdentityFamily};
 use arcweft_lang_hir::{model::HirTopLevelDecl, project::HirProject};
 use arcweft_lang_syntax::{
     ast::items::{EntityDeclItem, EntityDeclKind, ImageDeclBody, ImageDeclField},
-    expr::{CallArg, DurationUnit, Expr, Literal, UnaryOp, UnitNumberSuffix},
+    expr::{CallArg, Expr, Literal, UnaryOp},
+    literal::{DurationUnit, UnitNumberSuffix},
 };
 use arcweft_layout::{
     LayoutSize,
@@ -519,7 +520,7 @@ fn image_field_expectation(name: &str) -> &'static str {
         "alignment.x" | "alignment.y" => "expected an alignment keyword or unitless number",
         "playback.start" | "playback.paused_at" | "playback.local_time" => "expected a duration",
         "playback.rate" | "transform.m11" | "transform.m12" | "transform.m21" | "transform.m22" => {
-            "expected a unitless, percent, or milli value"
+            "expected a unitless or percent value"
         }
         "depth" | "proxy.depth" => "expected a unitless number",
         "opacity" => "expected a value from 0 to 1",
@@ -686,10 +687,6 @@ fn image_opacity(fields: &ImageFields<'_>) -> Result<u16, ImageCompileError> {
         return Ok(1_000);
     };
     let value = match value {
-        Expr::Literal(Literal::UnitNumber {
-            raw,
-            suffix: UnitNumberSuffix::Milli,
-        }) => unit_number(raw, UnitNumberSuffix::Milli),
         Expr::Literal(Literal::UnitNumber {
             raw,
             suffix: UnitNumberSuffix::Percent,
@@ -943,10 +940,6 @@ fn milli(value: &Expr) -> Option<i32> {
             raw,
             suffix: UnitNumberSuffix::Percent,
         }) => rounded_i32(unit_number(raw, UnitNumberSuffix::Percent)? * 10.0),
-        Expr::Literal(Literal::UnitNumber {
-            raw,
-            suffix: UnitNumberSuffix::Milli,
-        }) => rounded_i32(unit_number(raw, UnitNumberSuffix::Milli)?),
         _ => rounded_i32(number(value)? * 1_000.0),
     }
 }
@@ -1025,7 +1018,7 @@ pub image @image.glass_bg {
     y = 0px
     width = 1280px
     height = 720px
-    opacity = 750milli
+    opacity = 75%
 }
 ",
             )

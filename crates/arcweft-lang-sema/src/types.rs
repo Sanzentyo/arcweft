@@ -1,10 +1,8 @@
 use crate::effect_row::{EffectRow, EffectRowTail};
 use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_lang_syntax::{
-    ast::module_path::ModulePathRoot,
-    expr::{IntSuffix, LifetimeScopeKind},
-    reference::BorrowKind,
-    types::TypePath,
+    ast::module_path::ModulePathRoot, expr::LifetimeScopeKind, literal::IntSuffix,
+    reference::BorrowKind, types::TypePath,
 };
 use core::fmt;
 

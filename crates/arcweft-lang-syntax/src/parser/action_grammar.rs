@@ -3,14 +3,15 @@
 use arcweft_id::RetainedIdentityFamily;
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::emit_retained_declaration_header;
-use super::document::ShadowDocumentParser;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::pattern::emit_pattern;
 use super::shadow_recovery::{
-    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
-    find_matching_close, find_top_level_boundary, token_count, trimmed_end,
+    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
+    emit_required_punctuation, find_matching_close, find_top_level_boundary, token_count,
+    trimmed_end,
 };
 use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
@@ -40,16 +41,12 @@ fn emit_action_signature(parser: &mut ShadowDocumentParser<'_, '_>) {
     if !parser.at("(") {
         let at = parser.current_offset();
         parser.start(SyntaxKind::FixedParameterGroup, SyntaxRole::ParameterGroup);
-        emit_missing_delimiter(
-            parser,
-            SyntaxKind::MissingTokenNode,
-            SyntaxRole::OpenDelimiter,
-        );
+        emit_missing_delimiter(parser, SyntaxKind::OpenParenNode, SyntaxRole::OpenDelimiter);
         parser.start(SyntaxKind::ParameterList, SyntaxRole::Element(0));
         parser.finish();
         emit_missing_delimiter(
             parser,
-            SyntaxKind::MissingTokenNode,
+            SyntaxKind::CloseParenNode,
             SyntaxRole::CloseDelimiter,
         );
         parser.finish();
@@ -112,34 +109,41 @@ fn emit_action_parameter(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, 
     }
     bump_until(parser, pattern_end);
 
-    let Some(colon) = colon else {
-        let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingType, SyntaxRole::ParameterType);
-        parser.push(SyntaxEvent::MissingToken {
-            expected: expected(SyntaxKind::PunctuationToken),
-            at,
-        });
+    let authored_colon = colon.is_some();
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::ColonNode,
+        SyntaxRole::Colon,
+        ":",
+        "syntax.parameter.missing_type",
+        "Action parameter requires `: Type`",
+    );
+    if !authored_colon {
+        emit_type(parser, end, SyntaxRole::ParameterType);
         parser.finish();
+        return;
+    }
+
+    parser.bump_trivia();
+    let default = find_top_level_boundary(parser, parser.cursor(), &["="]).min(end);
+    let type_end = trimmed_end(parser, parser.cursor(), default);
+    let type_start = parser.cursor();
+    emit_type(parser, type_end, SyntaxRole::ParameterType);
+    if type_start == type_end {
+        let at = parser.current_offset();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.parameter.missing_type",
             SourceRange::new(at, at),
             "Action parameter requires `: Type`",
         )));
-        parser.finish();
-        return;
-    };
-
-    debug_assert_eq!(parser.cursor(), colon);
-    parser.bump();
-    parser.bump_trivia();
-    let default = find_top_level_boundary(parser, parser.cursor(), &["="]).min(end);
-    let type_end = trimmed_end(parser, parser.cursor(), default);
-    emit_type(parser, type_end, SyntaxRole::ParameterType);
+    }
     bump_until(parser, default);
     if default < end && parser.at("=") {
         let default_start = parser.current_offset();
         parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+        parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
         parser.bump();
+        parser.finish();
         parser.bump_trivia();
         let expression_end = trimmed_end(parser, parser.cursor(), end);
         emit_expression(parser, expression_end, SyntaxRole::Initializer);

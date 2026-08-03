@@ -101,7 +101,7 @@ pub style modern_feedback_panel {
     selection-color = token(color.selection)
     border-color = token(color.glass_border)
     border-radius = token(metric.corner_md)
-    opacity = 940milli
+    opacity = 94%
     box-shadow = token(shadow.glass_control)
     backdrop-filter = token(filter.glass_blur)
     z-index = token(depth.field)
@@ -118,7 +118,7 @@ pub style modern_feedback_panel {
     corner-frame-width = token(metric.corner_frame_width)
     corner-frame-length = token(metric.corner_frame)
     corner-frame-offset = token(metric.corner_frame_offset)
-    opacity = 920milli
+    opacity = 92%
     box-shadow = token(shadow.glass_control)
     backdrop-filter = token(filter.glass_blur)
     z-index = token(depth.field)
@@ -139,7 +139,7 @@ pub style modern_feedback_panel {
     color = token(color.text)
     border-radius = token(metric.corner_lg)
     border-color = rgba(255, 255, 255, 44)
-    opacity = 960milli
+    opacity = 96%
     box-shadow = token(shadow.glass_button)
     z-index = token(depth.button)
   }
@@ -155,7 +155,7 @@ pub style modern_feedback_panel {
   }
 
   Button:disabled {
-    opacity = 460milli
+    opacity = 46%
   }
 
 }

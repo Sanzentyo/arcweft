@@ -10,9 +10,10 @@ use crate::reference::{BorrowKind, ReferenceType, RegionSyntax};
 use crate::types::source::{ParsedTypePath, TypePathComponent};
 use crate::types::{
     AssociatedTypeBinding, AuthoredTypeRef, ParsedTypeRef, TraitBound, TypeEffectRow,
-    TypeParseError, TypePath, TypeRef, TypeRefHeadKind, TypeRefHeadSource, TypeRefLexemeKind,
-    TypeRefLexemeSource, TypeRefNodePath, TypeRefNodeSource, TypeRefNodeStep, parse_lifetime_name,
-    validate_type_ref_limits,
+    TypeParseError, TypePath, TypeRef, TypeRefAssociatedBindingPart, TypeRefComponentRole,
+    TypeRefComponentSource, TypeRefHeadKind, TypeRefHeadSource, TypeRefLexemeKind,
+    TypeRefLexemeSource, TypeRefNodePath, TypeRefNodeSource, TypeRefNodeStep, TypeRefRegionPart,
+    parse_lifetime_name, validate_type_ref_limits,
 };
 
 struct ParsedGenericArguments {
@@ -48,9 +49,700 @@ pub(super) fn parse_authored(
     parsed
         .lexemes
         .sort_by_key(|lexeme| (lexeme.range().start(), lexeme.range().end()));
-    AuthoredTypeRef::try_new(parsed.value, parsed.nodes, parsed.lexemes).map_err(|error| {
-        TypeParseError::new_owned(format!("invalid parser-owned type source map: {error:?}"))
+    let components =
+        collect_type_components(tokens, &parsed.value, &parsed.nodes, &parsed.lexemes)?;
+    AuthoredTypeRef::try_new(parsed.value, parsed.nodes, parsed.lexemes, components).map_err(
+        |error| {
+            TypeParseError::new_owned(format!("invalid parser-owned type source map: {error:?}"))
+        },
+    )
+}
+
+fn collect_type_components(
+    tokens: &[TypeToken<'_>],
+    value: &TypeRef,
+    nodes: &[(TypeRefNodePath, TypeRefNodeSource<TextRange>)],
+    lexemes: &[TypeRefLexemeSource<TextRange>],
+) -> Result<Vec<TypeRefComponentSource<TextRange>>, TypeParseError> {
+    let sources = nodes
+        .iter()
+        .map(|(path, source)| (path.clone(), *source.whole()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut output = Vec::new();
+    let mut pending = vec![(TypeRefNodePath::root(), value)];
+    while let Some((path, value)) = pending.pop() {
+        collect_node_components(
+            tokens,
+            value,
+            &path,
+            &sources,
+            lexemes,
+            &mut output,
+            &mut pending,
+        )?;
+    }
+    Ok(output)
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the exhaustive semantic type-family source projection is one closed match"
+)]
+fn collect_node_components<'a>(
+    tokens: &[TypeToken<'_>],
+    value: &'a TypeRef,
+    path: &TypeRefNodePath,
+    sources: &std::collections::BTreeMap<TypeRefNodePath, TextRange>,
+    lexemes: &[TypeRefLexemeSource<TextRange>],
+    output: &mut Vec<TypeRefComponentSource<TextRange>>,
+    pending: &mut Vec<(TypeRefNodePath, &'a TypeRef)>,
+) -> Result<(), TypeParseError> {
+    let whole = *sources
+        .get(path)
+        .ok_or_else(|| TypeParseError::new("semantic type node has no source owner"))?;
+    component(output, path, TypeRefComponentRole::Whole, whole);
+
+    match value {
+        TypeRef::Never => component(output, path, TypeRefComponentRole::NeverMarker, whole),
+        TypeRef::ConstInt(_) => {
+            component(output, path, TypeRefComponentRole::ConstInteger, whole);
+        }
+        TypeRef::Path(_) => collect_path_components(path, lexemes, output),
+        TypeRef::Tuple(items) => {
+            punctuation_component(
+                tokens,
+                whole,
+                TypeTokenKind::OpenParen,
+                path,
+                TypeRefComponentRole::TupleOpen,
+                output,
+            )?;
+            punctuation_component(
+                tokens,
+                whole,
+                TypeTokenKind::CloseParen,
+                path,
+                TypeRefComponentRole::TupleClose,
+                output,
+            )?;
+            collect_indexed_children(
+                tokens,
+                items,
+                path,
+                sources,
+                output,
+                TypeRefNodeStep::TupleItem,
+                |ordinal| TypeRefComponentRole::TupleElement { ordinal },
+                |ordinal| TypeRefComponentRole::TupleSeparator { ordinal },
+                pending,
+            )?;
+        }
+        TypeRef::Function {
+            params,
+            return_type,
+            effects,
+        } => {
+            let return_path = path.child(TypeRefNodeStep::FunctionReturn);
+            let return_range = *sources
+                .get(&return_path)
+                .ok_or_else(|| TypeParseError::new("function return type has no source owner"))?;
+            let (node_start, _) = token_bounds(tokens, whole)
+                .ok_or_else(|| TypeParseError::new("function type has no token source"))?;
+            // Parenthesized grouping is erased from the semantic TypeRef, so
+            // the owner's arrow is not necessarily top-level within `whole`.
+            // The final arrow before the exact return child is nevertheless
+            // unique, including for right-associative and nested functions.
+            let (arrow_index, arrow_token) = tokens
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, token)| {
+                    token.range.start() >= whole.start()
+                        && token.range.end() <= return_range.start()
+                        && matches!(token.kind, TypeTokenKind::ThinArrow)
+                })
+                .ok_or_else(|| TypeParseError::new("function type has no arrow source"))?;
+            let arrow = arrow_token.range;
+            component(output, path, TypeRefComponentRole::FunctionArrow, arrow);
+            component(
+                output,
+                path,
+                TypeRefComponentRole::FunctionReturn,
+                return_range,
+            );
+            let last_parameter = params
+                .len()
+                .checked_sub(1)
+                .ok_or_else(|| TypeParseError::new("function type has no parameter source"))?;
+            let last_parameter = u16::try_from(last_parameter)
+                .map_err(|_| TypeParseError::resource_limit("type node ordinal overflow"))?;
+            let last_parameter_range =
+                sources[&path.child(TypeRefNodeStep::FunctionParameter(last_parameter))];
+            let parameter_close = tokens
+                .iter()
+                .enumerate()
+                .take(arrow_index)
+                .rev()
+                .find(|(_, token)| {
+                    token.range.start() >= last_parameter_range.end()
+                        && matches!(token.kind, TypeTokenKind::CloseParen)
+                })
+                .map(|(index, _)| index);
+            if let Some(close_index) = parameter_close {
+                let open_index = (node_start..close_index).rev().find(|candidate| {
+                    matches!(tokens[*candidate].kind, TypeTokenKind::OpenParen)
+                        && matching_close(tokens, *candidate, close_index + 1, Delimiter::Paren)
+                            == Some(close_index)
+                });
+                let open_index = open_index.ok_or_else(|| {
+                    TypeParseError::new("function parameter group has no open source")
+                })?;
+                component(
+                    output,
+                    path,
+                    TypeRefComponentRole::FunctionOpen,
+                    tokens[open_index].range,
+                );
+                component(
+                    output,
+                    path,
+                    TypeRefComponentRole::FunctionClose,
+                    tokens[close_index].range,
+                );
+            }
+            for (index, param) in params.iter().enumerate() {
+                let index = index_u32(index)?;
+                let child_path = path.child(TypeRefNodeStep::FunctionParameter(
+                    index_u16_from_u32(index)?,
+                ));
+                let child_range = *sources
+                    .get(&child_path)
+                    .ok_or_else(|| TypeParseError::new("function parameter has no source owner"))?;
+                component(
+                    output,
+                    path,
+                    TypeRefComponentRole::FunctionParameter { ordinal: index },
+                    child_range,
+                );
+                pending.push((child_path.clone(), param));
+                if index > 0 {
+                    let previous = path.child(TypeRefNodeStep::FunctionParameter(
+                        index_u16_from_u32(index - 1)?,
+                    ));
+                    let separator =
+                        comma_between(tokens, sources[&previous].end(), child_range.start())?;
+                    component(
+                        output,
+                        path,
+                        TypeRefComponentRole::FunctionSeparator { ordinal: index - 1 },
+                        separator,
+                    );
+                }
+            }
+            pending.push((return_path, return_type));
+            if effects.is_some() {
+                collect_effect_components(tokens, path, return_range.end(), whole.end(), output)?;
+            }
+        }
+        TypeRef::Choice(items) => collect_indexed_children(
+            tokens,
+            items,
+            path,
+            sources,
+            output,
+            TypeRefNodeStep::ChoiceAlternative,
+            |ordinal| TypeRefComponentRole::ChoiceAlternative { ordinal },
+            |ordinal| TypeRefComponentRole::ChoiceSeparator { ordinal },
+            pending,
+        )?,
+        TypeRef::Generic { args, .. } => {
+            collect_path_components(path, lexemes, output);
+            collect_generic_components(
+                tokens,
+                args,
+                &[],
+                path,
+                sources,
+                lexemes,
+                output,
+                false,
+                pending,
+            )?;
+        }
+        TypeRef::TraitBound(bound) => {
+            collect_path_components(path, lexemes, output);
+            collect_generic_components(
+                tokens,
+                bound.args(),
+                bound.associated(),
+                path,
+                sources,
+                lexemes,
+                output,
+                true,
+                pending,
+            )?;
+        }
+        TypeRef::Projection { subject, .. } => {
+            let subject_path = path.child(TypeRefNodeStep::ProjectionSubject);
+            let subject_range = sources[&subject_path];
+            component(
+                output,
+                path,
+                TypeRefComponentRole::ProjectionSubject,
+                subject_range,
+            );
+            let separator = find_token_between(tokens, subject_range.end(), whole.end(), |kind| {
+                matches!(kind, TypeTokenKind::PathSeparator)
+            })
+            .ok_or_else(|| TypeParseError::new("projection has no separator source"))?;
+            component(
+                output,
+                path,
+                TypeRefComponentRole::ProjectionSeparator,
+                separator,
+            );
+            let name = find_token_between(tokens, separator.end(), whole.end(), |kind| {
+                matches!(kind, TypeTokenKind::Identifier(_))
+            })
+            .ok_or_else(|| TypeParseError::new("projection has no name source"))?;
+            component(output, path, TypeRefComponentRole::ProjectionName, name);
+            pending.push((subject_path, subject));
+        }
+        TypeRef::Reference(reference) => {
+            component(
+                output,
+                path,
+                TypeRefComponentRole::ReferenceAmpersand,
+                reference.amp_range(),
+            );
+            match reference.region().name() {
+                Some(_) => {
+                    let range = reference.region().range();
+                    component(
+                        output,
+                        path,
+                        TypeRefComponentRole::Region(TypeRefRegionPart::Whole),
+                        range,
+                    );
+                    component(
+                        output,
+                        path,
+                        TypeRefComponentRole::Region(TypeRefRegionPart::NamedApostrophe),
+                        TextRange::new(range.start(), range.start() + 1),
+                    );
+                    component(
+                        output,
+                        path,
+                        TypeRefComponentRole::Region(TypeRefRegionPart::NamedName),
+                        TextRange::new(range.start() + 1, range.end()),
+                    );
+                }
+                None => component(
+                    output,
+                    path,
+                    TypeRefComponentRole::Region(TypeRefRegionPart::ElisionInsertion),
+                    reference.region().range(),
+                ),
+            }
+            if let Some(range) = reference.mut_range() {
+                component(
+                    output,
+                    path,
+                    TypeRefComponentRole::ReferenceMutKeyword,
+                    range,
+                );
+            }
+            let referent_path = path.child(TypeRefNodeStep::ReferenceReferent);
+            let referent_range = sources[&referent_path];
+            component(
+                output,
+                path,
+                TypeRefComponentRole::ReferenceReferent,
+                referent_range,
+            );
+            pending.push((referent_path, reference.referent()));
+        }
+        TypeRef::Slice(item) => {
+            punctuation_component(
+                tokens,
+                whole,
+                TypeTokenKind::OpenBracket,
+                path,
+                TypeRefComponentRole::SliceOpen,
+                output,
+            )?;
+            punctuation_component(
+                tokens,
+                whole,
+                TypeTokenKind::CloseBracket,
+                path,
+                TypeRefComponentRole::SliceClose,
+                output,
+            )?;
+            let item_path = path.child(TypeRefNodeStep::SliceItem);
+            component(
+                output,
+                path,
+                TypeRefComponentRole::SliceElement,
+                sources[&item_path],
+            );
+            pending.push((item_path, item));
+        }
+        TypeRef::Recovery(_) => component(output, path, TypeRefComponentRole::Recovery, whole),
+    }
+    Ok(())
+}
+
+fn component(
+    output: &mut Vec<TypeRefComponentSource<TextRange>>,
+    owner: &TypeRefNodePath,
+    role: TypeRefComponentRole,
+    range: TextRange,
+) {
+    output.push(TypeRefComponentSource::new(owner.clone(), role, range));
+}
+
+fn collect_path_components(
+    path: &TypeRefNodePath,
+    lexemes: &[TypeRefLexemeSource<TextRange>],
+    output: &mut Vec<TypeRefComponentSource<TextRange>>,
+) {
+    for lexeme in lexemes.iter().filter(|lexeme| lexeme.owner() == path) {
+        match lexeme.kind() {
+            TypeRefLexemeKind::PathRoot => component(
+                output,
+                path,
+                TypeRefComponentRole::PathRoot,
+                *lexeme.range(),
+            ),
+            TypeRefLexemeKind::PathSegment { ordinal } => component(
+                output,
+                path,
+                TypeRefComponentRole::PathSegment {
+                    ordinal: u32::from(*ordinal),
+                },
+                *lexeme.range(),
+            ),
+            _ => {}
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_indexed_children<'a>(
+    tokens: &[TypeToken<'_>],
+    items: &'a [TypeRef],
+    path: &TypeRefNodePath,
+    sources: &std::collections::BTreeMap<TypeRefNodePath, TextRange>,
+    output: &mut Vec<TypeRefComponentSource<TextRange>>,
+    step: fn(u16) -> TypeRefNodeStep,
+    item_role: impl Fn(u32) -> TypeRefComponentRole,
+    separator_role: impl Fn(u32) -> TypeRefComponentRole,
+    pending: &mut Vec<(TypeRefNodePath, &'a TypeRef)>,
+) -> Result<(), TypeParseError> {
+    let mut previous_end = None;
+    for (index, item) in items.iter().enumerate() {
+        let ordinal = index_u32(index)?;
+        let child_path = path.child(step(index_u16_from_u32(ordinal)?));
+        let child_range = sources[&child_path];
+        component(output, path, item_role(ordinal), child_range);
+        if let Some(previous_end) = previous_end {
+            let separator = find_token_between(tokens, previous_end, child_range.start(), |kind| {
+                matches!(kind, TypeTokenKind::Comma | TypeTokenKind::Pipe)
+            })
+            .ok_or_else(|| TypeParseError::new("type sequence has no separator source"))?;
+            component(output, path, separator_role(ordinal - 1), separator);
+        }
+        pending.push((child_path, item));
+        previous_end = Some(child_range.end());
+    }
+    Ok(())
+}
+
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "generic and trait roles share one canonical token/source-map transaction"
+)]
+fn collect_generic_components<'a>(
+    tokens: &[TypeToken<'_>],
+    args: &'a [TypeRef],
+    associated: &'a [AssociatedTypeBinding],
+    path: &TypeRefNodePath,
+    sources: &std::collections::BTreeMap<TypeRefNodePath, TextRange>,
+    lexemes: &[TypeRefLexemeSource<TextRange>],
+    output: &mut Vec<TypeRefComponentSource<TextRange>>,
+    is_trait: bool,
+    pending: &mut Vec<(TypeRefNodePath, &'a TypeRef)>,
+) -> Result<(), TypeParseError> {
+    let whole = sources[path];
+    let open = find_token(tokens, whole, |kind| {
+        matches!(kind, TypeTokenKind::OpenAngle)
     })
+    .ok_or_else(|| TypeParseError::new("generic type has no open delimiter source"))?;
+    let close = tokens
+        .iter()
+        .rev()
+        .find(|token| {
+            matches!(token.kind, TypeTokenKind::CloseAngle)
+                && token.range.end() <= whole.end()
+                && token.range.start() >= open.end()
+        })
+        .map(|token| token.range)
+        .ok_or_else(|| TypeParseError::new("generic type has no close delimiter source"))?;
+    let base_end = lexemes
+        .iter()
+        .find(|lexeme| {
+            lexeme.owner() == path && matches!(lexeme.kind(), TypeRefLexemeKind::TurbofishSeparator)
+        })
+        .map_or(open.start(), |lexeme| lexeme.range().start());
+    let base = TextRange::new(whole.start(), base_end);
+    component(
+        output,
+        path,
+        if is_trait {
+            TypeRefComponentRole::TraitBase
+        } else {
+            TypeRefComponentRole::GenericBase
+        },
+        base,
+    );
+    component(
+        output,
+        path,
+        if is_trait {
+            TypeRefComponentRole::TraitOpen
+        } else {
+            TypeRefComponentRole::GenericOpen
+        },
+        open,
+    );
+    component(
+        output,
+        path,
+        if is_trait {
+            TypeRefComponentRole::TraitClose
+        } else {
+            TypeRefComponentRole::GenericClose
+        },
+        close,
+    );
+
+    for (index, arg) in args.iter().enumerate() {
+        let ordinal = index_u32(index)?;
+        let child_path = path.child(if is_trait {
+            TypeRefNodeStep::TraitArgument(index_u16_from_u32(ordinal)?)
+        } else {
+            TypeRefNodeStep::GenericArgument(index_u16_from_u32(ordinal)?)
+        });
+        component(
+            output,
+            path,
+            if is_trait {
+                TypeRefComponentRole::TraitArgument { ordinal }
+            } else {
+                TypeRefComponentRole::GenericArgument { ordinal }
+            },
+            sources[&child_path],
+        );
+        pending.push((child_path, arg));
+    }
+    for (index, binding) in associated.iter().enumerate() {
+        let ordinal = index_u32(index)?;
+        let child_path = path.child(TypeRefNodeStep::AssociatedBinding(index_u16_from_u32(
+            ordinal,
+        )?));
+        let value_range = sources[&child_path];
+        let equals = tokens
+            .iter()
+            .rev()
+            .find(|token| {
+                matches!(token.kind, TypeTokenKind::Equals)
+                    && token.range.end() <= value_range.start()
+                    && token.range.start() > open.end()
+            })
+            .map(|token| token.range)
+            .ok_or_else(|| TypeParseError::new("associated binding has no equals source"))?;
+        let name = tokens
+            .iter()
+            .rev()
+            .find(|token| {
+                matches!(token.kind, TypeTokenKind::Identifier(_))
+                    && token.range.end() <= equals.start()
+                    && token.range.start() >= open.end()
+            })
+            .map(|token| token.range)
+            .ok_or_else(|| TypeParseError::new("associated binding has no name source"))?;
+        let whole_binding = TextRange::new(name.start(), value_range.end());
+        for (part, range) in [
+            (TypeRefAssociatedBindingPart::Whole, whole_binding),
+            (TypeRefAssociatedBindingPart::Name, name),
+            (TypeRefAssociatedBindingPart::Equals, equals),
+            (TypeRefAssociatedBindingPart::Value, value_range),
+        ] {
+            component(
+                output,
+                path,
+                TypeRefComponentRole::AssociatedBinding { ordinal, part },
+                range,
+            );
+        }
+        pending.push((child_path, binding.value()));
+    }
+    let separators = lexemes.iter().filter(|lexeme| {
+        lexeme.owner() == path
+            && matches!(
+                lexeme.kind(),
+                TypeRefLexemeKind::ArgumentSeparator { .. }
+                    | TypeRefLexemeKind::TrailingArgumentSeparator
+            )
+    });
+    for (index, separator) in separators.enumerate() {
+        let ordinal = index_u32(index)?;
+        component(
+            output,
+            path,
+            if is_trait {
+                TypeRefComponentRole::TraitSeparator { ordinal }
+            } else {
+                TypeRefComponentRole::GenericSeparator { ordinal }
+            },
+            *separator.range(),
+        );
+    }
+    Ok(())
+}
+
+fn collect_effect_components(
+    tokens: &[TypeToken<'_>],
+    path: &TypeRefNodePath,
+    start: usize,
+    end: usize,
+    output: &mut Vec<TypeRefComponentSource<TextRange>>,
+) -> Result<(), TypeParseError> {
+    let open_index = tokens
+        .iter()
+        .position(|token| {
+            token.range.start() >= start
+                && token.range.end() <= end
+                && matches!(token.kind, TypeTokenKind::OpenBrace)
+        })
+        .ok_or_else(|| TypeParseError::new("function effect row has no open source"))?;
+    let close_index = tokens
+        .iter()
+        .rposition(|token| {
+            token.range.start() >= start
+                && token.range.end() <= end
+                && matches!(token.kind, TypeTokenKind::CloseBrace)
+        })
+        .ok_or_else(|| TypeParseError::new("function effect row has no close source"))?;
+    component(
+        output,
+        path,
+        TypeRefComponentRole::FunctionEffectOpen,
+        tokens[open_index].range,
+    );
+    component(
+        output,
+        path,
+        TypeRefComponentRole::FunctionEffectClose,
+        tokens[close_index].range,
+    );
+    for (index, (label_start, label_end)) in
+        split_top_level(tokens, open_index + 1, close_index, |kind| {
+            matches!(kind, TypeTokenKind::Comma)
+        })
+        .into_iter()
+        .filter(|(start, end)| start != end)
+        .enumerate()
+    {
+        component(
+            output,
+            path,
+            TypeRefComponentRole::FunctionEffect {
+                ordinal: index_u32(index)?,
+            },
+            token_range(tokens, label_start, label_end)?,
+        );
+    }
+    Ok(())
+}
+
+fn punctuation_component(
+    tokens: &[TypeToken<'_>],
+    whole: TextRange,
+    expected: TypeTokenKind<'_>,
+    path: &TypeRefNodePath,
+    role: TypeRefComponentRole,
+    output: &mut Vec<TypeRefComponentSource<TextRange>>,
+) -> Result<(), TypeParseError> {
+    let range = find_token(tokens, whole, |kind| {
+        core::mem::discriminant(kind) == core::mem::discriminant(&expected)
+    })
+    .ok_or_else(|| TypeParseError::new("type component has no punctuation source"))?;
+    component(output, path, role, range);
+    Ok(())
+}
+
+fn find_token(
+    tokens: &[TypeToken<'_>],
+    whole: TextRange,
+    predicate: impl Fn(&TypeTokenKind<'_>) -> bool,
+) -> Option<TextRange> {
+    tokens
+        .iter()
+        .find(|token| {
+            token.range.start() >= whole.start()
+                && token.range.end() <= whole.end()
+                && predicate(&token.kind)
+        })
+        .map(|token| token.range)
+}
+
+fn token_bounds(tokens: &[TypeToken<'_>], whole: TextRange) -> Option<(usize, usize)> {
+    let start = tokens
+        .iter()
+        .position(|token| token.range.start() >= whole.start())?;
+    let end = tokens
+        .iter()
+        .rposition(|token| token.range.end() <= whole.end())?
+        + 1;
+    Some((start, end))
+}
+
+fn find_token_between(
+    tokens: &[TypeToken<'_>],
+    start: usize,
+    end: usize,
+    predicate: impl Fn(&TypeTokenKind<'_>) -> bool,
+) -> Option<TextRange> {
+    tokens
+        .iter()
+        .find(|token| {
+            token.range.start() >= start && token.range.end() <= end && predicate(&token.kind)
+        })
+        .map(|token| token.range)
+}
+
+fn comma_between(
+    tokens: &[TypeToken<'_>],
+    start: usize,
+    end: usize,
+) -> Result<TextRange, TypeParseError> {
+    find_token_between(tokens, start, end, |kind| {
+        matches!(kind, TypeTokenKind::Comma)
+    })
+    .ok_or_else(|| TypeParseError::new("type sequence has no comma source"))
+}
+
+fn index_u32(index: usize) -> Result<u32, TypeParseError> {
+    u32::try_from(index)
+        .map_err(|_| TypeParseError::resource_limit("type component ordinal overflow"))
+}
+
+fn index_u16_from_u32(index: u32) -> Result<u16, TypeParseError> {
+    u16::try_from(index).map_err(|_| TypeParseError::resource_limit("type node ordinal overflow"))
 }
 
 fn parse_type(
@@ -276,13 +968,13 @@ fn parse_atom(
             lexemes: parsed.lexemes,
         });
     }
+    if let Some(projection) = try_parse_projection(tokens, start, end, path, whole)? {
+        return Ok(projection);
+    }
     if let Some(open) = first_top_level(tokens, start, end, |kind| {
         matches!(kind, TypeTokenKind::OpenAngle)
     }) {
         return parse_generic(tokens, start, end, open, path);
-    }
-    if let Some(projection) = try_parse_projection(tokens, start, end, path, whole)? {
-        return Ok(projection);
     }
     parse_path_node(tokens, start, end, path, TypeRefHeadKind::Path)
 }
@@ -814,6 +1506,13 @@ fn parse_path(
                 tokens[cursor].range,
             ));
         };
+        if spelling == "_" {
+            return Err(TypeParseError::at(
+                "syntax.type.infer_unsupported",
+                "inferred type syntax is not part of the final semantic type vocabulary",
+                tokens[cursor].range,
+            ));
+        }
         components.push(TypePathComponent {
             spelling,
             range: tokens[cursor].range,

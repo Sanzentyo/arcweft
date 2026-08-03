@@ -219,7 +219,7 @@ fn numeric_style_diagnostics_distinguish_units_from_fixed_point_overflow() {
         .find(|diagnostic| diagnostic.code() == StyleDiagnosticCode::InvalidUnit)
         .expect("invalid unit diagnostic");
     assert_eq!(invalid_unit.subject(), Some("px"));
-    assert_eq!(invalid_unit.accepted_units(), &["milli", "%"]);
+    assert_eq!(invalid_unit.accepted_units(), &["%"]);
     assert_eq!(
         diagnostics
             .filter(|diagnostic| diagnostic.code() == StyleDiagnosticCode::NonFiniteValue)
@@ -316,7 +316,7 @@ Button:hover { color = rgba(1, 2, 3, 255) }
 }
 pub view Example() {
     Button("OK")
-        .style { opacity = 900milli }
+        .style { opacity = 90% }
         .style { outline-width = 2px }
 }
 "#;
@@ -387,7 +387,7 @@ fn alignment_keywords_are_checked_against_the_owning_property() {
 fn scalar_filters_clip_mask_and_transitions_lower_to_owned_values() {
     let report = analyze(
         r#"pub style effects {
-    token motion.emphasis: Scalar = 1250milli
+    token motion.emphasis: Scalar = 1.25
 
     Panel {
         scale = token(motion.emphasis)

@@ -13,7 +13,7 @@ fn document(text: &str) -> SourceDocument {
 
 #[test]
 fn one_pass_lexer_classifies_current_token_families_losslessly() {
-    let source = "proof π<'a>(c: Char = '界') = r##\"x\r\ny\"## // note\r\n@actor.hero";
+    let source = "proof π<'a>(c: Char = \"界\"c) = r##\"x\r\ny\"## // note\r\n@actor.hero";
     let document = document(source);
     let tokens = DocumentLexer::new(source).lex();
     let rebuilt = tokens
@@ -46,13 +46,12 @@ fn one_pass_lexer_classifies_current_token_families_losslessly() {
             .iter()
             .any(|token| token.kind == SyntaxKind::EntityReferenceToken)
     );
-    assert_eq!(
-        parse_shadow_document(&document)
-            .unwrap()
-            .green()
-            .to_string(),
-        source
-    );
+    let built = parse_shadow_document(&document, crate::parser::ParseOptions::default()).unwrap();
+    assert_eq!(built.green().to_string(), source);
+    let stats = built.stats();
+    assert_eq!(stats.accepted_source_bytes(), source.len());
+    assert_eq!(stats.lexer_tokens(), tokens.len());
+    assert_eq!(stats.grammar_events(), built.events().len());
 }
 
 #[test]
@@ -74,8 +73,27 @@ fn block_comments_split_newlines_without_losing_comment_state() {
 }
 
 #[test]
+fn terminal_entity_reference_colon_remains_a_suite_token() {
+    let source = "@choice:.menu @choice.menu:";
+    let tokens = DocumentLexer::new(source).lex();
+    let significant = tokens
+        .iter()
+        .filter(|token| token.kind != SyntaxKind::WhitespaceToken)
+        .map(|token| (token.kind, &source[token.range.as_range()]))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        significant,
+        [
+            (SyntaxKind::EntityReferenceToken, "@choice:.menu"),
+            (SyntaxKind::EntityReferenceToken, "@choice.menu"),
+            (SyntaxKind::PunctuationToken, ":"),
+        ]
+    );
+}
+
+#[test]
 fn numeric_ranges_raw_strings_and_character_escapes_keep_exact_boundaries() {
-    let source = "1..2 3.14 6.02e-23 0xff_u8 r###\"x\"##y\"### '界' '\\u{754c}' 'life";
+    let source = "1..2 3.14 6.02e-23 0xff_u8 r###\"x\"##y\"### \"界\"c \"\\u{754c}\"c 'life";
     let tokens = DocumentLexer::new(source).lex();
     let significant = tokens
         .iter()
@@ -92,8 +110,8 @@ fn numeric_ranges_raw_strings_and_character_escapes_keep_exact_boundaries() {
             (SyntaxKind::NumberToken, "6.02e-23"),
             (SyntaxKind::NumberToken, "0xff_u8"),
             (SyntaxKind::RawStringToken, "r###\"x\"##y\"###"),
-            (SyntaxKind::CharacterToken, "'界'"),
-            (SyntaxKind::CharacterToken, "'\\u{754c}'"),
+            (SyntaxKind::CharacterToken, "\"界\"c"),
+            (SyntaxKind::CharacterToken, "\"\\u{754c}\"c"),
             (SyntaxKind::LifetimeToken, "'life"),
         ]
     );
@@ -108,7 +126,8 @@ fn shadow_root_keeps_non_declarations_as_generic_errors() {
         "let shown = true\n",
         "???\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -140,7 +159,7 @@ fn shadow_root_keeps_non_declarations_as_generic_errors() {
 }
 
 #[test]
-fn unterminated_non_dialogue_string_is_not_a_literal_expression() {
+fn unterminated_non_dialogue_string_retains_typed_literal_recovery() {
     let source = "fn bad() { let values = [\"unfinished] }\n";
     let tokens = DocumentLexer::new(source).lex();
     assert!(
@@ -149,13 +168,15 @@ fn unterminated_non_dialogue_string_is_not_a_literal_expression() {
             .any(|token| token.kind == SyntaxKind::UnterminatedStringToken)
     );
 
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     assert!(
         built
             .index()
             .entries()
             .iter()
-            .any(|entry| entry.kind() == SyntaxKind::ErrorExpression)
+            .any(|entry| entry.kind() == SyntaxKind::LiteralExpression)
     );
+    assert!(built.has_recovery());
     assert_eq!(built.green().to_string(), source);
 }

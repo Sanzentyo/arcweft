@@ -19,9 +19,10 @@ use arcweft_core::value::{
 use arcweft_lang_syntax::{
     ast::{flow::Stmt, line_plan::LinePlanItem, pattern::Pattern},
     expr::{
-        BinaryOp, CallArg, ClosureParam, DecodedStringLiteral, Expr, FloatSuffix, IntLiteral,
-        Literal, MatchExprArm, NumericBracketSeq, Placeholder, UnaryOp,
+        BinaryOp, CallArg, ClosureParam, DecodedStringLiteral, Expr, IntLiteral, Literal,
+        MatchExprArm, NumericBracketSeq, Placeholder, UnaryOp,
     },
+    literal::FloatSuffix,
     types::TypeRef,
 };
 use std::{cell::Cell, collections::BTreeMap, sync::LazyLock};

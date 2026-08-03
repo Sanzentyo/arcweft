@@ -1,5 +1,6 @@
 use super::TextRange;
 use crate::expr::Expr;
+use crate::text::RichTextArgumentIssue;
 
 /// Syntax-owned payload classification for one dialogue tag.
 ///
@@ -52,7 +53,8 @@ pub enum DialogueTagArg {
     Invalid {
         source: String,
         range: TextRange,
-        issue: DialogueTagArgSyntaxIssue,
+        issue: RichTextArgumentIssue,
+        issue_range: TextRange,
     },
 }
 
@@ -81,17 +83,6 @@ pub enum QuoteStyle {
     Unquoted,
     Single,
     Double,
-}
-
-/// Syntax issue retained by an invalid argument record.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum DialogueTagArgSyntaxIssue {
-    EmptyKey { range: TextRange },
-    InvalidKey { range: TextRange },
-    InvalidEscape { range: TextRange },
-    UnterminatedQuote { range: TextRange },
-    KeyTooLong { range: TextRange },
-    ValueTooLong { range: TextRange },
 }
 
 impl DialogueTagArg {
@@ -160,9 +151,17 @@ impl DialogueTagArg {
     }
 
     /// Syntax issue attached to an invalid argument.
-    pub const fn issue(&self) -> Option<&DialogueTagArgSyntaxIssue> {
+    pub const fn issue(&self) -> Option<&RichTextArgumentIssue> {
         match self {
             Self::Invalid { issue, .. } => Some(issue),
+            Self::Positional { .. } | Self::Named { .. } => None,
+        }
+    }
+
+    /// Exact source range responsible for an invalid argument issue.
+    pub const fn issue_range(&self) -> Option<TextRange> {
+        match self {
+            Self::Invalid { issue_range, .. } => Some(*issue_range),
             Self::Positional { .. } | Self::Named { .. } => None,
         }
     }

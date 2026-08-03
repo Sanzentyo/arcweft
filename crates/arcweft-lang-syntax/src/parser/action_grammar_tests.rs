@@ -2,7 +2,7 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::document::parse_shadow_document;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
-use crate::grammar::kinds::SyntaxKind;
+use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
 fn document(source: &str) -> SourceDocument {
     SourceDocument::try_new(
@@ -14,7 +14,8 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source)).expect("Action grammar builds")
+    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("Action grammar builds")
 }
 
 fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
@@ -40,6 +41,7 @@ fn canonical_action_owns_a_typed_bodyless_channel_signature() {
     assert_eq!(count_kind(&built, SyntaxKind::ActionDeclarationItem), 1);
     assert_eq!(count_kind(&built, SyntaxKind::ActionSignature), 1);
     assert_eq!(count_kind(&built, SyntaxKind::Parameter), 2);
+    assert_eq!(count_kind(&built, SyntaxKind::ColonNode), 2);
     assert_eq!(count_kind(&built, SyntaxKind::PathType), 2);
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
@@ -102,6 +104,7 @@ fn action_defaults_return_types_and_bodies_are_rejected_without_raw_reparse() {
         .expect("body diagnostic");
     assert_eq!(body.range(), source_range(source, "{ return }"));
     assert!(count_kind(&built, SyntaxKind::ErrorNode) >= 3);
+    assert_eq!(count_kind(&built, SyntaxKind::EqualsNode), 1);
     assert_eq!(built.green().to_string(), source);
 }
 
@@ -109,7 +112,8 @@ fn action_defaults_return_types_and_bodies_are_rejected_without_raw_reparse() {
 fn action_missing_group_and_non_binding_parameter_remain_typed_recovery() {
     let source = concat!("action Missing\n", "action Invalid((left, right): Pair)\n");
     let built = parse(source);
-    assert!(count_kind(&built, SyntaxKind::MissingTokenNode) >= 2);
+    assert!(count_kind(&built, SyntaxKind::OpenParenNode) >= 2);
+    assert!(count_kind(&built, SyntaxKind::CloseParenNode) >= 2);
     assert!(count_kind(&built, SyntaxKind::TuplePattern) >= 1);
     assert!(
         built
@@ -123,6 +127,46 @@ fn action_missing_group_and_non_binding_parameter_remain_typed_recovery() {
             .iter()
             .any(|diagnostic| diagnostic.code() == "syntax.action.invalid_parameter")
     );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn action_parameters_own_authored_and_missing_punctuation() {
+    let source = concat!(
+        "action Typed(value: String)\n",
+        "action MissingType(value:)\n",
+        "action MissingColon(value)\n",
+        "action Defaulted(value: String = make())\n",
+    );
+    let built = parse(source);
+    assert_eq!(count_kind(&built, SyntaxKind::ColonNode), 4);
+    assert_eq!(count_kind(&built, SyntaxKind::EqualsNode), 1);
+    assert!(built.index().entries().iter().all(|entry| {
+        entry.kind() != SyntaxKind::ColonNode || entry.role() == SyntaxRole::Colon
+    }));
+    assert!(built.index().entries().iter().all(|entry| {
+        entry.kind() != SyntaxKind::EqualsNode || entry.role() == SyntaxRole::Equals
+    }));
+    assert_eq!(
+        built
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code() == "syntax.parameter.missing_type")
+            .count(),
+        2
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn action_nonempty_invalid_type_keeps_the_authored_parameter_close() {
+    let source = "action Broken(value: @)\n";
+    let built = parse(source);
+    assert_eq!(count_kind(&built, SyntaxKind::ErrorType), 1);
+    assert_eq!(count_kind(&built, SyntaxKind::CloseParenNode), 1);
+    assert_eq!(built.diagnostics().len(), 1);
+    assert_eq!(built.diagnostics()[0].code(), "syntax.type.invalid");
+    assert_eq!(built.diagnostics()[0].range(), source_range(source, "@"));
     assert_eq!(built.green().to_string(), source);
 }
 

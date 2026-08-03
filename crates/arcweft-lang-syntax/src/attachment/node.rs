@@ -2,7 +2,7 @@
 
 use core::marker::PhantomData;
 
-use arcweft_source::SourceRange;
+use arcweft_source::{SourceRange, SourceSpan};
 
 use super::{SyntaxLookupError, SyntaxNodeHandle, SyntaxNodeId, SyntaxSnapshotId};
 use crate::grammar::kinds::{AstTag, SyntaxKind};
@@ -11,8 +11,10 @@ mod sealed {
     pub trait Sealed {}
 }
 
-/// Exact grammar-kind marker owned by the syntax crate.
-pub(crate) trait AstKind: sealed::Sealed + Copy + 'static {
+/// Grammar-kind predicate owned by the syntax crate.
+///
+/// This trait is sealed; only syntax-owned marker types can implement it.
+pub trait AstKind: sealed::Sealed + Copy + 'static {
     const TAG: AstTag;
 
     fn accepts(kind: SyntaxKind) -> bool;
@@ -22,19 +24,17 @@ pub(crate) trait AstKind: sealed::Sealed + Copy + 'static {
     }
 }
 
-pub(crate) trait ExactAstKind: AstKind {
+/// Sealed marker for exactly one concrete grammar kind.
+pub trait ExactAstKind: AstKind {
     const KIND: SyntaxKind;
 }
 
 macro_rules! define_ast_kinds {
     ($inventory:ident, $tag:ident; $($marker:ident => $kind:ident),+ $(,)?) => {
         $(
-            #[allow(
-                dead_code,
-                reason = "the complete private marker inventory precedes the atomic public syntax switch"
-            )]
             #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-            pub(crate) struct $marker;
+            #[doc = concat!("Typed marker for `SyntaxKind::", stringify!($kind), "`.")]
+            pub struct $marker;
 
             impl sealed::Sealed for $marker {}
 
@@ -65,7 +65,8 @@ macro_rules! define_ast_kinds {
 macro_rules! define_fragment_root_kind {
     ($marker:ident, $tag:ident, $accepts:expr) => {
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        pub(crate) struct $marker;
+        #[doc = concat!("Typed root marker for an attached ", stringify!($tag), " fragment.")]
+        pub struct $marker;
 
         impl sealed::Sealed for $marker {}
 
@@ -159,6 +160,11 @@ define_ast_kinds!(STATEMENT_MARKERS, Statement;
     MatchStatementKind => MatchStatement,
     CloseStatementKind => CloseStatement,
     SelectStatementKind => SelectStatement,
+    ChoiceStatementKind => ChoiceStatement,
+    SourceLocaleStatementKind => SourceLocaleStatement,
+    ScopeStatementKind => ScopeStatement,
+    IncludeStatementKind => IncludeStatement,
+    AwaitWithStatementKind => AwaitWithStatement,
     BreakStatementKind => BreakStatement,
     ContinueStatementKind => ContinueStatement,
     ExpressionStatementKind => ExpressionStatement,
@@ -179,12 +185,13 @@ define_ast_kinds!(EXPRESSION_MARKERS, Expression;
     ArrayRepeatExpressionKind => ArrayRepeatExpression,
     CallExpressionKind => CallExpression,
     SelectExpressionKind => SelectExpression,
-    DialogueCallExpressionKind => DialogueCallExpression,
-    IndexExpressionKind => IndexExpression,
+    PostfixBracketExpressionKind => PostfixBracketExpression,
+    DialogueContentApplicationExpressionKind => DialogueContentApplicationExpression,
     PipeExpressionKind => PipeExpression,
     TryExpressionKind => TryExpression,
     AwaitExpressionKind => AwaitExpression,
     ThreadExpressionKind => ThreadExpression,
+    ChoiceExpressionKind => ChoiceExpression,
     RangeExpressionKind => RangeExpression,
     RecordExpressionKind => RecordExpression,
     RecordLiteralExpressionKind => RecordLiteralExpression,
@@ -212,6 +219,7 @@ define_ast_kinds!(PATTERN_MARKERS, Pattern;
     WildcardPatternKind => WildcardPattern,
     BindingPatternKind => BindingPattern,
     MutableBindingPatternKind => MutableBindingPattern,
+    TypedBindingPatternKind => TypedBindingPattern,
     LiteralPatternKind => LiteralPattern,
     EntityReferencePatternKind => EntityReferencePattern,
     TuplePatternKind => TuplePattern,
@@ -233,12 +241,8 @@ define_ast_kinds!(TYPE_MARKERS, Type;
     TupleTypeKind => TupleType,
     ReferenceTypeKind => ReferenceType,
     SliceTypeKind => SliceType,
-    ArrayTypeKind => ArrayType,
     FunctionTypeKind => FunctionType,
     SumTypeKind => SumType,
-    InferTypeKind => InferType,
-    LifetimeTypeKind => LifetimeType,
-    ElidedRegionTypeKind => ElidedRegionType,
     TypeArgumentKind => TypeArgument,
     MissingTypeKind => MissingType,
     ErrorTypeKind => ErrorType,
@@ -275,6 +279,10 @@ define_ast_kinds!(BODY_MARKERS, Body;
     StyleBodyKind => StyleBody,
     EntryBodyKind => EntryBody,
     BlockKind => Block,
+    ChoiceBodyKind => ChoiceBody,
+    ChoiceOptionBodyKind => ChoiceOptionBody,
+    ChoiceViewBodyKind => ChoiceViewBody,
+    ChoicePlanBodyKind => ChoicePlanBody,
     PredicateBlockKind => PredicateBlock,
     ProofBlockKind => ProofBlock,
 );
@@ -288,6 +296,9 @@ define_ast_kinds!(DELIMITER_MARKERS, Delimiter;
     CloseBracketKind => CloseBracketNode,
     OpenAngleKind => OpenAngleNode,
     CloseAngleKind => CloseAngleNode,
+    EqualsKind => EqualsNode,
+    ColonKind => ColonNode,
+    RestParameterMarkerKind => RestParameterMarker,
 );
 
 define_ast_kinds!(RICH_TEXT_MARKERS, RichText;
@@ -326,6 +337,17 @@ define_ast_kinds!(DECLARATION_PART_MARKERS, DeclarationPart;
     DeclarationHeaderKind => DeclarationHeader,
     DeclarationPublicIdKind => DeclarationPublicId,
     SurfaceAliasKind => SurfaceAlias,
+    PostfixBracketPayloadKind => PostfixBracketPayload,
+    DialogueContentKind => DialogueContent,
+    DialogueTextKind => DialogueText,
+    DialogueRawKind => DialogueRaw,
+    DialogueEscapeKind => DialogueEscape,
+    DialogueRubyKind => DialogueRuby,
+    DialogueInterpolationKind => DialogueInterpolation,
+    DialogueControlKind => DialogueControl,
+    DialogueMarkKind => DialogueMark,
+    DialogueLineBreakKind => DialogueLineBreak,
+    DialogueErrorKind => DialogueError,
     GenericParameterGroupKind => GenericParameterGroup,
     GenericParameterKind => GenericParameter,
     LifetimeParameterKind => LifetimeParameter,
@@ -337,6 +359,47 @@ define_ast_kinds!(DECLARATION_PART_MARKERS, DeclarationPart;
     ReturnTypeKind => ReturnType,
     RequiresClauseKind => RequiresClause,
     EnsuresClauseKind => EnsuresClause,
+    InvariantClauseKind => InvariantClause,
+    AssumeClauseKind => AssumeClause,
+    ReadsClauseKind => ReadsClause,
+    EffectsClauseKind => EffectsClause,
+    NoEffectClauseKind => NoEffectClause,
+    ModifiesClauseKind => ModifiesClause,
+    DecreasesClauseKind => DecreasesClause,
+    SelectBranchKind => SelectBranch,
+    AwaitWithBranchKind => AwaitWithBranch,
+    ChoiceIfItemKind => ChoiceIfItem,
+    ChoiceIfBranchKind => ChoiceIfBranch,
+    ChoiceForItemKind => ChoiceForItem,
+    ChoiceMatchItemKind => ChoiceMatchItem,
+    ChoiceMatchArmKind => ChoiceMatchArm,
+    ChoiceOptionKind => ChoiceOption,
+    ChoiceOptionForKind => ChoiceOptionFor,
+    ChoiceLabelFieldKind => ChoiceLabelField,
+    ChoiceIdFieldKind => ChoiceIdField,
+    ChoiceValueFieldKind => ChoiceValueField,
+    ChoiceVisibleFieldKind => ChoiceVisibleField,
+    ChoiceEnabledFieldKind => ChoiceEnabledField,
+    ChoiceOrderFieldKind => ChoiceOrderField,
+    ChoiceHotkeyFieldKind => ChoiceHotkeyField,
+    ChoiceViewFieldKind => ChoiceViewField,
+    ChoiceSelectFieldKind => ChoiceSelectField,
+    ChoiceCompactArmKind => ChoiceCompactArm,
+    ChoiceGotoActionKind => ChoiceGotoAction,
+    ChoiceOutActionKind => ChoiceOutAction,
+    ChoicePlanKind => ChoicePlan,
+    ChoicePlanAssignmentKind => ChoicePlanAssignment,
+    ChoicePlanTimeoutKind => ChoicePlanTimeout,
+    ChoicePlanCancelKind => ChoicePlanCancel,
+    ChoicePlanOnSelectKind => ChoicePlanOnSelect,
+    InputTriggerPatternKind => InputTriggerPattern,
+    EventTriggerPatternKind => EventTriggerPattern,
+    SignalTriggerPatternKind => SignalTriggerPattern,
+    TimeoutTriggerPatternKind => TimeoutTriggerPattern,
+    MarkTriggerPatternKind => MarkTriggerPattern,
+    SelectTriggerPatternKind => SelectTriggerPattern,
+    TaskTriggerPatternKind => TaskTriggerPattern,
+    ScopeTriggerPatternKind => ScopeTriggerPattern,
     ResourceFieldInitializerKind => ResourceFieldInitializer,
     CharacterDisplayNameMemberKind => CharacterDisplayNameMember,
     ViewExportBlockKind => ViewExportBlock,
@@ -375,7 +438,7 @@ define_ast_kinds!(DECLARATION_PART_MARKERS, DeclarationPart;
 );
 
 /// Typed handle that cannot detach from its immutable grammar snapshot.
-pub(crate) struct AstNode<K: AstKind> {
+pub struct AstNode<K: AstKind> {
     syntax: SyntaxNodeHandle,
     marker: PhantomData<fn() -> K>,
 }
@@ -438,39 +501,41 @@ impl<K: AstKind> AstNode<K> {
         })
     }
 
-    pub(crate) fn id(&self) -> SyntaxNodeId {
+    pub fn id(&self) -> SyntaxNodeId {
         self.syntax.id()
     }
 
-    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
+    pub fn snapshot_id(&self) -> &SyntaxSnapshotId {
         self.syntax.snapshot_id()
     }
 
-    pub(crate) fn syntax(&self) -> SyntaxNodeHandle {
+    pub fn syntax(&self) -> SyntaxNodeHandle {
         self.syntax.clone()
     }
 
-    #[allow(
-        dead_code,
-        reason = "private typed accessors precede the atomic ParsedSource syntax switch"
-    )]
-    pub(crate) fn kind(&self) -> SyntaxKind {
+    pub fn kind(&self) -> SyntaxKind {
         self.syntax.kind()
     }
 
-    #[allow(
-        dead_code,
-        reason = "private typed accessors precede the atomic ParsedSource syntax switch"
-    )]
-    pub(crate) fn role(&self) -> crate::grammar::kinds::SyntaxRole {
+    pub fn role(&self) -> crate::grammar::kinds::SyntaxRole {
         self.syntax.role()
     }
 
-    pub(crate) fn range(&self) -> SourceRange {
+    pub fn range(&self) -> SourceRange {
         self.syntax.range()
     }
 
-    pub(crate) fn is_same_reconciled_node(&self, other: &Self) -> bool {
+    /// Exact revision-bound source span occupied by this typed node.
+    pub fn source_span(&self) -> SourceSpan {
+        self.syntax.source_span()
+    }
+
+    /// Exact UTF-8 source slice retained with this typed node.
+    pub fn source_text(&self) -> &str {
+        self.syntax.source_text()
+    }
+
+    pub fn is_same_reconciled_node(&self, other: &Self) -> bool {
         self.id() == other.id()
     }
 }

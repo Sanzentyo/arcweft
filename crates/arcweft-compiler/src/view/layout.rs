@@ -5,7 +5,8 @@ use arcweft_bundle::resource_codec::{
 };
 use arcweft_lang_syntax::{
     ast::view::{ViewArg, ViewButton, ViewModifier},
-    expr::{Expr, Literal, UnitNumberSuffix},
+    expr::{Expr, Literal},
+    literal::UnitNumberSuffix,
 };
 
 use super::ViewSidecarError;
@@ -155,12 +156,9 @@ pub(super) fn text_block_frame(
             .max(1);
     let font_size_milli = modifier_layout_length_u32(modifiers, &["font-size"])?.unwrap_or(20_000);
     let fallback_line_height = font_size_milli.saturating_mul(6).saturating_add(4) / 5;
-    let line_height_milli = modifier_layout_length_u32(
-        modifiers,
-        &["line-height", "line-height-milli", "line_height_milli"],
-    )?
-    .unwrap_or(fallback_line_height)
-    .max(VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI);
+    let line_height_milli = modifier_layout_length_u32(modifiers, &["line-height"])?
+        .unwrap_or(fallback_line_height)
+        .max(VIEW_LAYOUT_TEXT_LINE_HEIGHT_MILLI);
     let line_count = estimated_wrapped_text_lines(text, width_milli, font_size_milli);
     let inferred_height_milli = line_height_milli.saturating_mul(line_count);
     let height_milli =
@@ -247,16 +245,6 @@ fn expr_px_milli(expr: &Expr, property: &str) -> Result<i32, ViewSidecarError> {
             let raw = raw.trim();
             let raw = raw.strip_suffix("px").map_or(raw, str::trim);
             parse_px_milli(raw).ok_or_else(invalid)
-        }
-        Expr::Literal(Literal::UnitNumber {
-            raw,
-            suffix: UnitNumberSuffix::Milli,
-        }) => {
-            let raw = raw.trim();
-            raw.strip_suffix("milli")
-                .map(str::trim)
-                .and_then(|raw| raw.parse::<i32>().ok())
-                .ok_or_else(invalid)
         }
         Expr::Literal(Literal::Int(literal)) => literal
             .magnitude()

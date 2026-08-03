@@ -95,3 +95,12 @@ pub(super) fn parse_source_at(
     }
     grammar::parse_authored(&tokens, 0, tokens.len())
 }
+
+/// Parses tokens borrowed from an already-active parser transaction without
+/// lexing or consulting source text again.
+pub(crate) fn parse_tokens(tokens: &[TypeToken<'_>]) -> Result<AuthoredTypeRef, TypeParseError> {
+    if tokens.is_empty() {
+        return Err(TypeParseError::new("expected type"));
+    }
+    grammar::parse_authored(tokens, 0, tokens.len())
+}

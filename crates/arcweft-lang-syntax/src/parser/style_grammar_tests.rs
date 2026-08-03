@@ -1,9 +1,12 @@
+use std::fmt::Write;
+
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::document::parse_shadow_document;
-use crate::grammar::build::UnattachedGrammarEntry;
+use crate::grammar::build::{GrammarBuildError, UnattachedGrammarEntry};
 use crate::grammar::event::PendingSyntaxDiagnostic;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::incremental::SyntaxLimit;
 
 fn document(text: &str) -> SourceDocument {
     SourceDocument::try_new(
@@ -27,14 +30,15 @@ fn style_shadow_grammar_is_lossless_and_owns_typed_members() {
         "    token color.text: Color = rgba(255, 255, 255, 255)\n",
         "    Button.primary:hover > .label {\n",
         "        color = color.text\n",
-        "        opacity += 0.2\n",
+        "        append opacity = 0.2\n",
         "    }\n",
-        "    when environment(text_scale >= 100%, contrast = high) {\n",
+        "    when environment(text-scale >= 100%, contrast == high) {\n",
         "        Button { color = color.text }\n",
         "    }\n",
         "}\n",
     );
-    let built = parse_shadow_document(&document(source)).expect("shadow grammar builds");
+    let built = parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("shadow grammar builds");
     let entries = built.index().entries();
 
     for expected in [
@@ -124,7 +128,8 @@ fn malformed_style_member_recovers_before_later_member_and_declaration() {
         "}\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).expect("shadow grammar builds");
+    let built = parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("shadow grammar builds");
     let codes = built
         .diagnostics()
         .iter()
@@ -170,7 +175,8 @@ fn missing_style_close_preserves_the_following_declaration() {
         "    Button { color = color.text }\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source)).expect("shadow grammar builds");
+    let built = parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("shadow grammar builds");
     let codes = built
         .diagnostics()
         .iter()
@@ -191,4 +197,107 @@ fn missing_style_close_preserves_the_following_declaration() {
         "{codes:?}"
     );
     assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn style_members_share_the_declaration_member_limit_exactly() {
+    let exact = style_with_tokens(SyntaxLimit::DeclarationMembers.maximum());
+    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+        .expect("exact Style declaration-member limit builds");
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::StyleTokenDeclaration),
+        SyntaxLimit::DeclarationMembers.maximum()
+    );
+
+    let one_over = style_with_tokens(SyntaxLimit::DeclarationMembers.maximum() + 1);
+    assert!(matches!(
+        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        Err(GrammarBuildError::LimitExceeded(
+            SyntaxLimit::DeclarationMembers
+        ))
+    ));
+}
+
+#[test]
+fn mixed_style_members_share_one_aggregate_declaration_member_budget() {
+    let maximum = SyntaxLimit::DeclarationMembers.maximum();
+    assert_eq!(maximum, 1_024);
+    let exact = style_with_mixed_members(maximum);
+    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+        .expect("mixed Style aggregate at 1,024 members builds");
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::StyleTokenDeclaration),
+        maximum - 9
+    );
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| { diagnostic.code() == "syntax.style.environment_trailing_comma" })
+    );
+
+    let one_over = style_with_mixed_members(maximum + 1);
+    assert!(matches!(
+        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        Err(GrammarBuildError::LimitExceeded(
+            SyntaxLimit::DeclarationMembers
+        ))
+    ));
+}
+
+#[test]
+fn style_environment_nesting_accepts_exact_limit_and_rejects_one_over() {
+    let exact = nested_style_environments(SyntaxLimit::StyleNestingDepth.maximum());
+    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+        .expect("exact Style environment nesting limit builds");
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::StyleEnvironmentBlock),
+        SyntaxLimit::StyleNestingDepth.maximum()
+    );
+
+    let one_over = nested_style_environments(SyntaxLimit::StyleNestingDepth.maximum() + 1);
+    assert!(matches!(
+        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        Err(GrammarBuildError::LimitExceeded(
+            SyntaxLimit::StyleNestingDepth
+        ))
+    ));
+}
+
+fn style_with_tokens(count: usize) -> String {
+    let mut source = String::from("style many {\n");
+    for ordinal in 0..count {
+        writeln!(source, "token token_{ordinal} = {ordinal}").expect("String writes cannot fail");
+    }
+    source.push_str("}\n");
+    source
+}
+
+fn style_with_mixed_members(total_charge: usize) -> String {
+    // Top-level rule: rule + sequence + predicate + declaration = 4.
+    // Environment: block + clause + nested rule + sequence + declaration = 5.
+    // Its trailing-comma recovery is deliberately outside the aggregate.
+    const NON_TOKEN_CHARGE: usize = 9;
+    let token_count = total_charge
+        .checked_sub(NON_TOKEN_CHARGE)
+        .expect("mixed fixture requires its fixed rule/environment members");
+    let mut source = style_with_tokens(token_count);
+    source.truncate(source.len() - "}\n".len());
+    source.push_str("Panel:hover { opacity = 1 }\n");
+    source.push_str("when environment(color-scheme == dark,) {\n");
+    source.push_str("Panel { opacity = 1 }\n");
+    source.push_str("}\n}\n");
+    source
+}
+
+fn nested_style_environments(depth: usize) -> String {
+    let mut source = String::from("style nested {\n");
+    for _ in 0..depth {
+        source.push_str("when environment(color-scheme == dark) {\n");
+    }
+    for _ in 0..depth {
+        source.push_str("}\n");
+    }
+    source.push_str("}\n");
+    source
 }

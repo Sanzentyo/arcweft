@@ -2,9 +2,9 @@
 
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::emit_outer_prefixes;
-use super::document::ShadowDocumentParser;
-use super::expression::{emit_expression, emit_named_plan_block};
+use super::expression::{emit_entity_reference, emit_expression, emit_named_plan_block};
 use super::lexer::LexToken;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
@@ -14,6 +14,8 @@ use super::shadow_recovery::{
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::grammar::test_projection::{KnownTestKind, PendingTestKindProjection};
+use crate::name::SyntaxName;
 
 pub(super) fn emit_declaration(
     source: &str,
@@ -30,7 +32,12 @@ pub(super) fn emit_declaration(
         "bench"
     };
     let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
-    parser.start(kind, role);
+    let test_owner = if kind == SyntaxKind::TestItem {
+        parser.start_projected_owner(kind, role)
+    } else {
+        parser.start(kind, role);
+        None
+    };
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
 
@@ -40,25 +47,32 @@ pub(super) fn emit_declaration(
     parser.bump_trivia();
     emit_plan_id(&mut parser, keyword);
     parser.bump_trivia();
-    if kind == SyntaxKind::TestItem {
-        emit_test_kind(&mut parser);
+    let test_kind = if kind == SyntaxKind::TestItem {
+        Some(emit_test_kind(&mut parser))
+    } else {
+        None
+    };
+    if test_kind.is_some() {
         parser.bump_trivia();
     }
     recover_trailing_header(&mut parser);
     emit_plan_body(&mut parser, keyword);
 
     while parser.bump().is_some() {}
+    if let Some(test_kind) = test_kind {
+        parser.set_test_kind_projection(test_owner, test_kind);
+    }
     parser.finish();
 }
 
 fn emit_plan_id(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &'static str) {
     if parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
-        parser.bump();
+        let _ = emit_entity_reference(parser, SyntaxRole::Reference(0));
         return;
     }
 
     let at = parser.current_offset();
-    parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
+    parser.start(SyntaxKind::MissingExpression, SyntaxRole::Reference(0));
     parser.push(SyntaxEvent::MissingToken {
         expected: expected(SyntaxKind::EntityReferenceToken),
         at,
@@ -75,19 +89,45 @@ fn emit_plan_id(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &'static str
     )));
 }
 
-fn emit_test_kind(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_test_kind(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingTestKindProjection {
     if matches!(
         parser.current_kind(),
         Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
     ) {
-        parser.start(SyntaxKind::NameReference, SyntaxRole::Type);
+        let token = parser.current().expect("checked test adapter-kind token");
+        let source = token.range();
+        let spelling = parser.text_of(token);
+        let projection = match spelling {
+            "scenario" => PendingTestKindProjection::Known {
+                value: KnownTestKind::Scenario,
+                source,
+            },
+            "visual" => PendingTestKindProjection::Known {
+                value: KnownTestKind::Visual,
+                source,
+            },
+            "audio" => PendingTestKindProjection::Known {
+                value: KnownTestKind::Audio,
+                source,
+            },
+            "fixture" => PendingTestKindProjection::Known {
+                value: KnownTestKind::Fixture,
+                source,
+            },
+            _ => PendingTestKindProjection::Custom {
+                value: SyntaxName::try_new(spelling)
+                    .expect("identifier-like test adapter token is a validated name"),
+                source,
+            },
+        };
+        parser.start(SyntaxKind::NameReference, SyntaxRole::Kind);
         parser.bump();
         parser.finish();
-        return;
+        return projection;
     }
 
     let at = parser.current_offset();
-    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+    parser.start(SyntaxKind::MissingName, SyntaxRole::Kind);
     parser.push(SyntaxEvent::MissingToken {
         expected: expected(SyntaxKind::IdentifierToken),
         at,
@@ -98,6 +138,9 @@ fn emit_test_kind(parser: &mut ShadowDocumentParser<'_, '_>) {
         SourceRange::new(at, at),
         "test declaration requires an adapter kind",
     )));
+    PendingTestKindProjection::Missing {
+        insertion: SourceRange::new(at, at),
+    }
 }
 
 fn recover_trailing_header(parser: &mut ShadowDocumentParser<'_, '_>) {
@@ -111,7 +154,7 @@ fn recover_trailing_header(parser: &mut ShadowDocumentParser<'_, '_>) {
 
     let start = parser.cursor();
     let recovery_end = trimmed_end(parser, start, open);
-    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(1));
+    parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
     bump_until(parser, recovery_end);
     parser.finish();
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
@@ -215,18 +258,23 @@ fn emit_plan_statement(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, or
             SyntaxKind::ExpressionStatement,
             SyntaxRole::Statement(ordinal),
         );
-        emit_named_plan_block(parser, child_end, SyntaxRole::Operand);
+        emit_named_plan_block(parser, child_end, SyntaxRole::Initializer);
     } else if parser.at("goto") {
-        parser.start(SyntaxKind::GotoStatement, SyntaxRole::Statement(ordinal));
-        parser.bump();
-        parser.bump_trivia();
-        emit_expression(parser, child_end, SyntaxRole::Operand);
+        let owner =
+            parser.start_projected_owner(SyntaxKind::GotoStatement, SyntaxRole::Statement(ordinal));
+        let projection = super::statement::keyword::emit_keyword_statement(
+            parser,
+            child_end,
+            SyntaxKind::TestItem,
+            SyntaxKind::GotoStatement,
+        );
+        parser.set_keyword_statement_projection(owner, projection);
     } else {
         parser.start(
             SyntaxKind::ExpressionStatement,
             SyntaxRole::Statement(ordinal),
         );
-        emit_expression(parser, child_end, SyntaxRole::Operand);
+        emit_expression(parser, child_end, SyntaxRole::Initializer);
     }
     bump_until(parser, end);
     parser.finish();

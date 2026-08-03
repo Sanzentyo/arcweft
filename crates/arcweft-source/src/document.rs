@@ -10,7 +10,7 @@ pub const MAX_REGISTRATION_SOURCE_BYTES: u64 = 8_388_608;
 
 /// Stable identity for one logical source document.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct SourceDocumentId(String);
+pub struct SourceDocumentId(Arc<str>);
 
 impl SourceDocumentId {
     pub fn try_new(value: impl Into<String>) -> Result<Self, SourceDocumentIdError> {
@@ -24,7 +24,7 @@ impl SourceDocumentId {
         {
             return Err(SourceDocumentIdError::Control { byte });
         }
-        Ok(Self(value))
+        Ok(Self(Arc::from(value)))
     }
 
     pub fn as_str(&self) -> &str {

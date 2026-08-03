@@ -6,7 +6,8 @@ use arcweft_lang_syntax::{
             ViewStyleModifier, ViewTextControlPayloadField,
         },
     },
-    expr::{Expr, Literal, UnitNumberSuffix},
+    expr::{Expr, Literal},
+    literal::UnitNumberSuffix,
     parser::recovery::ParseErrorKind,
 };
 
@@ -24,7 +25,7 @@ pub style primary_button {
 
 pub style @style:.secondary_button {
     Button:active {
-        opacity = 920milli
+        opacity = 92%
         z-index = 920
         border-radius = 12px
     }
@@ -57,8 +58,8 @@ pub style danger_button {
         .declarations();
     assert!(matches!(
         active_declarations[0].value().expr(),
-        Expr::Literal(Literal::UnitNumber { raw, suffix: UnitNumberSuffix::Milli })
-            if raw == "920milli"
+        Expr::Literal(Literal::UnitNumber { raw, suffix: UnitNumberSuffix::Percent })
+            if raw == "92%"
     ));
     assert!(matches!(
         active_declarations[1].value().expr(),
@@ -205,7 +206,7 @@ fn native_style_braces_in_values_strings_and_comments_are_not_selector_rules() {
             nested: { amount: 1 },
         }
         content = "an unmatched { inside a string"
-        opacity = 900milli // selector-looking { in a comment
+        opacity = 90% // selector-looking { in a comment
         // Another selector-looking { comment is trivia.
     }
 }
@@ -263,7 +264,7 @@ fn inline_native_style_rejects_only_a_top_level_selector_rule() {
     let source = r#"pub view Example() {
     Button("OK").style {
         custom-data = { label: "{" }
-        Button:hover { opacity = 900milli }
+        Button:hover { opacity = 90% }
     }
 }
 "#;
@@ -276,7 +277,7 @@ fn inline_native_style_rejects_only_a_top_level_selector_rule() {
     assert_eq!(error.code(), "style::inline_selector_not_supported");
     assert_eq!(
         error.range().end() - error.range().start(),
-        "Button:hover { opacity = 900milli }".len()
+        "Button:hover { opacity = 90% }".len()
     );
 }
 
@@ -284,7 +285,7 @@ fn inline_native_style_rejects_only_a_top_level_selector_rule() {
 fn named_style_rejects_nested_selector_with_typed_recovery() {
     let source = r"pub style broken {
     Panel {
-        Button:hover { opacity = 900milli }
+        Button:hover { opacity = 90% }
     }
 }
 ";
@@ -298,7 +299,7 @@ fn named_style_rejects_nested_selector_with_typed_recovery() {
     assert_eq!(error.code(), "style::malformed_selector");
     assert_eq!(
         &source[error.range().as_range()],
-        "Button:hover { opacity = 900milli }"
+        "Button:hover { opacity = 90% }"
     );
     assert_eq!(
         error.recovery()[0].message(),
@@ -311,14 +312,14 @@ fn unknown_inline_style_head_uses_ordinary_view_modifier_recovery() {
     let source = r#"pub view ExactRanges() {
     Button("One")
         .style {
-            opacity = 900milli
+            opacity = 90%
         }
     Button("Two")
         .style {
-            opacity = 900milli
+            opacity = 90%
         }
         .style(.UnknownDialect) {
-            opacity = 500milli
+            opacity = 50%
         }
 }
 "#;
@@ -341,7 +342,7 @@ fn unknown_inline_style_head_uses_ordinary_view_modifier_recovery() {
     assert_eq!(patches.len(), 2);
 
     let native_bodies = source
-        .match_indices("\n            opacity = 900milli\n        ")
+        .match_indices("\n            opacity = 90%\n        ")
         .map(|(start, body)| (start, start + body.len()))
         .collect::<Vec<_>>();
     for (patch, (expected_start, expected_end)) in patches[..2].iter().zip(native_bodies) {
@@ -349,13 +350,10 @@ fn unknown_inline_style_head_uses_ordinary_view_modifier_recovery() {
         assert_eq!(patch.range().end(), expected_end);
         assert_eq!(
             &source[patch.range().as_range()],
-            "\n            opacity = 900milli\n        "
+            "\n            opacity = 90%\n        "
         );
         let declaration = &patch.declarations()[0];
-        assert_eq!(
-            &source[declaration.range().as_range()],
-            "opacity = 900milli"
-        );
+        assert_eq!(&source[declaration.range().as_range()], "opacity = 90%");
         assert_eq!(
             &source[declaration.property().range().as_range()],
             "opacity"
@@ -370,7 +368,7 @@ fn unknown_inline_style_head_uses_ordinary_view_modifier_recovery() {
 #[test]
 fn inline_style_ranges_survive_same_line_view_chain_expansion() {
     let source = r#"pub view ExpandedRange() {
-    Button("One").style { opacity = 900milli }
+    Button("One").style { opacity = 90% }
     Button("Two").style { outline-width = 2px }
 }
 "#;
@@ -386,10 +384,10 @@ fn inline_style_ranges_survive_same_line_view_chain_expansion() {
         })
         .expect("expanded inline style patches");
     let patch = patches[0];
-    assert_eq!(&source[patch.range().as_range()], " opacity = 900milli ");
+    assert_eq!(&source[patch.range().as_range()], " opacity = 90% ");
     assert_eq!(
         &source[patch.declarations()[0].range().as_range()],
-        "opacity = 900milli"
+        "opacity = 90%"
     );
     let second = patches[1];
     assert_eq!(&source[second.range().as_range()], " outline-width = 2px ");
@@ -535,11 +533,11 @@ fn inline_native_style_diagnostic_starts_at_the_original_repeated_modifier() {
     let source = r#"pub view ExactDiagnostic() {
     Button("One")
         .style {
-            opacity = 900milli
+            opacity = 90%
         }
     Button("Two")
         .style {
-            opacity 900milli
+            opacity 90%
         }
 }
 "#;
@@ -550,15 +548,15 @@ fn inline_native_style_diagnostic_starts_at_the_original_repeated_modifier() {
         .find(|error| error.message().contains("style declaration needs `=`"))
         .expect("missing equals diagnostic");
     let expected = source
-        .find("opacity 900milli")
+        .find("opacity 90%")
         .expect("malformed declaration source");
     assert_eq!(error.range().start(), expected);
-    assert_eq!(&source[error.range().as_range()], "opacity 900milli");
+    assert_eq!(&source[error.range().as_range()], "opacity 90%");
 }
 
 #[test]
 fn style_parser_reports_an_unclosed_style_block() {
-    let parsed = parse_style_fixture("pub style broken {\n Button { opacity = 900milli }\n");
+    let parsed = parse_style_fixture("pub style broken {\n Button { opacity = 90% }\n");
     assert!(
         parsed
             .errors()
@@ -571,10 +569,10 @@ fn style_parser_reports_an_unclosed_style_block() {
 fn inline_and_named_native_styles_share_expression_ast() {
     let parsed = parse_style_fixture(
         r#"pub style named {
-    Button { opacity = 900milli }
+    Button { opacity = 90% }
 }
 pub view Example() {
-    Button("OK").style { opacity = 900milli }
+    Button("OK").style { opacity = 90% }
 }
 "#,
     );
@@ -1027,7 +1025,7 @@ pub style glass_shell {
 
   Scroll {
     axis = text("vertical")
-    opacity = milli(920)
+    opacity = 92%
   }
 }
 
@@ -1282,7 +1280,7 @@ pub view ButtonRow() {
         .style(@.primary_button)
         .style(@style:.primary_button)
         .style {
-            padding-x = milli(24000)
+            padding-x = 24px
         }
         .part(confirm)
         .on_click(|| noop)

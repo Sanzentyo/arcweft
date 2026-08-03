@@ -68,7 +68,7 @@ style native_style_parity {
   token metric.corner_lg: Length = 8px
   token metric.focus_ring: Length = 2px
   token motion.hover_lift: Length = -3px
-  token motion.pressed_scale: Scalar = 970milli
+  token motion.pressed_scale: Scalar = 0.97
 
   Panel {
     background-color = token(color.panel)
@@ -80,8 +80,8 @@ style native_style_parity {
     background-color = token(color.panel)
     color = system_color(.AccentText)
     border-radius = token(metric.corner_lg)
-    opacity = 1000milli
-    scale = 1000milli
+    opacity = 100%
+    scale = 1
     translate-y = 0px
   }
 
@@ -92,7 +92,7 @@ style native_style_parity {
   }
 
   Button:active {
-    opacity = 920milli
+    opacity = 92%
     scale = token(motion.pressed_scale)
   }
 

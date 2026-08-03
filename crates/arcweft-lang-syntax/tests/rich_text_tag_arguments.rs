@@ -2,8 +2,8 @@ use arcweft_lang_syntax::{
     ast::{
         common::TextRange,
         dialogue::{
-            DialogueTag, DialogueTagArg, DialogueTagArgSyntaxIssue, DialogueTagArgValueSurface,
-            DialogueTagPayload, DialogueToken, QuoteStyle,
+            DialogueTag, DialogueTagArg, DialogueTagArgValueSurface, DialogueTagPayload,
+            DialogueToken, QuoteStyle,
         },
         flow::FlowItem,
         items::Item,
@@ -11,7 +11,8 @@ use arcweft_lang_syntax::{
     text::{
         DialogueTextDiagnostic, DialogueTextDiagnosticCode, MAX_RICH_TEXT_CONTENT_ARGUMENTS,
         MAX_RICH_TEXT_CONTENT_TAGS, MAX_RICH_TEXT_TAG_ARGUMENTS, MAX_RICH_TEXT_TAG_BODY_BYTES,
-        MAX_RICH_TEXT_TAG_KEY_BYTES, MAX_RICH_TEXT_TAG_VALUE_BYTES, parse_dialogue_text,
+        MAX_RICH_TEXT_TAG_KEY_BYTES, MAX_RICH_TEXT_TAG_VALUE_BYTES, RichTextArgumentIssue,
+        parse_dialogue_text,
     },
 };
 
@@ -238,20 +239,32 @@ fn g010_invalid_keys_and_escapes_are_ordered_invalid_records() {
     let arguments = tag(&parsed).arguments();
     assert!(matches!(
         arguments[1].issue(),
-        Some(DialogueTagArgSyntaxIssue::EmptyKey { .. })
+        Some(RichTextArgumentIssue::EmptyKey)
     ));
     assert!(matches!(
         arguments[2].issue(),
-        Some(DialogueTagArgSyntaxIssue::InvalidKey { .. })
+        Some(RichTextArgumentIssue::InvalidKey)
     ));
     assert!(matches!(
         arguments[3].issue(),
-        Some(DialogueTagArgSyntaxIssue::InvalidKey { .. })
+        Some(RichTextArgumentIssue::InvalidKey)
     ));
     assert!(matches!(
         arguments[4].issue(),
-        Some(DialogueTagArgSyntaxIssue::InvalidEscape { .. })
+        Some(RichTextArgumentIssue::InvalidEscape)
     ));
+    assert_eq!(
+        arguments[1..=4]
+            .iter()
+            .map(DialogueTagArg::issue_range)
+            .collect::<Vec<_>>(),
+        [
+            Some(TextRange::new(14, 14)),
+            Some(TextRange::new(21, 26)),
+            Some(TextRange::new(29, 35)),
+            Some(TextRange::new(42, 44)),
+        ]
+    );
 }
 
 #[test]
@@ -264,8 +277,12 @@ fn g011_unterminated_quote_recovers_before_the_following_tag() {
     );
     assert!(matches!(
         tag(&parsed).arguments()[1].issue(),
-        Some(DialogueTagArgSyntaxIssue::UnterminatedQuote { .. })
+        Some(RichTextArgumentIssue::UnterminatedQuote)
     ));
+    assert_eq!(
+        tag(&parsed).arguments()[1].issue_range(),
+        Some(TextRange::new(19, 30))
+    );
     assert!(
         parsed.tokens().iter().any(
             |token| matches!(token, DialogueToken::InferredTag(tag) if tag.name() == ".sparkle")

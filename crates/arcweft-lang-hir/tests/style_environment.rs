@@ -27,7 +27,7 @@ fn style(hir: &arcweft_lang_hir::model::HirModule) -> &HirStyleDecl {
 fn hir_preserves_condition_clause_and_operand_ranges() {
     let source = r"pub style adaptive {
     when environment(text-scale >= 125.5%) {
-        Button { opacity = 900milli }
+        Button { opacity = 90% }
     }
 }
 ";
@@ -65,11 +65,11 @@ fn hir_preserves_condition_clause_and_operand_ranges() {
     );
     assert_eq!(
         &source[environment.body_range().as_range()],
-        "\n        Button { opacity = 900milli }\n    "
+        "\n        Button { opacity = 90% }\n    "
     );
     assert_eq!(
         &source[environment.scope_range().as_range()],
-        "when environment(text-scale >= 125.5%) {\n        Button { opacity = 900milli }\n    }"
+        "when environment(text-scale >= 125.5%) {\n        Button { opacity = 90% }\n    }"
     );
     assert_eq!(
         &source[environment.body()[0]
@@ -77,7 +77,7 @@ fn hir_preserves_condition_clause_and_operand_ranges() {
             .expect("guarded rule")
             .range()
             .as_range()],
-        "Button { opacity = 900milli }"
+        "Button { opacity = 90% }"
     );
     let HirStyleEnvironmentValue::Percentage(percentage) = clause.value() else {
         panic!("typed percentage")
@@ -91,7 +91,7 @@ fn hir_preserves_nested_wrapper_roles_outer_to_inner() {
     let source = r"pub style adaptive {
     when environment(text-scale >= 125.5%) {
         when environment(color-scheme == dark) {
-            Button { opacity = 900milli }
+            Button { opacity = 90% }
         }
     }
 }
@@ -131,7 +131,7 @@ fn hir_preserves_nested_wrapper_roles_outer_to_inner() {
 fn hir_recovery_is_typed_not_raw_expression() {
     let source = r"pub style adaptive {
     when environment(text-scale == 125.55%) {
-        Button { opacity = 900milli }
+        Button { opacity = 90% }
     }
 }
 ";

@@ -92,6 +92,106 @@ pub enum TypeRefLexemeKind {
     CloseAngle,
 }
 
+/// Source component of one associated-type binding.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeRefAssociatedBindingPart {
+    Whole,
+    Name,
+    Equals,
+    Value,
+}
+
+/// Source component of one named or elided reference region.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeRefRegionPart {
+    Whole,
+    NamedApostrophe,
+    NamedName,
+    ElisionInsertion,
+}
+
+/// Typed source component exposed by an attached semantic type node.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TypeRefComponentRole {
+    Whole,
+    NeverMarker,
+    ConstInteger,
+    PathRoot,
+    PathSegment {
+        ordinal: u32,
+    },
+    TupleOpen,
+    TupleElement {
+        ordinal: u32,
+    },
+    TupleSeparator {
+        ordinal: u32,
+    },
+    TupleClose,
+    FunctionOpen,
+    FunctionParameter {
+        ordinal: u32,
+    },
+    FunctionSeparator {
+        ordinal: u32,
+    },
+    FunctionClose,
+    FunctionArrow,
+    FunctionReturn,
+    FunctionEffectOpen,
+    FunctionEffect {
+        ordinal: u32,
+    },
+    FunctionEffectClose,
+    ChoiceAlternative {
+        ordinal: u32,
+    },
+    ChoiceSeparator {
+        ordinal: u32,
+    },
+    GenericBase,
+    GenericOpen,
+    GenericArgument {
+        ordinal: u32,
+    },
+    GenericSeparator {
+        ordinal: u32,
+    },
+    GenericClose,
+    TraitBase,
+    TraitOpen,
+    TraitArgument {
+        ordinal: u32,
+    },
+    TraitSeparator {
+        ordinal: u32,
+    },
+    AssociatedBinding {
+        ordinal: u32,
+        part: TypeRefAssociatedBindingPart,
+    },
+    TraitClose,
+    ProjectionSubject,
+    ProjectionSeparator,
+    ProjectionName,
+    ReferenceAmpersand,
+    Region(TypeRefRegionPart),
+    ReferenceMutKeyword,
+    ReferenceReferent,
+    SliceOpen,
+    SliceElement,
+    SliceClose,
+    Recovery,
+}
+
+/// Exact source of one semantic type component.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TypeRefComponentSource<R> {
+    owner: TypeRefNodePath,
+    role: TypeRefComponentRole,
+    range: R,
+}
+
 /// Exact source of one typed lexical token in a type reference.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeRefLexemeSource<R> {
@@ -105,13 +205,14 @@ pub struct TypeRefLexemeSource<R> {
 pub struct TypeRefSourceMap<R> {
     nodes: Box<[(TypeRefNodePath, TypeRefNodeSource<R>)]>,
     lexemes: Box<[TypeRefLexemeSource<R>]>,
+    components: Box<[TypeRefComponentSource<R>]>,
 }
 
 /// Parsed type structure coupled to its exact syntax source map.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AuthoredTypeRef {
     value: TypeRef,
-    source: TypeRefSourceMap<TextRange>,
+    source: Box<TypeRefSourceMap<TextRange>>,
 }
 
 /// One path parsed from the active type-grammar transaction together with its
@@ -161,6 +262,14 @@ pub enum TypeRefSourceMapError {
     },
     LexemeOrdinalOverflow(TypeRefNodePath),
     InvalidTurbofishLexeme(TypeRefNodePath),
+    DuplicateComponent {
+        owner: TypeRefNodePath,
+        role: TypeRefComponentRole,
+    },
+    ComponentOutsideOwner {
+        owner: TypeRefNodePath,
+        role: TypeRefComponentRole,
+    },
 }
 
 impl TypePath {
@@ -313,7 +422,7 @@ impl TypeRefNodePath {
         &self.0
     }
 
-    pub(super) fn child(&self, step: TypeRefNodeStep) -> Self {
+    pub(crate) fn child(&self, step: TypeRefNodeStep) -> Self {
         let mut steps = self.0.to_vec();
         steps.push(step);
         Self(steps.into_boxed_slice())
@@ -400,6 +509,27 @@ impl<R> TypeRefLexemeSource<R> {
     }
 }
 
+impl<R> TypeRefComponentSource<R> {
+    pub(super) const fn new(owner: TypeRefNodePath, role: TypeRefComponentRole, range: R) -> Self {
+        Self { owner, role, range }
+    }
+
+    /// Structural type node that owns this component.
+    pub const fn owner(&self) -> &TypeRefNodePath {
+        &self.owner
+    }
+
+    /// Semantic role of this component.
+    pub const fn role(&self) -> TypeRefComponentRole {
+        self.role
+    }
+
+    /// Exact component source.
+    pub const fn range(&self) -> &R {
+        &self.range
+    }
+}
+
 impl<R> TypeRefSourceMap<R> {
     /// Source entries in canonical structural-path order.
     pub fn nodes(&self) -> &[(TypeRefNodePath, TypeRefNodeSource<R>)] {
@@ -409,6 +539,19 @@ impl<R> TypeRefSourceMap<R> {
     /// Typed lexical tokens in source order.
     pub fn lexemes(&self) -> &[TypeRefLexemeSource<R>] {
         &self.lexemes
+    }
+
+    /// Semantic components in structural-owner/role order.
+    pub fn components(&self) -> &[TypeRefComponentSource<R>] {
+        &self.components
+    }
+
+    /// Exact source for one semantic component.
+    pub fn component_at(&self, owner: &TypeRefNodePath, role: TypeRefComponentRole) -> Option<&R> {
+        self.components
+            .binary_search_by(|component| (component.owner(), component.role()).cmp(&(owner, role)))
+            .ok()
+            .map(|index| self.components[index].range())
     }
 
     /// Source for one structural node.
@@ -448,9 +591,18 @@ impl<R> TypeRefSourceMap<R> {
                 range: map(&lexeme.range)?,
             });
         }
+        let mut components = Vec::with_capacity(self.components.len());
+        for component in &self.components {
+            components.push(TypeRefComponentSource {
+                owner: component.owner.clone(),
+                role: component.role,
+                range: map(&component.range)?,
+            });
+        }
         Ok(TypeRefSourceMap {
             nodes: nodes.into_boxed_slice(),
             lexemes: lexemes.into_boxed_slice(),
+            components: components.into_boxed_slice(),
         })
     }
 }
@@ -460,14 +612,47 @@ impl TypeRefSourceMap<TextRange> {
         value: &TypeRef,
         nodes: Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
         lexemes: Vec<TypeRefLexemeSource<TextRange>>,
+        mut components: Vec<TypeRefComponentSource<TextRange>>,
     ) -> Result<Self, TypeRefSourceMapError> {
         let ordered = validated_type_nodes(value, nodes)?;
         validate_type_lexemes(value, &ordered, &lexemes)?;
+        components
+            .sort_by(|left, right| (left.owner(), left.role()).cmp(&(right.owner(), right.role())));
+        validate_type_components(&ordered, &components)?;
         Ok(Self {
             nodes: ordered.into_iter().collect::<Vec<_>>().into_boxed_slice(),
             lexemes: lexemes.into_boxed_slice(),
+            components: components.into_boxed_slice(),
         })
     }
+}
+
+fn validate_type_components(
+    nodes: &BTreeMap<TypeRefNodePath, TypeRefNodeSource<TextRange>>,
+    components: &[TypeRefComponentSource<TextRange>],
+) -> Result<(), TypeRefSourceMapError> {
+    let mut seen = BTreeSet::new();
+    for component in components {
+        if !seen.insert((component.owner.clone(), component.role)) {
+            return Err(TypeRefSourceMapError::DuplicateComponent {
+                owner: component.owner.clone(),
+                role: component.role,
+            });
+        }
+        let Some(owner) = nodes.get(&component.owner) else {
+            return Err(TypeRefSourceMapError::ComponentOutsideOwner {
+                owner: component.owner.clone(),
+                role: component.role,
+            });
+        };
+        if !contains(owner.whole, component.range) {
+            return Err(TypeRefSourceMapError::ComponentOutsideOwner {
+                owner: component.owner.clone(),
+                role: component.role,
+            });
+        }
+    }
+    Ok(())
 }
 
 fn validated_type_nodes(
@@ -646,9 +831,13 @@ impl AuthoredTypeRef {
         value: TypeRef,
         nodes: Vec<(TypeRefNodePath, TypeRefNodeSource<TextRange>)>,
         lexemes: Vec<TypeRefLexemeSource<TextRange>>,
+        components: Vec<TypeRefComponentSource<TextRange>>,
     ) -> Result<Self, TypeRefSourceMapError> {
-        let source = TypeRefSourceMap::try_new(&value, nodes, lexemes)?;
-        Ok(Self { value, source })
+        let source = TypeRefSourceMap::try_new(&value, nodes, lexemes, components)?;
+        Ok(Self {
+            value,
+            source: Box::new(source),
+        })
     }
 
     /// Parsed type structure.
@@ -719,6 +908,10 @@ impl AuthoredTypeRef {
     }
 
     pub(crate) fn recovery(index: u32, range: TextRange) -> Self {
+        Self::recovery_with_source(index, range, range)
+    }
+
+    pub(crate) fn recovery_with_source(index: u32, whole: TextRange, recovery: TextRange) -> Self {
         let id = TypeRecoveryId::from_index(index);
         let path = TypeRefNodePath::root();
         Self::try_new(
@@ -726,11 +919,23 @@ impl AuthoredTypeRef {
             vec![(
                 path,
                 TypeRefNodeSource::new(
-                    range,
-                    Some(TypeRefHeadSource::new(TypeRefHeadKind::Recovery, range)),
+                    whole,
+                    Some(TypeRefHeadSource::new(TypeRefHeadKind::Recovery, recovery)),
                 ),
             )],
             Vec::new(),
+            vec![
+                TypeRefComponentSource::new(
+                    TypeRefNodePath::root(),
+                    TypeRefComponentRole::Whole,
+                    whole,
+                ),
+                TypeRefComponentSource::new(
+                    TypeRefNodePath::root(),
+                    TypeRefComponentRole::Recovery,
+                    recovery,
+                ),
+            ],
         )
         .expect("one recovery root is a valid type source map")
     }
@@ -752,6 +957,9 @@ impl AuthoredTypeRef {
         for lexeme in &mut self.source.lexemes {
             lexeme.range = rebase_range(lexeme.range, base);
         }
+        for component in &mut self.source.components {
+            component.range = rebase_range(component.range, base);
+        }
     }
 }
 
@@ -768,53 +976,15 @@ fn collect_expected_paths(
     path: &TypeRefNodePath,
     output: &mut BTreeSet<TypeRefNodePath>,
 ) -> Result<(), TypeRefSourceMapError> {
-    output.insert(path.clone());
-    match value {
-        TypeRef::Tuple(items) => collect_indexed(items, path, output, TypeRefNodeStep::TupleItem)?,
-        TypeRef::Function {
-            params,
-            return_type,
-            ..
-        } => {
-            collect_indexed(params, path, output, TypeRefNodeStep::FunctionParameter)?;
-            collect_expected_paths(
-                return_type,
-                &path.child(TypeRefNodeStep::FunctionReturn),
-                output,
-            )?;
-        }
-        TypeRef::Choice(items) => {
-            collect_indexed(items, path, output, TypeRefNodeStep::ChoiceAlternative)?;
-        }
-        TypeRef::Generic { args, .. } => {
-            collect_indexed(args, path, output, TypeRefNodeStep::GenericArgument)?;
-        }
-        TypeRef::TraitBound(bound) => {
-            collect_indexed(bound.args(), path, output, TypeRefNodeStep::TraitArgument)?;
-            for (index, binding) in bound.associated().iter().enumerate() {
-                let index = u16::try_from(index)
-                    .map_err(|_| TypeRefSourceMapError::IndexOverflow(path.clone()))?;
-                collect_expected_paths(
-                    binding.value(),
-                    &path.child(TypeRefNodeStep::AssociatedBinding(index)),
-                    output,
-                )?;
-            }
-        }
-        TypeRef::Projection { subject, .. } => collect_expected_paths(
-            subject,
-            &path.child(TypeRefNodeStep::ProjectionSubject),
-            output,
-        )?,
-        TypeRef::Reference(reference) => collect_expected_paths(
-            reference.referent(),
-            &path.child(TypeRefNodeStep::ReferenceReferent),
-            output,
-        )?,
-        TypeRef::Slice(item) => {
-            collect_expected_paths(item, &path.child(TypeRefNodeStep::SliceItem), output)?;
-        }
-        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) | TypeRef::Recovery(_) => {}
+    let mut pending = vec![(path.clone(), value)];
+    while let Some((path, value)) = pending.pop() {
+        output.insert(path.clone());
+        schedule_type_children(
+            value,
+            &path,
+            &mut pending,
+            TypeRefSourceMapError::IndexOverflow,
+        )?;
     }
     Ok(())
 }
@@ -823,99 +993,41 @@ fn expected_lexeme_keys(
     value: &TypeRef,
 ) -> Result<BTreeSet<(TypeRefNodePath, TypeRefLexemeKind)>, TypeRefSourceMapError> {
     let mut output = BTreeSet::new();
-    collect_expected_lexeme_keys(value, &TypeRefNodePath::root(), &mut output)?;
-    Ok(output)
-}
-
-fn collect_expected_lexeme_keys(
-    value: &TypeRef,
-    path: &TypeRefNodePath,
-    output: &mut BTreeSet<(TypeRefNodePath, TypeRefLexemeKind)>,
-) -> Result<(), TypeRefSourceMapError> {
-    match value {
-        TypeRef::Path(ty) => collect_expected_path_lexemes(ty, path, output)?,
-        TypeRef::Generic { base, args } => {
-            collect_expected_path_lexemes(base, path, output)?;
-            collect_expected_generic_lexemes(args.len(), path, output)?;
-            for (index, argument) in args.iter().enumerate() {
-                let index = u16::try_from(index)
-                    .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
-                collect_expected_lexeme_keys(
-                    argument,
-                    &path.child(TypeRefNodeStep::GenericArgument(index)),
-                    output,
-                )?;
+    let mut pending = vec![(TypeRefNodePath::root(), value)];
+    while let Some((path, value)) = pending.pop() {
+        match value {
+            TypeRef::Path(ty) => collect_expected_path_lexemes(ty, &path, &mut output)?,
+            TypeRef::Generic { base, args } => {
+                collect_expected_path_lexemes(base, &path, &mut output)?;
+                collect_expected_generic_lexemes(args.len(), &path, &mut output)?;
             }
-        }
-        TypeRef::TraitBound(bound) => {
-            collect_expected_path_lexemes(&bound.path, path, output)?;
-            let count = bound
-                .args()
-                .len()
-                .checked_add(bound.associated().len())
-                .ok_or_else(|| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
-            collect_expected_generic_lexemes(count, path, output)?;
-            for (index, argument) in bound.args().iter().enumerate() {
-                let index = u16::try_from(index)
-                    .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
-                collect_expected_lexeme_keys(
-                    argument,
-                    &path.child(TypeRefNodeStep::TraitArgument(index)),
-                    output,
-                )?;
+            TypeRef::TraitBound(bound) => {
+                collect_expected_path_lexemes(&bound.path, &path, &mut output)?;
+                let count = bound
+                    .args()
+                    .len()
+                    .checked_add(bound.associated().len())
+                    .ok_or_else(|| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
+                collect_expected_generic_lexemes(count, &path, &mut output)?;
             }
-            for (index, binding) in bound.associated().iter().enumerate() {
-                let index = u16::try_from(index)
-                    .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
-                collect_expected_lexeme_keys(
-                    binding.value(),
-                    &path.child(TypeRefNodeStep::AssociatedBinding(index)),
-                    output,
-                )?;
-            }
+            TypeRef::Never
+            | TypeRef::ConstInt(_)
+            | TypeRef::Tuple(_)
+            | TypeRef::Function { .. }
+            | TypeRef::Choice(_)
+            | TypeRef::Projection { .. }
+            | TypeRef::Reference(_)
+            | TypeRef::Slice(_)
+            | TypeRef::Recovery(_) => {}
         }
-        TypeRef::Tuple(items) => {
-            collect_expected_indexed_lexemes(items, path, output, TypeRefNodeStep::TupleItem)?;
-        }
-        TypeRef::Function {
-            params,
-            return_type,
-            ..
-        } => {
-            collect_expected_indexed_lexemes(
-                params,
-                path,
-                output,
-                TypeRefNodeStep::FunctionParameter,
-            )?;
-            collect_expected_lexeme_keys(
-                return_type,
-                &path.child(TypeRefNodeStep::FunctionReturn),
-                output,
-            )?;
-        }
-        TypeRef::Choice(items) => collect_expected_indexed_lexemes(
-            items,
-            path,
-            output,
-            TypeRefNodeStep::ChoiceAlternative,
-        )?,
-        TypeRef::Projection { subject, .. } => collect_expected_lexeme_keys(
-            subject,
-            &path.child(TypeRefNodeStep::ProjectionSubject),
-            output,
-        )?,
-        TypeRef::Reference(reference) => collect_expected_lexeme_keys(
-            reference.referent(),
-            &path.child(TypeRefNodeStep::ReferenceReferent),
-            output,
-        )?,
-        TypeRef::Slice(item) => {
-            collect_expected_lexeme_keys(item, &path.child(TypeRefNodeStep::SliceItem), output)?;
-        }
-        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Recovery(_) => {}
+        schedule_type_children(
+            value,
+            &path,
+            &mut pending,
+            TypeRefSourceMapError::LexemeOrdinalOverflow,
+        )?;
     }
-    Ok(())
+    Ok(output)
 }
 
 fn collect_expected_path_lexemes(
@@ -959,30 +1071,89 @@ fn collect_expected_generic_lexemes(
     Ok(())
 }
 
-fn collect_expected_indexed_lexemes(
-    values: &[TypeRef],
+fn schedule_type_children<'a>(
+    value: &'a TypeRef,
     path: &TypeRefNodePath,
-    output: &mut BTreeSet<(TypeRefNodePath, TypeRefLexemeKind)>,
-    step: impl Fn(u16) -> TypeRefNodeStep,
+    pending: &mut Vec<(TypeRefNodePath, &'a TypeRef)>,
+    ordinal_error: fn(TypeRefNodePath) -> TypeRefSourceMapError,
 ) -> Result<(), TypeRefSourceMapError> {
-    for (index, value) in values.iter().enumerate() {
-        let index = u16::try_from(index)
-            .map_err(|_| TypeRefSourceMapError::LexemeOrdinalOverflow(path.clone()))?;
-        collect_expected_lexeme_keys(value, &path.child(step(index)), output)?;
+    match value {
+        TypeRef::Tuple(items) => schedule_indexed_children(
+            items,
+            path,
+            pending,
+            TypeRefNodeStep::TupleItem,
+            ordinal_error,
+        )?,
+        TypeRef::Function {
+            params,
+            return_type,
+            ..
+        } => {
+            pending.push((path.child(TypeRefNodeStep::FunctionReturn), return_type));
+            schedule_indexed_children(
+                params,
+                path,
+                pending,
+                TypeRefNodeStep::FunctionParameter,
+                ordinal_error,
+            )?;
+        }
+        TypeRef::Choice(items) => schedule_indexed_children(
+            items,
+            path,
+            pending,
+            TypeRefNodeStep::ChoiceAlternative,
+            ordinal_error,
+        )?,
+        TypeRef::Generic { args, .. } => schedule_indexed_children(
+            args,
+            path,
+            pending,
+            TypeRefNodeStep::GenericArgument,
+            ordinal_error,
+        )?,
+        TypeRef::TraitBound(bound) => {
+            for (index, binding) in bound.associated().iter().enumerate().rev() {
+                let index = u16::try_from(index).map_err(|_| ordinal_error(path.clone()))?;
+                pending.push((
+                    path.child(TypeRefNodeStep::AssociatedBinding(index)),
+                    binding.value(),
+                ));
+            }
+            schedule_indexed_children(
+                bound.args(),
+                path,
+                pending,
+                TypeRefNodeStep::TraitArgument,
+                ordinal_error,
+            )?;
+        }
+        TypeRef::Projection { subject, .. } => {
+            pending.push((path.child(TypeRefNodeStep::ProjectionSubject), subject));
+        }
+        TypeRef::Reference(reference) => pending.push((
+            path.child(TypeRefNodeStep::ReferenceReferent),
+            reference.referent(),
+        )),
+        TypeRef::Slice(item) => {
+            pending.push((path.child(TypeRefNodeStep::SliceItem), item));
+        }
+        TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) | TypeRef::Recovery(_) => {}
     }
     Ok(())
 }
 
-fn collect_indexed(
-    values: &[TypeRef],
+fn schedule_indexed_children<'a>(
+    values: &'a [TypeRef],
     path: &TypeRefNodePath,
-    output: &mut BTreeSet<TypeRefNodePath>,
-    step: impl Fn(u16) -> TypeRefNodeStep,
+    pending: &mut Vec<(TypeRefNodePath, &'a TypeRef)>,
+    step: fn(u16) -> TypeRefNodeStep,
+    ordinal_error: fn(TypeRefNodePath) -> TypeRefSourceMapError,
 ) -> Result<(), TypeRefSourceMapError> {
-    for (index, value) in values.iter().enumerate() {
-        let index =
-            u16::try_from(index).map_err(|_| TypeRefSourceMapError::IndexOverflow(path.clone()))?;
-        collect_expected_paths(value, &path.child(step(index)), output)?;
+    for (index, value) in values.iter().enumerate().rev() {
+        let index = u16::try_from(index).map_err(|_| ordinal_error(path.clone()))?;
+        pending.push((path.child(step(index)), value));
     }
     Ok(())
 }

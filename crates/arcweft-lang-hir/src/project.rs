@@ -529,14 +529,14 @@ mod tests {
 
     fn linked_style_project() -> LinkedStyleProject {
         let root_source = r#"pub view Root() {
-    Button("root").style { opacity = 100milli }
+    Button("root").style { opacity = 10% }
 }
 "#;
         let (root_document, root) = lower_bound("root", root_source);
         let alpha_source = r#"pub view Alpha() {
     Button("alpha")
         .style { outline-width = 2px }
-        .style { opacity = 200milli }
+        .style { opacity = 20% }
 }
 "#;
         let (alpha_document, alpha) = lower_bound("alpha", alpha_source);

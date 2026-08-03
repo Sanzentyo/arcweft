@@ -17,7 +17,8 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source)).expect("retained Stage 1 grammar builds")
+    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("retained Stage 1 grammar builds")
 }
 
 fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
@@ -42,7 +43,7 @@ fn canonical_mixed_document_dispatches_all_seven_retained_rows() {
         "layer Overlay: overlay {}\n",
         "res dialogue_resource: DialogueResource {}\n",
         "fn helper() { true }\n",
-        "proof invariant() { assert true }\n",
+        "proof invariant() { assert.check(true) }\n",
         "style @style.native { Button { opacity = 1.0 } }\n",
     );
     let built = parse(source);
@@ -75,7 +76,7 @@ fn comment_rich_mixed_document_remains_byte_exact() {
         "layer Overlay: overlay {} // layer tail\n",
         "res dialogue_resource: DialogueResource {} // resource tail\n",
         "fn helper() { true } // function tail\n",
-        "proof invariant() { assert true } // proof tail\n",
+        "proof invariant() { assert.check(true) } // proof tail\n",
         "style @style.native { Button { opacity = 1.0 } } // style tail\n",
     );
     let built = parse(source);
@@ -153,91 +154,145 @@ fn top_level_retained_namespace_calls_are_error_items_not_declarations() {
 #[test]
 fn fixed_parameter_budget_accepts_256_and_rejects_257_transactionally() {
     let accepted = action_with_parameters(256);
-    assert!(parse_shadow_document(&document(&accepted)).is_ok());
+    assert!(
+        parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default()).is_ok()
+    );
     let rejected = action_with_parameters(257);
     assert!(matches!(
-        parse_shadow_document(&document(&rejected)),
+        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::FixedParameters
         ))
     ));
-    assert!(parse_shadow_document(&document("action Ready()\n")).is_ok());
+    assert!(
+        parse_shadow_document(
+            &document("action Ready()\n"),
+            crate::parser::ParseOptions::default()
+        )
+        .is_ok()
+    );
 }
 
 #[test]
 fn metric_label_budget_accepts_64_and_rejects_65_transactionally() {
     let accepted = metric_with_labels(64);
-    assert!(parse_shadow_document(&document(&accepted)).is_ok());
+    assert!(
+        parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default()).is_ok()
+    );
     let rejected = metric_with_labels(65);
     assert!(matches!(
-        parse_shadow_document(&document(&rejected)),
+        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(SyntaxLimit::MetricLabels))
     ));
-    assert!(parse_shadow_document(&document("metric gauge Ready: f32 {}\n")).is_ok());
+    assert!(
+        parse_shadow_document(
+            &document("metric gauge Ready: f32 {}\n"),
+            crate::parser::ParseOptions::default()
+        )
+        .is_ok()
+    );
 }
 
 #[test]
 fn layer_member_budget_accepts_64_and_rejects_65_transactionally() {
     let accepted = layer_with_members(64);
-    assert!(parse_shadow_document(&document(&accepted)).is_ok());
+    assert!(
+        parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default()).is_ok()
+    );
     let rejected = layer_with_members(65);
     assert!(matches!(
-        parse_shadow_document(&document(&rejected)),
+        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(SyntaxLimit::LayerMembers))
     ));
-    assert!(parse_shadow_document(&document("layer Ready: overlay {}\n")).is_ok());
+    assert!(
+        parse_shadow_document(
+            &document("layer Ready: overlay {}\n"),
+            crate::parser::ParseOptions::default()
+        )
+        .is_ok()
+    );
 }
 
 #[test]
 fn activity_port_budget_accepts_256_and_rejects_257_transactionally() {
     let accepted = activity_with_ports(256);
-    assert!(parse_shadow_document(&document(&accepted)).is_ok());
+    assert!(
+        parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default()).is_ok()
+    );
     let rejected = activity_with_ports(257);
     assert!(matches!(
-        parse_shadow_document(&document(&rejected)),
+        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(SyntaxLimit::ActivityPorts))
     ));
-    assert!(parse_shadow_document(&document("activity Ready {}\n")).is_ok());
+    assert!(
+        parse_shadow_document(
+            &document("activity Ready {}\n"),
+            crate::parser::ParseOptions::default()
+        )
+        .is_ok()
+    );
 }
 
 #[test]
 fn metric_bucket_budget_accepts_1024_and_rejects_1025_transactionally() {
     let accepted = metric_with_buckets(1_024);
-    assert!(parse_shadow_document(&document(&accepted)).is_ok());
+    assert!(
+        parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default()).is_ok()
+    );
     let rejected = metric_with_buckets(1_025);
     assert!(matches!(
-        parse_shadow_document(&document(&rejected)),
+        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(SyntaxLimit::MetricBuckets))
     ));
     assert!(
-        parse_shadow_document(&document("metric histogram Ready: f64 { buckets = [1] }\n")).is_ok()
+        parse_shadow_document(
+            &document("metric histogram Ready: f64 { buckets = [1] }\n"),
+            crate::parser::ParseOptions::default()
+        )
+        .is_ok()
     );
 }
 
 #[test]
 fn view_export_budget_accepts_256_and_rejects_257_transactionally() {
     let accepted = view_with_exports(256);
-    assert!(parse_shadow_document(&document(&accepted)).is_ok());
+    assert!(
+        parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default()).is_ok()
+    );
     let rejected = view_with_exports(257);
     assert!(matches!(
-        parse_shadow_document(&document(&rejected)),
+        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(SyntaxLimit::ViewExports))
     ));
-    assert!(parse_shadow_document(&document("view Ready() { Panel {} }\n")).is_ok());
+    assert!(
+        parse_shadow_document(
+            &document("view Ready() { Panel {} }\n"),
+            crate::parser::ParseOptions::default()
+        )
+        .is_ok()
+    );
 }
 
 #[test]
 fn declaration_member_budget_accepts_1024_and_rejects_1025_transactionally() {
     let accepted = character_with_members(1_024);
-    assert!(parse_shadow_document(&document(&accepted)).is_ok());
+    assert!(
+        parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default()).is_ok()
+    );
     let rejected = character_with_members(1_025);
     assert!(matches!(
-        parse_shadow_document(&document(&rejected)),
+        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::DeclarationMembers
         ))
     ));
-    assert!(parse_shadow_document(&document("character Ready {}\n")).is_ok());
+    assert!(
+        parse_shadow_document(
+            &document("character Ready {}\n"),
+            crate::parser::ParseOptions::default()
+        )
+        .is_ok()
+    );
 }
 
 fn action_with_parameters(count: usize) -> String {

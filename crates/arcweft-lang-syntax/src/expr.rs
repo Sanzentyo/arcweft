@@ -7,6 +7,7 @@ use crate::ast::ids::{
 use crate::ast::line_plan::LinePlan;
 use crate::ast::pattern::Pattern;
 use crate::cst::{split_leading_entity_ref_parts, split_leading_relative_entity_ref};
+use crate::literal::{DurationUnit, FloatSuffix, UnitNumberSuffix};
 use crate::reference::{BorrowExpr, DerefExpr};
 use crate::types::{AuthoredTypeRef, parse_type_ref};
 use std::{fmt, ops::Deref};
@@ -19,7 +20,6 @@ mod char_literal;
 mod closure_parse;
 mod closure_source;
 mod control_parse;
-mod dialogue_application;
 mod numeric;
 mod pipe_scope;
 mod source_ranges;
@@ -36,10 +36,7 @@ pub use call_syntax::{
 use closure_parse::parse_closure_params;
 use closure_source::ClosureBodySource;
 use numeric::AuthoredNumericBracketSeqError;
-pub use numeric::{
-    IntLiteral, IntLiteralValueError, IntRadix, IntSuffix, NumericBracketSeq,
-    NumericBracketSeqError,
-};
+pub use numeric::{IntLiteral, IntLiteralValueError, NumericBracketSeq, NumericBracketSeqError};
 use numeric::{digit_matches_radix, split_number_suffix};
 pub use source_ranges::{
     ExprSourceRange, collect_dialogue_call_content_ranges, collect_expr_source_ranges,
@@ -672,129 +669,6 @@ pub enum Literal {
         amount: String,
         unit: DurationUnit,
     },
-}
-
-/// Floating-point literal width suffix.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum FloatSuffix {
-    F32,
-    F64,
-}
-
-impl FloatSuffix {
-    pub fn parse(source: &str) -> Option<Self> {
-        match source {
-            "f32" => Some(Self::F32),
-            "f64" => Some(Self::F64),
-            _ => None,
-        }
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::F32 => "f32",
-            Self::F64 => "f64",
-        }
-    }
-}
-
-impl fmt::Display for FloatSuffix {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Numeric literal suffix that carries presentation or geometry units.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum UnitNumberSuffix {
-    Percent,
-    Px,
-    Pt,
-    Em,
-    Rem,
-    Milli,
-    Vw,
-    Vh,
-    Deg,
-    Rad,
-    Turn,
-    Db,
-    Lufs,
-    Bpm,
-    Bars,
-}
-
-impl UnitNumberSuffix {
-    pub fn parse(source: &str) -> Option<Self> {
-        match source {
-            "%" => Some(Self::Percent),
-            "px" => Some(Self::Px),
-            "pt" => Some(Self::Pt),
-            "em" => Some(Self::Em),
-            "rem" => Some(Self::Rem),
-            "milli" => Some(Self::Milli),
-            "vw" => Some(Self::Vw),
-            "vh" => Some(Self::Vh),
-            "deg" => Some(Self::Deg),
-            "rad" => Some(Self::Rad),
-            "turn" => Some(Self::Turn),
-            "db" => Some(Self::Db),
-            "lufs" => Some(Self::Lufs),
-            "bpm" => Some(Self::Bpm),
-            "bars" => Some(Self::Bars),
-            _ => None,
-        }
-    }
-
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Percent => "%",
-            Self::Px => "px",
-            Self::Pt => "pt",
-            Self::Em => "em",
-            Self::Rem => "rem",
-            Self::Milli => "milli",
-            Self::Vw => "vw",
-            Self::Vh => "vh",
-            Self::Deg => "deg",
-            Self::Rad => "rad",
-            Self::Turn => "turn",
-            Self::Db => "db",
-            Self::Lufs => "lufs",
-            Self::Bpm => "bpm",
-            Self::Bars => "bars",
-        }
-    }
-}
-
-impl fmt::Display for UnitNumberSuffix {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(self.as_str())
-    }
-}
-
-/// Duration suffix recognized by the syntax parser.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DurationUnit {
-    Nanos,
-    Micros,
-    Millis,
-    Seconds,
-    Minutes,
-    Hours,
-}
-
-impl DurationUnit {
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::Nanos => "ns",
-            Self::Micros => "us",
-            Self::Millis => "ms",
-            Self::Seconds => "s",
-            Self::Minutes => "min",
-            Self::Hours => "h",
-        }
-    }
 }
 
 /// Placeholder expression.

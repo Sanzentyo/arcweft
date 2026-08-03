@@ -7,8 +7,9 @@ mod reconcile;
 mod shape;
 mod transaction;
 
+pub use bound::SyntaxDiagnostic;
 pub use database::{
     InvalidEditSet, ParseFailure, ParseStatus, ParsedSource, SyntaxDatabase,
-    SyntaxDatabaseCreateError, SyntaxIdentityKind,
+    SyntaxDatabaseCreateError, SyntaxInvariantFailure,
 };
 pub use limits::SyntaxLimit;

@@ -144,6 +144,42 @@ in both Flow and Thread-expression contexts. The `Error` variant is
 recovery-only: it must be produced by an actual recovered input and must never
 be described or tested as a valid authored item.
 
+### One Choice expression owner and the final-HIR family count
+
+The predecessor leaf package's closed list of `35` expression families omitted
+the maintained `ChoiceExpr` grammar even though both direct Choice and
+`LetChoice` require one semantic expression identity. Treating that syntax as a
+generic Error, a Block, or a statement-owned duplicate would change its
+meaning. This repository-local decision therefore adds the thirty-sixth final
+family:
+
+```text
+ChoiceStatement -> ChoiceExpression(Initializer)
+LetChoiceStatement -> ChoiceExpression(Initializer)
+ChoiceExpression -> ExprId -> HirExprKind::Choice(HirChoiceExpr)
+```
+
+`ChoiceExpression` is the sole owner of the optional static Choice ID, ordered
+candidate body, and optional lifecycle plan. The direct wrapper lowers to
+`HirStmtKind::Choice { choice: ExprId }` and remains
+`HirThreadFlowItem::Choice(StmtId)`. The binding wrapper lowers to the existing
+`HirStmtKind::LetChoice { pattern, choice: ExprId, locals }` and remains an
+ordinary `HirThreadFlowItem::Statement(StmtId)`. Both wrappers invoke the same
+Pratt prefix producer, attached relation, and expression lowerer; neither owns
+a second Choice payload.
+
+The root static ID is `Option<HirIdRefValue>`, not an executable child
+`ExprId`. Dynamic option IDs and other authored candidate values remain normal
+expression IDs. Choice adds no Choice-specific item, field, plan, or synthetic
+slot limit. Existing expression, statement, pattern, scope, local,
+`ThreadFlowItems`, diagnostic, and total-slot accounting remains authoritative,
+with every arena child charged exactly once.
+
+The final public authority cut deletes detached `ChoiceBlock`, the detached
+Choice parser and AST payload family, old `HirChoice`/flattened option readers,
+and every old Flow consumer. No alias, adapter, dual reader, source reparse, or
+temporary compatibility spelling is admitted.
+
 ### Missing required Flow body
 
 `IDENTITY_SIGNATURE_MATRIX.tsv` row `B03`, the non-optional

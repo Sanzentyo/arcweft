@@ -720,7 +720,7 @@ style glass_shell {
     width = 512px
     height = 96px
     overflow = .Scroll
-    opacity = 920milli
+    opacity = 92%
   }
 }
 

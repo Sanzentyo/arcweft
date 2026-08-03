@@ -62,7 +62,7 @@ fn nested_environment_paths_flatten_into_one_checked_rule_guard() {
         r"pub style adaptive {
     when environment(color-scheme == dark) {
         when environment(text-scale >= 125.5%) {
-            Button { opacity = 900milli }
+            Button { opacity = 90% }
         }
     }
 }
@@ -96,7 +96,7 @@ fn canonical_clause_order_retains_authored_wrapper_indexes() {
     let source = r"pub style adaptive {
     when environment(text-scale >= 125.5%) {
         when environment(color-scheme == dark) {
-            Button { opacity = 900milli }
+            Button { opacity = 90% }
         }
     }
 }
@@ -140,7 +140,7 @@ fn text_scale_truth_table_covers_six_comparisons_at_boundaries() {
         .iter()
         .map(|comparison| {
             format!(
-                "when environment(text-scale {comparison} 50%) {{ Button {{ opacity = 900milli }} }}"
+                "when environment(text-scale {comparison} 50%) {{ Button {{ opacity = 90% }} }}"
             )
         })
         .collect::<Vec<_>>()

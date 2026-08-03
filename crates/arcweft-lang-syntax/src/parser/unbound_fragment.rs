@@ -8,6 +8,8 @@
 use core::marker::PhantomData;
 use std::sync::Arc;
 
+use arcweft_source::SourceSpan;
+
 use crate::attachment::{
     AstKind, AstNode, ExpressionFragmentRootKind, PatternFragmentRootKind,
     StatementFragmentRootKind, SyntaxSnapshotData, SyntaxSnapshotId, TypeFragmentRootKind,
@@ -174,11 +176,20 @@ impl UnboundFragment<StatementFragment> {
 pub(crate) struct AttachedFragment<K: FragmentKind> {
     snapshot: Arc<SyntaxSnapshotData>,
     root: AstNode<K::AstKind>,
+    whole: SourceSpan,
 }
 
 impl<K: FragmentKind> AttachedFragment<K> {
-    pub(crate) fn new(snapshot: Arc<SyntaxSnapshotData>, root: AstNode<K::AstKind>) -> Self {
-        Self { snapshot, root }
+    pub(crate) fn new(
+        snapshot: Arc<SyntaxSnapshotData>,
+        root: AstNode<K::AstKind>,
+        whole: SourceSpan,
+    ) -> Self {
+        Self {
+            snapshot,
+            root,
+            whole,
+        }
     }
 
     pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
@@ -191,6 +202,14 @@ impl<K: FragmentKind> AttachedFragment<K> {
 
     pub(crate) fn root(&self) -> AstNode<K::AstKind> {
         self.root.clone()
+    }
+
+    /// Exact target span occupied by the complete standalone fragment.
+    ///
+    /// For a parenthesized expression this includes the ID-less grouping while
+    /// `root()` returns the inner identity-bearing semantic expression.
+    pub(crate) const fn whole_source_span(&self) -> &SourceSpan {
+        &self.whole
     }
 }
 

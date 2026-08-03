@@ -2,7 +2,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arcweft_lang_syntax::expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp, UnitNumberSuffix};
+use arcweft_lang_syntax::expr::{BinaryOp, CallArg, Expr, Literal, UnaryOp};
+use arcweft_lang_syntax::literal::UnitNumberSuffix;
 use arcweft_presentation::fx::{
     Angle, FiniteF32, FxContextSlot, FxRuntimeType, FxRuntimeValue, FxSamplerProgram,
     FxStaticValue, Length, ValueInstruction, ValueProgramSchema,

@@ -3,7 +3,8 @@
 use std::collections::BTreeMap;
 
 use arcweft_lang_syntax::{
-    expr::{CallArg, DurationUnit, Expr, Literal, UnitNumberSuffix},
+    expr::{CallArg, Expr, Literal},
+    literal::{DurationUnit, UnitNumberSuffix},
     types::TypeRef,
 };
 use arcweft_presentation::fx::{

@@ -3,7 +3,7 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use super::document::parse_shadow_document;
 use super::statement::parse_test_statement_block;
 use crate::grammar::build::{GrammarBuildError, UnattachedGrammarEntry};
-use crate::grammar::kinds::SyntaxKind;
+use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::incremental::SyntaxLimit;
 
 fn document(text: &str) -> SourceDocument {
@@ -31,9 +31,56 @@ fn comma_separated(count: usize, element: impl Fn(usize) -> String) -> String {
 }
 
 #[test]
+fn receiver_shaped_predicate_and_proof_parameters_retain_typed_recovery() {
+    for keyword in ["predicate", "proof"] {
+        for receiver in ["self", "mut self", "&self", "&mut self"] {
+            let body = if keyword == "predicate" { "true" } else { "()" };
+            let source =
+                format!("{keyword} recovered({receiver}) = {body}\nproof following() = ()\n");
+            let built =
+                parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+                    .unwrap();
+            let entries = built.index().entries();
+            let patterns = entries
+                .iter()
+                .filter(|entry| entry.role() == SyntaxRole::ParameterPattern)
+                .collect::<Vec<_>>();
+
+            assert_eq!(patterns.len(), 1, "{keyword}({receiver})");
+            assert!(
+                patterns[0].pattern_projection().is_some(),
+                "{keyword}({receiver}) must retain the parser-owned Pattern projection"
+            );
+            assert_eq!(
+                entries
+                    .iter()
+                    .filter(|entry| {
+                        entry.kind() == SyntaxKind::MissingType
+                            && entry.role() == SyntaxRole::ParameterType
+                    })
+                    .count(),
+                1,
+                "{keyword}({receiver})"
+            );
+            assert_eq!(
+                built
+                    .diagnostics()
+                    .iter()
+                    .filter(|diagnostic| diagnostic.code() == "syntax.parameter.missing_type")
+                    .count(),
+                1,
+                "{keyword}({receiver})"
+            );
+            assert_eq!(built.green().to_string(), source);
+        }
+    }
+}
+
+#[test]
 fn complete_headers_emit_distinct_typed_descendant_families_losslessly() {
     let source = "pub proof ordered<'a, T>((left, right): (T, T), cmp: Comparator<T>) -> Bool where T: Ord requires cmp.ready() ensures result = left == right\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -67,7 +114,8 @@ fn complete_headers_emit_distinct_typed_descendant_families_losslessly() {
 #[test]
 fn canonical_multiline_contract_header_and_block_form_one_declaration() {
     let source = "pub predicate ordered<T>(pair: (T, T), cmp: Comparator<T>)\nwhere T: Ord\nrequires cmp.is_total()\nensures result\n{\n    let (left, right): (T, T) = pair\n    cmp.compare(left, right) <= 0\n}\nproof next() = ()\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -108,7 +156,8 @@ fn canonical_multiline_contract_header_and_block_form_one_declaration() {
 #[test]
 fn generic_header_angle_nesting_controls_logical_line_boundaries() {
     let source = "proof generic<\n    T: Ord,\n    U,\n>\n(\n    value: Result<T, U>\n)\n-> Result<\n    T,\n    U\n>\n= ()\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -145,7 +194,8 @@ fn generic_header_angle_nesting_controls_logical_line_boundaries() {
 #[test]
 fn documentation_and_outer_attributes_attach_to_the_following_proof() {
     let source = "/// Establishes the ordering lemma.\n/// Retains both documentation lines.\n#[verify]\n#[cfg(\n    debug\n)]\npub proof documented<T>(value: T)\nwhere T: Ord\n= ()\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -191,7 +241,8 @@ fn documentation_and_outer_attributes_attach_to_the_following_proof() {
 #[test]
 fn missing_body_does_not_consume_following_clean_declaration() {
     let source = "predicate missing(x: Bool)\nproof next() = ()\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -227,7 +278,8 @@ fn missing_body_does_not_consume_following_clean_declaration() {
 fn missing_parameter_close_synchronizes_before_the_following_declaration() {
     let source = "proof broken(value: Int\nproof next() = ()\n";
     let next_start = source.find("proof next").unwrap();
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -265,7 +317,8 @@ fn missing_parameter_close_synchronizes_before_the_following_declaration() {
 fn missing_block_close_synchronizes_before_the_following_declaration() {
     let source = "proof broken() -> Int { let x = ;\nproof next() = ()\n";
     let next_start = source.find("proof next").unwrap();
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -303,7 +356,8 @@ fn missing_block_close_synchronizes_before_the_following_declaration() {
 fn missing_block_close_preserves_the_following_declarations_prefixes() {
     let source = "predicate broken() { let x = true\n/// The next proof remains documented.\n#[verify]\nproof next() = ()\n";
     let next_prefix_start = source.find("/// The next").unwrap();
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -354,7 +408,8 @@ fn missing_block_close_preserves_the_following_declarations_prefixes() {
 #[test]
 fn proof_block_separates_statements_tail_braces_and_omitted_tail() {
     let with_tail = "proof p() -> Int { let x: Int = 1; lemma(x); assert.prove(x == 1); x }\n";
-    let built = parse_shadow_document(&document(with_tail)).unwrap();
+    let built = parse_shadow_document(&document(with_tail), crate::parser::ParseOptions::default())
+        .unwrap();
     let kinds = built
         .index()
         .entries()
@@ -372,7 +427,11 @@ fn proof_block_separates_statements_tail_braces_and_omitted_tail() {
     assert!(!kinds.contains(&SyntaxKind::OmittedBlockTail));
     assert_eq!(built.green().to_string(), with_tail);
 
-    let empty = parse_shadow_document(&document("proof unit() {}\n")).unwrap();
+    let empty = parse_shadow_document(
+        &document("proof unit() {}\n"),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert!(
         empty
             .index()
@@ -387,7 +446,8 @@ fn proof_block_separates_statements_tail_braces_and_omitted_tail() {
 fn expression_events_preserve_precedence_arguments_and_postfix_identity() {
     let source =
         "proof p(a: Int, b: Int, c: Int, list: List<Int>) = lemma(a + b * c, list[0]?.field)?\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -410,7 +470,7 @@ fn expression_events_preserve_precedence_arguments_and_postfix_identity() {
     );
     for expected in [
         SyntaxKind::CallExpression,
-        SyntaxKind::IndexExpression,
+        SyntaxKind::PostfixBracketExpression,
         SyntaxKind::SelectExpression,
         SyntaxKind::TryExpression,
         SyntaxKind::Path,
@@ -423,7 +483,11 @@ fn expression_events_preserve_precedence_arguments_and_postfix_identity() {
 #[test]
 fn prefix_try_uses_the_ordinary_expression_grammar_and_missing_operand_recovery() {
     let valid_source = "proof unwrap(value: Result<Int, Error>) = try value\n";
-    let valid = parse_shadow_document(&document(valid_source)).unwrap();
+    let valid = parse_shadow_document(
+        &document(valid_source),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert_eq!(
         valid
             .index()
@@ -445,7 +509,11 @@ fn prefix_try_uses_the_ordinary_expression_grammar_and_missing_operand_recovery(
     assert_eq!(valid.green().to_string(), valid_source);
 
     let missing_source = "proof missing() = try\n";
-    let missing = parse_shadow_document(&document(missing_source)).unwrap();
+    let missing = parse_shadow_document(
+        &document(missing_source),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert_eq!(
         missing
             .index()
@@ -465,7 +533,11 @@ fn prefix_try_uses_the_ordinary_expression_grammar_and_missing_operand_recovery(
     assert_eq!(missing.green().to_string(), missing_source);
 
     let plain_source = "proof plain(value: Result<Int, Error>) = value\n";
-    let plain = parse_shadow_document(&document(plain_source)).unwrap();
+    let plain = parse_shadow_document(
+        &document(plain_source),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert!(
         plain
             .index()
@@ -478,7 +550,8 @@ fn prefix_try_uses_the_ordinary_expression_grammar_and_missing_operand_recovery(
 #[test]
 fn control_expressions_emit_typed_conditions_patterns_branches_and_arms() {
     let source = "proof choose(value: Option<Int>, ready: Bool) -> Int = if let .Some(x) = value when ready { x } else { match value { .Some(v) when v > 0 => v, .None => 0 } }\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -518,7 +591,8 @@ fn control_expressions_emit_typed_conditions_patterns_branches_and_arms() {
 #[test]
 fn comparison_operator_does_not_hide_if_expression_branches() {
     let source = "predicate less(a: Int, b: Int) = if a < b { true } else { false }\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -544,7 +618,8 @@ fn comparison_operator_does_not_hide_if_expression_branches() {
 fn closures_own_typed_parameters_return_types_bodies_and_grouping() {
     let source =
         "proof apply(value: Int) -> Int = (|x: Int| -> Int { let next = x + 1; next })(value)\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -556,7 +631,7 @@ fn closures_own_typed_parameters_return_types_bodies_and_grouping() {
         SyntaxKind::ClosureExpression,
         SyntaxKind::ClosureParameter,
         SyntaxKind::BindingPattern,
-        SyntaxKind::PrimitiveType,
+        SyntaxKind::PathType,
         SyntaxKind::ReturnType,
         SyntaxKind::BlockExpression,
         SyntaxKind::LetStatement,
@@ -578,7 +653,8 @@ fn closures_own_typed_parameters_return_types_bodies_and_grouping() {
 #[test]
 fn zero_parameter_closure_is_not_a_binary_or_expression() {
     let source = "proof ready() = || true\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -597,7 +673,8 @@ fn zero_parameter_closure_is_not_a_binary_or_expression() {
 #[test]
 fn bracket_families_and_call_argument_shapes_are_independently_typed() {
     let source = "proof containers(value: Int, count: Int, rest: [Int]) = consume([1, 2, 3], [value, count], [value; count], first = value, rest...)\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -628,9 +705,10 @@ fn bracket_families_and_call_argument_shapes_are_independently_typed() {
 }
 
 #[test]
-fn mixed_integer_suffixes_remain_an_ordinary_bracket_sequence() {
+fn mixed_integer_suffixes_retain_typed_numeric_recovery() {
     let source = "proof mixed() = [1u8, 2u16]\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -638,15 +716,27 @@ fn mixed_integer_suffixes_remain_an_ordinary_bracket_sequence() {
         .map(UnattachedGrammarEntry::kind)
         .collect::<Vec<_>>();
 
-    assert!(kinds.contains(&SyntaxKind::BracketSequenceExpression));
-    assert!(!kinds.contains(&SyntaxKind::NumericBracketSequenceExpression));
-    assert_eq!(
-        kinds
-            .iter()
-            .filter(|kind| **kind == SyntaxKind::LiteralExpression)
-            .count(),
-        2
-    );
+    assert!(!kinds.contains(&SyntaxKind::BracketSequenceExpression));
+    assert!(kinds.contains(&SyntaxKind::NumericBracketSequenceExpression));
+    let numeric = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::NumericBracketSequenceExpression)
+        .and_then(UnattachedGrammarEntry::expression_projection)
+        .expect("numeric sequence owns one parser-selected projection");
+    assert!(matches!(
+        numeric.projection(),
+        crate::expressions::ExpressionProjection::NumericBracketSequence(sequence)
+            if matches!(
+                sequence.recovery(),
+                crate::expressions::SyntaxNumericSequenceRecovery::ConflictingSuffix {
+                    ordinal: 1,
+                    first: crate::literal::IntSuffix::U8,
+                    conflicting: crate::literal::IntSuffix::U16,
+                }
+            )
+    ));
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
 }
@@ -654,7 +744,8 @@ fn mixed_integer_suffixes_remain_an_ordinary_bracket_sequence() {
 #[test]
 fn record_and_named_block_families_share_typed_fields_and_blocks() {
     let source = "proof composites(value: Int) = (Point { x = value, y }, { first = value, second: value + 1 }, result { let computed = value; computed }, scope named { let local = value; local }, thread detached worker { let item = value; item })\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -696,7 +787,8 @@ fn record_and_named_block_families_share_typed_fields_and_blocks() {
 #[test]
 fn statement_shaped_braces_remain_a_block_expression() {
     let source = "proof block(value: Int) = { let local = value; local }\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -714,8 +806,9 @@ fn statement_shaped_braces_remain_a_block_expression() {
 
 #[test]
 fn nested_type_and_pattern_families_have_independent_events() {
-    let source = "proof nested((head, [first, ..rest], TruckResult { score, rank: mut r, .. }, ev .Choice(value)): (&'a mut Comparator<Option<(Int, String)> | [U8; 32]>) -> Result<Bool, Error>, .Some(left) | .None: Option<Int>) where Comparator<Option<Int>>: Callable<(Int, String)> + Send = true\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let source = "proof nested((head, [first, ..rest], TruckResult { score, rank: mut r, .. }, ev .Choice(value)): (&'a mut Comparator<Option<(Int, String)> | [U8]>) -> Result<Bool, Error>, .Some(left) | .None: Option<Int>) where Comparator<Option<Int>>: Callable<(Int, String)> + Send = true\n";
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -729,7 +822,6 @@ fn nested_type_and_pattern_families_have_independent_events() {
         SyntaxKind::GenericApplicationType,
         SyntaxKind::SumType,
         SyntaxKind::TupleType,
-        SyntaxKind::ArrayType,
         SyntaxKind::TypeArgument,
         SyntaxKind::WherePredicate,
         SyntaxKind::TuplePattern,
@@ -763,7 +855,7 @@ fn nested_type_and_pattern_families_have_independent_events() {
 
 #[test]
 fn shared_statement_families_keep_typed_identity_and_children() {
-    let source = "{ let y: Int = x; target = y; 'line <- y; return y; out 'exit y; goto next; defer cleanup(); yield y; signal y; wait(y); on ready => lemma(y); close y; select y; break 'loop y; continue 'loop; lemma(y); y; }\n";
+    let source = "{ let y: Int = x; target = y; 'line <- y; return y; out 'exit y; goto next; defer cleanup(); yield y; signal changed <- y; wait(y); on ready => lemma(y); close y; select y; break 'loop y; continue 'loop; lemma(y); y; }\n";
     let built = parse_test_statement_block(&document(source)).unwrap();
     let kinds = built
         .index()
@@ -793,6 +885,73 @@ fn shared_statement_families_keep_typed_identity_and_children() {
         assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
     }
     assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn required_operand_statements_retain_exact_missing_slots_and_wait_punctuation() {
+    let authored = "{ return 'lease; yield @entity.value; wait(target); close resource; select choice.member; }\n";
+    let built = parse_test_statement_block(&document(authored)).unwrap();
+    let entries = built.index().entries();
+    assert!(entries.iter().any(|entry| {
+        entry.kind() == SyntaxKind::LifetimePathExpression && entry.role() == SyntaxRole::Operand
+    }));
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| {
+                entry.kind() == SyntaxKind::OpenParenNode
+                    && entry.role() == SyntaxRole::OpenDelimiter
+            })
+            .count(),
+        1
+    );
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| {
+                entry.kind() == SyntaxKind::CloseParenNode
+                    && entry.role() == SyntaxRole::CloseDelimiter
+            })
+            .count(),
+        1
+    );
+    assert_eq!(built.green().to_string(), authored);
+
+    let missing = "{ return; yield; wait(); close; select; }\n";
+    let built = parse_test_statement_block(&document(missing)).unwrap();
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| {
+                entry.kind() == SyntaxKind::MissingExpression && entry.role() == SyntaxRole::Operand
+            })
+            .count(),
+        5
+    );
+    assert_eq!(built.green().to_string(), missing);
+
+    let recovered = "{ wait target; }\n";
+    let built = parse_test_statement_block(&document(recovered)).unwrap();
+    let codes = built
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| diagnostic.code())
+        .collect::<Vec<_>>();
+    assert!(codes.contains(&"syntax.statement.missing_wait_open"));
+    assert!(codes.contains(&"syntax.statement.missing_wait_close"));
+    assert_eq!(built.green().to_string(), recovered);
+
+    let missing_close = "{ wait(target }\n";
+    let built = parse_test_statement_block(&document(missing_close)).unwrap();
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.statement.missing_wait_close")
+    );
+    assert_eq!(built.green().to_string(), missing_close);
 }
 
 #[test]
@@ -876,7 +1035,8 @@ fn malformed_statement_is_typed_without_consuming_following_sibling() {
 #[test]
 fn predicate_and_proof_blocks_reject_non_contract_statement_families() {
     let source = "predicate p(x: Bool) { if x { return; }; x }\nproof q() { let picked = choice @choice.test { }; while true { break; }; lemma(); }\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -901,7 +1061,8 @@ fn predicate_and_proof_blocks_reject_non_contract_statement_families() {
 #[test]
 fn entity_style_proof_name_uses_ordinary_error_item_recovery() {
     let source = "proof @legacy.fact() {}\nproof current() = ()\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -921,7 +1082,11 @@ fn entity_style_proof_name_uses_ordinary_error_item_recovery() {
 
 #[test]
 fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
-    let missing_name = parse_shadow_document(&document("proof () = ()\n")).unwrap();
+    let missing_name = parse_shadow_document(
+        &document("proof () = ()\n"),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert!(
         missing_name
             .index()
@@ -935,7 +1100,11 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
         "syntax.proof.missing_name"
     );
 
-    let missing_parameters = parse_shadow_document(&document("predicate ready = true\n")).unwrap();
+    let missing_parameters = parse_shadow_document(
+        &document("predicate ready = true\n"),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     assert_eq!(missing_parameters.missing_tokens().len(), 2);
     assert!(
         missing_parameters
@@ -944,8 +1113,11 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
             .any(|diagnostic| diagnostic.code() == "syntax.predicate.missing_parameters")
     );
 
-    let malformed =
-        parse_shadow_document(&document("proof p()() ensures true requires true = ()\n")).unwrap();
+    let malformed = parse_shadow_document(
+        &document("proof p()() ensures true requires true = ()\n"),
+        crate::parser::ParseOptions::default(),
+    )
+    .unwrap();
     let codes = malformed
         .diagnostics()
         .iter()
@@ -969,7 +1141,8 @@ fn words_before_contract_values_use_ordinary_expression_recovery() {
         "ensures prove value\n",
         "= ()\n",
     );
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     assert_eq!(
         built
             .index()
@@ -986,7 +1159,8 @@ fn words_before_contract_values_use_ordinary_expression_recovery() {
 #[test]
 fn missing_contract_expression_has_the_shared_canonical_diagnostic() {
     let source = "proof missing()\nrequires\n= ()\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     assert!(
         built
             .index()
@@ -1007,7 +1181,8 @@ fn missing_contract_expression_has_the_shared_canonical_diagnostic() {
 #[test]
 fn predicate_authored_return_is_retained_as_current_typed_recovery() {
     let source = "predicate positive(x: Int) -> Bool = x > 0\n";
-    let built = parse_shadow_document(&document(source)).unwrap();
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     assert!(
         built
             .index()
@@ -1033,7 +1208,7 @@ fn predicate_and_proof_parameter_limits_are_inclusive() {
         let exact = comma_separated(limit.maximum(), |index| format!("p{index}: Bool"));
         let source = format!("{keyword} within({exact}) = true\n");
         assert_eq!(
-            parse_shadow_document(&document(&source))
+            parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
                 .expect("the exact parameter limit must build")
                 .green()
                 .to_string(),
@@ -1043,7 +1218,8 @@ fn predicate_and_proof_parameter_limits_are_inclusive() {
         let over = comma_separated(limit.maximum() + 1, |index| format!("p{index}: Bool"));
         let source = format!("{keyword} over({over}) = true\n");
         assert_eq!(
-            parse_shadow_document(&document(&source)).unwrap_err(),
+            parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+                .unwrap_err(),
             GrammarBuildError::LimitExceeded(limit)
         );
     }
@@ -1055,34 +1231,39 @@ fn generic_where_and_contract_limits_are_per_declaration_and_inclusive() {
     let exact_generics = comma_separated(generic_limit.maximum(), |index| format!("T{index}"));
     let source =
         format!("proof first<{exact_generics}>() = ()\nproof second<{exact_generics}>() = ()\n");
-    parse_shadow_document(&document(&source))
+    parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
         .expect("each declaration owns an independent exact generic budget");
     let over_generics = comma_separated(generic_limit.maximum() + 1, |index| format!("T{index}"));
     let source = format!("proof over<{over_generics}>() = ()\n");
     assert_eq!(
-        parse_shadow_document(&document(&source)).unwrap_err(),
+        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+            .unwrap_err(),
         GrammarBuildError::LimitExceeded(generic_limit)
     );
 
     let where_limit = SyntaxLimit::WherePredicates;
     let exact_where = comma_separated(where_limit.maximum(), |index| format!("T{index}: Ord"));
     let source = format!("proof within() where {exact_where} = ()\n");
-    parse_shadow_document(&document(&source)).expect("the exact where-predicate limit must build");
+    parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+        .expect("the exact where-predicate limit must build");
     let over_where = comma_separated(where_limit.maximum() + 1, |index| format!("T{index}: Ord"));
     let source = format!("proof over() where {over_where} = ()\n");
     assert_eq!(
-        parse_shadow_document(&document(&source)).unwrap_err(),
+        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+            .unwrap_err(),
         GrammarBuildError::LimitExceeded(where_limit)
     );
 
     let clause_limit = SyntaxLimit::ContractClauses;
     let exact_clauses = "requires true\n".repeat(clause_limit.maximum());
     let source = format!("proof within()\n{exact_clauses}= ()\n");
-    parse_shadow_document(&document(&source)).expect("the exact contract-clause limit must build");
+    parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+        .expect("the exact contract-clause limit must build");
     let over_clauses = "requires true\n".repeat(clause_limit.maximum() + 1);
     let source = format!("proof over()\n{over_clauses}= ()\n");
     assert_eq!(
-        parse_shadow_document(&document(&source)).unwrap_err(),
+        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+            .unwrap_err(),
         GrammarBuildError::LimitExceeded(clause_limit)
     );
 }
@@ -1092,7 +1273,7 @@ fn assertion_conditions_are_independent_typed_expressions_with_an_inclusive_limi
     let limit = SyntaxLimit::AssertionConditions;
     let exact = comma_separated(limit.maximum(), |index| format!("condition_{index}"));
     let source = format!("proof within() {{ assert.prove({exact}) }}\n");
-    let built = parse_shadow_document(&document(&source))
+    let built = parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
         .expect("the exact assertion-condition limit must build");
     assert_eq!(
         built
@@ -1108,7 +1289,8 @@ fn assertion_conditions_are_independent_typed_expressions_with_an_inclusive_limi
     let over = comma_separated(limit.maximum() + 1, |index| format!("condition_{index}"));
     let source = format!("proof over() {{ assert.prove({over}) }}\n");
     assert_eq!(
-        parse_shadow_document(&document(&source)).unwrap_err(),
+        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
+            .unwrap_err(),
         GrammarBuildError::LimitExceeded(limit)
     );
 }

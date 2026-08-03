@@ -1,6 +1,7 @@
 //! Type-checker evidence consumed by runtime-plan lowering.
 
 use arcweft_lang_hir::symbol::CallableDeclarationId;
+use arcweft_lang_syntax::literal::IntSuffix;
 
 /// Runtime-plan-local expression identifier aligned with type-check evidence.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -98,9 +99,8 @@ impl RuntimeNumericType {
     }
 }
 
-impl From<arcweft_lang_syntax::expr::IntSuffix> for RuntimeNumericType {
-    fn from(suffix: arcweft_lang_syntax::expr::IntSuffix) -> Self {
-        use arcweft_lang_syntax::expr::IntSuffix;
+impl From<IntSuffix> for RuntimeNumericType {
+    fn from(suffix: IntSuffix) -> Self {
         match suffix {
             IntSuffix::I8 => Self::I8,
             IntSuffix::I16 => Self::I16,

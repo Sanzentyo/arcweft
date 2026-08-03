@@ -2,17 +2,17 @@
 
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::{
-    emit_fixed_parameters, emit_generic_parameters, emit_missing_parameter_group, emit_name,
-    emit_outer_prefixes, emit_visibility,
+    FixedParameterGrammar, emit_fixed_parameters, emit_generic_parameters,
+    emit_missing_parameter_group, emit_name, emit_outer_prefixes, emit_visibility,
 };
-use super::document::ShadowDocumentParser;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
-    find_matching_close, find_top_level_boundary, first_significant, token_count, token_text,
-    trimmed_end,
+    find_matching_close, find_matching_close_before, find_top_level_boundary, first_significant,
+    token_count, token_text, trimmed_end,
 };
 use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
@@ -193,6 +193,7 @@ fn emit_function_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, o
     while parser.at("(") && parser.cursor() < content_end {
         emit_fixed_parameters(
             parser,
+            FixedParameterGrammar::TypedPattern,
             "capability function parameters require an authored type",
             "syntax.capability.unclosed_parameters",
         );
@@ -253,7 +254,7 @@ fn emit_effect_clause(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     }
 
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
-    let close = matching_close_before(parser, parser.cursor(), end, "{").unwrap_or(end);
+    let close = find_matching_close_before(parser, parser.cursor(), end, "{").unwrap_or(end);
     parser.start(SyntaxKind::ExpressionList, SyntaxRole::Element(0));
     let mut ordinal = 0_u32;
     while parser.cursor() < close {
@@ -291,28 +292,6 @@ fn emit_effect_clause(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         )));
     }
     parser.finish();
-}
-
-fn matching_close_before(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-    opening: &str,
-) -> Option<usize> {
-    let (open, close) = match opening {
-        "{" => ("{", "}"),
-        _ => return None,
-    };
-    let mut depth = 0_usize;
-    for index in start..end {
-        match token_text(parser, index)? {
-            text if text == open => depth += 1,
-            text if text == close && depth == 0 => return Some(index),
-            text if text == close => depth = depth.saturating_sub(1),
-            _ => {}
-        }
-    }
-    None
 }
 
 fn emit_member_tail_error(

@@ -64,7 +64,7 @@ pub style reactive_interaction {
 
     Button:active {
         background-color = token(color.button_active)
-        scale = 970milli
+        scale = 0.97
     }
 
     Button:focus-visible {
@@ -73,7 +73,7 @@ pub style reactive_interaction {
     }
 
     Button:disabled {
-        opacity = 520milli
+        opacity = 52%
     }
 }
 

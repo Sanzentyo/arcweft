@@ -4,6 +4,7 @@
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SyntaxLimit {
     PrefixDepth,
+    StyleNestingDepth,
     AssertionConditions,
     PredicateParameters,
     ProofParameters,
@@ -31,6 +32,7 @@ impl SyntaxLimit {
     pub const fn maximum(self) -> usize {
         match self {
             Self::PrefixDepth
+            | Self::StyleNestingDepth
             | Self::AssertionConditions
             | Self::PredicateParameters
             | Self::ProofParameters
@@ -59,6 +61,7 @@ mod tests {
     #[test]
     fn syntax_hard_limits_match_the_language_contract() {
         assert_eq!(SyntaxLimit::PrefixDepth.maximum(), 64);
+        assert_eq!(SyntaxLimit::StyleNestingDepth.maximum(), 64);
         assert_eq!(SyntaxLimit::AssertionConditions.maximum(), 64);
         assert_eq!(SyntaxLimit::PredicateParameters.maximum(), 64);
         assert_eq!(SyntaxLimit::ProofParameters.maximum(), 64);

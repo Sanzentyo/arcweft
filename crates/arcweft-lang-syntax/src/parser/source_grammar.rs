@@ -1,23 +1,37 @@
 //! Attached `source` declaration grammar over the shared document cursor.
 
-use arcweft_id::PublicId;
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::{emit_contract_clause_until, emit_outer_prefixes, emit_visibility};
-use super::document::ShadowDocumentParser;
-use super::expression::emit_expression;
-use super::lexer::LexToken;
+use super::expression::emit_expression_node;
+use super::lexer::{LexToken, typed_entity_reference};
 use super::pattern::emit_pattern;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
     find_matching_close, find_statement_terminator, find_top_level_boundary, first_significant,
     token_count, token_text, trimmed_end,
 };
-use super::statement::{emit_braced_block_until, emit_statement_fragment};
+use super::statement::{emit_braced_statement_block_until, emit_statement_fragment};
 use super::type_ref::emit_type;
+use crate::expressions::{
+    ExpressionComponentRole, ExpressionProjection, PendingExpressionProjection,
+    SyntaxCallArgumentListTerminator, SyntaxCallArgumentPart, SyntaxCallArgumentProjection,
+    SyntaxCallProjection,
+};
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+use crate::grammar::source_declaration_projection::{
+    PendingSourceBackpressurePolicy, PendingSourceBodyProjection, PendingSourceBoundedArgument,
+    PendingSourceChildState, PendingSourceDeclarationProjection, PendingSourceHandlerBody,
+    PendingSourceHandlerEvent, PendingSourceId, PendingSourceMemberProjection, PendingSourceName,
+    PendingSourceNamedPolicy, PendingSourceOverflowPolicy, PendingSourcePunctuation,
+    PendingSourceTypeState, SourceContractSyntaxKind, SourcePrivacySyntaxKind,
+    SourceReplaySyntaxKind,
+};
+use crate::id_ref::{AuthoredIdRoot, SyntaxIdRefIssue};
+use crate::name::SyntaxName;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum SourceIdProblem {
@@ -25,17 +39,36 @@ enum SourceIdProblem {
     Malformed,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct SourceIdEmission {
     requires_name: bool,
     consumed_type_colon: bool,
+    projection: PendingSourceId,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-struct SourceContractLedger {
+struct SourceBodyLedger {
+    source_ordinal: u32,
+    statement_ordinal: u32,
+    contract_ordinal: u16,
     requires: u16,
     ensures: u16,
     saw_ensures: bool,
+    saw_from: bool,
+    saw_backpressure: bool,
+    saw_replay: bool,
+    saw_privacy: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceHandlerHead {
+    Item,
+    Error,
+    Progress,
+    Disconnected,
+    PermissionRevoked,
+    End,
+    Unknown,
 }
 
 pub(super) fn emit_declaration(
@@ -46,7 +79,7 @@ pub(super) fn emit_declaration(
     budget: &mut GrammarBudget,
 ) {
     let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
-    parser.start(SyntaxKind::SourceItem, role);
+    let owner = parser.start_projected_owner(SyntaxKind::SourceItem, role);
     parser.start(SyntaxKind::DeclarationHeader, SyntaxRole::Element(0));
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -59,23 +92,35 @@ pub(super) fn emit_declaration(
     parser.bump_trivia();
     let public_id = emit_public_id(&mut parser);
     parser.bump_trivia();
-    match public_id {
+    let name = match public_id.as_ref() {
         None => emit_required_name(&mut parser),
         Some(emission) if emission.requires_name && emission.consumed_type_colon => {
-            emit_missing_name(&mut parser);
+            emit_missing_name(&mut parser)
         }
         Some(emission) if emission.requires_name => emit_required_name(&mut parser),
         Some(emission) if !emission.consumed_type_colon => emit_optional_name(&mut parser),
-        Some(_) => {}
-    }
+        Some(_) => PendingSourceName::Absent,
+    };
     parser.bump_trivia();
-    emit_source_type(
+    let (source_type, missing_type_colon) = emit_source_type(
         &mut parser,
-        public_id.is_some_and(|emission| emission.consumed_type_colon),
+        public_id
+            .as_ref()
+            .is_some_and(|emission| emission.consumed_type_colon),
     );
     parser.finish();
-    emit_source_body(&mut parser);
+    let body = emit_source_body(&mut parser);
     while parser.bump().is_some() {}
+    parser.set_source_declaration_projection(
+        owner,
+        PendingSourceDeclarationProjection::new(
+            public_id.map_or(PendingSourceId::Absent, |emission| emission.projection),
+            name,
+            source_type,
+            missing_type_colon,
+            body,
+        ),
+    );
     parser.finish();
 }
 
@@ -99,7 +144,47 @@ fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdE
     } else {
         spelling
     };
-    let (requires_name, problem) = classify_source_id(id_spelling);
+    let typed = typed_entity_reference(
+        LexToken {
+            kind: SyntaxKind::EntityReferenceToken,
+            range: id_range,
+        },
+        id_spelling,
+    )
+    .into_syntax();
+    let malformed_delimited_absolute = id_spelling.starts_with("@<") && !id_spelling.ends_with('>');
+    let marker_family = source_id_marker_family(id_spelling);
+    let canonical_source_family = !malformed_delimited_absolute
+        && match typed.value() {
+            Ok(value) => match value.root() {
+                AuthoredIdRoot::Absolute { .. } => {
+                    value
+                        .segments()
+                        .first()
+                        .is_some_and(|segment| segment.as_str() == "source")
+                        && value.segments().len() > 1
+                }
+                AuthoredIdRoot::FamilyRelative { family, .. } => family.as_str() == "source",
+                AuthoredIdRoot::Relative { .. } => true,
+            },
+            Err(SyntaxIdRefIssue::MissingSuffix) => marker_family
+                .as_ref()
+                .is_some_and(|family| family.as_deref().is_none_or(|family| family == "source")),
+            Err(_) => false,
+        };
+    let problem = if malformed_delimited_absolute {
+        Some(SourceIdProblem::Malformed)
+    } else {
+        match typed.value() {
+            Err(SyntaxIdRefIssue::MissingSuffix) if marker_family.is_some() => {
+                (!canonical_source_family).then_some(SourceIdProblem::WrongFamily)
+            }
+            Err(_) => Some(SourceIdProblem::Malformed),
+            Ok(_) if !canonical_source_family => Some(SourceIdProblem::WrongFamily),
+            Ok(_) => None,
+        }
+    };
+    let requires_name = source_id_marker_requires_name(id_spelling);
 
     parser.start(SyntaxKind::DeclarationPublicId, SyntaxRole::PublicId);
     if let Some(problem) = problem {
@@ -151,107 +236,55 @@ fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdE
     Some(SourceIdEmission {
         requires_name,
         consumed_type_colon: trailing_type_colon,
+        projection: PendingSourceId::Authored {
+            value: typed,
+            source: id_range,
+            canonical_source_family,
+            requires_name,
+        },
     })
 }
 
-fn classify_source_id(spelling: &str) -> (bool, Option<SourceIdProblem>) {
-    let Some(body) = spelling.strip_prefix('@') else {
-        return (false, Some(SourceIdProblem::Malformed));
-    };
-
-    if let Some(delimited) = body.strip_prefix('<') {
-        let Some(delimited) = delimited.strip_suffix('>') else {
-            return (false, Some(SourceIdProblem::Malformed));
-        };
-        if PublicId::try_new(delimited).is_err() {
-            return (false, Some(SourceIdProblem::Malformed));
-        }
-        return (
-            false,
-            delimited
-                .strip_prefix("source.")
-                .is_none_or(str::is_empty)
-                .then_some(SourceIdProblem::WrongFamily),
-        );
-    }
-
-    if let Some((family, relative)) = body.split_once(":.") {
-        let requires_name = relative.is_empty();
-        if family.is_empty() || !valid_id_tail(relative.trim_start_matches('.'), requires_name) {
-            return (requires_name, Some(SourceIdProblem::Malformed));
-        }
-        return (
-            requires_name,
-            (family != "source").then_some(SourceIdProblem::WrongFamily),
-        );
-    }
-
-    if body.starts_with('.') {
-        let suffix = body.trim_start_matches('.');
-        let requires_name = suffix.is_empty();
-        let valid_marker = body == ".";
-        return (
-            requires_name,
-            (!valid_id_tail(suffix, requires_name) || (requires_name && !valid_marker))
-                .then_some(SourceIdProblem::Malformed),
-        );
-    }
-
-    if body.starts_with("super.") {
-        let mut suffix = body;
-        while let Some(rest) = suffix.strip_prefix("super.") {
-            suffix = rest;
-        }
-        let requires_name = suffix.is_empty();
-        return (
-            requires_name,
-            (!valid_id_tail(suffix, false)).then_some(SourceIdProblem::Malformed),
-        );
-    }
-
-    if !valid_absolute_id(body) {
-        return (false, Some(SourceIdProblem::Malformed));
-    }
-    (
-        false,
-        body.strip_prefix("source.")
-            .is_none_or(str::is_empty)
-            .then_some(SourceIdProblem::WrongFamily),
-    )
+fn source_id_marker_requires_name(spelling: &str) -> bool {
+    source_id_marker_family(spelling).is_some() || spelling == "@super."
 }
 
-fn valid_absolute_id(body: &str) -> bool {
-    PublicId::try_new(body).is_ok()
-        && !body.contains([':', '/', '{', '}'])
-        && body.split('.').all(|component| !component.is_empty())
-}
-
-fn valid_id_tail(tail: &str, allow_empty: bool) -> bool {
-    if tail.is_empty() {
-        return allow_empty;
+fn source_id_marker_family(spelling: &str) -> Option<Option<&str>> {
+    if spelling == "@." {
+        return Some(None);
     }
-    !tail.contains([':', '/', '{', '}'])
-        && tail.split('.').all(|component| !component.is_empty())
-        && PublicId::try_new(format!("source.{tail}")).is_ok()
+    spelling
+        .strip_prefix('@')
+        .and_then(|body| body.strip_suffix(":."))
+        .filter(|family| !family.is_empty())
+        .map(Some)
 }
 
-fn emit_optional_name(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_optional_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceName {
     if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+        let token = parser.current().expect("checked Source name token");
+        let value = SyntaxName::try_new(parser.text_of(token));
         parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
         parser.bump();
         parser.finish();
-    }
-}
-
-fn emit_required_name(parser: &mut ShadowDocumentParser<'_, '_>) {
-    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
-        emit_optional_name(parser);
+        PendingSourceName::Authored {
+            value,
+            source: token.range(),
+        }
     } else {
-        emit_missing_name(parser);
+        PendingSourceName::Absent
     }
 }
 
-fn emit_missing_name(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_required_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceName {
+    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+        emit_optional_name(parser)
+    } else {
+        emit_missing_name(parser)
+    }
+}
+
+fn emit_missing_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceName {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
     parser.push(SyntaxEvent::MissingToken {
@@ -264,13 +297,21 @@ fn emit_missing_name(parser: &mut ShadowDocumentParser<'_, '_>) {
         SourceRange::new(at, at),
         "source declaration requires a public ID or local name",
     )));
+    PendingSourceName::Missing {
+        insertion: SourceRange::new(at, at),
+    }
 }
 
-fn emit_source_type(parser: &mut ShadowDocumentParser<'_, '_>, consumed_colon: bool) {
+fn emit_source_type(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    consumed_colon: bool,
+) -> (PendingSourceTypeState, bool) {
+    let mut missing_colon = false;
     if !consumed_colon {
         if parser.at(":") {
             parser.bump();
         } else {
+            missing_colon = true;
             let at = parser.current_offset();
             parser.push(SyntaxEvent::MissingToken {
                 expected: expected(SyntaxKind::PunctuationToken),
@@ -291,24 +332,24 @@ fn emit_source_type(parser: &mut ShadowDocumentParser<'_, '_>, consumed_colon: b
     let end = trimmed_end(parser, parser.cursor(), body);
     if parser.cursor() == end {
         let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingType, SyntaxRole::Type);
         parser.push(SyntaxEvent::MissingToken {
             expected: expected(SyntaxKind::IdentifierToken),
             at,
         });
-        parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.source.missing_type",
             SourceRange::new(at, at),
             "source declaration requires a source type",
         )));
-        return;
+        emit_type(parser, end, SyntaxRole::Type);
+        return (PendingSourceTypeState::Missing, missing_colon);
     }
     emit_type(parser, end, SyntaxRole::Type);
     bump_until(parser, end);
+    (PendingSourceTypeState::Authored, missing_colon)
 }
 
-fn emit_source_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_source_body(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceBodyProjection {
     parser.bump_trivia();
     if !parser.at("{") {
         let at = parser.current_offset();
@@ -319,15 +360,15 @@ fn emit_source_body(parser: &mut ShadowDocumentParser<'_, '_>) {
             SourceRange::new(at, at),
             "source declaration requires a body",
         )));
-        return;
+        return PendingSourceBodyProjection::Missing;
     }
 
     parser.start(SyntaxKind::Block, SyntaxRole::Body);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
     let close = find_matching_close(parser, parser.cursor(), "{").unwrap_or(token_count(parser));
     parser.start(SyntaxKind::StatementList, SyntaxRole::Element(0));
-    let mut ordinal = 0_u32;
-    let mut contracts = SourceContractLedger::default();
+    let mut ledger = SourceBodyLedger::default();
+    let mut members = Vec::new();
     while parser.cursor() < close {
         parser.bump_trivia();
         if parser.cursor() >= close {
@@ -347,17 +388,19 @@ fn emit_source_body(parser: &mut ShadowDocumentParser<'_, '_>) {
         } else {
             significant_end
         };
-        let is_statement = emit_source_body_entry(parser, end, ordinal, &mut contracts);
-        bump_until(parser, end);
-        if is_statement {
-            ordinal = ordinal.saturating_add(1);
+        if !parser.charge_source_member() {
+            bump_until(parser, end);
+            break;
         }
+        members.push(emit_source_body_entry(parser, end, &mut ledger));
+        bump_until(parser, end);
     }
     parser.finish();
     parser.start(SyntaxKind::OmittedBlockTail, SyntaxRole::Tail);
     parser.finish();
 
-    if parser.cursor() == close && parser.at("}") {
+    let closed = parser.cursor() == close && parser.at("}");
+    if closed {
         emit_close_delimiter(
             parser,
             SyntaxKind::CloseBraceNode,
@@ -378,6 +421,10 @@ fn emit_source_body(parser: &mut ShadowDocumentParser<'_, '_>) {
         )));
     }
     parser.finish();
+    PendingSourceBodyProjection::Braced {
+        members: members.into_boxed_slice(),
+        closed,
+    }
 }
 
 fn find_source_entry_terminator(
@@ -435,78 +482,218 @@ fn is_source_body_head(spelling: &str) -> bool {
 fn emit_source_body_entry(
     parser: &mut ShadowDocumentParser<'_, '_>,
     end: usize,
-    ordinal: u32,
-    contracts: &mut SourceContractLedger,
-) -> bool {
+    ledger: &mut SourceBodyLedger,
+) -> PendingSourceMemberProjection {
+    let source_ordinal = ledger.source_ordinal;
+    ledger.source_ordinal = ledger.source_ordinal.saturating_add(1);
     match parser.current_text() {
-        Some("from") => emit_source_from(parser, end, ordinal),
-        Some("on") => emit_source_handler(parser, end, ordinal),
+        Some("from") => {
+            let statement_ordinal = take_statement_ordinal(ledger);
+            let duplicate = std::mem::replace(&mut ledger.saw_from, true);
+            emit_source_from(parser, end, source_ordinal, statement_ordinal, duplicate)
+        }
+        Some("backpressure") => {
+            let statement_ordinal = take_statement_ordinal(ledger);
+            let duplicate = std::mem::replace(&mut ledger.saw_backpressure, true);
+            let (assignment, evidence) =
+                emit_source_policy_assignment(parser, end, statement_ordinal);
+            PendingSourceMemberProjection::Backpressure {
+                source_ordinal,
+                statement_ordinal,
+                assignment,
+                policy: source_backpressure_policy(parser, &evidence),
+                duplicate,
+            }
+        }
+        Some("replay") => {
+            let statement_ordinal = take_statement_ordinal(ledger);
+            let duplicate = std::mem::replace(&mut ledger.saw_replay, true);
+            let (assignment, evidence) =
+                emit_source_policy_assignment(parser, end, statement_ordinal);
+            PendingSourceMemberProjection::Replay {
+                source_ordinal,
+                statement_ordinal,
+                assignment,
+                policy: source_replay_policy(&evidence),
+                duplicate,
+            }
+        }
+        Some("privacy") => {
+            let statement_ordinal = take_statement_ordinal(ledger);
+            let duplicate = std::mem::replace(&mut ledger.saw_privacy, true);
+            let (assignment, evidence) =
+                emit_source_policy_assignment(parser, end, statement_ordinal);
+            PendingSourceMemberProjection::Privacy {
+                source_ordinal,
+                statement_ordinal,
+                assignment,
+                policy: source_privacy_policy(&evidence),
+                duplicate,
+            }
+        }
+        Some("on") => {
+            let statement_ordinal = take_statement_ordinal(ledger);
+            emit_source_handler(parser, end, source_ordinal, statement_ordinal)
+        }
         Some("requires") => {
             let clause_start = parser.current_offset();
-            emit_contract_clause_until(
+            let contract_ordinal = ledger.contract_ordinal;
+            let condition = emit_contract_clause_until(
                 parser,
                 end,
                 SyntaxKind::RequiresClause,
-                SyntaxRole::RequiresClause(contracts.requires),
+                SyntaxRole::ContractClause(contract_ordinal),
             );
-            if contracts.saw_ensures {
+            let condition = completed_expression_state(parser, condition.start_event);
+            if ledger.saw_ensures {
                 parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
                     "syntax.contract.invalid_clause_order",
                     SourceRange::new(clause_start, parser.current_offset()),
                     "`requires` clauses must precede every `ensures` clause",
                 )));
             }
-            contracts.requires = contracts.requires.saturating_add(1);
-            return false;
+            let family_ordinal = ledger.requires;
+            ledger.requires = ledger.requires.saturating_add(1);
+            ledger.contract_ordinal = ledger.contract_ordinal.saturating_add(1);
+            PendingSourceMemberProjection::UnsupportedContract {
+                source_ordinal,
+                contract_ordinal,
+                family: SourceContractSyntaxKind::Requires,
+                family_ordinal,
+                condition,
+                out_of_order: ledger.saw_ensures,
+            }
         }
         Some("ensures") => {
-            emit_contract_clause_until(
+            let contract_ordinal = ledger.contract_ordinal;
+            let condition = emit_contract_clause_until(
                 parser,
                 end,
                 SyntaxKind::EnsuresClause,
-                SyntaxRole::EnsuresClause(contracts.ensures),
+                SyntaxRole::ContractClause(contract_ordinal),
             );
-            contracts.ensures = contracts.ensures.saturating_add(1);
-            contracts.saw_ensures = true;
-            return false;
+            let condition = completed_expression_state(parser, condition.start_event);
+            let family_ordinal = ledger.ensures;
+            ledger.ensures = ledger.ensures.saturating_add(1);
+            ledger.contract_ordinal = ledger.contract_ordinal.saturating_add(1);
+            ledger.saw_ensures = true;
+            PendingSourceMemberProjection::UnsupportedContract {
+                source_ordinal,
+                contract_ordinal,
+                family: SourceContractSyntaxKind::Ensures,
+                family_ordinal,
+                condition,
+                out_of_order: false,
+            }
         }
-        _ => emit_statement_fragment(parser, end, SyntaxRole::Statement(ordinal)),
+        _ => {
+            let statement_ordinal = take_statement_ordinal(ledger);
+            emit_statement_fragment(parser, end, SyntaxRole::Statement(statement_ordinal));
+            PendingSourceMemberProjection::Recovery {
+                source_ordinal,
+                statement_ordinal,
+            }
+        }
     }
-    true
 }
 
-fn emit_source_from(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn take_statement_ordinal(ledger: &mut SourceBodyLedger) -> u32 {
+    let ordinal = ledger.statement_ordinal;
+    ledger.statement_ordinal = ledger.statement_ordinal.saturating_add(1);
+    ordinal
+}
+
+fn emit_source_from(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    source_ordinal: u32,
+    statement_ordinal: u32,
+    duplicate: bool,
+) -> PendingSourceMemberProjection {
     parser.start(
         SyntaxKind::ExpressionStatement,
-        SyntaxRole::Statement(ordinal),
+        SyntaxRole::Statement(statement_ordinal),
     );
     parser.bump();
     parser.bump_trivia();
-    emit_expression(parser, end, SyntaxRole::Initializer);
+    let child_end = statement_child_end(parser, end);
+    let value = emit_expression_node(parser, child_end, SyntaxRole::Initializer);
     bump_until(parser, end);
     parser.finish();
+    PendingSourceMemberProjection::From {
+        source_ordinal,
+        statement_ordinal,
+        value: completed_expression_state(parser, value.start_event),
+        duplicate,
+    }
 }
 
-fn emit_source_handler(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
-    parser.start(SyntaxKind::OnStatement, SyntaxRole::Statement(ordinal));
+fn emit_source_handler(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    source_ordinal: u32,
+    statement_ordinal: u32,
+) -> PendingSourceMemberProjection {
+    parser.start(
+        SyntaxKind::OnStatement,
+        SyntaxRole::Statement(statement_ordinal),
+    );
     parser.bump();
     parser.bump_trivia();
     let arrow = find_top_level_boundary(parser, parser.cursor(), &["=>"]).min(end);
     let has_arrow = arrow < end && token_text(parser, arrow) == Some("=>");
     let event_start = first_significant(parser, parser.cursor(), arrow);
-    match event_start.and_then(|index| token_text(parser, index)) {
-        Some("item" | "error" | "progress") => {
+    let head = match event_start.and_then(|index| token_text(parser, index)) {
+        Some("item") => SourceHandlerHead::Item,
+        Some("error") => SourceHandlerHead::Error,
+        Some("progress") => SourceHandlerHead::Progress,
+        Some("disconnected") => SourceHandlerHead::Disconnected,
+        Some("permission_revoked") => SourceHandlerHead::PermissionRevoked,
+        Some("end") => SourceHandlerHead::End,
+        _ => SourceHandlerHead::Unknown,
+    };
+    let unknown_value = event_start.and_then(|start| single_name_in_interval(parser, start, arrow));
+    let event = match head {
+        SourceHandlerHead::Item | SourceHandlerHead::Error | SourceHandlerHead::Progress => {
             parser.start(SyntaxKind::NameReference, SyntaxRole::Name);
             parser.bump();
             parser.finish();
             parser.bump_trivia();
+            let pattern_start = parser.event_position();
             emit_pattern(parser, arrow, SyntaxRole::Pattern);
+            let state = emitted_pattern_state(parser, pattern_start);
+            match head {
+                SourceHandlerHead::Item => PendingSourceHandlerEvent::Item(state),
+                SourceHandlerHead::Error => PendingSourceHandlerEvent::Error(state),
+                SourceHandlerHead::Progress => PendingSourceHandlerEvent::Progress(state),
+                _ => unreachable!("matched closed payload event family"),
+            }
         }
-        _ => emit_expression(parser, arrow, SyntaxRole::Condition),
-    }
+        SourceHandlerHead::Disconnected
+        | SourceHandlerHead::PermissionRevoked
+        | SourceHandlerHead::End => {
+            let condition = emit_expression_node(parser, arrow, SyntaxRole::Condition);
+            let state = completed_expression_state(parser, condition.start_event);
+            match head {
+                SourceHandlerHead::Disconnected => PendingSourceHandlerEvent::Disconnected(state),
+                SourceHandlerHead::PermissionRevoked => {
+                    PendingSourceHandlerEvent::PermissionRevoked(state)
+                }
+                SourceHandlerHead::End => PendingSourceHandlerEvent::End(state),
+                _ => unreachable!("matched closed condition event family"),
+            }
+        }
+        SourceHandlerHead::Unknown => {
+            let condition = emit_expression_node(parser, arrow, SyntaxRole::Condition);
+            PendingSourceHandlerEvent::Unknown {
+                value: unknown_value,
+                condition: completed_expression_state(parser, condition.start_event),
+            }
+        }
+    };
     bump_until(parser, arrow);
 
-    if !has_arrow {
+    let arrow_state = if !has_arrow {
         let at = parser.current_offset();
         parser.push(SyntaxEvent::MissingToken {
             expected: expected(SyntaxKind::PunctuationToken),
@@ -519,24 +706,32 @@ fn emit_source_handler(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, or
             SourceRange::new(at, at),
             "source handler requires `=>` before its body",
         )));
-        parser.finish();
-        return;
-    }
+        PendingSourcePunctuation::Missing(SourceRange::new(at, at))
+    } else {
+        let range = parser
+            .current()
+            .expect("checked Source handler arrow")
+            .range();
+        parser.bump();
+        PendingSourcePunctuation::Authored(range)
+    };
 
-    parser.bump();
     parser.bump_trivia();
     let body_end = trimmed_end(parser, parser.cursor(), end);
-    if parser.cursor() >= body_end {
+    let body = if parser.cursor() >= body_end || !has_arrow {
         let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
-        parser.finish();
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            "syntax.source.missing_handler_body",
-            SourceRange::new(at, at),
-            "source handler requires a statement or block body",
-        )));
+        if has_arrow {
+            parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
+            parser.finish();
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                "syntax.source.missing_handler_body",
+                SourceRange::new(at, at),
+                "source handler requires a statement or block body",
+            )));
+        }
+        PendingSourceHandlerBody::Missing
     } else if parser.at("{") {
-        emit_braced_block_until(
+        let closed = emit_braced_statement_block_until(
             parser,
             end,
             SyntaxKind::SourceItem,
@@ -544,9 +739,373 @@ fn emit_source_handler(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, or
             SyntaxRole::Body,
             "syntax.source.missing_handler_close",
         );
+        PendingSourceHandlerBody::Block { closed }
     } else {
         emit_statement_fragment(parser, end, SyntaxRole::Body);
-    }
+        PendingSourceHandlerBody::Statement
+    };
     bump_until(parser, end);
     parser.finish();
+    PendingSourceMemberProjection::Handler {
+        source_ordinal,
+        statement_ordinal,
+        event,
+        arrow: arrow_state,
+        body,
+    }
+}
+
+#[derive(Clone, Debug)]
+struct SourcePolicyEvidence {
+    state: PendingSourceChildState,
+    name: Option<SyntaxName>,
+    projection: Option<PendingExpressionProjection>,
+}
+
+fn emit_source_policy_assignment(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    statement_ordinal: u32,
+) -> (PendingSourcePunctuation, SourcePolicyEvidence) {
+    let child_end = statement_child_end(parser, end);
+    let target_start = parser.cursor();
+    let equals = find_top_level_boundary(parser, target_start, &["="]).min(child_end);
+    let has_equals = equals < child_end && token_text(parser, equals) == Some("=");
+    let target_end = if has_equals {
+        equals
+    } else {
+        first_significant(parser, target_start.saturating_add(1), child_end).unwrap_or(child_end)
+    };
+
+    parser.start(
+        SyntaxKind::AssignmentStatement,
+        SyntaxRole::Statement(statement_ordinal),
+    );
+    let _ = emit_expression_node(parser, target_end, SyntaxRole::Target);
+    bump_until(parser, target_end);
+    let assignment = if has_equals {
+        let range = parser
+            .current()
+            .expect("checked Source policy assignment")
+            .range();
+        parser.bump();
+        PendingSourcePunctuation::Authored(range)
+    } else {
+        let at = parser.current_offset();
+        parser.push(SyntaxEvent::MissingToken {
+            expected: expected(SyntaxKind::PunctuationToken),
+            at,
+        });
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.source.missing_policy_assignment",
+            SourceRange::new(at, at),
+            "Source policy requires `=` before its value",
+        )));
+        PendingSourcePunctuation::Missing(SourceRange::new(at, at))
+    };
+    parser.bump_trivia();
+    let value_start = parser.cursor();
+    let value = emit_expression_node(parser, child_end, SyntaxRole::Initializer);
+    let evidence = SourcePolicyEvidence {
+        state: completed_expression_state(parser, value.start_event),
+        name: single_name_in_interval(parser, value_start, child_end),
+        projection: parser.expression_projection_at(value.start_event).cloned(),
+    };
+    bump_until(parser, end);
+    parser.finish();
+    (assignment, evidence)
+}
+
+fn source_backpressure_policy(
+    parser: &ShadowDocumentParser<'_, '_>,
+    evidence: &SourcePolicyEvidence,
+) -> PendingSourceBackpressurePolicy {
+    match evidence.state {
+        PendingSourceChildState::Missing => PendingSourceBackpressurePolicy::Missing,
+        PendingSourceChildState::Invalid => PendingSourceBackpressurePolicy::Invalid,
+        PendingSourceChildState::Authored => match evidence.name.as_ref().map(SyntaxName::as_str) {
+            Some("latest") => PendingSourceBackpressurePolicy::Latest,
+            Some("blocking_not_allowed") => PendingSourceBackpressurePolicy::BlockingNotAllowed,
+            _ => source_bounded_policy(parser, evidence)
+                .unwrap_or_else(|| PendingSourceBackpressurePolicy::Unknown(evidence.name.clone())),
+        },
+    }
+}
+
+fn source_bounded_policy(
+    parser: &ShadowDocumentParser<'_, '_>,
+    evidence: &SourcePolicyEvidence,
+) -> Option<PendingSourceBackpressurePolicy> {
+    let pending = evidence.projection.as_ref()?;
+    let ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(call)) =
+        pending.projection()
+    else {
+        return None;
+    };
+    let callee = pending
+        .components()
+        .iter()
+        .find(|component| component.role() == ExpressionComponentRole::CallCallee)
+        .and_then(|component| single_name_in_range(parser, component.range()));
+    if callee.as_ref().map(SyntaxName::as_str) != Some("bounded") {
+        return None;
+    }
+
+    let mut capacity = PendingSourceBoundedArgument::Missing;
+    let mut overflow_argument = PendingSourceBoundedArgument::Missing;
+    let mut capacity_seen = false;
+    let mut overflow_seen = false;
+    let mut unexpected_arguments = false;
+    for (ordinal, argument) in call.arguments().iter().enumerate() {
+        let checked_ordinal = u16::try_from(ordinal)
+            .expect("Call argument budget fits the Source policy ordinal domain");
+        let SyntaxCallArgumentProjection::Named { name, .. } = argument else {
+            unexpected_arguments = true;
+            continue;
+        };
+        let state = source_argument_state(parser, pending, argument, checked_ordinal);
+        match name.as_ref().map(SyntaxName::as_str) {
+            Ok("capacity") => {
+                if capacity_seen {
+                    unexpected_arguments = true;
+                    if let PendingSourceBoundedArgument::Present { duplicate, .. } = &mut capacity {
+                        *duplicate = true;
+                    }
+                } else {
+                    capacity_seen = true;
+                    capacity = PendingSourceBoundedArgument::Present {
+                        ordinal: checked_ordinal,
+                        value: state,
+                        duplicate: false,
+                    };
+                }
+            }
+            Ok("overflow") => {
+                if overflow_seen {
+                    unexpected_arguments = true;
+                    if let PendingSourceBoundedArgument::Present { duplicate, .. } =
+                        &mut overflow_argument
+                    {
+                        *duplicate = true;
+                    }
+                } else {
+                    overflow_seen = true;
+                    overflow_argument = PendingSourceBoundedArgument::Present {
+                        ordinal: checked_ordinal,
+                        value: state,
+                        duplicate: false,
+                    };
+                }
+            }
+            _ => unexpected_arguments = true,
+        }
+    }
+
+    let overflow = if !overflow_seen {
+        PendingSourceOverflowPolicy::Missing
+    } else if overflow_argument.value_has_recovery() {
+        PendingSourceOverflowPolicy::Invalid {
+            argument: overflow_argument,
+        }
+    } else {
+        match source_call_argument_name(parser, pending, overflow_argument) {
+            Some(name) if name.as_str() == "drop_oldest" => {
+                PendingSourceOverflowPolicy::DropOldest(overflow_argument)
+            }
+            Some(name) if name.as_str() == "drop_newest" => {
+                PendingSourceOverflowPolicy::DropNewest(overflow_argument)
+            }
+            Some(name) if name.as_str() == "error" => {
+                PendingSourceOverflowPolicy::Error(overflow_argument)
+            }
+            Some(name) if name.as_str() == "coalesce" => {
+                PendingSourceOverflowPolicy::Coalesce(overflow_argument)
+            }
+            value => PendingSourceOverflowPolicy::Unknown {
+                argument: overflow_argument,
+                value,
+            },
+        }
+    };
+
+    Some(PendingSourceBackpressurePolicy::Bounded {
+        capacity,
+        overflow,
+        unexpected_arguments,
+        recovered_call: call.terminator() != SyntaxCallArgumentListTerminator::Closed,
+    })
+}
+
+fn source_replay_policy(
+    evidence: &SourcePolicyEvidence,
+) -> PendingSourceNamedPolicy<SourceReplaySyntaxKind> {
+    match evidence.state {
+        PendingSourceChildState::Missing => PendingSourceNamedPolicy::Missing,
+        PendingSourceChildState::Invalid => PendingSourceNamedPolicy::Invalid,
+        PendingSourceChildState::Authored => match evidence.name.as_ref().map(SyntaxName::as_str) {
+            Some("full") => PendingSourceNamedPolicy::Known(SourceReplaySyntaxKind::Full),
+            Some("hash_only") => PendingSourceNamedPolicy::Known(SourceReplaySyntaxKind::HashOnly),
+            Some("summary") => PendingSourceNamedPolicy::Known(SourceReplaySyntaxKind::Summary),
+            Some("event_only") => {
+                PendingSourceNamedPolicy::Known(SourceReplaySyntaxKind::EventOnly)
+            }
+            Some("none") => PendingSourceNamedPolicy::Known(SourceReplaySyntaxKind::None),
+            _ => PendingSourceNamedPolicy::Unknown(evidence.name.clone()),
+        },
+    }
+}
+
+fn source_privacy_policy(
+    evidence: &SourcePolicyEvidence,
+) -> PendingSourceNamedPolicy<SourcePrivacySyntaxKind> {
+    match evidence.state {
+        PendingSourceChildState::Missing => PendingSourceNamedPolicy::Missing,
+        PendingSourceChildState::Invalid => PendingSourceNamedPolicy::Invalid,
+        PendingSourceChildState::Authored => match evidence.name.as_ref().map(SyntaxName::as_str) {
+            Some("transient") => {
+                PendingSourceNamedPolicy::Known(SourcePrivacySyntaxKind::Transient)
+            }
+            Some("redacted") => PendingSourceNamedPolicy::Known(SourcePrivacySyntaxKind::Redacted),
+            Some("recordable") => {
+                PendingSourceNamedPolicy::Known(SourcePrivacySyntaxKind::Recordable)
+            }
+            Some("private") => PendingSourceNamedPolicy::Known(SourcePrivacySyntaxKind::Private),
+            _ => PendingSourceNamedPolicy::Unknown(evidence.name.clone()),
+        },
+    }
+}
+
+fn source_argument_state(
+    parser: &ShadowDocumentParser<'_, '_>,
+    pending: &PendingExpressionProjection,
+    argument: &SyntaxCallArgumentProjection,
+    ordinal: u16,
+) -> PendingSourceChildState {
+    if argument.value().is_missing() {
+        PendingSourceChildState::Missing
+    } else if argument.has_recovery()
+        || source_call_argument_value_range(pending, ordinal)
+            .and_then(|range| parser.expression_projection_for_range(range))
+            .is_none_or(PendingExpressionProjection::has_recovery)
+    {
+        PendingSourceChildState::Invalid
+    } else {
+        PendingSourceChildState::Authored
+    }
+}
+
+fn source_call_argument_value_range(
+    pending: &PendingExpressionProjection,
+    ordinal: u16,
+) -> Option<SourceRange> {
+    pending
+        .components()
+        .iter()
+        .find(|component| {
+            component.role()
+                == ExpressionComponentRole::CallArgument {
+                    argument: ordinal,
+                    part: SyntaxCallArgumentPart::Value,
+                }
+        })
+        .map(|component| component.range())
+}
+
+fn source_call_argument_name(
+    parser: &ShadowDocumentParser<'_, '_>,
+    pending: &PendingExpressionProjection,
+    argument: PendingSourceBoundedArgument,
+) -> Option<SyntaxName> {
+    let PendingSourceBoundedArgument::Present { ordinal, .. } = argument else {
+        return None;
+    };
+    pending
+        .components()
+        .iter()
+        .find(|component| {
+            component.role()
+                == ExpressionComponentRole::CallArgument {
+                    argument: ordinal,
+                    part: SyntaxCallArgumentPart::Value,
+                }
+        })
+        .and_then(|component| single_name_in_range(parser, component.range()))
+}
+
+fn completed_expression_state(
+    parser: &ShadowDocumentParser<'_, '_>,
+    start_event: usize,
+) -> PendingSourceChildState {
+    if parser.completed_kind(start_event) == Some(SyntaxKind::MissingExpression) {
+        PendingSourceChildState::Missing
+    } else if parser
+        .expression_projection_at(start_event)
+        .is_none_or(PendingExpressionProjection::has_recovery)
+    {
+        PendingSourceChildState::Invalid
+    } else {
+        PendingSourceChildState::Authored
+    }
+}
+
+fn emitted_pattern_state(
+    parser: &ShadowDocumentParser<'_, '_>,
+    event_position: usize,
+) -> PendingSourceChildState {
+    if parser.started_kind_since(event_position, SyntaxKind::MissingPattern) {
+        PendingSourceChildState::Missing
+    } else if parser.started_kind_since(event_position, SyntaxKind::ErrorPattern) {
+        PendingSourceChildState::Invalid
+    } else {
+        PendingSourceChildState::Authored
+    }
+}
+
+fn single_name_in_interval(
+    parser: &ShadowDocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<SyntaxName> {
+    let first = first_significant(parser, start, end)?;
+    let next = first_significant(parser, first.saturating_add(1), end);
+    if next.is_some() {
+        return None;
+    }
+    let token = parser.token_at(first)?;
+    SyntaxName::try_new(parser.text_of(token)).ok()
+}
+
+fn single_name_in_range(
+    parser: &ShadowDocumentParser<'_, '_>,
+    range: SourceRange,
+) -> Option<SyntaxName> {
+    let mut found = None;
+    for index in 0..token_count(parser) {
+        let token = parser.token_at(index)?;
+        if token.range().end() <= range.start() || token.range().start() >= range.end() {
+            continue;
+        }
+        if matches!(
+            token.kind(),
+            SyntaxKind::WhitespaceToken
+                | SyntaxKind::NewlineToken
+                | SyntaxKind::CommentToken
+                | SyntaxKind::DocCommentToken
+        ) {
+            continue;
+        }
+        if found.is_some() || token.range() != range {
+            return None;
+        }
+        found = SyntaxName::try_new(parser.text_of(token)).ok();
+    }
+    found
+}
+
+fn statement_child_end(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> usize {
+    if end > parser.cursor() && token_text(parser, end - 1) == Some(";") {
+        end - 1
+    } else {
+        end
+    }
 }

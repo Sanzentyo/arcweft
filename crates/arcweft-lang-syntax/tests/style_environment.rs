@@ -31,7 +31,7 @@ fn environment_wrapper_parses_all_four_fields() {
         reduced-motion == true,
         text-scale >= 125.5%,
     ) {
-        Button:hover { opacity = 900milli }
+        Button:hover { opacity = 90% }
     }
 }
 ";
@@ -84,11 +84,11 @@ fn environment_wrapper_parses_all_four_fields() {
     );
     assert_eq!(
         &source[environment.body_range().as_range()],
-        "\n        Button:hover { opacity = 900milli }\n    "
+        "\n        Button:hover { opacity = 90% }\n    "
     );
     assert_eq!(
         &source[environment.scope_range().as_range()],
-        "when environment(\n        color-scheme == dark,\n        contrast == more,\n        reduced-motion == true,\n        text-scale >= 125.5%,\n    ) {\n        Button:hover { opacity = 900milli }\n    }"
+        "when environment(\n        color-scheme == dark,\n        contrast == more,\n        reduced-motion == true,\n        text-scale >= 125.5%,\n    ) {\n        Button:hover { opacity = 90% }\n    }"
     );
     assert!(environment.body()[0].as_rule().is_some());
 }
@@ -98,7 +98,7 @@ fn environment_wrapper_parses_nested_implicit_conjunction() {
     let source = r"pub style adaptive {
     when environment(color-scheme == dark) {
         when environment(text-scale < 100%) {
-            Button { opacity = 800milli }
+            Button { opacity = 80% }
         }
     }
 }
@@ -266,7 +266,7 @@ fn arbitrarily_long_fraction_never_overflows_ast() {
 fn missing_clause_comma_has_dedicated_code() {
     let source = r"pub style adaptive {
     when environment(color-scheme == dark contrast == more) {
-        Button { opacity = 900milli }
+        Button { opacity = 90% }
     }
 }
 ";
@@ -287,9 +287,9 @@ fn missing_clause_comma_has_dedicated_code() {
 fn unterminated_condition_recovers_at_matching_wrapper_brace() {
     let source = r"pub style adaptive {
     when environment(text-scale >= 125% {
-        Button { opacity = 900milli }
+        Button { opacity = 90% }
     }
-    Panel { opacity = 800milli }
+    Panel { opacity = 80% }
 }
 ";
     let parsed = parse_style_environment_fixture(source);

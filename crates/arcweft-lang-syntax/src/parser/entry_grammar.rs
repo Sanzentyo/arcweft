@@ -2,8 +2,8 @@
 
 use arcweft_source::SourceRange;
 
+use super::cursor::ShadowDocumentParser;
 use super::declaration::{emit_outer_prefixes, emit_visibility};
-use super::document::ShadowDocumentParser;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::path::emit_path;
@@ -14,34 +14,16 @@ use super::shadow_recovery::{
 };
 use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
+use crate::grammar::entry_projection::{
+    EntryRoleSyntaxKind, KnownEntryHttpMethod, KnownEntryKind, PendingEntryBodyProjection,
+    PendingEntryDeclarationProjection, PendingEntryHttpMethod, PendingEntryId, PendingEntryKind,
+    PendingEntryMemberProjection, PendingEntryName, PendingEntryPunctuation,
+    PendingEntryRouteBinding, PendingEntryRouteBindings, PendingEntryValueState,
+};
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum EntryRole {
-    State,
-    Initializer,
-    Event,
-    Reducer,
-    Controller,
-}
-
-impl EntryRole {
-    const fn from_spelling(spelling: &str) -> Option<Self> {
-        match spelling.as_bytes() {
-            b"state" => Some(Self::State),
-            b"initializer" => Some(Self::Initializer),
-            b"event" => Some(Self::Event),
-            b"reducer" => Some(Self::Reducer),
-            b"controller" => Some(Self::Controller),
-            _ => None,
-        }
-    }
-
-    const fn expects_type(self) -> bool {
-        matches!(self, Self::State | Self::Event)
-    }
-}
+use crate::id_ref::AuthoredIdRoot;
+use crate::name::SyntaxName;
 
 pub(super) fn emit_declaration(
     source: &str,
@@ -51,7 +33,7 @@ pub(super) fn emit_declaration(
     budget: &mut GrammarBudget,
 ) {
     let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
-    parser.start(SyntaxKind::EntryDeclarationItem, role);
+    let owner = parser.start_projected_owner(SyntaxKind::EntryDeclarationItem, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
     emit_visibility(&mut parser);
@@ -61,26 +43,49 @@ pub(super) fn emit_declaration(
         parser.bump();
     }
     parser.bump_trivia();
-    emit_entry_kind(&mut parser);
+    let kind = emit_entry_kind(&mut parser);
     parser.bump_trivia();
-    emit_entry_id(&mut parser);
+    let id = emit_entry_id(&mut parser);
     parser.bump_trivia();
-    recover_header_tail(&mut parser);
-    emit_entry_body(&mut parser, source);
+    let trailing_header_recovery = recover_header_tail(&mut parser);
+    let body = emit_entry_body(&mut parser, source);
+
+    parser.set_entry_projection(
+        owner,
+        PendingEntryDeclarationProjection {
+            kind,
+            id,
+            trailing_header_recovery,
+            body,
+        },
+    );
 
     while parser.bump().is_some() {}
     parser.finish();
 }
 
-fn emit_entry_kind(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_entry_kind(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingEntryKind {
     if matches!(
         parser.current_kind(),
         Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
     ) {
+        let token = parser
+            .current()
+            .expect("entry kind dispatch retains one token");
+        let source = token.range();
+        let spelling = parser.text_of(token);
+        let projected = KnownEntryKind::from_source_name(spelling).map_or_else(
+            || PendingEntryKind::Custom {
+                value: SyntaxName::try_new(spelling)
+                    .expect("entry kind token is an identifier or keyword"),
+                source,
+            },
+            |value| PendingEntryKind::Known { value, source },
+        );
         parser.start(SyntaxKind::NameReference, SyntaxRole::Type);
         parser.bump();
         parser.finish();
-        return;
+        return projected;
     }
 
     let at = parser.current_offset();
@@ -99,15 +104,18 @@ fn emit_entry_kind(parser: &mut ShadowDocumentParser<'_, '_>) {
         range,
         "entry declaration requires an explicit entry kind",
     )));
+    PendingEntryKind::Missing {
+        insertion: SourceRange::new(at, at),
+    }
 }
 
-fn emit_entry_id(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_entry_id(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingEntryId {
     let Some(token) = parser
         .current()
         .filter(|token| token.kind() == SyntaxKind::EntityReferenceToken)
     else {
         let at = parser.current_offset();
-        parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
+        parser.start(SyntaxKind::MissingExpression, SyntaxRole::Reference(0));
         parser.push(SyntaxEvent::MissingToken {
             expected: expected(SyntaxKind::EntityReferenceToken),
             at,
@@ -118,28 +126,35 @@ fn emit_entry_id(parser: &mut ShadowDocumentParser<'_, '_>) {
             SourceRange::new(at, at),
             "entry declaration requires an explicit canonical `@entry.*` ID",
         )));
-        return;
+        return PendingEntryId::Missing {
+            insertion: SourceRange::new(at, at),
+        };
     };
 
-    parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
-    let valid_family = parser
-        .text_of(token)
-        .strip_prefix("@entry.")
-        .is_some_and(|suffix| !suffix.is_empty());
-    parser.bump();
-    parser.finish();
+    let range = token.range();
+    let (_, reference) = super::expression::emit_entity_reference(parser, SyntaxRole::Reference(0));
+    let valid_family = reference.value().is_ok_and(|reference| {
+        matches!(
+            reference.root(),
+            AuthoredIdRoot::Absolute { delimited: false }
+        ) && matches!(reference.segments(), [family, ..] if family.as_str() == "entry")
+    });
     if !valid_family {
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.entry.id_family",
-            token.range(),
+            range,
             "entry declaration IDs must use the `entry` family",
         )));
     }
+    PendingEntryId::Authored {
+        source: range,
+        canonical_entry_family: valid_family,
+    }
 }
 
-fn recover_header_tail(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn recover_header_tail(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
     if parser.at("{") || parser.is_at_end() {
-        return;
+        return false;
     }
 
     let start = parser.current_offset();
@@ -154,9 +169,13 @@ fn recover_header_tail(parser: &mut ShadowDocumentParser<'_, '_>) {
         "unexpected text after the entry ID",
     )));
     parser.bump_trivia();
+    true
 }
 
-fn emit_entry_body(parser: &mut ShadowDocumentParser<'_, '_>, source: &str) {
+fn emit_entry_body(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    source: &str,
+) -> PendingEntryBodyProjection {
     if !parser.at("{") {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -170,7 +189,7 @@ fn emit_entry_body(parser: &mut ShadowDocumentParser<'_, '_>, source: &str) {
             SourceRange::new(at, at),
             "entry declaration requires a braced body",
         )));
-        return;
+        return PendingEntryBodyProjection::Missing;
     }
 
     parser.start(SyntaxKind::EntryBody, SyntaxRole::Body);
@@ -178,10 +197,11 @@ fn emit_entry_body(parser: &mut ShadowDocumentParser<'_, '_>, source: &str) {
     let end = token_count(parser);
     let close = find_matching_close(parser, parser.cursor(), "{").unwrap_or(end);
     parser.start(SyntaxKind::ItemList, SyntaxRole::Element(0));
-    emit_entry_members(parser, source, close);
+    let members = emit_entry_members(parser, source, close);
     bump_until(parser, close);
     parser.finish();
-    if parser.at("}") {
+    let closed = parser.at("}");
+    if closed {
         emit_close_delimiter(
             parser,
             SyntaxKind::CloseBraceNode,
@@ -202,10 +222,19 @@ fn emit_entry_body(parser: &mut ShadowDocumentParser<'_, '_>, source: &str) {
         )));
     }
     parser.finish();
+    PendingEntryBodyProjection::Braced {
+        members: members.into_boxed_slice(),
+        closed,
+    }
 }
 
-fn emit_entry_members(parser: &mut ShadowDocumentParser<'_, '_>, source: &str, close: usize) {
+fn emit_entry_members(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    source: &str,
+    close: usize,
+) -> Vec<PendingEntryMemberProjection> {
     let mut ordinal = 0_u32;
+    let mut members = Vec::new();
     while parser.cursor() < close {
         bump_member_separators(parser, close);
         if parser.cursor() >= close {
@@ -215,24 +244,26 @@ fn emit_entry_members(parser: &mut ShadowDocumentParser<'_, '_>, source: &str, c
         let start = parser.cursor();
         let end = entry_member_boundary(parser, source, start, close);
         let spelling = parser.current_text();
-        if let Some(role) = spelling.and_then(EntryRole::from_spelling) {
-            emit_role_binding(parser, end, ordinal, role);
+        let member = if let Some(role) = spelling.and_then(EntryRoleSyntaxKind::from_source_name) {
+            emit_role_binding(parser, end, ordinal, role)
         } else {
             match spelling {
                 Some("goto") => emit_goto(parser, end, ordinal),
                 Some("route") => emit_route(parser, end, ordinal),
                 _ if entry_option_equals(parser, start, end).is_some() => {
-                    emit_option(parser, end, ordinal);
+                    emit_option(parser, end, ordinal)
                 }
                 _ => emit_invalid_member(parser, end, ordinal),
             }
-        }
+        };
+        members.push(member);
         bump_until(parser, end);
         if parser.cursor() == start {
             parser.bump();
         }
         ordinal = ordinal.saturating_add(1);
     }
+    members
 }
 
 fn bump_member_separators(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
@@ -312,7 +343,9 @@ fn following_line_starts_entry_member(
     if line_indent(source, token.range().start()) > member_indent {
         return false;
     }
-    if EntryRole::from_spelling(spelling).is_some() || matches!(spelling, "goto" | "route") {
+    if EntryRoleSyntaxKind::from_source_name(spelling).is_some()
+        || matches!(spelling, "goto" | "route")
+    {
         return true;
     }
     matches!(
@@ -336,52 +369,72 @@ fn emit_role_binding(
     parser: &mut ShadowDocumentParser<'_, '_>,
     end: usize,
     ordinal: u32,
-    role: EntryRole,
-) {
+    role: EntryRoleSyntaxKind,
+) -> PendingEntryMemberProjection {
     parser.start(SyntaxKind::EntryRoleBinding, SyntaxRole::Element(ordinal));
     emit_current_name(parser, SyntaxRole::Name);
     bump_trivia_before(parser, end);
-    if parser.at("=") {
+    let assignment = if parser.at("=") {
+        let range = parser
+            .current()
+            .expect("assignment token is present")
+            .range();
         parser.bump();
+        PendingEntryPunctuation::Authored(range)
     } else {
+        let at = parser.current_offset();
         emit_missing_punctuation(parser, SyntaxRole::Recovery(0));
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.entry.role_binding",
             SourceRange::new(parser.current_offset(), parser.current_offset()),
             "entry role binding requires `=` before its value",
         )));
-    }
+        PendingEntryPunctuation::Missing(SourceRange::new(at, at))
+    };
     bump_trivia_before(parser, end);
 
-    if role.expects_type() {
-        if parser.cursor() >= end {
-            emit_missing_type(parser);
-        } else {
-            emit_type(parser, end, SyntaxRole::Type);
+    let (value, trailing_recovery) = if role.expects_type() {
+        let missing = parser.cursor() >= end;
+        let projection = emit_type(parser, end, SyntaxRole::Type);
+        if missing {
+            let at = parser.current_offset();
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                "syntax.entry.role_value",
+                SourceRange::new(at, at),
+                "entry role requires a value",
+            )));
         }
+        (
+            if missing {
+                PendingEntryValueState::Missing
+            } else if matches!(
+                projection.authored().value_at(projection.path()),
+                Some(crate::types::TypeRef::Recovery(_))
+            ) {
+                PendingEntryValueState::Invalid
+            } else {
+                PendingEntryValueState::Authored
+            },
+            false,
+        )
     } else {
-        emit_required_path(parser, end);
-    }
+        emit_required_path(parser, end)
+    };
     bump_until(parser, end);
     parser.finish();
+    PendingEntryMemberProjection::Role {
+        source_ordinal: ordinal,
+        role,
+        assignment,
+        value,
+        trailing_recovery,
+    }
 }
 
-fn emit_missing_type(parser: &mut ShadowDocumentParser<'_, '_>) {
-    let at = parser.current_offset();
-    parser.start(SyntaxKind::MissingType, SyntaxRole::Type);
-    parser.push(SyntaxEvent::MissingToken {
-        expected: expected(SyntaxKind::IdentifierToken),
-        at,
-    });
-    parser.finish();
-    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        "syntax.entry.role_value",
-        SourceRange::new(at, at),
-        "entry role requires a value",
-    )));
-}
-
-fn emit_required_path(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_required_path(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+) -> (PendingEntryValueState, bool) {
     if parser.cursor() >= end {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingName, SyntaxRole::Initializer);
@@ -395,7 +448,7 @@ fn emit_required_path(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
             SourceRange::new(at, at),
             "entry role requires a symbol path",
         )));
-        return;
+        return (PendingEntryValueState::Missing, false);
     }
 
     if !matches!(
@@ -411,13 +464,18 @@ fn emit_required_path(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
             range,
             "entry callable role requires a dotted symbol path",
         )));
-        return;
+        return (PendingEntryValueState::Invalid, false);
     }
 
-    emit_path(parser, end, SyntaxRole::Initializer);
+    emit_path(
+        parser,
+        end,
+        SyntaxRole::Initializer,
+        super::path::PathSeparatorGrammar::DottedOrQualified,
+    );
     let Some(remainder) = first_significant(parser, parser.cursor(), end) else {
         bump_until(parser, end);
-        return;
+        return (PendingEntryValueState::Authored, false);
     };
     let range = token_range(parser, remainder, end);
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(1));
@@ -428,17 +486,23 @@ fn emit_required_path(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         range,
         "entry callable role requires a dotted symbol path",
     )));
+    (PendingEntryValueState::Authored, true)
 }
 
-fn emit_goto(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn emit_goto(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    ordinal: u32,
+) -> PendingEntryMemberProjection {
     parser.start(SyntaxKind::EntryGoto, SyntaxRole::Element(ordinal));
     parser.bump();
     bump_trivia_before(parser, end);
     let target_start = parser.cursor();
     let valid = parser.current_kind() == Some(SyntaxKind::EntityReferenceToken)
         && first_significant(parser, target_start + 1, end).is_none();
-    if target_start >= end {
+    let target = if target_start >= end {
         emit_missing_entity_reference(parser, SyntaxRole::Target, "syntax.entry.goto_target");
+        PendingEntryValueState::Missing
     } else {
         let range = token_range(parser, target_start, end);
         emit_expression(parser, end, SyntaxRole::Target);
@@ -449,30 +513,48 @@ fn emit_goto(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32
                 "entry `goto` requires one entity reference target",
             )));
         }
-    }
+        if valid {
+            PendingEntryValueState::Authored
+        } else {
+            PendingEntryValueState::Invalid
+        }
+    };
     bump_until(parser, end);
     parser.finish();
+    PendingEntryMemberProjection::Goto {
+        source_ordinal: ordinal,
+        target,
+        trailing_recovery: false,
+    }
 }
 
-fn emit_route(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn emit_route(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    ordinal: u32,
+) -> PendingEntryMemberProjection {
     parser.start(SyntaxKind::EntryRoute, SyntaxRole::Element(ordinal));
     parser.bump();
     bump_trivia_before(parser, end);
-    emit_route_method(parser, end);
+    let method = emit_route_method(parser, end);
     bump_trivia_before(parser, end);
-    emit_route_path(parser, end);
+    let path = emit_route_path(parser, end);
     bump_trivia_before(parser, end);
-    emit_route_arrow(parser);
+    let arrow = emit_route_arrow(parser);
     bump_trivia_before(parser, end);
-    emit_route_target(parser, end);
+    let target = emit_route_target(parser, end);
     bump_trivia_before(parser, end);
-    if parser.at("(") {
-        emit_route_bindings(parser, end);
+    let bindings = if parser.at("(") {
+        let bindings = emit_route_bindings(parser, end);
         bump_trivia_before(parser, end);
-    }
-    if parser.cursor() < end {
+        bindings
+    } else {
+        PendingEntryRouteBindings::Absent
+    };
+    let trailing_recovery = parser.cursor() < end;
+    if trailing_recovery {
         let range = token_range(parser, parser.cursor(), end);
-        parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+        parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(1));
         bump_until(parser, end);
         parser.finish();
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
@@ -482,17 +564,41 @@ fn emit_route(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u3
         )));
     }
     parser.finish();
+    PendingEntryMemberProjection::Route {
+        source_ordinal: ordinal,
+        method,
+        path,
+        arrow,
+        target,
+        bindings,
+        trailing_recovery,
+    }
 }
 
-fn emit_route_method(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_route_method(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+) -> PendingEntryHttpMethod {
     if parser.cursor() < end
         && matches!(
             parser.current_kind(),
             Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
         )
     {
+        let token = parser
+            .current()
+            .expect("route method dispatch retains one token");
+        let source = token.range();
+        let spelling = parser.text_of(token);
+        let projected = KnownEntryHttpMethod::from_source_name(spelling).map_or_else(
+            || PendingEntryHttpMethod::Unsupported {
+                value: SyntaxName::try_new(spelling),
+                source,
+            },
+            |value| PendingEntryHttpMethod::Known { value, source },
+        );
         emit_current_name(parser, SyntaxRole::Name);
-        return;
+        return projected;
     }
 
     let at = parser.current_offset();
@@ -507,19 +613,23 @@ fn emit_route_method(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         SourceRange::new(at, at),
         "entry route requires an HTTP method",
     )));
+    PendingEntryHttpMethod::Missing {
+        insertion: SourceRange::new(at, at),
+    }
 }
 
-fn emit_route_path(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_route_path(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+) -> PendingEntryValueState {
     if parser.cursor() < end
         && matches!(
             parser.current_kind(),
             Some(SyntaxKind::StringToken | SyntaxKind::RawStringToken)
         )
     {
-        parser.start(SyntaxKind::LiteralExpression, SyntaxRole::Operand);
-        parser.bump();
-        parser.finish();
-        return;
+        super::expression::emit_literal(parser, SyntaxRole::Operand);
+        return PendingEntryValueState::Authored;
     }
 
     let at = parser.current_offset();
@@ -534,12 +644,18 @@ fn emit_route_path(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         SourceRange::new(at, at),
         "entry route requires a string path",
     )));
+    if parser.cursor() < end {
+        PendingEntryValueState::Invalid
+    } else {
+        PendingEntryValueState::Missing
+    }
 }
 
-fn emit_route_arrow(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_route_arrow(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingEntryPunctuation {
     if parser.at("->") {
+        let range = parser.current().expect("route arrow is present").range();
         parser.bump();
-        return;
+        return PendingEntryPunctuation::Authored(range);
     }
 
     let at = parser.current_offset();
@@ -549,19 +665,29 @@ fn emit_route_arrow(parser: &mut ShadowDocumentParser<'_, '_>) {
         SourceRange::new(at, at),
         "entry route requires `->` before its flow target",
     )));
+    PendingEntryPunctuation::Missing(SourceRange::new(at, at))
 }
 
-fn emit_route_target(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_route_target(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+) -> PendingEntryValueState {
     if parser.cursor() < end && parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
-        parser.start(SyntaxKind::EntityReferenceExpression, SyntaxRole::Target);
-        parser.bump();
-        parser.finish();
-        return;
+        super::expression::emit_entity_reference(parser, SyntaxRole::Target);
+        return PendingEntryValueState::Authored;
     }
     emit_missing_entity_reference(parser, SyntaxRole::Target, "syntax.entry.route_target");
+    if parser.cursor() < end {
+        PendingEntryValueState::Invalid
+    } else {
+        PendingEntryValueState::Missing
+    }
 }
 
-fn emit_route_bindings(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_route_bindings(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+) -> PendingEntryRouteBindings {
     parser.start(SyntaxKind::DelimitedGroup, SyntaxRole::Argument(0));
     emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
     let close = find_matching_close(parser, parser.cursor(), "(")
@@ -569,13 +695,14 @@ fn emit_route_bindings(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         .min(end);
     parser.start(SyntaxKind::ArgumentList, SyntaxRole::Element(0));
     let mut ordinal = 0_u16;
+    let mut bindings = Vec::new();
     while parser.cursor() < close {
         bump_trivia_before(parser, close);
         if parser.cursor() >= close {
             break;
         }
         let binding_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
-        emit_route_binding(parser, binding_end, ordinal);
+        bindings.push(emit_route_binding(parser, binding_end, ordinal));
         bump_until(parser, binding_end);
         ordinal = ordinal.saturating_add(1);
         if parser.at(",") {
@@ -585,7 +712,8 @@ fn emit_route_bindings(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         }
     }
     parser.finish();
-    if parser.at(")") {
+    let closed = parser.at(")");
+    if closed {
         emit_close_delimiter(
             parser,
             SyntaxKind::CloseParenNode,
@@ -606,55 +734,76 @@ fn emit_route_bindings(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
         )));
     }
     parser.finish();
+    PendingEntryRouteBindings::Parenthesized {
+        bindings: bindings.into_boxed_slice(),
+        closed,
+    }
 }
 
-fn emit_route_binding(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
+fn emit_route_binding(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    ordinal: u16,
+) -> PendingEntryRouteBinding {
     parser.start(SyntaxKind::EntryRouteBinding, SyntaxRole::Argument(ordinal));
-    if parser.cursor() < end
+    let parameter = if parser.cursor() < end
         && matches!(
             parser.current_kind(),
             Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
-        )
-    {
-        emit_current_name(parser, SyntaxRole::Name);
+        ) {
+        emit_projected_current_name(parser, SyntaxRole::Name)
     } else {
-        emit_missing_name(parser, SyntaxRole::Name);
-    }
+        emit_projected_missing_name(parser, SyntaxRole::Name)
+    };
     bump_trivia_before(parser, end);
-    if parser.at("=") {
+    let equals = if parser.at("=") {
+        let range = parser
+            .current()
+            .expect("route binding equals is present")
+            .range();
         parser.bump();
+        PendingEntryPunctuation::Authored(range)
     } else {
+        let at = parser.current_offset();
         emit_missing_punctuation(parser, SyntaxRole::Recovery(0));
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.entry.route_binding",
             SourceRange::new(parser.current_offset(), parser.current_offset()),
             "entry route binding requires `=`",
         )));
-    }
+        PendingEntryPunctuation::Missing(SourceRange::new(at, at))
+    };
     bump_trivia_before(parser, end);
-    if parser.at(":") {
+    let colon = if parser.at(":") {
+        let range = parser
+            .current()
+            .expect("route binding colon is present")
+            .range();
         parser.bump();
+        PendingEntryPunctuation::Authored(range)
     } else {
+        let at = parser.current_offset();
         emit_missing_punctuation(parser, SyntaxRole::Recovery(1));
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.entry.route_binding",
             SourceRange::new(parser.current_offset(), parser.current_offset()),
             "entry route binding values must name a `:path_param`",
         )));
-    }
+        PendingEntryPunctuation::Missing(SourceRange::new(at, at))
+    };
     bump_trivia_before(parser, end);
-    if parser.cursor() < end
+    let capture = if parser.cursor() < end
         && matches!(
             parser.current_kind(),
             Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
-        )
-    {
-        emit_current_name(parser, SyntaxRole::Initializer);
+        ) {
+        emit_projected_current_name(parser, SyntaxRole::Initializer)
     } else {
-        emit_missing_name(parser, SyntaxRole::Initializer);
-    }
+        emit_projected_missing_name(parser, SyntaxRole::Initializer)
+    };
     bump_trivia_before(parser, end);
-    if parser.cursor() < end {
+    let trailing_recovery = parser.cursor() < end;
+    if trailing_recovery {
         let range = token_range(parser, parser.cursor(), end);
         parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(2));
         bump_until(parser, end);
@@ -666,15 +815,28 @@ fn emit_route_binding(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ord
         )));
     }
     parser.finish();
+    PendingEntryRouteBinding {
+        source_ordinal: ordinal,
+        parameter,
+        equals,
+        colon,
+        capture,
+        trailing_recovery,
+    }
 }
 
-fn emit_option(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn emit_option(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    ordinal: u32,
+) -> PendingEntryMemberProjection {
     let equals = entry_option_equals(parser, parser.cursor(), end)
         .expect("entry option dispatch requires a top-level equals token");
     parser.start(SyntaxKind::EntryOption, SyntaxRole::Element(ordinal));
-    emit_current_name(parser, SyntaxRole::Name);
+    let name = emit_projected_current_name(parser, SyntaxRole::Name);
     bump_trivia_before(parser, equals);
-    if parser.cursor() < equals {
+    let trailing_recovery = parser.cursor() < equals;
+    if trailing_recovery {
         let range = token_range(parser, parser.cursor(), equals);
         parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
         bump_until(parser, equals);
@@ -686,9 +848,13 @@ fn emit_option(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u
         )));
     }
     bump_until(parser, equals);
+    let assignment_range = parser
+        .current()
+        .expect("entry option equals is present")
+        .range();
     parser.bump();
     bump_trivia_before(parser, end);
-    if parser.cursor() >= end {
+    let value = if parser.cursor() >= end {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingExpression, SyntaxRole::Initializer);
         parser.push(SyntaxEvent::MissingToken {
@@ -701,14 +867,27 @@ fn emit_option(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u
             SourceRange::new(at, at),
             "entry option requires a value expression",
         )));
+        PendingEntryValueState::Missing
     } else {
         emit_expression(parser, end, SyntaxRole::Initializer);
-    }
+        PendingEntryValueState::Authored
+    };
     bump_until(parser, end);
     parser.finish();
+    PendingEntryMemberProjection::Option {
+        source_ordinal: ordinal,
+        name,
+        assignment: PendingEntryPunctuation::Authored(assignment_range),
+        value,
+        trailing_recovery,
+    }
 }
 
-fn emit_invalid_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn emit_invalid_member(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    end: usize,
+    ordinal: u32,
+) -> PendingEntryMemberProjection {
     let start = parser.cursor();
     let range = token_range(parser, start, end);
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Element(ordinal));
@@ -719,6 +898,9 @@ fn emit_invalid_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, or
         range,
         "entry bodies accept typed role bindings, `goto`, routes, and option assignments",
     )));
+    PendingEntryMemberProjection::Recovery {
+        source_ordinal: ordinal,
+    }
 }
 
 fn entry_option_equals(
@@ -743,6 +925,17 @@ fn emit_current_name(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole
     parser.finish();
 }
 
+fn emit_projected_current_name(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    role: SyntaxRole,
+) -> PendingEntryName {
+    let token = parser.current().expect("name dispatch retains one token");
+    let source = token.range();
+    let value = SyntaxName::try_new(parser.text_of(token));
+    emit_current_name(parser, role);
+    PendingEntryName::Authored { value, source }
+}
+
 fn emit_missing_name(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingName, role);
@@ -751,6 +944,17 @@ fn emit_missing_name(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole
         at,
     });
     parser.finish();
+}
+
+fn emit_projected_missing_name(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    role: SyntaxRole,
+) -> PendingEntryName {
+    let at = parser.current_offset();
+    emit_missing_name(parser, role);
+    PendingEntryName::Missing {
+        insertion: SourceRange::new(at, at),
+    }
 }
 
 fn emit_missing_entity_reference(

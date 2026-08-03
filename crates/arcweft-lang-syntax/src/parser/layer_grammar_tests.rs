@@ -1,8 +1,13 @@
+use std::fmt::Write;
+
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::document::parse_shadow_document;
+use crate::grammar::build::GrammarBuildError;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
 use crate::grammar::kinds::SyntaxKind;
+use crate::incremental::SyntaxLimit;
+use crate::parser::ParseOptions;
 
 fn document(source: &str) -> SourceDocument {
     SourceDocument::try_new(
@@ -14,7 +19,8 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source)).expect("Layer grammar builds")
+    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+        .expect("Layer grammar builds")
 }
 
 fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
@@ -156,4 +162,31 @@ fn layer_reference_families_and_closed_policies_are_checked_in_the_typed_tree() 
             .any(|diagnostic| diagnostic.code() == "syntax.layer.unknown_policy")
     );
     assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn unknown_layer_members_share_the_exact_layer_limit_and_rollback_cleanly() {
+    let accepted = layer_with_unknown_members(SyntaxLimit::LayerMembers.maximum());
+    assert!(parse_shadow_document(&document(&accepted), ParseOptions::default()).is_ok());
+
+    let rejected = layer_with_unknown_members(SyntaxLimit::LayerMembers.maximum() + 1);
+    assert!(matches!(
+        parse_shadow_document(&document(&rejected), ParseOptions::default()),
+        Err(GrammarBuildError::LimitExceeded(SyntaxLimit::LayerMembers))
+    ));
+    assert!(
+        parse_shadow_document(
+            &document("layer Ready: overlay {}\n"),
+            ParseOptions::default()
+        )
+        .is_ok()
+    );
+}
+
+fn layer_with_unknown_members(count: usize) -> String {
+    let mut members = String::new();
+    for index in 0..count {
+        writeln!(members, "    unknown_{index} = true").expect("String writes are infallible");
+    }
+    format!("layer Many: custom {{\n{members}}}\n")
 }

@@ -1,7 +1,6 @@
 //! Private staging for grammar identity and typed attachment.
 
 use core::num::NonZeroU64;
-use std::rc::Rc;
 use std::sync::Arc;
 
 use arcweft_source::identity::SourceSnapshotId;
@@ -15,11 +14,12 @@ use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar};
 use crate::grammar::event::SyntaxEvent;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::incremental::shape::{GrammarShapeError, GrammarShapeNode};
+use crate::parser::ParseOptions;
 use crate::parser::parse_shadow_document;
 use crate::parser::unbound_fragment::{AttachedFragment, FragmentKind, FragmentTree};
 
-use super::bound::BoundParsedSource;
-use super::{ParseFailure, SyntaxIdentityKind, reconcile};
+use super::bound::ParsedSourceData;
+use super::{ParseFailure, SyntaxInvariantFailure, reconcile};
 
 #[derive(Debug)]
 pub(super) struct SyntaxTransactionState {
@@ -34,11 +34,15 @@ impl SyntaxTransactionState {
             next_lineage: Some(NonZeroU64::MIN),
         })
     }
+
+    pub(super) const fn database_id(&self) -> SyntaxDatabaseId {
+        self.database
+    }
 }
 
 #[derive(Clone, Debug)]
 pub(super) struct SyntaxLineageState {
-    current: Rc<BoundParsedSource>,
+    current: Arc<ParsedSourceData>,
     shape: Arc<GrammarShapeNode>,
     identities: GrammarIdentityMap,
     allocator: GrammarNodeAllocator,
@@ -82,14 +86,15 @@ impl SyntaxTransactionState {
         &self,
         source: &SourceSnapshotId,
         document: &Arc<SourceDocument>,
+        options: ParseOptions,
         fault: TransactionFault,
     ) -> Result<StagedInitial, ParseFailure> {
-        let build =
-            parse_shadow_document(document).map_err(|error| map_grammar_build_failure(&error))?;
+        let build = parse_shadow_document(document, options)
+            .map_err(|error| map_grammar_build_failure(&error))?;
         let staged = self.stage_fresh_attachment(source, document, build, fault)?;
-        let current = Rc::new(
-            BoundParsedSource::try_new(staged.syntax, &staged.build)
-                .map_err(|_| ParseFailure::InternalInvariant)?,
+        let current = Arc::new(
+            ParsedSourceData::try_new(staged.syntax, &staged.build)
+                .map_err(|_| SyntaxInvariantFailure::SnapshotOwnershipMismatch)?,
         );
         Ok(StagedInitial {
             lineage: SyntaxLineageState {
@@ -116,12 +121,12 @@ impl SyntaxTransactionState {
             .syntax
             .root_handle()
             .child(SyntaxRole::Element(0))
-            .ok_or(ParseFailure::InternalInvariant)?;
+            .ok_or(SyntaxInvariantFailure::IdentityMapMismatch)?;
         let root = staged
             .syntax
             .typed_node::<K::AstKind>(root.id())
-            .map_err(|_| ParseFailure::InternalInvariant)?;
-        let fragment = AttachedFragment::new(staged.syntax, root);
+            .map_err(|_| SyntaxInvariantFailure::IdentityMapMismatch)?;
+        let fragment = AttachedFragment::new(staged.syntax, root, span.clone());
         Ok(StagedFragment {
             fragment,
             next_lineage: staged.next_lineage,
@@ -135,7 +140,9 @@ impl SyntaxTransactionState {
         build: GrammarBuild,
         fault: TransactionFault,
     ) -> Result<StagedFreshAttachment, ParseFailure> {
-        let ordinal = self.next_lineage.ok_or(ParseFailure::InternalInvariant)?;
+        let ordinal = self
+            .next_lineage
+            .ok_or(ParseFailure::LineageIdentityExhausted)?;
         let lineage_id = SyntaxLineageId::new(self.database, ordinal);
         let next_lineage = ordinal.get().checked_add(1).and_then(NonZeroU64::new);
         let shape = GrammarShapeNode::from_build(&build).map_err(map_grammar_shape_failure)?;
@@ -145,7 +152,7 @@ impl SyntaxTransactionState {
         apply_fault(fault, &build, &mut identities);
         let snapshot_id = SyntaxSnapshotId::new(lineage_id, source.clone());
         let syntax = attach_typed_tree(&build, &identities, snapshot_id, Arc::clone(document))
-            .map_err(|_| ParseFailure::InternalInvariant)?;
+            .map_err(ParseFailure::Attachment)?;
         Ok(StagedFreshAttachment {
             build,
             syntax,
@@ -180,15 +187,16 @@ impl SyntaxLineageState {
         &self,
         source: &SourceSnapshotId,
         document: &Arc<SourceDocument>,
+        options: ParseOptions,
         fault: TransactionFault,
     ) -> Result<StagedReparse, ParseFailure> {
         if source.name() != self.current.snapshot_id().source().name()
             || source.generation() <= self.current.snapshot_id().source().generation()
         {
-            return Err(ParseFailure::InternalInvariant);
+            return Err(SyntaxInvariantFailure::AllocatorRegression.into());
         }
-        let build =
-            parse_shadow_document(document).map_err(|error| map_grammar_build_failure(&error))?;
+        let build = parse_shadow_document(document, options)
+            .map_err(|error| map_grammar_build_failure(&error))?;
         let shape = GrammarShapeNode::from_build(&build).map_err(map_grammar_shape_failure)?;
         let mut allocator = self.allocator.clone();
         let mut identities =
@@ -198,10 +206,10 @@ impl SyntaxLineageState {
         apply_fault(fault, &build, &mut identities);
         let snapshot_id = SyntaxSnapshotId::new(self.allocator.lineage, source.clone());
         let syntax = attach_typed_tree(&build, &identities, snapshot_id, Arc::clone(document))
-            .map_err(|_| ParseFailure::InternalInvariant)?;
-        let current = Rc::new(
-            BoundParsedSource::try_new(syntax, &build)
-                .map_err(|_| ParseFailure::InternalInvariant)?,
+            .map_err(ParseFailure::Attachment)?;
+        let current = Arc::new(
+            ParsedSourceData::try_new(syntax, &build)
+                .map_err(|_| SyntaxInvariantFailure::SnapshotOwnershipMismatch)?,
         );
         Ok(StagedReparse {
             lineage: Self {
@@ -213,7 +221,7 @@ impl SyntaxLineageState {
         })
     }
 
-    pub(super) const fn current(&self) -> &Rc<BoundParsedSource> {
+    pub(super) const fn current(&self) -> &Arc<ParsedSourceData> {
         &self.current
     }
 
@@ -229,7 +237,7 @@ impl SyntaxLineageState {
 }
 
 impl StagedInitial {
-    pub(super) const fn current(&self) -> &Rc<BoundParsedSource> {
+    pub(super) const fn current(&self) -> &Arc<ParsedSourceData> {
         self.lineage.current()
     }
 }
@@ -239,7 +247,7 @@ impl StagedReparse {
         self.lineage
     }
 
-    pub(super) const fn current(&self) -> &Rc<BoundParsedSource> {
+    pub(super) const fn current(&self) -> &Arc<ParsedSourceData> {
         self.lineage.current()
     }
 }
@@ -259,9 +267,7 @@ impl GrammarNodeAllocator {
     }
 
     fn allocate(&mut self) -> Result<SyntaxNodeId, ParseFailure> {
-        let slot = self
-            .next
-            .ok_or(ParseFailure::IdentityExhausted(SyntaxIdentityKind::Node))?;
+        let slot = self.next.ok_or(ParseFailure::NodeIdentityExhausted)?;
         self.next = slot.get().checked_add(1).and_then(NonZeroU64::new);
         Ok(SyntaxNodeId::new(self.lineage, slot))
     }
@@ -270,7 +276,11 @@ impl GrammarNodeAllocator {
 fn map_grammar_build_failure(error: &GrammarBuildError) -> ParseFailure {
     match error {
         GrammarBuildError::LimitExceeded(limit) => ParseFailure::LimitExceeded(*limit),
-        _ => ParseFailure::InternalInvariant,
+        GrammarBuildError::InvalidTokenRange { .. }
+        | GrammarBuildError::TokenCoverageMismatch { .. }
+        | GrammarBuildError::InvalidEofPlacement { .. }
+        | GrammarBuildError::IncompleteTokenCoverage { .. } => ParseFailure::LosslessnessViolation,
+        _ => SyntaxInvariantFailure::IdentityMapMismatch.into(),
     }
 }
 
@@ -288,13 +298,13 @@ fn project_fragment_tree(
             ))
         || events.last() != Some(&SyntaxEvent::FinishNode)
     {
-        return Err(ParseFailure::InternalInvariant);
+        return Err(SyntaxInvariantFailure::IdentityMapMismatch.into());
     }
 
     let fragment_len = target
         .end()
         .checked_sub(target.start())
-        .ok_or(ParseFailure::InternalInvariant)?;
+        .ok_or(SyntaxInvariantFailure::SnapshotOwnershipMismatch)?;
     let eof_index = events.len() - 2;
     if events[eof_index]
         != SyntaxEvent::token(
@@ -311,7 +321,7 @@ fn project_fragment_tree(
             )
         })
     {
-        return Err(ParseFailure::InternalInvariant);
+        return Err(ParseFailure::LosslessnessViolation);
     }
 
     let mut projected = Vec::with_capacity(events.len() + 2);
@@ -322,13 +332,10 @@ fn project_fragment_tree(
             SourceRange::new(0, target.start()),
         ));
     }
-    for event in &events[1..eof_index] {
-        projected.push(
-            event
-                .rebased(target.start())
-                .ok_or(ParseFailure::InternalInvariant)?,
-        );
-    }
+    projected.extend(
+        SyntaxEvent::rebased_all(&events[1..eof_index], target.start())
+            .ok_or(SyntaxInvariantFailure::SnapshotOwnershipMismatch)?,
+    );
     if target.end() < document.text().len() {
         projected.push(SyntaxEvent::token(
             SyntaxKind::TextToken,
@@ -345,7 +352,7 @@ fn project_fragment_tree(
 }
 
 const fn map_grammar_shape_failure(_: GrammarShapeError) -> ParseFailure {
-    ParseFailure::InternalInvariant
+    ParseFailure::Invariant(SyntaxInvariantFailure::IdentityMapMismatch)
 }
 
 fn apply_fault(
