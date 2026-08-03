@@ -390,6 +390,7 @@ OptionField := 'label' '=' Expr
              | 'hotkey' '=' Expr
              | 'view' Block
              | 'select' Block
+             | 'id' '=' Expr
              | LetStmt
 
 OptionForSugar := 'option' Pattern 'in' Expr OptionBody
@@ -730,10 +731,14 @@ entity reference.
 PostfixExpr := PrimaryExpr ('?' | CallArgs | '.' Ident CallArgs? | '[' Expr ']')*
 PrefixExpr  := ('!' | '-') PrefixExpr | AwaitExpr | PostfixExpr
 BinaryExpr  := PrefixExpr BinaryOp PrefixExpr
-BinaryOp    := '*' | '/' | '%' | '+' | '-' | ComparisonOp | 'in' | '&&' | '||' | '|>' | '=>'
+BinaryOp    := '*' | '/' | '%' | '+' | '-' | '&' | ComparisonOp | 'in' | '&&' | '||' | '|>' | '=>'
 ComparisonOp:= '==' | '!=' | '>=' | '<=' | '>' | '<'
 RangeExpr   := Expr? ('..' | '..=') Expr?
 ```
+
+In infix position, `&` is the typed merge operator. Prefix `&` remains the
+shared or mutable borrow operator; Pratt position distinguishes the two
+without source-text reinterpretation.
 
 Field access such as `state.affection` is structured as a field expression.
 Type, module, and selector paths use dot-separated segments; public IDs use the
