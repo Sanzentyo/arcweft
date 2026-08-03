@@ -81,6 +81,6 @@ use generated.route_map.{RouteMap}
 
 - macro expansion は source map を持つ。
 - generated entity にも EntityId を付ける。
-- Graph/RAG/JJ history は macro-generated item を追跡できる。
+- Graph/RAG/Git history は macro-generated item を追跡できる。
 
 

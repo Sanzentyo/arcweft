@@ -4,7 +4,7 @@
 {
   "base": {
     "program_hash": "b3:...",
-    "jj_change_id": "qtnqlkkm",
+    "git_commit": "70e24164373e7898ff9ef83f56f4c48523ce108e",
     "graph_revision": "gr:..."
   },
   "ops": [
@@ -31,4 +31,3 @@
   ]
 }
 ```
-

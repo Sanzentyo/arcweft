@@ -74,7 +74,7 @@ runtime layout, not an authoring convention.
 
 ## Version-control strategies
 
-The repository-level default is ordinary Git/Jujutsu tracking for `assets/`
+The repository-level default is ordinary Git tracking for `assets/`
 and `content/`. This gives reviewable changes and makes checkout, CI, bisect,
 and deterministic bundle construction work without an extra synchronization
 step. Textual content should normally remain in this mode.
@@ -98,8 +98,8 @@ project/build-adapter responsibilities. An engine-owned content-addressed
 resolver and lock contract require a separate design before implementation.
 
 Git LFS is not the baseline policy. It may be adopted by an individual project
-only after every Git and Jujutsu workflow used by developers and CI has been
-verified to hydrate, diff, and publish the expected objects. Pointer files
+only after every Git workflow used by developers and CI has been verified to
+hydrate, diff, and publish the expected objects. Pointer files
 without reliable object hydration do not satisfy the clean-checkout contract.
 
 ## Repository and sample policy

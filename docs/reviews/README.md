@@ -10,6 +10,10 @@ repository retention is intentional; its verified path/hash must otherwise be
 recorded in the package-specific implementation intake note. An attachment or
 filename is never implementation-readiness evidence by itself.
 
+Repository evidence uses the full Git commit SHA. Jujutsu identities are not
+part of current intake or readiness evidence, even when an older request asks
+for them. Returned sidecars belong inside the ZIP rather than beside it.
+
 ## Intake procedure
 
 At task start and at every reviewable push cut point:

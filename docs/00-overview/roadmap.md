@@ -71,9 +71,9 @@
 - RichText and Typst bridge
 - BGM authoring and adaptive music
 
-## Phase 7: RAG / JJ / Product QA
+## Phase 7: RAG / Git / Product QA
 
-- Jujutsu node history
+- Git-backed entity history
 - GraphRAG index
 - Agent debugging at scale
 - product mode capability / auth / audit

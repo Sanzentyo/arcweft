@@ -34,7 +34,7 @@
 | Touch virtual controller | ✅ |  | touch devices |
 | Agent Debug Bus | ✅ |  | product flag |
 | MCP server |  | ✅ | product flag + auth |
-| Jujutsu history |  | ✅ | dev/tooling |
+| Git-backed entity history |  | ✅ | dev/tooling |
 | GraphRAG |  | ✅ | dev/tooling |
 | WASM plugin |  | ✅ | feature |
 | Rust Activity static | ✅ |  | feature |
