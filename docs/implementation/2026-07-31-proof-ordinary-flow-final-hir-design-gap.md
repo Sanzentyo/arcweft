@@ -2,7 +2,7 @@
 
 Date: 2026-07-31
 
-Status: `DESIGN_RETURN_REQUIRED_BEFORE_FLOW_FINAL_HIR_PUBLIC_SWITCH`
+Status: `CORRECTED_RETURN_ADJUDICATED_IMPLEMENTATION_RELEASED`
 
 ## Outcome
 
@@ -66,7 +66,7 @@ When design returns, implementation starts by making obsolete Flow readers
 unavailable and uses compile failures as the migration inventory. The final
 public switch must delete the old authority rather than leave a parallel path.
 
-## Dispatch state
+## Return state
 
 The first return was received on 2026-08-02 and rejected as not
 implementation-ready. Although mechanically readable, it inspected no
@@ -76,6 +76,15 @@ exhaustive matrices requested. Its intake is recorded in
 
 The independently throwable full-redelivery correction is
 [`2026-08-02-seq-proof-01.1.1.2.1.1.1-ordinary-flow-evidence-schema-redelivery-correction.md`](../reviews/requests/2026-08-02-seq-proof-01.1.1.2.1.1.1-ordinary-flow-evidence-schema-redelivery-correction.md).
-Ordinary Flow and the shared Thread/Flow-item public projection remain frozen
-until that corrected return is accepted. TTS remains separately on hold under
-its existing skip decision.
+
+The corrected return arrived on 2026-08-03. Its standalone READY claim was
+rejected because it conflicted with accepted limits, shared final-HIR owners,
+the maintained `ensures no_effect` grammar, and required Thread recovery
+evidence. Those decisions are fully determined by current accepted authority,
+so the repository adjudicated them locally instead of requesting another
+redelivery. The verified archive, exact adjudication, and released
+deletion-driven boundary are recorded in
+[`2026-08-03-proof-ordinary-flow-redelivery-intake.md`](2026-08-03-proof-ordinary-flow-redelivery-intake.md).
+Ordinary Flow and the shared Thread/Flow-item public projection are no longer
+design blocked. TTS remains separately on hold under its existing skip
+decision.
