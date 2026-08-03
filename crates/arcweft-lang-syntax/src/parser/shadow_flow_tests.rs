@@ -558,3 +558,70 @@ fn flow_parameter_list(count: usize) -> String {
         .collect::<Vec<_>>()
         .join(", ")
 }
+
+#[test]
+fn loop_family_missing_bodies_retain_typed_heads_and_zero_width_body_recovery() {
+    let source = concat!(
+        "flow recovered {\n",
+        "    loop\n",
+        "    while\n",
+        "    while let = when\n",
+        "    for in\n",
+        "}\n",
+    );
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let entries = built.index().entries();
+
+    for kind in [
+        SyntaxKind::LoopStatement,
+        SyntaxKind::WhileStatement,
+        SyntaxKind::WhileLetStatement,
+        SyntaxKind::ForStatement,
+    ] {
+        assert_eq!(kind_count(entries, kind), 1);
+    }
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| {
+                entry.kind() == SyntaxKind::MissingBody && entry.role() == SyntaxRole::Body
+            })
+            .count(),
+        4
+    );
+    assert_eq!(kind_count(entries, SyntaxKind::MissingExpression), 4);
+    assert_eq!(kind_count(entries, SyntaxKind::MissingPattern), 2);
+    assert_eq!(
+        built
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| diagnostic.code() == "syntax.statement.missing_body")
+            .count(),
+        4
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn loop_family_unclosed_body_uses_current_grammar_close_recovery() {
+    let source = "flow unclosed {\n    while ready {\n        return unit\n";
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::WhileStatement),
+        1
+    );
+    assert_eq!(
+        kind_count(built.index().entries(), SyntaxKind::MissingBody),
+        0
+    );
+    assert!(
+        built
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.statement.missing_block_close")
+    );
+    assert_eq!(built.green().to_string(), source);
+}

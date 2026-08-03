@@ -137,6 +137,16 @@ impl AttachedChoiceExpression {
         &self.syntax
     }
 
+    /// Projects this specialized relation back to its sole generic expression
+    /// owner without detaching, reparsing, or changing snapshot identity.
+    ///
+    /// Direct `choice` and `let choice` statement wrappers use this route so
+    /// the central expression transaction reserves and finalizes the same
+    /// source-backed `ExprId` as ordinary expression consumers.
+    pub fn expression_node(&self) -> Result<AttachedExpressionNode, SyntaxAccessError> {
+        AttachedExpressionNode::from_syntax(self.syntax.syntax())
+    }
+
     pub const fn id(&self) -> Option<&AttachedChoiceEntityReference> {
         self.id.as_ref()
     }

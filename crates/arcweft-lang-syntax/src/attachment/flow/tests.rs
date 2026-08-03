@@ -18,15 +18,16 @@ use crate::attachment::{
     AttachedRequiredChoiceMatchBody, AttachedRequiredChoiceOptionBody,
     AttachedRequiredChoicePlanBody, AttachedRequiredChoiceViewBody, AttachedRequiredIncludeTarget,
     AttachedRequiredNestedThreadFlowBody, AttachedRequiredThreadExpressionBody,
-    AttachedSelectBranch, AttachedSelectStatementForm, AttachedSourceLocaleValue,
-    AttachedThreadFlowItem, AttachedThreadFlowItemFamily, AttachedTriggerPattern,
-    GrammarIdentityMap, RequiredStatementExpressionNode, SyntaxDatabaseId, SyntaxLineageId,
-    SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
+    AttachedSelectBindingName, AttachedSelectBranch, AttachedSelectStatementForm,
+    AttachedSourceLocaleValue, AttachedThreadFlowItem, AttachedThreadFlowItemFamily,
+    AttachedTriggerPattern, GrammarIdentityMap, RequiredStatementExpressionNode, SyntaxDatabaseId,
+    SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
 };
 use crate::expressions::SyntaxAwaitPropagation;
 use crate::grammar::SyntaxAwaitBranchKind;
 use crate::grammar::kinds::SyntaxKind;
 use crate::id_ref::SyntaxIdRefPart;
+use crate::name::SyntaxNameIssue;
 use crate::parser::{ParseOptions, parse_shadow_document};
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
@@ -588,12 +589,15 @@ fn select_statement_preserves_unary_and_typed_branch_forms() {
     assert!(matches!(
         &branches.branches()[2],
         AttachedSelectBranch::Bind {
-            name,
+            name:
+                AttachedSelectBindingName::Authored {
+                    value: Ok(name), ..
+                },
             source: RequiredStatementExpressionNode::Expression(source),
             propagates_error: true,
             body,
             ..
-        } if name.value().unwrap().as_str() == "value"
+        } if name.as_str() == "value"
             && source.source_text() == "source"
             && matches!(body, AttachedRequiredNestedThreadFlowBody::Present(nested)
                 if nested.items()[0].kind() == SyntaxKind::OutStatement)
@@ -636,6 +640,52 @@ fn select_branch_recovery_retains_unknown_head_and_missing_body() {
             body: AttachedRequiredNestedThreadFlowBody::Missing(missing),
             ..
         } if missing.range().is_empty()
+    ));
+    assert!(select.has_recovery());
+}
+
+#[test]
+fn select_binding_name_retains_missing_and_invalid_authored_owners() {
+    let snapshot = attach(concat!(
+        "flow select_binding_name_recovery {\n",
+        "    select {\n",
+        "        = source => { out source }\n",
+        "        1bad = other => { out other }\n",
+        "    }\n",
+        "}\n",
+    ));
+    let declaration = flow(&snapshot).semantics().unwrap();
+    let AttachedRequiredFlowBody::Present(body) = declaration.body() else {
+        panic!("Select binding-name fixture requires a Flow body");
+    };
+    let AttachedThreadFlowItem::Select(select) = &body.items()[0] else {
+        panic!("fixture must retain one Select statement");
+    };
+    let select = select.semantics().unwrap();
+    let AttachedSelectStatementForm::Branches(branches) = select.form() else {
+        panic!("fixture must retain one Select branch block");
+    };
+
+    assert!(matches!(
+        &branches.branches()[0],
+        AttachedSelectBranch::Bind {
+            name: AttachedSelectBindingName::Missing(syntax),
+            source: RequiredStatementExpressionNode::Expression(source),
+            ..
+        } if syntax.range().is_empty() && source.source_text() == "source"
+    ));
+    assert!(matches!(
+        &branches.branches()[1],
+        AttachedSelectBranch::Bind {
+            name: AttachedSelectBindingName::Authored {
+                syntax,
+                value: Err(SyntaxNameIssue::InvalidStart { spelling }),
+            },
+            source: RequiredStatementExpressionNode::Expression(source),
+            ..
+        } if syntax.source_text() == "1bad"
+            && spelling.as_ref() == "1bad"
+            && source.source_text() == "other"
     ));
     assert!(select.has_recovery());
 }

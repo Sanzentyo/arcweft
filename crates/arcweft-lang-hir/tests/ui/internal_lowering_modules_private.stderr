@@ -1,7 +1,7 @@
 error[E0603]: module `cache_facts` is private
  --> tests/ui/internal_lowering_modules_private.rs:2:5
   |
-2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
+2 |     cache_facts, database, dialogue_application, expr, lower_choice, lower_context,
   |     ^^^^^^^^^^^ private module
   |
 note: the module `cache_facts` is defined here
@@ -10,11 +10,23 @@ note: the module `cache_facts` is defined here
   | mod cache_facts;
   | ^^^^^^^^^^^^^^^
 
-error[E0603]: module `dialogue_application` is private
+error[E0603]: module `database` is private
  --> tests/ui/internal_lowering_modules_private.rs:2:18
   |
-2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
-  |                  ^^^^^^^^^^^^^^^^^^^^ private module
+2 |     cache_facts, database, dialogue_application, expr, lower_choice, lower_context,
+  |                  ^^^^^^^^ private module
+  |
+note: the module `database` is defined here
+ --> src/lib.rs
+  |
+  | mod database;
+  | ^^^^^^^^^^^^
+
+error[E0603]: module `dialogue_application` is private
+ --> tests/ui/internal_lowering_modules_private.rs:2:28
+  |
+2 |     cache_facts, database, dialogue_application, expr, lower_choice, lower_context,
+  |                            ^^^^^^^^^^^^^^^^^^^^ private module
   |
 note: the module `dialogue_application` is defined here
  --> src/lib.rs
@@ -23,10 +35,10 @@ note: the module `dialogue_application` is defined here
   | ^^^^^^^^^^^^^^^^^^^^^^^^
 
 error[E0603]: module `expr` is private
- --> tests/ui/internal_lowering_modules_private.rs:2:40
+ --> tests/ui/internal_lowering_modules_private.rs:2:50
   |
-2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
-  |                                        ^^^^ private module
+2 |     cache_facts, database, dialogue_application, expr, lower_choice, lower_context,
+  |                                                  ^^^^ private module
   |
 note: the module `expr` is defined here
  --> src/lib.rs
@@ -35,10 +47,10 @@ note: the module `expr` is defined here
   | ^^^^^^^^
 
 error[E0603]: module `lower_choice` is private
- --> tests/ui/internal_lowering_modules_private.rs:2:46
+ --> tests/ui/internal_lowering_modules_private.rs:2:56
   |
-2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
-  |                                              ^^^^^^^^^^^^ private module
+2 |     cache_facts, database, dialogue_application, expr, lower_choice, lower_context,
+  |                                                        ^^^^^^^^^^^^ private module
   |
 note: the module `lower_choice` is defined here
  --> src/lib.rs
@@ -47,10 +59,10 @@ note: the module `lower_choice` is defined here
   | ^^^^^^^^^^^^^^^^
 
 error[E0603]: module `lower_context` is private
- --> tests/ui/internal_lowering_modules_private.rs:2:60
+ --> tests/ui/internal_lowering_modules_private.rs:2:70
   |
-2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
-  |                                                            ^^^^^^^^^^^^^ private module
+2 |     cache_facts, database, dialogue_application, expr, lower_choice, lower_context,
+  |                                                                      ^^^^^^^^^^^^^ private module
   |
 note: the module `lower_context` is defined here
  --> src/lib.rs
@@ -59,10 +71,10 @@ note: the module `lower_context` is defined here
   | ^^^^^^^^^^^^^^^^^
 
 error[E0603]: module `lower_dialogue` is private
- --> tests/ui/internal_lowering_modules_private.rs:2:75
+ --> tests/ui/internal_lowering_modules_private.rs:3:5
   |
-2 |     cache_facts, dialogue_application, expr, lower_choice, lower_context, lower_dialogue,
-  |                                                                           ^^^^^^^^^^^^^^ private module
+3 |     lower_dialogue, lower_flow, lower_ids, module, slot,
+  |     ^^^^^^^^^^^^^^ private module
   |
 note: the module `lower_dialogue` is defined here
  --> src/lib.rs
@@ -71,10 +83,10 @@ note: the module `lower_dialogue` is defined here
   | ^^^^^^^^^^^^^^^^^^
 
 error[E0603]: module `lower_flow` is private
- --> tests/ui/internal_lowering_modules_private.rs:3:5
+ --> tests/ui/internal_lowering_modules_private.rs:3:21
   |
-3 |     lower_flow, lower_ids,
-  |     ^^^^^^^^^^ private module
+3 |     lower_dialogue, lower_flow, lower_ids, module, slot,
+  |                     ^^^^^^^^^^ private module
   |
 note: the module `lower_flow` is defined here
  --> src/lib.rs
@@ -83,13 +95,97 @@ note: the module `lower_flow` is defined here
   | ^^^^^^^^^^^^^^
 
 error[E0603]: module `lower_ids` is private
- --> tests/ui/internal_lowering_modules_private.rs:3:17
+ --> tests/ui/internal_lowering_modules_private.rs:3:33
   |
-3 |     lower_flow, lower_ids,
-  |                 ^^^^^^^^^ private module
+3 |     lower_dialogue, lower_flow, lower_ids, module, slot,
+  |                                 ^^^^^^^^^ private module
   |
 note: the module `lower_ids` is defined here
  --> src/lib.rs
   |
   | mod lower_ids;
   | ^^^^^^^^^^^^^
+
+error[E0603]: module `module` is private
+ --> tests/ui/internal_lowering_modules_private.rs:3:44
+  |
+3 |     lower_dialogue, lower_flow, lower_ids, module, slot,
+  |                                            ^^^^^^ private module
+  |
+note: the module `module` is defined here
+ --> src/lib.rs
+  |
+  | mod module;
+  | ^^^^^^^^^^
+
+error[E0603]: module `slot` is private
+ --> tests/ui/internal_lowering_modules_private.rs:3:52
+  |
+3 |     lower_dialogue, lower_flow, lower_ids, module, slot,
+  |                                                    ^^^^ private module
+  |
+note: the module `slot` is defined here
+ --> src/lib.rs
+  |
+  | mod slot;
+  | ^^^^^^^^
+
+error[E0603]: enum `HirInvariantFailure` is private
+ --> tests/ui/internal_lowering_modules_private.rs:6:5
+  |
+6 |     HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey, LoweringRequest,
+  |     ^^^^^^^^^^^^^^^^^^^ private enum
+  |
+note: the enum `HirInvariantFailure` is defined here
+ --> src/lower.rs
+  |
+  | pub(crate) enum HirInvariantFailure {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: struct `HirLimitError` is private
+ --> tests/ui/internal_lowering_modules_private.rs:6:26
+  |
+6 |     HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey, LoweringRequest,
+  |                          ^^^^^^^^^^^^^ private struct
+  |
+note: the struct `HirLimitError` is defined here
+ --> src/lower.rs
+  |
+  | pub(crate) struct HirLimitError {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: enum `HirLowerFailure` is private
+ --> tests/ui/internal_lowering_modules_private.rs:6:41
+  |
+6 |     HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey, LoweringRequest,
+  |                                         ^^^^^^^^^^^^^^^ private enum
+  |
+note: the enum `HirLowerFailure` is defined here
+ --> src/lower.rs
+  |
+  | pub(crate) enum HirLowerFailure {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: struct `HirModuleKey` is private
+ --> tests/ui/internal_lowering_modules_private.rs:6:58
+  |
+6 |     HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey, LoweringRequest,
+  |                                                          ^^^^^^^^^^^^ private struct
+  |
+note: the struct `HirModuleKey` is defined here
+ --> src/lower.rs
+  |
+  | pub(crate) struct HirModuleKey {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0603]: struct `LoweringRequest` is private
+ --> tests/ui/internal_lowering_modules_private.rs:6:72
+  |
+6 |     HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey, LoweringRequest,
+  |                                                                        ^^^^^^^^^^^^^^^ private struct
+  |
+note: the struct `LoweringRequest` is defined here
+ --> src/lower.rs
+  |
+  | pub(crate) struct LoweringRequest<'a> {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

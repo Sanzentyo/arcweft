@@ -1,0 +1,5 @@
+error[E0599]: no variant, associated function, or constant named `Syntax` found for enum `SyntheticOwner` in the current scope
+ --> tests/ui/synthetic_owner_syntax_variant_absent.rs:4:48
+  |
+4 |     let _removed_constructor = SyntheticOwner::Syntax;
+  |                                                ^^^^^^ variant, associated function, or constant not found in `SyntheticOwner`

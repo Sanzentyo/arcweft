@@ -210,10 +210,12 @@ pub use thread_body::{
 };
 pub use thread_statement::{
     AttachedAwaitWithBranch, AttachedAwaitWithBranchBlock, AttachedAwaitWithStatement,
-    AttachedIncludeStatement, AttachedRequiredAwaitWithBranchBody, AttachedRequiredIncludeTarget,
-    AttachedScopeName, AttachedScopeStatement, AttachedSelectBranch, AttachedSelectBranchBlock,
-    AttachedSelectStatement, AttachedSelectStatementForm, AttachedSourceLocaleStatement,
-    AttachedSourceLocaleValue, AttachedThreadEntityReference,
+    AttachedForStatement, AttachedIncludeStatement, AttachedLoopStatement,
+    AttachedRequiredAwaitWithBranchBody, AttachedRequiredIncludeTarget, AttachedScopeName,
+    AttachedScopeStatement, AttachedSelectBindingName, AttachedSelectBranch,
+    AttachedSelectBranchBlock, AttachedSelectStatement, AttachedSelectStatementForm,
+    AttachedSourceLocaleStatement, AttachedSourceLocaleValue, AttachedThreadEntityReference,
+    AttachedWhileLetStatement, AttachedWhileStatement,
 };
 pub use trait_impl::{
     AttachedImplAssociatedType, AttachedImplBody, AttachedImplDeclaration, AttachedImplFunction,

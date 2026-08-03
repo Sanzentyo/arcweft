@@ -14,8 +14,9 @@ use super::expression::{
 use super::pattern::emit_pattern;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
-    emit_required_punctuation, find_matching_close_before, find_statement_terminator,
-    find_top_level_boundary, first_significant, token_count, token_text, trimmed_end,
+    emit_required_keyword, emit_required_punctuation, find_matching_close_before,
+    find_statement_terminator, find_top_level_boundary, first_significant, token_count, token_text,
+    trimmed_end,
 };
 use crate::assertion::AssertionMode;
 use crate::expressions::SyntaxAwaitPropagation;
@@ -1409,6 +1410,49 @@ fn emit_control_children(
         }
         return;
     }
+
+    if matches!(
+        kind,
+        SyntaxKind::LoopStatement
+            | SyntaxKind::WhileStatement
+            | SyntaxKind::WhileLetStatement
+            | SyntaxKind::ForStatement
+    ) {
+        let head_end = open.unwrap_or(end);
+        match kind {
+            SyntaxKind::WhileLetStatement => {
+                emit_pattern_condition_head(parser, head_end, "while");
+            }
+            SyntaxKind::WhileStatement => {
+                emit_expression_head(parser, head_end, "while", SyntaxRole::Condition);
+            }
+            SyntaxKind::ForStatement => emit_for_head(parser, head_end),
+            SyntaxKind::LoopStatement => bump_until(parser, head_end),
+            _ => unreachable!("the dedicated loop-family match is exhaustive"),
+        }
+        bump_until(parser, head_end);
+        if open.is_none() {
+            parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
+            parser.finish();
+            let at = parser.current_offset();
+            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                "syntax.statement.missing_body",
+                SourceRange::new(at, at),
+                "expected a braced statement body",
+            )));
+            return;
+        }
+        emit_nested_control_block(
+            parser,
+            end,
+            item_kind,
+            SyntaxRole::Body,
+            "syntax.statement.missing_block_close",
+            thread_flow_context,
+        );
+        return;
+    }
+
     let Some(open) = open else {
         bump_until(parser, end);
         return;
@@ -1419,13 +1463,6 @@ fn emit_control_children(
             emit_if_children(parser, open, end, item_kind, thread_flow_context);
             return;
         }
-        SyntaxKind::WhileLetStatement => {
-            emit_pattern_condition_head(parser, open, "while");
-        }
-        SyntaxKind::WhileStatement => {
-            emit_expression_head(parser, open, "while", SyntaxRole::Condition);
-        }
-        SyntaxKind::ForStatement => emit_for_head(parser, open),
         _ => bump_until(parser, open),
     }
     bump_until(parser, open);
@@ -1644,14 +1681,21 @@ fn emit_pattern_condition_head(
 fn emit_for_head(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     parser.bump();
     parser.bump_trivia();
-    let separator = top_level_operator(parser, parser.cursor(), end, "in").unwrap_or(end);
-    emit_pattern(parser, separator, SyntaxRole::Pattern);
-    bump_until(parser, separator);
-    if parser.cursor() < end {
-        parser.bump();
+    let separator = top_level_operator(parser, parser.cursor(), end, "in");
+    let pattern_end = separator.unwrap_or(end);
+    emit_pattern(parser, pattern_end, SyntaxRole::Pattern);
+    bump_until(parser, pattern_end);
+    if emit_required_keyword(
+        parser,
+        SyntaxKind::ForInNode,
+        SyntaxRole::Token,
+        "in",
+        "syntax.statement.for_missing_in",
+        "expected `in` in For statement",
+    ) {
         parser.bump_trivia();
-        emit_expression(parser, end, SyntaxRole::Scrutinee);
     }
+    emit_expression(parser, end, SyntaxRole::Scrutinee);
 }
 
 fn emit_match_block(

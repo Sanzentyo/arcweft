@@ -88,6 +88,37 @@ pub(super) fn emit_required_punctuation(
     authored
 }
 
+/// Emits one required keyword owner as authored bytes or its exact insertion.
+pub(super) fn emit_required_keyword(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    kind: SyntaxKind,
+    role: SyntaxRole,
+    spelling: &'static str,
+    diagnostic: &'static str,
+    message: &'static str,
+) -> bool {
+    parser.start(kind, role);
+    let authored = if parser.at(spelling) {
+        parser.bump();
+        true
+    } else {
+        let at = parser.current_offset();
+        parser.push(SyntaxEvent::MissingToken {
+            expected: ExpectedToken::try_with_spelling(SyntaxKind::KeywordToken, spelling)
+                .expect("real grammar keyword token"),
+            at,
+        });
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            diagnostic,
+            SourceRange::new(at, at),
+            message,
+        )));
+        false
+    };
+    parser.finish();
+    authored
+}
+
 pub(super) fn expected(kind: SyntaxKind) -> ExpectedToken {
     ExpectedToken::try_new(kind).expect("real grammar token kind")
 }

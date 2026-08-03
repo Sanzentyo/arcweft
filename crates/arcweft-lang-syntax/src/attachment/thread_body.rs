@@ -1,6 +1,7 @@
 //! Shared attached ownership for statement-only Flow and Thread bodies.
 
 use super::access::IfStatementHeadNode;
+use super::expression::AttachedExpressionNode;
 use super::family::{FamilyNode, StatementFamily, StatementNode};
 use super::node::{
     AstNode, AwaitWithStatementKind, BlockKind, ChoiceStatementKind, CloseBraceKind,
@@ -140,6 +141,31 @@ impl AttachedThreadFlowItem {
     pub fn has_recovery(&self) -> bool {
         syntax_has_recovery(&self.syntax())
     }
+
+    /// Returns the one existing statement-family owner for statement-backed
+    /// Thread/Flow items. Dialogue application remains expression-owned.
+    pub fn statement(&self) -> Option<StatementNode> {
+        match self {
+            Self::DialogueApplication(_) => None,
+            Self::Statement(statement) => Some(statement.clone()),
+            _ => Some(
+                FamilyNode::<StatementFamily>::new(self.syntax())
+                    .expect("checked Thread/Flow statement family remains a statement"),
+            ),
+        }
+    }
+
+    /// Returns the exact attached expression owner for the sole
+    /// expression-backed Thread/Flow item family.
+    pub fn dialogue_application(&self) -> Option<AttachedExpressionNode> {
+        match self {
+            Self::DialogueApplication(expression) => Some(
+                AttachedExpressionNode::from_syntax(expression.syntax())
+                    .expect("checked Dialogue application remains an expression"),
+            ),
+            _ => None,
+        }
+    }
 }
 
 /// One statement-only ordinary Flow body with no value-tail reader.
@@ -167,6 +193,11 @@ impl AttachedFlowStatementBody {
 
     pub const fn open(&self) -> &AstNode<OpenBraceKind> {
         &self.open
+    }
+
+    /// Exact revision-bound Flow body owner.
+    pub const fn syntax(&self) -> &AstNode<FlowBodyKind> {
+        &self.syntax
     }
 
     pub fn items(&self) -> &[AttachedThreadFlowItem] {
@@ -274,6 +305,15 @@ impl AttachedNestedThreadFlowBody {
     }
 }
 
+impl AstNode<BlockKind> {
+    /// Binds this exact revision-backed block as a statement-only Thread/Flow
+    /// body. The checked owner rejects ordinary statement/tail roles and
+    /// exposes no detached range or source-text fallback.
+    pub fn thread_flow_body(&self) -> Result<AttachedNestedThreadFlowBody, SyntaxAccessError> {
+        AttachedNestedThreadFlowBody::from_block(self.clone())
+    }
+}
+
 impl AttachedThreadExpressionBody {
     fn from_block(
         owner: AstNode<ThreadExpressionKind>,
@@ -287,6 +327,16 @@ impl AttachedThreadExpressionBody {
             items,
             close,
         })
+    }
+
+    /// Exact revision-bound Thread expression that owns this body.
+    pub const fn owner(&self) -> &AstNode<ThreadExpressionKind> {
+        &self.owner
+    }
+
+    /// Exact revision-bound block syntax for this body.
+    pub const fn syntax(&self) -> &AstNode<BlockKind> {
+        &self.body
     }
 
     pub const fn open(&self) -> &AstNode<OpenBraceKind> {

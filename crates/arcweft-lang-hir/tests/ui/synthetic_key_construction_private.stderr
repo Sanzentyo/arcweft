@@ -1,0 +1,14 @@
+error[E0624]: associated function `try_new` is private
+ --> tests/ui/synthetic_key_construction_private.rs:4:19
+  |
+4 |       SyntheticKey::try_new(owner, SyntheticRole::ImplicitUnitTail, 0).unwrap()
+  |                     ^^^^^^^ private associated function
+  |
+ ::: src/identity.rs
+  |
+  | /     pub(crate) fn try_new(
+  | |         owner: SyntheticOwner,
+  | |         role: SyntheticRole,
+  | |         ordinal: u32,
+  | |     ) -> Result<Self, SyntheticKeyError> {
+  | |________________________________________- private associated function defined here

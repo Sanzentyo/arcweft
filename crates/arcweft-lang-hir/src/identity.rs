@@ -1,11 +1,43 @@
 //! Database-qualified session-local HIR identities and stale-ID diagnostics.
 
 use core::num::{NonZeroU32, NonZeroU64};
+use core::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
+
+static NEXT_HIR_DATABASE_ID: AtomicU64 = AtomicU64::new(1);
 
 /// Process-local identity of one in-memory HIR database.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirDatabaseId(NonZeroU64);
+
+impl HirDatabaseId {
+    pub(crate) fn allocate() -> Result<Self, HirDatabaseCreateError> {
+        allocate_database_id(&NEXT_HIR_DATABASE_ID).ok_or(HirDatabaseCreateError::IdentityExhausted)
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn from_raw_for_test(value: NonZeroU64) -> Self {
+        Self(value)
+    }
+}
+
+fn allocate_database_id(counter: &AtomicU64) -> Option<HirDatabaseId> {
+    counter
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            NonZeroU64::new(current)?;
+            Some(current.checked_add(1).unwrap_or(0))
+        })
+        .ok()
+        .and_then(NonZeroU64::new)
+        .map(HirDatabaseId)
+}
+
+/// Failure to allocate a fresh process-local HIR database identity.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum HirDatabaseCreateError {
+    #[error("HIR database identity allocation is exhausted")]
+    IdentityExhausted,
+}
 
 /// Stable module identity within one in-memory HIR database.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -14,9 +46,40 @@ pub struct HirModuleId {
     slot: NonZeroU32,
 }
 
+impl HirModuleId {
+    pub(crate) const fn new(database: HirDatabaseId, slot: NonZeroU32) -> Self {
+        Self { database, slot }
+    }
+
+    pub(crate) const fn database(self) -> HirDatabaseId {
+        self.database
+    }
+
+    pub(crate) const fn slot(self) -> NonZeroU32 {
+        self.slot
+    }
+}
+
 /// Monotonic immutable snapshot revision for one HIR module.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirRevision(NonZeroU32);
+
+impl HirRevision {
+    pub(crate) const INITIAL: Self = Self(NonZeroU32::MIN);
+
+    pub(crate) fn checked_next(self) -> Option<Self> {
+        self.0
+            .get()
+            .checked_add(1)
+            .and_then(NonZeroU32::new)
+            .map(Self)
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn from_raw_for_test(value: NonZeroU32) -> Self {
+        Self(value)
+    }
+}
 
 /// Module and revision identifying one immutable HIR snapshot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -26,6 +89,10 @@ pub struct HirSnapshotId {
 }
 
 impl HirSnapshotId {
+    pub(crate) const fn new(module: HirModuleId, revision: HirRevision) -> Self {
+        Self { module, revision }
+    }
+
     /// Returns the module owning this snapshot.
     pub const fn module(self) -> HirModuleId {
         self.module
@@ -38,10 +105,36 @@ impl HirSnapshotId {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-struct RawHirId {
+pub(crate) struct RawHirId {
     module: HirModuleId,
     slot: NonZeroU32,
     kind: HirIdKind,
+}
+
+impl RawHirId {
+    pub(crate) const fn new(module: HirModuleId, slot: NonZeroU32, kind: HirIdKind) -> Self {
+        Self { module, slot, kind }
+    }
+
+    pub(crate) const fn module(self) -> HirModuleId {
+        self.module
+    }
+
+    pub(crate) const fn slot(self) -> NonZeroU32 {
+        self.slot
+    }
+
+    pub(crate) const fn kind(self) -> HirIdKind {
+        self.kind
+    }
+
+    pub(crate) const fn view(self) -> RawHirIdView {
+        RawHirIdView {
+            module: self.module,
+            kind: self.kind,
+            slot: self.slot,
+        }
+    }
 }
 
 /// Non-forgeable diagnostic projection of a raw HIR identity.
@@ -66,11 +159,7 @@ impl RawHirIdView {
 
 impl From<RawHirId> for RawHirIdView {
     fn from(value: RawHirId) -> Self {
-        Self {
-            module: value.module,
-            kind: value.kind,
-            slot: value.slot,
-        }
+        value.view()
     }
 }
 
@@ -202,6 +291,137 @@ impl CaptureId {
     }
 }
 
+mod sealed {
+    pub(crate) trait Sealed {}
+}
+
+pub(crate) trait HirTypedId: sealed::Sealed + Copy {
+    const KIND: HirIdKind;
+
+    fn from_raw(raw: RawHirId) -> Self;
+    fn raw(self) -> RawHirId;
+}
+
+impl sealed::Sealed for ItemId {}
+
+impl HirTypedId for ItemId {
+    const KIND: HirIdKind = HirIdKind::Item;
+
+    fn from_raw(raw: RawHirId) -> Self {
+        debug_assert_eq!(raw.kind(), Self::KIND);
+        Self(raw)
+    }
+
+    fn raw(self) -> RawHirId {
+        self.0
+    }
+}
+
+impl sealed::Sealed for ScopeId {}
+
+impl HirTypedId for ScopeId {
+    const KIND: HirIdKind = HirIdKind::Scope;
+
+    fn from_raw(raw: RawHirId) -> Self {
+        debug_assert_eq!(raw.kind(), Self::KIND);
+        Self(raw)
+    }
+
+    fn raw(self) -> RawHirId {
+        self.0
+    }
+}
+
+impl sealed::Sealed for LocalId {}
+
+impl HirTypedId for LocalId {
+    const KIND: HirIdKind = HirIdKind::Local;
+
+    fn from_raw(raw: RawHirId) -> Self {
+        debug_assert_eq!(raw.kind(), Self::KIND);
+        Self(raw)
+    }
+
+    fn raw(self) -> RawHirId {
+        self.0
+    }
+}
+
+impl sealed::Sealed for ExprId {}
+
+impl HirTypedId for ExprId {
+    const KIND: HirIdKind = HirIdKind::Expr;
+
+    fn from_raw(raw: RawHirId) -> Self {
+        debug_assert_eq!(raw.kind(), Self::KIND);
+        Self(raw)
+    }
+
+    fn raw(self) -> RawHirId {
+        self.0
+    }
+}
+
+impl sealed::Sealed for StmtId {}
+
+impl HirTypedId for StmtId {
+    const KIND: HirIdKind = HirIdKind::Stmt;
+
+    fn from_raw(raw: RawHirId) -> Self {
+        debug_assert_eq!(raw.kind(), Self::KIND);
+        Self(raw)
+    }
+
+    fn raw(self) -> RawHirId {
+        self.0
+    }
+}
+
+impl sealed::Sealed for TypeId {}
+
+impl HirTypedId for TypeId {
+    const KIND: HirIdKind = HirIdKind::Type;
+
+    fn from_raw(raw: RawHirId) -> Self {
+        debug_assert_eq!(raw.kind(), Self::KIND);
+        Self(raw)
+    }
+
+    fn raw(self) -> RawHirId {
+        self.0
+    }
+}
+
+impl sealed::Sealed for PatternId {}
+
+impl HirTypedId for PatternId {
+    const KIND: HirIdKind = HirIdKind::Pattern;
+
+    fn from_raw(raw: RawHirId) -> Self {
+        debug_assert_eq!(raw.kind(), Self::KIND);
+        Self(raw)
+    }
+
+    fn raw(self) -> RawHirId {
+        self.0
+    }
+}
+
+impl sealed::Sealed for CaptureId {}
+
+impl HirTypedId for CaptureId {
+    const KIND: HirIdKind = HirIdKind::Capture;
+
+    fn from_raw(raw: RawHirId) -> Self {
+        debug_assert_eq!(raw.kind(), Self::KIND);
+        Self(raw)
+    }
+
+    fn raw(self) -> RawHirId {
+        self.0
+    }
+}
+
 /// Typed owner of one source-derived synthetic HIR identity.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SyntheticOwner {
@@ -251,6 +471,32 @@ impl SyntheticOwner {
             Self::Capture(id) => id.module(),
         }
     }
+
+    pub(crate) const fn fingerprint_tag(self) -> u8 {
+        match self {
+            Self::Item(_) => 0x01,
+            Self::Scope(_) => 0x02,
+            Self::Local(_) => 0x03,
+            Self::Expr(_) => 0x04,
+            Self::Stmt(_) => 0x05,
+            Self::Type(_) => 0x06,
+            Self::Pattern(_) => 0x07,
+            Self::Capture(_) => 0x08,
+        }
+    }
+
+    fn raw_for_fingerprint(self) -> RawHirId {
+        match self {
+            Self::Item(id) => id.0,
+            Self::Scope(id) => id.0,
+            Self::Local(id) => id.0,
+            Self::Expr(id) => id.0,
+            Self::Stmt(id) => id.0,
+            Self::Type(id) => id.0,
+            Self::Pattern(id) => id.0,
+            Self::Capture(id) => id.0,
+        }
+    }
 }
 
 /// Kind recorded for one globally unique module slot.
@@ -278,6 +524,19 @@ impl HirIdKind {
             Self::Type => "type",
             Self::Pattern => "pattern",
             Self::Capture => "capture",
+        }
+    }
+
+    pub(crate) const fn allocation_limit(self) -> HirLimit {
+        match self {
+            Self::Item => HirLimit::Items,
+            Self::Scope => HirLimit::Scopes,
+            Self::Local => HirLimit::LocalsPerModule,
+            Self::Expr => HirLimit::Expressions,
+            Self::Stmt => HirLimit::Statements,
+            Self::Type => HirLimit::Types,
+            Self::Pattern => HirLimit::Patterns,
+            Self::Capture => HirLimit::Captures,
         }
     }
 }
@@ -314,6 +573,32 @@ pub enum IdResolveError {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct LocalGeneration(NonZeroU32);
 
+impl LocalGeneration {
+    /// First successfully published binding generation in one scope/name key.
+    pub const FIRST: Self = Self(NonZeroU32::MIN);
+
+    /// Constructs a non-zero binding generation.
+    pub const fn try_new(value: u32) -> Option<Self> {
+        match NonZeroU32::new(value) {
+            Some(value) => Some(Self(value)),
+            None => None,
+        }
+    }
+
+    /// Returns the numeric generation used for deterministic ordering.
+    pub const fn get(self) -> u32 {
+        self.0.get()
+    }
+
+    /// Advances one same-scope, same-name shadow generation without wrapping.
+    pub const fn checked_next(self) -> Option<Self> {
+        match self.0.get().checked_add(1) {
+            Some(value) => Self::try_new(value),
+            None => None,
+        }
+    }
+}
+
 /// Stable role used to key a source-derived synthetic HIR node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SyntheticRole {
@@ -326,7 +611,6 @@ pub enum SyntheticRole {
     DesugaredTemporary,
     MissingRequiredTail,
     DestructuredBinding,
-    ClosureEnvironment,
     ClosureCapture,
     ContractRequiresScope,
     ContractEnsuresScope,
@@ -339,6 +623,8 @@ pub enum SyntheticRole {
     PostfixIndexCandidateExpression,
     DialogueContentCandidateExpression,
 }
+
+pub(crate) const MAX_SOURCE_ORDERED_SYNTHETIC_ORDINAL: u32 = 1_023;
 
 impl SyntheticRole {
     /// Stable diagnostic and cache label owned by the role enum.
@@ -353,7 +639,6 @@ impl SyntheticRole {
             Self::DesugaredTemporary => "desugared_temporary",
             Self::MissingRequiredTail => "missing_required_tail",
             Self::DestructuredBinding => "destructured_binding",
-            Self::ClosureEnvironment => "closure_environment",
             Self::ClosureCapture => "closure_capture",
             Self::ContractRequiresScope => "contract_requires_scope",
             Self::ContractEnsuresScope => "contract_ensures_scope",
@@ -367,6 +652,178 @@ impl SyntheticRole {
             Self::DialogueContentCandidateExpression => "dialogue_content_candidate_expression",
         }
     }
+
+    pub(crate) const fn accepts_owner_kind(self, owner_kind: HirIdKind) -> bool {
+        use HirIdKind::{Expr, Item, Pattern, Scope, Stmt, Type};
+
+        match self {
+            Self::ImplicitUnitTail | Self::MissingRequiredTail => {
+                matches!(owner_kind, Expr | Scope)
+            }
+            Self::ClosureCapture
+            | Self::PostfixIndexCandidateExpression
+            | Self::DialogueContentCandidateExpression => matches!(owner_kind, Expr),
+            Self::PredicateBoolReturn
+            | Self::ProofUnitReturn
+            | Self::ContractRequiresScope
+            | Self::ContractEnsuresScope => matches!(owner_kind, Item),
+            Self::ElidedRegion => matches!(owner_kind, Type),
+            Self::RecoveryOperand
+            | Self::DesugaredTemporary
+            | Self::IfLetScrutinee
+            | Self::MatchScrutinee => matches!(owner_kind, Expr | Stmt),
+            Self::PostconditionResult => matches!(owner_kind, Scope),
+            Self::DestructuredBinding | Self::PatternRest => {
+                matches!(owner_kind, Pattern)
+            }
+            Self::ForIterator | Self::ForNextValue | Self::WhileLetScrutinee => {
+                matches!(owner_kind, Stmt)
+            }
+        }
+    }
+
+    pub(crate) const fn accepts_ordinal(self, ordinal: u32) -> bool {
+        match self {
+            Self::RecoveryOperand
+            | Self::DesugaredTemporary
+            | Self::DestructuredBinding
+            | Self::ClosureCapture
+            | Self::PostfixIndexCandidateExpression
+            | Self::DialogueContentCandidateExpression => {
+                ordinal <= MAX_SOURCE_ORDERED_SYNTHETIC_ORDINAL
+            }
+            Self::ImplicitUnitTail
+            | Self::PredicateBoolReturn
+            | Self::ProofUnitReturn
+            | Self::ElidedRegion
+            | Self::PostconditionResult
+            | Self::MissingRequiredTail
+            | Self::ContractRequiresScope
+            | Self::ContractEnsuresScope
+            | Self::ForIterator
+            | Self::ForNextValue
+            | Self::IfLetScrutinee
+            | Self::WhileLetScrutinee
+            | Self::MatchScrutinee
+            | Self::PatternRest => ordinal == 0,
+        }
+    }
+
+    pub(crate) const fn accepts_owner(self, owner_kind: HirIdKind, ordinal: u32) -> bool {
+        self.accepts_owner_kind(owner_kind) && self.accepts_ordinal(ordinal)
+    }
+
+    pub(crate) const fn fingerprint_tag(self) -> u8 {
+        match self {
+            Self::ImplicitUnitTail => 0x01,
+            Self::PredicateBoolReturn => 0x02,
+            Self::ProofUnitReturn => 0x03,
+            Self::ElidedRegion => 0x04,
+            Self::RecoveryOperand => 0x05,
+            Self::PostconditionResult => 0x06,
+            Self::DesugaredTemporary => 0x07,
+            Self::MissingRequiredTail => 0x08,
+            Self::DestructuredBinding => 0x09,
+            Self::ClosureCapture => 0x0b,
+            Self::ContractRequiresScope => 0x0c,
+            Self::ContractEnsuresScope => 0x0d,
+            Self::ForIterator => 0x0e,
+            Self::ForNextValue => 0x0f,
+            Self::IfLetScrutinee => 0x10,
+            Self::WhileLetScrutinee => 0x11,
+            Self::MatchScrutinee => 0x12,
+            Self::PatternRest => 0x13,
+            Self::PostfixIndexCandidateExpression => 0x14,
+            Self::DialogueContentCandidateExpression => 0x15,
+        }
+    }
+}
+
+/// Structurally validated identity of one source-derived synthetic HIR node.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SyntheticKey {
+    owner: SyntheticOwner,
+    role: SyntheticRole,
+    ordinal: u32,
+}
+
+/// Structural rejection produced while constructing a [`SyntheticKey`].
+#[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SyntheticKeyError {
+    #[error("synthetic role {role:?} does not accept owner kind {actual:?}")]
+    WrongOwnerKind {
+        role: SyntheticRole,
+        actual: HirIdKind,
+    },
+    #[error("synthetic role {role:?} does not accept ordinal {ordinal}")]
+    InvalidOrdinal { role: SyntheticRole, ordinal: u32 },
+}
+
+/// Exact byte length of the v1 database-qualified synthetic-key transcript.
+pub const SYNTHETIC_KEY_FINGERPRINT_INPUT_LEN: usize = 51;
+
+const SYNTHETIC_KEY_FINGERPRINT_DOMAIN: &[u8; 29] = b"arcweft-hir-synthetic-key-v1\0";
+
+/// Opaque, database-qualified bytes suitable as input to a higher-level hasher.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct SyntheticKeyFingerprintInput([u8; SYNTHETIC_KEY_FINGERPRINT_INPUT_LEN]);
+
+impl SyntheticKeyFingerprintInput {
+    /// Returns the canonical v1 transcript bytes.
+    pub const fn as_bytes(&self) -> &[u8; SYNTHETIC_KEY_FINGERPRINT_INPUT_LEN] {
+        &self.0
+    }
+}
+
+impl SyntheticKey {
+    pub(crate) fn try_new(
+        owner: SyntheticOwner,
+        role: SyntheticRole,
+        ordinal: u32,
+    ) -> Result<Self, SyntheticKeyError> {
+        let actual = owner.kind();
+        if role.accepts_owner(actual, ordinal) {
+            return Ok(Self {
+                owner,
+                role,
+                ordinal,
+            });
+        }
+        if !role.accepts_owner_kind(actual) {
+            return Err(SyntheticKeyError::WrongOwnerKind { role, actual });
+        }
+        Err(SyntheticKeyError::InvalidOrdinal { role, ordinal })
+    }
+
+    /// Returns the typed owner used to allocate this synthetic identity.
+    pub const fn owner(self) -> SyntheticOwner {
+        self.owner
+    }
+
+    /// Returns the semantic role within the owner.
+    pub const fn role(self) -> SyntheticRole {
+        self.role
+    }
+
+    /// Returns the role-defined ordinal within the owner.
+    pub const fn ordinal(self) -> u32 {
+        self.ordinal
+    }
+
+    /// Encodes the canonical session-qualified v1 fingerprint input.
+    #[must_use]
+    pub fn fingerprint_input(self) -> SyntheticKeyFingerprintInput {
+        let raw = self.owner.raw_for_fingerprint();
+        let mut bytes = [0; SYNTHETIC_KEY_FINGERPRINT_INPUT_LEN];
+        bytes[..29].copy_from_slice(SYNTHETIC_KEY_FINGERPRINT_DOMAIN);
+        bytes[29] = self.owner.fingerprint_tag();
+        bytes[30..38].copy_from_slice(&raw.module.database.0.get().to_le_bytes());
+        bytes[38..42].copy_from_slice(&raw.module.slot.get().to_le_bytes());
+        bytes[42..46].copy_from_slice(&raw.slot.get().to_le_bytes());
+        bytes[46] = self.role.fingerprint_tag();
+        bytes[47..51].copy_from_slice(&self.ordinal.to_le_bytes());
+        SyntheticKeyFingerprintInput(bytes)
+    }
 }
 
 /// Inclusive HIR allocation limit.
@@ -374,6 +831,7 @@ impl SyntheticRole {
 pub enum HirLimit {
     ModulesPerDatabase,
     Items,
+    DeclarationMembers,
     Statements,
     Expressions,
     Types,
@@ -385,6 +843,25 @@ pub enum HirLimit {
     Diagnostics,
     SyntheticDescendantsPerOwner,
     TotalSlotsPerModule,
+    SourceDocumentBytes,
+    DecodedStringBytes,
+    NameBytes,
+    PathSegments,
+    PathSemanticBytes,
+    RegistrySegments,
+    RegistrySemanticBytes,
+    NumericDigitsPerLiteral,
+    DecimalCoefficientDigits,
+    DecimalScale,
+    DecimalExponentAbs,
+    NumericSequenceElements,
+    NumericSequenceTotalDigits,
+    ThreadFlowItems,
+    CallArguments,
+    AssertionConditions,
+    RichTextCallArguments,
+    CallTypeArguments,
+    StyleNestingDepth,
 }
 
 impl HirLimit {
@@ -395,240 +872,33 @@ impl HirLimit {
             Self::ModulesPerDatabase
             | Self::Statements
             | Self::LocalsPerModule
-            | Self::Captures => 65_536,
-            Self::Expressions => 262_144,
+            | Self::Captures
+            | Self::PathSemanticBytes
+            | Self::RegistrySemanticBytes
+            | Self::NumericDigitsPerLiteral
+            | Self::DecimalCoefficientDigits
+            | Self::DecimalScale
+            | Self::NumericSequenceElements
+            | Self::ThreadFlowItems => 65_536,
+            Self::Expressions | Self::NumericSequenceTotalDigits => 262_144,
             Self::Types | Self::Patterns => 131_072,
             Self::LocalsPerScope => 4_096,
-            Self::Diagnostics | Self::SyntheticDescendantsPerOwner => 1_024,
+            Self::DeclarationMembers
+            | Self::Diagnostics
+            | Self::SyntheticDescendantsPerOwner
+            | Self::NameBytes => 1_024,
             Self::TotalSlotsPerModule => 786_432,
+            Self::SourceDocumentBytes | Self::DecodedStringBytes => 8_388_608,
+            Self::PathSegments | Self::RegistrySegments => 256,
+            Self::DecimalExponentAbs => 1_000_000,
+            Self::CallArguments | Self::CallTypeArguments => 128,
+            Self::AssertionConditions => 64,
+            Self::RichTextCallArguments => 32,
+            Self::StyleNestingDepth => 64,
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        CaptureId, ExprId, HirDatabaseId, HirIdKind, HirLimit, HirModuleId, HirRevision,
-        HirSnapshotId, IdResolveError, ItemId, LocalId, PatternId, RawHirId, RawHirIdView, ScopeId,
-        StmtId, SyntheticOwner, SyntheticRole, TypeId,
-    };
-    use core::fmt::Debug;
-    use core::hash::Hash;
-    use core::num::{NonZeroU32, NonZeroU64};
-
-    fn module_id(database: u64, slot: u32) -> HirModuleId {
-        HirModuleId {
-            database: HirDatabaseId(NonZeroU64::new(database).unwrap()),
-            slot: NonZeroU32::new(slot).unwrap(),
-        }
-    }
-
-    fn expression(module: HirModuleId, slot: u32) -> ExprId {
-        ExprId(RawHirId {
-            module,
-            slot: NonZeroU32::new(slot).unwrap(),
-            kind: HirIdKind::Expr,
-        })
-    }
-
-    fn raw_id(module: HirModuleId, slot: u32, kind: HirIdKind) -> RawHirId {
-        RawHirId {
-            module,
-            slot: NonZeroU32::new(slot).unwrap(),
-            kind,
-        }
-    }
-
-    #[test]
-    fn typed_ids_include_database_module_kind_and_global_slot() {
-        let module = module_id(1, 2);
-        let first = expression(module, 3);
-        let second = expression(module, 4);
-        let foreign_database = expression(module_id(2, 2), 3);
-
-        assert!(first < second);
-        assert!(first < foreign_database);
-        assert_ne!(first, foreign_database);
-        assert_eq!(first.module(), module);
-        assert_eq!(first.kind(), HirIdKind::Expr);
-
-        let snapshot = HirSnapshotId {
-            module,
-            revision: HirRevision(NonZeroU32::MIN),
-        };
-        assert_eq!(snapshot.module(), module);
-        assert_eq!(snapshot.revision().0.get(), 1);
-    }
-
-    #[test]
-    fn id_resolve_error_variants_preserve_exact_payload_shapes() {
-        let module = module_id(7, 11);
-        let id = RawHirIdView::from(RawHirId {
-            module,
-            slot: NonZeroU32::new(13).unwrap(),
-            kind: HirIdKind::Expr,
-        });
-        let snapshot = HirSnapshotId {
-            module,
-            revision: HirRevision(NonZeroU32::new(3).unwrap()),
-        };
-
-        assert_eq!(id.module(), module);
-        assert_eq!(id.kind(), HirIdKind::Expr);
-        assert_eq!(id.slot.get(), 13);
-
-        let corrupted_wrapper = ExprId(RawHirId {
-            module,
-            slot: NonZeroU32::new(14).unwrap(),
-            kind: HirIdKind::Stmt,
-        });
-        assert_eq!(corrupted_wrapper.kind(), HirIdKind::Expr);
-        assert_eq!(
-            RawHirIdView::from(corrupted_wrapper.0).kind(),
-            HirIdKind::Stmt
-        );
-
-        match (IdResolveError::WrongModule {
-            expected: module,
-            actual: module_id(8, 11),
-        }) {
-            IdResolveError::WrongModule { expected, actual } => {
-                assert_eq!(expected, module);
-                assert_eq!(actual, module_id(8, 11));
-            }
-            other => panic!("unexpected resolver error: {other:?}"),
-        }
-
-        match (IdResolveError::NotYetLive {
-            id,
-            snapshot,
-            born: HirRevision(NonZeroU32::new(4).unwrap()),
-        }) {
-            IdResolveError::NotYetLive {
-                id: actual_id,
-                snapshot: actual_snapshot,
-                born,
-            } => {
-                assert_eq!(actual_id, id);
-                assert_eq!(actual_snapshot, snapshot);
-                assert_eq!(born.0.get(), 4);
-            }
-            other => panic!("unexpected resolver error: {other:?}"),
-        }
-
-        match (IdResolveError::Retired {
-            id,
-            snapshot,
-            retired_at: HirRevision(NonZeroU32::new(3).unwrap()),
-        }) {
-            IdResolveError::Retired {
-                id: actual_id,
-                snapshot: actual_snapshot,
-                retired_at,
-            } => {
-                assert_eq!(actual_id, id);
-                assert_eq!(actual_snapshot, snapshot);
-                assert_eq!(retired_at.0.get(), 3);
-            }
-            other => panic!("unexpected resolver error: {other:?}"),
-        }
-
-        match (IdResolveError::KindMismatch {
-            id,
-            expected: HirIdKind::Expr,
-            actual: HirIdKind::Stmt,
-        }) {
-            IdResolveError::KindMismatch {
-                id: actual_id,
-                expected,
-                actual,
-            } => {
-                assert_eq!(actual_id, id);
-                assert_eq!(expected, HirIdKind::Expr);
-                assert_eq!(actual, HirIdKind::Stmt);
-            }
-            other => panic!("unexpected resolver error: {other:?}"),
-        }
-    }
-
-    #[test]
-    fn synthetic_owner_projects_every_typed_id_family() {
-        fn assert_structural_traits<
-            T: Clone + Copy + Debug + Eq + Hash + Ord + PartialEq + PartialOrd,
-        >() {
-        }
-
-        assert_structural_traits::<SyntheticOwner>();
-
-        let module = module_id(17, 19);
-        let owners = [
-            (
-                SyntheticOwner::Item(ItemId(raw_id(module, 1, HirIdKind::Item))),
-                HirIdKind::Item,
-            ),
-            (
-                SyntheticOwner::Scope(ScopeId(raw_id(module, 2, HirIdKind::Scope))),
-                HirIdKind::Scope,
-            ),
-            (
-                SyntheticOwner::Local(LocalId(raw_id(module, 3, HirIdKind::Local))),
-                HirIdKind::Local,
-            ),
-            (
-                SyntheticOwner::Expr(ExprId(raw_id(module, 4, HirIdKind::Expr))),
-                HirIdKind::Expr,
-            ),
-            (
-                SyntheticOwner::Stmt(StmtId(raw_id(module, 5, HirIdKind::Stmt))),
-                HirIdKind::Stmt,
-            ),
-            (
-                SyntheticOwner::Type(TypeId(raw_id(module, 6, HirIdKind::Type))),
-                HirIdKind::Type,
-            ),
-            (
-                SyntheticOwner::Pattern(PatternId(raw_id(module, 7, HirIdKind::Pattern))),
-                HirIdKind::Pattern,
-            ),
-            (
-                SyntheticOwner::Capture(CaptureId(raw_id(module, 8, HirIdKind::Capture))),
-                HirIdKind::Capture,
-            ),
-        ];
-
-        for (owner, expected_kind) in owners {
-            assert_eq!(owner.kind(), expected_kind);
-            assert_eq!(owner.module(), module);
-        }
-
-        let shared_raw = raw_id(module, 21, HirIdKind::Expr);
-        let item = SyntheticOwner::Item(ItemId(shared_raw));
-        let expression = SyntheticOwner::Expr(ExprId(shared_raw));
-        assert_eq!(item.kind(), HirIdKind::Item);
-        assert_eq!(expression.kind(), HirIdKind::Expr);
-        assert_ne!(item, expression);
-        assert!(item < expression);
-    }
-
-    #[test]
-    fn owned_identity_vocabularies_have_stable_behavior() {
-        assert_eq!(HirIdKind::Capture.as_str(), "capture");
-        assert_eq!(HirLimit::LocalsPerScope.maximum(), 4_096);
-        assert_eq!(HirLimit::Captures.maximum(), 65_536);
-        assert_eq!(HirLimit::TotalSlotsPerModule.maximum(), 786_432);
-        assert_eq!(SyntheticRole::ElidedRegion.as_str(), "elided_region");
-        assert_eq!(SyntheticRole::ClosureCapture.as_str(), "closure_capture");
-        assert_eq!(
-            SyntheticRole::ContractEnsuresScope.as_str(),
-            "contract_ensures_scope"
-        );
-        assert_eq!(
-            SyntheticRole::PostfixIndexCandidateExpression.as_str(),
-            "postfix_index_candidate_expression"
-        );
-        assert_eq!(
-            SyntheticRole::DialogueContentCandidateExpression.as_str(),
-            "dialogue_content_candidate_expression"
-        );
-    }
-}
+#[path = "identity/tests.rs"]
+mod tests;

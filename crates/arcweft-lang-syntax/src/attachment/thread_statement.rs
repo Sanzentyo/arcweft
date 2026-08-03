@@ -7,9 +7,10 @@ use super::expression::AttachedExpressionNode;
 use super::family::PatternFamily;
 use super::node::{
     AstNode, AwaitWithBranchKind, AwaitWithStatementKind, BlockKind, CloseBraceKind, EqualsKind,
-    ErrorNodeKind, IncludeStatementKind, MissingBodyKind, MissingExpressionKind, MissingNameKind,
-    NameDefinitionKind, NameReferenceKind, OpenBraceKind, ScopeStatementKind, SelectBranchKind,
-    SelectStatementKind, SourceLocaleStatementKind,
+    ErrorNodeKind, ForInKind, ForStatementKind, IncludeStatementKind, LoopStatementKind,
+    MissingBodyKind, MissingExpressionKind, MissingNameKind, NameDefinitionKind, NameReferenceKind,
+    OpenBraceKind, ScopeStatementKind, SelectBranchKind, SelectStatementKind,
+    SourceLocaleStatementKind, WhileLetStatementKind, WhileStatementKind,
 };
 use super::source_file::AttachedDelimiterState;
 use super::statement::{invalid, keyword_statement_projection, optional_recovery, require_roles};
@@ -136,6 +137,25 @@ impl AttachedScopeName {
     }
 }
 
+/// Required Select binding name without a fabricated recovery spelling.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedSelectBindingName {
+    Authored {
+        syntax: AstNode<NameDefinitionKind>,
+        value: Result<SyntaxName, SyntaxNameIssue>,
+    },
+    Missing(AstNode<MissingNameKind>),
+}
+
+impl AttachedSelectBindingName {
+    pub const fn has_recovery(&self) -> bool {
+        match self {
+            Self::Authored { value, .. } => value.is_err(),
+            Self::Missing(_) => true,
+        }
+    }
+}
+
 /// Complete typed named or anonymous lexical Scope relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttachedScopeStatement {
@@ -194,6 +214,139 @@ impl AttachedIncludeStatement {
 
     pub fn has_recovery(&self) -> bool {
         self.target.has_recovery() || self.trailing_recovery.is_some()
+    }
+}
+
+/// Complete typed `loop { ... }` relation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedLoopStatement {
+    syntax: AstNode<LoopStatementKind>,
+    body: AttachedRequiredNestedThreadFlowBody,
+}
+
+impl AttachedLoopStatement {
+    pub const fn syntax(&self) -> &AstNode<LoopStatementKind> {
+        &self.syntax
+    }
+
+    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
+        &self.body
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        self.body.has_recovery()
+    }
+}
+
+/// Complete typed `while CONDITION { ... }` relation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedWhileStatement {
+    syntax: AstNode<WhileStatementKind>,
+    condition: RequiredStatementExpressionNode,
+    body: AttachedRequiredNestedThreadFlowBody,
+}
+
+impl AttachedWhileStatement {
+    pub const fn syntax(&self) -> &AstNode<WhileStatementKind> {
+        &self.syntax
+    }
+
+    pub const fn condition(&self) -> &RequiredStatementExpressionNode {
+        &self.condition
+    }
+
+    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
+        &self.body
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        matches!(self.condition, RequiredStatementExpressionNode::Missing(_))
+            || self.body.has_recovery()
+    }
+}
+
+/// Complete typed `while let PATTERN = SCRUTINEE when GUARD { ... }` relation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedWhileLetStatement {
+    syntax: AstNode<WhileLetStatementKind>,
+    pattern: AttachedPatternNode,
+    scrutinee: RequiredStatementExpressionNode,
+    guard: Option<RequiredStatementExpressionNode>,
+    body: AttachedRequiredNestedThreadFlowBody,
+}
+
+impl AttachedWhileLetStatement {
+    pub const fn syntax(&self) -> &AstNode<WhileLetStatementKind> {
+        &self.syntax
+    }
+
+    pub const fn pattern(&self) -> &AttachedPatternNode {
+        &self.pattern
+    }
+
+    pub const fn scrutinee(&self) -> &RequiredStatementExpressionNode {
+        &self.scrutinee
+    }
+
+    pub const fn guard(&self) -> Option<&RequiredStatementExpressionNode> {
+        self.guard.as_ref()
+    }
+
+    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
+        &self.body
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        matches!(
+            self.pattern.value().state(),
+            PatternSyntaxState::Recovered(_)
+        ) || matches!(self.scrutinee, RequiredStatementExpressionNode::Missing(_))
+            || self
+                .guard
+                .as_ref()
+                .is_some_and(|guard| matches!(guard, RequiredStatementExpressionNode::Missing(_)))
+            || self.body.has_recovery()
+    }
+}
+
+/// Complete typed `for PATTERN in SOURCE { ... }` relation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedForStatement {
+    syntax: AstNode<ForStatementKind>,
+    pattern: AttachedPatternNode,
+    in_keyword: AstNode<ForInKind>,
+    source: RequiredStatementExpressionNode,
+    body: AttachedRequiredNestedThreadFlowBody,
+}
+
+impl AttachedForStatement {
+    pub const fn syntax(&self) -> &AstNode<ForStatementKind> {
+        &self.syntax
+    }
+
+    pub const fn pattern(&self) -> &AttachedPatternNode {
+        &self.pattern
+    }
+
+    pub const fn in_keyword(&self) -> &AstNode<ForInKind> {
+        &self.in_keyword
+    }
+
+    pub const fn source(&self) -> &RequiredStatementExpressionNode {
+        &self.source
+    }
+
+    pub const fn body(&self) -> &AttachedRequiredNestedThreadFlowBody {
+        &self.body
+    }
+
+    pub fn has_recovery(&self) -> bool {
+        matches!(
+            self.pattern.value().state(),
+            PatternSyntaxState::Recovered(_)
+        ) || self.in_keyword.range().is_empty()
+            || matches!(self.source, RequiredStatementExpressionNode::Missing(_))
+            || self.body.has_recovery()
     }
 }
 
@@ -274,7 +427,7 @@ impl AttachedSelectBranchBlock {
 pub enum AttachedSelectBranch {
     Bind {
         syntax: AstNode<SelectBranchKind>,
-        name: AttachedScopeName,
+        name: AttachedSelectBindingName,
         equals: AstNode<EqualsKind>,
         source: RequiredStatementExpressionNode,
         propagates_error: bool,
@@ -450,6 +603,78 @@ impl AttachedAwaitWithBranch {
             })
             || self.recovery.is_some()
             || self.body.has_recovery()
+    }
+}
+
+impl AstNode<LoopStatementKind> {
+    pub fn semantics(&self) -> Result<AttachedLoopStatement, SyntaxAccessError> {
+        require_roles(self, &[SyntaxRole::Body])?;
+        Ok(AttachedLoopStatement {
+            syntax: self.clone(),
+            body: required_nested_thread_flow_body(self)?,
+        })
+    }
+}
+
+impl AstNode<WhileStatementKind> {
+    pub fn semantics(&self) -> Result<AttachedWhileStatement, SyntaxAccessError> {
+        require_roles(self, &[SyntaxRole::Condition, SyntaxRole::Body])?;
+        Ok(AttachedWhileStatement {
+            syntax: self.clone(),
+            condition: required_statement_expression(self, SyntaxRole::Condition)?,
+            body: required_nested_thread_flow_body(self)?,
+        })
+    }
+}
+
+impl AstNode<WhileLetStatementKind> {
+    pub fn semantics(&self) -> Result<AttachedWhileLetStatement, SyntaxAccessError> {
+        require_roles(
+            self,
+            &[
+                SyntaxRole::Pattern,
+                SyntaxRole::Scrutinee,
+                SyntaxRole::Guard,
+                SyntaxRole::Body,
+            ],
+        )?;
+        let guard = self
+            .syntax()
+            .optional_unique_child(SyntaxRole::Guard)?
+            .map(|_| required_statement_expression(self, SyntaxRole::Guard))
+            .transpose()?;
+        Ok(AttachedWhileLetStatement {
+            syntax: self.clone(),
+            pattern: self
+                .required_family_child::<PatternFamily>(SyntaxRole::Pattern)?
+                .semantic()?,
+            scrutinee: required_statement_expression(self, SyntaxRole::Scrutinee)?,
+            guard,
+            body: required_nested_thread_flow_body(self)?,
+        })
+    }
+}
+
+impl AstNode<ForStatementKind> {
+    pub fn semantics(&self) -> Result<AttachedForStatement, SyntaxAccessError> {
+        require_roles(
+            self,
+            &[
+                SyntaxRole::Pattern,
+                SyntaxRole::Token,
+                SyntaxRole::Scrutinee,
+                SyntaxRole::Body,
+            ],
+        )?;
+        Ok(AttachedForStatement {
+            syntax: self.clone(),
+            pattern: self
+                .required_family_child::<PatternFamily>(SyntaxRole::Pattern)?
+                .semantic()?,
+            in_keyword: self.required_exact_child::<ForInKind>(SyntaxRole::Token)?,
+            source: required_statement_expression(self, SyntaxRole::Scrutinee)?,
+            body: required_nested_thread_flow_body(self)?,
+        })
     }
 }
 
@@ -642,11 +867,28 @@ fn attach_select_branch(
                     SyntaxRole::Body,
                 ],
             )?;
+            let name_syntax = syntax
+                .syntax()
+                .optional_unique_child(SyntaxRole::Name)?
+                .ok_or_else(|| invalid(&syntax))?;
+            let name = match (name_syntax.kind(), name) {
+                (SyntaxKind::NameDefinition, value)
+                    if !matches!(value, Err(SyntaxNameIssue::Missing)) =>
+                {
+                    AttachedSelectBindingName::Authored {
+                        syntax: name_syntax.cast()?,
+                        value: value.clone(),
+                    }
+                }
+                (SyntaxKind::MissingName, Err(SyntaxNameIssue::Missing))
+                    if name_syntax.range().is_empty() =>
+                {
+                    AttachedSelectBindingName::Missing(name_syntax.cast()?)
+                }
+                _ => return Err(invalid(&syntax)),
+            };
             Ok(AttachedSelectBranch::Bind {
-                name: AttachedScopeName {
-                    syntax: syntax.required_exact_child::<NameDefinitionKind>(SyntaxRole::Name)?,
-                    value: name.clone(),
-                },
+                name,
                 equals: syntax.required_exact_child::<EqualsKind>(SyntaxRole::Equals)?,
                 source: required_statement_expression(&syntax, SyntaxRole::Initializer)?,
                 propagates_error: *propagates_error,
@@ -765,3 +1007,7 @@ fn attach_required_await_with_branch_body(
         _ => Err(invalid(owner)),
     }
 }
+
+#[cfg(test)]
+#[path = "thread_statement/tests.rs"]
+mod tests;

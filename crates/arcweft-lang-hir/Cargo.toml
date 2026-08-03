@@ -7,8 +7,10 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-id = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
 arcweft-source = { workspace = true }
+num-bigint.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]

@@ -38,7 +38,10 @@ use super::choice::AttachedChoiceExpression;
 use super::family::{
     ExprNode, ExpressionFamily, FamilyNode, FamilySpec, PatternFamily, RecoveryFamily, RecoveryNode,
 };
-use super::node::{AstNode, BlockKind, ChoiceExpressionKind, ExpressionFragmentRootKind, PathKind};
+use super::node::{
+    AstNode, BlockKind, ChoiceExpressionKind, ExpressionFragmentRootKind, PathKind,
+    ThreadExpressionKind,
+};
 use super::source_file::{AttachedPath, AttachedPathRoot, AttachedPathSegmentKind};
 use super::{
     AttachedPatternNode, AttachedTypeRefNode, SyntaxAccessError, SyntaxNodeHandle, SyntaxNodeId,
@@ -1315,6 +1318,7 @@ pub struct AttachedExpressionNode {
     nominal_path_type: Option<AttachedTypeRefNode>,
     pattern: Option<AttachedPatternNode>,
     block: Option<AstNode<BlockKind>>,
+    thread: Option<AstNode<ThreadExpressionKind>>,
     choice: Option<Box<AttachedChoiceExpression>>,
     children: Box<[AttachedExpressionChild]>,
     match_arms: Box<[AttachedMatchArm]>,
@@ -1456,6 +1460,10 @@ impl AttachedExpressionNode {
             | ExpressionProjection::NamedBlock(_) => Some(attached_block(&syntax)?),
             _ => None,
         };
+        let thread = match pending.projection() {
+            ExpressionProjection::Thread(_) => Some(syntax.clone().cast::<ThreadExpressionKind>()?),
+            _ => None,
+        };
         let choice = match pending.projection() {
             ExpressionProjection::Choice => Some(Box::new(
                 syntax.clone().cast::<ChoiceExpressionKind>()?.semantics()?,
@@ -1504,6 +1512,7 @@ impl AttachedExpressionNode {
             nominal_path_type,
             pattern,
             block,
+            thread,
             choice,
             children,
             match_arms,
@@ -1599,6 +1608,11 @@ impl AttachedExpressionNode {
     /// Exact attached value block selected by a Block expression projection.
     pub const fn block(&self) -> Option<&AstNode<BlockKind>> {
         self.block.as_ref()
+    }
+
+    /// Exact attached Thread owner selected by a Thread expression projection.
+    pub const fn thread(&self) -> Option<&AstNode<ThreadExpressionKind>> {
+        self.thread.as_ref()
     }
 
     /// Exact typed Choice relation selected by the shared expression owner.

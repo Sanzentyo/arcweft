@@ -1,0 +1,57 @@
+error[E0603]: struct `RawHirId` is private
+ --> tests/ui/synthetic_identity_raw_projection_absent.rs:1:55
+  |
+1 | use arcweft_lang_hir::identity::{ExprId, HirModuleId, RawHirId, SyntheticOwner};
+  |                                                       ^^^^^^^^ private struct
+  |
+note: the struct `RawHirId` is defined here
+ --> src/identity.rs
+  |
+  | pub(crate) struct RawHirId {
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0624]: method `raw_for_fingerprint` is private
+ --> tests/ui/synthetic_identity_raw_projection_absent.rs:4:11
+  |
+4 |     owner.raw_for_fingerprint()
+  |           ^^^^^^^^^^^^^^^^^^^ private method
+  |
+ ::: src/identity.rs
+  |
+  |     fn raw_for_fingerprint(self) -> RawHirId {
+  |     ---------------------------------------- private method defined here
+
+error[E0599]: no method named `slot` found for enum `SyntheticOwner` in the current scope
+ --> tests/ui/synthetic_identity_raw_projection_absent.rs:8:19
+  |
+8 |     let _ = owner.slot();
+  |                   ^^^^
+  |
+help: there is a method `lt` with a similar name, but with different arguments
+ --> $RUST/core/src/cmp.rs
+  |
+  |     fn lt(&self, other: &Rhs) -> bool {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+error[E0624]: method `slot` is private
+ --> tests/ui/synthetic_identity_raw_projection_absent.rs:9:20
+  |
+9 |     let _ = module.slot();
+  |                    ^^^^ private method
+  |
+ ::: src/identity.rs
+  |
+  |     pub(crate) const fn slot(self) -> NonZeroU32 {
+  |     -------------------------------------------- private method defined here
+
+error[E0599]: no method named `slot` found for struct `ExprId` in the current scope
+  --> tests/ui/synthetic_identity_raw_projection_absent.rs:10:24
+   |
+10 |     let _ = expression.slot();
+   |                        ^^^^
+   |
+help: there is a method `lt` with a similar name, but with different arguments
+  --> $RUST/core/src/cmp.rs
+   |
+   |     fn lt(&self, other: &Rhs) -> bool {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

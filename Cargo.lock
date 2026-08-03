@@ -933,8 +933,10 @@ dependencies = [
 name = "arcweft-lang-hir"
 version = "0.1.0"
 dependencies = [
+ "arcweft-id",
  "arcweft-lang-syntax",
  "arcweft-source",
+ "num-bigint",
  "serde",
  "thiserror 2.0.18",
  "trybuild",

@@ -139,7 +139,7 @@ fn associated_capacity_dependency_direction() {
         .collect::<BTreeSet<_>>();
     assert_eq!(
         external_dependencies(&hir_dependencies, &workspace_ids),
-        BTreeSet::from(["thiserror"])
+        BTreeSet::from(["num-bigint", "thiserror"])
     );
     assert_eq!(
         external_dependencies(&sema_dependencies, &workspace_ids),

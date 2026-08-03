@@ -298,6 +298,7 @@ define_ast_kinds!(DELIMITER_MARKERS, Delimiter;
     CloseAngleKind => CloseAngleNode,
     EqualsKind => EqualsNode,
     ColonKind => ColonNode,
+    ForInKind => ForInNode,
     RestParameterMarkerKind => RestParameterMarker,
 );
 

@@ -1,7 +1,10 @@
 use crate::entry::{HirEntryDecl, HirEntryItem};
+use crate::identity::{HirIdKind, HirLimit, HirModuleId, IdResolveError, ScopeId};
+use crate::leaf::HirName;
 use crate::lower_flow::lower_flow;
 use crate::model::{HirFunction, HirLowerError, HirModule, HirSource, HirTopLevelDecl};
 use crate::style::{HirStyleDecl, HirStylePatch};
+use crate::symbol::CallablePackageId;
 use crate::view_part::HirViewPartOwner;
 use arcweft_lang_syntax::ast::{
     items::{
@@ -9,7 +12,250 @@ use arcweft_lang_syntax::ast::{
     },
     module_path::CanonicalModulePath,
 };
-use arcweft_source::SourceDocument;
+use arcweft_lang_syntax::attachment::{
+    SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotId,
+};
+use arcweft_lang_syntax::incremental::ParsedSource;
+use arcweft_lang_syntax::patterns::PatternOrBindingIssue;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceDocumentIdentity};
+use thiserror::Error;
+
+/// Package-qualified owner of one source-backed HIR module.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct HirModuleKey {
+    package: CallablePackageId,
+    path: CanonicalModulePath,
+    document: SourceDocumentId,
+}
+
+impl HirModuleKey {
+    /// Binds a package, canonical module path, and logical source document.
+    pub(crate) fn new(
+        package: CallablePackageId,
+        path: CanonicalModulePath,
+        document: SourceDocumentId,
+    ) -> Self {
+        Self {
+            package,
+            path,
+            document,
+        }
+    }
+
+    /// Package that owns this module.
+    pub(crate) const fn package(&self) -> &CallablePackageId {
+        &self.package
+    }
+
+    /// Canonical path of this module within its package.
+    pub(crate) const fn path(&self) -> &CanonicalModulePath {
+        &self.path
+    }
+
+    /// Logical source document admitted for this module.
+    pub(crate) const fn document(&self) -> &SourceDocumentId {
+        &self.document
+    }
+}
+
+/// Exact attached whole-source snapshot admitted to one HIR transaction.
+pub(crate) struct LoweringRequest<'a> {
+    key: HirModuleKey,
+    source: &'a ParsedSource,
+}
+
+impl<'a> LoweringRequest<'a> {
+    /// Validates document and revision identity before any HIR allocation.
+    pub(crate) fn try_new(
+        key: HirModuleKey,
+        source: &'a ParsedSource,
+    ) -> Result<Self, HirLowerFailure> {
+        let actual_document = source.document().identity().id();
+        if key.document() != actual_document {
+            return Err(HirLowerFailure::SourceDocumentMismatch {
+                expected: key.document().clone(),
+                actual: actual_document.clone(),
+            });
+        }
+
+        // `ParsedSource` is the whole-source owner: attached fragments have a
+        // distinct type and cannot enter this boundary. Revalidate its retained
+        // root against the same immutable snapshot and document identity.
+        let root = source.root_syntax();
+        if root.snapshot_id() != source.snapshot_id() {
+            return Err(HirLowerFailure::StaleSource {
+                current: source.snapshot_id().clone(),
+                supplied: root.snapshot_id().clone(),
+            });
+        }
+
+        let expected_identity = source.document().identity();
+        let actual_identity = root.source_span().source().clone();
+        if &actual_identity != expected_identity {
+            return Err(HirLowerFailure::SourceIdentityMismatch {
+                expected: expected_identity.clone(),
+                actual: actual_identity,
+            });
+        }
+
+        let observed = source.document().text().len();
+        let maximum = HirLimit::SourceDocumentBytes.maximum();
+        if observed > maximum {
+            return Err(HirLimitError::with_maximum(
+                HirLimit::SourceDocumentBytes,
+                observed,
+                maximum,
+            )
+            .into());
+        }
+
+        Ok(Self { key, source })
+    }
+
+    /// Package/module/document owner accepted for this transaction.
+    pub(crate) const fn key(&self) -> &HirModuleKey {
+        &self.key
+    }
+
+    /// Bound whole-source syntax snapshot accepted for this transaction.
+    pub(crate) const fn source(&self) -> &'a ParsedSource {
+        self.source
+    }
+}
+
+/// Fatal lowering failure that publishes no HIR snapshot or allocation.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum HirLowerFailure {
+    #[error("parsed source belongs to another syntax database")]
+    WrongSyntaxDatabase {
+        expected: SyntaxDatabaseId,
+        actual: SyntaxDatabaseId,
+    },
+    #[error("parsed source belongs to another syntax lineage")]
+    WrongSyntaxLineage {
+        expected: SyntaxLineageId,
+        actual: SyntaxLineageId,
+    },
+    #[error("attached source root belongs to snapshot {supplied:?}, expected {current:?}")]
+    StaleSource {
+        current: SyntaxSnapshotId,
+        supplied: SyntaxSnapshotId,
+    },
+    #[error("attached source identity {actual:?} does not match retained identity {expected:?}")]
+    SourceIdentityMismatch {
+        expected: SourceDocumentIdentity,
+        actual: SourceDocumentIdentity,
+    },
+    #[error("parsed source document {actual} does not match HIR module document {expected}")]
+    SourceDocumentMismatch {
+        expected: SourceDocumentId,
+        actual: SourceDocumentId,
+    },
+    #[error(transparent)]
+    Limit(#[from] HirLimitError),
+    #[error("HIR module identity allocation is exhausted")]
+    ModuleIdentityExhausted,
+    #[error("HIR revision allocation is exhausted for module {module:?}")]
+    RevisionExhausted { module: HirModuleId },
+    #[error("HIR {kind:?} slot identity is exhausted for module {module:?}")]
+    SlotIdentityExhausted {
+        module: HirModuleId,
+        kind: HirIdKind,
+    },
+    #[error("HIR cache epoch allocation is exhausted for module {module:?}")]
+    CacheEpochExhausted { module: HirModuleId },
+    #[error("local generation is exhausted for {name:?} in scope {scope:?}")]
+    LocalGenerationExhausted { scope: ScopeId, name: HirName },
+    #[error("or-pattern {owner:?} has inconsistent alternative bindings: {issue:?}")]
+    OrAlternativeBindingsMismatch {
+        owner: SyntaxNodeId,
+        issue: PatternOrBindingIssue,
+    },
+    #[error(
+        "local binding {name:?} in scope {scope:?} starts at {attempted_start}, not after the previously lowered binding at {previous_start}"
+    )]
+    LocalBindingSourceOrderViolation {
+        scope: ScopeId,
+        name: HirName,
+        previous_start: usize,
+        attempted_start: usize,
+    },
+    #[error(transparent)]
+    IdResolve(#[from] IdResolveError),
+    #[error(transparent)]
+    Invariant(#[from] HirInvariantFailure),
+}
+
+/// Exact hard-limit failure produced before any HIR publication.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+#[error("HIR limit {limit:?} allows {maximum} entries, but the transaction observed {observed}")]
+pub(crate) struct HirLimitError {
+    limit: HirLimit,
+    observed: usize,
+    maximum: usize,
+}
+
+impl HirLimitError {
+    pub(crate) const fn with_maximum(limit: HirLimit, observed: usize, maximum: usize) -> Self {
+        Self {
+            limit,
+            observed,
+            maximum,
+        }
+    }
+
+    /// Limit family whose deterministic preflight failed.
+    pub(crate) const fn limit(self) -> HirLimit {
+        self.limit
+    }
+
+    /// Checked observed amount, or `usize::MAX` after conversion/addition overflow.
+    pub(crate) const fn observed(self) -> usize {
+        self.observed
+    }
+
+    /// Inclusive maximum applied by the failing lowering context.
+    pub(crate) const fn maximum(self) -> usize {
+        self.maximum
+    }
+}
+
+/// Fatal private HIR storage invariant detected before publication.
+#[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
+pub(crate) enum HirInvariantFailure {
+    #[error("HIR arena and ID kinds disagree")]
+    ArenaKindMismatch,
+    #[error("a HIR slot has an invalid live interval")]
+    InvalidLiveInterval,
+    #[error("a HIR scope has an invalid parent")]
+    InvalidScopeParent,
+    #[error("a HIR local has an invalid generation timeline")]
+    InvalidLocalTimeline,
+    #[error("a HIR capture has an invalid owner")]
+    InvalidCaptureOwner,
+    #[error("a HIR slot has an invalid source span")]
+    InvalidSourceSpan,
+    #[error("a staged HIR module commit does not match current database state")]
+    InvalidModuleCommit,
+    #[error("a staged HIR module has inconsistent source or syntax provenance")]
+    InvalidModuleProvenance,
+    #[error("a staged HIR module arena belongs to another snapshot")]
+    InvalidModuleArenaSnapshot,
+    #[error("a staged HIR module has invalid recoverable diagnostics")]
+    InvalidModuleDiagnostics,
+    #[error("a staged HIR module has an invalid execution status")]
+    InvalidModuleStatus,
+    #[error("a staged HIR module has incomplete or foreign declaration members")]
+    InvalidDeclarationMemberIndex,
+    #[error("a staged HIR module has an invalid source-ordered top-level item inventory")]
+    InvalidSourceOrderedItems,
+    #[error("a staged typed arena failed final coverage or payload validation")]
+    InvalidArenaCommit,
+    #[error("a staged slot ledger failed final liveness validation")]
+    InvalidSlotCommit,
+    #[error("a staged typed source-component index failed final validation")]
+    InvalidSourceIndex,
+}
 
 /// Lowers one exact source document and retains revision-bound project spans.
 pub fn lower_document_to_hir(
@@ -303,14 +549,115 @@ fn lower_function(
 
 #[cfg(test)]
 mod tests {
-    use super::lower_document_to_hir;
+    use super::{
+        HirLimitError, HirLowerFailure, HirModuleKey, LoweringRequest, lower_document_to_hir,
+    };
     use arcweft_lang_syntax::{
-        ast::flow::Stmt,
+        ast::{flow::Stmt, module_path::CanonicalModulePath},
         expr::{CallArg, CallExpr, Expr, ParenthesizedCalleeSyntax},
+        incremental::SyntaxDatabase,
         parser::{ParseOptions, parse_document_with_source},
     };
+    use arcweft_source::identity::SourceSnapshotId;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use std::sync::Arc;
+
+    use crate::identity::HirLimit;
+    use crate::symbol::CallablePackageId;
+
+    fn parsed_source_with_text(
+        document_id: &str,
+        text: impl Into<Arc<str>>,
+    ) -> arcweft_lang_syntax::incremental::ParsedSource {
+        let name = SourceName::path("proof/lowering-request.arcw");
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(document_id).expect("lowering request document ID"),
+                name.clone(),
+                text,
+            )
+            .expect("lowering request document"),
+        );
+        SyntaxDatabase::try_new()
+            .expect("syntax database")
+            .parse_initial(
+                SourceSnapshotId::initial(name),
+                document,
+                ParseOptions::default(),
+            )
+            .expect("bound parsed source")
+    }
+
+    fn parsed_source(document_id: &str) -> arcweft_lang_syntax::incremental::ParsedSource {
+        parsed_source_with_text(document_id, "fn main() {}\n")
+    }
+
+    fn final_module_key(document: SourceDocumentId) -> HirModuleKey {
+        HirModuleKey::new(
+            CallablePackageId::try_new("proof-lowering-request").expect("lowering request package"),
+            CanonicalModulePath::crate_root(),
+            document,
+        )
+    }
+
+    #[test]
+    fn lowering_request_accepts_only_its_bound_whole_source_identity() {
+        let source = parsed_source("arcweft-test://lang-hir/lowering-request.arcw");
+        let request = LoweringRequest::try_new(
+            final_module_key(source.document().identity().id().clone()),
+            &source,
+        )
+        .expect("exact source identity is admitted");
+
+        assert_eq!(request.key().package().as_str(), "proof-lowering-request");
+        assert_eq!(request.key().path(), &CanonicalModulePath::crate_root());
+        assert_eq!(request.key().document(), source.document().identity().id());
+        assert_eq!(request.source().snapshot_id(), source.snapshot_id());
+    }
+
+    #[test]
+    fn lowering_request_rejects_a_foreign_logical_document_before_staging() {
+        let source = parsed_source("arcweft-test://lang-hir/lowering-request.arcw");
+        let expected = SourceDocumentId::try_new("arcweft-test://lang-hir/another-module.arcw")
+            .expect("foreign document ID");
+        let actual = source.document().identity().id().clone();
+
+        assert_eq!(
+            LoweringRequest::try_new(final_module_key(expected.clone()), &source).err(),
+            Some(HirLowerFailure::SourceDocumentMismatch { expected, actual })
+        );
+    }
+
+    #[test]
+    fn lowering_request_preflights_the_whole_source_byte_limit() {
+        let maximum = HirLimit::SourceDocumentBytes.maximum();
+        let exact = parsed_source_with_text(
+            "arcweft-test://lang-hir/lowering-request-exact.arcw",
+            " ".repeat(maximum),
+        );
+        LoweringRequest::try_new(
+            final_module_key(exact.document().identity().id().clone()),
+            &exact,
+        )
+        .expect("the inclusive source-document limit is admitted");
+
+        let one_over = parsed_source_with_text(
+            "arcweft-test://lang-hir/lowering-request-one-over.arcw",
+            " ".repeat(maximum + 1),
+        );
+        assert_eq!(
+            LoweringRequest::try_new(
+                final_module_key(one_over.document().identity().id().clone()),
+                &one_over,
+            )
+            .err(),
+            Some(HirLowerFailure::Limit(HirLimitError::with_maximum(
+                HirLimit::SourceDocumentBytes,
+                maximum + 1,
+                maximum,
+            )))
+        );
+    }
 
     fn first_function_statement_call(hir: &crate::model::HirModule) -> &CallExpr {
         let statement = hir

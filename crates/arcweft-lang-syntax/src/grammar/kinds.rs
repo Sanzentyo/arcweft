@@ -172,6 +172,7 @@ define_syntax_kinds! {
     CloseAngleNode,
     EqualsNode,
     ColonNode,
+    ForInNode,
     AssertionStatement,
     LetStatement,
     AssignmentStatement,
@@ -593,6 +594,7 @@ impl SyntaxKind {
             | Self::CloseAngleNode
             | Self::EqualsNode
             | Self::ColonNode
+            | Self::ForInNode
             | Self::AssertionStatement
             | Self::LetStatement
             | Self::AssignmentStatement
@@ -994,6 +996,7 @@ impl SyntaxKind {
             | Self::CloseAngleNode
             | Self::EqualsNode
             | Self::ColonNode
+            | Self::ForInNode
             | Self::RestParameterMarker => Some(AstTag::Delimiter),
             Self::MissingBody
             | Self::MissingTokenNode
