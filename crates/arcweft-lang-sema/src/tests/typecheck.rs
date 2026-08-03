@@ -4069,9 +4069,8 @@ flow @flow.char_literal_bad char_literal_bad {
 }
 
 #[test]
-fn typechecks_structured_collection_and_capacity_trait_methods() {
-    let tree = parse_ok(
-        r"
+fn typechecks_structured_collection_and_capacity_methods_through_registered_authority() {
+    let source = r"
 flow @flow.collections collections {
     let nums: Vec<i32> = [1i32, 2i32, 3i32]
     let first: i32 = nums[0i64]
@@ -4082,11 +4081,95 @@ flow @flow.collections collections {
     let _ = nums.shrink_to(1i64)
     let text = String.with_capacity(16usize)
 }
-",
+";
+    let report = analyze_registered_source(
+        "structured-collection-capacity",
+        source,
+        TypeCheckEnv::standard(),
     );
-    let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
-        .expect("collection fixture lowers");
-    typecheck_hir(&hir, &TypeCheckEnv::new()).expect("collection fixture typechecks");
+    assert!(
+        report.diagnostics.is_empty(),
+        "collection fixture must typecheck through the registered callable authority: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(report.stats.registered_call_expressions, 4);
+    assert_eq!(report.stats.shared_resolver_invocations, 4);
+    assert_eq!(report.stats.registered_argument_expression_checks, 3);
+    assert_eq!(report.stats.old_dispatch_calls, 0);
+
+    let selected = report
+        .retained_call_target_facts()
+        .map(|facts| match facts.target() {
+            CallTargetFact::Selected { selected, .. } => match selected.id() {
+                CallableCandidateId::CapacityMethod(method) => {
+                    (method.method().as_str(), method.arity())
+                }
+                candidate => panic!("unexpected collection candidate: {candidate:?}"),
+            },
+            target => panic!("collection call did not select a target: {target:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        selected,
+        [
+            ("reserve", 1),
+            ("shrink", 0),
+            ("shrink_to", 1),
+            ("with_capacity", 1),
+        ]
+    );
+}
+
+#[test]
+fn registered_instance_methods_replace_the_removed_implicit_dispatcher() {
+    let report = analyze_registered_source(
+        "registered-instance-methods",
+        r#"
+flow @flow.registered_instance_methods registered_instance_methods {
+    let values: Vec<i32> = [1i32, 2i32, 3i32]
+    let text: String = " Arcweft "
+    let _ = text.trim()
+    let _ = text.to_string()
+    let _ = values.pop()
+    let _ = values.pop_front()
+    let _ = values.collect()
+    let _ = values.push(4i32)
+}
+"#,
+        TypeCheckEnv::standard(),
+    );
+    assert!(
+        report.diagnostics.is_empty(),
+        "registered instance methods must not require an implicit checker dispatcher: {:?}",
+        report.diagnostics
+    );
+    assert_eq!(report.stats.registered_call_expressions, 6);
+    assert_eq!(report.stats.shared_resolver_invocations, 6);
+    assert_eq!(report.stats.registered_argument_expression_checks, 1);
+
+    let selected = report
+        .retained_call_target_facts()
+        .map(|facts| match facts.target() {
+            CallTargetFact::Selected { selected, .. } => match selected.id() {
+                CallableCandidateId::CapacityMethod(method) => {
+                    (method.method().as_str(), method.arity())
+                }
+                candidate => panic!("unexpected instance-method candidate: {candidate:?}"),
+            },
+            target => panic!("instance method did not select a target: {target:?}"),
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        selected,
+        [
+            ("trim", 0),
+            ("to_string", 0),
+            ("pop", 0),
+            ("pop_front", 0),
+            ("collect", 0),
+            ("push", 1),
+        ]
+    );
 }
 
 #[test]

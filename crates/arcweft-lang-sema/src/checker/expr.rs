@@ -3,7 +3,6 @@
 use super::helpers::{
     array_repeat_length, expr_path_label, first_arg_type, let_else_bindings,
     numeric_literal_suffix_type, optional_type_kind_label, stmts_diverge, type_kind_label,
-    well_known_capacity_method_type,
 };
 use super::{
     ArrayLength, BorrowLocalState, BorrowStateDelta, EntityKind, EntityRefSyntax, Expr,
@@ -1225,20 +1224,6 @@ impl TypeChecker<'_> {
             match self.check_builtin_domain_method_call(receiver_type, method_name, args) {
                 InherentMethodCallOutcome::Missing => {}
                 checked @ InherentMethodCallOutcome::Checked(_) => return checked,
-            }
-            if let Some(return_type) =
-                well_known_capacity_method_type(receiver_type, method_name, args.len())
-            {
-                let signature = FunctionSignature::return_only(return_type.clone());
-                self.warn_if_data_last_method_fallback_shadowed(
-                    receiver_type,
-                    method_name,
-                    args,
-                    "inherent",
-                    &signature,
-                );
-                self.check_untyped_method_args(args);
-                return InherentMethodCallOutcome::Checked(Some(return_type));
             }
         }
         InherentMethodCallOutcome::Missing

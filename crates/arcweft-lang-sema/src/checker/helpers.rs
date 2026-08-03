@@ -570,55 +570,6 @@ pub(super) fn is_drop_name(name: &str) -> bool {
     matches!(name, "drop" | "drop_optional" | "on_drop")
 }
 
-pub(super) fn well_known_capacity_method_type(
-    receiver: &TypeKind,
-    method: &str,
-    arg_count: usize,
-) -> Option<TypeKind> {
-    if matches!(receiver, TypeKind::String)
-        && let ("trim" | "to_string", 0) = (method, arg_count)
-    {
-        return Some(TypeKind::String);
-    }
-    if matches!(receiver, TypeKind::Named(name) if name == "LineContext")
-        && matches!((method, arg_count), ("voice_handle", 0))
-    {
-        return Some(TypeKind::Named("VoiceHandle".to_owned()));
-    }
-    if matches!(receiver, TypeKind::Named(name) if name == "StageApi")
-        && matches!((method, arg_count), ("acquire", 1))
-    {
-        return Some(TypeKind::Named("StageActorHandle".to_owned()));
-    }
-    if matches!(receiver, TypeKind::Named(name) if name == "StageActorHandle")
-        && matches!((method, arg_count), ("look", 1 | 2))
-    {
-        return Some(TypeKind::Named("CueHandle".to_owned()));
-    }
-    if let TypeKind::Vec(item) = receiver
-        && matches!((method, arg_count), ("pop" | "pop_front", 0))
-    {
-        return Some(TypeKind::Option(item.clone()));
-    }
-    if let TypeKind::Vec(item) = receiver {
-        match method {
-            "collect" if arg_count == 0 => return Some(TypeKind::Vec(item.clone())),
-            _ => {}
-        }
-    }
-    if !is_reservable_type(receiver) {
-        return None;
-    }
-    match (method, arg_count) {
-        ("push" | "reserve" | "shrink_to", 1) | ("shrink", 0) => Some(TypeKind::Unit),
-        _ => None,
-    }
-}
-
-pub(super) fn is_reservable_type(ty: &TypeKind) -> bool {
-    matches!(ty, TypeKind::Vec(_) | TypeKind::String | TypeKind::Bytes)
-}
-
 pub(super) fn collection_index_type(target_type: &TypeKind) -> Option<TypeKind> {
     match target_type {
         TypeKind::Vec(item) | TypeKind::Array { item, .. } | TypeKind::Slice(item) => {

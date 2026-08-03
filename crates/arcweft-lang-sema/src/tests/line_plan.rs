@@ -195,10 +195,9 @@ flow @flow.opening opening() -> Result<Unit, LineCancel> {
 
 #[test]
 fn typechecks_bound_timed_cue_line_result_and_outer_use() {
-    let tree = parse_ok(
-        r#"
+    let source = r#"
 flow @flow.line_handles line_handles() -> String {
-    let (_, cue) = alice.say(voice=auto)[聞いて。[p]]
+    let (_, cue) = alice[聞いて。[p]]
     with:
         let actor = alice.stage.acquire(scope=line)
         let cue = at(0.42s):
@@ -209,17 +208,15 @@ flow @flow.line_handles line_handles() -> String {
     log.info("cue kept", cue = cue)
     return "done"
 }
-"#,
-    );
+"#;
+    let tree = parse_ok(source);
     let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
         .expect("bound timed cue line result lowers");
     validate_typecheck_ready(&hir).expect("bound timed cue line result is typecheck-ready");
-    typecheck_hir(
-        &hir,
-        &TypeCheckEnv::new()
-            .with_symbol("alice", TypeKind::entity_ref(EntityKind::Character))
-            .with_symbol("auto", TypeKind::Named("VoicePolicy".to_owned()))
-            .with_function("log.info", TypeKind::Unit),
+    typecheck_registered_source(
+        "bound-timed-cue-line-result",
+        source,
+        TypeCheckEnv::standard().with_symbol("alice", TypeKind::entity_ref(EntityKind::Character)),
     )
     .expect("bound timed cue line result typechecks");
 }

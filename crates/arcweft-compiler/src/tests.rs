@@ -949,12 +949,8 @@ flow @flow.main main() -> String {
 
 #[test]
 fn runtime_plan_keeps_curried_source_and_local_method_fallback_staged() {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
-                .expect("runtime-plan fixture source ID"),
-            SourceName::path("compiler/runtime-plan/main.arcw"),
-            r#"
+    let compiled = compile_source(
+        r#"
 #[pure]
 fn above(min: i64)(value: i64) -> bool {
     return value > min
@@ -974,25 +970,14 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
-        )
-        .expect("runtime-plan fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let hir =
-        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
+    )
+    .expect("project compiler lowers curried source and registered method calls");
     assert!(
-        typecheck.diagnostics.is_empty(),
+        compiled.typecheck_report.diagnostics.is_empty(),
         "unexpected type errors: {:#?}",
-        typecheck.diagnostics
+        compiled.typecheck_report.diagnostics
     );
 
-    let report = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
-    )
-    .expect("runtime plan lowers curried source and local method fallback");
     let [
         FlowOp::Let { .. },
         FlowOp::Let { .. },
@@ -1001,7 +986,7 @@ flow @flow.main main() -> String {
         FlowOp::Let { .. },
         FlowOp::Let { expr: inherent, .. },
         ..,
-    ] = report.plan.flows[0].ops.as_slice()
+    ] = compiled.plan.flows[0].ops.as_slice()
     else {
         panic!("expected compare, score, source, local, text, and inherent lets");
     };
@@ -3194,13 +3179,9 @@ flow @flow.main main() -> String {
 }
 
 #[test]
-fn checked_runtime_plan_rejects_source_function_partial_when_body_calls() {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
-                .expect("runtime-plan fixture source ID"),
-            SourceName::path("compiler/runtime-plan/main.arcw"),
-            r#"
+fn registered_typecheck_rejects_named_same_group_partial_when_body_calls() {
+    let error = compile_source(
+        r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3211,47 +3192,27 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
-        )
-        .expect("runtime-plan fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let hir =
-        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
     )
-    .expect_err("checked runtime plan rejects source function partials whose body calls");
-
+    .expect_err("registered project compiler rejects a missing same-group argument");
+    assert_eq!(error.project().stage(), "type-check");
     assert!(
-        errors.iter().any(|error| {
-            error
+        error
+            .project()
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic
+                .diagnostic()
                 .message()
-                .contains("unsupported callable family `signature_partial_without_helper`")
-                && error.message().contains(
-                    "function `trim_right` partial application requires executable helper lowering",
-                )
-        }),
-        "expected non-helper partial diagnostic, got {errors:#?}"
+                .contains("function `trim_right` missing required argument `left`")),
+        "expected shared-resolver missing-argument diagnostic, got {:#?}",
+        error.project().diagnostics()
     );
 }
 
 #[test]
-fn checked_runtime_plan_rejects_source_function_partial_when_body_calls_unaccepted_source() {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
-                .expect("runtime-plan fixture source ID"),
-            SourceName::path("compiler/runtime-plan/main.arcw"),
-            r#"
+fn registered_typecheck_rejects_chained_named_same_group_partial_when_body_calls() {
+    let error = compile_source(
+        r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3266,47 +3227,27 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
-        )
-        .expect("runtime-plan fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let hir =
-        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
     )
-    .expect_err("checked runtime plan rejects partials through chained unsupported sources");
-
+    .expect_err("registered project compiler rejects a chained same-group partial");
+    assert_eq!(error.project().stage(), "type-check");
     assert!(
-        errors.iter().any(|error| {
-            error
+        error
+            .project()
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic
+                .diagnostic()
                 .message()
-                .contains("unsupported callable family `signature_partial_without_helper`")
-                && error.message().contains(
-                    "function `normalize` partial application requires executable helper lowering",
-                )
-        }),
-        "expected chained source partial diagnostic, got {errors:#?}"
+                .contains("function `normalize` missing required argument `left`")),
+        "expected shared-resolver missing-argument diagnostic, got {:#?}",
+        error.project().diagnostics()
     );
 }
 
 #[test]
-fn checked_runtime_plan_rejects_prefix_source_function_partial_when_body_calls() {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
-                .expect("runtime-plan fixture source ID"),
-            SourceName::path("compiler/runtime-plan/main.arcw"),
-            r#"
+fn registered_typecheck_rejects_positional_same_group_partial_when_body_calls() {
+    let error = compile_source(
+        r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3317,47 +3258,27 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
-        )
-        .expect("runtime-plan fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let hir =
-        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
     )
-    .expect_err("checked runtime plan rejects unsupported prefix source function partials");
-
+    .expect_err("registered project compiler rejects a positional same-group partial");
+    assert_eq!(error.project().stage(), "type-check");
     assert!(
-        errors.iter().any(|error| {
-            error
+        error
+            .project()
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic
+                .diagnostic()
                 .message()
-                .contains("unsupported callable family `signature_partial_without_helper`")
-                && error.message().contains(
-                    "function `trim_right` partial application requires executable helper lowering",
-                )
-        }),
-        "expected non-helper prefix partial diagnostic, got {errors:#?}"
+                .contains("function `trim_right` missing required argument `right`")),
+        "expected shared-resolver missing-argument diagnostic, got {:#?}",
+        error.project().diagnostics()
     );
 }
 
 #[test]
 fn checked_runtime_plan_rejects_bare_source_function_value_when_body_calls() {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
-                .expect("runtime-plan fixture source ID"),
-            SourceName::path("compiler/runtime-plan/main.arcw"),
-            r#"
+    let error = compile_source(
+        r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3368,46 +3289,28 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
-        )
-        .expect("runtime-plan fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let hir =
-        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
     )
-    .expect_err("checked runtime plan rejects unsupported bare source function values");
+    .expect_err("project compiler rejects unsupported bare source function values");
+    assert_eq!(error.project().stage(), "runtime-plan-lower");
 
     assert!(
-        errors.iter().any(|error| {
-            error.message().contains(
+        error.project().diagnostics().iter().any(|diagnostic| {
+            diagnostic.diagnostic().message().contains(
                 "unsupported callable family `source_function_value_without_runtime_candidate`",
-            ) && error
+            ) && diagnostic
+                .diagnostic()
                 .message()
                 .contains("function `trim_right` cannot be referenced as a runtime function value")
         }),
-        "expected unsupported bare source function value diagnostic, got {errors:#?}"
+        "expected unsupported bare source function value diagnostic, got {:#?}",
+        error.project().diagnostics()
     );
 }
 
 #[test]
 fn checked_runtime_plan_rejects_bare_source_function_value_when_body_calls_unaccepted_source() {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
-                .expect("runtime-plan fixture source ID"),
-            SourceName::path("compiler/runtime-plan/main.arcw"),
-            r#"
+    let error = compile_source(
+        r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3422,46 +3325,28 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
-        )
-        .expect("runtime-plan fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let hir =
-        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
     )
-    .expect_err("checked runtime plan rejects source functions that call unaccepted sources");
+    .expect_err("project compiler rejects source functions that call unaccepted sources");
+    assert_eq!(error.project().stage(), "runtime-plan-lower");
 
     assert!(
-        errors.iter().any(|error| {
-            error.message().contains(
+        error.project().diagnostics().iter().any(|diagnostic| {
+            diagnostic.diagnostic().message().contains(
                 "unsupported callable family `source_function_value_without_runtime_candidate`",
-            ) && error
+            ) && diagnostic
+                .diagnostic()
                 .message()
                 .contains("function `normalize` cannot be referenced as a runtime function value")
         }),
-        "expected unsupported chained source function diagnostic, got {errors:#?}"
+        "expected unsupported chained source function diagnostic, got {:#?}",
+        error.project().diagnostics()
     );
 }
 
 #[test]
 fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls() {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
-                .expect("runtime-plan fixture source ID"),
-            SourceName::path("compiler/runtime-plan/main.arcw"),
-            r#"
+    let error = compile_source(
+        r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3472,48 +3357,30 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
-        )
-        .expect("runtime-plan fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let hir =
-        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
     )
-    .expect_err("checked runtime plan rejects unsupported data-last source function partials");
+    .expect_err("project compiler rejects unsupported data-last source function partials");
+    assert_eq!(error.project().stage(), "runtime-plan-lower");
 
     assert!(
-        errors.iter().any(|error| {
-            error
+        error.project().diagnostics().iter().any(|diagnostic| {
+            diagnostic
+                .diagnostic()
                 .message()
                 .contains("unsupported callable family `signature_partial_without_helper`")
-                && error.message().contains(
+                && diagnostic.diagnostic().message().contains(
                     "function `trim_right` partial application requires executable helper lowering",
                 )
         }),
-        "expected non-helper data-last partial diagnostic, got {errors:#?}"
+        "expected non-helper data-last partial diagnostic, got {:#?}",
+        error.project().diagnostics()
     );
 }
 
 #[test]
 fn checked_runtime_plan_rejects_data_last_source_function_partial_when_body_calls_unaccepted_source()
  {
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-test://compiler/runtime-plan/main.arcw")
-                .expect("runtime-plan fixture source ID"),
-            SourceName::path("compiler/runtime-plan/main.arcw"),
-            r#"
+    let error = compile_source(
+        r#"
 fn trim_right(left: String, right: String) -> String {
     return right.trim()
 }
@@ -3528,36 +3395,22 @@ flow @flow.main main() -> String {
     return "done"
 }
 "#,
-        )
-        .expect("runtime-plan fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let hir =
-        lower_document_to_hir(parsed.document(), parsed.typed_tree()).expect("fixture lowers");
-    let typecheck = arcweft_lang_sema::check::analyze_types(&hir, &TypeCheckEnv::standard());
-    assert!(
-        typecheck.diagnostics.is_empty(),
-        "unexpected type errors: {:#?}",
-        typecheck.diagnostics
-    );
-
-    let errors = lower_source_runtime_plan_with_typecheck_stats_and_options(
-        &hir,
-        &typecheck,
-        &admitted_options(),
     )
-    .expect_err("checked runtime plan rejects chained unsupported data-last source partials");
+    .expect_err("project compiler rejects chained unsupported data-last source partials");
+    assert_eq!(error.project().stage(), "runtime-plan-lower");
 
     assert!(
-        errors.iter().any(|error| {
-            error
+        error.project().diagnostics().iter().any(|diagnostic| {
+            diagnostic
+                .diagnostic()
                 .message()
                 .contains("unsupported callable family `signature_partial_without_helper`")
-                && error.message().contains(
+                && diagnostic.diagnostic().message().contains(
                     "function `normalize` partial application requires executable helper lowering",
                 )
         }),
-        "expected chained source data-last partial diagnostic, got {errors:#?}"
+        "expected chained source data-last partial diagnostic, got {:#?}",
+        error.project().diagnostics()
     );
 }
 
