@@ -219,6 +219,22 @@ pub(crate) struct StagedHirModuleTransaction<'source> {
 }
 
 impl HirDatabase {
+    /// Lowers and publishes one exact attached whole-source snapshot.
+    ///
+    /// This is the sole database-owned final-HIR entry point intended for the
+    /// later public authority switch. The mutable transaction remains private:
+    /// callers cannot publish a header-only or otherwise partially lowered
+    /// module, and every failure leaves the database without a new revision.
+    pub(crate) fn lower_attached_source(
+        &mut self,
+        request: LoweringRequest<'_>,
+    ) -> Result<HirLowerOutput, HirLowerFailure> {
+        let tree = request.source().tree();
+        let mut transaction = StagedHirModuleTransaction::stage(self, request)?;
+        transaction.lower_attached_source_file_items(&tree)?;
+        transaction.finish(self)
+    }
+
     /// Starts a private final-HIR transaction without publishing a second
     /// production reader or reserving an observable module revision.
     pub(crate) fn stage_final_hir<'source>(

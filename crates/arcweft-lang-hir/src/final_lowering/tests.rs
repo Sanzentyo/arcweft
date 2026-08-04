@@ -78,6 +78,16 @@ fn stage<'source>(
         .unwrap()
 }
 
+fn lower_attached_source(
+    database: &mut HirDatabase,
+    parsed: &ParsedSource,
+    key: &HirModuleKey,
+) -> crate::database::HirLowerOutput {
+    database
+        .lower_attached_source(LoweringRequest::try_new(key.clone(), parsed).unwrap())
+        .unwrap()
+}
+
 fn allocate_module_scope(
     transaction: &mut StagedHirModuleTransaction<'_>,
     parsed: &ParsedSource,
@@ -143,6 +153,39 @@ fn empty_attached_source_publishes_first_and_second_revisions_atomically() {
     assert!(Arc::ptr_eq(
         &first_module,
         &database.snapshot(first_module.snapshot_id()).unwrap()
+    ));
+}
+
+#[test]
+fn database_owned_entry_lowers_the_complete_attached_source_atomically() {
+    let (initial, revised) = parsed_revisions_with_source(
+        "arcweft-test://proof/final-lowering-owned-entry",
+        "fn ready() {}",
+    );
+    let key = key(&initial);
+    let mut database = HirDatabase::try_new().unwrap();
+
+    let first = lower_attached_source(&mut database, &initial, &key);
+    assert_eq!(first.module().source_ordered_items().len(), 1);
+    assert!(Arc::ptr_eq(
+        first.module(),
+        &database.current(&key).expect("first revision is current")
+    ));
+
+    let second = lower_attached_source(&mut database, &revised, &key);
+    assert_eq!(second.module().source_ordered_items().len(), 1);
+    assert_eq!(
+        second.module().snapshot_id().revision(),
+        first
+            .module()
+            .snapshot_id()
+            .revision()
+            .checked_next()
+            .unwrap()
+    );
+    assert!(Arc::ptr_eq(
+        second.module(),
+        &database.current(&key).expect("second revision is current")
     ));
 }
 
