@@ -1,4 +1,5 @@
-pub character @character.alice Alice as alice {
+pub character alice {
+    display_name = "Alice"
     default_voice = auto
     dialogue_style {
         font = "MS Mincho"
@@ -11,7 +12,7 @@ entry cli @entry.vertical_tutr_golden {
     goto @flow.vertical_tutr_golden
 }
 
-flow @flow.vertical_tutr_golden vertical_tutr_golden() -> String {
+flow vertical_tutr_golden() -> String {
     alice.say(id=@say.vertical_tutr_golden.001, voice=auto)[
         [.vertical_rl][font "MS Mincho"]吾輩は猫である。ABC 123 2026。ー「縦書き」[/font][/][p]
     ]

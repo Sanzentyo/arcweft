@@ -1,7 +1,7 @@
-flow @flow.opening opening {
+flow opening {
   goto @flow.done
 }
 
-flow @flow.done done {
+flow done {
   return "done"
 }

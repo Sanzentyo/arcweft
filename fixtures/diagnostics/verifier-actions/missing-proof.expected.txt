@@ -5,7 +5,7 @@ Expected renderer properties for seq07.3 missing-proof fixture:
 - output includes a patch preview with a top-level insertion.
 - patch preview contains:
 
-+ proof @proof.obligation_0001 {
++ proof obligation_0001 {
 +     // TODO: prove effect capability
 +     check _
 + }

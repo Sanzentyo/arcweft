@@ -1,6 +1,6 @@
 use dep
 
-pub flow @flow.opening opening {
+pub flow opening {
 goto @flow.dep
 return "done"
 }

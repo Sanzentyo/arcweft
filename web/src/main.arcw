@@ -1,5 +1,5 @@
 pub character zunda_guide {
-    display = "ずんだガイド"
+    display_name = "ずんだガイド"
     default_voice = auto
     dialogue_style {
         rich_text {
@@ -13,7 +13,7 @@ pub character zunda_guide {
 }
 
 pub character narrator {
-    display = "語り手"
+    display_name = "語り手"
     default_voice = auto
     dialogue_style {
         rich_text {

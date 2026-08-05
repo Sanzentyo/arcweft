@@ -1,4 +1,5 @@
-pub character @character.audit Audit as audit {
+pub character audit {
+    display_name = "Audit"
     default_voice = auto
     dialogue_style {
         font = "MS Mincho"
@@ -11,7 +12,7 @@ entry cli @entry.vertical_goal_clear_smoke {
     goto @flow.vertical_goal_clear_smoke
 }
 
-flow @flow.vertical_goal_clear_smoke vertical_goal_clear_smoke {
+flow vertical_goal_clear_smoke() -> String {
     audit.say(id=@say.vertical_goal_clear_smoke.001, voice=auto)[
         [.vertical_rl jlreq=strict][font "MS Mincho"]吾|[輩](はい)は2026ABC。[/font][/][br]
         [.vertical_lr jlreq=strict][font "MS Mincho"]縦|[夢](ゆめ)へ[.typewriter cps=1]2026[/]XYZ。[/font][/][p]
