@@ -1,6 +1,14 @@
 use crate::{pattern::*, source::*, step::*, task::*, value::*};
 
 #[test]
+fn local_source_names_use_the_public_source_family_prefix() {
+    assert_eq!(
+        SourceId::from_local_name("camera"),
+        SourceId("source.camera".to_owned())
+    );
+}
+
+#[test]
 fn source_policy_is_pure_data() {
     let policy = SourcePolicy {
         backpressure: BackpressurePolicy::BoundedQueue {

@@ -36,7 +36,7 @@ pub(crate) fn lower_source_plan(
     let source_item = source.item();
     let mut errors = Vec::new();
     let id = source_item.id().map_or_else(
-        || SourceId(source_item.name().unwrap_or("anonymous").to_owned()),
+        || SourceId::from_local_name(source_item.name().unwrap_or("anonymous")),
         |id| SourceId(id.body().to_owned()),
     );
     let owner = format!("source `{}`", id.0);

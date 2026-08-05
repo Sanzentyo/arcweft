@@ -69,6 +69,13 @@ pub struct SourceRuntimeState {
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct SourceId(pub String);
 
+impl SourceId {
+    /// Builds the public runtime identity for a source declared by local name.
+    pub fn from_local_name(name: impl AsRef<str>) -> Self {
+        Self(format!("source.{}", name.as_ref()))
+    }
+}
+
 pub fn normalize_source_events<T, E>(mut events: Vec<SourceEvent<T, E>>) -> Vec<SourceEvent<T, E>> {
     if events.len() > 1 && !source_events_are_normalized(&events) {
         events.sort_by(compare_source_events);
