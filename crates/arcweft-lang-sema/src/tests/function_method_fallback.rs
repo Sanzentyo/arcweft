@@ -28,7 +28,7 @@ fn analyze_registered_method_fixture(
 fn method_chain_falls_back_to_data_last_callable_when_no_method_matches() {
     let tree = parse_ok(
         r"
-flow @flow.method_fallback method_fallback {
+flow method_fallback {
     let ok: bool = score.above(80i64)
     log.info(ok)
 }
@@ -80,7 +80,7 @@ fn above(min: i64)(value: i64) -> bool {
     return value > min
 }
 
-flow @flow.curried_method_fallback curried_method_fallback {
+flow curried_method_fallback {
     let positional: bool = score.above(80i64)
     let named: bool = score.above(min = 80i64)
     log.info(positional)
@@ -125,7 +125,7 @@ flow @flow.curried_method_fallback curried_method_fallback {
 fn method_chain_accepts_named_data_last_fallback_and_records_arg_order() {
     let tree = parse_ok(
         r"
-flow @flow.method_fallback_named method_fallback_named {
+flow method_fallback_named {
     let ok: bool = score.above(min = 80i64)
     log.info(ok)
 }
@@ -177,7 +177,7 @@ flow @flow.method_fallback_named method_fallback_named {
 fn method_chain_accepts_fixed_literal_spread_data_last_fallback() {
     let tree = parse_ok(
         r"
-flow @flow.method_fallback_fixed_spread method_fallback_fixed_spread {
+flow method_fallback_fixed_spread {
     let direct: bool = score.between([60i64, 90i64]...)
     let mixed: bool = score.between([60i64]..., max = 90i64)
     log.info(direct)
@@ -251,7 +251,7 @@ flow @flow.method_fallback_fixed_spread method_fallback_fixed_spread {
 fn method_chain_reports_spread_data_last_fallback_as_unsupported() {
     let tree = parse_ok(
         r"
-flow @flow.method_fallback_spread method_fallback_spread {
+flow method_fallback_spread {
     let thresholds = [80i64]
     let wrong = score.above(thresholds...)
     log.info(wrong)
@@ -300,7 +300,7 @@ flow @flow.method_fallback_spread method_fallback_spread {
 fn method_chain_reports_spread_then_named_data_last_fallback_as_unsupported() {
     let tree = parse_ok(
         r"
-flow @flow.method_fallback_spread_then_named method_fallback_spread_then_named {
+flow method_fallback_spread_then_named {
     let thresholds = [80i64]
     let wrong = score.between(thresholds..., max = 99i64)
     log.info(wrong)
@@ -353,7 +353,7 @@ flow @flow.method_fallback_spread_then_named method_fallback_spread_then_named {
 fn method_chain_reports_multiple_spread_data_last_fallback_as_unsupported() {
     let tree = parse_ok(
         r"
-flow @flow.method_fallback_multiple_spreads method_fallback_multiple_spreads {
+flow method_fallback_multiple_spreads {
     let lows = [60i64]
     let highs = [90i64]
     let wrong = score.between(lows..., highs...)
@@ -411,7 +411,7 @@ fn above(min: i64, value: i64) -> bool {
     return value > min
 }
 
-flow @flow.method_fallback_ambiguous method_fallback_ambiguous {
+flow method_fallback_ambiguous {
     let wrong = score.above(80i64)
 }
 ",
@@ -473,7 +473,7 @@ fn above(min: i64, value: i64) -> bool {
     return value > min
 }
 
-flow @flow.method_fallback_spread_ambiguous method_fallback_spread_ambiguous {
+flow method_fallback_spread_ambiguous {
     let thresholds = [80i64]
     let wrong = score.above(thresholds...)
 }
@@ -541,7 +541,7 @@ flow @flow.method_fallback_spread_ambiguous method_fallback_spread_ambiguous {
 fn method_chain_prefers_real_method_over_data_last_callable_fallback() {
     let tree = parse_ok(
         r"
-flow @flow.method_priority method_priority {
+flow method_priority {
     let text: String = score.above(80i64)
     log.info(text)
 }
@@ -628,7 +628,7 @@ fn above(min: i64, value: Score) -> bool {
     true
 }
 
-flow @flow.method_trait_priority method_trait_priority(score: Score) {
+flow method_trait_priority(score: Score) {
     let text: String = score.above(80i64)
     log.info(text)
 }
@@ -678,7 +678,7 @@ impl Threshold for Score {
     }
 }
 
-flow @flow.method_trait_value method_trait_value(score: Score) {
+flow method_trait_value(score: Score) {
     let method = score.above
 }
 "#,
@@ -713,7 +713,7 @@ flow @flow.method_trait_value method_trait_value(score: Score) {
 fn environment_method_value_reference_reports_unsupported_method_value() {
     let tree = parse_ok(
         r"
-flow @flow.env_method_value env_method_value {
+flow env_method_value {
     let method = score.above
 }
 ",
@@ -757,7 +757,7 @@ fn use_loader(label: String, load: String -> String)(path: String) -> String {
     return load(path)
 }
 
-flow @flow.data_last_receiver_stage data_last_receiver_stage
+flow data_last_receiver_stage
 effects { }
 {
     let loader = |path: String| -> String {
@@ -766,7 +766,7 @@ effects { }
     let staged = loader.use_loader("story")
 }
 
-flow @flow.data_last_receiver_call data_last_receiver_call
+flow data_last_receiver_call
 effects { }
 {
     let loader = |path: String| -> String {
@@ -814,7 +814,7 @@ fn audited_load(load: String -> String)(path: String) -> String {
     return load(path)
 }
 
-flow @flow.data_last_alias_identity data_last_alias_identity
+flow data_last_alias_identity
 effects { }
 {
     let invoke = audited_load
@@ -855,7 +855,7 @@ fn use_loader(load: String -> String, path: String) -> String {
     return load(path)
 }
 
-flow @flow.method_fallback_callback_effect method_fallback_callback_effect
+flow method_fallback_callback_effect
 effects { }
 {
     let body = "story.arcw".use_loader(|path: String| -> String {
@@ -890,7 +890,7 @@ fn use_loader(load: String -> String, context: String)(path: String) -> String {
     return load(path)
 }
 
-flow @flow.curried_method_callback_stage curried_method_callback_stage
+flow curried_method_callback_stage
 effects { }
 {
     let staged = "context".use_loader(|path: String| -> String {
@@ -898,7 +898,7 @@ effects { }
     })
 }
 
-flow @flow.curried_method_callback_final curried_method_callback_final
+flow curried_method_callback_final
 effects { }
 {
     let staged = "context".use_loader(|path: String| -> String {

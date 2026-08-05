@@ -69,7 +69,7 @@ fn generic_expr_brackets_are_indexes_not_dialogue_calls() {
 
     let parsed = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let handles = alice.say()[本文です。[p]]
 }
 ",

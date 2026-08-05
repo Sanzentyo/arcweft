@@ -4,7 +4,7 @@ use super::support::*;
 fn source_function_type_effect_row_becomes_closed_semantic_row() {
     let tree = parse_ok(
         r#"
-flow @flow.source_effect_row source_effect_row
+flow source_effect_row
 effects { fs.read }
 {
     let loader: String -> String effects { fs.read } = load
@@ -58,7 +58,7 @@ fn load_story(path: String) -> String {
     return adapter.read_text(path = path)
 }
 
-flow @flow.source_function_value_row source_function_value_row
+flow source_function_value_row
 effects { }
 {
     let loader = load_story
@@ -121,7 +121,7 @@ effects { }
 fn environment_function_value_type_carries_closed_effect_row() {
     let tree = parse_ok(
         r"
-flow @flow.env_function_value_effect_row env_function_value_effect_row {
+flow env_function_value_effect_row {
     let reader = read_text
 }
 ",
@@ -188,7 +188,7 @@ flow @flow.env_function_value_effect_row env_function_value_effect_row {
 fn closure_body_effects_do_not_leak_on_function_value_creation() {
     let tree = parse_ok(
         r#"
-flow @flow.closure_effect_creation closure_effect_creation
+flow closure_effect_creation
 effects { }
 {
     let later = || -> String {
@@ -233,7 +233,7 @@ effects { }
 fn closure_effect_rows_project_closed_report_evidence() {
     let tree = parse_ok(
         r#"
-flow @flow.closure_row_projection closure_row_projection
+flow closure_row_projection
 effects { }
 {
     let later = || -> String {
@@ -281,7 +281,7 @@ effects { }
 fn analyzable_closure_type_and_report_use_a_resolved_open_effect_row() {
     let tree = parse_ok(
         r"
-flow @flow.open_closure_row open_closure_row
+flow open_closure_row
 effects { }
 {
     let later = |path: String| -> String {
@@ -373,7 +373,7 @@ effects { }
 fn effect_analysis_report_owns_effect_row_report_boundary() {
     let tree = parse_ok(
         r#"
-flow @flow.owned_row_report owned_row_report
+flow owned_row_report
 effects { fs.read }
 {
     let body = adapter.read_text(path = "story.arcw")
@@ -428,7 +428,7 @@ effects { fs.read }
 fn closure_expected_function_type_effect_row_sets_closed_upper_bound() {
     let tree = parse_ok(
         r"
-flow @flow.closure_expected_row closure_expected_row
+flow closure_expected_row
 effects { }
 {
     let later: String -> String effects { fs.read } =
@@ -493,7 +493,7 @@ effects { }
 fn closure_expected_empty_effect_row_rejects_body_effect() {
     let tree = parse_ok(
         r"
-flow @flow.closure_empty_expected_row closure_empty_expected_row
+flow closure_empty_expected_row
 effects { }
 {
     let later: String -> String effects { } =
@@ -527,7 +527,7 @@ effects { }
 fn closure_effect_callable_evidence_joins_type_judgment_to_closed_row() {
     let tree = parse_ok(
         r"
-flow @flow.closure_row_join closure_row_join
+flow closure_row_join
 effects { }
 {
     let later = |path: String| -> String {
@@ -595,7 +595,7 @@ effects { }
 fn borrowed_closure_capture_keeps_effect_row_evidence_at_await_boundary() {
     let tree = parse_ok(
         r#"
-flow @flow.borrowed_capture_effect_row borrowed_capture_effect_row
+flow borrowed_capture_effect_row
 effects { }
 {
     let pixels: &'asset [Rgba8] = bg.pixels()

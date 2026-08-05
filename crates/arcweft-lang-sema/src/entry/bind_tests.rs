@@ -139,7 +139,7 @@ effects {{}}
 {{
     reduce_other(state, event)
 }}
-flow @flow.other other(state: OtherState) {{}}
+flow other(state: OtherState) {{}}
 entry game @entry.game.other {{
     state = OtherState
     initializer = initial_other

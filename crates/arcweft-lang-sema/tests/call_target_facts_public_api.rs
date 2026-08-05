@@ -88,7 +88,7 @@ fn analyze(source: &str) -> (Arc<SourceDocument>, TypeCheckReport) {
 fn public_focused_entry_returns_a_report_with_the_exact_requested_call_fact() {
     const SOURCE: &str = r"
 fn identity(value: i32) -> i32 { value }
-flow @flow.main main {
+flow main {
     let first: i32 = identity(1i32)
     let second: i32 = identity(2i32)
 }
@@ -173,7 +173,7 @@ fn surround(prefix: String)(value: i32) -> String {
     prefix
 }
 
-flow @flow.main main {
+flow main {
     let staged = surround(prefix = ">")
     let complete: String = staged(1i32)
 }
@@ -249,7 +249,7 @@ fn accept_number(value: i32) -> String {
     "number"
 }
 
-flow @flow.main main {
+flow main {
     let invalid: String = accept_number(text_value(1i32))
 }
 "#;
@@ -277,8 +277,7 @@ flow @flow.main main {
 
 #[test]
 fn collecting_many_ordinary_facts_does_not_apply_focused_query_limits() {
-    let mut source =
-        String::from("fn identity(value: i32) -> i32 { value }\nflow @flow.main main {\n");
+    let mut source = String::from("fn identity(value: i32) -> i32 { value }\nflow main {\n");
     for index in 0..96 {
         writeln!(source, "    let value_{index}: i32 = identity({index}i32)")
             .expect("write fixture call");
@@ -302,7 +301,7 @@ fn collecting_many_ordinary_facts_does_not_apply_focused_query_limits() {
 fn whole_module_missing_calls_retain_facts_without_swallowing_ordinary_rejection() {
     const SOURCE: &str = r"
 fn identity(value: u8) -> u8 { value }
-flow @flow.main main {
+flow main {
     let free: u8 = unknown(identity(1u8))
     let dotted: u8 = unregistered.resolve(identity(300u8))
 }

@@ -127,7 +127,7 @@ fn bad(state: i32) -> Result<i64, ArcError> {
 fn await_with_non_need_uses_the_same_typed_diagnostic_without_fabricated_source() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     await 42 with { pending p => p }
 }
 ",
@@ -155,7 +155,7 @@ flow @flow.loading loading {
 fn await_with_keeps_awaited_expression() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     try await load_opening_assets() with { pending p => progress.set(p.ratio) }
 }
 ",
@@ -184,7 +184,7 @@ flow @flow.loading loading {
 fn await_with_keeps_wait_view_branches() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     await load_avatar() with {
         pending p => progress.set(p.ratio)
         ready img => Image(img)
@@ -226,7 +226,7 @@ flow @flow.loading loading {
 fn try_await_accepts_indented_with_block() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     try await asset.image(@asset:.bg.room) with:
         pending p:
             progress.set(p.ratio)
@@ -257,7 +257,7 @@ flow @flow.loading loading {
 fn await_question_prefix_is_try_await_sugar() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     await? asset.image(@asset:.bg.room) with { pending p => scene.show(@scene.loading) }
 }
 ",
@@ -277,7 +277,7 @@ flow @flow.loading loading {
 fn let_try_await_with_binds_ready_value_and_keeps_wait_view() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     let assets = try await load_opening_assets() with { pending p => p.ratio ready loaded => loaded.ready }
     let count = assets.count
 }
@@ -323,7 +323,7 @@ flow @flow.loading loading {
 fn let_plain_await_with_binds_result_value() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     let result = await load_opening_assets() with:
         pending p:
             p.ratio
@@ -348,7 +348,7 @@ flow @flow.loading loading {
 fn await_with_variant_pending_pattern_binds_payload() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     try await run_activity() with { pending .Realizing(p) => p.ratio pending .Running(p) => p.ratio }
 }
 ",
@@ -370,7 +370,7 @@ flow @flow.loading loading {
 fn let_try_await_with_accepts_multiline_context_before_with() {
     let tree = parse_ok(
         r#"
-flow @flow.loading loading {
+flow loading {
     let bg = try await asset.image(@asset:.bg.room)
         .context("opening background failed")
     with:
@@ -409,7 +409,7 @@ flow @flow.loading loading {
 fn let_parenthesized_await_with_question_is_try_sugar() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     let bg = (await asset.image(@asset:.bg.room) with:
         pending p:
             p.ratio
@@ -439,7 +439,7 @@ flow @flow.loading loading {
 fn let_parenthesized_await_with_context_after_block_typechecks() {
     let tree = parse_ok(
         r#"
-flow @flow.loading loading {
+flow loading {
     let bg = (await asset.image(@asset:.bg.room) with:
         pending p:
             p.ratio
@@ -476,7 +476,7 @@ flow @flow.loading loading {
 fn let_try_await_without_wait_view_stays_expression_await() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     let bg = try await load_bg()
 }
 ",
@@ -497,7 +497,7 @@ flow @flow.loading loading {
 fn await_question_with_is_rejected_as_ambiguous() {
     let errors = parse_errors(
         r"
-flow @flow.loading loading {
+flow loading {
     await load_opening_assets()? with { pending p => scene.show(@scene.loading) }
 }
 ",
@@ -513,7 +513,7 @@ flow @flow.loading loading {
 fn typecheck_rejects_borrow_across_await_boundary() {
     let tree = parse_ok(
         r"
-flow @flow.borrow borrow {
+flow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
     try await load_avatar() with { pending p => progress.set(p.ratio) }
 }
@@ -547,7 +547,7 @@ flow @flow.borrow borrow {
 #[test]
 fn borrow_across_direct_await_reports_typed_code_and_exact_keyword_range() {
     let source = r"
-flow @flow.borrow borrow {
+flow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
     let result = await load_avatar()
 }
@@ -605,7 +605,7 @@ flow @flow.borrow borrow {
 fn typecheck_allows_explicit_drop_before_await_boundary() {
     let tree = parse_ok(
         r"
-flow @flow.borrow borrow {
+flow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
     drop(pixels)
     try await load_avatar() with { pending p => progress.set(p.ratio) }
@@ -643,7 +643,7 @@ flow @flow.borrow borrow {
 fn typecheck_rejects_conditional_drop_before_await_boundary() {
     let tree = parse_ok(
         r"
-flow @flow.borrow borrow {
+flow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
     if should_drop {
         drop(pixels)
@@ -689,7 +689,7 @@ flow @flow.borrow borrow {
 fn typecheck_allows_match_when_every_arm_drops_before_await_boundary() {
     let tree = parse_ok(
         r"
-flow @flow.borrow borrow {
+flow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
     match mode {
         .Fast => drop(pixels)
@@ -731,7 +731,7 @@ flow @flow.borrow borrow {
 fn typecheck_rejects_use_after_explicit_borrow_drop() {
     let tree = parse_ok(
         r"
-flow @flow.borrow borrow {
+flow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
     drop(pixels)
     let again = pixels
@@ -770,7 +770,7 @@ fn typechecks_await_wait_view_branches() {
 enum FlowExit { Goto(Ref<Flow>) }
 struct AvatarError {}
 
-flow @flow.loading loading() -> Result<FlowExit, AvatarError> {
+flow loading() -> Result<FlowExit, AvatarError> {
     try await load_avatar() with {
         pending p => progress.set(p.ratio)
         ready img => Image(img)

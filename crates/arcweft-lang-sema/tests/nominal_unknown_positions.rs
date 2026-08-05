@@ -75,14 +75,8 @@ fn unknown_nominal_types_are_poisoned_in_registered_project_positions() {
         ("UNK-ALIAS-TARGET", "type Use = Missing"),
         ("UNK-PARAM", "fn use_value(value: Missing) {}"),
         ("UNK-RETURN", "fn use_value() -> Missing { Unit }"),
-        (
-            "UNK-FLOW-PARAM",
-            "flow @flow.use_value use_value(value: Missing) {}",
-        ),
-        (
-            "UNK-FLOW-RETURN",
-            "flow @flow.use_value use_value() -> Missing {}",
-        ),
+        ("UNK-FLOW-PARAM", "flow use_value(value: Missing) {}"),
+        ("UNK-FLOW-RETURN", "flow use_value() -> Missing {}"),
         ("UNK-TUPLE", "struct Use { value: (i32, Missing, bool) }"),
         (
             "UNK-FUNCTION-PARAM",

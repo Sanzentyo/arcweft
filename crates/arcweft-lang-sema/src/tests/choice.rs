@@ -4,7 +4,7 @@ use super::support::*;
 fn parses_choice_block_inside_flow() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow opening {
     choice @choice.opening.first {
         @choice.opening.listen "聞いてみる" -> @flow.alice_intro
         @choice.opening.silent "黙っている" -> @flow.quiet_intro
@@ -31,7 +31,7 @@ flow @flow.opening opening {
 fn rejects_unknown_sigiled_flow_statements_generically() {
     let errors = parse_errors(
         r"
-flow @flow.opening opening {
+flow opening {
     @project_command opening
 }
 ",
@@ -198,7 +198,7 @@ choice @choice.opening.first {
 fn choice_body_raw_items_are_not_typecheck_ready() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     choice @choice.opening.first {
         unknown choice body syntax
     }
@@ -362,7 +362,7 @@ choice @choice.opening.routes {
 fn rejects_bare_dot_ids_in_id_bearing_choice_contexts() {
     let errors = parse_errors(
         r#"
-flow @flow.opening opening {
+flow opening {
     choice .first {
         .listen "聞いてみる" -> @flow.alice_intro
     }
@@ -385,7 +385,7 @@ fn typechecks_choice_plan_structured_bodies() {
 enum FlowExit { Goto(Ref<Flow>) }
 struct FlowError {}
 
-flow @flow.opening opening() -> Result<FlowExit, FlowError> {
+flow opening() -> Result<FlowExit, FlowError> {
     choice @choice.opening.first {
         @choice.opening.listen "聞いてみる" -> @flow.alice_intro
     }
@@ -410,7 +410,7 @@ flow @flow.opening opening() -> Result<FlowExit, FlowError> {
 fn typechecks_choice_option_select_block_statements() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow opening {
     choice @choice.opening.first {
         option @choice.opening.listen {
             label = "聞いてみる"
@@ -470,7 +470,7 @@ mod crate.game.routes.opening
 use self.characters.{alice}
 use parent.common.{route_gate}
 
-flow @flow.opening opening {
+flow opening {
     scope dream {
         choice @.first {
             @.listen "聞いてみる" -> @flow.alice_intro
@@ -479,8 +479,8 @@ flow @flow.opening opening {
     }
 }
 
-flow @flow.alice_intro alice_intro {}
-flow @flow.quiet_intro quiet_intro {}
+flow alice_intro {}
+flow quiet_intro {}
 "#,
     );
 
@@ -544,7 +544,7 @@ flow @flow.quiet_intro quiet_intro {}
 fn lowers_choice_expression_let_binding() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow opening {
     let next_flow = choice @.first {
         @.listen "聞いてみる" => @flow.alice_intro
         @.silent "黙っている" => @flow.quiet_intro
@@ -552,10 +552,10 @@ flow @flow.opening opening {
 
     goto next_flow
 }
-flow @flow.alice_intro alice_intro {
+flow alice_intro {
 }
 
-flow @flow.quiet_intro quiet_intro {
+flow quiet_intro {
 }
 "#,
     );
@@ -601,7 +601,7 @@ flow @flow.quiet_intro quiet_intro {
 fn lowers_current_and_parent_relative_choice_ids() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow opening {
     scope outer {
         scope inner {
             choice @...first {
@@ -611,7 +611,7 @@ flow @flow.opening opening {
     }
 }
 
-flow @flow.alice_intro alice_intro {}
+flow alice_intro {}
 "#,
     );
 

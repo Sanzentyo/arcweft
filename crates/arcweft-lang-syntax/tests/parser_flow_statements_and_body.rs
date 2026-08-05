@@ -18,7 +18,8 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSou
 
 #[test]
 fn flat_scope_body_retains_document_coordinates_for_ordinary_calls() {
-    let source = "flow @flow.main main {\n=== scope rain ===\nlet value = standard_value(1i32)\n=== /scope ===\n}\n";
+    let source =
+        "flow main {\n=== scope rain ===\nlet value = standard_value(1i32)\n=== /scope ===\n}\n";
     let parsed = parse_ok(source);
     let tree = parsed.typed_tree();
     let Item::Flow(flow) = &tree.items()[0] else {
@@ -106,7 +107,7 @@ entry game @entry.main {
     goto @flow.opening
 }
 
-flow @flow.opening opening {
+flow opening {
     return "ok"
 }
 "#,
@@ -130,7 +131,7 @@ flow @flow.opening opening {
 fn indented_defer_body_groups_multiline_statements_from_cst_lines() {
     let parsed = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     defer:
         let saved = compute(
             1

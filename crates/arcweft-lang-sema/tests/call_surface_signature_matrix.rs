@@ -600,7 +600,7 @@ fn main() -> Unit {
 #[test]
 fn s17_s18_character_dialogue_non_argument_positions_do_not_produce_help() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     alice: Dialogue content.
     alice[Bracket content.]
 }

@@ -1398,7 +1398,7 @@ fn main() -> Unit {
 
     let dialogue_tag = SignatureFixture::new(
         r"
-flow @flow.main main {
+flow main {
     alice: Moving.[move at=.left]
 }
 ",
@@ -1412,11 +1412,11 @@ flow @flow.main main {
 
     let goto = SignatureFixture::new(
         r"
-flow @flow.main main {
+flow main {
     goto @flow.target
 }
 
-flow @flow.target target {
+flow target {
     return ()
 }
 ",

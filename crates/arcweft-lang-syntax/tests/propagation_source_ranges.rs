@@ -25,7 +25,7 @@ fn slice(source: &str, range: TextRange) -> &str {
 fn flow_signature_source_excludes_visibility_contract_and_trivia_at_utf8_offset() {
     let source = concat!(
         "// 前置き\n",
-        "    pub flow @flow.audit audit(input: Input) -> Result<Output, Failure>   ",
+        "    pub flow audit(input: Input) -> Result<Output, Failure>   ",
         "effects { log.write } {\n",
         "        return input\n",
         "    }\n",
@@ -36,7 +36,7 @@ fn flow_signature_source_excludes_visibility_contract_and_trivia_at_utf8_offset(
         panic!("expected flow item")
     };
 
-    let header = "flow @flow.audit audit(input: Input) -> Result<Output, Failure>";
+    let header = "flow audit(input: Input) -> Result<Output, Failure>";
     let result = "Result<Output, Failure>";
     let retained = flow.signature_source();
     assert_eq!(retained.header(), range_of(source, header));
@@ -246,7 +246,7 @@ fn grouped_multiline_and_utf8_ranges_are_byte_exact() {
 #[test]
 fn dialogue_try_uses_the_ordinary_expression_node_and_source_recursion() {
     let source = r"
-flow @flow.dialogue dialogue() -> Result<Unit, LineError> {
+flow dialogue() -> Result<Unit, LineError> {
     let result = try alice.say()[hello]
 }
 ";

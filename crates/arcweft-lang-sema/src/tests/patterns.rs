@@ -4,7 +4,7 @@ use super::support::*;
 fn flow_typed_statements_keep_patterns_and_exprs() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let (actor, (_, voice)) = alice.say()[聞いて。[p]]
     return Ok(FlowExit.Done)
     goto @flow.title
@@ -41,7 +41,7 @@ flow @flow.opening opening {
 fn typed_patterns_keep_lifetime_borrow_types() {
     let tree = parse_ok(
         r"
-flow @flow.borrow borrow {
+flow borrow {
     let pixels: &'asset [Rgba8] = bg.pixels()
 }
 ",
@@ -64,7 +64,7 @@ flow @flow.borrow borrow {
 fn parses_documented_structured_pattern_shapes() {
     let tree = parse_ok(
         r"
-flow @flow.patterns patterns {
+flow patterns {
     let mut route = current_route
     let 42 = answer
     let @choice.opening.listen = selected

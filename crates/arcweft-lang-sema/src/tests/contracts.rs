@@ -4,7 +4,7 @@ use super::support::*;
 fn parses_flow_contracts_before_body_block() {
     let tree = parse_ok(
         r"
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError>
 requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
 requires progress in 0.0..=1.0
@@ -136,7 +136,7 @@ effects { asset.read }
 fn typechecks_flow_contract_expressions() {
     let tree = parse_ok(
         r"
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError>
 requires delta >= -100 && delta <= 100
 ensures check result.affection[character] >= 0
 effects { asset.read, view.show }

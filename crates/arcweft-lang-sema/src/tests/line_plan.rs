@@ -60,7 +60,7 @@ with:
 fn parses_same_line_line_plan_attachments() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice.say()[聞いて。[p]] with: out (voice, face)
     alice.say()[もう一度。[p]] with 'line { out .Done }
     let handles = alice.say()[結果を返す。[p]] with: out (voice, face)
@@ -110,7 +110,7 @@ flow @flow.opening opening {
 #[test]
 fn parses_multiline_line_result_binding_with_plan() {
     let source = r"
-flow @flow.opening opening {
+flow opening {
     let handles = alice.say(voice=auto)[
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
     ]
@@ -160,7 +160,7 @@ flow @flow.opening opening {
     validate_typecheck_ready(&hir).expect("multiline line result bindings are typecheck-ready");
 
     let check_source = r"
-flow @flow.opening opening() -> Result<Unit, LineCancel> {
+flow opening() -> Result<Unit, LineCancel> {
     let handles = alice.say(voice=auto)[
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
     ]
@@ -196,7 +196,7 @@ flow @flow.opening opening() -> Result<Unit, LineCancel> {
 #[test]
 fn typechecks_bound_timed_cue_line_result_and_outer_use() {
     let source = r#"
-flow @flow.line_handles line_handles() -> String {
+flow line_handles() -> String {
     let (_, cue) = alice[聞いて。[p]]
     with:
         let actor = alice.stage.acquire(scope=line)
@@ -290,7 +290,7 @@ with:
 fn parses_line_marks_handlers_threads_and_lifetime_registry() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice(focus=.soft)[待って。[mark .release_focus][p]]
     with:
         init:
@@ -355,7 +355,7 @@ flow @flow.opening opening {
 fn parses_flat_fence_line_sugar_with_line_plan() {
     let tree = parse_ok(
         r"
-flow @flow.flat flat {
+flow flat {
 === line alice(.smile, focus = .soft) ===
 聞いて。[mark .release_focus]
 === with ===
@@ -385,20 +385,17 @@ wait(mark(.release_focus))
 #[test]
 fn rejects_unknown_flow_items_and_malformed_flat_fences() {
     for (source, message) in [
+        ("flow x { launch load_avatar() }", "unsupported flow item"),
         (
-            "flow @flow.x x { launch load_avatar() }",
-            "unsupported flow item",
-        ),
-        (
-            "flow @flow.x x {\n=== thread worker ===\nfoo()\n=== /scope ===\n}",
+            "flow x {\n=== thread worker ===\nfoo()\n=== /scope ===\n}",
             "flat fence close mismatch",
         ),
         (
-            "flow @flow.x x {\n=== line alice ===\nhello\n}",
+            "flow x {\n=== line alice ===\nhello\n}",
             "missing close fence",
         ),
         (
-            "flow @flow.x x {\n=== ===\nfoo()\n=== / ===\n}",
+            "flow x {\n=== ===\nfoo()\n=== / ===\n}",
             "unknown flat fence kind",
         ),
     ] {
@@ -414,7 +411,7 @@ fn rejects_unknown_flow_items_and_malformed_flat_fences() {
 fn rejects_duplicate_marks_and_missing_handlers() {
     let duplicate = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice[重複。[mark .x][mark .x][p]]
 }
 ",
@@ -434,7 +431,7 @@ flow @flow.opening opening {
 
     let missing = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice[待って。[p]]
     with:
         on mark(.missing):
@@ -462,7 +459,7 @@ flow @flow.opening opening {
 fn unregistered_dialogue_tags_do_not_gain_builtin_hook_semantics() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice[拡張タグ。[project_extension payload][p]]
 }
 ",
@@ -480,7 +477,7 @@ flow @flow.opening opening {
 fn line_plan_cancel_actions_keep_typed_statements() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice[
         聞いて。[p]
     ]
@@ -534,7 +531,7 @@ flow @flow.opening opening {
 fn line_plan_cancel_commands_keep_structured_arguments() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice[
         聞いて。[p]
     ]
@@ -585,7 +582,7 @@ flow @flow.opening opening {
 fn line_plan_assertions_keep_typed_conditions() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice:
         聞いて。[p]
     with {
@@ -627,7 +624,7 @@ flow @flow.opening opening {
 fn line_plan_parallel_groups_keep_typed_items() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice:
         走って！[p]
     with {
@@ -690,7 +687,7 @@ fn line_plan_block_items_share_brace_and_colon_parsing() {
 
     let brace_items = parse_plan_items(
         r"
-flow @flow.opening opening {
+flow opening {
     alice:
         合図。[mark .release_focus][p]
     with {
@@ -710,7 +707,7 @@ flow @flow.opening opening {
     );
     let colon_items = parse_plan_items(
         r"
-flow @flow.opening opening {
+flow opening {
     alice:
         合図。[mark .release_focus][p]
     with:
@@ -754,7 +751,7 @@ flow @flow.opening opening {
 fn line_plan_flat_blocks_share_block_item_parsing() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice:
         合図。[mark .release_focus][p]
     with:
@@ -813,7 +810,7 @@ fn rejects_malformed_line_plan_flat_fences() {
     for (source, message) in [
         (
             r"
-flow @flow.opening opening {
+flow opening {
     alice:
         合図。[p]
     with:
@@ -825,7 +822,7 @@ flow @flow.opening opening {
         ),
         (
             r"
-flow @flow.opening opening {
+flow opening {
     alice:
         合図。[p]
     with:
@@ -840,7 +837,7 @@ flow @flow.opening opening {
         ),
         (
             r"
-flow @flow.opening opening {
+flow opening {
     alice:
         合図。[p]
     with {
@@ -865,7 +862,7 @@ flow @flow.opening opening {
 fn line_plan_memo_keeps_typed_options() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice:
         聞いて。[p]
     with {

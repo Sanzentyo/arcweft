@@ -51,7 +51,7 @@ fn project_curried(value: i32)(suffix: String) -> String {
     return suffix
 }
 
-flow @flow.main main {
+flow main {
     let project_next: String -> String = project_curried(1i32)
     let project_result: String = project_next("project")
 }

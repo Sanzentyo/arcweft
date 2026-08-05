@@ -52,13 +52,13 @@ fn read_with_prefix(prefix: String)(path: String) -> String
     return adapter.read_text(path = path)
 }
 
-flow @flow.curried_source_stage curried_source_stage
+flow curried_source_stage
 effects { }
 {
     let staged = read_with_prefix("assets")
 }
 
-flow @flow.curried_source_final curried_source_final
+flow curried_source_final
 effects { }
 {
     let body = read_with_prefix("assets")("story.arcw")
@@ -115,14 +115,14 @@ fn read_with_prefix(prefix: String)(path: String) -> String
     return adapter.read_text(path = path)
 }
 
-flow @flow.curried_source_alias_stage curried_source_alias_stage
+flow curried_source_alias_stage
 effects { }
 {
     let reader = read_with_prefix
     let staged = reader("assets")
 }
 
-flow @flow.curried_source_alias_final curried_source_alias_final
+flow curried_source_alias_final
 effects { }
 {
     let reader = read_with_prefix
@@ -183,14 +183,14 @@ fn read_with_prefix(prefix: String, base: String)(path: String) -> String {
     return adapter.read_text(path = path)
 }
 
-flow @flow.partial_first_group_stage partial_first_group_stage
+flow partial_first_group_stage
 effects { }
 {
     let partial = read_with_prefix("assets")
     let staged = partial("base")
 }
 
-flow @flow.partial_first_group_final partial_first_group_final
+flow partial_first_group_final
 effects { }
 {
     let partial = read_with_prefix("assets")
@@ -232,7 +232,7 @@ fn use_loader(load: String -> String)(path: String) -> String {
     return load(path)
 }
 
-flow @flow.first_group_callback_stage first_group_callback_stage
+flow first_group_callback_stage
 effects { }
 {
     let staged = use_loader(|path: String| -> String {
@@ -240,7 +240,7 @@ effects { }
     })
 }
 
-flow @flow.first_group_callback_final first_group_callback_final
+flow first_group_callback_final
 effects { }
 {
     let staged = use_loader(|path: String| -> String {
@@ -287,7 +287,7 @@ fn use_loader(load: String -> String, path: String) -> String {
     return load(path)
 }
 
-flow @flow.partial_callback_stage partial_callback_stage
+flow partial_callback_stage
 effects { }
 {
     let partial = use_loader(|path: String| -> String {
@@ -295,7 +295,7 @@ effects { }
     })
 }
 
-flow @flow.partial_callback_final partial_callback_final
+flow partial_callback_final
 effects { }
 {
     let partial = use_loader(|path: String| -> String {
@@ -338,7 +338,7 @@ effects { }
 fn local_closure_call_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"
-flow @flow.closure_effect_call closure_effect_call
+flow closure_effect_call
 effects { }
 {
     let later = || -> String {
@@ -368,7 +368,7 @@ effects { }
 fn no_effect_rejects_local_closure_effect_when_called() {
     let tree = parse_ok(
         r#"
-flow @flow.no_effect_closure_call no_effect_closure_call
+flow no_effect_closure_call
 effects { fs.read }
 ensures no_effect fs.read
 {
@@ -399,7 +399,7 @@ ensures no_effect fs.read
 fn immediate_closure_call_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"
-flow @flow.immediate_closure_effect_call immediate_closure_effect_call
+flow immediate_closure_effect_call
 effects { }
 {
     let body = (|| -> String {
@@ -430,7 +430,7 @@ effects { }
 fn partial_local_closure_application_does_not_compose_until_called() {
     let tree = parse_ok(
         r#"
-flow @flow.partial_closure_effect_creation partial_closure_effect_creation
+flow partial_closure_effect_creation
 effects { }
 {
     let later = |path: String, suffix: String| -> String {
@@ -466,7 +466,7 @@ effects { }
 fn partial_immediate_closure_application_does_not_compose_until_called() {
     let tree = parse_ok(
         r#"
-flow @flow.partial_immediate_closure_effect_creation partial_immediate_closure_effect_creation
+flow partial_immediate_closure_effect_creation
 effects { }
 {
     let suffixer = (|path: String, suffix: String| -> String {
@@ -501,7 +501,7 @@ effects { }
 fn partial_local_closure_alias_composes_body_effects_when_called() {
     let tree = parse_ok(
         r#"
-flow @flow.partial_closure_effect_call partial_closure_effect_call
+flow partial_closure_effect_call
 effects { }
 {
     let later = |path: String, suffix: String| -> String {
@@ -532,7 +532,7 @@ effects { }
 fn no_effect_rejects_partial_closure_alias_effect_when_called() {
     let tree = parse_ok(
         r#"
-flow @flow.no_effect_partial_closure_call no_effect_partial_closure_call
+flow no_effect_partial_closure_call
 effects { fs.read }
 ensures no_effect fs.read
 {
@@ -566,7 +566,7 @@ ensures no_effect fs.read
 fn partial_immediate_closure_alias_composes_body_effects_when_called() {
     let tree = parse_ok(
         r#"
-flow @flow.partial_immediate_closure_effect_call partial_immediate_closure_effect_call
+flow partial_immediate_closure_effect_call
 effects { }
 {
     let suffixer = (|path: String, suffix: String| -> String {
@@ -599,7 +599,7 @@ effects { }
 fn map_closure_argument_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"
-flow @flow.map_closure_effect_arg map_closure_effect_arg
+flow map_closure_effect_arg
 effects { }
 {
     let paths: Vec<String> = ["story.arcw"]
@@ -629,7 +629,7 @@ effects { }
 fn map_local_closure_alias_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"
-flow @flow.map_closure_alias_effect_arg map_closure_alias_effect_arg
+flow map_closure_alias_effect_arg
 effects { }
 {
     let paths: Vec<String> = ["story.arcw"]
@@ -662,7 +662,7 @@ effects { }
 fn map_partial_closure_alias_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"
-flow @flow.map_partial_closure_effect_arg map_partial_closure_effect_arg
+flow map_partial_closure_effect_arg
 effects { }
 {
     let suffixes: Vec<String> = [".bak"]
@@ -696,7 +696,7 @@ effects { }
 fn filter_closure_argument_composes_body_effects_into_caller() {
     let tree = parse_ok(
         r#"
-flow @flow.filter_closure_effect_arg filter_closure_effect_arg
+flow filter_closure_effect_arg
 effects { }
 {
     let paths: Vec<String> = ["story.arcw"]
@@ -730,7 +730,7 @@ fn use_loader(path: String, load: String -> String) -> String {
     return load(path)
 }
 
-flow @flow.user_higher_order_closure_effect user_higher_order_closure_effect
+flow user_higher_order_closure_effect
 effects { }
 {
     let body = use_loader("story.arcw", |path: String| -> String {
@@ -765,7 +765,7 @@ fn keep_loader(load: String -> String) -> Unit {
     let _ = load
 }
 
-flow @flow.user_higher_order_kept_closure user_higher_order_kept_closure
+flow user_higher_order_kept_closure
 effects { }
 {
     let load = |path: String| -> String {
@@ -805,7 +805,7 @@ fn make_loader(load: String -> String) -> Unit -> String {
     return |_unit: Unit| -> String { load("story.arcw") }
 }
 
-flow @flow.returned_closure_callback_creation returned_closure_callback_creation
+flow returned_closure_callback_creation
 effects { }
 {
     let loader = make_loader(|path: String| -> String {
@@ -844,7 +844,7 @@ fn make_loader(load: String -> String) -> Unit -> String {
     return |_unit: Unit| -> String { load("story.arcw") }
 }
 
-flow @flow.returned_closure_callback_call returned_closure_callback_call
+flow returned_closure_callback_call
 effects { }
 {
     let loader = make_loader(|path: String| -> String {
@@ -880,7 +880,7 @@ fn make_loader(load: String -> String) -> Unit -> String {
     return |_unit: Unit| -> String { load("story.arcw") }
 }
 
-flow @flow.returned_closure_callback_trace returned_closure_callback_trace
+flow returned_closure_callback_trace
 effects { }
 {
     let loader = make_loader(|path: String| -> String {
@@ -940,7 +940,7 @@ fn make_loader(load: String -> String) -> Unit -> String {
     return |_unit: Unit| -> String { load("story.arcw") }
 }
 
-flow @flow.no_effect_returned_closure_callback_call no_effect_returned_closure_callback_call
+flow no_effect_returned_closure_callback_call
 effects { fs.read }
 ensures no_effect fs.read
 {
@@ -978,7 +978,7 @@ fn make_loader(load: String -> String) -> Unit -> String {
     return runner
 }
 
-flow @flow.stored_returned_closure_callback_call stored_returned_closure_callback_call
+flow stored_returned_closure_callback_call
 effects { }
 {
     let loader = make_loader(|path: String| -> String {
@@ -1016,7 +1016,7 @@ fn make_loader(load: String -> String) -> Unit -> String {
     return |_unit: Unit| -> String { selected("story.arcw") }
 }
 
-flow @flow.returned_closure_alias_creation returned_closure_alias_creation
+flow returned_closure_alias_creation
 effects { }
 {
     let loader = make_loader(|path: String| -> String {
@@ -1057,7 +1057,7 @@ fn make_loader(load: String -> String) -> Unit -> String {
     return |_unit: Unit| -> String { selected("story.arcw") }
 }
 
-flow @flow.returned_closure_alias_call returned_closure_alias_call
+flow returned_closure_alias_call
 effects { }
 {
     let loader = make_loader(|path: String| -> String {
@@ -1091,7 +1091,7 @@ fn use_loader((path, load): (String, String -> String)) -> String {
     return load(path)
 }
 
-flow @flow.destructured_higher_order_tuple_effect destructured_higher_order_tuple_effect
+flow destructured_higher_order_tuple_effect
 effects { }
 {
     let load = |path: String| -> String {
@@ -1127,7 +1127,7 @@ fn keep_loader((_path, load): (String, String -> String)) -> Unit {
     let _ = load
 }
 
-flow @flow.destructured_higher_order_tuple_kept destructured_higher_order_tuple_kept
+flow destructured_higher_order_tuple_kept
 effects { }
 {
     let load = |path: String| -> String {
@@ -1167,7 +1167,7 @@ fn use_loader(((load, suffix), path): ((String -> String, String), String)) -> S
     return load(path)
 }
 
-flow @flow.destructured_nested_tuple_inline_closure_effect destructured_nested_tuple_inline_closure_effect
+flow destructured_nested_tuple_inline_closure_effect
 effects { }
 {
     let body = use_loader(((|path: String| -> String {
@@ -1217,7 +1217,7 @@ fn use_loader(LoaderSpec { load: load: String -> String, path }: LoaderSpec) -> 
     return load(path)
 }
 
-flow @flow.destructured_record_inline_closure_effect destructured_record_inline_closure_effect
+flow destructured_record_inline_closure_effect
 effects { }
 {
     let body = use_loader(LoaderSpec {
@@ -1265,7 +1265,7 @@ fn use_loader(LoaderSpec { load, path }: LoaderSpec) -> String {
     return load(path)
 }
 
-flow @flow.untyped_destructured_record_callback_effect untyped_destructured_record_callback_effect
+flow untyped_destructured_record_callback_effect
 effects { }
 {
     let body = use_loader(LoaderSpec {
@@ -1298,7 +1298,7 @@ fn use_loader(.Some(load): Option<String -> String>) -> String {
     return load("story.arcw")
 }
 
-flow @flow.option_variant_destructured_callback_effect option_variant_destructured_callback_effect
+flow option_variant_destructured_callback_effect
 effects { }
 {
     let body = use_loader(Some(|path: String| -> String {
@@ -1333,7 +1333,7 @@ fn use_loader(.Err(load): Result<String, String -> String>) -> String {
     return load("story.arcw")
 }
 
-flow @flow.result_err_variant_destructured_callback_effect result_err_variant_destructured_callback_effect
+flow result_err_variant_destructured_callback_effect
 effects { }
 {
     let body = use_loader(Err(|path: String| -> String {
@@ -1379,7 +1379,7 @@ fn use_loader(.WithLoad(load): LoaderSpec) -> String {
     return load("story.arcw")
 }
 
-flow @flow.user_enum_tuple_variant_destructured_callback_effect user_enum_tuple_variant_destructured_callback_effect
+flow user_enum_tuple_variant_destructured_callback_effect
 effects { }
 {
     let body = use_loader(LoaderSpec.WithLoad(|path: String| -> String {
@@ -1416,7 +1416,7 @@ fn use_loader(.WithLoad(load): ExternalLoaderSpec) -> String {
     return load("story.arcw")
 }
 
-flow @flow.env_enum_tuple_variant_destructured_callback_effect env_enum_tuple_variant_destructured_callback_effect
+flow env_enum_tuple_variant_destructured_callback_effect
 effects { }
 {
     let body = use_loader(ExternalLoaderSpec.WithLoad(|path: String| -> String {
@@ -1456,7 +1456,7 @@ fn use_loader(.WithLoad { load }: ExternalLoaderRecordSpec) -> String {
     return load("story.arcw")
 }
 
-flow @flow.env_enum_record_variant_destructured_callback_effect env_enum_record_variant_destructured_callback_effect
+flow env_enum_record_variant_destructured_callback_effect
 effects { }
 {
     let body = use_loader(WithLoad { load: |path: String| -> String { adapter.read_text(path = path) } })
@@ -1484,7 +1484,7 @@ fn use_loader(path: String)(load: String -> String) -> String {
     return load(path)
 }
 
-flow @flow.curried_higher_order_closure_effect curried_higher_order_closure_effect
+flow curried_higher_order_closure_effect
 effects { }
 {
     let body = use_loader("story.arcw")(|path: String| -> String {
@@ -1519,7 +1519,7 @@ fn use_loader(path: String)(load: String -> String) -> String {
     return load(path)
 }
 
-flow @flow.curried_higher_order_alias_effect curried_higher_order_alias_effect
+flow curried_higher_order_alias_effect
 effects { }
 {
     let stage = use_loader("story.arcw")
@@ -1555,7 +1555,7 @@ fn use_loader(path: String)(load: String -> String, suffix: String) -> String {
     return load(path)
 }
 
-flow @flow.partial_curried_higher_order_creation partial_curried_higher_order_creation
+flow partial_curried_higher_order_creation
 effects { }
 {
     let stage = use_loader("story.arcw")
@@ -1595,7 +1595,7 @@ fn use_loader(path: String)(load: String -> String, suffix: String) -> String {
     return load(path)
 }
 
-flow @flow.partial_curried_higher_order_call partial_curried_higher_order_call
+flow partial_curried_higher_order_call
 effects { }
 {
     let stage = use_loader("story.arcw")
@@ -1632,7 +1632,7 @@ fn use_loader(path: String)(load: String -> String, suffix: String) -> String {
     return load(path)
 }
 
-flow @flow.no_effect_partial_curried_higher_order_call no_effect_partial_curried_higher_order_call
+flow no_effect_partial_curried_higher_order_call
 effects { fs.read }
 ensures no_effect fs.read
 {
@@ -1670,7 +1670,7 @@ fn use_loader(path: String)(load: String -> String, suffix: String) -> String {
     return load(path)
 }
 
-flow @flow.partial_curried_higher_order_immediate_call partial_curried_higher_order_immediate_call
+flow partial_curried_higher_order_immediate_call
 effects { }
 {
     let stage = use_loader("story.arcw")
@@ -1708,13 +1708,13 @@ fn make_loader(prefix: String)(suffix: String) -> (String -> String) {
     }
 }
 
-flow @flow.curried_returned_closure_stage curried_returned_closure_stage
+flow curried_returned_closure_stage
 effects { }
 {
     let loader = make_loader("assets")(".arcw")
 }
 
-flow @flow.curried_returned_closure_call curried_returned_closure_call
+flow curried_returned_closure_call
 effects { }
 {
     let loader = make_loader("assets")(".arcw")

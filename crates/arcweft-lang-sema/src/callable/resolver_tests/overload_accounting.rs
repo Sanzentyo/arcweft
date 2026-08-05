@@ -22,7 +22,7 @@ use super::*;
 #[test]
 fn contextual_enum_shorthand_records_each_candidate_expected_type() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let value: String = enum_choice(.Ready)
 }
 ";
@@ -90,7 +90,7 @@ flow @flow.main main {
 #[test]
 fn unsuffixed_numeric_probe_fallback_rolls_back_before_exact_winner_replay() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let value: String = numeric_choice(7)
 }
 ";
@@ -175,7 +175,7 @@ flow @flow.main main {
 #[test]
 fn fixed_literal_spread_records_three_passes_per_logical_slot() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let value: String = fixed_choice([1i32, 2i32]...)
 }
 ";
@@ -265,7 +265,7 @@ flow @flow.main main {
 #[test]
 fn typed_rest_spread_counts_the_container_once_for_each_candidate_pass() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let values: Vec<i32> = [1i32, 2i32]
     let value: String = typed_rest_choice(values...)
 }
@@ -329,7 +329,7 @@ flow @flow.main main {
 #[test]
 fn unchecked_winner_replays_without_retaining_rejected_shape_diagnostics() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let value: String = clean_choice(1i32)
 }
 ";
@@ -392,7 +392,7 @@ flow @flow.main main {
 #[test]
 fn zero_argument_candidate_materialization_and_comparison_do_not_create_events() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let value = zero_choice()
 }
 ";
@@ -590,7 +590,7 @@ fn repeated_nested_overload_builds_have_identical_ordered_evidence() {
 #[test]
 fn generic_candidate_substitutions_are_probe_local_and_winner_owned() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let value: i32 = generic_choice(1i32, 2i32)
 }
 ";
@@ -681,7 +681,7 @@ flow @flow.main main {
 #[test]
 fn closure_candidate_probes_roll_back_capture_diagnostics_and_lowering_evidence() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let captured = 1i32
     let value: String = closure_choice(|item: i32| -> i32 { captured + item })
 }
@@ -782,7 +782,7 @@ flow @flow.main main {
 #[test]
 fn partial_placeholder_facts_are_candidate_local_and_selected_once() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let value: String = partial_choice(_ > 80i32)
 }
 ";
@@ -867,7 +867,7 @@ flow @flow.main main {
 
 fn nested_overload_fixture() -> ResolverFixture {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let value: String = outer_choice(inner_choice(1i32))
 }
 ";

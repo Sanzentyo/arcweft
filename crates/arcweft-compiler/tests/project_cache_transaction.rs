@@ -471,7 +471,7 @@ fn pending_stores_discard_on_type_error() {
 fn pending_stores_discard_when_typed_image_admission_fails() {
     let (project, facts) = fixture(
         r"
-image @image.poster {
+image poster {
     asset = @asset.poster
     x = 0px
     y = 0px

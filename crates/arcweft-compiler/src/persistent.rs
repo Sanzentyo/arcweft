@@ -1111,13 +1111,13 @@ pub fn current_route() -> Ref<Flow> {
 return @flow.done
 }
 
-flow @flow.opening opening {
+flow opening {
 let route = current_route()
 goto @flow.done
 goto route
 }
 
-flow @flow.done done {
+flow done {
 return "done"
 }
 "#;

@@ -89,7 +89,7 @@ fn source_text<'a>(document: &'a SourceDocument, span: &SourceSpan) -> &'a str {
 fn absolute_image(extra_fields: &str) -> String {
     format!(
         r"
-pub image @image.poster {{
+pub image poster {{
     asset = @asset.poster
     x = 0px
     y = 0px

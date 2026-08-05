@@ -14,7 +14,7 @@ fn parses_module_use_and_pub_flow() {
 mod game.routes.opening
 
 use game.prelude.*
- pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+ pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
     include @flow.alice_enters
 }
@@ -30,14 +30,7 @@ use game.prelude.*
         panic!("expected flow item");
     };
     assert_eq!(flow.visibility(), Some(Visibility::Public));
-    assert_eq!(
-        flow.id()
-            .expect("flow id")
-            .as_absolute()
-            .expect("absolute flow id")
-            .body(),
-        "flow.opening"
-    );
+    assert_eq!(flow.name(), Some("opening"));
     let signature = flow.signature().expect("flow signature");
     assert!(ident_pattern(
         signature.param_groups()[0].params()[0].pattern(),
@@ -118,7 +111,7 @@ flow @flow:. shared {
 fn parses_staging_calls_as_expression_statements() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     show(@character.alice, .normal, at = .right, fade = 220ms)
 }
 ",
@@ -180,7 +173,7 @@ flow @<flow.alice_intro@sem:b3_9f2a1c> opening {
 fn lowers_family_relative_entity_refs_in_general_reference_contexts() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     scope prologue {
         include @flow:.alice_enters
     }
@@ -203,7 +196,7 @@ flow @flow.opening opening {
 fn rejects_unqualified_relative_entity_refs_in_general_reference_contexts() {
     let errors = parse_errors(
         r"
-flow @flow.opening opening {
+flow opening {
     include @.next
 }
 ",
@@ -342,7 +335,7 @@ fn removed_memo_block_does_not_reach_typechecked_hir() {
             .expect("test document ID"),
             arcweft_source::SourceName::Generated,
             r"
-flow @flow.memo memo_example {
+flow memo_example {
     let value = memo(scope=scene, key=(score)) {
         let next = score
         next
@@ -350,7 +343,7 @@ flow @flow.memo memo_example {
     goto @flow.title
 }
 
-flow @flow.title title {}
+flow title {}
 ",
         )
         .expect("test source document"),
@@ -374,7 +367,7 @@ fn parses_attributes_and_wiki_links() {
 #![generated(tool)]
 /// links to [[flow.alice_intro]]
 #[derive(Debug)]
-    flow @flow.opening opening {}
+    flow opening {}
 ",
     );
 

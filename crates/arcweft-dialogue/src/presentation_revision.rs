@@ -92,7 +92,7 @@ mod tests {
         let compiled = SourceDocument::try_new(
             SourceDocumentId::try_new("source-main").expect("document id"),
             SourceName::Memory,
-            "flow @flow.main {}\n",
+            "flow main {}\n",
         )
         .expect("document");
         let compiled_sources = SourceSetRevision::try_for_identities([compiled.identity()])
@@ -136,7 +136,7 @@ mod tests {
         let compiled = SourceDocument::try_new(
             SourceDocumentId::try_new("arcweft-project://game/src/main.arcw").expect("document id"),
             SourceName::Memory,
-            "flow @flow.main {}\n",
+            "flow main {}\n",
         )
         .expect("document");
         let topology_sources = SourceSetRevision::try_for_identities([manifest.identity()])

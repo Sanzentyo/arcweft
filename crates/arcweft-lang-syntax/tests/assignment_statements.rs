@@ -61,7 +61,7 @@ fn parses_impl_assignment_tail_if_without_raw_fallback() {
 fn parses_flow_body_assignment_without_raw_fallback() {
     let parsed = parse_assignment_fixture(
         r"
-flow @flow.assignment_demo {
+flow assignment_demo {
     let out = Box { index: 0 }
     out.index = out.index + 1
 }

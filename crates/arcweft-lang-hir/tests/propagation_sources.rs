@@ -91,7 +91,7 @@ fn function_result_source_survives_document_bound_hir_unchanged() {
 fn flow_method_and_closure_sources_survive_hir_with_exact_result_ranges() {
     let source = concat!(
         "// 型境界\n",
-        "flow @flow.audit audit(value: Result<i64, String>) -> Result<i64, String> {\n",
+        "flow audit(value: Result<i64, String>) -> Result<i64, String> {\n",
         "    let unwrapped = value?\n",
         "}\n",
         "impl Handler {\n",
@@ -118,7 +118,7 @@ fn flow_method_and_closure_sources_survive_hir_with_exact_result_ranges() {
         .expect("boundary source fixture lowers");
 
     let flow = &hir.flows()[0];
-    let flow_header = "flow @flow.audit audit(value: Result<i64, String>) -> Result<i64, String>";
+    let flow_header = "flow audit(value: Result<i64, String>) -> Result<i64, String>";
     assert_eq!(
         flow.signature_source().header(),
         range_of(source, flow_header)

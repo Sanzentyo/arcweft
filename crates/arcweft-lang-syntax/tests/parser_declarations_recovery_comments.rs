@@ -148,8 +148,7 @@ fn policy_shaped_top_level_text_uses_ordinary_context_recovery() {
 
 #[test]
 fn namespace_separator_is_rejected_in_module_paths() {
-    let parsed =
-        parse_declaration_fixture("mod game::opening\nflow @flow.opening opening { return }\n");
+    let parsed = parse_declaration_fixture("mod game::opening\nflow opening { return }\n");
 
     assert_eq!(parsed.errors().len(), 1);
     assert!(
@@ -369,7 +368,7 @@ fn at_is_entity_ref_and_slash_comments_are_comments() {
     let parsed = parse_ok(
         r"
 // ordinary comment
-flow @flow.opening opening {
+flow opening {
     goto @flow.title
 }
 ",
@@ -378,7 +377,7 @@ flow @flow.opening opening {
     let Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
-    assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
+    assert_eq!(flow.name(), Some("opening"));
 
     let parsed = parse_ok("// ordinary comment only");
 
@@ -393,7 +392,7 @@ fn block_comments_are_comments() {
 /*
 ordinary block comment
 */
-flow @flow.opening opening {
+flow opening {
     goto @flow.title
 }
 ",
@@ -402,7 +401,7 @@ flow @flow.opening opening {
     let arcweft_lang_syntax::ast::items::Item::Flow(flow) = &tree.items()[0] else {
         panic!("expected flow");
     };
-    assert_eq!(flow.id().expect("flow id").body(), "flow.opening");
+    assert_eq!(flow.name(), Some("opening"));
 }
 
 #[test]
@@ -473,7 +472,7 @@ fn documented_body() -> Unit {
 fn flow_recovery_nodes_keep_family_and_source_range() {
     let parsed = parse_declaration_fixture(
         r"
-flow @flow.raw_example {
+flow raw_example {
     unknown surface form
 }
 ",

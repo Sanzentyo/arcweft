@@ -409,7 +409,7 @@ fn unknown_policy_cases() -> [(&'static str, &'static str, &'static str); 12] {
 }
 
 const VIEW_IMAGE_COLLISION_SOURCE: &str = r"
-pub image @image.poster {
+pub image poster {
   asset = @asset.poster
   x = 0px
   y = 0px

@@ -12,7 +12,7 @@ use crate::{
 fn parses_reusable_flow_body() {
     let tree = parse_ok(
         r"
-pub flow @flow.alice_enters alice_enters {
+pub flow alice_enters {
     show(@character.alice, .normal, at = .right, fade = 220ms)
     alice: おはよう。[p]
 }
@@ -22,7 +22,7 @@ pub flow @flow.alice_enters alice_enters {
     let Item::Flow(flow) = &tree.typed_tree().items()[0] else {
         panic!("expected flow item");
     };
-    assert_eq!(flow.id().expect("flow id").body(), "flow.alice_enters");
+    assert_eq!(flow.name(), Some("alice_enters"));
     assert!(matches!(
         &flow.body()[0],
         FlowItem::Stmt(Stmt::Expr {
@@ -81,7 +81,7 @@ fn unreserved_line_options_remain_extension_arguments_without_builtin_meaning() 
 fn typechecks_character_method_and_speaker_preset_dialogue_callees() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice.say(voice=auto)[おはよう。[p]]
     @<character.alice>.say(voice=auto)[おはよう。[p]]
     alice2(voice=auto): おはよう。[p]
@@ -110,7 +110,7 @@ flow @flow.opening opening {
 #[test]
 fn registered_character_dialogue_keeps_frozen_speaker_classification() {
     let source = r"
-flow @flow.opening opening {
+flow opening {
     let akane = @<character.akane>
     let line = akane[おはよう。[p]]
 }
@@ -137,7 +137,7 @@ flow @flow.opening opening {
 fn speaker_preset_options_parse_but_reject_unresolved_atoms() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let alice2 = alice(face=smile, mood=embarrassed, custom_style=soft, view=@view:.side)
     alice2: おはよう。[p]
     alice.face(worried)
@@ -161,7 +161,7 @@ flow @flow.opening opening {
 
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let bad = smile
 }
 ",
@@ -180,7 +180,7 @@ flow @flow.opening opening {
 fn speaker_preset_options_accept_resolved_variant_atoms() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let alice2 = alice(face=.smile, voice=auto, view=@view:.side)
     alice2: おはよう。[p]
     alice.face(.worried)
@@ -197,7 +197,7 @@ flow @flow.opening opening {
 fn parses_bare_block_after_dialogue_as_unnamed_scope() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow opening {
     alice.say()[おはよう。[p]] {
         let tmp = route_title(state.route)
         log.info("tmp={tmp}", tmp = tmp)
@@ -230,7 +230,7 @@ flow @flow.opening opening {
 fn lowers_relative_dialogue_line_options() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     scope rain {
         地の文(id=@.sound):
             扉の向こうから、雨の音がした。[p]
@@ -302,7 +302,7 @@ flow @flow.opening opening {
 fn lowers_at_relative_dialogue_line_options_with_parent_scopes() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     scope outer {
         scope inner {
             alice(id=@...shared, text_key=@super.inner_text):
@@ -540,7 +540,7 @@ fn typechecker_rejects_invalid_dialogue_waits_and_control_attributes() {
         r"
 character @character.alice Alice as alice {}
 
-flow @flow.main main {
+flow main {
     alice: A[w]B[w 0ms]C[w 0.0001s]D[p unexpected]E[speed]F[speed 241]
 }
 ",
@@ -601,7 +601,7 @@ fn parser_surfaces_dialogue_text_diagnostics() {
 fn typechecker_uses_shorthand_marks_for_line_plan_handlers() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow opening {
     alice[待って。[.seen][p]]
     with:
         on mark(.seen):
@@ -623,7 +623,7 @@ flow @flow.opening opening {
 fn typechecker_does_not_register_custom_effect_selectors_as_marks() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice[One [.sparkle amp=1px]effect[/], two [.sparkle amp=2px]effects[/].[p]]
 }
 ",
@@ -642,7 +642,7 @@ flow @flow.opening opening {
 fn lowers_family_relative_dialogue_id_declarations() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     scope dream {
         alice(id=@say:.hint, text_key=@text:.hint):
             今日は少しだけ。[p]
@@ -673,7 +673,7 @@ flow @flow.opening opening {
 fn lowers_narrator_aliases_and_family_relative_windows() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     scope rain {
         ナレーション(id=@.voiceover, view=@view:.narrator):
             扉の向こうから、雨の音がした。[p]

@@ -4,7 +4,7 @@ use super::support::*;
 fn typecheck_rejects_locals_escaping_named_and_bare_scopes() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     scope rain {
         let scoped_name = true
     }
@@ -57,7 +57,7 @@ flow @flow.opening opening {
 fn lowers_scope_expression_let_binding() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     let can_enter = scope alice_route_check {
         let affection_ok = state.affection[@character.alice] >= 3
         let has_key = state.inventory.contains(@item.alice_key)
@@ -69,7 +69,7 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     }
 }
 
-flow @flow.alice_intro alice_intro {
+flow alice_intro {
 }
 ",
     );
@@ -122,7 +122,7 @@ flow @flow.alice_intro alice_intro {
 fn lowers_unnamed_scope_expression_let_binding() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let ready = scope {
         let local = true
         local
@@ -133,7 +133,7 @@ flow @flow.opening opening {
     }
 }
 
-flow @flow.next next {
+flow next {
 }
 ",
     );
@@ -169,7 +169,7 @@ flow @flow.next next {
 fn parses_and_typechecks_plain_block_expression_binding() {
     let tree = parse_ok(
         r"
-flow @flow.block_expr block_expr {
+flow block_expr {
     let total = {
         let a = 1i32
         let b = 2i32
@@ -204,7 +204,7 @@ flow @flow.block_expr block_expr {
 fn parses_and_typechecks_let_else_binding() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     let .Some(route) = state.route_override else {
         goto @flow.title
     }
@@ -212,7 +212,7 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
     goto route
 }
 
-flow @flow.title title {
+flow title {
 }
 ",
     );
@@ -248,13 +248,13 @@ flow @flow.title title {
 fn typecheck_rejects_non_diverging_let_else() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     let .Some(route) = state.route_override else {
         @flow.title
     }
 }
 
-flow @flow.title title {
+flow title {
 }
 ",
     );
@@ -276,7 +276,7 @@ flow @flow.title title {
 fn typecheck_rejects_out_outside_line_plan_scope() {
     let tree = parse_ok(
         r"
-flow @flow.bad_out bad_out {
+flow bad_out {
     out .Done
 }
 ",
@@ -302,7 +302,7 @@ fn typechecks_let_else_panic_and_fail_as_diverging() {
     ] {
         let source = format!(
             r"
-flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
+flow opening(state: GameState) -> Result<FlowExit, FlowError> {{
     let .Some(route) = state.route_override else {{
         {diverging}
     }}
@@ -328,7 +328,7 @@ flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {{
 fn parses_and_typechecks_bail_and_ensure_calls() {
     let tree = parse_ok(
         r#"
-flow @flow.validate validate {
+flow validate {
     ensure(score >= 0, "score must be non-negative")
     if !valid {
         bail("invalid score")
@@ -357,7 +357,7 @@ flow @flow.validate validate {
 #[test]
 fn parses_and_typechecks_result_computation_block_binding() {
     let source = r#"
-flow @flow.compute compute() -> Result<Unit, ArcError> {
+flow compute() -> Result<Unit, ArcError> {
     let route = result {
         let id = parse_choice_id(raw)?
         ensure(id_valid, "choice id must be valid")
@@ -412,7 +412,7 @@ flow @flow.compute compute() -> Result<Unit, ArcError> {
 fn parses_and_typechecks_stream_computation_block_binding() {
     let tree = parse_ok(
         r"
-flow @flow.stream stream_example {
+flow stream_example {
     let levels = stream {
         for frame in frames {
             yield rms(frame)
@@ -421,7 +421,7 @@ flow @flow.stream stream_example {
     goto @flow.title
 }
 
-flow @flow.title title {}
+flow title {}
 ",
     );
 
@@ -465,7 +465,7 @@ flow @flow.title title {}
 fn typecheck_rejects_yield_outside_generation_context() {
     let tree = parse_ok(
         r"
-flow @flow.bad bad {
+flow bad {
     yield state
 }
 ",
@@ -485,7 +485,7 @@ flow @flow.bad bad {
 fn typecheck_rejects_yield_in_dialogue_line_plan() {
     let tree = parse_ok(
         r"
-flow @flow.bad bad {
+flow bad {
     alice[待って。[p]]
     with:
         yield .Done
@@ -508,7 +508,7 @@ flow @flow.bad bad {
 fn typecheck_rejects_non_bool_ensure_condition() {
     let tree = parse_ok(
         r#"
-flow @flow.validate validate {
+flow validate {
     ensure(score, "score must be non-negative")
 }
 "#,
@@ -538,7 +538,7 @@ flow @flow.validate validate {
 fn parses_and_typechecks_while_loop() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     while loading {
         continue
     }
@@ -573,7 +573,7 @@ flow @flow.loading loading {
 fn parses_and_typechecks_if_let_guard_block() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     if let .Some(route) = state.route_override when route_available {
         goto route
     }
@@ -612,7 +612,7 @@ flow @flow.branching branching {
 fn parses_and_typechecks_value_if_expression_binding() {
     let tree = parse_ok(
         r#"
-flow @flow.branching branching {
+flow branching {
     let face = if ready {
         "smile"
     } else {
@@ -662,7 +662,7 @@ flow @flow.branching branching {
 fn typecheck_joins_value_if_branch_types_as_anonymous_sum() {
     let tree = parse_ok(
         r#"
-flow @flow.branching branching {
+flow branching {
     let face = if ready {
         "smile"
     } else {
@@ -695,7 +695,7 @@ flow @flow.branching branching {
 fn parses_and_typechecks_value_if_let_expression_binding() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     let route = if let .Some(route) = state.route_override when route_enabled {
         route
     } else {
@@ -753,7 +753,7 @@ flow @flow.branching branching {
 fn value_if_let_guard_can_use_pattern_binding() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     let chosen = if let .Some(value) = maybe when value > fallback {
         value
     } else {
@@ -778,7 +778,7 @@ flow @flow.branching branching {
 fn typecheck_rejects_value_if_let_non_bool_guard() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     let route = if let .Some(route) = state.route_override when route_count {
         route
     } else {
@@ -810,7 +810,7 @@ flow @flow.branching branching {
 fn parses_and_typechecks_value_match_expression_binding() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     let route = match selected {
         @choice.opening.listen when can_listen => @flow.alice_intro
         @choice.opening.silent => @flow.quiet_intro
@@ -856,7 +856,7 @@ flow @flow.branching branching {
 fn typecheck_joins_value_match_branch_types_as_anonymous_sum() {
     let tree = parse_ok(
         r#"
-flow @flow.branching branching {
+flow branching {
     let route = match selected {
         @choice.opening.listen => @flow.alice_intro
         _ => "fallback"
@@ -892,7 +892,7 @@ flow @flow.branching branching {
 #[test]
 fn parses_and_typechecks_postfix_try_expression() {
     let source = r"
-flow @flow.trying trying() -> Result<Unit, ConfigError> {
+flow trying() -> Result<Unit, ConfigError> {
     let config = load_config()?
 }
 ";
@@ -930,7 +930,7 @@ flow @flow.trying trying() -> Result<Unit, ConfigError> {
 #[test]
 fn parses_and_typechecks_prefix_try_expression() {
     let source = r"
-flow @flow.trying trying() -> Result<Unit, Error> {
+flow trying() -> Result<Unit, Error> {
     let config = try load_config()
 }
 ";
@@ -953,7 +953,7 @@ flow @flow.trying trying() -> Result<Unit, Error> {
 fn typecheck_rejects_non_bool_if_let_guard() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     if let .Some(route) = state.route_override when route_count {
         goto route
     }
@@ -980,7 +980,7 @@ flow @flow.branching branching {
 fn parses_and_typechecks_while_let_loop() {
     let tree = parse_ok(
         r"
-flow @flow.events events {
+flow events {
     while let .Some(event) = next_event when event_ready {
         goto event
     }
@@ -1019,7 +1019,7 @@ flow @flow.events events {
 fn typecheck_rejects_non_bool_while_condition() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     while loading_count {
         continue
     }
@@ -1044,7 +1044,7 @@ flow @flow.loading loading {
 fn parses_and_typechecks_loop_expression_binding() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let next = 'events: loop {
         break 'events @flow.title
     }
@@ -1052,7 +1052,7 @@ flow @flow.opening opening {
     goto next
 }
 
-flow @flow.title title {
+flow title {
 }
 ",
     );
@@ -1096,13 +1096,13 @@ flow @flow.title title {
 fn typecheck_rejects_break_value_in_while() {
     let tree = parse_ok(
         r"
-flow @flow.loading loading {
+flow loading {
     while is_loading {
         break @flow.title
     }
 }
 
-flow @flow.title title {
+flow title {
 }
 ",
     );
@@ -1124,7 +1124,7 @@ flow @flow.title title {
 fn typecheck_rejects_break_outside_loop() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     break
 }
 ",
@@ -1144,7 +1144,7 @@ flow @flow.opening opening {
 fn typecheck_rejects_unresolved_control_transfer_labels() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let next = 'events: loop {
         if done {
             break 'missing @flow.title
@@ -1160,7 +1160,7 @@ flow @flow.opening opening {
     }
 }
 
-flow @flow.title title {}
+flow title {}
 ",
     );
     let hir = lower_document_to_hir(tree.document(), tree.typed_tree())
@@ -1195,7 +1195,7 @@ flow @flow.title title {}
 fn parses_for_and_select_flow_blocks() {
     let tree = parse_ok(
         r"
-flow @flow.stream stream {
+flow stream {
     for c in choices {
         option(c.id, label = c.label)
     }
@@ -1271,7 +1271,7 @@ fn typecheck_rejects_borrow_across_yield_thread_and_defer_boundaries() {
     ] {
         let tree = parse_ok(format!(
             r"
-flow @flow.borrow borrow {{
+flow borrow {{
     let pixels: &'asset [Rgba8] = bg.pixels()
     {boundary}
 }}
@@ -1304,7 +1304,7 @@ flow @flow.borrow borrow {{
 fn parses_if_and_match_flow_blocks_for_hir() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     if state.ready {
         goto @flow.ready
     }
@@ -1334,7 +1334,7 @@ flow @flow.branching branching {
 #[test]
 fn parses_flow_statement_if_else_blocks() {
     let source = r#"
-flow @flow.main main(input: i32) -> String {
+flow main(input: i32) -> String {
     if input > 0 {
         return "ok"
     } else {
@@ -1358,7 +1358,7 @@ flow @flow.main main(input: i32) -> String {
 fn typechecks_if_and_match_flow_blocks() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     if !state.ready {
         goto @flow.ready
     }
@@ -1382,7 +1382,7 @@ flow @flow.branching branching {
 fn typechecks_statement_match_arm_guards_and_bindings() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     match state.route_override {
         .Some(route) when route_enabled => goto route
         _ => goto @flow.title
@@ -1415,7 +1415,7 @@ flow @flow.branching branching {
 fn typecheck_rejects_statement_match_non_bool_guard() {
     let tree = parse_ok(
         r"
-flow @flow.branching branching {
+flow branching {
     match state.route_override {
         .Some(route) when route_count => goto route
         _ => goto @flow.title

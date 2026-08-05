@@ -21,7 +21,7 @@ fn parse_ok(source: impl Into<String>) -> arcweft_lang_syntax::source::ParsedSou
 fn dialogue_trailing_brace_plan_avoids_owned_block_for_same_line() {
     let same_line = parse_dialogue_fixture(
         r"
-flow @flow.opening opening {
+flow opening {
     alice.say()[本文です。[p]] with { out handles }
 }
 ",
@@ -37,7 +37,7 @@ flow @flow.opening opening {
 #[test]
 fn let_dialogue_call_expr_source_includes_same_line_plan() {
     let source = r"
-flow @flow.opening opening {
+flow opening {
     let result = alice.say()[Pick one.] with { out score + 1i64 }
 }
 ";
@@ -75,7 +75,7 @@ flow @flow.opening opening {
 #[test]
 fn let_dialogue_call_expr_source_includes_following_line_plan() {
     let source = r"
-flow @flow.opening opening {
+flow opening {
     let result = alice.say()[Pick one.]
     with:
         out score + 1i64
@@ -114,7 +114,7 @@ flow @flow.opening opening {
 
 #[test]
 fn multiline_let_dialogue_call_expr_range_slices_lf_and_crlf_source() {
-    let source_lf = "flow @flow.opening opening {\n    let result = alice.say()[\n        Intro\n        [.sparkle amp=2px]effect[/][p]\n    ]\n}\n";
+    let source_lf = "flow opening {\n    let result = alice.say()[\n        Intro\n        [.sparkle amp=2px]effect[/][p]\n    ]\n}\n";
     for source in [source_lf.to_owned(), source_lf.replace('\n', "\r\n")] {
         let parsed = parse_ok(source.clone());
         let tree = parsed.typed_tree();
@@ -154,7 +154,7 @@ fn multiline_let_dialogue_call_expr_range_slices_lf_and_crlf_source() {
 #[test]
 fn dialogue_line_options_are_structured_not_raw_args() {
     let source = r#"
-flow @flow.opening opening {
+flow opening {
     alice(id=@say.opening.dream_hint, text_key=@text.opening.dream_hint, voice=auto, view=@view.side, hooks=[@hook.dialogue.read_state_color], style=@style.dream, rich_text=rich_text_style(ruby=ruby_style(size=11px)), look=smile, source_locale="ja-JP", custom=foo(size=12px)): 今日は少しだけ。[p]
 }
 "#;

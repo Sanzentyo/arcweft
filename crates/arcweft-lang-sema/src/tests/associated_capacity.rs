@@ -28,7 +28,7 @@ use arcweft_source::SourceRange;
 
 fn analyze_capacity_source(profile: &str, body: &str) -> TypeCheckReport {
     let source = format!(
-        "flow @flow.{profile} {profile} {{\n{body}\n}}\n",
+        "flow {profile} {{\n{body}\n}}\n",
         profile = profile.replace('-', "_")
     );
     analyze_registered_source(profile, &source)
@@ -332,7 +332,7 @@ fn associated_environment_override_exact_counters() {
     );
     let report = analyze_registered_source_with_environment(
         "associated-environment-override-exact-counters",
-        "flow @flow.associated_environment_override associated_environment_override {\n    let _: bool = String.with_capacity(64usize)\n}\n",
+        "flow associated_environment_override {\n    let _: bool = String.with_capacity(64usize)\n}\n",
         environment,
     );
     assert!(report.diagnostics.is_empty(), "{:?}", report.diagnostics);

@@ -33,7 +33,7 @@ effects {}
     reduce_game(state, event)
 }
 
-flow @flow.opening opening(state: GameState) {
+flow opening(state: GameState) {
 }
 
 entry game @entry.game.main {
@@ -182,7 +182,11 @@ fn schema_change_changes_schema_and_binding_digests() {
 #[test]
 fn flow_id_change_changes_flow_contract_and_binding_digests() {
     let first = checked(SOURCE);
-    let second = checked(&SOURCE.replace("flow.opening", "flow.alternate"));
+    let second = checked(
+        &SOURCE
+            .replace("flow opening", "flow alternate")
+            .replace("@flow.opening", "@flow.alternate"),
+    );
     let first = first.stateful().unwrap();
     let second = second.stateful().unwrap();
 
@@ -610,7 +614,7 @@ effects {}
     Ok(())
 }
 
-flow @flow.unbound_agent_call unbound_agent_call {
+flow unbound_agent_call {
     expect(true)
 }
 

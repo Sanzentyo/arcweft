@@ -10,7 +10,7 @@ fn view_lowering_keeps_one_typed_view_owner() {
             SourceDocumentId::try_new("arcweft-test://lang-hir/view/callable.arcw")
                 .expect("View callable fixture source ID"),
             SourceName::path("lang-hir/view/callable.arcw"),
-            "pub character @character.alice\npub view Card() {\n    Panel()\n}\n",
+            "pub character alice { display_name = \"Alice\" }\npub view Card() {\n    Panel()\n}\n",
         )
         .expect("View callable fixture source document"),
     );

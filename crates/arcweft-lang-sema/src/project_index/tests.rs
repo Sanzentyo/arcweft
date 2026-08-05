@@ -143,9 +143,9 @@ entry cli @entry.main {
     goto @flow.listen
 }
 
-signal @signal.current_flow: Watch<Ref<Flow>>
+signal current_flow: Watch<Ref<Flow>>
 
-flow @flow.opening opening() -> String {
+flow opening() -> String {
     narrator.say(id=@say.opening)[hello]
     let current = @signal.current_flow
     include @flow.intro
@@ -159,7 +159,7 @@ pub flow intro {
     return "intro"
 }
 
-flow @flow.listen listen {
+flow listen {
     return "listen"
 }
 "#,
@@ -301,8 +301,8 @@ fn agent_prelude_marks_structured_intrinsic_lowering() {
 fn project_index_from_hir_does_not_reparse_raw_signal_type_tails() {
     let tree = parse_project_index_fixture(
         r#"
-signal @signal.current_flow: Watch<Ref<Flow>>
-flow @flow.opening opening() -> String {
+signal current_flow: Watch<Ref<Flow>>
+flow opening() -> String {
     return "ok"
 }
 "#,
@@ -359,13 +359,13 @@ pub fn current_route() -> String {
     "opening"
 }
 
-flow @flow.opening opening() -> String {
+flow opening() -> String {
     let route = current_route()
     goto @flow.done
     return "ok"
 }
 
-flow @flow.done done() -> String {
+flow done() -> String {
     return "done"
 }
 "#;
@@ -625,7 +625,7 @@ effects {}
     ()
 }
 
-flow @flow.opening opening(state: GameState) {
+flow opening(state: GameState) {
 }
 
 entry game @entry.game.main {
@@ -741,7 +741,7 @@ entry agent @entry.agent.smoke {
 fn project_index_from_hir_projects_inline_image_agent_actions() {
     let tree = parse_project_index_fixture(
         r#"
-flow @flow.opening opening {
+flow opening {
     let pulse = image(asset = @asset:.bg.pulse, target = "target.sample.pulse", layer = "layer.foreground", x = 96px, y = 72px, width = 360px, height = 180px, action = "action.inspect.pulse")
 }
 "#,
@@ -768,7 +768,7 @@ flow @flow.opening opening {
 fn project_index_does_not_project_unknown_call_actions() {
     let tree = parse_project_index_fixture(
         r#"
-flow @flow.opening opening {
+flow opening {
     mystery_present(asset = @asset:.bg.pulse, target = "target.sample.pulse", action = "action.inspect.pulse")
 }
 "#,

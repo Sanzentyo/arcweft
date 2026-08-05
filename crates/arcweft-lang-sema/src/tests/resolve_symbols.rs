@@ -4,13 +4,13 @@ use super::support::*;
 fn validates_hir_entity_references_against_registry() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow opening {
     choice @choice.opening.first {
         @choice.opening.listen "聞く" -> @flow.alice_intro
     }
 }
 
-flow @flow.alice_intro alice_intro {
+flow alice_intro {
     goto @flow.opening
 }
 "#,
@@ -26,7 +26,7 @@ flow @flow.alice_intro alice_intro {
 fn reports_unresolved_hir_entity_reference() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     goto @flow.missing
 }
 ",
@@ -43,7 +43,7 @@ flow @flow.opening opening {
 fn resolves_hir_entity_references_from_external_semantic_env() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     show(@character.zundamon)
 }
 ",
@@ -69,7 +69,7 @@ view FeedbackForm() {
 
 action feedback.submit(value: String)
 
-flow @flow.submit submit {
+flow submit {
     let event = receive action(@action.feedback.submit)
     let submitted = event.value
     return submitted
@@ -89,7 +89,7 @@ fn resolves_declared_action_entity_references() {
         r#"
 action feedback.submit(value: String)
 
-flow @flow.submit submit {
+flow submit {
     let target = @action.feedback.submit
     return "done"
 }
@@ -106,7 +106,7 @@ flow @flow.submit submit {
 fn collects_hir_symbol_uses_for_type_checking_without_reparsing() {
     let tree = parse_ok(
         r#"
-flow @flow.opening opening {
+flow opening {
     let (actor, (_, voice)) = alice.say()[聞いて。[p]]
     alice[
         #[fmt("夢", color=blue)]を見た。[p]

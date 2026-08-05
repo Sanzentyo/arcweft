@@ -21,7 +21,7 @@ fn pure_function_call_is_runtime_value_expression() {
 #[pure]
 fn add(a: i32, b: i32) -> i32 { a + b }
 
-flow @flow.main main {
+flow main {
     let n = add(1, 2)
     return "done"
 }
@@ -38,8 +38,8 @@ fn entry_selects_runtime_goto_flow() {
     let tree = parse_ok(
         r#"
 entry cli @entry.main { goto @flow.second }
-flow @flow.first first { return "wrong" }
-flow @flow.second second { return "right" }
+flow first { return "wrong" }
+flow second { return "right" }
 "#,
     );
     let hir = lower_document_to_hir(tree.document(), tree.typed_tree()).expect("entry lowers");
@@ -56,7 +56,7 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
-flow @flow.main main effects { fs.read(save) } {
+flow main effects { fs.read(save) } {
     let text = try await fs.read_text(path.save("profile.json")) with {
         error e => return "missing"
     }

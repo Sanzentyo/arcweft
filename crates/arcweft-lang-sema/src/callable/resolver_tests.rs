@@ -79,7 +79,7 @@ fn project_value(value: i32) -> String {
     "project"
 }
 
-flow @flow.main main {
+flow main {
     let project: String = project_value(1i32)
     let standard: String = standard_value(2i32)
     let adapter: String = adapter_value(3i32)
@@ -1634,7 +1634,7 @@ fn unique_overload_records_probe_and_selected_replay_separately_from_retained_fa
 #[test]
 fn singleton_rejection_records_probe_and_rejected_recovery_replay() {
     const SOURCE: &str = r#"
-flow @flow.main main {
+flow main {
     let rejected: String = standard_value("wrong")
 }
 "#;
@@ -1817,7 +1817,7 @@ fn multi_rejected_overloads_retain_only_the_stable_primary_probe() {
 
 fn overload_recovery_accounting_fixture() -> ResolverFixture {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let ambiguous: String = ambiguous_value(1i32)
     let rejected: String = rejected_value(true)
 }
@@ -1878,7 +1878,7 @@ flow @flow.main main {
 #[test]
 fn typed_rest_spread_records_one_unchecked_container_evaluation() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let values: Vec<i32> = [1i32, 2i32]
     let result: String = typed_rest_values(values...)
 }
@@ -1929,7 +1929,7 @@ flow @flow.main main {
 #[test]
 fn missing_target_recovery_is_outside_candidate_physical_and_retained_accounting() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let non_callable: i32 = 1i32
     non_callable(2i32)
     missing_target(1i32)
@@ -2030,7 +2030,7 @@ fn apply_once(f: i64 -> i64, value: i64) -> i64 {
     return f(value)
 }
 
-flow @flow.main main {
+flow main {
     let result: i64 = apply_once(|value: i64| -> i64 { value }, 2i64)
 }
 ";
@@ -2085,7 +2085,7 @@ fn above(min: i64, value: i64) -> bool {
     value > min
 }
 
-flow @flow.main main {
+flow main {
     let score: i64 = 90i64
     let accepted: bool = score.above(80i64)
 }
@@ -2155,7 +2155,7 @@ fn surround(prefix: String)(value: i64)(suffix: String) -> String {
     return prefix
 }
 
-flow @flow.main main {
+flow main {
     let score: i64 = 90i64
     let suffixer: String -> String = score.surround("prefix")
     let result: String = suffixer("suffix")
@@ -2221,7 +2221,7 @@ fn above(min: i64, value: Score) -> bool {
     true
 }
 
-flow @flow.main main(score: Score) {
+flow main(score: Score) {
     let accepted: String = score.above(80i64)
 }
 "#;
@@ -2382,7 +2382,7 @@ extern capability fs {
     fn read_text(path: String) -> String effects { fs.read }
 }
 
-flow @flow.main main effects { fs.read } {
+flow main effects { fs.read } {
     let text: String = fs.read_text("opening.txt")
     let display = fmt(text)
     log.info(text)
@@ -2491,7 +2491,7 @@ flow @flow.main main effects { fs.read } {
 #[test]
 fn untyped_calls_check_every_authored_argument_without_name_special_cases() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     event.emit(missing_event, payload = missing_payload)
 }
 ";
@@ -2525,7 +2525,7 @@ flow @flow.main main {
 #[test]
 fn non_event_untyped_callable_accepts_open_named_and_spread_arguments() {
     const SOURCE: &str = r#"
-flow @flow.main main {
+flow main {
     let values: Vec<i32> = [3i32, 4i32]
     custom_untyped(1i32, label = "open", [2i32]..., values..., 5i32...)
 }
@@ -2620,7 +2620,7 @@ flow @flow.main main {
 #[test]
 fn registered_open_checked_named_arguments_still_check_their_values() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     open_checked(extra = missing_open_checked_value)
 }
 ";
@@ -2661,7 +2661,7 @@ flow @flow.main main {
 #[test]
 fn registered_spread_policy_distinguishes_fixed_literal_and_rejected_spreads() {
     const SOURCE: &str = r"
-flow @flow.main main {
+flow main {
     let values: Vec<i32> = [3i32, 4i32]
     let accepted: String = fixed_literal_only([1i32, 2i32]...)
     let dynamic: String = fixed_literal_only(values...)
