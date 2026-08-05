@@ -1,6 +1,10 @@
-use crate::dialogue_identity::{DialogueIdFamily, DialogueLineId, DialogueSpeakerSlug};
+use crate::dialogue_identity::DialogueSpeakerSlug;
 use crate::lower_context::LowerContext;
 use crate::model::HirLowerError;
+use arcweft_id::{
+    DeclarationIdentityFamily,
+    dialogue::{DialogueLineId, DialogueTextKey},
+};
 use arcweft_lang_syntax::ast::{
     choice::ChoiceAction,
     common::TextRange,
@@ -18,12 +22,16 @@ pub(crate) fn normalize_flow_decl_id(flow: &Flow) -> Result<Option<EntityRef>, H
     match flow.id() {
         Some(IdRef::Absolute(id)) => Ok(Some(id.clone())),
         Some(IdRef::Relative(relative)) => Ok(Some(EntityRef::new(
-            format!("flow.{}", relative.suffix()),
+            format!(
+                "{}.{}",
+                DeclarationIdentityFamily::Flow.prefix(),
+                relative.suffix()
+            ),
             false,
             *relative.range(),
         ))),
         Some(IdRef::FamilyRelative(relative)) => {
-            if relative.family() != "flow" {
+            if relative.family() != DeclarationIdentityFamily::Flow.prefix() {
                 return Err(HirLowerError::new(
                     format!(
                         "flow declaration cannot use `{}` family-relative id",
@@ -33,14 +41,22 @@ pub(crate) fn normalize_flow_decl_id(flow: &Flow) -> Result<Option<EntityRef>, H
                 ));
             }
             Ok(Some(EntityRef::new(
-                format!("flow.{}", relative.relative().suffix()),
+                format!(
+                    "{}.{}",
+                    DeclarationIdentityFamily::Flow.prefix(),
+                    relative.relative().suffix()
+                ),
                 false,
                 *relative.range(),
             )))
         }
-        None => Ok(flow
-            .name()
-            .map(|name| EntityRef::new(format!("flow.{name}"), false, *flow.range()))),
+        None => Ok(flow.name().map(|name| {
+            EntityRef::new(
+                format!("{}.{}", DeclarationIdentityFamily::Flow.prefix(), name),
+                false,
+                *flow.range(),
+            )
+        })),
     }
 }
 
@@ -65,9 +81,15 @@ pub(crate) fn normalize_entity_ref_syntax(
     match entity {
         EntityRefSyntax::Absolute(entity) => Ok(entity.clone()),
         EntityRefSyntax::FamilyRelative(relative) => {
-            if relative.family() == "flow" && relative.relative().parent_depth() == 0 {
+            if relative.family() == DeclarationIdentityFamily::Flow.prefix()
+                && relative.relative().parent_depth() == 0
+            {
                 return Ok(EntityRef::new(
-                    format!("flow.{}", relative.relative().suffix()),
+                    format!(
+                        "{}.{}",
+                        DeclarationIdentityFamily::Flow.prefix(),
+                        relative.relative().suffix()
+                    ),
                     false,
                     *relative.range(),
                 ));
@@ -179,7 +201,7 @@ pub(crate) fn normalize_line_id(
     }
     match id {
         Some(IdRef::Absolute(id)) => {
-            if !DialogueIdFamily::Line.contains(id.body()) {
+            if DialogueLineId::try_new(id.body()).is_err() {
                 return Err(HirLowerError::new(
                     "dialogue line ID must use the `say` family",
                     Some(*id.range()),
@@ -196,7 +218,7 @@ pub(crate) fn normalize_line_id(
         Some(IdRef::FamilyRelative(relative)) => {
             ensure_id_family(
                 relative.family(),
-                DialogueIdFamily::Line.prefix(),
+                DialogueLineId::family_prefix(),
                 relative.range(),
             )?;
             Ok(Some(build_line_entity_ref(
@@ -219,7 +241,7 @@ pub(crate) fn normalize_line_text_key(
     if let Some(text_key) = text_key {
         let relative = match text_key {
             IdRef::Absolute(text_key) => {
-                if !DialogueIdFamily::Text.contains(text_key.body()) {
+                if DialogueTextKey::try_new(text_key.body()).is_err() {
                     return Err(HirLowerError::new(
                         "dialogue text key must use the `text` family",
                         Some(*text_key.range()),
@@ -231,7 +253,7 @@ pub(crate) fn normalize_line_text_key(
             IdRef::FamilyRelative(relative) => {
                 ensure_id_family(
                     relative.family(),
-                    DialogueIdFamily::Text.prefix(),
+                    DialogueTextKey::family_prefix(),
                     relative.range(),
                 )?;
                 relative.relative()
@@ -244,7 +266,7 @@ pub(crate) fn normalize_line_text_key(
             ));
         };
         let mut parts = vec![
-            DialogueIdFamily::Text.prefix().to_owned(),
+            DialogueTextKey::family_prefix().to_owned(),
             flow_slug.clone(),
             speaker.as_str().to_owned(),
         ];
@@ -259,14 +281,20 @@ pub(crate) fn normalize_line_text_key(
     let Some(line_id) = line_id else {
         return Ok(None);
     };
-    let normalized = DialogueLineId::parse(line_id.body()).ok_or_else(|| {
+    let normalized = DialogueLineId::try_new(line_id.body()).map_err(|_| {
         HirLowerError::new(
             "dialogue line ID must use the `say` family before deriving a text key",
             Some(*line_id.range()),
         )
     })?;
+    let text_key = normalized.generated_text_key().map_err(|_| {
+        HirLowerError::new(
+            "dialogue line ID is too long to derive a text key",
+            Some(*line_id.range()),
+        )
+    })?;
     Ok(Some(EntityRef::new(
-        normalized.generated_text_key(),
+        text_key.as_str().to_owned(),
         false,
         *line_id.range(),
     )))
@@ -274,7 +302,8 @@ pub(crate) fn normalize_line_text_key(
 
 pub(crate) fn flow_slug_from_entity(id: &EntityRef) -> String {
     id.body()
-        .strip_prefix("flow.")
+        .strip_prefix(DeclarationIdentityFamily::Flow.prefix())
+        .and_then(|suffix| suffix.strip_prefix('.'))
         .unwrap_or(id.body())
         .to_owned()
 }
@@ -303,7 +332,7 @@ fn build_line_entity_ref(
         ));
     };
     let mut parts = vec![
-        DialogueIdFamily::Line.prefix().to_owned(),
+        DialogueLineId::family_prefix().to_owned(),
         flow_slug.clone(),
         speaker.as_str().to_owned(),
     ];

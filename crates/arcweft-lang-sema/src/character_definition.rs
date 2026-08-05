@@ -362,14 +362,7 @@ pub fn collect_character_references(
                         .expected_type()
                         .is_some_and(|ty| ty.is_entity_ref_kind(&EntityKind::Character)) =>
             {
-                owner_fact(
-                    world,
-                    &input,
-                    range,
-                    &entity.canonical_body(),
-                    source,
-                    budget,
-                )?
+                owner_fact(world, &input, range, &entity, budget)?
             }
             Expr::ShortVariant(name) => {
                 local_member_fact(world, &input, range, name.as_str(), budget)?
@@ -426,17 +419,23 @@ fn owner_fact(
     world: &RegisteredSemanticWorld,
     input: &CharacterReferenceInput<'_>,
     range: arcweft_lang_syntax::ast::common::TextRange,
-    canonical_body: &str,
-    authored: &str,
+    entity: &arcweft_lang_syntax::ast::ids::EntityRefSyntax,
     budget: &mut CharacterDefinitionRequestBudget,
 ) -> Result<Option<CharacterReferenceFact>, CharacterReferenceInventoryError> {
-    let Some(body) = authored.strip_prefix('@') else {
+    let Some(entity) = entity.as_absolute() else {
         return Ok(None);
     };
-    if body.starts_with('<') || body != canonical_body {
+    if !entity.is_authored() || entity.is_delimited() {
         return Ok(None);
     }
-    let Ok(spanned) = SpannedProjectSymbolPath::parse_at(body, range.start() + 1) else {
+    let body = entity.body();
+    let Some(authored_body_range) = entity.authored_body_range() else {
+        return Ok(None);
+    };
+    let Some(body_base) = range.start().checked_add(authored_body_range.start()) else {
+        return Ok(None);
+    };
+    let Ok(spanned) = SpannedProjectSymbolPath::parse_at(body, body_base) else {
         return Ok(None);
     };
     let Ok(path) = SymbolPath::try_from(spanned.path()) else {

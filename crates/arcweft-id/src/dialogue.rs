@@ -54,6 +54,11 @@ pub enum DialogueIdentityError {
 }
 
 impl DialogueLineId {
+    /// Returns the family prefix owned by dialogue line identities.
+    pub const fn family_prefix() -> &'static str {
+        LINE_FAMILY
+    }
+
     /// Validates and constructs an identity in the exact `say.*` family.
     pub fn try_new(value: impl Into<String>) -> Result<Self, DialogueIdentityError> {
         let value =
@@ -63,6 +68,23 @@ impl DialogueLineId {
             })?;
         validate_family(value.as_str(), DialogueIdentityKind::Line, LINE_FAMILY)?;
         Ok(Self(value))
+    }
+
+    /// Derives the localization key for this line through the same typed
+    /// dialogue identity boundary used for authored text keys.
+    pub fn generated_text_key(&self) -> Result<DialogueTextKey, DialogueIdentityError> {
+        let Some(tail) = self
+            .as_str()
+            .strip_prefix(LINE_FAMILY)
+            .and_then(|value| value.strip_prefix('.'))
+        else {
+            return Err(DialogueIdentityError::WrongFamily {
+                kind: DialogueIdentityKind::Line,
+                expected: LINE_FAMILY,
+                value: self.as_str().to_owned(),
+            });
+        };
+        DialogueTextKey::try_new(format!("{TEXT_FAMILY}.{tail}"))
     }
 
     /// Returns the validated public identity.
@@ -82,6 +104,11 @@ impl DialogueLineId {
 }
 
 impl DialogueTextKey {
+    /// Returns the family prefix owned by dialogue text keys.
+    pub const fn family_prefix() -> &'static str {
+        TEXT_FAMILY
+    }
+
     /// Validates and constructs a key in the exact `text.*` family.
     pub fn try_new(value: impl Into<String>) -> Result<Self, DialogueIdentityError> {
         let value =
@@ -294,5 +321,13 @@ mod tests {
                 family: TEXT_FAMILY,
             })
         );
+    }
+
+    #[test]
+    fn dialogue_line_id_derives_typed_text_key() {
+        let line = DialogueLineId::try_new("say.opening.greeting").expect("valid line ID");
+        let key = line.generated_text_key().expect("derived text key");
+
+        assert_eq!(key.as_str(), "text.opening.greeting");
     }
 }

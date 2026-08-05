@@ -1,50 +1,8 @@
-//! Dialogue identity rules shared by HIR lowering and source materialization.
+//! HIR-only dialogue speaker normalization.
 //!
-//! These rules live in HIR because they normalize language-surface spellings
-//! into semantic ID segments. Syntax must preserve authored text, while
-//! tooling above HIR must observe the same identities as compilation.
-
-/// ID families owned by dialogue line normalization.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum DialogueIdFamily {
-    Line,
-    Text,
-}
-
-impl DialogueIdFamily {
-    pub(crate) const fn prefix(self) -> &'static str {
-        match self {
-            Self::Line => "say",
-            Self::Text => "text",
-        }
-    }
-
-    pub(crate) fn contains(self, body: &str) -> bool {
-        self.tail(body).is_some()
-    }
-
-    fn tail(self, body: &str) -> Option<&str> {
-        let tail = body.strip_prefix(self.prefix())?.strip_prefix('.')?;
-        (!tail.is_empty()).then_some(tail)
-    }
-}
-
-/// A normalized dialogue line ID known to belong to the `say` family.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct DialogueLineId<'a> {
-    tail: &'a str,
-}
-
-impl<'a> DialogueLineId<'a> {
-    pub(crate) fn parse(body: &'a str) -> Option<Self> {
-        DialogueIdFamily::Line.tail(body).map(|tail| Self { tail })
-    }
-
-    /// Derives the localization identity by replacing only the owned family.
-    pub(crate) fn generated_text_key(self) -> String {
-        format!("{}.{}", DialogueIdFamily::Text.prefix(), self.tail)
-    }
-}
+//! Durable dialogue line and text identities are owned by `arcweft-id`.
+//! Speaker surface parsing remains here until syntax exposes a typed callee
+//! boundary instead of a source string.
 
 /// Canonical speaker segment inserted into generated dialogue identities.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -117,7 +75,7 @@ fn is_narrator_alias(segment: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{DialogueIdFamily, DialogueLineId, DialogueSpeakerSlug};
+    use super::DialogueSpeakerSlug;
 
     #[test]
     fn speaker_slug_normalizes_every_callee_surface_without_collapsing_case() {
@@ -167,16 +125,5 @@ mod tests {
                 .map(DialogueSpeakerSlug::as_str),
             Some("narrator")
         );
-    }
-
-    #[test]
-    fn generated_text_key_replaces_only_a_valid_line_family() {
-        let line = DialogueLineId::parse("say.Opening.Alice.001").expect("valid line ID");
-        assert_eq!(line.generated_text_key(), "text.Opening.Alice.001");
-        assert!(DialogueLineId::parse("text.Opening.Alice.001").is_none());
-        assert!(DialogueLineId::parse("say.").is_none());
-        assert!(DialogueLineId::parse("say").is_none());
-        assert!(DialogueIdFamily::Text.contains("text.Opening.Alice.001"));
-        assert!(!DialogueIdFamily::Text.contains("say.Opening.Alice.001"));
     }
 }
