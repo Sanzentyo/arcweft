@@ -6,7 +6,8 @@ Run:
 
 ```bash
 cargo run -p arcweft-cli --all-features -- run \
-  --runner native samples/native-text-input/src/main.arcw \
+  --runner native \
+  --manifest-path samples/native-text-input/arcw.toml --profile main \
   --text-input-trace-out target/native-text-input-trace/native-player-ime.real.json
 ```
 

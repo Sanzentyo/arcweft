@@ -75,7 +75,7 @@ ime-sample-web port="8786":
     @python -m http.server {{ port }} --bind 127.0.0.1 --directory web
 
 ime-sample-native:
-    @cargo run -p arcweft-cli --features native-player -- run --runner native samples/native-text-input/src/main.arcw --text-input-trace-out target\native-text-input-trace\native-player-ime.real.json
+    @cargo run -p arcweft-cli --features native-player -- run --runner native --manifest-path samples\native-text-input\arcw.toml --profile main --text-input-trace-out target\native-text-input-trace\native-player-ime.real.json
 
 view-text-input-native-smoke-check:
     @cargo run -p arcweft-cli -- check --manifest-path samples\native-text-input\arcw.toml
@@ -88,7 +88,7 @@ view-text-input-native-smoke-check:
 view-text-input-native-smoke out="target\\native-text-input-trace\\seq06.16.3":
     @just view-text-input-native-smoke-check
     @New-Item -ItemType Directory -Force -Path "{{ out }}" | Out-Null
-    @cargo run -p arcweft-cli --features native-player -- run --runner native samples\native-text-input\src\main.arcw --text-input-trace-out "{{ out }}\native-player-ime.real.json"
+    @cargo run -p arcweft-cli --features native-player -- run --runner native --manifest-path samples\native-text-input\arcw.toml --profile main --text-input-trace-out "{{ out }}\native-player-ime.real.json"
     @cargo +nightly -Zscript tools\verify-seq06-16-3-native-smoke-trace.rs --trace "{{ out }}\native-player-ime.real.json"
 
 ime-sample-native-contract:

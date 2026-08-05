@@ -6,4 +6,5 @@ version = "0.1.0"
 
 [profiles.main]
 kind = "game"
+entry = "@entry.native_text_input_sample"
 source = "src/main.arcw"
