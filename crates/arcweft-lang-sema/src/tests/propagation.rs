@@ -534,7 +534,7 @@ fn declared_flow_and_method_boundaries_keep_exact_result_sources() {
         (
             "flow",
             r"
-flow @flow.wrong wrong(value: Result<i64, String>) -> Result<i64, i64> {
+flow wrong(value: Result<i64, String>) -> Result<i64, i64> {
     let inner = value?
     return Ok(inner)
 }
@@ -593,7 +593,7 @@ fn ordinary_nested_blocks_do_not_replace_the_function_boundary() {
         (
             "scope",
             r"
-flow @flow.nested nested(value: Result<i64, String>) -> Result<i64, i64> {
+flow nested(value: Result<i64, String>) -> Result<i64, i64> {
     let scoped = scope {
         let inner = value?
         inner
@@ -606,7 +606,7 @@ flow @flow.nested nested(value: Result<i64, String>) -> Result<i64, i64> {
         (
             "if",
             r"
-flow @flow.if_nested nested(value: Result<i64, String>) -> Result<i64, i64> {
+flow nested(value: Result<i64, String>) -> Result<i64, i64> {
     let branched = if true {
         let inner = value?
         inner
@@ -621,7 +621,7 @@ flow @flow.if_nested nested(value: Result<i64, String>) -> Result<i64, i64> {
         (
             "loop",
             r"
-flow @flow.loop_nested nested(value: Result<i64, String>) -> Result<i64, i64> {
+flow nested(value: Result<i64, String>) -> Result<i64, i64> {
     let repeated = loop {
         break value?
     }
@@ -672,7 +672,7 @@ fn values() -> Stream<i64, String> {
         (
             "stream-block",
             r"
-flow @flow.stream_outer outer(value: Result<i64, String>) -> Result<i64, String> {
+flow outer(value: Result<i64, String>) -> Result<i64, String> {
     let values = stream {
         let inner = value?
         yield inner
@@ -685,7 +685,7 @@ flow @flow.stream_outer outer(value: Result<i64, String>) -> Result<i64, String>
         (
             "seq-block",
             r"
-flow @flow.seq_outer outer(value: Result<i64, String>) -> Result<i64, String> {
+flow outer(value: Result<i64, String>) -> Result<i64, String> {
     let values = seq {
         let inner = value?
         yield inner
@@ -698,7 +698,7 @@ flow @flow.seq_outer outer(value: Result<i64, String>) -> Result<i64, String> {
         (
             "source-declaration",
             r"
-source @source.values: Source<i64, String> {
+source values: Source<i64, String> {
     from value?
     backpressure = latest
     replay = event_only
@@ -876,7 +876,7 @@ fn outer(value: Result<i64, String>) -> Result<i64, String> {
 #[test]
 fn omitted_flow_return_is_a_unit_boundary_with_header_related_evidence() {
     let source = r"
-flow @flow.unit unit(value: Result<i64, String>) {
+flow unit(value: Result<i64, String>) {
     let unwrapped = value?
 }
 ";
@@ -903,7 +903,7 @@ flow @flow.unit unit(value: Result<i64, String>) {
         source_range(source, "?"),
         Some(source_range(
             source,
-            "flow @flow.unit unit(value: Result<i64, String>)",
+            "flow unit(value: Result<i64, String>)",
         )),
     );
 }

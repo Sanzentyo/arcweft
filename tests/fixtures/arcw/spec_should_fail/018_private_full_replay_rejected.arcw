@@ -7,6 +7,6 @@ pub source @source.private_full: Source<IteratorItem, CaptureError> {
     on item frame => yield frame
 }
 
-flow @flow.done done {
+flow done {
     return "done"
 }

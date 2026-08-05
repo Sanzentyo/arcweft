@@ -7,7 +7,7 @@ fn passthrough(frames: Stream<IteratorItem, CaptureError>) -> Stream<IteratorIte
     }
 }
 
-pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
+pub source fixture_frames: Source<IteratorItem, CaptureError> {
     from "fixture"
     backpressure = latest
     replay = hash_only
@@ -16,6 +16,6 @@ pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     on item frame => yield frame
 }
 
-flow @flow.generation_edge generation_edge() -> String {
+flow generation_edge() -> String {
     return "done"
 }

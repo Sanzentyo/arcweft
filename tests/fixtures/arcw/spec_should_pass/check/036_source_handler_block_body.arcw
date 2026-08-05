@@ -1,4 +1,4 @@
-source @source.events: Source<String, String> {
+source events: Source<String, String> {
     from adapter.events()
     backpressure = latest
     replay = event_only
@@ -10,4 +10,4 @@ source @source.events: Source<String, String> {
     }
 }
 
-flow @flow.main main() -> String { return "done" }
+flow main() -> String { return "done" }
