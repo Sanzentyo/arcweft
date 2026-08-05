@@ -21,7 +21,7 @@ use crate::dialogue_application::{
     HirRichTextTagIdentity, HirRichTextTagPayload, HirRichTextValue, HirTextFragment,
 };
 use crate::identity::{
-    ExprId, HirDatabaseId, HirLimit, HirModuleId, HirTypedId, LocalId, PatternId, RawHirId,
+    ExprId, HirDatabaseId, HirLimit, HirModuleId, HirTypedId, ItemId, LocalId, PatternId, RawHirId,
     ScopeId, StmtId, TypeId,
 };
 use crate::leaf::{
@@ -465,7 +465,7 @@ fn thread_body_preserves_source_order_and_rejects_foreign_flow_items() {
 
     assert_eq!(
         HirThreadBody::try_new(
-            HirThreadBodyOwner::ThreadExpression(owner),
+            HirThreadBodyOwner::ThreadExpression(id::<ExprId>(owner_module, 3)),
             scope,
             Box::new([HirThreadFlowItem::Error(foreign)]),
         ),
@@ -474,6 +474,51 @@ fn thread_body_preserves_source_order_and_rejects_foreign_flow_items() {
             actual: foreign_module,
         })
     );
+}
+
+#[test]
+fn thread_body_item_limit_is_inclusive_for_every_owner() {
+    let owner_module = module(80);
+    let scope = id::<ScopeId>(owner_module, 1);
+    let maximum = HirLimit::ThreadFlowItems.maximum();
+    let items = (1..=maximum)
+        .map(|slot| {
+            HirThreadFlowItem::Statement(id::<StmtId>(
+                owner_module,
+                u32::try_from(slot).expect("Thread-body limit fits u32"),
+            ))
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+
+    for owner in [
+        HirThreadBodyOwner::Flow(id::<ItemId>(owner_module, 2)),
+        HirThreadBodyOwner::ThreadExpression(id::<ExprId>(owner_module, 3)),
+        HirThreadBodyOwner::NestedScope(scope),
+    ] {
+        let exact = HirThreadBody::try_new(owner, scope, items.clone())
+            .expect("the inclusive ThreadFlowItems limit commits for every body owner");
+        assert_eq!(exact.items().len(), maximum);
+    }
+
+    let mut one_over = items.into_vec();
+    one_over.push(HirThreadFlowItem::DialogueApplication(id::<ExprId>(
+        owner_module,
+        u32::try_from(maximum + 1).expect("one-over Thread-body limit fits u32"),
+    )));
+    for owner in [
+        HirThreadBodyOwner::Flow(id::<ItemId>(owner_module, 2)),
+        HirThreadBodyOwner::ThreadExpression(id::<ExprId>(owner_module, 3)),
+        HirThreadBodyOwner::NestedScope(scope),
+    ] {
+        assert_eq!(
+            HirThreadBody::try_new(owner, scope, one_over.clone().into_boxed_slice()),
+            Err(HirThreadBodyInvariantError::ItemLimit {
+                observed: maximum + 1,
+                maximum,
+            })
+        );
+    }
 }
 
 #[test]

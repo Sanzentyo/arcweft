@@ -14,11 +14,11 @@ use crate::patterns::{PatternComponentRole, PatternSyntaxFamily};
 use super::declaration::{AttachedDeclarationIdentity, attach_declaration_identity};
 use super::family::{ExpressionFamily, NameFamily, PatternFamily, TypeFamily};
 use super::node::{
-    AssertionStatementKind, AstNode, CloseParenKind, EnsuresClauseKind, EqualsKind, ErrorNodeKind,
-    ExpressionBodyKind, FixedParameterGroupKind, FunctionBodyKind, FunctionItemKind,
+    AssertionStatementKind, AstNode, CloseParenKind, ColonKind, EnsuresClauseKind, EqualsKind,
+    ErrorNodeKind, ExpressionBodyKind, FixedParameterGroupKind, FunctionBodyKind, FunctionItemKind,
     MissingBodyKind, OpenParenKind, ParameterKind, PredicateBlockKind, PredicateBodyKind,
     PredicateItemKind, ProofBlockKind, ProofBodyKind, ProofItemKind, RequiresClauseKind,
-    RestParameterMarkerKind, ReturnTypeKind,
+    RestParameterMarkerKind, ReturnTypeKind, ThinArrowKind,
 };
 use super::nominal::{optional_generics, required_name, where_clauses};
 use super::{
@@ -36,6 +36,7 @@ pub struct AttachedCallableParameter {
     group_ordinal: u16,
     parameter_ordinal: u16,
     pattern: AttachedPatternNode,
+    colon: AttachedRequiredPunctuation,
     ty: AttachedTypeRefNode,
     kind: AttachedCallableParameterKind,
     default: Option<AttachedCallableParameterDefault>,
@@ -93,6 +94,11 @@ impl AttachedCallableParameter {
         &self.pattern
     }
 
+    /// Exact authored `:` token or the parser-owned insertion when omitted.
+    pub const fn colon(&self) -> &AttachedRequiredPunctuation {
+        &self.colon
+    }
+
     pub const fn ty(&self) -> &AttachedTypeRefNode {
         &self.ty
     }
@@ -118,7 +124,8 @@ impl AttachedCallableParameter {
     }
 
     pub fn has_recovery(&self) -> bool {
-        !self.pattern().value().state().is_valid()
+        self.colon().is_missing()
+            || !self.pattern().value().state().is_valid()
             || self.ty().family() == AttachedTypeFamily::Recovery
             || self
                 .default()
@@ -674,12 +681,18 @@ impl AstNode<PredicateItemKind> {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttachedCallableReturn {
     syntax: AstNode<ReturnTypeKind>,
+    arrow: AttachedRequiredPunctuation,
     ty: AttachedTypeRefNode,
 }
 
 impl AttachedCallableReturn {
     pub const fn syntax(&self) -> &AstNode<ReturnTypeKind> {
         &self.syntax
+    }
+
+    /// Exact parser-owned `->` token site.
+    pub const fn arrow(&self) -> &AttachedRequiredPunctuation {
+        &self.arrow
     }
 
     pub const fn ty(&self) -> &AttachedTypeRefNode {
@@ -703,6 +716,7 @@ impl AstNode<ReturnTypeKind> {
     pub(crate) fn callable_semantics(&self) -> Result<AttachedCallableReturn, SyntaxAccessError> {
         Ok(AttachedCallableReturn {
             syntax: self.clone(),
+            arrow: punctuation(&self.required_exact_child::<ThinArrowKind>(SyntaxRole::Token)?),
             ty: self
                 .required_family_child::<TypeFamily>(SyntaxRole::Type)?
                 .semantic()?,
@@ -1094,13 +1108,17 @@ fn attach_callable_parameter(
     group_ordinal: u16,
     parameter_ordinal: u16,
 ) -> Result<AttachedCallableParameter, SyntaxAccessError> {
+    let pattern = parameter
+        .required_family_child::<PatternFamily>(SyntaxRole::ParameterPattern)?
+        .semantic()?;
+    let ty = parameter
+        .required_family_child::<TypeFamily>(SyntaxRole::ParameterType)?
+        .semantic()?;
+    let colon = punctuation(&parameter.required_exact_child::<ColonKind>(SyntaxRole::Colon)?);
     Ok(AttachedCallableParameter {
-        pattern: parameter
-            .required_family_child::<PatternFamily>(SyntaxRole::ParameterPattern)?
-            .semantic()?,
-        ty: parameter
-            .required_family_child::<TypeFamily>(SyntaxRole::ParameterType)?
-            .semantic()?,
+        pattern,
+        colon,
+        ty,
         kind: parameter
             .optional_exact_child::<RestParameterMarkerKind>(SyntaxRole::Kind)?
             .map_or(AttachedCallableParameterKind::Fixed, |marker| {

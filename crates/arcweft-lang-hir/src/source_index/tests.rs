@@ -4,8 +4,9 @@ use std::sync::Arc;
 
 use arcweft_lang_syntax::attachment::node::{FunctionBodyKind, LetStatementKind};
 use arcweft_lang_syntax::attachment::{
-    AttachedExpressionNode, AttachedPatternNode, AttachedRequiredThreadExpressionBody,
-    AttachedStyleBody, AttachedStyleMember, AttachedTypeRefNode, DeclarationBodyNode,
+    AttachedExpressionNode, AttachedPatternNode, AttachedRequiredNestedThreadFlowBody,
+    AttachedRequiredThreadExpressionBody, AttachedSelectStatementForm, AttachedStyleBody,
+    AttachedStyleMember, AttachedThreadFlowItem, AttachedTypeRefNode, DeclarationBodyNode,
     LetInitializerNode, StatementNode, TypedItemNode,
 };
 use arcweft_lang_syntax::incremental::{ParsedSource, SyntaxDatabase};
@@ -1177,6 +1178,125 @@ fn thread_expression_body_manifest_stores_only_delimiters_and_item_wholes() {
         None,
         "ChildWhole must borrow the child slot rather than copy its site",
     );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one end-to-end transaction proves both nested branch owners and cross-family non-aliasing"
+)]
+fn nested_branch_body_queries_keep_distinct_scope_owners_without_family_aliasing() {
+    let (parsed, attached) = parsed_expression(
+        "nested-branch-body-owner-identity",
+        concat!(
+            "thread {\n",
+            "    select {\n",
+            "        frame first => {}\n",
+            "        event .Back => {}\n",
+            "    }\n",
+            "}",
+        ),
+    );
+    let thread = attached.thread().expect("Thread expression family");
+    let AttachedRequiredThreadExpressionBody::Present(thread_body) =
+        thread.statement_body().expect("attached Thread body")
+    else {
+        panic!("authored Thread body must be present");
+    };
+    let [AttachedThreadFlowItem::Select(select)] = thread_body.items() else {
+        panic!("fixture must retain one Select parent");
+    };
+    let select = select.semantics().expect("typed Select statement");
+    let AttachedSelectStatementForm::Branches(branches) = select.form() else {
+        panic!("fixture Select must retain its branch block");
+    };
+    let [first, second] = branches.branches() else {
+        panic!("fixture Select must retain two source-ordered branches");
+    };
+    let branch_bodies = [first.body(), second.body()].map(|body| {
+        let AttachedRequiredNestedThreadFlowBody::Present(body) = body else {
+            panic!("each Select branch must retain an authored nested body");
+        };
+        body.clone()
+    });
+
+    let mut slots = StagedSlotTransaction::new(module(1), HirRevision::INITIAL);
+    let mut nested = Vec::new();
+    for body in &branch_bodies {
+        let scope = slots
+            .reserve_source::<ScopeId>(
+                body.syntax().id(),
+                HirSourceSite::Span(body.syntax().source_span()),
+                false,
+            )
+            .expect("nested branch scope slot")
+            .id();
+        slots
+            .bind_payload_poison(scope, false)
+            .expect("nested branch scope payload state");
+        let owner = HirThreadBodyOwner::NestedScope(scope);
+        let body =
+            HirThreadBody::try_new(owner, scope, Box::new([])).expect("empty semantic branch body");
+        nested.push((owner, body));
+    }
+
+    let mut staged = StagedHirSourceIndex::new(parsed.document().identity().clone(), &slots);
+    for ((owner, body), attached) in nested.iter().zip(&branch_bodies) {
+        staged
+            .stage_attached_nested_thread_body(
+                &parsed,
+                *owner,
+                &AttachedRequiredNestedThreadFlowBody::Present(attached.clone()),
+                body,
+            )
+            .expect("nested branch source manifest");
+    }
+    let prepared = slots.prepare().expect("prepared nested branch scopes");
+    let index = staged.commit().expect("committed nested branch manifest");
+    assert!(index.validates_prepared(prepared.snapshot(), parsed.document().identity()));
+    assert_eq!(index.component_count(), 4);
+
+    let role = HirThreadBodySourceRole::OpenDelimiter;
+    let queries = nested
+        .iter()
+        .map(|(owner, _)| HirSourceQuery::ThreadBody {
+            owner: *owner,
+            role,
+        })
+        .collect::<Vec<_>>();
+    assert_ne!(queries[0], queries[1]);
+    let sites = queries
+        .iter()
+        .map(|query| {
+            let lookup = index
+                .lookup(
+                    parsed.document().identity(),
+                    parsed.document().identity(),
+                    query,
+                    |_| {
+                        Ok(HirResolvedSourceRole::component(
+                            HirSourceRequirement::Required,
+                            HirSourceOwnerStatus::Clean,
+                        ))
+                    },
+                )
+                .expect("nested branch delimiter lookup");
+            let HirSourcePresence::Present(site) = lookup.presence() else {
+                panic!("nested branch delimiter must remain present");
+            };
+            site
+        })
+        .collect::<Vec<_>>();
+    assert_ne!(sites[0], sites[1]);
+
+    for owner in [
+        HirThreadBodyOwner::Flow(item(module(1), 1)),
+        HirThreadBodyOwner::ThreadExpression(expr(module(1), 1)),
+    ] {
+        let query = HirSourceQuery::ThreadBody { owner, role };
+        assert!(queries.iter().all(|nested| nested != &query));
+        assert_eq!(index.requirement(&query), None);
+    }
 }
 
 #[test]

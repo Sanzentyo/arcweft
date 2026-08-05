@@ -595,19 +595,37 @@ pub(super) fn item_body_scope_matches(
     slots: &SlotSnapshot,
     arenas: &ItemValidationArenas<'_>,
 ) -> bool {
-    source_owner_matches(
-        slots,
+    item_body_scope_matches_at_site(
+        owner,
+        callable_scope,
         body_scope,
+        expected_kind,
         body_syntax,
-        &HirSourceSite::Span(body_source),
-    ) && arenas
-        .scopes
-        .resolve_prepared(slots, body_scope)
-        .is_ok_and(|payload| {
-            payload.kind() == expected_kind
-                && payload.parent() == Some(callable_scope)
-                && payload.owner() == &HirScopeOwner::Item(owner)
-        })
+        HirSourceSite::Span(body_source),
+        slots,
+        arenas,
+    )
+}
+
+pub(super) fn item_body_scope_matches_at_site(
+    owner: ItemId,
+    callable_scope: ScopeId,
+    body_scope: ScopeId,
+    expected_kind: HirScopeKind,
+    body_syntax: SyntaxNodeId,
+    body_source: HirSourceSite,
+    slots: &SlotSnapshot,
+    arenas: &ItemValidationArenas<'_>,
+) -> bool {
+    source_owner_matches(slots, body_scope, body_syntax, &body_source)
+        && arenas
+            .scopes
+            .resolve_prepared(slots, body_scope)
+            .is_ok_and(|payload| {
+                payload.kind() == expected_kind
+                    && payload.parent() == Some(callable_scope)
+                    && payload.owner() == &HirScopeOwner::Item(owner)
+            })
 }
 
 pub(super) fn scope_locals_are_exact(

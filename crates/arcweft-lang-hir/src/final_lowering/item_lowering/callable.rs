@@ -167,11 +167,27 @@ impl StagedHirModuleTransaction<'_> {
         parent: ScopeId,
         kind: HirScopeKind,
     ) -> Result<ScopeId, HirLowerFailure> {
-        let reservation = self.arenas.scopes().reserve_source(
-            &mut self.slots,
-            syntax.id(),
+        self.allocate_item_body_scope_from_syntax_at_site(
+            syntax,
+            owner,
+            parent,
+            kind,
             HirSourceSite::Span(syntax.source_span()),
-        )?;
+        )
+    }
+
+    pub(super) fn allocate_item_body_scope_from_syntax_at_site(
+        &mut self,
+        syntax: &SyntaxNodeHandle,
+        owner: ItemId,
+        parent: ScopeId,
+        kind: HirScopeKind,
+        source_site: HirSourceSite,
+    ) -> Result<ScopeId, HirLowerFailure> {
+        let reservation =
+            self.arenas
+                .scopes()
+                .reserve_source(&mut self.slots, syntax.id(), source_site)?;
         let scope = reservation.id();
         if reservation.is_first_touch() {
             let payload = HirScope::try_new(
@@ -959,7 +975,7 @@ impl StagedHirModuleTransaction<'_> {
             .map_err(Into::into)
     }
 
-    fn allocate_postcondition_result_local(
+    pub(super) fn allocate_postcondition_result_local(
         &mut self,
         scope: ScopeId,
         annotation: Option<TypeId>,
@@ -1002,7 +1018,7 @@ impl StagedHirModuleTransaction<'_> {
         Ok(local)
     }
 
-    fn attached_insertion_site(
+    pub(super) fn attached_insertion_site(
         &self,
         source: SourceSpan,
     ) -> Result<HirSourceSite, HirLowerFailure> {

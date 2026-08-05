@@ -887,14 +887,10 @@ fn thread_body_graph_evidence(
     prefix_locals: &[LocalId],
     generations: &mut BTreeMap<HirName, LocalGeneration>,
 ) -> Option<ThreadBodyGraphEvidence> {
+    let source_site = HirSourceSite::from_attached_span(parsed.document(), source).ok()?;
     if body.items().len() != attached_items.len()
         || (missing && (!body.items().is_empty() || close_missing))
-        || !source_owner_matches(
-            slots,
-            body.scope(),
-            syntax,
-            &HirSourceSite::Span(source.clone()),
-        )
+        || !source_owner_matches(slots, body.scope(), syntax, &source_site)
     {
         return None;
     }

@@ -1,5 +1,7 @@
 //! Typed source-role vocabulary for native Style item owners.
 
+use super::flow_role::HirFlowSourceRole;
+
 /// Source-order path to one native Style body nested through environment bodies.
 ///
 /// The empty path selects the outer sheet body. Every ordinal is an index into
@@ -123,6 +125,7 @@ pub(crate) enum HirStyleSourceRole {
 /// Typed item source-role family admitted by the sole source index.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum HirItemSourceRole {
+    Flow(HirFlowSourceRole),
     Style(HirStyleSourceRole),
 }
 

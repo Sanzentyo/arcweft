@@ -298,15 +298,26 @@ fn flow_attachment_retains_empty_markers_and_wrong_family_poison_as_typed_states
 
 #[test]
 fn flow_attachment_aggregates_shared_signature_and_statement_only_body_owners() {
-    let snapshot = attach("flow render<T>(value: T) -> T where T: Display { value }");
+    let source = "flow render<T>(value: T) -> T where T: Display { value }";
+    let snapshot = attach(source);
     let declaration = flow(&snapshot).semantics().unwrap();
     let signature = declaration.signature();
     assert!(signature.generics().is_some());
     assert_eq!(signature.parameters().unwrap().parameters().len(), 1);
-    assert!(matches!(
-        signature.result(),
-        AttachedFlowReturnSyntax::Authored(_)
-    ));
+    let parameter = &signature.parameters().unwrap().parameters()[0];
+    let colon_start = source.find(':').unwrap();
+    assert_eq!(
+        parameter.colon().source_span().range(),
+        SourceRange::new(colon_start, colon_start + 1)
+    );
+    let AttachedFlowReturnSyntax::Authored(result) = signature.result() else {
+        panic!("authored return must retain the shared callable return owner");
+    };
+    let arrow_start = source.find("->").unwrap();
+    assert_eq!(
+        result.arrow().source_span().range(),
+        SourceRange::new(arrow_start, arrow_start + 2)
+    );
     assert!(signature.where_clause().is_some());
     assert!(signature.end().range().is_empty());
 
@@ -324,6 +335,22 @@ fn flow_attachment_aggregates_shared_signature_and_statement_only_body_owners() 
         declaration.signature().result(),
         AttachedFlowReturnSyntax::Omitted
     ));
+}
+
+#[test]
+fn flow_parameter_retains_the_parser_owned_missing_colon_insertion() {
+    let source = "flow broken(value) {}";
+    let snapshot = attach(source);
+    let declaration = flow(&snapshot).semantics().unwrap();
+    let parameter = &declaration.signature().parameters().unwrap().parameters()[0];
+    let insertion = source.find(')').unwrap();
+
+    assert!(parameter.colon().is_missing());
+    assert_eq!(
+        parameter.colon().source_span().range(),
+        SourceRange::new(insertion, insertion)
+    );
+    assert!(parameter.has_recovery());
 }
 
 fn thread_flow_matrix_body() -> &'static str {

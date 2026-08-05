@@ -10,9 +10,9 @@ use super::declaration::{
 };
 use super::lexer::LexToken;
 use super::shadow_recovery::{
-    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
-    find_matching_close, find_top_level_boundary, first_significant, token_count, token_text,
-    trimmed_end,
+    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
+    emit_required_punctuation, expected, find_matching_close, find_top_level_boundary,
+    first_significant, token_count, token_text, trimmed_end,
 };
 use super::statement::emit_braced_block;
 use super::type_ref::emit_type;
@@ -336,7 +336,14 @@ fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
 
 fn emit_member_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     parser.start(SyntaxKind::ReturnType, SyntaxRole::ReturnType);
-    parser.bump();
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::ThinArrowNode,
+        SyntaxRole::Token,
+        "->",
+        "syntax.return.missing_arrow",
+        "authored return type requires `->`",
+    );
     parser.bump_trivia();
     let type_end = find_top_level_boundary(parser, parser.cursor(), &["where", "{"]).min(end);
     emit_type(parser, type_end, SyntaxRole::Type);

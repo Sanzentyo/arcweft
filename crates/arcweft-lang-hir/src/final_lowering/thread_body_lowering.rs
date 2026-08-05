@@ -3,7 +3,7 @@
 
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
-    AttachedExpressionNode, AttachedRequiredNestedThreadFlowBody,
+    AttachedExpressionNode, AttachedRequiredFlowBody, AttachedRequiredNestedThreadFlowBody,
     AttachedRequiredThreadExpressionBody, AttachedThreadFlowItem, AttachedThreadFlowItemFamily,
     SyntaxNodeId,
 };
@@ -14,7 +14,7 @@ use crate::expr::{
     HirThreadBody, HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem, HirThreadIssue,
     HirThreadMode,
 };
-use crate::identity::{ExprId, HirLimit, LocalId, ScopeId};
+use crate::identity::{ExprId, HirLimit, ItemId, LocalId, ScopeId};
 use crate::lower::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::HirSourceSite;
@@ -24,6 +24,16 @@ use super::{StagedHirModuleTransaction, require_limit};
 pub(super) struct LoweredThreadBody {
     pub(super) body: HirThreadBody,
     pub(super) recovery: Option<HirThreadIssue>,
+}
+
+/// Lossless Flow-body lowering result used to build canonical Flow poison.
+///
+/// Other Thread-family consumers currently expose one terminal issue. A Flow
+/// declaration instead retains every recovered direct child followed by the
+/// missing close, so its `HirFlowPoison` can publish all related evidence.
+pub(super) struct LoweredFlowBody {
+    pub(super) body: HirThreadBody,
+    pub(super) recoveries: Box<[HirThreadIssue]>,
 }
 
 pub(super) struct PreparedNestedThreadBody<'attached> {
@@ -43,10 +53,45 @@ impl PreparedNestedThreadBody<'_> {
 struct LoweredThreadFlowItems {
     items: Box<[HirThreadFlowItem]>,
     locals: Box<[LocalId]>,
-    recovery: Option<HirThreadIssue>,
+    recoveries: Box<[HirThreadIssue]>,
 }
 
 impl StagedHirModuleTransaction<'_> {
+    pub(super) fn lower_attached_flow_body(
+        &mut self,
+        attached: &AttachedRequiredFlowBody,
+        owner: ItemId,
+        scope: ScopeId,
+    ) -> Result<LoweredFlowBody, HirLowerFailure> {
+        let (items, recoveries) = match attached {
+            AttachedRequiredFlowBody::Present(body) => {
+                let lowered = self.lower_attached_thread_flow_items(body.items(), scope)?;
+                self.close_thread_body_scope(scope, Box::new([]), &lowered)?;
+                let mut recoveries = lowered.recoveries.into_vec();
+                if matches!(body.close_state(), AttachedDelimiterState::Missing(_)) {
+                    recoveries.push(HirThreadIssue::UnclosedBody);
+                }
+                (lowered.items, recoveries.into_boxed_slice())
+            }
+            AttachedRequiredFlowBody::Missing { .. } => {
+                self.close_scope_members(scope, Box::new([]))?;
+                (
+                    Box::<[HirThreadFlowItem]>::from([]),
+                    Box::<[HirThreadIssue]>::from([HirThreadIssue::MissingBody]),
+                )
+            }
+        };
+        let body = HirThreadBody::try_new(HirThreadBodyOwner::Flow(owner), scope, items)
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        self.source_components.stage_attached_flow_thread_body(
+            self.request.source(),
+            HirThreadBodyOwner::Flow(owner),
+            attached,
+            &body,
+        )?;
+        Ok(LoweredFlowBody { body, recoveries })
+    }
+
     pub(super) fn lower_attached_thread_expression(
         &mut self,
         attached: &AttachedExpressionNode,
@@ -95,7 +140,7 @@ impl StagedHirModuleTransaction<'_> {
                 )?;
                 let lowered_items = self.lower_attached_thread_flow_items(body.items(), scope)?;
                 self.close_thread_body_scope(scope, Box::new([]), &lowered_items)?;
-                let recovery = lowered_items.recovery.or_else(|| {
+                let recovery = lowered_items.recoveries.first().cloned().or_else(|| {
                     matches!(body.close_state(), AttachedDelimiterState::Missing(_))
                         .then_some(HirThreadIssue::UnclosedBody)
                 });
@@ -200,7 +245,7 @@ impl StagedHirModuleTransaction<'_> {
         let recovery = if prepared.missing_body {
             Some(HirThreadIssue::MissingBody)
         } else {
-            lowered_items.recovery.or(prepared
+            lowered_items.recoveries.first().cloned().or(prepared
                 .close_missing
                 .then_some(HirThreadIssue::UnclosedBody))
         };
@@ -227,7 +272,7 @@ impl StagedHirModuleTransaction<'_> {
         require_limit(HirLimit::ThreadFlowItems, attached.len())?;
         let mut items = Vec::with_capacity(attached.len());
         let mut locals = Vec::<LocalId>::new();
-        let mut recovery = None;
+        let mut recoveries = Vec::new();
         for (ordinal, item) in attached.iter().enumerate() {
             let (lowered, poisoned) = if let Some(expression) = item.dialogue_application() {
                 let expression = self.lower_attached_expression(&expression, scope)?;
@@ -247,7 +292,7 @@ impl StagedHirModuleTransaction<'_> {
                 )
             };
             if poisoned || item.has_recovery() {
-                recovery.get_or_insert(HirThreadIssue::RecoveredBodyChild {
+                recoveries.push(HirThreadIssue::RecoveredBodyChild {
                     ordinal: u32::try_from(ordinal)
                         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
                 });
@@ -257,7 +302,7 @@ impl StagedHirModuleTransaction<'_> {
         Ok(LoweredThreadFlowItems {
             items: items.into_boxed_slice(),
             locals: locals.into_boxed_slice(),
-            recovery,
+            recoveries: recoveries.into_boxed_slice(),
         })
     }
 

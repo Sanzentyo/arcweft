@@ -10,9 +10,9 @@ use super::lexer::LexToken;
 use super::path::emit_path;
 use super::pattern::emit_pattern;
 use super::shadow_recovery::{
-    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
-    find_matching_close, find_statement_terminator, find_top_level_boundary, first_significant,
-    token_count, trimmed_end,
+    bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
+    emit_required_punctuation, expected, find_matching_close, find_statement_terminator,
+    find_top_level_boundary, first_significant, token_count, trimmed_end,
 };
 use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
@@ -123,13 +123,20 @@ fn emit_view_parameter(
     }
     bump_until(parser, pattern_end);
 
-    let Some(colon) = colon else {
+    let authored_colon = colon.is_some();
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::ColonNode,
+        SyntaxRole::Colon,
+        ":",
+        "syntax.parameter.missing_type",
+        "View parameter requires `: Type`",
+    );
+    if !authored_colon {
         emit_missing_parameter_type(parser);
         parser.finish();
         return;
-    };
-    debug_assert_eq!(parser.cursor(), colon);
-    parser.bump();
+    }
     parser.bump_trivia();
     let default = find_top_level_boundary(parser, parser.cursor(), &["="]).min(parameter_end);
     let type_end = trimmed_end(parser, parser.cursor(), default);

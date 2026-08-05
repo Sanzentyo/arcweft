@@ -142,6 +142,91 @@ fn thread_control_families_lower_in_exact_source_order() {
 }
 
 #[test]
+fn thread_expression_lowers_the_complete_statement_only_family_inventory_in_source_order() {
+    let parsed = parsed_source(
+        "thread-complete-flow-item-inventory",
+        &[concat!(
+            "thread {\n",
+            "    return unit\n",
+            "    alice[こんにちは。]\n",
+            "    choice {}\n",
+            "    if ready {}\n",
+            "    if let value = source {}\n",
+            "    match value { _ => {} }\n",
+            "    loop {}\n",
+            "    while ready {}\n",
+            "    while let value = source {}\n",
+            "    for value in source {}\n",
+            "    select {\n",
+            "        frame frame => {}\n",
+            "        event .Back => {}\n",
+            "        value = source? => {}\n",
+            "    }\n",
+            "    source locale en-US {}\n",
+            "    scope local {}\n",
+            "    include @flow.shared\n",
+            "    try await task with {\n",
+            "        pending progress => {}\n",
+            "        ready value => {}\n",
+            "        error issue => {}\n",
+            "        denied reason => {}\n",
+            "    }\n",
+            "    ???\n",
+            "}",
+        )
+        .into()],
+    );
+    let attached = attached_expressions(&parsed);
+    let thread = attached[0].thread().expect("Thread expression family");
+    let arcweft_lang_syntax::attachment::AttachedRequiredThreadExpressionBody::Present(body) =
+        thread.statement_body().expect("attached Thread body")
+    else {
+        panic!("authored Thread body must be present");
+    };
+    assert!(
+        matches!(
+            body.items().last(),
+            Some(arcweft_lang_syntax::attachment::AttachedThreadFlowItem::Error(_))
+        ),
+        "the malformed `???` source row must attach through the recovery Error family"
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+
+    let root = expression(&module, owners[0]);
+    let HirExprKind::Thread(thread) = root.kind() else {
+        panic!("fixture root must remain a Thread expression");
+    };
+    assert!(matches!(
+        thread.body().items(),
+        [
+            HirThreadFlowItem::Statement(_),
+            HirThreadFlowItem::DialogueApplication(_),
+            HirThreadFlowItem::Choice(_),
+            HirThreadFlowItem::If(_),
+            HirThreadFlowItem::IfLet(_),
+            HirThreadFlowItem::Match(_),
+            HirThreadFlowItem::Loop(_),
+            HirThreadFlowItem::While(_),
+            HirThreadFlowItem::WhileLet(_),
+            HirThreadFlowItem::For(_),
+            HirThreadFlowItem::Select(_),
+            HirThreadFlowItem::SourceLocale(_),
+            HirThreadFlowItem::Scope(_),
+            HirThreadFlowItem::Include(_),
+            HirThreadFlowItem::AwaitWith(_),
+            HirThreadFlowItem::Error(_),
+        ]
+    ));
+    assert_eq!(
+        root.state(),
+        &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidThread(
+            HirThreadIssue::RecoveredBodyChild { ordinal: 15 },
+        ))
+    );
+}
+
+#[test]
 fn thread_root_poison_is_rederived_from_the_attached_owner() {
     assert_expression_freeze_rejects(
         "thread-root-poison-freeze",

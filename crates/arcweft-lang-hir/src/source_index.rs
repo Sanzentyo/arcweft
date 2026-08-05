@@ -4,6 +4,7 @@ mod block_projection;
 mod control_projection;
 mod expr_projection;
 mod expression_manifest;
+mod flow_role;
 mod item_projection;
 mod match_projection;
 mod pattern_projection;
@@ -62,6 +63,10 @@ pub(crate) enum HirSourceLookupError {
 }
 
 pub(crate) use expression_manifest::expression_component_role;
+pub(crate) use flow_role::{
+    HirFlowContractSourcePart, HirFlowParameterSourcePart, HirFlowReturnSourcePart,
+    HirFlowSourceRole,
+};
 pub(crate) use item_projection::ItemValidationArenas;
 pub(crate) use style_role::{
     HirItemSourceRole, HirStyleBodyPath, HirStyleBodySourcePart, HirStyleSourceRole,
@@ -640,7 +645,10 @@ impl HirSourceQuery {
     pub(crate) const fn is_slot_whole(&self) -> bool {
         matches!(
             self,
-            Self::Expr {
+            Self::Item {
+                role: HirItemSourceRole::Flow(HirFlowSourceRole::Whole),
+                ..
+            } | Self::Expr {
                 role: HirExprSourceRole::Whole,
                 ..
             } | Self::Pattern {
@@ -813,6 +821,12 @@ pub(crate) enum HirSourceQueryError {
     ExprOrdinalOutOfBounds {
         owner: ExprId,
         role: HirExprSourceRole,
+        length: u32,
+    },
+    #[error("source role {role:?} is outside item {owner:?}'s length {length}")]
+    ItemOrdinalOutOfBounds {
+        owner: ItemId,
+        role: HirItemSourceRole,
         length: u32,
     },
     #[error("source role {role:?} is outside pattern {owner:?}'s length {length}")]

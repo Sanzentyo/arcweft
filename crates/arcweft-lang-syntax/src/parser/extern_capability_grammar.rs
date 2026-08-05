@@ -11,8 +11,8 @@ use super::expression::emit_expression;
 use super::lexer::LexToken;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
-    find_matching_close, find_matching_close_before, find_top_level_boundary, first_significant,
-    token_count, token_text, trimmed_end,
+    emit_required_punctuation, find_matching_close, find_matching_close_before,
+    find_top_level_boundary, first_significant, token_count, token_text, trimmed_end,
 };
 use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
@@ -222,7 +222,14 @@ fn emit_function_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, o
 
 fn emit_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     parser.start(SyntaxKind::ReturnType, SyntaxRole::ReturnType);
-    parser.bump();
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::ThinArrowNode,
+        SyntaxRole::Token,
+        "->",
+        "syntax.return.missing_arrow",
+        "authored return type requires `->`",
+    );
     parser.bump_trivia();
     let type_end = find_top_level_boundary(parser, parser.cursor(), &["effects"]).min(end);
     emit_type(parser, type_end, SyntaxRole::Type);

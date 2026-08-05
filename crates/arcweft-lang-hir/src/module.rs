@@ -655,6 +655,10 @@ impl HirModule {
                     .resolve(&self.slots, *owner)
                     .expect("published item slot has its validated payload");
                 match (payload.kind(), role) {
+                    (HirItemKind::Flow(flow), HirItemSourceRole::Flow(flow_role)) => {
+                        self.source_components
+                            .validate_flow_source_role(flow, *owner, *flow_role)?;
+                    }
                     (HirItemKind::Style(style), HirItemSourceRole::Style(style_role)) => {
                         style.validate_source_role(*owner, style_role)?;
                     }
@@ -1479,6 +1483,9 @@ fn recovery_query_applies(
             .items
             .resolve_prepared(slots, *owner)
             .is_ok_and(|payload| match (payload.kind(), role) {
+                (HirItemKind::Flow(flow), HirItemSourceRole::Flow(flow_role)) => {
+                    flow.validate_source_role(*owner, *flow_role).is_ok()
+                }
                 (HirItemKind::Style(style), HirItemSourceRole::Style(style_role)) => {
                     style.validate_source_role(*owner, style_role).is_ok()
                 }

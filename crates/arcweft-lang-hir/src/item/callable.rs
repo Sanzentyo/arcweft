@@ -2,15 +2,13 @@
 
 use arcweft_id::PublicId;
 
-use crate::expr::HirThreadBody;
-use crate::identity::{ExprId, HirModuleId, ItemId, LocalId, PatternId, ScopeId, StmtId, TypeId};
-use crate::leaf::{HirIdRef, HirName};
+use crate::identity::{ExprId, HirModuleId, LocalId, PatternId, ScopeId, StmtId, TypeId};
 
 use super::{
     HirItemInvariantError, HirRequiredName, validate_contract_scopes, validate_function_body,
-    validate_function_signature, validate_locals, validate_module, validate_optional_expr,
-    validate_parameters, validate_predicate_body, validate_proof_body, validate_signature,
-    validate_type, validate_types,
+    validate_function_signature, validate_locals, validate_optional_expr, validate_parameters,
+    validate_predicate_body, validate_proof_body, validate_signature, validate_type,
+    validate_types,
 };
 
 /// One final generic parameter.
@@ -286,94 +284,6 @@ impl HirContractScopes {
         expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
         validate_contract_scopes(expected, self.callable, self.requires, self.ensures)
-    }
-}
-
-/// One final flow declaration.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct HirFlowItem {
-    id: Option<HirIdRef>,
-    name: Option<HirName>,
-    generic_parameters: Box<[HirGenericParameter]>,
-    parameters: Box<[HirParameter]>,
-    where_predicates: Box<[HirWherePredicate]>,
-    requires: Box<[ExprId]>,
-    ensures: Box<[ExprId]>,
-    return_type: TypeId,
-    body: HirThreadBody,
-}
-
-impl HirFlowItem {
-    pub(crate) fn try_new(
-        owner: ItemId,
-        id: Option<HirIdRef>,
-        name: Option<HirName>,
-        signature: HirCallableSignature,
-        body: HirThreadBody,
-    ) -> Result<Self, HirItemInvariantError> {
-        if id.is_none() && name.is_none() {
-            return Err(HirItemInvariantError::MissingFlowIdentity);
-        }
-        let expected = owner.module();
-        validate_module(expected, signature.return_type.module())?;
-        body.validate_module(expected)
-            .map_err(|actual| HirItemInvariantError::ForeignChild { expected, actual })?;
-        Ok(Self {
-            id,
-            name,
-            generic_parameters: signature.generic_parameters,
-            parameters: signature.parameters,
-            where_predicates: signature.where_predicates,
-            requires: signature.requires,
-            ensures: signature.ensures,
-            return_type: signature.return_type,
-            body,
-        })
-    }
-
-    pub fn id(&self) -> Option<&HirIdRef> {
-        self.id.as_ref()
-    }
-
-    pub const fn name(&self) -> Option<&HirName> {
-        self.name.as_ref()
-    }
-
-    pub const fn parameters(&self) -> &[HirParameter] {
-        &self.parameters
-    }
-
-    pub const fn return_type(&self) -> TypeId {
-        self.return_type
-    }
-
-    pub const fn body_scope(&self) -> ScopeId {
-        self.body.scope()
-    }
-
-    pub const fn body(&self) -> &HirThreadBody {
-        &self.body
-    }
-
-    pub(super) fn validate_module(
-        &self,
-        expected: HirModuleId,
-    ) -> Result<(), HirItemInvariantError> {
-        if self.id.is_none() && self.name.is_none() {
-            return Err(HirItemInvariantError::MissingFlowIdentity);
-        }
-        validate_signature(
-            expected,
-            &self.generic_parameters,
-            &self.parameters,
-            &self.where_predicates,
-            &self.requires,
-            &self.ensures,
-            self.return_type,
-        )?;
-        self.body
-            .validate_module(expected)
-            .map_err(|actual| HirItemInvariantError::ForeignChild { expected, actual })
     }
 }
 

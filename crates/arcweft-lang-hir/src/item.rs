@@ -15,6 +15,7 @@ use crate::leaf::{HirName, HirPath, HirPathValue};
 
 mod callable;
 mod entry;
+mod flow;
 mod host;
 mod member_index;
 mod nominal;
@@ -48,7 +49,6 @@ pub(crate) use self::trait_impl::{
     HirTraitFunction, HirTraitItem, HirTraitMember,
 };
 
-use self::callable::HirFlowItem;
 pub(crate) use self::callable::{
     HirCallableSignature, HirContractScopes, HirFunctionBody, HirFunctionItem,
     HirFunctionParameterGroup, HirFunctionSignature, HirGenericParameter, HirParameter,
@@ -60,6 +60,11 @@ pub(crate) use self::entry::{
     HirEntryPunctuationState, HirEntryRoute, HirEntryRouteBinding, HirEntryRouteBindings,
     HirEntryTarget, HirEntryTypeBinding, HirHttpMethod, HirHttpMethodIssue, HirHttpMethodValue,
     HirRoutePath, HirRoutePathIssue, HirRoutePathValue,
+};
+pub(crate) use self::flow::{
+    HirContractCondition, HirContractMode, HirContractOperandList, HirFlowContractClause,
+    HirFlowIdentity, HirFlowIssue, HirFlowIssueClass, HirFlowIssueOwner, HirFlowItem,
+    HirFlowPoison, HirFlowResultLocal, HirFlowReturn,
 };
 pub(crate) use self::host::{
     HirBenchItem, HirStyleAssignOperation, HirStyleAssignOperationIssue, HirStyleBodyIssue,
@@ -248,6 +253,7 @@ fn item_state_matches_kind(kind: &HirItemKind, state: &HirItemPoisonState) -> bo
     match kind {
         HirItemKind::Module(module) => module.path().recovery().is_none() || state.is_poisoned(),
         HirItemKind::Use(declaration) => !declaration.has_recovery() || state.is_poisoned(),
+        HirItemKind::Flow(declaration) => declaration.has_recovery() == state.is_poisoned(),
         HirItemKind::View(declaration) => !declaration.has_recovery() || state.is_poisoned(),
         HirItemKind::Layer(declaration) => !declaration.has_recovery() || state.is_poisoned(),
         HirItemKind::Entry(declaration) => {
@@ -591,8 +597,16 @@ pub(crate) enum HirItemInvariantError {
         expected: HirModuleId,
         actual: HirModuleId,
     },
-    #[error("flow declaration has neither a retained ID nor an ordinary name")]
-    MissingFlowIdentity,
+    #[error("Flow parameter uses a callable shape not admitted by Flow")]
+    InvalidFlowParameterShape,
+    #[error("Flow callable, contract, and body scopes must have distinct identities")]
+    FlowScopeIdentityCollision,
+    #[error("Flow result-local presence disagrees with its Ensures clauses")]
+    InvalidFlowResultLocal,
+    #[error("Flow poison references item {actual:?}, expected {expected:?}")]
+    FlowIssueItemOwner { expected: ItemId, actual: ItemId },
+    #[error("Flow poison contains related issues without a primary issue")]
+    InvalidFlowPoison,
     #[error("source declaration has neither a retained ID nor an ordinary name")]
     MissingSourceIdentity,
     #[error("source recovery payload is inconsistent with its typed issue")]

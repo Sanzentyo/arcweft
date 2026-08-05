@@ -73,6 +73,7 @@ mod activity;
 mod callable;
 mod entry;
 mod extern_capability;
+mod flow;
 mod function;
 mod host;
 mod layer;
@@ -157,6 +158,12 @@ impl HirSourceIndex {
                             declaration_members.arena(owner),
                             slots,
                         )
+                    })
+                }
+                (TypedItemNode::Flow(flow), HirItemKind::Flow(_)) => {
+                    flow.semantics().is_ok_and(|attached| {
+                        flow::payload_matches(self, owner, &attached, item, parsed, slots, arenas)
+                            && declaration_members.arena(owner).is_none()
                     })
                 }
                 (TypedItemNode::Signal(signal), HirItemKind::Signal(_)) => {
@@ -447,7 +454,7 @@ fn enum_matches(
         && item.state() == &expected_enum_state(attached, retained, item.prefix(), slots)
 }
 
-fn item_prefix_matches(
+pub(super) fn item_prefix_matches(
     item: &HirItem,
     attached: &AttachedItemPrefix,
     slots: &SlotSnapshot,
@@ -605,7 +612,7 @@ fn required_name_matches(retained: &HirRequiredName, attached: &AttachedRequired
     }
 }
 
-fn generic_parameters_match(
+pub(super) fn generic_parameters_match(
     retained: &[HirGenericParameter],
     attached: Option<&arcweft_lang_syntax::attachment::AttachedGenericParameterGroup>,
     slots: &SlotSnapshot,
@@ -638,7 +645,7 @@ fn generic_parameters_match(
             })
 }
 
-fn where_predicates_match(
+pub(super) fn where_predicates_match(
     retained: &[HirWherePredicate],
     clauses: &[AttachedWhereClause],
     slots: &SlotSnapshot,
@@ -667,7 +674,7 @@ fn type_owners_match(
             .all(|(retained, attached)| type_owner_matches(retained, attached, slots))
 }
 
-fn type_owner_matches(
+pub(super) fn type_owner_matches(
     retained: TypeId,
     attached: &AttachedTypeRefNode,
     slots: &SlotSnapshot,

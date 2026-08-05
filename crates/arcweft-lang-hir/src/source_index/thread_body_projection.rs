@@ -827,13 +827,13 @@ fn flow_body_graph_matches(
             crate::scope::HirScopeKind::Flow,
         )
         .is_some(),
-        AttachedRequiredFlowBody::Missing { missing, .. } => root_thread_body_graph_matches(
+        AttachedRequiredFlowBody::Missing { syntax, .. } => root_thread_body_graph_matches(
             parsed,
             slots,
             arenas,
             body,
-            missing.id(),
-            &missing.source_span(),
+            syntax.id(),
+            &syntax.source_span(),
             &[],
             false,
             true,

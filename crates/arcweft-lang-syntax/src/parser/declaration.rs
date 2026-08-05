@@ -916,7 +916,14 @@ fn emit_parameter(
     bump_until(parser, pattern_end);
     if let Some(colon) = colon {
         debug_assert_eq!(parser.cursor(), colon);
-        parser.bump();
+        emit_required_punctuation(
+            parser,
+            SyntaxKind::ColonNode,
+            SyntaxRole::Colon,
+            ":",
+            "syntax.parameter.missing_colon",
+            "typed parameter requires `:` before its type",
+        );
         parser.bump_trivia();
         if parser.at("...") {
             parser.start(SyntaxKind::RestParameterMarker, SyntaxRole::Kind);
@@ -932,6 +939,14 @@ fn emit_parameter(
         }
     } else {
         let at = parser.current_offset();
+        emit_required_punctuation(
+            parser,
+            SyntaxKind::ColonNode,
+            SyntaxRole::Colon,
+            ":",
+            "syntax.parameter.missing_colon",
+            "typed parameter requires `:` before its type",
+        );
         emit_type(parser, parser.cursor(), SyntaxRole::ParameterType);
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.parameter.missing_type",
@@ -1065,7 +1080,14 @@ fn method_receiver_projection(
 pub(super) fn emit_return_type(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind) {
     let start = parser.current_offset();
     parser.start(SyntaxKind::ReturnType, SyntaxRole::ReturnType);
-    parser.bump();
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::ThinArrowNode,
+        SyntaxRole::Token,
+        "->",
+        "syntax.return.missing_arrow",
+        "authored return type requires `->`",
+    );
     parser.bump_trivia();
     let end = find_header_boundary(parser, parser.cursor());
     emit_type(parser, end, SyntaxRole::Type);

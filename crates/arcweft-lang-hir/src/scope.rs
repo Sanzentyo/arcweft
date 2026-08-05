@@ -178,6 +178,7 @@ pub enum HirLocalKind {
 pub(crate) enum HirPatternBindingPolicy {
     PatternBinding,
     CallableParameter,
+    FlowParameter,
     PredicateParameter,
     ProofParameter,
     LetBinding,
@@ -191,9 +192,10 @@ impl HirPatternBindingPolicy {
     pub(crate) const fn local_kind(self) -> HirLocalKind {
         match self {
             Self::PatternBinding => HirLocalKind::PatternBinding,
-            Self::CallableParameter | Self::PredicateParameter | Self::ProofParameter => {
-                HirLocalKind::Parameter
-            }
+            Self::CallableParameter
+            | Self::FlowParameter
+            | Self::PredicateParameter
+            | Self::ProofParameter => HirLocalKind::Parameter,
             Self::LetBinding | Self::PredicateLet | Self::ProofLet => HirLocalKind::LetBinding,
             Self::ClosureParameter => HirLocalKind::ClosureParameter,
             Self::MatchBinding => HirLocalKind::MatchBinding,
@@ -221,7 +223,11 @@ impl HirPatternBindingPolicy {
     pub(crate) const fn reserves_result(self) -> bool {
         matches!(
             self,
-            Self::PredicateParameter | Self::ProofParameter | Self::PredicateLet | Self::ProofLet
+            Self::FlowParameter
+                | Self::PredicateParameter
+                | Self::ProofParameter
+                | Self::PredicateLet
+                | Self::ProofLet
         )
     }
 }

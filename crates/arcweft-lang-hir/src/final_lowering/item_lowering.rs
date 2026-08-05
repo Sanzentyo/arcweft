@@ -38,6 +38,7 @@ use super::{StagedHirModuleTransaction, require_limit};
 mod callable;
 mod entry;
 mod extern_capability;
+mod flow;
 mod host;
 mod nominal;
 mod retained;
@@ -241,6 +242,9 @@ impl StagedHirModuleTransaction<'_> {
                 TypedItemNode::Proof(node) => {
                     self.lower_proof_declaration(owner, root_scope, node)?
                 }
+                TypedItemNode::Flow(node) => {
+                    self.lower_flow_declaration(owner, root_scope, node)?
+                }
                 TypedItemNode::ExternCapability(node) => {
                     self.lower_extern_capability_declaration(owner, root_scope, node)?
                 }
@@ -261,9 +265,6 @@ impl StagedHirModuleTransaction<'_> {
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
                     members: None,
                 },
-                _ => {
-                    return Err(HirInvariantFailure::InvalidArenaCommit.into());
-                }
             };
 
             let is_recovery = lowered.item.is_poisoned();

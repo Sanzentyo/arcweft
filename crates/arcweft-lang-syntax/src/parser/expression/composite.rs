@@ -19,8 +19,8 @@ use crate::parser::cursor::ShadowDocumentParser;
 use crate::parser::lexer::{LiteralLexemePart, typed_literal};
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
-    bump_until, emit_close_delimiter, emit_open_delimiter, find_matching_close,
-    find_top_level_boundary, first_significant, token_text, trimmed_end,
+    bump_until, emit_close_delimiter, emit_open_delimiter, emit_required_punctuation,
+    find_matching_close, find_top_level_boundary, first_significant, token_text, trimmed_end,
 };
 use crate::parser::type_ref::emit_type;
 
@@ -572,7 +572,14 @@ pub(super) fn emit_closure_parameters_until(
 
 fn emit_closure_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> SourceRange {
     parser.start(SyntaxKind::ReturnType, SyntaxRole::ReturnType);
-    parser.bump();
+    emit_required_punctuation(
+        parser,
+        SyntaxKind::ThinArrowNode,
+        SyntaxRole::Token,
+        "->",
+        "syntax.return.missing_arrow",
+        "authored return type requires `->`",
+    );
     parser.bump_trivia();
     let body = find_top_level_boundary(parser, parser.cursor(), &["{"]).min(end);
     let type_end = trimmed_end(parser, parser.cursor(), body);

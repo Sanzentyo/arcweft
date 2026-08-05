@@ -3,7 +3,9 @@
 use std::collections::BTreeSet;
 
 use super::{HirExprInvariantError, validate_scope};
-use crate::identity::{CaptureId, ExprId, HirModuleId, ItemId, ScopeId, StmtId, SyntheticOwner};
+use crate::identity::{
+    CaptureId, ExprId, HirLimit, HirModuleId, ItemId, ScopeId, StmtId, SyntheticOwner,
+};
 use crate::leaf::HirName;
 
 /// Closure-backed thread expression with a source-ordered flow body.
@@ -88,6 +90,13 @@ impl HirThreadBody {
         items: Box<[HirThreadFlowItem]>,
     ) -> Result<Self, HirThreadBodyInvariantError> {
         let expected = owner.module();
+        let maximum = HirLimit::ThreadFlowItems.maximum();
+        if items.len() > maximum {
+            return Err(HirThreadBodyInvariantError::ItemLimit {
+                observed: items.len(),
+                maximum,
+            });
+        }
         if scope.module() != expected {
             return Err(HirThreadBodyInvariantError::ForeignReference {
                 expected,
@@ -200,6 +209,10 @@ impl HirThreadFlowItem {
 /// Structural failure while assembling one shared Flow/Thread body.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum HirThreadBodyInvariantError {
+    ItemLimit {
+        observed: usize,
+        maximum: usize,
+    },
     ForeignReference {
         expected: HirModuleId,
         actual: HirModuleId,
