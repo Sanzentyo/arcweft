@@ -114,7 +114,7 @@ fn i_to_string_2(i: i32) -> String {
     }
 }
 
-flow native_text_input_sample(state: GameState) {
+flow native_text_input_sample(state: GameState) -> String {
   view(@view:.NativeTextInputPanel)
 
     let a: i32 = 2
