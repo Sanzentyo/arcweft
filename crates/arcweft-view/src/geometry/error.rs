@@ -34,6 +34,23 @@ pub enum ViewRepresentedGeometryFeature {
     PaintEffectBounds,
 }
 
+impl ViewRepresentedGeometryFeature {
+    /// Returns whether this represented feature is unsupported by the
+    /// consumer's physical result.
+    ///
+    /// Paint-effect bounds belong to the paint/compositing owner.  Layout and
+    /// the other non-paint consumers operate on the border-box geometry and
+    /// therefore must not reject a style solely because it also has a paint
+    /// effect. Paint remains fail-closed until its effect bounds are
+    /// executable.
+    pub const fn is_unsupported_for(self, consumer: ViewGeometryConsumer) -> bool {
+        match self {
+            Self::PaintEffectBounds => matches!(consumer, ViewGeometryConsumer::Paint),
+            _ => true,
+        }
+    }
+}
+
 /// Whether a canonical Style property participates in executable geometry.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ViewGeometryPropertySupport {
@@ -42,14 +59,36 @@ pub enum ViewGeometryPropertySupport {
     NotGeometry,
 }
 
-/// Rejects any Style property whose geometry behavior is represented but not executable.
+impl ViewGeometryPropertySupport {
+    /// Returns the represented feature that `consumer` must execute.
+    pub const fn unsupported_feature_for(
+        self,
+        consumer: ViewGeometryConsumer,
+    ) -> Option<ViewRepresentedGeometryFeature> {
+        match self {
+            Self::RepresentedOnly(feature) => {
+                if feature.is_unsupported_for(consumer) {
+                    Some(feature)
+                } else {
+                    None
+                }
+            }
+            Self::Supported | Self::NotGeometry => None,
+        }
+    }
+}
+
+/// Rejects any represented Style feature that the requested consumer must execute.
 pub fn validate_supported_properties(
     node: &ViewStyleNodeKey,
     consumer: ViewGeometryConsumer,
     properties: &[ViewPropertyKind],
 ) -> Result<(), ViewGeometryError> {
     for property in properties {
-        if let ViewGeometryPropertySupport::RepresentedOnly(feature) = property.geometry_support() {
+        if let Some(feature) = property
+            .geometry_support()
+            .unsupported_feature_for(consumer)
+        {
             return Err(ViewGeometryError::UnsupportedConsumer {
                 node: node.clone(),
                 consumer,

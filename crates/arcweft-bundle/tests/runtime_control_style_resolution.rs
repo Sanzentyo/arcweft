@@ -19,10 +19,11 @@ fn environment(color_scheme: ColorScheme) -> PresentationEnvironment {
 use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision, ViewAlignment,
     ViewAngleMilliDegrees, ViewBlendMode, ViewBoxAxisMode, ViewClip, ViewColorValue, ViewDisplay,
-    ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList, ViewFontStyle,
+    ViewFilter, ViewFlexDirection, ViewFlexWrap, ViewFontFamily, ViewFontFamilyList, ViewFontStyle,
     ViewFontWeight, ViewLengthMilli, ViewMask, ViewOverflow, ViewPosition, ViewPropertyKind,
-    ViewRatioMilli, ViewScalarMilli, ViewSpecifiedValue, ViewStyleAssignOp, ViewStyleContribution,
-    ViewStyleContributionSource, ViewStylePriority, ViewStyleValueKind, ViewSystemFontFamily,
+    ViewRatioMilli, ViewScalarMilli, ViewShadow, ViewSpecifiedValue, ViewStyleAssignOp,
+    ViewStyleContribution, ViewStyleContributionSource, ViewStylePriority, ViewStyleValueKind,
+    ViewSystemFontFamily,
 };
 use arcweft_view::{ViewElementKind, ViewMountId, ViewStyleNodeKey};
 
@@ -219,6 +220,90 @@ fn every_canonical_property_is_retained_in_exactly_one_runtime_partition() {
     );
     assert!(projected.physical().box_style().is_some());
     assert!(projected.physical().container_style().is_some());
+}
+
+#[test]
+fn paint_effects_project_without_being_sent_to_layout() {
+    let shadow = ViewShadow {
+        x: ViewLengthMilli::new(2_000),
+        y: ViewLengthMilli::new(3_000),
+        blur: ViewLengthMilli::new(4_000),
+        spread: ViewLengthMilli::new(1_000),
+        color: ViewColorValue::Literal {
+            color: PresentationColor::rgba(10, 20, 30, 40),
+        },
+        inset: false,
+    };
+    let filter = ViewFilter::Blur {
+        radius: ViewLengthMilli::new(5_000),
+    };
+    let projected = ViewRuntimeNodeStyle::try_from_computed(
+        node(),
+        owner(),
+        &computed([
+            (
+                ViewPropertyKind::BoxShadow,
+                ViewSpecifiedValue::ShadowList {
+                    value: vec![shadow],
+                },
+            ),
+            (
+                ViewPropertyKind::Filter,
+                ViewSpecifiedValue::FilterList {
+                    value: vec![filter],
+                },
+            ),
+            (
+                ViewPropertyKind::BackdropFilter,
+                ViewSpecifiedValue::FilterList {
+                    value: vec![filter],
+                },
+            ),
+        ]),
+        &environment(ColorScheme::Dark),
+        &SystemPaletteSet::ENGINE_DEFAULT,
+    )
+    .expect("paint effects do not participate in layout projection");
+
+    assert_eq!(projected.visual().shadows.len(), 1);
+    assert_eq!(projected.visual().shadows[0].offset_x_milli, 2_000);
+    assert_eq!(projected.visual().shadows[0].offset_y_milli, 3_000);
+    assert_eq!(projected.visual().shadows[0].blur_milli, 4_000);
+    assert_eq!(projected.visual().shadows[0].spread_milli, 1_000);
+    assert_eq!(
+        projected
+            .visual()
+            .filters
+            .as_ref()
+            .map(|filters| filters.filters.len()),
+        Some(1)
+    );
+    assert_eq!(
+        projected
+            .visual()
+            .backdrop_filters
+            .as_ref()
+            .map(|filters| filters.filters.len()),
+        Some(1)
+    );
+    assert!(
+        projected
+            .paint()
+            .value(ViewPropertyKind::BoxShadow)
+            .is_some()
+    );
+    assert!(
+        projected
+            .composite()
+            .value(ViewPropertyKind::Filter)
+            .is_some()
+    );
+    assert!(
+        projected
+            .composite()
+            .value(ViewPropertyKind::BackdropFilter)
+            .is_some()
+    );
 }
 
 #[test]

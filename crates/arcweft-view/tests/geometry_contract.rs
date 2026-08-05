@@ -721,3 +721,40 @@ fn unsupported_represented_geometry_is_never_silently_dropped() {
         })
     );
 }
+
+#[test]
+fn paint_effect_bounds_do_not_block_layout_but_remain_fail_closed_for_paint() {
+    let paint_effects = [
+        ViewPropertyKind::BoxShadow,
+        ViewPropertyKind::Filter,
+        ViewPropertyKind::BackdropFilter,
+    ];
+    for consumer in [
+        ViewGeometryConsumer::Measure,
+        ViewGeometryConsumer::Layout,
+        ViewGeometryConsumer::Clip,
+        ViewGeometryConsumer::HitTest,
+        ViewGeometryConsumer::Focus,
+        ViewGeometryConsumer::Avoidance,
+        ViewGeometryConsumer::Scroll,
+        ViewGeometryConsumer::Capture,
+    ] {
+        assert_eq!(
+            validate_supported_properties(&node(20), consumer, &paint_effects),
+            Ok(())
+        );
+    }
+    assert_eq!(
+        validate_supported_properties(
+            &node(21),
+            ViewGeometryConsumer::Paint,
+            &[ViewPropertyKind::BoxShadow],
+        ),
+        Err(ViewGeometryError::UnsupportedConsumer {
+            node: node(21),
+            consumer: ViewGeometryConsumer::Paint,
+            property: ViewPropertyKind::BoxShadow,
+            feature: arcweft_view::geometry::ViewRepresentedGeometryFeature::PaintEffectBounds,
+        })
+    );
+}
