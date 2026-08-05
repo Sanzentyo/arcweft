@@ -1,4 +1,4 @@
-flow @flow.bad_break bad_break {
+flow bad_break {
     while true {
         break 1
     }

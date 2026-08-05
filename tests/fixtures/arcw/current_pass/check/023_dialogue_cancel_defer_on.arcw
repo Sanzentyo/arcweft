@@ -1,7 +1,8 @@
-character @character.alice Alice as alice {
+character alice {
+    display_name = "Alice"
 }
 
-flow @flow.cancel_edge cancel_edge() -> String {
+flow cancel_edge() -> String {
     alice(voice=auto):
         長い台詞です。[p]
     with:

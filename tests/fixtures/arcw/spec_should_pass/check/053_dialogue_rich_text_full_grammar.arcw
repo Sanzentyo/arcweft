@@ -16,7 +16,8 @@ pub fn warning(
     ])
 }
 
-pub character @character.alice Alice as alice {
+pub character alice {
+    display_name = "Alice"
     default_voice = auto
     dialogue_style {
         inline_error = InlineFailure.fallback("?")
@@ -47,7 +48,8 @@ pub character @character.alice Alice as alice {
     }
 }
 
-pub character @character.bob Bob as bob {
+pub character bob {
+    display_name = "Bob"
     default_voice = auto
     dialogue_style {
         inline_error = InlineFailure.fallback("?")
@@ -78,7 +80,8 @@ pub character @character.bob Bob as bob {
     }
 }
 
-pub character @character.narrator Narrator as narrator {
+pub character narrator {
+    display_name = "Narrator"
     default_voice = auto
     dialogue_style {
         inline_error = InlineFailure.fallback("?")
@@ -113,7 +116,7 @@ entry cli @entry.rich_text_full_grammar {
     goto @flow.rich_text_full_grammar
 }
 
-flow @flow.rich_text_full_grammar rich_text_full_grammar() -> String {
+flow rich_text_full_grammar() -> String {
     let player_name = "澪"
     let score: i32 = 42
     let debug_label = "debug-ok"

@@ -2,7 +2,7 @@ bench @bench.dense_scalar_len {
     measure iterations = 4 { goto @flow.dense_scalar_len }
 }
 
-flow @flow.dense_scalar_len dense_scalar_len {
+flow dense_scalar_len {
     let units: Vec<Unit> = [(), (), (), (), (), (), (), ()]
     let flags: Vec<Bool> = [true, false, true, true, false, true, false, false]
     let letters: Vec<Char> = ["a"c, "b"c, "c"c, "d"c, "e"c, "f"c, "g"c, "h"c]

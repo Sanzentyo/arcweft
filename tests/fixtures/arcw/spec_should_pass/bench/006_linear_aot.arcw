@@ -2,7 +2,7 @@ bench @bench.linear_aot {
     measure iterations = 4 { goto @flow.linear_aot }
 }
 
-flow @flow.linear_aot linear_aot {
+flow linear_aot {
     let value: i64 = 41i64 + 1i64
     log.info(value)
     return "done"

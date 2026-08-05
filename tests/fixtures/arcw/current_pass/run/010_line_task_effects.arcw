@@ -1,9 +1,10 @@
 entry cli @entry.main { goto @flow.main }
 
-character @character.alice Alice as alice {
+character alice {
+    display_name = "Alice"
 }
 
-flow @flow.main main() -> String {
+flow main() -> String {
     alice: hello[mark .shown]
     with:
         on mark(.shown) => log.info("shown")

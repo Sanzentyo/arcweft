@@ -1,4 +1,4 @@
-flow @flow.main main() -> String {
+flow main() -> String {
     log.info("hello")
     return "done"
 }

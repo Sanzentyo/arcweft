@@ -1,4 +1,4 @@
-flow @flow.main main {
+flow main {
     let r = try await fetch("https://example.com") with { error e => return "failed" }
     return r
 }

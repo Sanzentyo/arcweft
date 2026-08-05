@@ -9,7 +9,7 @@ bench @bench.system_threads {
     measure iterations = 1 { goto @flow.system_threads }
 }
 
-flow @flow.system_threads system_threads effects { system.read } {
+flow system_threads effects { system.read } {
     thread cores {
         let value = try await system.core_count() with { error e => return "core_failed" }
         log.info(value)

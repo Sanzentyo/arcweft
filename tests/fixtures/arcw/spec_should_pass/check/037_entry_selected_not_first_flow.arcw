@@ -1,4 +1,4 @@
 entry cli @entry.main { goto @flow.second }
 
-flow @flow.first first() -> String { return "wrong" }
-flow @flow.second second() -> String { return "right" }
+flow first() -> String { return "wrong" }
+flow second() -> String { return "right" }

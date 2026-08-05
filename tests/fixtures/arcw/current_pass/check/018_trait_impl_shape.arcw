@@ -15,6 +15,6 @@ impl Named for RouteInfo {
     }
 }
 
-flow @flow.main main() -> String {
+flow main() -> String {
     return "done"
 }

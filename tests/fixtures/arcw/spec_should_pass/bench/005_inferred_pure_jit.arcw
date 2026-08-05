@@ -6,7 +6,7 @@ bench @bench.inferred_pure {
     measure iterations = 4 { goto @flow.inferred_pure }
 }
 
-flow @flow.inferred_pure inferred_pure {
+flow inferred_pure {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     let total: i64 = scores.sum()

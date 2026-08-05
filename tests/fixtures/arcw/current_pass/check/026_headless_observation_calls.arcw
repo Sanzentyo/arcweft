@@ -1,7 +1,7 @@
 signal @signal:.current_flow: Watch<Ref<Flow>>
 metric gauge @metric.frame_count: i32
 
-flow @flow.observed observed() -> String
+flow observed() -> String
 effects { signal.write, metric.write }
 {
     log.info("enter observed")

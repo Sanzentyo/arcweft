@@ -1,4 +1,4 @@
-flow @flow.await_question_with_context await_question_with_context -> ArcResult<Unit> {
+flow await_question_with_context -> ArcResult<Unit> {
     let bg = await asset.image(@asset:.room)
         .context("opening background failed")? with:
         pending p:

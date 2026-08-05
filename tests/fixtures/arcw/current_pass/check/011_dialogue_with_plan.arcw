@@ -1,7 +1,8 @@
-character @character.alice Alice as alice {
+character alice {
+    display_name = "Alice"
 }
 
-flow @flow.main main() -> String {
+flow main() -> String {
     alice: hello[mark .end]
     with:
         on mark(.end) => log.info("end")

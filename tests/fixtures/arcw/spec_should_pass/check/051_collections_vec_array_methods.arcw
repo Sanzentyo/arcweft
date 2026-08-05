@@ -6,7 +6,7 @@ fn build_numbers() -> Vec<i32> {
     xs
 }
 
-flow @flow.collections collections() -> String {
+flow collections() -> String {
     let xs = build_numbers()
     let fixed: Array<i32, 3> = [1i32, 2i32, 3i32]
     let repeated: Array<i32, 4> = [0i32; 4i64]

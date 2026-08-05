@@ -6,7 +6,7 @@ fn piyo(input: i32) -> Result<i32, String> {
     }
 }
 
-flow @flow.main main() -> i32 {
+flow main() -> i32 {
     let result = piyo(-1i32)
     let value = match result {
         .Ok(value) => value

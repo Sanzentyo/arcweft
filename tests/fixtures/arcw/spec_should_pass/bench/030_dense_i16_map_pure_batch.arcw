@@ -7,7 +7,7 @@ bench @bench.dense_i16_map_pure_batch {
     measure iterations = 4 { goto @flow.dense_i16_map_pure_batch }
 }
 
-flow @flow.dense_i16_map_pure_batch dense_i16_map_pure_batch {
+flow dense_i16_map_pure_batch {
     let values: Vec<i16> = [1i16, 2i16, 3i16, 4i16, 5i16, 6i16, 7i16, 8i16, 9i16, 10i16, 11i16, 12i16, 13i16, 14i16, 15i16, 16i16]
     let scores: Vec<i16> = values.map(|item| score_i16(item, 2i16))
     let total: i64 = scores.sum()

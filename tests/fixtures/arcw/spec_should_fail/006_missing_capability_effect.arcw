@@ -1,6 +1,6 @@
 extern capability cli { fn stdout(text: String) effects { stdio.write } }
 entry cli @entry.main { goto @flow.main }
-flow @flow.main main
+flow main
 effects {}
 {
     cli.stdout("missing effects declaration")

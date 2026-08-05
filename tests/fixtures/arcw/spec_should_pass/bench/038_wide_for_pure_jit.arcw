@@ -12,7 +12,7 @@ bench @bench.wide_for_pure_jit {
     measure iterations = 4 { goto @flow.wide_for_pure_jit }
 }
 
-flow @flow.wide_for_pure_jit wide_for_pure_jit {
+flow wide_for_pure_jit {
     let ints: Vec<i128> = [1i128, 2i128, 3i128, 4i128, 5i128, 6i128, 7i128, 8i128]
     let uints: Vec<u128> = [1u128, 2u128, 3u128, 4u128, 5u128, 6u128, 7u128, 8u128]
 

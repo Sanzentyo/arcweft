@@ -1,10 +1,10 @@
-flow @flow.main main() -> String {
+flow main() -> String {
     let Some(route) = Some(@flow.done) else {
         return "missing"
     }
     goto route
 }
 
-flow @flow.done done() -> String {
+flow done() -> String {
     return "done"
 }

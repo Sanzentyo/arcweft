@@ -1,10 +1,10 @@
-flow @flow.main main {
+flow main {
     let route = loop {
         break @flow.done
     }
     goto route
 }
 
-flow @flow.done done() -> String {
+flow done() -> String {
     return "done"
 }

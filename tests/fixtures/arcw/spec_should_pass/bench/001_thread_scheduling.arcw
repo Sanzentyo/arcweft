@@ -2,7 +2,7 @@ bench @bench.threads {
     measure iterations = 1 { goto @flow.threads }
 }
 
-flow @flow.threads threads {
+flow threads {
     thread first {
         log.info("first")
     }

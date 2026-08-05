@@ -7,7 +7,7 @@ bench @bench.dense_i8_map_pure_batch {
     measure iterations = 4 { goto @flow.dense_i8_map_pure_batch }
 }
 
-flow @flow.dense_i8_map_pure_batch dense_i8_map_pure_batch {
+flow dense_i8_map_pure_batch {
     let values: Vec<i8> = [1i8, 2i8, 3i8, 4i8, 5i8, 6i8, 7i8, 8i8, 9i8, 10i8, 11i8, 12i8, 13i8, 14i8, 15i8, 16i8]
     let scores: Vec<i8> = values.map(|item| score_i8(item, 2i8))
     let total: i64 = scores.sum()

@@ -1,7 +1,8 @@
-pub character @character.alice Alice as alice {
+pub character alice {
+    display_name = "Alice"
 }
 
-flow @flow.dialogue_edge dialogue_edge {
+flow dialogue_edge {
     alice(voice=auto):
         今日は少しだけ、｜変な夢《へんなゆめ》を見たんだ。[p]
     with:

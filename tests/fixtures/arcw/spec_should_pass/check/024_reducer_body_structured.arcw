@@ -5,4 +5,4 @@ effects {}
     Ok(Reduction.unchanged(state))
 }
 
-flow @flow.main main() -> String { return "done" }
+flow main() -> String { return "done" }

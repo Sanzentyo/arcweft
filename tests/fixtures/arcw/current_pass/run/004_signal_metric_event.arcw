@@ -1,9 +1,9 @@
 entry cli @entry.main { goto @flow.main }
 
-signal @signal.ready: Watch<bool>
+signal ready: Watch<bool>
 metric gauge @metric.count: i32
 
-flow @flow.main main() -> String effects { signal.write, metric.write } {
+flow main() -> String effects { signal.write, metric.write } {
     signal.set(@signal.ready, true)
     metric.set(@metric.count, 1i32)
     event.emit("AppStarted", flow = @flow.main)

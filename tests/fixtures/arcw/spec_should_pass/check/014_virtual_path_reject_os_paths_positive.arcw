@@ -6,7 +6,7 @@ extern capability fs {
     fn read_text(path: VirtualPath) -> Need<String, FsError> effects { fs.read }
 }
 
-flow @flow.main main() -> String effects { fs.read(asset) } {
+flow main() -> String effects { fs.read(asset) } {
     let text = try await fs.read_text(path.asset("dialogue/opening.txt")) with {
         error e => return "missing"
     }

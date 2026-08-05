@@ -26,5 +26,5 @@ entry game @entry.main {
     reducer = reduce_game
     goto @flow.second
 }
-flow @flow.first first() -> String { return "wrong" }
-flow @flow.second second(state: GameState) -> String { return "right" }
+flow first() -> String { return "wrong" }
+flow second(state: GameState) -> String { return "right" }

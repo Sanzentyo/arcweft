@@ -1,9 +1,9 @@
-flow @flow.main main {
+flow main {
     choice @.first {
         @.next "Next" -> @flow.done
     }
 }
 
-flow @flow.done done() -> String {
+flow done() -> String {
     return "done"
 }

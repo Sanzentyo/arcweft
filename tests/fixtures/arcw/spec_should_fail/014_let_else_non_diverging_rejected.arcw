@@ -1,10 +1,10 @@
-flow @flow.bad_let_else bad_let_else(opt: Option<Ref<Flow>>) {
+flow bad_let_else(opt: Option<Ref<Flow>>) {
     let .Some(route) = opt else {
         @flow.fallback
     }
     goto route
 }
 
-flow @flow.fallback fallback {
+flow fallback {
     return "done"
 }

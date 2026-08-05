@@ -2,7 +2,7 @@ bench @bench.dense_wide_numeric_len {
     measure iterations = 4 { goto @flow.dense_wide_numeric_len }
 }
 
-flow @flow.dense_wide_numeric_len dense_wide_numeric_len {
+flow dense_wide_numeric_len {
     let i128_values: Vec<i128> = [1i128, 2i128, 3i128, 4i128, 5i128, 6i128, 7i128, 8i128]
     let u128_values: Vec<u128> = [1u128, 2u128, 3u128, 4u128, 5u128, 6u128, 7u128, 8u128]
     let isize_values: Vec<isize> = [1isize, 2isize, 3isize, 4isize, 5isize, 6isize, 7isize, 8isize]

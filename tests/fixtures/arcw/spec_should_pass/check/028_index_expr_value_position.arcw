@@ -1,4 +1,4 @@
-flow @flow.main main() -> String {
+flow main() -> String {
     let xs = [1i32, 2i32, 3i32]
     let first = xs[0i64]
     log.info("first", value = first)

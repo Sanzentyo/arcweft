@@ -1,4 +1,4 @@
-flow @flow.bad_out bad_out {
+flow bad_out {
     out .Done
     return "done"
 }

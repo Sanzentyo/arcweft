@@ -10,6 +10,6 @@ pub struct RouteInfo {
 
 pub type RouteLabel = String
 
-flow @flow.main main() -> String {
+flow main() -> String {
     return "done"
 }

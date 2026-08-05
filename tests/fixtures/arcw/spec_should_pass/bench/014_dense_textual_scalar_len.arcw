@@ -1,11 +1,11 @@
-pub character @character.alice Alice as alice {}
-pub character @character.bob Bob as bob {}
+pub character alice { display_name = "Alice" }
+pub character bob { display_name = "Bob" }
 
 bench @bench.dense_textual_scalar_len {
     measure iterations = 4 { goto @flow.dense_textual_scalar_len }
 }
 
-flow @flow.dense_textual_scalar_len dense_textual_scalar_len {
+flow dense_textual_scalar_len {
     let label: String = "alpha"
     let names: Vec<String> = [label, "beta", "gamma", "delta"]
     let ratios: Vec<f64> = [1.0f64, 2.0f64, 3.0f64, 4.0f64]

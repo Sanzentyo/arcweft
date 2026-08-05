@@ -7,7 +7,7 @@ bench @bench.dense_isize_map_pure_batch {
     measure iterations = 4 { goto @flow.dense_isize_map_pure_batch }
 }
 
-flow @flow.dense_isize_map_pure_batch dense_isize_map_pure_batch {
+flow dense_isize_map_pure_batch {
     let values: Vec<isize> = [1isize, 2isize, 3isize, 4isize, 5isize, 6isize, 7isize, 8isize, 9isize, 10isize, 11isize, 12isize, 13isize, 14isize, 15isize, 16isize, 17isize, 18isize, 19isize, 20isize, 21isize, 22isize, 23isize, 24isize, 25isize, 26isize, 27isize, 28isize, 29isize, 30isize, 31isize, 32isize, 33isize, 34isize, 35isize, 36isize, 37isize, 38isize, 39isize, 40isize, 41isize, 42isize, 43isize, 44isize, 45isize, 46isize, 47isize, 48isize, 49isize, 50isize, 51isize, 52isize, 53isize, 54isize, 55isize, 56isize, 57isize, 58isize, 59isize, 60isize, 61isize, 62isize, 63isize, 64isize, 65isize, 66isize, 67isize, 68isize, 69isize, 70isize, 71isize, 72isize, 73isize, 74isize, 75isize, 76isize, 77isize, 78isize, 79isize, 80isize, 81isize, 82isize, 83isize, 84isize, 85isize, 86isize, 87isize, 88isize, 89isize, 90isize, 91isize, 92isize, 93isize, 94isize, 95isize, 96isize, 97isize, 98isize, 99isize, 100isize, 101isize, 102isize, 103isize, 104isize, 105isize, 106isize, 107isize, 108isize, 109isize, 110isize, 111isize, 112isize, 113isize, 114isize, 115isize, 116isize, 117isize, 118isize, 119isize, 120isize, 121isize, 122isize, 123isize, 124isize, 125isize, 126isize, 127isize, 128isize]
     let scores: Vec<isize> = values.map(|item| score_isize(item, 2isize))
     let total: i64 = scores.sum()

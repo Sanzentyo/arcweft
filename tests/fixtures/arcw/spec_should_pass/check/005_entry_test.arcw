@@ -27,6 +27,6 @@ entry test @entry.test {
     goto @flow.main
 }
 
-flow @flow.main main(state: TestState) -> String {
+flow main(state: TestState) -> String {
     return "test"
 }

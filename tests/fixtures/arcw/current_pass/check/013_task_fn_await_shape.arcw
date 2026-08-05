@@ -9,6 +9,6 @@ fn load_opening_assets() -> ArcResult<OpeningAssets> {
     Ok(OpeningAssets { bg })
 }
 
-flow @flow.main main() -> String {
+flow main() -> String {
     return "done"
 }

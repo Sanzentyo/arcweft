@@ -7,4 +7,4 @@ pub struct GameState {
     config: Config,
 }
 
-flow @flow.main main() -> String { return "done" }
+flow main() -> String { return "done" }

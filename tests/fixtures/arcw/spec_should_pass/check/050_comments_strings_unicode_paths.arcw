@@ -1,5 +1,5 @@
 /// Doc comment should attach to this flow while inner braces stay inside strings.
-flow @flow.comments_strings comments_strings() -> String {
+flow comments_strings() -> String {
     let raw = r##"nested { braces } and "# marker text"##
     let windows_like = "C:\\Users\\alice\\save:slot\\profile.json"
     let japanese = "日本語、絵文字✨️、variation selector、ruby delimiters ｜《》"

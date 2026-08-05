@@ -27,7 +27,7 @@ bench @bench.mixed_width_for_iter_pure_jit {
     measure iterations = 4 { goto @flow.mixed_width_for_iter_pure_jit }
 }
 
-flow @flow.mixed_width_for_iter_pure_jit mixed_width_for_iter_pure_jit {
+flow mixed_width_for_iter_pure_jit {
     let signed: Vec<i16> = [1i16, 2i16, 3i16, 4i16, 5i16, 6i16, 7i16, 8i16]
     let unsigned: Vec<u16> = [1u16, 2u16, 3u16, 4u16, 5u16, 6u16, 7u16, 8u16]
     let sized: Vec<isize> = [1isize, 2isize, 3isize, 4isize, 5isize, 6isize, 7isize, 8isize]

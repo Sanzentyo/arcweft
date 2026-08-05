@@ -1,4 +1,4 @@
-flow @flow.continue_expr continue_expr {
+flow continue_expr {
     loop {
         let value = continue
         break value

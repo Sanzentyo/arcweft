@@ -6,6 +6,6 @@ flow @.main main {
     }
 }
 
-flow @flow.done done() -> String {
+flow done() -> String {
     return "done"
 }

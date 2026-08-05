@@ -1,5 +1,5 @@
-character @character.alice Alice as alice {}
-flow @flow.main main() -> String {
+character alice { display_name = "Alice" }
+flow main() -> String {
     alice: [raw]literal { braces }[/raw]
     return "done"
 }

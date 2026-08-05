@@ -7,7 +7,7 @@ bench @bench.dense_f64_map_pure_batch {
     measure iterations = 4 { goto @flow.dense_f64_map_pure_batch }
 }
 
-flow @flow.dense_f64_map_pure_batch dense_f64_map_pure_batch {
+flow dense_f64_map_pure_batch {
     let values: Array<f64, 128> = [2.0f64; 128]
     let scores: Vec<f64> = values.map(|item| score_f64(item, 2.0f64))
     log.info(scores.len())

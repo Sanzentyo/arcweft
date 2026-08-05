@@ -1,7 +1,7 @@
-flow @flow.main main {
+flow main {
     goto @flow.done
 }
 
-flow @flow.done done() -> String {
+flow done() -> String {
     return "done"
 }

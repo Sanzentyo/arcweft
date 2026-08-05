@@ -2,6 +2,6 @@ entry activity @entry.activity {
     goto @flow.main
 }
 
-flow @flow.main main() -> String {
+flow main() -> String {
     return "activity"
 }
