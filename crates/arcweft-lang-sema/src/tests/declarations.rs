@@ -111,8 +111,8 @@ proof resource_manifest_hashes {
 #[test]
 fn malformed_trust_metadata_and_separate_axiom_declarations_do_not_lower_as_proofs() {
     for source in [
-        "#[verify.trusted(reason = \"\")]\nproof @proof.empty_reason {\n    check valid()\n}\n",
-        "#[verify.trusted]\nproof @proof.missing_reason {\n    check valid()\n}\n",
+        "#[verify.trusted(reason = \"\")]\nproof empty_reason {\n    check valid()\n}\n",
+        "#[verify.trusted]\nproof missing_reason {\n    check valid()\n}\n",
         "trusted axiom @axiom.external {\n    reason = \"external\"\n}\n",
     ] {
         let parsed = parse_recovered(source);
@@ -329,7 +329,7 @@ fn log(message: String, fields: ...String) -> Unit {
 fn fixed(a: String, b: String) -> Unit {
 }
 
-flow @flow.ok ok {
+flow ok {
     let fields: Vec<String> = ["asset", "elapsed"]
     log("loaded", "asset", "elapsed")
     log("loaded", fields...)
@@ -349,7 +349,7 @@ fn fixed(a: String, b: String) -> Unit {
 fn variadic(prefix: String, fields: ...String) -> Unit {
 }
 
-flow @flow.bad bad {
+flow bad {
     let dynamic: Vec<String> = ["two"]
     fixed("one")
     fixed("one", "two", "three")
@@ -454,7 +454,7 @@ fn payload(flag: bool) -> String | Bytes {
 fn log(message: String, fields: ...(String | i64 | Duration)) -> Unit {
 }
 
-flow @flow.ok ok(flag: bool) {
+flow ok(flag: bool) {
     let body: String | Bytes = "hello"
     let joined = payload(flag)
     let fields: Vec<String | i64 | Duration> = ["asset", 3i64, 120ms]
@@ -484,7 +484,7 @@ flow @flow.ok ok(flag: bool) {
 
     let missing = parse_ok(
         r#"
-flow @flow.bad bad {
+flow bad {
     let body: String | Bytes = "hello"
     let label = match body {
         text: String => text
@@ -561,7 +561,7 @@ type Invalid = Missing | i32 | i32
 
     let numeric = parse_ok(
         r"
-flow @flow.bad bad {
+flow bad {
     let value: i32 | i64 = 1
 }
 ",
@@ -916,7 +916,7 @@ fn label<'a>(choice: &'a ChoiceView) -> &'a DisplayText {
     choice.label
 }
 
-flow @flow.opening opening {
+flow opening {
     goto @flow.title
 }
 ",
@@ -965,11 +965,11 @@ signal @signal:.current_flow: Watch<Ref<Flow>>
 
 signal @signal:. ready: Watch<bool>
 
-source @source:.events() {
+source @source:.events: Source<Event, Error> {
     yield event
 }
 
-source @source:. metrics() {
+source @source:. metrics: Source<Event, Error> {
     yield event
 }
 ",
@@ -1270,9 +1270,9 @@ fn camera_frames() -> Source<Frame, CaptureError> {
 fn parses_entity_declarations_used_by_presentation_docs() {
     let tree = parse_ok(
         r#"
-pub signal @signal.microphone_level: Watch<f32>
+pub signal microphone_level: Watch<f32>
 
-pub character @character.alice Alice {
+pub character alice {
     role = main
     nameplate = visible
 }
