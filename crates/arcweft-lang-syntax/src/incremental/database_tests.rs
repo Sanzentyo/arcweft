@@ -1308,7 +1308,7 @@ fn private_bound_product_retains_the_attached_snapshot_and_grammar_diagnostics()
     let missing_name = bound
         .diagnostics()
         .iter()
-        .find(|diagnostic| diagnostic.code() == "syntax.proof.missing_name")
+        .find(|diagnostic| diagnostic.code() == "syntax.declaration.missing_name")
         .unwrap_or_else(|| panic!("missing bound diagnostic: {:?}", bound.diagnostics()));
     assert_eq!(
         missing_name.primary().source(),

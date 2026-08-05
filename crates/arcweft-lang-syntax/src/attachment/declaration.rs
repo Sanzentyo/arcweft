@@ -774,7 +774,7 @@ mod tests {
         let source = concat!(
             "character @view.alice WrongFamily {}\n",
             "character @.relative Relative {}\n",
-            "character @character:malformed Malformed {}\n",
+            "character @character.broken. Malformed {}\n",
             "character @ MissingId {}\n",
             "character {}\n",
             "character Bad.Name {}\n",
@@ -801,13 +801,17 @@ mod tests {
             AttachedDeclarationPublicId::Explicit { value, .. }
                 if value.as_str() == "character.relative"
         ));
-        assert!(matches!(
-            semantics[2].header().public_id(),
-            AttachedDeclarationPublicId::Recovered {
-                issue: AttachedDeclarationPublicIdIssue::Malformed,
-                ..
-            }
-        ));
+        let malformed_public_id = semantics[2].header().public_id();
+        assert!(
+            matches!(
+                malformed_public_id,
+                AttachedDeclarationPublicId::Recovered {
+                    issue: AttachedDeclarationPublicIdIssue::Malformed,
+                    ..
+                }
+            ),
+            "unexpected malformed public-ID state: {malformed_public_id:?}"
+        );
         assert!(matches!(
             semantics[3].header().public_id(),
             AttachedDeclarationPublicId::Recovered {
