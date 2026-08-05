@@ -615,7 +615,7 @@ source = "demo.arcw"
     .expect("fixture manifest writes");
     fs::write(
         root.join("demo.arcw"),
-        "entry cli @entry.main { goto @flow.main }\nflow @flow.main main { return () }",
+        "entry cli @entry.main { goto @flow.main }\nflow main { return () }",
     )
     .expect("profile source writes");
 
@@ -1051,7 +1051,7 @@ fn view_scroll_contains_nested_image_element() {
             .expect("fixture document ID"),
             SourceName::path("view-scroll-contains-nested-image-element.arcw"),
             r#"
-pub image @image.sample.pulse {
+pub image sample.pulse {
   asset = @asset.bg.pulse
   x = 12px
   y = 34px

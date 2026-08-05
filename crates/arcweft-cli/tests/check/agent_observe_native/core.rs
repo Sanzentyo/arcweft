@@ -203,14 +203,14 @@ fn agent_observe_json_reports_rich_text_display_objects() {
     let path = temp_arcw(
         "agent-observe-rich-text",
         r##"
-character @character.alice Alice as alice {
+character alice {
     dialogue_style {
         font = serif
         text_color = rgb("#202122")
     }
 }
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice(color=rgb("#303132")): Hello #[player] |[夢](ゆめ)[r][voice auto][p]
 }
@@ -263,9 +263,9 @@ pub struct HoverHit {
     layer: String
 }
 
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [object .hotspot type=KeywordHit][object .hover type=HoverHit]Hit[/object][/object][p]
 }
 
@@ -456,9 +456,9 @@ pub struct QuestHit {
     channel: String
 }
 
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.QuestHit state=active]Quest[/][p]
 }
 "#,
@@ -586,9 +586,9 @@ fn agent_observe_reports_text_presentation_z_index_depth() {
     let path = temp_arcw(
         "agent-observe-rich-text-z-index-depth",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.layer hud][.z_index 7][.opacity 0.5][.meta role=caption hover=true weight=2]Depth|[夢](ゆめ)[r][/][/][/][/] plain[p]
 }
 ",
@@ -851,9 +851,9 @@ pub struct HoverHit {
     layer: String
 }
 
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]Hit[/][/][.sparkle amp=2px]FX[/][p]
 }
 "#,
@@ -1142,9 +1142,9 @@ pub struct HoverHit {
     layer: String
 }
 
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [object .hotspot type=KeywordHit][object .hover type=HoverHit]Hit[/object][/object][p]
 }
 "#,
@@ -1168,9 +1168,9 @@ pub struct KeywordHit {
     channel: String
 }
 
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [object .hotspot type=KeywordHit][.wave amp=60px dir=0,1 target=run]Hit[/][/object][p]
 }
 "#,
@@ -1423,9 +1423,9 @@ fn agent_observe_json_reports_rich_text_reset_controls_and_host_markers() {
     let path = temp_arcw(
         "agent-observe-rich-text-controls",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [color red]Hot[reset]Cool[w 500ms][mark .sync][clear][voice auto][p]
 }
 ",

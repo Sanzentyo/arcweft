@@ -2,14 +2,14 @@
 // This bundle is only used as the base of a patch that is then offered to a
 // running player whose active base is base.arcw. The typed path must reject it
 // and leave the old session/catalog active.
-flow @flow.main main {
+flow main {
     line @line.opening alice "Windowed smoke: wrong base"
     choice @choice.opening {
         option @choice.opening.next "Next" -> @flow.done
     }
 }
 
-flow @flow.done done {
+flow done {
     return "done"
 }
 

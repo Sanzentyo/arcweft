@@ -17,9 +17,9 @@ fn observe_native_strict_jlreq_style_split_fixture(writing_mode: &str) -> serde_
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-style-split"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=strict]天地。[color red:「人]山川海[/][p]
 }}
 "
@@ -37,9 +37,9 @@ fn assert_native_strict_jlreq_style_split_raw_crop(writing_mode: &str, capture_k
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=strict]天地。[color red:「人]山川海[/][p]
 }}
 "
@@ -167,9 +167,9 @@ fn observe_native_published_jlreq_european_numeral_sequence_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-european-numerals"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天地2026502671234人[/][p]
 }}
 "
@@ -192,9 +192,9 @@ fn assert_native_published_jlreq_european_numeral_sequence_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天地2026502671234人[/][p]
 }}
 "
@@ -375,9 +375,9 @@ fn observe_native_published_jlreq_numeric_separator_fixture(
         ),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
 ",
@@ -418,9 +418,9 @@ fn assert_native_published_jlreq_numeric_separator_case_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
 ",
@@ -806,9 +806,9 @@ fn observe_native_published_jlreq_numeric_abbreviation_fixture(
         ),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{text}[/][p]
 }}
 "
@@ -835,9 +835,9 @@ fn assert_native_published_jlreq_numeric_abbreviation_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{text}[/][p]
 }}
 "
@@ -1306,9 +1306,9 @@ fn observe_native_published_jlreq_reference_mark_fixture(writing_mode: &str) -> 
         &format!("agent-observe-native-{writing_mode}-published-jlreq-reference-mark"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]本¹²。人[/][p]
 }}
 "
@@ -1342,9 +1342,9 @@ fn assert_native_published_jlreq_reference_mark_target_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]本¹²。人[/][p]
 }}
 "
@@ -1550,9 +1550,9 @@ fn observe_native_published_jlreq_parenthesized_reference_mark_fixture(
         ),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]本⁽¹⁾。人[/][p]
 }}
 "
@@ -1593,9 +1593,9 @@ fn assert_native_published_jlreq_parenthesized_reference_mark_target_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]本⁽¹⁾。人[/][p]
 }}
 "
@@ -1812,9 +1812,9 @@ fn observe_native_published_jlreq_latin_unit_fixture(writing_mode: &str) -> serd
         &format!("agent-observe-native-{writing_mode}-published-jlreq-latin-unit"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天kg人[/][p]
 }}
 "
@@ -1836,9 +1836,9 @@ fn assert_native_published_jlreq_latin_unit_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天kg人[/][p]
 }}
 "
@@ -1981,9 +1981,9 @@ fn observe_native_published_jlreq_western_word_fixture(writing_mode: &str) -> se
         &format!("agent-observe-native-{writing_mode}-published-jlreq-western-word"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天Web人[/][p]
 }}
 "
@@ -2005,9 +2005,9 @@ fn assert_native_published_jlreq_western_word_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天Web人[/][p]
 }}
 "
@@ -2165,9 +2165,9 @@ fn observe_native_published_jlreq_numeric_unit_fixture(
         ),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
 ",
@@ -2208,9 +2208,9 @@ fn assert_native_published_jlreq_numeric_unit_case_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
 ",
@@ -2434,9 +2434,9 @@ fn observe_native_published_jlreq_hyphenated_western_word_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-hyphenated-western-word"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天Web-Test人[/][p]
 }}
 "
@@ -2461,9 +2461,9 @@ fn assert_native_published_jlreq_hyphenated_western_word_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天Web-Test人[/][p]
 }}
 "
@@ -2657,9 +2657,9 @@ fn observe_native_published_jlreq_apostrophe_western_word_fixture(
         ),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
 ",
@@ -2700,9 +2700,9 @@ fn assert_native_published_jlreq_apostrophe_western_word_case_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
 ",
@@ -2909,9 +2909,9 @@ fn observe_native_published_jlreq_accented_latin_word_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-accented-latin-word"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天café人[/][p]
 }}
 "
@@ -2935,9 +2935,9 @@ fn assert_native_published_jlreq_accented_latin_word_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天café人[/][p]
 }}
 "
@@ -3082,9 +3082,9 @@ fn observe_native_published_jlreq_greek_latin_unit_fixture(
         &format!("agent-observe-native-{writing_mode}-published-jlreq-greek-latin-unit"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天μm人[/][p]
 }}
 "
@@ -3103,9 +3103,9 @@ fn assert_native_published_jlreq_greek_latin_unit_raw_crop(writing_mode: &str, c
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]天μm人[/][p]
 }}
 "
@@ -3258,9 +3258,9 @@ fn observe_native_published_jlreq_subscript_object_fixture(
         ),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
 ",
@@ -3301,9 +3301,9 @@ fn assert_native_published_jlreq_subscript_object_case_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=normal]{}[/][p]
 }}
 ",
@@ -3522,9 +3522,9 @@ fn observe_native_strict_jlreq_ruby_text_combine_fixture(writing_mode: &str) -> 
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-ruby-text-combine"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=strict]|[夢](ゆめ)2026。「人山川海[/][p]
 }}
 "
@@ -3543,9 +3543,9 @@ fn assert_native_strict_jlreq_ruby_text_combine_raw_crop(writing_mode: &str, cap
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=strict]|[夢](ゆめ)2026。「人山川海[/][p]
 }}
 "
@@ -3690,9 +3690,9 @@ fn assert_native_strict_jlreq_hard_break_segment_geometry(
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-hard-break-segment"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=strict]天地。[r]「人外[/][p]
 }}
 "
@@ -3724,9 +3724,9 @@ fn assert_native_strict_jlreq_hard_break_segment_raw_crop(
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=strict]天地。[r]「人外[/][p]
 }}
 "
@@ -3995,7 +3995,7 @@ fn observe_native_jlreq_preset_fixture(strictness: &str, label: &str) -> serde_j
             r##"
 entry cli @entry.main {{ goto @flow.main }}
 
-pub character @character.alice Alice as alice {{
+pub character alice {{
     default_voice = auto
     dialogue_style {{
         font = "MS Mincho"
@@ -4004,7 +4004,7 @@ pub character @character.alice Alice as alice {{
     }}
 }}
 
-flow @flow.main main {{
+flow main {{
     alice: [.vertical_rl jlreq={strictness}][font "MS Mincho"]天地。」人山川海。『火水木[/font][/][p]
 }}
 "##
@@ -4086,9 +4086,9 @@ fn observe_native_jlreq_closing_opening_fixture(
         &format!("agent-observe-native-{writing_mode}-jlreq-closing-opening-{strictness}"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq={strictness}]天地。「人山川海[/][p]
 }}
 "
@@ -4104,9 +4104,9 @@ fn assert_native_strict_jlreq_closing_opening_raw_crop(writing_mode: &str, captu
         &format!("agent-observe-native-{writing_mode}-strict-jlreq-closing-opening-{capture_kind}"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode} jlreq=strict]天地。「人山川海[/][p]
 }}
 "

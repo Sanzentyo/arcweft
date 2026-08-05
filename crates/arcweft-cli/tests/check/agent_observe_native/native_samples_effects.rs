@@ -362,9 +362,9 @@ fn agent_observe_native_rich_text_reports_structured_visual_diagnostics() {
     let path = temp_arcw(
         "agent-observe-native-rich-text-structured-diagnostics",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [effect .missing_fx amp=2px]missing effect[/effect] and [effect .shader id=ghost_glow phase=run_offscreen_pass]missing shader[/effect][p]
 }
 ",
@@ -416,9 +416,9 @@ fn agent_observe_native_rich_text_reports_missing_motion_diagnostics_in_image_re
     let path = temp_arcw(
         "agent-observe-native-rich-text-missing-motion-diagnostics",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.motion fn=ghost_orbit amp=4px target=glyph]missing motion[/][p]
 }
 ",
@@ -1290,9 +1290,9 @@ fn agent_observe_shared_renderer_writes_dialogue_layer_masked_framebuffer_crop()
         r"
 entry cli @entry.main { goto @flow.main }
 
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: Hello native layer[p]
 }
 ",
@@ -1353,9 +1353,9 @@ fn agent_observe_native_renderer_reports_capture_step_metadata() {
     let path = temp_arcw(
         "agent-observe-native-capture-step",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: Step pinned capture[p]
 }
 ",
@@ -1408,9 +1408,9 @@ fn agent_observe_native_capture_step_defaults_capture_time_for_typewriter() {
     let path = temp_arcw(
         "agent-observe-native-capture-step-typewriter-time",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.vertical_rl][.typewriter cps=1]吾輩[/][/][p]
 }
 ",
@@ -1501,9 +1501,9 @@ fn agent_observe_native_renderer_reports_custom_effect_diagnostics() {
     let path = temp_arcw(
         "agent-observe-native-custom-effect-diagnostic",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.unknown_custom_effect amp=2px]custom effect[/][p]
 }
 ",
@@ -1561,9 +1561,9 @@ fn agent_observe_native_renderer_applies_shader_glyph_color_phase() {
     let path = temp_arcw(
         "agent-observe-native-shader-glyph-color-phase",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [effect .shader id=soft_glow phase=glyph_color amount=1 dir=1,0]shader phase[/effect][p]
 }
 ",
@@ -1626,9 +1626,9 @@ fn agent_observe_native_renderer_applies_shader_post_process_phase() {
     let path = temp_arcw(
         "agent-observe-native-shader-post-process-phase",
         r##"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [effect .shader id=screen_tint phase=post_process amount=1 color="#ff2020"]post process shader[/effect][p]
 }
 "##,
@@ -1697,9 +1697,9 @@ fn agent_observe_native_renderer_applies_builtin_effect_post_process_phase() {
     let path = temp_arcw(
         "agent-observe-native-builtin-effect-post-process-phase",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [effect .wave phase=post_process amp=12px period=48px dir=1,0]wave phase[/effect][p]
 }
 ",
@@ -1707,9 +1707,9 @@ flow @flow.main main {
     let baseline = temp_arcw(
         "agent-observe-native-builtin-effect-post-process-baseline",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: wave phase[p]
 }
 ",
@@ -1801,9 +1801,9 @@ fn agent_observe_reports_host_event_phase_effects() {
     let path = temp_arcw(
         "agent-observe-host-event-phase-effect",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.host id=sparkle phase=host_event channel=debug]host cue[/][effect .wave phase=host_event amp=4px]wave cue[/effect][p]
 }
 ",
@@ -1865,9 +1865,9 @@ fn agent_observe_native_renderer_dispatches_host_effect_registry() {
     let path = temp_arcw(
         "agent-observe-native-host-effect-registry",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.host id=sparkle amp=2px seed=custom]host effect[/][p]
 }
 ",
@@ -1919,9 +1919,9 @@ fn agent_observe_native_renderer_writes_rich_text_layer_png_crop() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1984,9 +1984,9 @@ fn agent_observe_native_renderer_handles_clear_in_rich_text_layer_capture() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-clear-layer",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: Before[clear]After[p]
 }
 ",
@@ -2060,9 +2060,9 @@ fn agent_observe_native_renderer_captures_clear_after_page_layer() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-page-layer",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: Before[clear]After[p]
 }
 ",
@@ -2146,9 +2146,9 @@ fn agent_observe_native_renderer_captures_clear_after_page_object() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-page-object",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: Before[clear]After[p]
 }
 ",
@@ -3460,9 +3460,9 @@ fn agent_observe_read_uri_returns_latest_native_layer_image() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-layer-read-uri",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -3524,9 +3524,9 @@ fn agent_observe_read_uri_uses_native_renderer_without_selected_image() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-read-uri-renderer",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -3577,9 +3577,9 @@ fn agent_observe_native_renderer_writes_ruby_mask_raw_crop() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-ruby-mask",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -3715,9 +3715,9 @@ fn assert_native_vertical_lr_ruby_raw_crop(capture_kind: &str) {
     let path = temp_arcw(
         &fixture_name,
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.vertical_lr]天地|[夢](ゆめ)星[/][p]
 }
 ",
@@ -3841,9 +3841,9 @@ fn assert_native_long_vertical_ruby_mask_raw_crop(writing_mode: &str, ruby_on_ri
         &format!("agent-observe-native-long-{writing_mode}-ruby-mask"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
 }}
 "
@@ -3944,9 +3944,9 @@ fn assert_native_long_vertical_ruby_object_id_raw_crop(writing_mode: &str, ruby_
         &format!("agent-observe-native-long-{writing_mode}-ruby-object-id"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}]天地春夏秋冬|[夢](ながいながいよみ)人外[/][p]
 }}
 "
@@ -4054,9 +4054,9 @@ fn assert_native_overheight_vertical_ruby_raw_crop(
         &format!("agent-observe-native-overheight-{writing_mode}-ruby-{capture_kind}"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}]天地|[夢](あいうえおかきくけこさしすせそたちつてと)人外[/][p]
 }}
 "
@@ -4252,9 +4252,9 @@ fn agent_observe_native_renderer_writes_text_combine_mask_raw_crop() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-text-combine-mask",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.vertical_rl]A 2026 B[/][p]
 }
 ",
@@ -4347,9 +4347,9 @@ fn agent_observe_native_renderer_writes_vertical_lr_text_combine_mask_raw_crop()
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-vertical-lr-text-combine-mask",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.vertical_lr]A 2026 B[/][p]
 }
 ",
@@ -4455,9 +4455,9 @@ fn assert_native_text_combine_object_id_raw_crop(writing_mode: &str, label: &str
         &format!("agent-observe-native-{label}"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}]A 2026 B[/][p]
 }}
 "
@@ -4577,9 +4577,9 @@ fn assert_native_jlreq_compressed_punctuation_raw_crop(writing_mode: &str, captu
         &fixture_name,
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}]天、。・人[/][p]
 }}
 "
@@ -4714,9 +4714,9 @@ fn assert_native_jlreq_opening_punctuation_raw_crop(writing_mode: &str, capture_
         format!("agent-observe-native-{writing_mode}-jlreq-opening-punctuation-{capture_kind}");
     let source = format!(
         r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}]天地春「人外[/][p]
 }}
 "
@@ -4861,9 +4861,9 @@ fn assert_native_vertical_lr_jlreq_hanging_punctuation_raw_crop(capture_kind: &s
     let path = temp_arcw(
         &fixture_name,
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.vertical_lr]天地、人人[/][p]
 }
 ",
@@ -5279,9 +5279,9 @@ fn agent_observe_native_typewriter_capture_time_changes_visibility_without_relay
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-typewriter-capture-time",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.vertical_rl][.typewriter cps=1]吾輩[/][/][p]
 }
 ",
@@ -5335,9 +5335,9 @@ fn agent_observe_native_typewriter_capture_time_controls_object_id() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-typewriter-object-id-capture-time",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.vertical_rl][.typewriter cps=1]吾輩[/][/][p]
 }
 ",
@@ -5412,9 +5412,9 @@ fn assert_native_typewriter_text_combine_capture_time_controls_all_glyphs(
         &format!("agent-observe-native-{label}-capture-time"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
 }}
 ",
@@ -5495,9 +5495,9 @@ fn assert_native_typewriter_text_combine_capture_time_controls_object_id(
         &format!("agent-observe-native-{label}-object-id-capture-time"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}][.typewriter cps=1]2026[/][/][p]
 }}
 ",
@@ -5586,9 +5586,9 @@ fn assert_native_typewriter_ruby_capture_time_controls_base_and_annotation(
         &format!("agent-observe-native-{label}-capture-time"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
 }}
 ",
@@ -5655,9 +5655,9 @@ fn assert_native_typewriter_ruby_capture_time_controls_object_id(
         &format!("agent-observe-native-{label}-object-id-capture-time"),
         &format!(
             r"
-character @character.alice Alice as alice {{}}
+character alice {{}}
 
-flow @flow.main main {{
+flow main {{
     alice: [.{writing_mode}]天地春夏秋冬[.typewriter cps=1]|[夢](ながいながいよみ)人外[/][/][p]
 }}
 ",
@@ -5751,9 +5751,9 @@ fn agent_observe_native_renderer_writes_rich_text_layer_mask_attachment() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer-mask",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -5833,9 +5833,9 @@ fn agent_observe_native_renderer_writes_rich_text_layer_object_id_attachment() {
     let path = temp_runnable_agent_observe_arcw(
         "agent-observe-native-rich-text-layer-object-id",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }

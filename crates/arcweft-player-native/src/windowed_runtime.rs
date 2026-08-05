@@ -935,10 +935,7 @@ mod tests {
                     source_plans: stats.source_plans,
                 },
             },
-            source_map(
-                "windowed-runtime-owner.arcw",
-                "flow @flow.main main { ... }",
-            ),
+            source_map("windowed-runtime-owner.arcw", "flow main { ... }"),
             bytecode,
             display,
         )

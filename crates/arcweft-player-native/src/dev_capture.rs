@@ -548,7 +548,7 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            source_map("capture.arcw", "flow @flow.main main { dialogue }"),
+            source_map("capture.arcw", "flow main { dialogue }"),
             BytecodeProgram::from_runtime_plan(plan),
             display,
         )

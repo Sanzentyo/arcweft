@@ -258,7 +258,7 @@ fn fixture_bundle_with(display_text: &str) -> ArcweftBundle {
                 source_plans: stats.source_plans,
             },
         },
-        source_map("windowed-ingress.arcw", "flow @flow.main main { ... }"),
+        source_map("windowed-ingress.arcw", "flow main { ... }"),
         bytecode,
         display,
     )

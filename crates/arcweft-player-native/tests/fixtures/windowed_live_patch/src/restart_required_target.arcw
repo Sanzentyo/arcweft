@@ -2,13 +2,13 @@
 // The sprite object and virtual image payload are intentionally absent. The
 // generated patch removes required bundle sections, which classifies as
 // restart-required and forces the native endpoint restart path.
-flow @flow.main main {
+flow main {
     line @line.opening alice "Windowed smoke: restart target"
     choice @choice.opening {
         option @choice.opening.next "Next" -> @flow.done
     }
 }
 
-flow @flow.done done {
+flow done {
     return "done"
 }

@@ -559,7 +559,7 @@ adapter = "network"
 extern capability fs {
     fn read() -> String effects { fs.read }
 }
-flow @flow.main main effects { fs.read } {
+flow main effects { fs.read } {
     let body = fs.read()
 }
 ",

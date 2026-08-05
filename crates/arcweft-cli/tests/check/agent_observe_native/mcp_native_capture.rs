@@ -244,13 +244,13 @@ fn agent_mcp_stdio_observes_and_reads_rich_text_child_image() {
     let path = temp_mcp_arcw(
         "agent-mcp-rich-text-image",
         r#"
-character @character.alice Alice as alice {
+character alice {
     dialogue_style {
         font = serif
     }
 }
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1112,13 +1112,13 @@ fn agent_mcp_stdio_captures_source_without_prior_observe() {
     let path = temp_mcp_arcw(
         "agent-mcp-direct-capture",
         r#"
-character @character.alice Alice as alice {
+character alice {
     dialogue_style {
         font = serif
     }
 }
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1275,9 +1275,9 @@ fn agent_mcp_stdio_captures_source_with_native_renderer() {
     let path = temp_mcp_arcw(
         "agent-mcp-native-capture",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1372,9 +1372,9 @@ fn agent_mcp_stdio_captures_clear_after_page_object_with_native_renderer() {
     let path = temp_mcp_arcw(
         "agent-mcp-native-page-object-capture",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: Before[clear]After[p]
 }
 ",
@@ -1434,9 +1434,9 @@ fn agent_mcp_stdio_reads_published_semantic_page_capture_ref_with_native_rendere
     let path = temp_mcp_arcw(
         "agent-mcp-native-page-query-read",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: Before[clear]After[p]
 }
 ",
@@ -1514,9 +1514,9 @@ fn agent_mcp_stdio_captures_source_object_with_native_renderer() {
     let path = temp_mcp_arcw(
         "agent-mcp-native-object-capture",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1586,9 +1586,9 @@ fn agent_mcp_stdio_captures_source_layer_with_native_renderer() {
     let path = temp_mcp_arcw(
         "agent-mcp-native-layer-capture",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1691,9 +1691,9 @@ fn agent_mcp_stdio_reads_latest_native_layer_image_resource() {
     let path = temp_mcp_arcw(
         "agent-mcp-native-layer-read-resource",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1882,9 +1882,9 @@ fn agent_mcp_stdio_captures_source_ruby_element_with_native_renderer() {
     let path = temp_mcp_arcw(
         "agent-mcp-native-ruby-capture",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1942,9 +1942,9 @@ fn agent_mcp_stdio_requires_review_for_ruby_object_id_capture() {
     let path = temp_mcp_arcw(
         "agent-mcp-native-ruby-object-id",
         r#"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r]
 }
@@ -1991,9 +1991,9 @@ fn agent_mcp_stdio_requires_review_for_text_combine_mask_capture() {
     let path = temp_mcp_arcw(
         "agent-mcp-strict-text-combine-mask-review",
         r"
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     alice: [.vertical_rl][.typewriter cps=1]2026[/][/][p]
 }
 ",

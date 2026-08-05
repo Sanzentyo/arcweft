@@ -1123,7 +1123,7 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            source_map("main.arcw", "flow @flow.main main { return \"ok\" }"),
+            source_map("main.arcw", "flow main { return \"ok\" }"),
             BytecodeProgram::default(),
             LineDisplayCatalog::new(test_dialogue_revision()),
         )

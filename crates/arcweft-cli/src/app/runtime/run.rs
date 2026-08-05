@@ -1098,13 +1098,13 @@ version = "0.1.0"
         .expect("manifest writes");
         fs::write(
             source_root.join("main.arcw"),
-            r#"flow @flow.main main { return "ok" }"#,
+            r#"flow main { return "ok" }"#,
         )
         .expect("main source writes");
         fs::write(
             nested.join("opening.arcw"),
             r#"mod routes.opening
-flow @flow.opening opening { return "ok" }
+flow opening { return "ok" }
 "#,
         )
         .expect("nested source writes");
@@ -1144,7 +1144,7 @@ version = "0.1.0"
         )
         .expect("manifest writes");
         let source = source_root.join("main.arcw");
-        fs::write(&source, r#"flow @flow.main main { return "ok" }"#).expect("main source writes");
+        fs::write(&source, r#"flow main { return "ok" }"#).expect("main source writes");
         let asset = asset_dir.join("room.png");
         let content = content_dir.join("catalog.json");
         fs::write(&asset, [0_u8, 1, 2, 3]).expect("asset writes");
@@ -1179,7 +1179,7 @@ version = "0.1.0"
         )
         .expect("manifest writes");
         let source = source_root.join("main.arcw");
-        fs::write(&source, r#"flow @flow.main main { return "ok" }"#).expect("main source writes");
+        fs::write(&source, r#"flow main { return "ok" }"#).expect("main source writes");
         let selection = SourceSelection::Project {
             manifest: root.join("arcw.toml"),
             path: source,

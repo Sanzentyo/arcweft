@@ -274,7 +274,7 @@ mod renderer_tests {
 
     #[test]
     fn plain_renderer_includes_verifier_proof_stub_patch_preview() {
-        let source = "flow @flow.opening opening {\n}\n";
+        let source = "flow opening {\n}\n";
         let document = document(source);
         let span = document
             .span(SourceRange::new(source.len(), source.len()))
@@ -291,7 +291,7 @@ mod renderer_tests {
             )
             .with_edit(SourceEdit::new(
                 span,
-                "\n\nproof @proof.obligation_0001 {\n    // TODO: prove it\n    check _\n}\n",
+                "\n\nproof obligation_0001 {\n    // TODO: prove it\n    check _\n}\n",
             )),
         );
         let source = DiagnosticSource::new(&document);
@@ -300,7 +300,7 @@ mod renderer_tests {
 
         assert!(rendered.contains("warning[AWF0703]: lifetime promotion requires proof"));
         assert!(rendered.contains("Generate proof stub"));
-        assert!(rendered.contains("+ proof @proof.obligation_0001"));
+        assert!(rendered.contains("+ proof obligation_0001"));
         assert!(rendered.contains("+     check _"));
     }
 

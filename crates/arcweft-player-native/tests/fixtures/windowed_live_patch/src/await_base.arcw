@@ -1,6 +1,6 @@
 // Seq-03.7 code-generational pending-task base fixture.
 // The first runtime step requests a host task and pins the old generation.
-flow @flow.main main {
+flow main {
     await need @need.bg task @task.bg adapter "asset.image" arg "asset.bg.room"
     return "ready"
 }

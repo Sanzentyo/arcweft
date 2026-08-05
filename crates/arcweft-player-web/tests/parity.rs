@@ -311,7 +311,7 @@ fn wave(amplitude: Length = 3px) -> Fx {
   ])
 }
 
-character @character.narrator Narrator as narrator {}
+character narrator { display_name = "Narrator" }
 
 flow opening {
   narrator: [fx wave()]typed Fx[/fx][p]

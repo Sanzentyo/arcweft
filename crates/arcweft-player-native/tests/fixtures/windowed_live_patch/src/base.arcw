@@ -4,14 +4,14 @@
 // constructs the equivalent typed RuntimePlan and stores this source text in
 // the generated AWFB BundleSource. The source is repository-owned acceptance
 // evidence, not a placeholder JSON runtime fixture.
-flow @flow.main main {
+flow main {
     line @line.opening alice "Windowed smoke: base"
     choice @choice.opening {
         option @choice.opening.next "Next" -> @flow.done
     }
 }
 
-flow @flow.done done {
+flow done {
     return "done"
 }
 

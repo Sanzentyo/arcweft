@@ -4,7 +4,7 @@ mod crate
 
 entry cli @entry.cli.main { goto @flow.main }
 
-flow @flow.main main(argc: i32) {
+flow main(argc: i32) {
     return argc
 }
 "
@@ -48,7 +48,7 @@ test @test.opening scenario {
     expect.no_assertion_failures()
 }
 
-flow @flow.opening opening(state: TestState) {
+flow opening(state: TestState) {
     return "done"
 }
 "#
@@ -60,7 +60,7 @@ mod crate
 
 entry bench @entry.bench.opening { goto @flow.bench_profile }
 
-flow @flow.bench_profile bench_profile {
+flow bench_profile {
     return "done"
 }
 

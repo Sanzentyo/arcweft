@@ -204,9 +204,9 @@ fn visual_smoke_source(label: &str) -> PathBuf {
         r#"
 entry cli @entry.main { goto @flow.main }
 
-character @character.alice Alice as alice {}
+character alice {}
 
-flow @flow.main main {
+flow main {
     let player = "Aoi"
     alice: Hello #[player] |[夢](ゆめ)[r][br][.vertical_rl]吾輩は猫である。ABC 123 2026。[/][p]
 }

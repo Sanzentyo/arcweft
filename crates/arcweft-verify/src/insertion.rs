@@ -19,7 +19,7 @@ pub struct VerifierInsertionTarget {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", tag = "policy")]
 pub enum VerifierInsertionPolicy {
-    /// Insert a new top-level `proof @proof.* { ... }` item.
+    /// Insert a new top-level `proof name { ... }` item.
     TopLevelProofItem,
 }
 
@@ -86,12 +86,12 @@ pub(crate) fn proof_stub_edit(
 }
 
 fn proof_stub_replacement(obligation: &ProofObligation) -> String {
-    let id = proof_id_for_obligation(&obligation.id);
+    let name = proof_name_for_obligation(&obligation.id);
     let message = sanitize_comment_text(&obligation.message);
-    format!("\n\nproof @{id} {{\n    // TODO: prove {message}\n    check _\n}}\n")
+    format!("\n\nproof {name} {{\n    // TODO: prove {message}\n    check _\n}}\n")
 }
 
-fn proof_id_for_obligation(obligation_id: &str) -> String {
+fn proof_name_for_obligation(obligation_id: &str) -> String {
     let suffix = obligation_id
         .chars()
         .map(|ch| if ch.is_ascii_alphanumeric() { ch } else { '_' })
@@ -99,9 +99,9 @@ fn proof_id_for_obligation(obligation_id: &str) -> String {
         .trim_matches('_')
         .to_owned();
     if suffix.is_empty() {
-        "proof.obligation".to_owned()
+        "obligation".to_owned()
     } else {
-        format!("proof.{suffix}")
+        suffix
     }
 }
 
@@ -140,7 +140,7 @@ mod tests {
 
         assert_eq!(span, SourceSpan { start: 42, end: 42 });
         assert_eq!(applicability, ToolActionApplicability::HasPlaceholders);
-        assert!(replacement.contains("proof @proof.obligation_0001"));
+        assert!(replacement.contains("proof obligation_0001"));
         assert!(replacement.contains("check _"));
     }
 }

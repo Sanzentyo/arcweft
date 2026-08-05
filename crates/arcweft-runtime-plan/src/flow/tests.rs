@@ -466,13 +466,13 @@ flow main {
 #[test]
 fn admitted_dialogue_profile_propagates_typed_owner_style_policy_and_revision() {
     let parsed = parse_flow_fixture(
-        r"
-character @character.alice Alice as alice {}
+        r##"
+character alice { display_name = "Alice" }
 
-flow @flow.main main {
+flow main {
     alice: Hello[p]
 }
-",
+"##,
     );
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
         .expect("fixture lowers");
@@ -505,13 +505,14 @@ flow @flow.main main {
 #[test]
 fn speaker_preset_styles_join_dialogue_cascade() {
     let source = r##"
-character @character.alice Alice as alice {
+character alice {
+    display_name = "Alice"
     dialogue_style {
         text_color = rgb("#202122")
     }
 }
 
-flow @flow.main main {
+flow main {
     let alice_side = alice(rich_text=rich_text_style(text=text_style(color=rgb("#303132"))), inline_error=InlineFailure.fallback("preset"))
     let alice_worried = alice_side(rich_text=rich_text_style(text=text_style(color=rgb("#404142"))))
 

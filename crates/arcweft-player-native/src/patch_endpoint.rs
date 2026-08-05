@@ -1046,7 +1046,7 @@ mod tests {
                     source_plans: stats.source_plans,
                 },
             },
-            source_map("native-patch.arcw", "flow @flow.main main { ... }"),
+            source_map("native-patch.arcw", "flow main { ... }"),
             bytecode,
             display,
         )

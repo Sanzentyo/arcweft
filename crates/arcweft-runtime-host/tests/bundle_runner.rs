@@ -302,7 +302,7 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
         },
         source_map(
             "custom.arcw",
-            "flow @flow.custom custom { await custom.echo(\"hello\") return \"custom-done\" }",
+            "flow custom { await custom.echo(\"hello\") return \"custom-done\" }",
         ),
         program,
         display,

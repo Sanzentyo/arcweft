@@ -48,7 +48,7 @@ fn hir(source: &str) -> arcweft_lang_hir::model::HirModule {
 #[test]
 fn promotion_without_proof_is_an_obligation() {
     let report = report(
-        "flow @flow.opening opening {\n  let summary = promote('flow)\n}\n",
+        "flow opening {\n  let summary = promote('flow)\n}\n",
         VerificationMode::Test,
     );
     assert!(report.has_errors());
@@ -61,11 +61,11 @@ fn promotion_without_proof_is_an_obligation() {
 #[test]
 fn verifier_projects_prefix_and_postfix_try_to_the_same_obligations() {
     let prefix = report(
-        "flow @flow.opening opening {\n  let summary = try promote('flow)\n}\n",
+        "flow opening {\n  let summary = try promote('flow)\n}\n",
         VerificationMode::Test,
     );
     let postfix = report(
-        "flow @flow.opening opening {\n  let summary = promote('flow)?\n}\n",
+        "flow opening {\n  let summary = promote('flow)?\n}\n",
         VerificationMode::Test,
     );
 
@@ -120,7 +120,7 @@ fn prove_assertion_conditions_create_ordered_unresolved_obligations() {
 fn semantic_diagnostics_carry_typed_verifier_actions() {
     let report = report(
         r"
-flow @flow.effects effects {
+flow effects {
     signal.set(@signal.current_flow, @flow.effects)
 }
 ",
@@ -157,7 +157,7 @@ fn verifier_action_source_edit_becomes_diagnostic_suggestion() {
     }
     .with_source_edit(
         SourceSpan { start: 0, end: 0 },
-        "\nproof @proof.todo {\n    prove _\n}\n",
+        "\nproof todo {\n    prove _\n}\n",
         ToolActionApplicability::HasPlaceholders,
     );
     let document = arcweft_source::SourceDocument::try_new(
@@ -175,11 +175,7 @@ fn verifier_action_source_edit_becomes_diagnostic_suggestion() {
         arcweft_source::DiagnosticApplicability::HasPlaceholders
     );
     assert_eq!(suggestion.edits().len(), 1);
-    assert!(
-        suggestion.edits()[0]
-            .replacement()
-            .contains("proof @proof.todo")
-    );
+    assert!(suggestion.edits()[0].replacement().contains("proof todo"));
 }
 
 #[test]
@@ -213,7 +209,7 @@ fn verifier_host_action_becomes_diagnostic_command() {
 #[test]
 fn unsafe_lifetime_records_audit() {
     let report = report(
-        "flow @flow.opening opening {\n  unsafe lifetime @unsafe.cache reason = \"ok\" {\n    /// SAFETY: owned clone only\n    let summary = promote_unchecked('flow)\n  }\n}\n",
+        "flow opening {\n  unsafe lifetime @unsafe.cache reason = \"ok\" {\n    /// SAFETY: owned clone only\n    let summary = promote_unchecked('flow)\n  }\n}\n",
         VerificationMode::Dev,
     );
     assert_eq!(report.unsafe_audit_count(), 1);
@@ -229,7 +225,7 @@ fn unsafe_lifetime_records_audit() {
 fn proof_insertion_target_generates_source_edit() {
     let report = report(
         r"
-flow @flow.effects effects {
+flow effects {
     signal.set(@signal.current_flow, @flow.effects)
 }
 ",
@@ -251,7 +247,7 @@ flow @flow.effects effects {
         edit.applicability(),
         ToolActionApplicability::HasPlaceholders
     );
-    assert!(edit.replacement().contains("proof @proof."));
+    assert!(edit.replacement().contains("proof "));
     assert!(edit.replacement().contains("check _"));
 }
 
@@ -282,7 +278,7 @@ fn proof_insertion_without_target_keeps_host_command() {
 fn unsafe_audit_command_waits_for_revision_bound_hir_source_component() {
     let report = report(
         r"
-flow @flow.unsafe_demo unsafe_demo {
+flow unsafe_demo {
     unsafe lifetime @unsafe.cache {
         let summary = promote_unchecked('flow)
     }
@@ -305,7 +301,7 @@ flow @flow.unsafe_demo unsafe_demo {
 fn missing_unsafe_audit_metadata_is_runtime_safety_gap_in_dev() {
     let report = report(
         r"
-flow @flow.unsafe_demo unsafe_demo {
+flow unsafe_demo {
     unsafe lifetime @unsafe.cache {
         let summary = promote_unchecked('flow)
     }
@@ -346,7 +342,7 @@ fn unsafe_audit_without_exact_range_keeps_host_command() {
 fn runtime_parallel_conflict_is_verifier_obligation() {
     let report = report(
         r"
-flow @flow.conflict conflict {
+flow conflict {
     alice[待って。[p]]
     with {
         together {
@@ -370,7 +366,7 @@ flow @flow.conflict conflict {
 fn semantic_thread_join_conflict_is_verifier_obligation() {
     let report = report(
         r#"
-flow @flow.thread_join thread_join {
+flow thread_join {
     thread worker {
         out 1
         out "bad"
@@ -399,7 +395,7 @@ flow @flow.thread_join thread_join {
 fn semantic_effect_capability_is_verifier_obligation() {
     let report = report(
         r"
-flow @flow.effects effects {
+flow effects {
     signal.set(@signal.current_flow, @flow.effects)
 }
 ",
@@ -417,7 +413,7 @@ flow @flow.effects effects {
 #[test]
 fn verifier_uses_adapter_typecheck_env_for_semantic_discharge() {
     let hir = hir(r"
-flow @flow.effects effects {
+flow effects {
     signal.set(@signal.current_flow, @flow.effects)
 }
 ");
@@ -453,7 +449,7 @@ flow @flow.effects effects {
 fn semantic_effect_capability_can_be_discharged_by_effects_clause() {
     let report = report(
         r"
-flow @flow.effects effects
+flow effects
 effects { signal.write }
 {
     signal.set(@signal.current_flow, @flow.effects)
@@ -474,7 +470,7 @@ effects { signal.write }
 fn semantic_state_write_can_be_discharged_by_effects_clause() {
     let report = report(
         r"
-flow @flow.registry registry
+flow registry
 effects { state.write('flow) }
 {
     'flow.flags.seen <- true
@@ -495,7 +491,7 @@ effects { state.write('flow) }
 fn proof_body_issues_are_verifier_obligations() {
     let report = report(
         r"
-proof @proof.requires_only {
+proof requires_only {
     requires summary.lifetime >= 'flow
 }
 ",
@@ -514,16 +510,16 @@ proof @proof.requires_only {
 fn trusted_proof_evidence_is_transitive_auditable_and_policy_controlled() {
     let source = r#"
 #[verify.trusted(reason = "validated by signed build metadata")]
-proof @proof.external_fact {
+proof external_fact {
     check no_lifetime_below(LineSummary, 'flow)
 }
 
-proof @proof.dependent {
+proof dependent {
     use @proof.external_fact
     check no_lifetime_below(LineSummary, 'flow)
 }
 
-flow @flow.proven proven {
+flow proven {
     let summary = promote('flow, proof = @proof.dependent)
 }
 "#;
@@ -573,7 +569,7 @@ flow @flow.proven proven {
 fn semantic_cfg_discharge_is_not_overridden_by_verifier_scan() {
     let report = report(
         r"
-flow @flow.cancel_cleanup cancel_cleanup {
+flow cancel_cleanup {
     alice[待って。[p]]
     with:
         init:

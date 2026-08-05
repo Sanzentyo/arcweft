@@ -380,10 +380,7 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            source_map(
-                "bundle-mode-runs.arcw",
-                "flow @flow.main main { return \"done\" }",
-            ),
+            source_map("bundle-mode-runs.arcw", "flow main { return \"done\" }"),
             bytecode,
             display,
         )

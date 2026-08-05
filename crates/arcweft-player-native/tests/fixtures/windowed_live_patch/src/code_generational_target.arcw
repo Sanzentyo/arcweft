@@ -2,11 +2,11 @@
 // The default foreground flow executable changes from dialogue+choice to a
 // return-only body. Existing foreground fibers remain on the old generation;
 // newly started foreground entries bind to this target generation.
-flow @flow.main main {
+flow main {
     return "changed"
 }
 
-flow @flow.done done {
+flow done {
     return "done"
 }
 

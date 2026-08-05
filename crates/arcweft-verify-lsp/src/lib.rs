@@ -1139,8 +1139,7 @@ mod tests {
                     kind: ToolActionKind::GenerateProofStub,
                     source_edit: Some(arcweft_verify::ToolActionSourceEdit {
                         span: VerifySourceSpan { start: 21, end: 21 },
-                        replacement: "\n\nproof @proof.obligation_0001 {\n    check _\n}\n"
-                            .to_owned(),
+                        replacement: "\n\nproof obligation_0001 {\n    check _\n}\n".to_owned(),
                         applicability: ToolActionApplicability::HasPlaceholders,
                     }),
                     command: None,
@@ -1155,7 +1154,7 @@ mod tests {
         let text_edit = &edit.changes.as_ref().expect("changes")[&uri][0];
         assert_eq!(text_edit.range.start, Position::new(0, 21));
         assert_eq!(text_edit.range.end, Position::new(0, 21));
-        assert!(text_edit.new_text.contains("proof @proof.obligation_0001"));
+        assert!(text_edit.new_text.contains("proof obligation_0001"));
     }
 
     #[test]

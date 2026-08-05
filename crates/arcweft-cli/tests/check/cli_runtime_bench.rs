@@ -8,7 +8,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow @flow.map_pure map_pure {
+flow map_pure {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     for item in scores {
@@ -63,7 +63,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow @flow.map_pure_sum map_pure_sum {
+flow map_pure_sum {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let total: i64 = values.map(|item| score(item, 2i64)).sum()
     log.info(total)
@@ -110,18 +110,19 @@ flow @flow.map_pure_sum map_pure_sum {
 fn check_accepts_valid_arcw_file() {
     let path = temp_arcw(
         "valid",
-        r"
-pub character @character.alice Alice as alice {
+        r#"
+character alice {
+    display_name = "Alice"
 }
 
-flow @flow.opening opening {
+flow opening {
     @<character.alice>.say[待って。[mark .release][p]]
     with:
         init:
             'line.flag <- true
         at(0.25s): 'line.flag |> drop_optional
 }
-",
+"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -172,7 +173,7 @@ fn check_allows_redundant_decl_identity_warning() {
     let path = temp_arcw(
         "redundant-decl-identity-warning",
         r"
-flow @flow.opening opening {
+flow opening {
 }
 ",
     );
@@ -199,7 +200,7 @@ fn check_json_reports_compiler_pipeline_summary() {
     let path = temp_arcw(
         "valid-json",
         r#"
-flow @flow.opening opening {
+flow opening {
     return "done"
 }
 "#,
@@ -243,7 +244,7 @@ fn check_accepts_state_write_effect_contract() {
     let path = temp_arcw(
         "state-write-effect",
         r"
-flow @flow.registry registry
+flow registry
 effects { state.write('flow) }
 {
     'flow.flags.seen <- true
@@ -270,10 +271,10 @@ fn check_rejects_unlowered_line_plan_item() {
     let path = temp_arcw(
         "unsupported-line-plan",
         r"
-pub character @character.alice Alice as alice {
+pub character alice {
 }
 
-flow @flow.unsupported unsupported {
+flow unsupported {
     @<character.alice>.say[待って。[p]]
     with:
         @bad raw item
@@ -302,7 +303,7 @@ fn check_rejects_invalid_arcw_file() {
     let path = temp_arcw(
         "invalid",
         r"
-flow @flow.bad bad {
+flow bad {
     alice[unclosed
 }
 ",
@@ -326,7 +327,7 @@ fn verify_json_reports_missing_promotion_proof() {
     let path = temp_arcw(
         "verify-missing-proof",
         r"
-flow @flow.verify verify {
+flow verify {
     let summary = promote('flow)
 }
 ",
@@ -357,7 +358,7 @@ fn verify_json_records_required_solver_checks() {
     let path = temp_arcw(
         "verify-solver-check",
         r"
-flow @flow.verify verify {
+flow verify {
     let summary = promote('flow)
 }
 ",
@@ -393,10 +394,9 @@ fn verify_json_reports_semantic_thread_join_conflict() {
     let path = temp_arcw(
         "verify-thread-join",
         r#"
-pub character @character.alice Alice as alice {
-}
+character alice { display_name = "Alice" }
 
-flow @flow.thread_join thread_join {
+flow thread_join {
     alice[待って。[p]]
     with:
         thread worker:
@@ -433,7 +433,7 @@ fn verify_json_reports_effect_capability_obligation() {
         r"
 signal @signal:.current_flow: Watch<Ref<Flow>>
 
-flow @flow.effects effects {
+flow effects {
     signal.set(@signal.current_flow, @flow.effects)
 }
 ",
@@ -466,7 +466,7 @@ fn verify_json_accepts_effect_capability_from_flow_contract() {
         r"
 signal @signal:.current_flow: Watch<Ref<Flow>>
 
-flow @flow.effects effects
+flow effects
 effects { signal.write }
 {
     signal.set(@signal.current_flow, @flow.effects)
@@ -496,7 +496,7 @@ fn verify_json_reports_invalid_proof_body() {
     let path = temp_arcw(
         "verify-proof-body",
         r"
-proof @proof.requires_only {
+proof requires_only {
     requires summary.lifetime >= 'flow
 }
 ",
@@ -527,7 +527,7 @@ fn verify_json_reports_unknown_proof_dependency() {
     let path = temp_arcw(
         "verify-proof-dependency",
         r"
-proof @proof.missing_dependency {
+proof missing_dependency {
     use @proof.missing
     check no_lifetime_below(LineSummary, 'flow)
 }
@@ -558,11 +558,12 @@ proof @proof.missing_dependency {
 fn verify_json_respects_semantic_defer_cancel_discharge() {
     let path = temp_arcw(
         "verify-cancel-defer",
-        r"
-pub character @character.alice Alice as alice {
+        r#"
+character alice {
+    display_name = "Alice"
 }
 
-flow @flow.cancel_cleanup cancel_cleanup {
+flow cancel_cleanup {
     @<character.alice>.say[待って。[p]]
     with:
         init:
@@ -573,7 +574,7 @@ flow @flow.cancel_cleanup cancel_cleanup {
             'line.focus |> drop_optional
         cancel on input(.SkipLine) { out .Skipped }
 }
-",
+"#,
     );
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -598,7 +599,7 @@ fn unsafe_json_lists_audit_regions() {
     let path = temp_arcw(
         "unsafe-audit",
         r#"
-flow @flow.audit audit {
+flow audit {
     unsafe lifetime @unsafe.cache reason = "owned clone" {
         /// SAFETY: value is owned before promotion
         let summary = promote_unchecked('flow)
@@ -787,10 +788,10 @@ fn run_json_steps_runtime_plan() {
     let path = temp_arcw(
         "runtime-run",
         r"
-pub character @character.alice Alice as alice {
+pub character alice {
 }
 
-flow @flow.run run {
+flow run {
     @<character.alice>.say[待って。[p]]
     with:
         out .Done
@@ -827,7 +828,7 @@ fn run_json_can_select_aot_executor() {
     let path = temp_arcw(
         "runtime-run-aot",
         r#"
-flow @flow.run run {
+flow run {
     log.info("aot")
     return "done"
 }
@@ -870,7 +871,7 @@ fn run_json_modes_and_budget_drive_engine_step_boundary() {
     let path = temp_arcw(
         "runtime-step-modes",
         r#"
-flow @flow.run run {
+flow run {
     log.info("first")
     log.info("second")
     return "done"
@@ -956,7 +957,7 @@ fn profile_json_can_select_aot_executor_without_absolute_source() {
         r#"
 entry cli @entry.profile { goto @flow.profile }
 
-flow @flow.profile profile {
+flow profile {
     return "done"
 }
 "#,
@@ -1012,7 +1013,7 @@ fn profile_json_reports_runtime_math_backend_selection() {
         r#"
 entry cli @entry.profile { goto @flow.profile }
 
-flow @flow.profile profile {
+flow profile {
     log.info("profile math")
     return "done"
 }
@@ -1058,7 +1059,7 @@ fn run_json_executes_math_intrinsic_with_cli_matrix_bindings() {
     let path = temp_arcw(
         "runtime-math-bindings",
         r"
-flow @flow.math math(lhs: MatrixF32, rhs: MatrixF32) -> MatrixF32 {
+flow math(lhs: MatrixF32, rhs: MatrixF32) -> MatrixF32 {
     let out = math.matmul_f32(lhs, rhs)
     return out
 }
@@ -1118,7 +1119,7 @@ fn run_json_executes_f64_math_intrinsic_with_cli_matrix_bindings() {
     let path = temp_arcw(
         "runtime-math-f64-bindings",
         r"
-flow @flow.math_f64 math_f64(lhs: MatrixF64, rhs: MatrixF64) -> MatrixF64 {
+flow math_f64(lhs: MatrixF64, rhs: MatrixF64) -> MatrixF64 {
     let out = math.matmul_f64(lhs, rhs)
     return out
 }
@@ -1180,7 +1181,7 @@ fn verify_types_json_reports_type_and_runtime_validation_without_absolute_source
     let path = temp_arcw(
         "verify-types",
         r#"
-flow @flow.verify_types verify_types {
+flow verify_types {
     log.info("verify types")
     return "done"
 }
@@ -1223,7 +1224,7 @@ fn profile_json_reports_phase_timings_and_runtime_stats_without_absolute_source(
         r#"
 entry cli @entry.profile { goto @flow.profile }
 
-flow @flow.profile profile {
+flow profile {
     log.info("profile")
     return "done"
 }
@@ -1299,7 +1300,7 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.profile_io { goto @flow.profile_io }
-flow @flow.profile_io profile_io effects { fs.read(save), fs.write(save) } {
+flow profile_io effects { fs.read(save), fs.write(save) } {
     let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
     try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
     return text
@@ -1360,7 +1361,7 @@ fn cli_json_selects_cli_entry_and_binds_args() {
         r"
 entry cli @entry.main { goto @flow.main }
 
-flow @flow.main main(argc: i32) {
+flow main(argc: i32) {
     return argc
 }
 ",
@@ -1406,7 +1407,7 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
-flow @flow.main main effects { fs.read(save), fs.write(save) } {
+flow main effects { fs.read(save), fs.write(save) } {
     let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
     try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
     return text
@@ -1704,7 +1705,7 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
-flow @flow.main main effects { fs.read(save), fs.write(save) } {
+flow main effects { fs.read(save), fs.write(save) } {
     let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
     try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
     return text
@@ -1900,7 +1901,7 @@ extern capability fs {
 }
 extern capability path { fn save(path: String) -> VirtualPath }
 entry cli @entry.main { goto @flow.main }
-flow @flow.main main effects { fs.read(save) } {
+flow main effects { fs.read(save) } {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
     let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
     log.info("parallel done")
@@ -1958,7 +1959,7 @@ extern capability system {
     fn available_parallelism() -> Need<String, SystemError> effects { system.read }
 }
 entry cli @entry.main { goto @flow.main }
-flow @flow.main main effects { system.read } {
+flow main effects { system.read } {
     let cores = try await system.core_count() with { error e => return "core_failed" }
     let threads = try await system.thread_count() with { error e => return "thread_failed" }
     let available = try await system.available_parallelism() with { error e => return "available_failed" }
@@ -2015,10 +2016,10 @@ fn run_json_observes_line_child_tasks_through_scheduler() {
     let path = temp_arcw(
         "line-child-scheduler",
         r#"
-pub character @character.alice Alice as alice {
+pub character alice {
 }
 
-flow @flow.main main {
+flow main {
     alice[待って。[p]]
     with:
         thread motion:
@@ -2062,7 +2063,7 @@ fn run_json_executes_source_thread_through_scheduler_marker() {
     let path = temp_arcw(
         "source-thread-scheduler",
         r#"
-flow @flow.main main {
+flow main {
     thread worker {
         log.info("worker")
     }
@@ -2109,7 +2110,7 @@ fn run_json_reports_headless_observations() {
 signal @signal:.current_flow: Watch<Ref<Flow>>
 metric gauge @metric.frame_count: i32
 
-flow @flow.observed observed
+flow observed
 effects { signal.write, metric.write }
 {
     log.info("enter observed")
@@ -2151,7 +2152,7 @@ fn plan_json_lists_source_generation_plans() {
     let path = temp_arcw(
         "generation-plan",
         r#"
-pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
+pub source fixture_frames: Source<IteratorItem, CaptureError> {
     from "fixture"
     backpressure = latest
     replay = hash_only
@@ -2160,7 +2161,7 @@ pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
     on item frame => yield frame
 }
 
-flow @flow.generation generation() -> String {
+flow generation() -> String {
     return "done"
 }
 "#,
@@ -2193,7 +2194,7 @@ fn run_json_lists_source_runtime_state() {
     let path = temp_arcw(
         "generation-run",
         r#"
-pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
+pub source fixture_frames: Source<IteratorItem, CaptureError> {
     from "fixture"
     backpressure = latest
     replay = hash_only
@@ -2204,7 +2205,7 @@ pub source @source.fixture_frames: Source<IteratorItem, CaptureError> {
 
 entry cli @entry.generation { goto @flow.generation }
 
-flow @flow.generation generation() -> String {
+flow generation() -> String {
     return "done"
 }
 "#,
@@ -2240,7 +2241,7 @@ fn run_json_executes_scope_and_loop_value_bindings() {
     let path = temp_arcw(
         "runtime-value-bindings",
         r#"
-flow @flow.value_bindings value_bindings {
+flow value_bindings {
     let local_target = scope target_scope {
         let candidate = @flow.done
         candidate
@@ -2253,7 +2254,7 @@ flow @flow.value_bindings value_bindings {
     goto next
 }
 
-flow @flow.done done {
+flow done {
     return "done"
 }
 "#,
@@ -2282,7 +2283,7 @@ flow @flow.done done {
 
 #[test]
 fn fmt_preserves_sugar_by_default() {
-    let source = "flow @flow.opening opening {\n    alice: hi[p]\n}\n";
+    let source = "flow opening {\n    alice: hi[p]\n}\n";
     let path = temp_arcw("fmt-preserve", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -2363,7 +2364,7 @@ fn help_does_not_advertise_removed_semantic_canonicalizer() {
 
 #[test]
 fn fmt_canonical_rich_text_rewrites_inferred_tags_without_other_sugar() {
-    let source = "flow @flow.opening opening {\n    alice: hi $(name)[.keyword]word[/][.sparkle amp=2px]there[/][page]\n    let handles = alice()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
+    let source = "flow opening {\n    alice: hi $(name)[.keyword]word[/][.sparkle amp=2px]there[/][page]\n    let handles = alice()[[.vertical_rl]縦[/][p]] with: out handles\n}\n";
     let path = temp_arcw("fmt-canonical-rich-text", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -2390,7 +2391,7 @@ fn fmt_canonical_rich_text_rewrites_inferred_tags_without_other_sugar() {
 
 #[test]
 fn fmt_canonical_rich_text_rewrites_text_proxy_inference() {
-    let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=choice]proxy[/][.KeywordHit]typed[/][p]\n}\n";
+    let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\nflow opening {\n    alice: [.hotspot type=KeywordHit channel=choice]proxy[/][.KeywordHit]typed[/][p]\n}\n";
     let path = temp_arcw("fmt-canonical-rich-text-text-proxy", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -2415,7 +2416,7 @@ fn fmt_canonical_rich_text_rewrites_text_proxy_inference() {
 
 #[test]
 fn fmt_canonical_rich_text_preserves_nested_proxy_params() {
-    let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]multi[/][/][p]\n}\n";
+    let source = "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow opening {\n    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]multi[/][/][p]\n}\n";
     let path = temp_arcw("fmt-canonical-rich-text-nested-text-proxy", source);
 
     let output = Command::new(env!("CARGO_BIN_EXE_arcw"))
@@ -2565,7 +2566,7 @@ bench @bench.runtime {
     measure iterations = 2 { goto @flow.bench }
 }
 
-flow @flow.bench bench {
+flow bench {
     log.info("bench")
     return "done"
 }
@@ -2623,7 +2624,7 @@ bench @bench.runtime_aot {
     measure iterations = 1 { goto @flow.bench }
 }
 
-flow @flow.bench bench {
+flow bench {
     log.info("bench aot")
     return "done"
 }
@@ -2674,7 +2675,7 @@ bench @bench.for_pure {
     measure iterations = 2 { goto @flow.for_pure }
 }
 
-flow @flow.for_pure for_pure {
+flow for_pure {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     for item in values {
         let scored = score(item, 2i64)
@@ -2777,7 +2778,7 @@ bench @bench.bracket_pure {
     measure iterations = 2 { goto @flow.bracket_pure }
 }
 
-flow @flow.bracket_pure bracket_pure {
+flow bracket_pure {
     let scores: Vec<i64> = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)]
     for item in scores {
         log.info(item)
@@ -2885,7 +2886,7 @@ bench @bench.bracket_pure_sum {
     measure iterations = 2 { goto @flow.bracket_pure_sum }
 }
 
-flow @flow.bracket_pure_sum bracket_pure_sum {
+flow bracket_pure_sum {
     let total: i64 = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)].sum()
     log.info(total)
     return "done"
@@ -2964,7 +2965,7 @@ bench @bench.bracket_pure {
     measure iterations = 2 { goto @flow.bracket_pure }
 }
 
-flow @flow.bracket_pure bracket_pure {
+flow bracket_pure {
     let scores: Vec<i64> = [score(1i64, 2i64), score(2i64, 2i64), score(3i64, 2i64), score(4i64, 2i64)]
     for item in scores {
         log.info(item)
@@ -3071,7 +3072,7 @@ bench @bench.map_pure {
     measure iterations = 2 { goto @flow.map_pure }
 }
 
-flow @flow.map_pure map_pure {
+flow map_pure {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     for item in scores {
@@ -3149,7 +3150,7 @@ bench @bench.map_pure_sum {
     measure iterations = 2 { goto @flow.map_pure_sum }
 }
 
-flow @flow.map_pure_sum map_pure_sum {
+flow map_pure_sum {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let total: i64 = values.map(|item| score(item, 2i64)).sum()
     log.info(total)
@@ -3224,7 +3225,7 @@ bench @bench.map_pure {
     measure iterations = 2 { goto @flow.map_pure }
 }
 
-flow @flow.map_pure map_pure {
+flow map_pure {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     for item in scores {
@@ -3310,7 +3311,7 @@ bench @bench.branch_for_pure {
     measure iterations = 2 { goto @flow.branch_for_pure }
 }
 
-flow @flow.branch_for_pure branch_for_pure {
+flow branch_for_pure {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     for item in values {
         let first = score(item, 2i64, 5i64)
@@ -3390,7 +3391,7 @@ bench @bench.match_pure {
     measure iterations = 2 { goto @flow.match_pure }
 }
 
-flow @flow.match_pure match_pure {
+flow match_pure {
     let next = @flow.scored
     match next {
         @flow.scored => goto @flow.scored
@@ -3398,13 +3399,13 @@ flow @flow.match_pure match_pure {
     }
 }
 
-flow @flow.scored scored {
+flow scored {
     let scored = score(3i64, 2i64)
     log.info(scored)
     return "done"
 }
 
-flow @flow.fallback fallback {
+flow fallback {
     let scored = score(1i64, 1i64)
     log.info(scored)
     return "fallback"
@@ -3472,7 +3473,7 @@ bench @bench.threads {
     measure iterations = 1 { goto @flow.threads }
 }
 
-flow @flow.threads threads {
+flow threads {
     thread first {
         log.info("first")
     }
@@ -4910,7 +4911,7 @@ bench @bench.infer_matmul_bias_add_f32 {
     measure iterations = 3 { goto @flow.infer_matmul_bias_add_f32 }
 }
 
-flow @flow.infer_matmul_bias_add_f32 infer_matmul_bias_add_f32(lhs: TensorF32, rhs: TensorF32, bias: TensorF32) -> TensorF32 {
+flow infer_matmul_bias_add_f32(lhs: TensorF32, rhs: TensorF32, bias: TensorF32) -> TensorF32 {
     let out = infer.matmul_bias_add_f32(lhs, rhs, bias)
     return out
 }
@@ -5840,7 +5841,7 @@ bench @bench.runtime_assert {
     assert { expect.no_assertion_failures() }
 }
 
-flow @flow.bench bench effects { signal.write } {
+flow bench effects { signal.write } {
     log.info("bench observed")
     signal.set(@signal.bench_done, true)
     return "done"
@@ -5885,7 +5886,7 @@ bench @bench.runtime_assert_fail {
     assert { expect.signal(@signal.bench_done, false) }
 }
 
-flow @flow.bench bench effects { signal.write } {
+flow bench effects { signal.write } {
     signal.set(@signal.bench_done, true)
     return "done"
 }
@@ -5940,7 +5941,7 @@ bench @bench.native_io {
     assert { expect.file(path.save("output.txt"), equals="bench-native-ok") }
 }
 
-flow @flow.bench_io bench_io effects { fs.read(save), fs.write(save) } {
+flow bench_io effects { fs.read(save), fs.write(save) } {
     let text = try await fs.read_text(path.save("input.txt")) with { error e => return "read_failed" }
     try await fs.write_text(path.save("output.txt"), text) with { error e => return "write_failed" }
     return text
@@ -6014,7 +6015,7 @@ bench @bench.parallel_io {
     assert { expect.file(path.save("output.txt"), equals="done") }
 }
 
-flow @flow.parallel_io parallel_io effects { fs.read(save), fs.write(save) } {
+flow parallel_io effects { fs.read(save), fs.write(save) } {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
     let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { error e => return "read_failed" }
     try await fs.write_text(path.save("output.txt"), "done") with { error e => return "write_failed" }
@@ -6086,7 +6087,7 @@ bench @bench.threaded_reads {
     measure iterations = 1 { goto @flow.threaded_reads }
 }
 
-flow @flow.threaded_reads threaded_reads effects { fs.read(save) } {
+flow threaded_reads effects { fs.read(save) } {
     thread left {
         let text = try await fs.read_text(path.save("a.txt")) with { error e => return "left_failed" }
         log.info(text)
@@ -6183,7 +6184,7 @@ bench @bench.native_file_assert {
     assert { expect.file(path.save("output.txt"), equals="expected") }
 }
 
-flow @flow.write_actual write_actual effects { fs.write(save) } {
+flow write_actual effects { fs.write(save) } {
     try await fs.write_text(path.save("output.txt"), "actual") with { error e => return "write_failed" }
     return "done"
 }
@@ -6260,7 +6261,7 @@ fn check_rejects_non_arcw_file_extension() {
         "non-arcw",
         "arwt",
         r#"
-flow @flow.main main {
+flow main {
     return "done"
 }
 "#,
@@ -6291,7 +6292,7 @@ fn check_rejects_direct_non_arcw_edge_extensions() {
             "direct-extension-edge",
             extension,
             r#"
-flow @flow.main main {
+flow main {
     return "done"
 }
 "#,
@@ -6323,7 +6324,7 @@ fn tooling_commands_reject_direct_non_arcw_paths() {
             "tooling-non-arcw",
             "arwt",
             r#"
-flow @flow.main main {
+flow main {
     return "done"
 }
 "#,
@@ -6354,7 +6355,7 @@ fn tooling_directory_scan_ignores_non_arcw_files() {
     fs::write(
         &arcw,
         r#"
-flow @flow.main main {
+flow main {
     return "done"
 }
 "#,
@@ -6485,11 +6486,11 @@ entry server @entry.http {
     route POST "/save" -> @flow.save
 }
 
-flow @flow.health health {
+flow health {
     return "ok"
 }
 
-flow @flow.save save {
+flow save {
     return "saved"
 }
 "#,
@@ -6532,7 +6533,7 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow @flow.hello hello(name: String) {
+flow hello(name: String) {
     return name
 }
 "#,
@@ -6564,7 +6565,7 @@ fn serve_json_treats_server_run_entry_as_default_route() {
         r#"
 entry server @entry.server { goto @flow.main }
 
-flow @flow.main main {
+flow main {
     return "server"
 }
 "#,
@@ -6603,7 +6604,7 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow @flow.hello hello(name: String) {
+flow hello(name: String) {
     return name
 }
 "#,
@@ -6656,7 +6657,7 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello
 }
 
-flow @flow.hello hello {
+flow hello {
     return route_params.name
 }
 "#,
@@ -6712,7 +6713,7 @@ entry server @entry.http {
     route GET "/health" -> @flow.health
 }
 
-flow @flow.health health {
+flow health {
     return "ok"
 }
 "#,
@@ -6769,7 +6770,7 @@ fn profile_source_and_path_are_mutually_exclusive() {
     fs::write(
         &source,
         r#"
-flow @flow.main main {
+flow main {
     return "done"
 }
 "#,
@@ -6822,7 +6823,7 @@ fn profile_rejects_unknown_adapter() {
         r#"
 entry server @entry.http { goto @flow.main }
 
-flow @flow.main main {
+flow main {
     return "ok"
 }
 "#,

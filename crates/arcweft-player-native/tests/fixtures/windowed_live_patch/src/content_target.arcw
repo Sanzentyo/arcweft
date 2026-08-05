@@ -1,14 +1,14 @@
 // Seq-03.7 content-only target fixture.
 // Changes presentation text and the sprite bytes while keeping the executable
 // flow graph unchanged. This should classify as content-only.
-flow @flow.main main {
+flow main {
     line @line.opening alice "Windowed smoke: content target"
     choice @choice.opening {
         option @choice.opening.next "Next" -> @flow.done
     }
 }
 
-flow @flow.done done {
+flow done {
     return "done"
 }
 
