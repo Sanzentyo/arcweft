@@ -317,7 +317,7 @@ fn runtime_plan_lowers_pure_function_call_from_compile_gap_fixture() {
 #[pure]
 fn add(a: i32, b: i32) -> i32 { a + b }
 
-flow @flow.main main {
+flow main {
     let n = add(1, 2)
     return "done"
 }
@@ -334,8 +334,8 @@ fn entry_selects_runtime_goto_flow_from_compile_gap_fixture() {
     let tree = parse_ok(
         r#"
 entry cli @entry.main { goto @flow.second }
-flow @flow.first first { return "wrong" }
-flow @flow.second second { return "right" }
+flow first { return "wrong" }
+flow second { return "right" }
 "#,
     );
     let hir =
@@ -355,8 +355,8 @@ fn entry_goto_selects_runtime_flow_from_final_syntax() {
 entry cli @entry.runtime_plan {
     goto @flow.second
 }
-flow @flow.first first { return "wrong" }
-flow @flow.second second { return "right" }
+flow first { return "wrong" }
+flow second { return "right" }
 "#,
     );
     let hir = lower_document_to_hir(tree.document().as_ref(), tree.typed_tree())
@@ -373,7 +373,7 @@ flow @flow.second second { return "right" }
 fn lowers_dialogue_line_plan_to_core_task_group() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice(focus=.soft)[待って。[mark .release_focus][p]]
     with:
         init:
@@ -479,7 +479,7 @@ fn line_plan_parser_rejects_items_outside_the_current_grammar() {
                 .expect("test document ID"),
             SourceName::Generated,
             r"
-flow @flow.raw raw {
+flow raw {
     alice[待って。[p]]
     with:
         @bad raw item
@@ -501,7 +501,7 @@ flow @flow.raw raw {
 fn line_plan_runtime_lowering_rejects_unlowered_semantic_items() {
     let tree = parse_ok(
         r"
-flow @flow.unsupported unsupported {
+flow unsupported {
     alice[待って。[p]]
     with:
         voice = auto
@@ -521,7 +521,7 @@ flow @flow.unsupported unsupported {
 fn line_plan_runtime_lowering_lowers_nested_group_expressions() {
     let tree = parse_ok(
         r"
-flow @flow.grouped grouped {
+flow grouped {
     alice[待って。[p]]
     with {
         start {
@@ -561,7 +561,7 @@ flow @flow.grouped grouped {
 fn lowers_structured_log_signal_metric_and_event_effects() {
     let tree = parse_ok(
         r#"
-flow @flow.effects effects {
+flow effects {
     alice[待って。[p]]
     with:
         log.info("selected {id:?}", id = selected.id)
@@ -600,7 +600,7 @@ flow @flow.effects effects {
 fn lowers_line_plan_semantic_items_to_runtime_ir() {
     let tree = parse_ok(
         r"
-flow @flow.semantic semantic {
+flow semantic {
     alice[待って。[p]]
     with:
         voice = auto
@@ -646,7 +646,7 @@ flow @flow.semantic semantic {
 fn together_group_rejects_conflicting_resource_writes() {
     let tree = parse_ok(
         r"
-flow @flow.conflict conflict {
+flow conflict {
     alice[待って。[p]]
     with {
         together {
@@ -673,7 +673,7 @@ flow @flow.conflict conflict {
 fn together_group_allows_append_only_effects() {
     let tree = parse_ok(
         r#"
-flow @flow.append append {
+flow append {
     alice[待って。[p]]
     with {
         together {
@@ -695,14 +695,14 @@ flow @flow.append append {
 fn lowers_flow_dialogue_goto_return_to_runtime_plan() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice[待って。[p]]
     with:
         out .Done
     goto @flow.next
 }
 
-flow @flow.next next {
+flow next {
     return Ok(FlowExit.Done)
 }
 ",
@@ -727,7 +727,7 @@ flow @flow.next next {
 fn lowers_dialogue_result_let_and_bound_timed_cue() {
     let tree = parse_ok(
         r#"
-flow @flow.line_handles line_handles {
+flow line_handles {
     let (_, cue) = alice(voice=auto)[聞いて。[p]]
     with:
         let actor = alice.stage.acquire(scope=line)
@@ -785,7 +785,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base + bonus
 }
 
-pub source @source.player_mic_frames: Source<i64, String> {
+pub source player_mic_frames: Source<i64, String> {
     from capture.microphone(@capture.player_microphone)
     backpressure = bounded(capacity = 8, overflow = drop_oldest)
     replay = hash_only
@@ -794,7 +794,7 @@ pub source @source.player_mic_frames: Source<i64, String> {
     on item frame => yield score(frame, 2i64)
 }
 
-flow @flow.opening opening {
+flow opening {
     return Ok(FlowExit.Done)
 }
 ",
@@ -823,7 +823,7 @@ flow @flow.opening opening {
 fn runtime_plan_rejects_unsupported_source_statement_instead_of_noop() {
     let tree = parse_ok(
         r#"
-pub source @source.invalid: Source<i64, String> {
+pub source invalid: Source<i64, String> {
     from capture.microphone(@capture.player_microphone)
     backpressure = latest
     replay = none
@@ -832,7 +832,7 @@ pub source @source.invalid: Source<i64, String> {
     on item value => { let copy = value }
 }
 
-flow @flow.main main {
+flow main {
     return "done"
 }
 "#,
@@ -857,7 +857,7 @@ flow @flow.main main {
 #[test]
 fn source_header_expression_failure_is_not_stringified() {
     let source = r#"
-pub source @source.invalid: Source<i64, String> {
+pub source invalid: Source<i64, String> {
     from _
     backpressure = latest
     replay = none
@@ -866,7 +866,7 @@ pub source @source.invalid: Source<i64, String> {
     on item value => yield value
 }
 
-flow @flow.main main {
+flow main {
     return "done"
 }
 "#;
@@ -912,7 +912,7 @@ flow @flow.main main {
 #[test]
 fn source_handler_expression_failure_retains_absolute_authored_range() {
     let source = r#"
-pub source @source.invalid: Source<i64, String> {
+pub source invalid: Source<i64, String> {
     from capture.values()
     backpressure = latest
     replay = none
@@ -923,7 +923,7 @@ pub source @source.invalid: Source<i64, String> {
     }
 }
 
-flow @flow.main main {
+flow main {
     return "done"
 }
 "#;
@@ -967,14 +967,14 @@ flow @flow.main main {
 #[test]
 fn source_bounded_policy_distinguishes_missing_and_unknown_overflow() {
     let missing_source = r#"
-pub source @source.missing: Source<i64, String> {
+pub source missing: Source<i64, String> {
     from capture.values()
     backpressure = bounded(capacity = 8)
     replay = none
     privacy = transient
 }
 
-flow @flow.main main { return "done" }
+flow main { return "done" }
 "#;
     let missing_parsed = parse_ok(missing_source);
     let missing_hir = lower_document_to_hir(
@@ -998,14 +998,14 @@ flow @flow.main main { return "done" }
     );
 
     let unknown_source = r#"
-pub source @source.unknown: Source<i64, String> {
+pub source unknown: Source<i64, String> {
     from capture.values()
     backpressure = bounded(capacity = 8, overflow = legacy)
     replay = none
     privacy = transient
 }
 
-flow @flow.main main { return "done" }
+flow main { return "done" }
 "#;
     let unknown_parsed = parse_ok(unknown_source);
     let unknown_hir = lower_document_to_hir(
@@ -1033,7 +1033,7 @@ flow @flow.main main { return "done" }
 #[test]
 fn source_duplicate_header_is_rejected_at_second_value() {
     let source = r#"
-pub source @source.duplicate: Source<i64, String> {
+pub source duplicate: Source<i64, String> {
     from capture.values()
     backpressure = latest
     replay = none
@@ -1041,7 +1041,7 @@ pub source @source.duplicate: Source<i64, String> {
     privacy = recordable
 }
 
-flow @flow.main main { return "done" }
+flow main { return "done" }
 "#;
     let parsed = parse_ok(source);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
@@ -1066,14 +1066,14 @@ flow @flow.main main { return "done" }
 #[test]
 fn source_runtime_policy_rejects_private_full_replay() {
     let source = r#"
-pub source @source.private: Source<i64, String> {
+pub source private: Source<i64, String> {
     from capture.values()
     backpressure = latest
     replay = full
     privacy = private
 }
 
-flow @flow.main main { return "done" }
+flow main { return "done" }
 "#;
     let parsed = parse_ok(source);
     let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree())
@@ -1099,7 +1099,7 @@ flow @flow.main main { return "done" }
 fn runtime_plan_lowers_range_for_source_as_runtime_range_expr() {
     let tree = parse_ok(
         r"
-flow @flow.range range() -> i32 {
+flow range() -> i32 {
     let a = 2
     for i in 0..a {
         log.info(i)
@@ -1160,7 +1160,7 @@ flow @flow.range range() -> i32 {
 fn line_plan_runtime_lowering_rejects_yield_effect() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     alice[待って。[p]]
     with:
         yield .Done
@@ -1182,14 +1182,14 @@ flow @flow.opening opening {
 fn lowers_choice_and_await_to_runtime_plan() {
     let tree = parse_ok(
         r#"
-flow @flow.loading loading {
+flow loading {
     try await load_opening_assets() with { pending p => progress.set(p.ratio) }
     choice @choice.opening.first {
         @choice.opening.listen "聞いてみる" -> @flow.alice_intro
     }
 }
 
-flow @flow.alice_intro alice_intro {
+flow alice_intro {
     return Ok(FlowExit.Done)
 }
 "#,
@@ -1212,7 +1212,7 @@ flow @flow.alice_intro alice_intro {
 fn runtime_plan_lowers_await_calls_to_typed_host_requests() {
     let tree = parse_ok(
         r#"
-flow @flow.loading loading {
+flow loading {
     try await fs.read_text("game/config.arcw") with { pending p => progress.set(p.ratio) }
     try await http.fetch("https://example.invalid/api", method = "POST", body = "payload") with { pending p => progress.set(p.ratio) }
     try await asset.image(@asset:.bg.room) with { pending p => progress.set(p.ratio) }
@@ -1261,7 +1261,7 @@ flow @flow.loading loading {
 fn runtime_plan_normalizes_family_relative_asset_call_args() {
     let tree = parse_ok(
         r"
-flow @flow.opening opening {
+flow opening {
     let room = bg(@asset:.room)
 }
 ",
@@ -1284,7 +1284,7 @@ flow @flow.opening opening {
 fn runtime_plan_preserves_host_request_spread_args() {
     let tree = parse_ok(
         r#"
-flow @flow.loading loading {
+flow loading {
     let args = ["save/out.txt", "hello"]
     try await fs.write(args...) with { pending p => progress.set(p.ratio) }
 }
@@ -1307,7 +1307,7 @@ flow @flow.loading loading {
 #[test]
 fn host_request_failure_retains_flow_owner_path_and_await_target_range() {
     let source = r"
-flow @flow.loading loading {
+flow loading {
     try await fs.read_text(try next) with { pending p => progress.set(p.ratio) }
 }
 ";
@@ -1352,7 +1352,7 @@ flow @flow.loading loading {
 #[test]
 fn let_await_failure_retains_binding_rhs_range() {
     let source = r"
-flow @flow.loading loading {
+flow loading {
     let contents = try await fs.read_text(try next) with { pending p => progress.set(p.ratio) }
 }
 ";
@@ -1378,7 +1378,7 @@ flow @flow.loading loading {
 fn runtime_plan_lowers_traverse_parallel_to_await_many() {
     let tree = parse_ok(
         r#"
-flow @flow.loading loading {
+flow loading {
     let paths = [path.save("a.txt"), path.save("b.txt"), path.save("c.txt")]
     let values = try await paths.traverse(fs.read_text).parallel(limit = 2) with { pending p => progress.set(p.ratio) }
     return "done"
@@ -1410,12 +1410,12 @@ flow @flow.loading loading {
 fn runtime_plan_lowering_preserves_let_and_dynamic_goto() {
     let tree = parse_ok(
         r"
-flow @flow.typed typed {
+flow typed {
     let route = @flow.next
     goto route
 }
 
-flow @flow.next next {
+flow next {
     return Ok(FlowExit.Done)
 }
 ",
@@ -1442,7 +1442,7 @@ fn inferred(base: i64) -> i64 {
     base + 1
 }
 
-flow @flow.main main {
+flow main {
     let explicit = score(3, 4)
     let auto = inferred(explicit)
     return "done"
@@ -1469,7 +1469,7 @@ flow @flow.main main {
 fn runtime_plan_lowers_expected_partial_placeholder_function_let() {
     let tree = parse_ok(
         r#"
-flow @flow.main main {
+flow main {
     let high: i64 -> bool = _ > 80i64
     let high_grouped: i64 -> bool = (_ > 80i64)
     return "done"
@@ -1524,7 +1524,7 @@ fn add(lhs: i64, rhs: i64) -> i64 {
     lhs + rhs
 }
 
-flow @flow.main main {
+flow main {
     let f = add
     let add_two = f(2i64)
     let seven = add_two(5i64)
@@ -1568,7 +1568,7 @@ flow @flow.main main {
 fn runtime_plan_lowers_closure_return_statement_to_function_body() {
     let tree = parse_ok(
         r"
-flow @flow.main main {
+flow main {
     let f = || -> i64 {
         let value = 7i64
         return value
@@ -1615,7 +1615,7 @@ flow @flow.main main {
 fn runtime_plan_lowers_data_format_path_to_enum_variant() {
     let tree = parse_ok(
         r#"
-flow @flow.main main {
+flow main {
     let bytes = data.encode(["hello"], .Json)
     return bytes
 }
@@ -1660,7 +1660,7 @@ enum Mood {
     WithMeta(MoodMeta),
 }
 
-flow @flow.main main {
+flow main {
     let mood: Mood = .Alert
     let scored: Mood = .WithScore(7i64)
     let meta: Mood = .WithMeta(MoodMeta { label = "ready" })
@@ -1732,7 +1732,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow @flow.main main {
+flow main {
     let values: Array<i64, 4> = [1i64; 4]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     let total: i64 = scores.sum()
@@ -1772,7 +1772,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow @flow.main main {
+flow main {
     let values: Array<i64, 4> = [1i64; 4]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     let total: i64 = scores.sum()
@@ -1814,7 +1814,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow @flow.main main {
+flow main {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     let total: i64 = scores.sum()
@@ -1844,7 +1844,7 @@ flow @flow.main main {
 fn runtime_plan_keeps_sequence_binding_when_map_body_uses_it() {
     let tree = parse_ok(
         r"
-flow @flow.main main {
+flow main {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| item + values.sum())
     let total: i64 = scores.sum()
@@ -1884,7 +1884,7 @@ fn score(base: i64, bonus: i64) -> i64 {
     return base * (bonus + 2i64)
 }
 
-flow @flow.main main {
+flow main {
     let values: Vec<i64> = [1i64, 2i64, 3i64, 4i64]
     let scores: Vec<i64> = values.map(|item| score(item, 2i64))
     let total: i64 = scores.sum()
@@ -1912,7 +1912,7 @@ flow @flow.main main {
 fn runtime_plan_lowering_preserves_structured_if_and_match() {
     let tree = parse_ok(
         r#"
-flow @flow.structured structured {
+flow structured {
     if ready {
         goto @flow.ready
     }
@@ -1923,7 +1923,7 @@ flow @flow.structured structured {
     }
 }
 
-flow @flow.ready ready {
+flow ready {
     return "done"
 }
 "#,
@@ -2036,7 +2036,7 @@ flow assertions {
 fn audited_unsafe_lifetime_region_lowers_as_a_lexical_runtime_scope() {
     let tree = parse_ok(
         r#"
-flow @flow.audit audit {
+flow audit {
     unsafe lifetime @unsafe.cache reason = "owned clone" {
         /// SAFETY: the value is owned before promotion.
         let summary = promote_unchecked('flow)
@@ -2061,7 +2061,7 @@ flow @flow.audit audit {
 fn runtime_plan_lowers_audio_call_to_typed_audio_effect() {
     let tree = parse_ok(
         r"
-flow @flow.audio audio {
+flow audio {
     audio.play(@voice.opening, @asset:.voice.opening, @bus.master, fade_in_millis = 120u64)
 }
 ",
