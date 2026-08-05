@@ -35,7 +35,7 @@ pub layer @layer.view.modal: Modal {
 Scene での利用:
 
 ```arcw
-flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     scene.show(@scene.opening)
     scope {
         layer @layer.world.background {

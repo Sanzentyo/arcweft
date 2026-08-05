@@ -510,7 +510,7 @@ layer @layer.modal.settings {
     block_below = true
 }
 
-layer @layer.choices {
+layer choices {
     description = "現在表示中の選択肢レイヤー"
 }
 ```

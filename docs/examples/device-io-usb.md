@@ -50,7 +50,7 @@ pub device @device.hid.dial: HidDevice {
 Use in a flow:
 
 ```arcw
-flow @flow.device_demo device_demo(state: GameState) -> Result<FlowExit, FlowError> {
+flow device_demo(state: GameState) -> Result<FlowExit, FlowError> {
     let dev =
         try await device.usb(@device.usb.sensor) with {
             pending _ => scene.show(@scene.device_wait); text.show("USBセンサーを接続してください")

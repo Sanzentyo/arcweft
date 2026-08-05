@@ -150,7 +150,7 @@ pub enum CaptureEvent {
 Capture requests must be explicit. No script can implicitly access the microphone or camera.
 
 ```arcw
-pub capture @capture.player_microphone: Microphone {
+pub capture player_microphone: Microphone {
     permission = user_prompt
     channels = 1
     sample_rate = prefer(48000)
@@ -160,7 +160,7 @@ pub capture @capture.player_microphone: Microphone {
     privacy = transient
 }
 
-pub capture @capture.face_camera: Camera {
+pub capture face_camera: Camera {
     permission = user_prompt
     resolution = prefer(1280x720)
     fps = prefer(30)
@@ -207,11 +207,11 @@ let cam =
 Capture exposes latest-state and stream signals:
 
 ```arcw
-pub signal @signal.microphone_level: Watch<f32>
-pub signal @signal.microphone_vad: Watch<bool>
-pub signal @signal.camera_frame: Watch<VideoFrameHandle>
-pub signal @signal.camera_pose: Watch<Option<FacePose>>
-pub signal @signal.capture_error: Stream<CaptureError>
+pub signal microphone_level: Watch<f32>
+pub signal microphone_vad: Watch<bool>
+pub signal camera_frame: Watch<VideoFrameHandle>
+pub signal camera_pose: Watch<Option<FacePose>>
+pub signal capture_error: Stream<CaptureError>
 ```
 
 Typical usage:
@@ -292,13 +292,13 @@ arcweft.capture_save_recording
 Headless test mode should support virtual devices:
 
 ```arcw
-pub capture @capture.test_camera: Camera {
+pub capture test_camera: Camera {
     backend = virtual_pattern
     resolution = 1280x720
     fps = 30
 }
 
-pub capture @capture.test_microphone: Microphone {
+pub capture test_microphone: Microphone {
     backend = fixture_audio("fixtures/audio/voice.wav")
 }
 ```

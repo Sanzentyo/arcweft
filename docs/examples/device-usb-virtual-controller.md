@@ -95,7 +95,7 @@ pub controller_map @controller_map.action_game {
 ## Flow usage
 
 ```arcw
-pub flow @flow.enter_truck_game enter_truck_game(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow enter_truck_game(state: GameState) -> Result<FlowExit, FlowError> {
     let pad =
         try await device.open(@device.rhythm_pad).optional() with {
             pending p => {

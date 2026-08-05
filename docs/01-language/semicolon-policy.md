@@ -3,7 +3,7 @@
 Arcweft is script-friendly: semicolons are not required for normal flow, dialogue, or scenario-style code.
 
 ```arcw
-flow @flow.opening {
+flow opening {
     alice: おはよう。[p]
     alice: 今日はいい天気だね。[p]
 }

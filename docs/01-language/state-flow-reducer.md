@@ -79,7 +79,7 @@ entry game @entry.game.main {
 Flow は逐次進行で、suspend/resume 可能。
 
 ```arcw
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     alice(id=@say.opening.greeting): おはよう。[p]
 
     choice @choice.opening.first {

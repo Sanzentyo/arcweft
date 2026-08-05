@@ -1103,7 +1103,7 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow @flow.hello hello(name: String) -> String {
+flow hello(name: String) -> String {
     return name
 }
 ```
@@ -1405,6 +1405,11 @@ source-level `#![generated(...)]`; specific lint rewrites can be suppressed with
 `#[allow(style::redundant_decl_identity)]` or source-level `#![allow(...)]`. A mismatch such as
 `flow @flow.opening start(...)` reports `identity::decl_binding_mismatch` and is
 not rewritten automatically.
+
+Proof headers follow the same policy: `proof @proof:.opening opening(...)` is
+accepted as an explicit identity form, while `proof opening(...)` is the
+canonical hand-written spelling. A redundant explicit identity produces the
+same warning; it is not rejected by parsing.
 
 The former sema-backed `arcw canonicalize` command was deleted. It deepened the
 provisional `SpeakerLine` / `SpeakerPreset` / `.say` model that is superseded by

@@ -72,7 +72,7 @@ input_map @input.lightgun_map {
 ## Touch fallback
 
 ```arcw
-layer @layer.touch_controls {
+layer touch_controls {
     z = 900
     kind = view_overlay
     visibility = env.touch_available

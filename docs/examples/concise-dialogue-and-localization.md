@@ -31,7 +31,7 @@ preload next @flow.alice_intro {
     asset.image(@asset:.bg.room_evening)
 }
 
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .normal, at = .center, fade = 200ms)
 
@@ -73,7 +73,7 @@ effects { stage.flash }
 Character style excerpt:
 
 ```arcw
-pub character @character.alice alice {
+pub character alice {
     display_name ja-JP = "アリス"
     display_name en-US = "Alice"
 

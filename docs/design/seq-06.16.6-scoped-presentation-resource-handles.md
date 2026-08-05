@@ -83,7 +83,7 @@ PresentationHandleLifecycleStmt :=
 Examples:
 
 ```arcw
-flow @flow.menu {
+flow menu {
     let background = image(@image.menu_background, layer=@layer.background)
     let menu = view(@view.MainMenu, focus=.Trap, input_capture=.Modal)
 

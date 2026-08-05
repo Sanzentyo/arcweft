@@ -213,17 +213,17 @@ pub enum ObservationSource {
 ## DSL: layer 宣言
 
 ```arcw
-layer @layer.world: World {
+layer world: World {
     z = 0
     input = passthrough
 }
 
-layer @layer.dialogue: Group {
+layer dialogue: Group {
     z = 100
     input = hit_test
 }
 
-layer @layer.modal: Modal {
+layer modal: Modal {
     z = 1000
     input = modal
 }
@@ -325,7 +325,7 @@ Native では Servo、Web では DOM に差し替えるが、Layer Tree 上で�
 layer 単位で shader を適用できる。
 
 ```arcw
-layer @layer.dialogue {
+layer dialogue {
     view(@view.MainDialogue)
 }
 .shader(@shader.view.glass_panel) {
@@ -340,7 +340,7 @@ Group layer に shader を付けると、その subtree を offscreen target へ
 Layer にも契約を持てる。
 
 ```arcw
-layer @layer.modal: Modal
+layer modal: Modal
 ensures input.blocks_lower_layers
 ensures z > layer(@layer.dialogue).z
 {
@@ -379,7 +379,7 @@ changes are exposed through the read-only render/input trace used by tests,
 Agent observation, and logging.
 
 ```arcw
-layer @layer.choices: Choice {
+layer choices: Choice {
     z = 550
     input = hit_test
     hit_test = view_layout

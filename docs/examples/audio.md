@@ -11,7 +11,7 @@ pub cue @cue.voice.alice.001 from "audio/voice/alice/001.ogg" {
     transcript = "おはよう。"
 }
 
-pub bgm @bgm.alice_theme {
+pub bgm alice_theme {
     bus = @bus.bgm
     stem @stem.piano from "audio/bgm/alice/piano.ogg"
     stem @stem.strings from "audio/bgm/alice/strings.ogg"

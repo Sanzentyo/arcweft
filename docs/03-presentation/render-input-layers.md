@@ -370,7 +370,7 @@ pub struct InputCaptureState {
 Modal の例:
 
 ```arcw
-layer @layer.confirm_dialog phase Modal z 900 {
+layer confirm_dialog phase Modal z 900 {
     input {
         policy = modal
         pointer = hit_test
@@ -419,7 +419,7 @@ scope {
 ### layer block 詳細
 
 ```arcw
-layer @layer.settings phase Modal z 900
+layer settings phase Modal z 900
 requires visible => input.policy == .Modal
 {
     render {
@@ -445,11 +445,11 @@ requires visible => input.policy == .Modal
 ### shorthand
 
 ```arcw
-layer @layer.bg background {
+layer bg background {
     image @asset:.bg.room
 }
 
-layer @layer.choice modal {
+layer choice modal {
     ChoiceList(choices)
 }
 ```
@@ -505,7 +505,7 @@ view Hud(state: GameState) {
 または scene 側で明示する。
 
 ```arcw
-layer @layer.hud {
+layer hud {
     order = view(700)
     input = hit_test
     view Hud(state)
@@ -531,7 +531,7 @@ pub struct ViewNode {
 HTML/CSS View は `HtmlView` phase の layer として扱う。
 
 ```arcw
-layer @layer.html_settings phase HtmlView z 800 {
+layer html_settings phase HtmlView z 800 {
     input modal
     html_panel @view.settings_html
 }
@@ -564,7 +564,7 @@ headless では pixel-perfect DOM/Servo capture が利用できない場合で�
 トラックゲームやFPSミニゲームは Activity を layer content として持つ。
 
 ```arcw
-layer @layer.truck_game phase World z 100 {
+layer truck_game phase World z 100 {
     input capture
     activity @activity.truck_game {
         size = fill
@@ -587,7 +587,7 @@ pub enum ActivityInput {
 Activity が modal/capture を要求する場合:
 
 ```arcw
-activity @activity.fps_arena {
+activity fps_arena {
     input_layer {
         policy = capture
         pointer_capture = true
@@ -653,8 +653,8 @@ arcw agent layers --json
 layer 状態は test と signal に使える。
 
 ```arcw
-pub signal @signal.active_modal_layer: Watch<Option<Ref<Layer>>>
-pub signal @signal.focused_layer: Watch<Option<Ref<Layer>>>
+pub signal active_modal_layer: Watch<Option<Ref<Layer>>>
+pub signal focused_layer: Watch<Option<Ref<Layer>>>
 ```
 
 visual test:
@@ -686,7 +686,7 @@ assert(no_layer_overlap_interactive(@layer.modal, @layer.debug_overlay))
 layer には契約を付けられる。
 
 ```arcw
-layer @layer.choices phase Dialogue z 550
+layer choices phase Dialogue z 550
 requires choices.len() > 0
 ensures visible => input.policy != .None
 ensures visible => actions.len() == choices.len()
@@ -768,7 +768,7 @@ changes are exposed through the read-only render/input trace used by tests,
 Agent observation, and logging.
 
 ```arcw
-layer @layer.choices: Choice {
+layer choices: Choice {
     z = 550
     input = hit_test
     hit_test = view_layout

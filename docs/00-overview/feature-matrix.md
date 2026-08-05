@@ -80,7 +80,7 @@
 | Serial | native serial backend | Web Serial | USB CDC and microcontroller-style devices. |
 | Gamepad | native gamepad abstraction | Gamepad API | Prefer high-level controller route when possible. |
 | Touch virtual controller | Game Native View | Game Native View / DOM pointer input | Agent-visible and replayable as logical events. |
-| generator `fn` / source block | yes | yes | An own-scope-`yield` `fn -> Stream<T,E>` transforms; `source @id: Source<T,E>` declares live policy-backed inputs. |
+| generator `fn` / source block | yes | yes | An own-scope-`yield` `fn -> Stream<T,E>` transforms; `source id: Source<T,E>` declares live policy-backed inputs. |
 
 
 ## Device and controller features

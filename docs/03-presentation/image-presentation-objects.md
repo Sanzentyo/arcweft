@@ -13,7 +13,7 @@ image-object declarations. Asset identities come from the selected asset
 catalog rather than source declarations:
 
 ```arcw
-pub image @image.sample.pulse_sprite {
+pub image sample.pulse_sprite {
   asset = @asset:.bg.pulse
   target = @target.sample.pulse_sprite
   layer = @layer.foreground

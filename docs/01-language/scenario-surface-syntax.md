@@ -146,7 +146,7 @@ mod crate.game.routes.opening
 use crate.game.prelude.*
 use self.characters.{alice}
 
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .normal, at = .center, fade = 200ms)
 
@@ -437,7 +437,7 @@ with:
 Scenario code is declared with ordinary `flow` items.
 
 ```arcw
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     alice: おはよう。[p]
 }
 ```
@@ -445,12 +445,12 @@ pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> 
 Reusable scenario snippets are ordinary `flow` declarations:
 
 ```arcw
-pub flow @flow.alice_enters alice_enters {
+pub flow alice_enters {
     show(@character.alice, .normal, at = .right, fade = 220ms)
     move(@character.alice, to = .center, time = 300ms, ease = cubic.out)
 }
 
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     include @flow.alice_enters
     alice: おはよう。[p]
 }
@@ -548,7 +548,7 @@ Outside dialogue text mode, `[...]` is not treated as a dialogue control tag. It
 Arcweft prelude defines a built-in narrator-like character:
 
 ```arcw
-pub character @character.narrator narrator {
+pub character narrator {
     role = narration
     nameplate = hidden
     localizable_name = false

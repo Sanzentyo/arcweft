@@ -60,7 +60,7 @@ modifies state.affection[character]
 Effect contract:
 
 ```arcw
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError>
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError>
 effects { asset.read, audio.play, view.show }
 ensures no_effect network.request
 {

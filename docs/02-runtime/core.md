@@ -386,7 +386,7 @@ when the access is optional such as `'flow.flags?`. Writes to upper scopes lower
 to replayable state-update events and require explicit capabilities.
 
 ```arcw
-flow @flow.opening opening(state: GameState)
+flow opening(state: GameState)
 effects { state.write('flow), state.write('global) }
 {
     alice[見たことにする。[mark .seen][p]]

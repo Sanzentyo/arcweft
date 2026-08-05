@@ -336,6 +336,13 @@ Relative ID lowering currently uses the enclosing flow ID plus named `scope`
 segments. For example, `flow @flow.opening` and `scope rain` produce
 `say.opening.alice.rain.greeting` for `alice(id=@.greeting)`.
 
+Declaration headers have a separate authored-surface rule: prefer
+`flow opening`, `proof opening`, `source events: Source<T, E>`, and the
+corresponding local-name form for other declaration families. The `@` forms in
+the examples above are relative-ID contracts; they remain useful for testing
+normalization and generated round trips, but are not the recommended spelling
+for ordinary authored declarations.
+
 `mod game.routes.opening` is a source/module hierarchy, not automatically part
 of public entity IDs today. This keeps public IDs stable when files move.
 However, projects may choose a policy that requires module paths and entity IDs

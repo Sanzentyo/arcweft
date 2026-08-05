@@ -5,29 +5,29 @@ mod game.routes.opening
 
 use game.prelude.*
 
-layer @layer.world: World {
+layer world: World {
     z = 0
     input = passthrough
 }
 
-layer @layer.dialogue: Group {
+layer dialogue: Group {
     z = 100
     input = hit_test
 }
 
-layer @layer.choices: Choice {
+layer choices: Choice {
     z = 120
     input = hit_test
     hit_test = view_layout
 }
 
-layer @layer.settings_modal: Modal {
+layer settings_modal: Modal {
     z = 1000
     input = modal
     backdrop = consume
 }
 
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     scene.show(@scene.opening)
     scope {
         layer @layer.world {

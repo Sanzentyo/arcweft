@@ -1596,7 +1596,7 @@ Current high-confidence state:
   result binding in the headless runtime.
 - The proof-aware lifetime/thread/drop direction and Agent-friendly tooling
   diagnostics originated in `pro_review14.md` / `pro_review15.md`. The current
-  accepted model consists of ordinary `proof @proof.*` items, proof-only
+  accepted model consists of ordinary `proof name` items, proof-only
   `#[verify.trusted(reason = "...")]` metadata, explicit references such as
   `proof = @proof.id`, and audited `unsafe lifetime @unsafe.*` regions with
   required `reason` and `SAFETY` documentation. A trusted proof is one ordinary
@@ -1700,11 +1700,11 @@ Current high-confidence state:
 - Declaration ID positions whose family is known now accept current-scope and
   family-relative IDs. `flow @.opening`, `flow @flow:.opening`, and bare
   `flow opening` normalize to `flow.opening`; declarations such as
-  `character @.alice`, `hook @.visible`, `source @source:.events`, and
+  `character @.alice`, `hook @.visible`, `source events`, and
   `dialogue defaults @dialogue:.opening` follow the same rule. Empty declaration
   markers are accepted when a declaration name follows them: `flow @. opening`,
   `flow @flow:. opening`, `character @. alice Alice`, `signal @signal:. ready`,
-  and `source @source:. metrics()` normalize through that following name.
+  and `source metrics()` normalize through that following name.
 - Remaining P2 semantic work is now refinement rather than missing surface
   coverage: fixed-point loop analysis is bounded and syntactic, proof discharge
   is target-aware and checks structured proof-body `ensures`/`check` targets,

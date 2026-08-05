@@ -7,7 +7,7 @@ Arcweft separates five kinds of control transfer.
 `return expr` leaves the nearest `fn`, `parser`, or `flow`.
 
 ```arcw
-pub flow @flow.title title(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow title(state: GameState) -> Result<FlowExit, FlowError> {
     if state.config.skip_title {
         return Ok(FlowExit.Goto(@flow.opening))
     }
@@ -50,7 +50,7 @@ Allowed contexts:
 seq { ... }
 stream { ... }
 fn ... -> Stream<T, E> { ... yield ... }
-source @source.id: Source<T, E> { on item frame => yield frame }
+source id: Source<T, E> { on item frame => yield frame }
 ```
 
 `yield` is a suspension boundary like `await` and `thread`: non-`'static`
@@ -63,7 +63,7 @@ Live external sources are declared with policy-backed `source` blocks rather
 than function-like generator declarations.
 
 ```arcw
-pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
+pub source face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from capture.camera(@capture.face_camera)
     backpressure = latest
     replay = hash_only

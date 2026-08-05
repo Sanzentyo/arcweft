@@ -152,14 +152,14 @@ stream { ... yield ... }
 fn ... -> Stream<T, E> { ... yield ... }
   deterministic transform over existing values/streams
 
-source @source.id: Source<T, E> { on item value => yield value }
+source id: Source<T, E> { on item value => yield value }
   live external source with explicit policy
 ```
 
 Source declarations are declarative and policy-driven:
 
 ```arcw
-pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
+pub source face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from capture.camera(@capture.face_camera)
     backpressure = latest
     replay = hash_only

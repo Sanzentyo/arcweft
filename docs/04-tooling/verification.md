@@ -119,7 +119,7 @@ Effects are checked as semantic facts, not as ordinary value expressions.
 Flow/function contracts grant capabilities in the checked body:
 
 ```arcw
-flow @flow.effects effects
+flow effects
 effects { signal.write, metric.write, state.write('flow) }
 {
     signal.set(@signal.current_flow, @flow.effects)

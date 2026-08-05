@@ -117,12 +117,12 @@ pub audio bus @bus.se parent @bus.master { volume = 0.9 }
 Mixer snapshot:
 
 ```arcw
-pub mixer snapshot @mix.dialogue {
+pub mixer snapshot dialogue {
     @bus.bgm.volume = -8db over 300ms
     @bus.voice.volume = 0db
 }
 
-pub mixer snapshot @mix.normal {
+pub mixer snapshot normal {
     @bus.bgm.volume = 0db over 600ms
 }
 ```
@@ -130,7 +130,7 @@ pub mixer snapshot @mix.normal {
 Ducking:
 
 ```arcw
-pub ducking @duck.voice_over_bgm {
+pub ducking voice_over_bgm {
     trigger = @bus.voice
     target = @bus.bgm
     amount = -6db
@@ -142,7 +142,7 @@ pub ducking @duck.voice_over_bgm {
 ## BGM 再生
 
 ```arcw
-pub bgm @bgm.alice_theme {
+pub bgm alice_theme {
     bus = @bus.bgm
     stem @stem.piano from "audio/bgm/alice/piano.ogg"
     stem @stem.strings from "audio/bgm/alice/strings.ogg"
@@ -174,12 +174,12 @@ theme.section(@music.main)
 ## Adaptive music
 
 ```arcw
-pub music state @music_state.alice_theme {
+pub music state alice_theme {
     intensity: f32 = 0.0
     danger: bool = false
 }
 
-pub adaptive bgm @bgm.truck_chase {
+pub adaptive bgm truck_chase {
     stem @stem.base from "audio/bgm/truck/base.ogg"
     stem @stem.drums from "audio/bgm/truck/drums.ogg"
     stem @stem.danger from "audio/bgm/truck/danger.ogg"
@@ -206,7 +206,7 @@ EffectRequest::Audio(AudioCommand::SetMusicState {
 BGM を完全にAI生成する前提ではなく、まずはゲーム内で使える「作曲データ・編曲データ・ループ/ステム定義」を扱う。
 
 ```arcw
-pub music pattern @music.pattern.soft_piano {
+pub music pattern soft_piano {
     tempo = 92bpm
     key = A_minor
     meter = 4/4
@@ -219,7 +219,7 @@ pub music pattern @music.pattern.soft_piano {
     }
 }
 
-pub bgm @bgm.generated.alice_theme compose {
+pub bgm generated.alice_theme compose {
     use pattern @music.pattern.soft_piano
     arrange {
         intro bars 1..4
@@ -338,7 +338,7 @@ ensures loudness in -24LUFS..-14LUFS
 BGM:
 
 ```arcw
-pub bgm @bgm.alice_theme
+pub bgm alice_theme
 ensures all sections have loop_points
 ensures no stem clips
 ```
@@ -346,9 +346,9 @@ ensures no stem clips
 ## Logging / Signal
 
 ```arcw
-pub signal @signal.current_bgm: Watch<Ref<Bgm>>
-pub signal @signal.audio_bus_levels: Watch<OrderedMap<Ref<AudioBus>, f32>>
-pub signal @signal.tts_progress: Watch<f32>
+pub signal current_bgm: Watch<Ref<Bgm>>
+pub signal audio_bus_levels: Watch<OrderedMap<Ref<AudioBus>, f32>>
+pub signal tts_progress: Watch<f32>
 
 log.info(
     "bgm section changed {bgm:?} -> {section:?}",

@@ -119,7 +119,7 @@ deterministic frame-boundary event data.
 A `source` block is allowed, but it is declarative and policy-driven.
 
 ```arcw
-pub source @source.face_camera_frames: Source<VideoFrameHandle, CaptureError> {
+pub source face_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from capture.camera(@capture.face_camera)
     backpressure = latest
     replay = hash_only
@@ -199,7 +199,7 @@ let reports =
 Every device stream can be replaced by a fixture source.
 
 ```rust
-pub source @source.test_camera_frames: Source<VideoFrameHandle, CaptureError> {
+pub source test_camera_frames: Source<VideoFrameHandle, CaptureError> {
     from fixture.video("fixtures/camera/front_cam.webm")
     backpressure = bounded(capacity = 8, overflow = error)
     replay = full

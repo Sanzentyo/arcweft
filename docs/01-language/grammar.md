@@ -173,14 +173,16 @@ AST attachment instead of falling through as raw statements.
 Proofs use the ordinary outer-attribute surface and a typed proof body:
 
 ```text
-ProofDecl   := 'proof' EntityRef '{' ProofClause* '}'
+ProofDecl   := 'proof' Ident '{' ProofClause* '}'
 ProofClause := ('requires' | 'ensures' | 'check') Expr
              | 'use' ProofRef
              | 'assume' Expr (','? 'proof' '=' ProofRef)
 ProofRef    := EntityRef
 ```
 
-`ProofRef` must resolve to the `proof` family. The optional
+The top-level proof declaration uses one ordinary local name. `ProofRef` is
+the entity-reference form used inside proof clauses and must resolve to the
+`proof` family. The optional
 `#[verify.trusted(reason = String)]` attribute marks external evidence; its
 reason must be a nonempty, non-interpolated string literal. Escape sequences
 are decoded once by the syntax-owned string-literal value contract, and the
@@ -189,6 +191,15 @@ attribute is reserved for proofs and rejects missing, duplicate, positional,
 unknown, non-string, and decoded-empty arguments through structured syntax
 diagnostics. Trust is attached to `ProofDecl` rather than represented by a
 separate declaration family.
+
+Callable proof declarations use the same header identity policy. The canonical
+authoring form is `proof hoge(...)`; a generated or fully elaborated header such
+as `proof @proof:.hoge hoge() = ()` (or the absolute form
+`proof @proof.hoge hoge() = ()`) is also accepted. When the explicit identity
+repeats the local name, check and LSP report the warning
+`style::redundant_decl_identity`; it is not a parse error. A genuinely
+mismatched explicit identity remains an identity diagnostic rather than being
+silently rewritten.
 
 Entity declarations share one closed header grammar. The entity family selects
 the declaration kind, but it does not make otherwise free-form header words
@@ -282,20 +293,21 @@ reserved alias for `super`; formatters should normalize it to `super`.
 and packaging policy.
 
 Declaration identities have a hand-written canonical surface and a generated
-surface. Hand-written flows should use either `flow opening(...)` or
-`flow @flow.opening(...)`. The fully elaborated spelling
+surface. Hand-written flows should use `flow opening(...)`. The fully elaborated spelling
 `flow @flow.opening opening(...)` is accepted for generated source and
-roundtrips, but hand-written source reports `style.redundant_decl_identity`
-unless it is covered by `#[allow(style.redundant_decl_identity)]` or
+roundtrips, but hand-written source reports `style::redundant_decl_identity`
+unless it is covered by `#[allow(style::redundant_decl_identity)]` or
 `#[generated]`. A mismatch such as `flow @flow.opening start(...)` reports
 `identity.decl_binding_mismatch`; it is not a style warning.
 
 Source and entity declarations follow the same principle. In declaration
 headers, the keyword supplies the default entity family, so authored code should
 omit that family prefix. Prefer
-`source http_requests: Source<T, E>` or
-`source @source.http_requests: Source<T, E>` over
-`source @source.http_requests http_requests: ...`. Prefer
+`source http_requests: Source<T, E>`. The fully qualified
+`source @source.http_requests: Source<T, E>` form is retained for generated or
+explicit-identity source, while
+`source @source.http_requests http_requests: ...` is redundant and should not be
+authored. Prefer
 `pub character alice { display = "Alice" }` or
 `content chapter_two { roots = [@flow.chapter_two] }` for hand-written source.
 Fully qualified forms such as `pub character @character.alice { ... }` and
@@ -303,6 +315,13 @@ Fully qualified forms such as `pub character @character.alice { ... }` and
 elaborated surfaces rather than the recommended authoring form. Assets are not
 part of this declaration grammar; their identities come from the project asset
 catalog. Avoid putting display names or aliases in declaration headers.
+
+The same rule applies to every declaration family whose keyword supplies a
+default identity family: write the local name in authored source, and retain an
+explicit `@family.name` only when preserving a generated/elaborated surface or
+testing the identity diagnostics. Explicit `@proof.hoge`, `@proof:.hoge`, and
+`@.hoge` proof identities are accepted and normalized to `proof.hoge`; a
+wrong-family identity is recovered and diagnosed rather than silently changed.
 
 ## Dialogue and line plans
 
@@ -601,7 +620,7 @@ SourceHandlerBody  := YieldStmt | ExprStmt | Block
 ```
 
 Function-like `source name() -> Source<T, E> { ... }` is not canonical. Use
-`source @source.id: Source<T, E> { ... }`.
+`source id: Source<T, E> { ... }`.
 
 ## Blocks and scopes
 

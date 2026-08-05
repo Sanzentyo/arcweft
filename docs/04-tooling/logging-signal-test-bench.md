@@ -26,10 +26,10 @@ pub struct LogFrame {
 ## Signal
 
 ```arcw
-pub signal @signal.current_flow: Watch<Ref<Flow>>
-pub signal @signal.loading_progress: Watch<f32>
-pub signal @signal.choice_visible: Watch<Vec<Ref<ChoiceOption>>>
-pub metric gauge @metric.frame_time_ms: f32
+pub signal current_flow: Watch<Ref<Flow>>
+pub signal loading_progress: Watch<f32>
+pub signal choice_visible: Watch<Vec<Ref<ChoiceOption>>>
+pub metric gauge frame_time_ms: f32
 ```
 
 更新:

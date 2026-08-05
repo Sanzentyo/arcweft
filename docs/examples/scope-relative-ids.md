@@ -10,7 +10,7 @@ use crate.game.prelude.*
 use self.characters.{alice}
 use super.common.{route_gate}
 
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     scope rain {
         地の文(id=@.sound):
             扉の向こうから、雨の音がした。[p]

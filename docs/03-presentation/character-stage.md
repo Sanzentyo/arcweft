@@ -509,7 +509,7 @@ preload next @flow.alice_intro {
 A character may also declare policy-level hints:
 
 ```arcw
-pub character @character.alice alice {
+pub character alice {
     preload_policy {
         next_flow_lookahead = 6.lines
         looks = [smile, worried, normal]

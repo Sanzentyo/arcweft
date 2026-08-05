@@ -122,7 +122,11 @@ a warning, declaration binding mismatch is an error, explicit declaration IDs
 are hints, and generated surface forms are informational diagnostics.
 Item-level `#[generated]` / `#[allow(...)]` and source-level
 `#![generated(...)]` / `#![allow(...)]` use the same lint policy as CLI checks
-and formatter expansion.
+and formatter expansion. This includes proof declarations: their explicit
+identity and outer attributes are retained by the typed syntax projection, so
+`proof @proof.name name(...)` is warned as redundant while
+`#[generated] proof @proof.name name(...)` is reported only as a generated
+surface.
 
 ## Custom requests
 

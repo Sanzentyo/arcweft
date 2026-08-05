@@ -44,7 +44,7 @@ show_inlay = true
 ## Source stays concise
 
 ```arcw
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .smile, at = .center)
 

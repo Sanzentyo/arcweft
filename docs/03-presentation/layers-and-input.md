@@ -391,27 +391,27 @@ input_scope @input.choice on layer @layer.choice_view {
 ### layer 宣言
 
 ```arcw
-layer @layer.background: Background {
+layer background: Background {
     order = background(0)
     input = pass_through
 }
 
-layer @layer.characters: Character {
+layer characters: Character {
     order = world(20)
     input = hit_test
 }
 
-layer @layer.dialogue: View {
+layer dialogue: View {
     order = view(10)
     input = capture_on_hit
 }
 
-layer @layer.choice_view: GameView {
+layer choice_view: GameView {
     order = view(20)
     input = capture_on_hit
 }
 
-layer @layer.modal: Modal {
+layer modal: Modal {
     order = modal(0)
     input = modal(allow_escape = true, dismiss_on_outside_click = false)
 }
@@ -696,7 +696,7 @@ diagnostics は同じ routing/render trace を read-only に参照する。詳�
 Layer declaration owns routing policy; target View nodes own interaction.
 
 ```arcw
-layer @layer.choices: Choice {
+layer choices: Choice {
     z = 550
     input = hit_test
     hit_test = view_layout

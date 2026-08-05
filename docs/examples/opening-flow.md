@@ -6,7 +6,7 @@ mod crate.game.routes.opening
 use crate.game.prelude.*
 use super.logic.affection.{has_affection_at_least}
 
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     signal.set(@signal.current_flow, @flow.opening)
     log.info("enter flow {flow:?}", flow = @flow.opening)
 

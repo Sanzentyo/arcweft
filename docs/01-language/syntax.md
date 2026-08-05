@@ -9,7 +9,7 @@ use crate.game.prelude.*
 use super.logic.affection.{has_affection_at_least}
 
 #[derive(StableHash)]
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .smile, at = .center, fade = 220ms)
 
@@ -215,7 +215,7 @@ own their event ordering, keys, lifetimes, and invalidation. See
 For ordinary visual novel writing, Arcweft provides compact line-oriented syntax directly inside `flow`. It is documented in [Flow-Integrated Scenario Syntax / Dialogue Sugar](scenario-surface-syntax.md). Dialogue tags and ruby are documented in [Dialogue Control Tags, Ruby, and Inline Hooks](dialogue-control-tags-and-ruby.md).
 
 ```arcw
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     bg(@asset:.bg.room, fade = 300ms)
     show(@character.alice, .smile, at = .center)
 

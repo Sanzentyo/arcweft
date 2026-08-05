@@ -59,7 +59,7 @@ entry game @entry.game.main {
     goto @flow.opening
 }
 
-flow @flow.opening opening(state: GameState) {
+flow opening(state: GameState) {
     log.info("game started")
     return "ok"
 }
@@ -118,11 +118,11 @@ entry server @entry.http {
     route GET "/hello/:name" -> @flow.hello(name = :name)
 }
 
-flow @flow.health() -> String {
+flow health() -> String {
     return "ok"
 }
 
-flow @flow.hello(name: String) -> String {
+flow hello(name: String) -> String {
     return "hello {name}"
 }
 ```
@@ -283,7 +283,7 @@ extern capability http {
 External live streams still use `source` declarations with explicit backpressure, replay, and privacy policy.
 
 ```arcw
-source @source.http_requests: Source<HttpRequest, HttpError> {
+source http_requests: Source<HttpRequest, HttpError> {
     from http.requests(@entry.http)
     backpressure = bounded(capacity = 1024, overflow = drop_oldest)
     replay = event_only
@@ -299,7 +299,7 @@ source @source.http_requests: Source<HttpRequest, HttpError> {
 Effects are capability facts.
 
 ```arcw
-flow @flow.save_profile save_profile
+flow save_profile
  effects { fs.read(save), fs.write(save), log.write }
 {
     let profile = try await fs.read_text(path.save("profile.json")) with {

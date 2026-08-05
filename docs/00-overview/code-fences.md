@@ -22,7 +22,7 @@ attribute と dialogue interpolation の一部であり、comment introducer と
 使わない。
 
 ```arcw
-pub flow @flow.opening opening(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow opening(state: GameState) -> Result<FlowExit, FlowError> {
     // Arcweft comments use `//`, not `#`.
     alice(id=@say.opening.001): おはよう。[p]
     Ok(FlowExit::Done)

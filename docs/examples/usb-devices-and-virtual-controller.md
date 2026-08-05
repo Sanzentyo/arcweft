@@ -28,7 +28,7 @@ pub device @device.motion_sensor: UsbRaw {
 
     decoder = decode_motion_packet
 
-    signal @signal.motion_sample: Stream<MotionSample>
+    signal motion_sample: Stream<MotionSample>
 
     emits {
         sample => GameEvent.Device(.Motion(sample.summary()))
@@ -97,7 +97,7 @@ pub virtual_controller @controller.default_touch {
 ## Flow usage
 
 ```arcw
-pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, FlowError> {
+pub flow device_setup(state: GameState) -> Result<FlowExit, FlowError> {
     let sensor =
         try await device.open(@device.motion_sensor) with {
             pending p => {
@@ -123,7 +123,7 @@ pub flow @flow.device_setup setup_devices(state: GameState) -> Result<FlowExit, 
 ## Layer integration
 
 ```arcw
-layer @layer.touch_controls {
+layer touch_controls {
     kind = view
     input = capture_if_hit
     visible = platform.touch_available || settings.force_touch_controls

@@ -214,7 +214,7 @@ pub enum InputDisposition {
 ## DSL: layer input
 
 ```arcw
-layer @layer.choices: Choice {
+layer choices: Choice {
     z = 200
     input = hit_test
     hit_test = view_layout
@@ -471,7 +471,7 @@ Custom hit-test、mask 判定、Activity 独自判定は respective owner API �
 Layer declaration owns routing policy; interaction remains on the target node.
 
 ```arcw
-layer @layer.choices: Choice {
+layer choices: Choice {
     z = 550
     input = hit_test
     hit_test = view_layout

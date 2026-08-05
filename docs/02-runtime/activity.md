@@ -42,7 +42,7 @@ pub enum ActivityMode {
 ## DSL
 
 ```arcw
-pub activity @activity.truck_game from rust "mini_games/truck" {
+pub activity truck_game from rust "mini_games/truck" {
     mode = deterministic
     tick = fixed(60hz)
 
