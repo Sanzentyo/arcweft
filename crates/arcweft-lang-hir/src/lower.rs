@@ -815,7 +815,7 @@ mod tests {
                 SourceName::path("lang-hir/lower/flow-attributes.arcw"),
                 r#"
 #[allow(id::flow_module_mismatch)]
-flow @flow.opening opening {
+flow opening {
     return "done"
 }
 "#,
@@ -846,7 +846,7 @@ flow @flow.opening opening {
                 r#"
 #![generated(tool)]
 
-flow @flow.opening opening {
+flow opening {
     return "done"
 }
 "#,
@@ -918,7 +918,7 @@ fn main() -> Unit {
                 r"
 alice: Hello[p]
 
-flow @flow.opening opening {
+flow opening {
     return
 }
 ",
@@ -1012,7 +1012,7 @@ flow @flow.opening opening {
                 "dialogue text key must use the `text` family",
             ),
         ] {
-            let source = format!("flow @flow.opening opening {{\n    {line}\n}}\n");
+            let source = format!("flow opening {{\n    {line}\n}}\n");
             let document = Arc::new(
                 SourceDocument::try_new(
                     SourceDocumentId::try_new(

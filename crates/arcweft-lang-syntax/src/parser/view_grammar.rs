@@ -1,6 +1,6 @@
 //! Private retained View declaration grammar.
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -31,7 +31,7 @@ pub(super) fn emit_declaration(
     parser.start(SyntaxKind::ViewDeclarationItem, role);
     emit_retained_declaration_header(
         &mut parser,
-        RetainedIdentityFamily::View,
+        DeclarationIdentityFamily::View,
         emit_view_signature,
     );
     parser.bump_trivia();

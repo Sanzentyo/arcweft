@@ -1,10 +1,10 @@
 //! Final retained-identity item lowering.
 
-use arcweft_id::{CharacterSurfaceAlias, DeclarationName, RetainedIdentityFamily};
+use arcweft_id::{CharacterSurfaceAlias, DeclarationIdentityFamily, DeclarationName};
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedCharacterBody, AttachedCharacterDeclaration, AttachedCharacterInitializer,
-    AttachedCharacterMember, AttachedCharacterSurfaceAlias, AttachedRetainedName,
-    AttachedRetainedPublicId, AttachedRetainedPublicIdIssue,
+    AttachedCharacterMember, AttachedCharacterSurfaceAlias, AttachedDeclarationPublicId,
+    AttachedDeclarationPublicIdIssue, AttachedRetainedName,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
 
@@ -44,7 +44,8 @@ impl StagedHirModuleTransaction<'_> {
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         preflight_character_members(attached.body().members().len())?;
-        let header = project_retained_header(attached.header(), RetainedIdentityFamily::Character)?;
+        let header =
+            project_retained_header(attached.header(), DeclarationIdentityFamily::Character)?;
         let alias = project_character_alias(attached.surface_alias())?;
         let mut retained_members = Vec::with_capacity(attached.body().members().len());
         let mut member_ids = Vec::with_capacity(attached.body().members().len());
@@ -164,7 +165,7 @@ impl StagedHirModuleTransaction<'_> {
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
-        let header = project_retained_header(attached.header(), RetainedIdentityFamily::Signal)?;
+        let header = project_retained_header(attached.header(), DeclarationIdentityFamily::Signal)?;
         let observable_type = self.lower_attached_type(attached.observable_type(), scope)?;
         let type_recovery = self.staged_type_is_poisoned(observable_type)?;
         let type_issue = type_recovery.then_some(
@@ -218,7 +219,7 @@ impl StagedHirModuleTransaction<'_> {
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
-        let header = project_retained_header(attached.header(), RetainedIdentityFamily::Action)?;
+        let header = project_retained_header(attached.header(), DeclarationIdentityFamily::Action)?;
         let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
         let mut parameters = Vec::with_capacity(attached.signature().parameters().len());
         let mut scope_locals = Vec::new();
@@ -303,7 +304,7 @@ impl StagedHirModuleTransaction<'_> {
 
 fn project_retained_header(
     attached: &arcweft_lang_syntax::attachment::AttachedRetainedHeader,
-    family: RetainedIdentityFamily,
+    family: DeclarationIdentityFamily,
 ) -> Result<HirRetainedHeader, HirLowerFailure> {
     let name = match attached.name() {
         AttachedRetainedName::Resolved { value, .. } => HirRetainedName::Resolved(
@@ -314,7 +315,7 @@ fn project_retained_header(
         AttachedRetainedName::Invalid { .. } => HirRetainedName::Invalid,
     };
     let public_id = match attached.public_id() {
-        AttachedRetainedPublicId::Derived => match &name {
+        AttachedDeclarationPublicId::Derived => match &name {
             HirRetainedName::Resolved(name) => HirRetainedPublicId::Resolved {
                 value: family
                     .derive_public_id(name)
@@ -325,18 +326,17 @@ fn project_retained_header(
                 HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::DerivedFromRecoveredName)
             }
         },
-        AttachedRetainedPublicId::Explicit { value, .. } => HirRetainedPublicId::Resolved {
+        AttachedDeclarationPublicId::Explicit { value, .. } => HirRetainedPublicId::Resolved {
             value: value.clone(),
             origin: HirPublicIdOrigin::Explicit,
         },
-        AttachedRetainedPublicId::Recovered { issue, .. } => {
+        AttachedDeclarationPublicId::Recovered { issue, .. } => {
             HirRetainedPublicId::Recovered(match issue {
-                AttachedRetainedPublicIdIssue::Relative => HirRetainedPublicIdIssue::Relative,
-                AttachedRetainedPublicIdIssue::WrongFamily(value) => {
+                AttachedDeclarationPublicIdIssue::WrongFamily(value) => {
                     HirRetainedPublicIdIssue::WrongFamily(value.clone())
                 }
-                AttachedRetainedPublicIdIssue::Malformed => HirRetainedPublicIdIssue::Malformed,
-                AttachedRetainedPublicIdIssue::Missing => HirRetainedPublicIdIssue::Missing,
+                AttachedDeclarationPublicIdIssue::Malformed => HirRetainedPublicIdIssue::Malformed,
+                AttachedDeclarationPublicIdIssue::Missing => HirRetainedPublicIdIssue::Missing,
             })
         }
     };
@@ -355,7 +355,7 @@ fn retained_header_issue(
     .or_else(|| {
         matches!(
             attached.public_id(),
-            AttachedRetainedPublicId::Recovered { .. }
+            AttachedDeclarationPublicId::Recovered { .. }
         )
         .then_some(HirItemIssue::MalformedHeader)
     })

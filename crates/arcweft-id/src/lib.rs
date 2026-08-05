@@ -54,13 +54,15 @@ pub struct AssetVirtualPath(String);
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct AssetId(PublicId);
 
-/// Retained global-identity family owned by Arcweft.
+/// Global declaration-identity family owned by Arcweft.
 ///
 /// `Asset` participates in retained reference validation even though packaged
 /// assets are discovered by the asset catalog rather than an authored
-/// top-level declaration.
+/// top-level declaration.  The callable and source families are included here
+/// so syntax producers share one family authority instead of maintaining
+/// parser-local string tables.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum RetainedIdentityFamily {
+pub enum DeclarationIdentityFamily {
     Asset,
     Character,
     View,
@@ -69,6 +71,10 @@ pub enum RetainedIdentityFamily {
     Signal,
     Metric,
     Layer,
+    Flow,
+    Proof,
+    Source,
+    Style,
 }
 
 /// Validated module-local spelling of a retained declaration.
@@ -153,7 +159,7 @@ impl PublicId {
     }
 }
 
-impl RetainedIdentityFamily {
+impl DeclarationIdentityFamily {
     pub const fn prefix(self) -> &'static str {
         match self {
             Self::Asset => "asset",
@@ -164,6 +170,10 @@ impl RetainedIdentityFamily {
             Self::Signal => "signal",
             Self::Metric => "metric",
             Self::Layer => "layer",
+            Self::Flow => "flow",
+            Self::Proof => "proof",
+            Self::Source => "source",
+            Self::Style => "style",
         }
     }
 
@@ -177,6 +187,10 @@ impl RetainedIdentityFamily {
             "signal" => Some(Self::Signal),
             "metric" => Some(Self::Metric),
             "layer" => Some(Self::Layer),
+            "flow" => Some(Self::Flow),
+            "proof" => Some(Self::Proof),
+            "source" => Some(Self::Source),
+            "style" => Some(Self::Style),
             _ => None,
         }
     }
@@ -469,8 +483,8 @@ fn is_reserved_prefix(value: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        AssetId, AssetIdError, AssetVirtualPath, CharacterSurfaceAlias, DeclarationName,
-        IdErrorKind, PublicId, PublicIdFamilyError, RetainedIdentityFamily, TextKey,
+        AssetId, AssetIdError, AssetVirtualPath, CharacterSurfaceAlias, DeclarationIdentityFamily,
+        DeclarationName, IdErrorKind, PublicId, PublicIdFamilyError, TextKey,
     };
 
     #[test]
@@ -511,14 +525,14 @@ mod tests {
     }
 
     #[test]
-    fn retained_family_validates_and_derives_public_identity() {
+    fn declaration_family_validates_and_derives_public_identity() {
         let name = DeclarationName::try_new("MainDialogue").expect("declaration name");
-        let derived = RetainedIdentityFamily::View
+        let derived = DeclarationIdentityFamily::View
             .derive_public_id(&name)
             .expect("derived View identity");
         assert_eq!(derived.as_str(), "view.MainDialogue");
         assert_eq!(
-            RetainedIdentityFamily::Character
+            DeclarationIdentityFamily::Character
                 .validate_public_id(&derived)
                 .expect_err("View identity is not a Character identity"),
             PublicIdFamilyError::WrongFamily {
@@ -529,23 +543,27 @@ mod tests {
     }
 
     #[test]
-    fn retained_family_round_trips_its_owned_prefixes() {
+    fn declaration_family_round_trips_its_owned_prefixes() {
         for family in [
-            RetainedIdentityFamily::Asset,
-            RetainedIdentityFamily::Character,
-            RetainedIdentityFamily::View,
-            RetainedIdentityFamily::Action,
-            RetainedIdentityFamily::Activity,
-            RetainedIdentityFamily::Signal,
-            RetainedIdentityFamily::Metric,
-            RetainedIdentityFamily::Layer,
+            DeclarationIdentityFamily::Asset,
+            DeclarationIdentityFamily::Character,
+            DeclarationIdentityFamily::View,
+            DeclarationIdentityFamily::Action,
+            DeclarationIdentityFamily::Activity,
+            DeclarationIdentityFamily::Signal,
+            DeclarationIdentityFamily::Metric,
+            DeclarationIdentityFamily::Layer,
+            DeclarationIdentityFamily::Flow,
+            DeclarationIdentityFamily::Proof,
+            DeclarationIdentityFamily::Source,
+            DeclarationIdentityFamily::Style,
         ] {
             assert_eq!(
-                RetainedIdentityFamily::from_prefix(family.prefix()),
+                DeclarationIdentityFamily::from_prefix(family.prefix()),
                 Some(family)
             );
         }
-        assert_eq!(RetainedIdentityFamily::from_prefix("image"), None);
+        assert_eq!(DeclarationIdentityFamily::from_prefix("image"), None);
     }
 
     #[test]

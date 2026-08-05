@@ -1,4 +1,4 @@
-//! Parser-owned semantic projections for retained declaration families.
+//! Parser-owned semantic projections for declaration families.
 //!
 //! These records retain decisions that cannot be reconstructed from CST shape
 //! alone, such as a recovered public-ID form or a missing required token.  The
@@ -12,21 +12,21 @@ use super::roles::{LayerKindSyntaxValue, LayerMemberSyntaxKind, LayerPolicySynta
 use crate::id_ref::SyntaxIdRefSyntax;
 use crate::name::SyntaxName;
 
-/// Parser-selected public-ID state for one retained declaration header.
+/// Parser-selected public-ID state for one declaration identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PendingRetainedPublicId {
+pub(crate) enum PendingDeclarationPublicId {
     Derived,
     Explicit {
         value: PublicId,
         source: SourceRange,
     },
     Recovered {
-        issue: PendingRetainedPublicIdIssue,
+        issue: PendingDeclarationPublicIdIssue,
         source: SourceRange,
     },
 }
 
-impl PendingRetainedPublicId {
+impl PendingDeclarationPublicId {
     pub(crate) fn rebased(&self, offset: usize) -> Option<Self> {
         let rebase = |range: SourceRange| {
             Some(SourceRange::new(
@@ -48,18 +48,17 @@ impl PendingRetainedPublicId {
     }
 }
 
-/// Typed recovery retained for an authored retained public ID.
+/// Typed recovery for an authored declaration public ID.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PendingRetainedPublicIdIssue {
-    Relative,
+pub(crate) enum PendingDeclarationPublicIdIssue {
     WrongFamily(PublicId),
     Malformed,
     Missing,
 }
 
-/// Parser-selected declaration-name state.
+/// Parser-selected declaration-name state shared by declaration headers.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) enum PendingRetainedName {
+pub(crate) enum PendingDeclarationName {
     Resolved {
         value: SyntaxName,
         source: SourceRange,
@@ -73,7 +72,7 @@ pub(crate) enum PendingRetainedName {
     },
 }
 
-impl PendingRetainedName {
+impl PendingDeclarationName {
     fn rebased(&self, offset: usize) -> Option<Self> {
         let rebase = |range: SourceRange| {
             Some(SourceRange::new(
@@ -100,31 +99,34 @@ impl PendingRetainedName {
     }
 }
 
-/// Header semantics shared by the seven retained declaration producers.
+/// Header semantics shared by declaration producers.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct PendingRetainedHeaderProjection {
-    public_id: PendingRetainedPublicId,
-    name: PendingRetainedName,
+pub(crate) struct PendingDeclarationHeaderProjection {
+    public_id: PendingDeclarationPublicId,
+    name: PendingDeclarationName,
 }
 
-impl PendingRetainedHeaderProjection {
-    pub(crate) const fn new(public_id: PendingRetainedPublicId, name: PendingRetainedName) -> Self {
+impl PendingDeclarationHeaderProjection {
+    pub(crate) const fn new(
+        public_id: PendingDeclarationPublicId,
+        name: PendingDeclarationName,
+    ) -> Self {
         Self { public_id, name }
     }
 
-    pub(crate) const fn public_id(&self) -> &PendingRetainedPublicId {
+    pub(crate) const fn public_id(&self) -> &PendingDeclarationPublicId {
         &self.public_id
     }
 
-    pub(crate) const fn name(&self) -> &PendingRetainedName {
+    pub(crate) const fn name(&self) -> &PendingDeclarationName {
         &self.name
     }
 
     pub(crate) fn has_recovery(&self) -> bool {
         !matches!(
             self.public_id,
-            PendingRetainedPublicId::Derived | PendingRetainedPublicId::Explicit { .. }
-        ) || !matches!(self.name, PendingRetainedName::Resolved { .. })
+            PendingDeclarationPublicId::Derived | PendingDeclarationPublicId::Explicit { .. }
+        ) || !matches!(self.name, PendingDeclarationName::Resolved { .. })
     }
 
     pub(crate) fn rebased(&self, offset: usize) -> Option<Self> {

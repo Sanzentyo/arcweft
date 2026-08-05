@@ -1181,10 +1181,10 @@ fn parse_style_decl_head(
                     return None;
                 };
                 (
-                    EntityRef::new(
+                    EntityRef::normalized_authored(
                         style_decl_body(&name, module_path),
                         false,
-                        TextRange::new(marker.range.end(), marker.range.end() + name.len()),
+                        TextRange::new(marker.range.start(), marker.range.end() + name.len()),
                     ),
                     tail,
                 )
@@ -1223,7 +1223,7 @@ fn normalize_style_decl_colon(entity: EntityRef, rest: &str) -> (EntityRef, Stri
     let body = entity.body().trim_end_matches(':').to_owned();
     let range = TextRange::new(entity.range().start(), entity.range().end() - 1);
     (
-        EntityRef::new(body, false, range),
+        EntityRef::normalized_authored(body, false, range),
         format!(": {}", rest.trim_start()),
     )
 }
@@ -1243,7 +1243,7 @@ fn rebase_relative_style_decl_entity(
     let Some(suffix) = entity.body().strip_prefix("style.") else {
         return entity;
     };
-    EntityRef::new(style_decl_body(suffix, module_path), false, *entity.range())
+    EntityRef::normalized_authored(style_decl_body(suffix, module_path), false, *entity.range())
 }
 
 fn parse_style_name_and_tail(input: &str) -> (Option<String>, String) {

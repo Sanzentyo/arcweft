@@ -353,7 +353,7 @@ mod tests {
         let snapshot = attach(concat!(
             "/// Sends feedback\n",
             "#[test.fixture]\n",
-            "pub action @action.feedback_submit feedback_submit(value: Feedback, count: Count);\n",
+            "pub action feedback_submit(value: Feedback, count: Count);\n",
         ));
         let declaration = actions(&snapshot)[0].semantics().unwrap();
 

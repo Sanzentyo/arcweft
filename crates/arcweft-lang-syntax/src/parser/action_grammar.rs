@@ -1,6 +1,6 @@
 //! Private retained Action channel declaration grammar.
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -29,7 +29,7 @@ pub(super) fn emit_declaration(
     parser.start(SyntaxKind::ActionDeclarationItem, role);
     emit_retained_declaration_header(
         &mut parser,
-        RetainedIdentityFamily::Action,
+        DeclarationIdentityFamily::Action,
         emit_action_signature,
     );
     emit_action_terminator_and_recovery(&mut parser);

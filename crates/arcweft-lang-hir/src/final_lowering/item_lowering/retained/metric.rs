@@ -1,6 +1,6 @@
 //! Final Metric schema lowering into typed retained members and expression owners.
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedMetricBucketsValue, AttachedMetricDeclaration, AttachedMetricEntry,
     AttachedMetricKind, AttachedMetricLabel, AttachedMetricLabelsBody, AttachedMetricUnitValue,
@@ -37,7 +37,7 @@ impl StagedHirModuleTransaction<'_> {
 
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
-        let header = project_retained_header(attached.header(), RetainedIdentityFamily::Metric)?;
+        let header = project_retained_header(attached.header(), DeclarationIdentityFamily::Metric)?;
         let kind = project_metric_kind(attached.kind());
         let value_type = self.lower_attached_type(attached.value_type(), scope)?;
         let value_type_poisoned = self.staged_type_is_poisoned(value_type)?;

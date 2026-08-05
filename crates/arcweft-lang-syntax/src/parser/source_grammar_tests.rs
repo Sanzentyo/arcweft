@@ -41,7 +41,7 @@ fn source_header_accepts_canonical_identity_forms_and_retains_exact_type() {
         "source @super.events: Source<Event, Error> {}\n",
         "source @source:.events: Source<Event, Error> {}\n",
         "source @source:..events: Source<Event, Error> {}\n",
-        "pub source @source.events events: Source<Event, Error> {}\n",
+        "pub source events: Source<Event, Error> {}\n",
         "source @. events: Source<Event, Error> {}\n",
         "source @source:. events: Source<Event, Error> {}\n",
     ] {

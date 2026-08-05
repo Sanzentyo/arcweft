@@ -20,7 +20,7 @@ fn document(source: &str) -> SourceDocument {
 #[test]
 fn flow_postfix_brackets_select_distinct_typed_lossless_owners() {
     let source = concat!(
-        "flow @flow.opening opening {\n",
+        "flow opening {\n",
         "    let handles = alice.say()[本文です。[p]]\n",
         "    let direct = alice[おはよう。[p]]\n",
         "    let selected = rows[0]\n",
@@ -94,7 +94,7 @@ fn unclosed_dialogue_content_recovers_before_the_next_item() {
 #[test]
 fn unterminated_rich_text_quote_recovers_before_following_tags() {
     let source = concat!(
-        "flow @flow.opening opening {\n",
+        "flow opening {\n",
         "    let line = alice[本文。",
         "[effect .wave note=\"unfinished][.sparkle]next[/]]\n",
         "}\n",
@@ -143,9 +143,8 @@ fn dedicated_rich_text_payloads_share_unterminated_quote_recovery() {
         r#"[! target(note="unfinished]"#,
         r#"[if predicate("unfinished]"#,
     ] {
-        let source = format!(
-            "flow @flow.opening opening {{\n    let line = alice[本文。{payload}[.sparkle]]\n}}\n"
-        );
+        let source =
+            format!("flow opening {{\n    let line = alice[本文。{payload}[.sparkle]]\n}}\n");
         let built =
             parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
                 .unwrap();
@@ -178,7 +177,7 @@ fn dedicated_rich_text_payloads_share_unterminated_quote_recovery() {
 #[test]
 fn private_rich_text_grammar_stops_at_the_content_tag_limit() {
     let tags = "[p]".repeat(MAX_RICH_TEXT_CONTENT_TAGS + 3);
-    let source = format!("flow @flow.opening opening {{\n    let line = alice[本文。{tags}]\n}}\n");
+    let source = format!("flow opening {{\n    let line = alice[本文。{tags}]\n}}\n");
     let built =
         parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
 
@@ -212,8 +211,7 @@ fn private_rich_text_grammar_reports_the_content_argument_limit_once() {
             .join(" ")
     );
     let content = one_tag.repeat(MAX_RICH_TEXT_CONTENT_ARGUMENTS / MAX_RICH_TEXT_TAG_ARGUMENTS + 3);
-    let source =
-        format!("flow @flow.opening opening {{\n    let line = alice[本文。{content}]\n}}\n");
+    let source = format!("flow opening {{\n    let line = alice[本文。{content}]\n}}\n");
     let built =
         parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
 
@@ -244,7 +242,7 @@ fn per_tag_argument_one_over_recovers_as_text_without_tag_or_argument_identity()
         .collect::<Vec<_>>()
         .join(" ");
     let source = format!(
-        "flow @flow.opening opening {{\n    let line = alice[本文。[effect {arguments}]text[/effect]]\n}}\n"
+        "flow opening {{\n    let line = alice[本文。[effect {arguments}]text[/effect]]\n}}\n"
     );
     let built =
         parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
@@ -286,7 +284,7 @@ fn per_tag_argument_one_over_recovers_as_text_without_tag_or_argument_identity()
 #[test]
 fn mark_payload_does_not_invent_rich_text_arguments() {
     let source = concat!(
-        "flow @flow.opening opening {\n",
+        "flow opening {\n",
         "    let line = alice[本文。[mark checkpoint]]\n",
         "}\n",
     );
@@ -312,9 +310,8 @@ fn mark_payload_does_not_invent_rich_text_arguments() {
 #[test]
 fn overlong_rich_text_body_is_opaque_to_inner_tag_identity() {
     let oversized = format!("[{}[p]]", "a".repeat(MAX_RICH_TEXT_TAG_BODY_BYTES + 1));
-    let source = format!(
-        "flow @flow.opening opening {{\n    let line = alice[本文。{oversized}[.sparkle]]\n}}\n"
-    );
+    let source =
+        format!("flow opening {{\n    let line = alice[本文。{oversized}[.sparkle]]\n}}\n");
     let built =
         parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
 

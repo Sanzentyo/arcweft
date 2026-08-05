@@ -68,7 +68,7 @@ fn views(snapshot: &Arc<SyntaxSnapshotData>) -> Vec<AstNode<ViewDeclarationItemK
 fn view_attachment_reuses_callable_parameters_and_owns_exports_and_values() {
     let snapshot = attach(concat!(
         "/// Main View\n",
-        "pub view @view.Main Main(count: u32 = 1) {\n",
+        "pub view Main(count: u32 = 1) {\n",
         "    export part panel as public.panel\n",
         "    Panel {}\n",
         "    Text(count)\n",

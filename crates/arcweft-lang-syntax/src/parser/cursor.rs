@@ -139,7 +139,7 @@ impl StagedParserEvents {
                     use_projection,
                     visibility_projection,
                     attribute_projection,
-                    retained_header_projection,
+                    declaration_header_projection,
                     character_projection,
                     test_kind_projection,
                     layer_projection,
@@ -155,7 +155,7 @@ impl StagedParserEvents {
                         use_projection.is_none()
                             && visibility_projection.is_none()
                             && attribute_projection.is_none()
-                            && retained_header_projection.is_none()
+                            && declaration_header_projection.is_none()
                             && character_projection.is_none()
                             && test_kind_projection.is_none()
                             && layer_projection.is_none()
@@ -779,29 +779,29 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
             })
     }
 
-    pub(super) fn set_retained_header_projection(
+    pub(super) fn set_declaration_header_projection(
         &mut self,
         position: Option<usize>,
-        projection: crate::grammar::declaration_projection::PendingRetainedHeaderProjection,
+        projection: crate::grammar::declaration_projection::PendingDeclarationHeaderProjection,
     ) {
         let Some(position) = position else {
             return;
         };
         let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::DeclarationHeader,
-            retained_header_projection,
+            kind: SyntaxKind::DeclarationHeader | SyntaxKind::ProofItem,
+            declaration_header_projection,
             ..
         }) = self.events.get_mut(position)
         else {
             panic!(
-                "retained-header projection marker must point to a DeclarationHeader start event"
+                "declaration-header projection marker must point to a declaration or ProofItem start event"
             );
         };
         assert!(
-            retained_header_projection.is_none(),
-            "retained header receives one parser-selected semantic projection"
+            declaration_header_projection.is_none(),
+            "declaration header receives one parser-selected semantic projection"
         );
-        *retained_header_projection = Some(projection);
+        *declaration_header_projection = Some(projection);
     }
 
     pub(super) fn set_attribute_projection(

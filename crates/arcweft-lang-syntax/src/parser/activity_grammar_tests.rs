@@ -43,7 +43,7 @@ fn nth_source_range(source: &str, fragment: &str, occurrence: usize) -> SourceRa
 #[test]
 fn canonical_activity_owns_abstract_ports_policies_and_contracts() {
     let source = concat!(
-        "pub activity @activity.truck TruckGame {\n",
+        "pub activity TruckGame {\n",
         "    mode = deterministic\n",
         "    lifecycle = snapshot\n",
         "    input {\n",

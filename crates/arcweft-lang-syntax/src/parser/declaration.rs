@@ -1,13 +1,13 @@
 //! Shared declaration-header grammar over the private document cursor.
 
-use arcweft_id::{PublicId, RetainedIdentityFamily};
+use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
 use super::expression::{
     CompletedNode, emit_expression, emit_expression_node, emit_parenthesized_call_tail,
 };
-use super::lexer::LexToken;
+use super::lexer::{LexToken, typed_entity_reference};
 use super::path::{PathSeparatorGrammar, emit_path};
 use super::pattern::{emit_method_receiver_pattern, emit_pattern};
 use super::shadow_recovery::{
@@ -29,12 +29,13 @@ use crate::grammar::contract_projection::{
     PendingFlowContractClauseProjection, PendingFlowContractMode,
 };
 use crate::grammar::declaration_projection::{
-    PendingRetainedHeaderProjection, PendingRetainedName, PendingRetainedPublicId,
-    PendingRetainedPublicIdIssue,
+    PendingDeclarationHeaderProjection, PendingDeclarationName, PendingDeclarationPublicId,
+    PendingDeclarationPublicIdIssue,
 };
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::grammar::source_projection::PendingVisibilityKind;
+use crate::id_ref::AuthoredIdRoot;
 use crate::name::SyntaxName;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -308,7 +309,7 @@ fn is_visibility_trivia(kind: SyntaxKind) -> bool {
 
 pub(super) fn emit_retained_declaration_header<T>(
     parser: &mut ShadowDocumentParser<'_, '_>,
-    family: RetainedIdentityFamily,
+    family: DeclarationIdentityFamily,
     emit_family_tail: impl FnOnce(&mut ShadowDocumentParser<'_, '_>) -> T,
 ) -> T {
     let owner = parser.start_projected_owner(SyntaxKind::DeclarationHeader, SyntaxRole::Element(0));
@@ -328,14 +329,14 @@ pub(super) fn emit_retained_declaration_header<T>(
         parser.bump();
     }
     parser.bump_trivia();
-    let public_id = emit_retained_declaration_public_id(parser, family, keyword_range);
+    let public_id = emit_declaration_public_id(parser, family, keyword_range);
     parser.bump_trivia();
-    let name = emit_retained_declaration_name(parser);
+    let name = emit_declaration_name(parser, family.prefix());
     parser.bump_trivia();
     let family_tail = emit_family_tail(parser);
-    parser.set_retained_header_projection(
+    parser.set_declaration_header_projection(
         owner,
-        PendingRetainedHeaderProjection::new(public_id, name),
+        PendingDeclarationHeaderProjection::new(public_id, name),
     );
     parser.finish();
     family_tail
@@ -354,101 +355,101 @@ pub(super) fn emit_metric_declaration_header(
 
     let keyword_range = parser
         .current()
-        .filter(|token| parser.text_of(*token) == RetainedIdentityFamily::Metric.prefix())
+        .filter(|token| parser.text_of(*token) == DeclarationIdentityFamily::Metric.prefix())
         .map_or_else(
             || SourceRange::new(parser.current_offset(), parser.current_offset()),
             LexToken::range,
         );
-    if parser.at(RetainedIdentityFamily::Metric.prefix()) {
+    if parser.at(DeclarationIdentityFamily::Metric.prefix()) {
         parser.bump();
     }
     parser.bump_trivia();
     emit_kind(parser);
     parser.bump_trivia();
     let public_id =
-        emit_retained_declaration_public_id(parser, RetainedIdentityFamily::Metric, keyword_range);
+        emit_declaration_public_id(parser, DeclarationIdentityFamily::Metric, keyword_range);
     parser.bump_trivia();
-    let name = emit_retained_declaration_name(parser);
+    let name = emit_declaration_name(parser, DeclarationIdentityFamily::Metric.prefix());
     parser.bump_trivia();
     emit_family_tail(parser);
-    parser.set_retained_header_projection(
+    parser.set_declaration_header_projection(
         owner,
-        PendingRetainedHeaderProjection::new(public_id, name),
+        PendingDeclarationHeaderProjection::new(public_id, name),
     );
     parser.finish();
 }
 
-fn emit_retained_declaration_public_id(
+/// Emits one shared declaration identity and its required local name.
+///
+/// All declaration producers accept the same relative identity spellings and
+/// normalize them to the declaration family before the name and lint layers
+/// observe them.
+pub(super) fn emit_declaration_identity(
     parser: &mut ShadowDocumentParser<'_, '_>,
-    family: RetainedIdentityFamily,
+    family: DeclarationIdentityFamily,
     keyword_range: SourceRange,
-) -> PendingRetainedPublicId {
+) -> PendingDeclarationHeaderProjection {
+    let public_id = emit_declaration_public_id(parser, family, keyword_range);
+    parser.bump_trivia();
+    let name = emit_declaration_name(parser, family.prefix());
+    PendingDeclarationHeaderProjection::new(public_id, name)
+}
+
+fn emit_declaration_public_id(
+    parser: &mut ShadowDocumentParser<'_, '_>,
+    family: DeclarationIdentityFamily,
+    keyword_range: SourceRange,
+) -> PendingDeclarationPublicId {
     if parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
         let token = parser.current().expect("checked declaration ID token");
-        let token_text = parser.text_of(token);
-        let value = token_text
-            .strip_prefix('@')
-            .expect("entity-reference token begins with @");
+        let projection = typed_entity_reference(token, parser.text_of(token));
+        let syntax = projection.into_syntax();
+        let source = token.range();
+        let family_name = SyntaxName::try_new(family.prefix())
+            .expect("declaration identity family prefixes are valid names");
 
         parser.start(SyntaxKind::DeclarationPublicId, SyntaxRole::PublicId);
-        if value.is_empty() {
-            parser.start(SyntaxKind::MissingDeclarationId, SyntaxRole::Recovery(0));
-            parser.bump();
-            parser.finish();
-            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                "syntax.declaration.malformed_id",
-                token.range(),
-                "retained declaration ID is missing after `@`",
-            )));
-            parser.finish();
-            return PendingRetainedPublicId::Recovered {
-                issue: PendingRetainedPublicIdIssue::Missing,
-                source: token.range(),
-            };
-        } else if value.starts_with('.') || value.contains(":.") {
-            parser.bump();
-            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                "syntax.declaration.relative_id",
-                token.range(),
-                "retained declaration IDs must be plain absolute references",
-            )));
-            parser.finish();
-            return PendingRetainedPublicId::Recovered {
-                issue: PendingRetainedPublicIdIssue::Relative,
-                source: token.range(),
-            };
-        } else if value.starts_with('{') || value.contains(':') || value.contains('/') {
-            parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
-            parser.bump();
-            parser.finish();
-            parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                "syntax.declaration.malformed_id",
-                token.range(),
-                "retained declaration ID is not a plain absolute public-ID reference",
-            )));
-            parser.finish();
-            return PendingRetainedPublicId::Recovered {
-                issue: PendingRetainedPublicIdIssue::Malformed,
-                source: token.range(),
-            };
-        } else {
-            match PublicId::try_new(value) {
-                Ok(public_id) if family.validate_public_id(&public_id).is_ok() => {
-                    parser.bump();
-                    parser.finish();
-                    return PendingRetainedPublicId::Explicit {
-                        value: public_id,
-                        source: token.range(),
-                    };
+        let result = match syntax.value() {
+            Err(crate::id_ref::SyntaxIdRefIssue::MissingSuffix) => {
+                parser.start(SyntaxKind::MissingDeclarationId, SyntaxRole::Recovery(0));
+                parser.bump();
+                parser.finish();
+                parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                    "syntax.declaration.malformed_id",
+                    source,
+                    "declaration ID is missing after `@`",
+                )));
+                PendingDeclarationPublicId::Recovered {
+                    issue: PendingDeclarationPublicIdIssue::Missing,
+                    source,
                 }
-                Ok(public_id) => {
+            }
+            Err(_) => {
+                parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
+                parser.bump();
+                parser.finish();
+                parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                    "syntax.declaration.malformed_id",
+                    source,
+                    "declaration ID is malformed",
+                )));
+                PendingDeclarationPublicId::Recovered {
+                    issue: PendingDeclarationPublicIdIssue::Malformed,
+                    source,
+                }
+            }
+            Ok(_reference) => {
+                let (normalized, canonical) = syntax.normalized_for_family(&family_name);
+                if !canonical {
+                    let public_id = public_id_from_syntax(&syntax, family)
+                        .expect("validated entity reference has a public-ID spelling");
                     parser.start(SyntaxKind::WrongFamilyReference, SyntaxRole::Reference(0));
                     parser.bump();
                     parser.finish();
                     parser.push(SyntaxEvent::Diagnostic(
                         PendingSyntaxDiagnostic::new(
                             "syntax.declaration.wrong_family_id",
-                            token.range(),
+                            source,
                             format!(
                                 "declaration ID must belong to the `{}` family",
                                 family.prefix()
@@ -456,47 +457,75 @@ fn emit_retained_declaration_public_id(
                         )
                         .with_related_range(keyword_range),
                     ));
-                    parser.finish();
-                    return PendingRetainedPublicId::Recovered {
-                        issue: PendingRetainedPublicIdIssue::WrongFamily(public_id),
-                        source: token.range(),
-                    };
-                }
-                Err(_) => {
+                    PendingDeclarationPublicId::Recovered {
+                        issue: PendingDeclarationPublicIdIssue::WrongFamily(public_id),
+                        source,
+                    }
+                } else if let Some(public_id) = public_id_from_syntax(&normalized, family) {
+                    parser.bump();
+                    PendingDeclarationPublicId::Explicit {
+                        value: public_id,
+                        source,
+                    }
+                } else {
                     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
                     parser.bump();
                     parser.finish();
                     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
                         "syntax.declaration.malformed_id",
-                        token.range(),
-                        "retained declaration ID is malformed",
+                        source,
+                        "declaration ID is malformed",
                     )));
-                    parser.finish();
-                    return PendingRetainedPublicId::Recovered {
-                        issue: PendingRetainedPublicIdIssue::Malformed,
-                        source: token.range(),
-                    };
+                    PendingDeclarationPublicId::Recovered {
+                        issue: PendingDeclarationPublicIdIssue::Malformed,
+                        source,
+                    }
                 }
             }
-        }
+        };
+        parser.finish();
+        return result;
     }
-    PendingRetainedPublicId::Derived
+    PendingDeclarationPublicId::Derived
 }
 
-fn emit_retained_declaration_name(
+fn public_id_from_syntax(
+    syntax: &crate::id_ref::SyntaxIdRefSyntax,
+    family: DeclarationIdentityFamily,
+) -> Option<PublicId> {
+    let reference = syntax.value().ok()?;
+    let mut components = Vec::new();
+    match reference.root() {
+        AuthoredIdRoot::Relative { .. } => components.push(family.prefix().to_owned()),
+        AuthoredIdRoot::FamilyRelative {
+            family: authored, ..
+        } => {
+            components.push(authored.as_str().to_owned());
+        }
+        AuthoredIdRoot::Absolute { .. } => {}
+    }
+    components.extend(
+        reference
+            .segments()
+            .iter()
+            .map(|segment| segment.as_str().to_owned()),
+    );
+    PublicId::try_new(components.join(".")).ok()
+}
+
+fn emit_declaration_name(
     parser: &mut ShadowDocumentParser<'_, '_>,
-) -> PendingRetainedName {
+    family: &str,
+) -> PendingDeclarationName {
     if parser.current_kind() == Some(SyntaxKind::IdentifierToken) && !current_name_is_dotted(parser)
     {
-        let token = parser
-            .current()
-            .expect("checked retained declaration name token");
+        let token = parser.current().expect("checked declaration name token");
         let name = SyntaxName::try_new(parser.text_of(token))
             .expect("identifier token is a validated declaration name");
         parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
         parser.bump();
         parser.finish();
-        return PendingRetainedName::Resolved {
+        return PendingDeclarationName::Resolved {
             value: name,
             source: token.range(),
         };
@@ -519,9 +548,9 @@ fn emit_retained_declaration_name(
         parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
             "syntax.declaration.missing_name",
             SourceRange::new(at, at),
-            "retained declaration requires one ordinary local name",
+            format!("{family} declaration requires one ordinary local name"),
         )));
-        return PendingRetainedName::Missing {
+        return PendingDeclarationName::Missing {
             insertion: SourceRange::new(at, at),
         };
     }
@@ -532,9 +561,9 @@ fn emit_retained_declaration_name(
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         "syntax.declaration.invalid_name",
         SourceRange::new(at, parser.current_offset()),
-        "retained declaration name must be one non-keyword identifier",
+        format!("{family} declaration name must be one non-keyword identifier"),
     )));
-    PendingRetainedName::Invalid {
+    PendingDeclarationName::Invalid {
         insertion: SourceRange::new(at, at),
         recovery: SourceRange::new(at, parser.current_offset()),
     }

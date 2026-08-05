@@ -17,17 +17,17 @@ use crate::{
 
 #[test]
 fn parsed_source_always_keeps_lossless_syntax() {
-    let parsed = parse_cst_fixture("flow @flow.bad bad {");
+    let parsed = parse_cst_fixture("flow bad {");
 
     assert!(!parsed.errors().is_empty());
     assert_eq!(parsed.syntax().kind(), SyntaxKind::Root);
-    assert_eq!(parsed.syntax().text().to_string(), "flow @flow.bad bad {");
-    assert_eq!(parsed.typed_tree().source(), "flow @flow.bad bad {");
+    assert_eq!(parsed.syntax().text().to_string(), "flow bad {");
+    assert_eq!(parsed.typed_tree().source(), "flow bad {");
 }
 
 #[test]
 fn cst_preserves_comments_doc_comments_entity_refs_and_newlines() {
-    let source = "/// Doc\n// comment\nflow @flow.opening opening {}\n";
+    let source = "/// Doc\n// comment\nflow opening { goto @flow.next }\n";
     let parsed = parse_cst_fixture(source);
     let token_kinds = parsed
         .syntax()
@@ -45,7 +45,7 @@ fn cst_preserves_comments_doc_comments_entity_refs_and_newlines() {
 
 #[test]
 fn cst_line_events_classify_trivia_docs_and_code() {
-    let source = "   \n// comment\n/// Doc\nflow @flow.opening opening {}\n";
+    let source = "   \n// comment\n/// Doc\nflow opening {}\n";
     let root = crate::cst::parse_cst(source);
     let lines = cst_lines_for_source(&root, source);
 
@@ -59,10 +59,7 @@ fn cst_line_events_classify_trivia_docs_and_code() {
         Some("Doc")
     );
     assert!(lines.get(3).is_some_and(|line| !line.is_trivia()));
-    assert_eq!(
-        lines.get(3).map(CstLine::trimmed),
-        Some("flow @flow.opening opening {}")
-    );
+    assert_eq!(lines.get(3).map(CstLine::trimmed), Some("flow opening {}"));
 }
 
 #[test]
@@ -232,7 +229,8 @@ fn cst_statement_classifier_covers_typed_statement_heads() {
 
 #[test]
 fn cst_flow_block_event_keeps_effects_prelude_out_of_body() {
-    let source = "flow @flow.opening opening\nrequires ready\n effects { asset.read }\n{\n    goto @flow.next\n}\n";
+    let source =
+        "flow opening\nrequires ready\n effects { asset.read }\n{\n    goto @flow.next\n}\n";
     let root = crate::cst::parse_cst(source);
     let lines = cst_lines_for_source(&root, source);
     let block = lines.collect_flow_block(0);
@@ -246,7 +244,7 @@ fn cst_flow_block_event_keeps_effects_prelude_out_of_body() {
 
 #[test]
 fn cst_flow_block_event_reuses_complete_body_line_events_only() {
-    let source = "flow @flow.opening opening {\n    goto @flow.next\n}\n";
+    let source = "flow opening {\n    goto @flow.next\n}\n";
     let root = crate::cst::parse_cst(source);
     let lines = crate::cst::cst_lines_for_source(&root, source);
     let block = lines.collect_flow_block(0);
@@ -264,7 +262,7 @@ fn cst_flow_block_event_reuses_complete_body_line_events_only() {
     assert_eq!(line.text(), "    goto @flow.next");
     assert_eq!(line.start(), 2);
 
-    let inline_source = "flow @flow.inline inline { goto @flow.next }\n";
+    let inline_source = "flow inline { goto @flow.next }\n";
     let inline_root = crate::cst::parse_cst(inline_source);
     let inline_lines = crate::cst::cst_lines_for_source(&inline_root, inline_source);
     let inline = inline_lines.collect_flow_block(0);
@@ -433,7 +431,7 @@ fn cst_top_level_matching_punctuation_uses_one_fragment_scan() {
 fn cst_line_projection_records_path_free_parse_stats() {
     let parsed = parse_cst_fixture(
         r"
-flow @flow.opening opening {
+flow opening {
     alice.say()[本文です。[p]]
 }
 ",
@@ -452,7 +450,7 @@ flow @flow.opening opening {
 fn parse_stats_count_numeric_sequence_summaries_from_flow_body() {
     let parsed = parse_cst_fixture(
         r"
-flow @flow.opening opening {
+flow opening {
     let values: Vec<i64> = [1i64, 2i64, 3i64]
 }
 ",
@@ -465,7 +463,7 @@ flow @flow.opening opening {
 fn flow_let_value_continuation_keeps_effect_row_type_ascription_with_closure() {
     let parsed = parse_cst_fixture(
         r"
-flow @flow.closure_expected_row closure_expected_row
+flow closure_expected_row
 effects { }
 {
     let later: String -> String effects { fs.read } =

@@ -104,7 +104,7 @@ fn character_identity_errors_are_typed_and_do_not_consume_the_next_item() {
     );
     assert!(wrong.related_range().is_some());
     assert!(
-        built
+        !built
             .diagnostics()
             .iter()
             .any(|diagnostic| diagnostic.code() == "syntax.declaration.relative_id")

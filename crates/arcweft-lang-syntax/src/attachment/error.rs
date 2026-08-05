@@ -193,10 +193,10 @@ pub enum SyntaxAccessError {
     MissingVisibilityProjection { id: SyntaxNodeId },
     #[error("syntax Character identity {id:?} has no parser-owned declaration projection")]
     MissingCharacterProjection { id: SyntaxNodeId },
-    #[error("syntax retained header identity {id:?} has no parser-owned header projection")]
-    MissingRetainedHeaderProjection { id: SyntaxNodeId },
-    #[error("syntax retained header identity {id:?} carries an invalid header projection")]
-    InvalidRetainedHeaderProjection { id: SyntaxNodeId },
+    #[error("syntax declaration header identity {id:?} has no parser-owned header projection")]
+    MissingDeclarationHeaderProjection { id: SyntaxNodeId },
+    #[error("syntax declaration header identity {id:?} carries an invalid header projection")]
+    InvalidDeclarationHeaderProjection { id: SyntaxNodeId },
     #[error("syntax Character identity {id:?} carries an invalid declaration projection")]
     InvalidCharacterProjection { id: SyntaxNodeId },
     #[error("syntax Test identity {id:?} has no parser-owned adapter-kind projection")]

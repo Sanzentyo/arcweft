@@ -1,4 +1,5 @@
 use crate::ast::common::TextRange;
+use crate::ast::ids::EntityRef;
 use crate::ast::items::Attribute;
 use crate::ast::proof::{BenchItem, ProofClause, ProofItem, ProofTrust, TestItem, TestKind};
 use crate::cst::{
@@ -6,7 +7,7 @@ use crate::cst::{
 };
 use crate::expr::{DecodedStringLiteral, Expr, Literal, parse_expr};
 
-use super::headers::{parse_required_id_ref, simple_error};
+use super::headers::{parse_decl_identity_and_name, parse_required_id_ref, simple_error};
 use super::{
     Parser,
     recovery::{ParseError, ParseErrorKind, RecoverySuggestion},
@@ -27,8 +28,22 @@ impl Parser<'_> {
             );
             return None;
         }
-        let rest = head.trim().strip_prefix("proof")?.trim();
-        let (id, rest) = parse_required_id_ref(rest, start_line.start, &mut self.errors)?;
+        let head = head.trim();
+        let rest = head.strip_prefix("proof")?.trim_start();
+        let explicit_id = rest.starts_with('@');
+        let head_start = start_line.start + start_line.text.as_ref().find(head).unwrap_or(0);
+        let name_start = head_start + head.find(rest).unwrap_or(head.len());
+        let (entity, name, rest) =
+            parse_decl_identity_and_name(rest, "proof", name_start, &mut self.errors)?;
+        let entity = entity.unwrap_or_else(|| {
+            EntityRef::module_scoped_declaration(
+                "proof",
+                name,
+                None,
+                TextRange::new(name_start, name_start + name.len()),
+            )
+        });
+        let id = crate::ast::ids::IdRef::absolute(entity);
         if !rest.trim().is_empty() {
             self.push_error(
                 TextRange::new(start_line.start, start_line.start + head.len()),
@@ -42,6 +57,9 @@ impl Parser<'_> {
         let clauses = parse_proof_clauses(&body);
         Some(ProofItem::new(
             id,
+            name.to_owned(),
+            explicit_id,
+            attrs,
             trust,
             body.into_owned(),
             clauses,
@@ -184,7 +202,9 @@ fn parse_proof_trust(attrs: &[Attribute], errors: &mut Vec<ParseError>) -> Optio
         .collect::<Vec<_>>();
     let unsupported = report_unsupported_proof_attributes(attrs, errors);
     let duplicated = report_duplicate_trusted_attributes(&trusted_attrs, errors);
-    let attr = *trusted_attrs.first()?;
+    let Some(attr) = trusted_attrs.first().copied() else {
+        return (!unsupported).then_some(ProofTrust::Verified);
+    };
     let reason = parse_trusted_reason(attr, errors);
 
     (!unsupported && !duplicated)
@@ -199,11 +219,11 @@ fn parse_proof_trust(attrs: &[Attribute], errors: &mut Vec<ParseError>) -> Optio
 fn report_unsupported_proof_attributes(attrs: &[Attribute], errors: &mut Vec<ParseError>) -> bool {
     let mut unsupported = false;
     for attr in attrs {
-        if attr.name() != "verify.trusted" {
+        if !matches!(attr.name(), "verify.trusted" | "allow" | "generated") {
             errors.push(simple_error(
                 attr.range().start(),
                 attr.range().end() - attr.range().start(),
-                "proof attributes only support `verify.trusted`",
+                "proof attributes support `verify.trusted`, `allow`, and `generated`",
                 "#[verify.trusted(reason = \"external review\")]",
             ));
             unsupported = true;

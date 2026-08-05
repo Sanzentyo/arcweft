@@ -1,5 +1,6 @@
 //! Proof-specific re-derivation for final item publication.
 
+use arcweft_lang_syntax::attachment::AttachedDeclarationPublicId;
 use arcweft_lang_syntax::attachment::{AttachedProofBody, AttachedProofDeclaration};
 use arcweft_lang_syntax::grammar::SyntaxKind;
 use arcweft_lang_syntax::incremental::ParsedSource;
@@ -46,6 +47,7 @@ pub(super) fn payload_matches(
     if members.is_some()
         || !item.members().is_empty()
         || !item_prefix_matches(item, attached.prefix(), slots)
+        || !proof_public_id_matches(proof.public_id(), attached.public_id())
         || !required_name_matches(proof.name(), attached.name())
         || !generic_parameters_match(proof.generic_parameters(), attached.generics(), slots)
         || !where_predicates_match(proof.where_predicates(), attached.where_clauses(), slots)
@@ -130,6 +132,13 @@ pub(super) fn payload_matches(
         prefix_issue(attached.prefix(), item.prefix(), slots)
             .or_else(|| name_issue(attached.name()))
             .or_else(|| {
+                matches!(
+                    attached.public_id(),
+                    AttachedDeclarationPublicId::Recovered { .. }
+                )
+                .then_some(HirItemIssue::MalformedHeader)
+            })
+            .or_else(|| {
                 generic_issue(attached.generics(), proof.generic_parameters(), slots)
                     .is_some()
                     .then_some(HirItemIssue::MalformedHeader)
@@ -166,6 +175,18 @@ pub(super) fn payload_matches(
             }),
     );
     item.state() == &expected_state
+}
+
+fn proof_public_id_matches(
+    retained: Option<&arcweft_id::PublicId>,
+    attached: &AttachedDeclarationPublicId,
+) -> bool {
+    match (retained, attached) {
+        (None, AttachedDeclarationPublicId::Derived)
+        | (None, AttachedDeclarationPublicId::Recovered { .. }) => true,
+        (Some(retained), AttachedDeclarationPublicId::Explicit { value, .. }) => retained == value,
+        _ => false,
+    }
 }
 
 struct ReturnState {

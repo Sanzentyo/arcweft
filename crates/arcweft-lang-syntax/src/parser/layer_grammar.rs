@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -36,7 +36,7 @@ pub(super) fn emit_declaration(
     let owner = parser.start_projected_owner(SyntaxKind::LayerDeclarationItem, role);
     let (colon, kind) = emit_retained_declaration_header(
         &mut parser,
-        RetainedIdentityFamily::Layer,
+        DeclarationIdentityFamily::Layer,
         emit_layer_kind,
     );
     parser.bump_trivia();
@@ -264,19 +264,19 @@ fn emit_layer_member(
             parser,
             entry_end,
             SyntaxRole::Reference(0),
-            RetainedIdentityFamily::Layer,
+            DeclarationIdentityFamily::Layer,
         ),
         LayerMemberSyntaxKind::View => emit_reference_value(
             parser,
             entry_end,
             SyntaxRole::Reference(1),
-            RetainedIdentityFamily::View,
+            DeclarationIdentityFamily::View,
         ),
         LayerMemberSyntaxKind::Activity => emit_reference_value(
             parser,
             entry_end,
             SyntaxRole::Reference(2),
-            RetainedIdentityFamily::Activity,
+            DeclarationIdentityFamily::Activity,
         ),
         LayerMemberSyntaxKind::Phase
         | LayerMemberSyntaxKind::Input
@@ -303,7 +303,7 @@ fn emit_reference_value(
     parser: &mut ShadowDocumentParser<'_, '_>,
     entry_end: usize,
     role: SyntaxRole,
-    expected_family: RetainedIdentityFamily,
+    expected_family: DeclarationIdentityFamily,
 ) -> (PendingLayerMemberValue, bool) {
     if parser.current_kind() != Some(SyntaxKind::EntityReferenceToken) {
         emit_missing_value(
@@ -348,7 +348,7 @@ fn emit_reference_value(
 
 fn absolute_reference_conflicts_with(
     reference: &SyntaxIdRefSyntax,
-    expected: RetainedIdentityFamily,
+    expected: DeclarationIdentityFamily,
 ) -> bool {
     let Ok(value) = reference.value() else {
         return false;
@@ -359,7 +359,7 @@ fn absolute_reference_conflicts_with(
     value
         .segments()
         .first()
-        .and_then(|segment| RetainedIdentityFamily::from_prefix(segment.as_str()))
+        .and_then(|segment| DeclarationIdentityFamily::from_prefix(segment.as_str()))
         != Some(expected)
 }
 

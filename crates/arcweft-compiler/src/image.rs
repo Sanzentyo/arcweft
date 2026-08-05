@@ -7,7 +7,7 @@ use arcweft_bundle::{
     BundleImageObjectParam, BundleImageObjectPlayback, BundleImageObjectProxy,
     BundleImageObjectTransform,
 };
-use arcweft_id::{IdError, PublicId, RetainedIdentityFamily};
+use arcweft_id::{DeclarationIdentityFamily, IdError, PublicId};
 use arcweft_lang_hir::{model::HirTopLevelDecl, project::HirProject};
 use arcweft_lang_syntax::{
     ast::items::{EntityDeclItem, EntityDeclKind, ImageDeclBody, ImageDeclField},
@@ -411,7 +411,7 @@ fn lower_image(
     let id = declaration.id().body();
     let fields = ImageFields::try_new(id, source, document, body)?;
     validate_image_fields(&fields)?;
-    let asset = retained_public_id(fields.required("asset")?, RetainedIdentityFamily::Asset)
+    let asset = declaration_public_id(fields.required("asset")?, DeclarationIdentityFamily::Asset)
         .map(|asset| asset.as_str().to_owned())
         .ok_or_else(|| fields.invalid("asset", "expected an `asset.*` entity reference"))?;
     let placement = image_stage_placement(&fields)?;
@@ -425,7 +425,7 @@ fn lower_image(
             .map(|id| id.as_str().to_owned()),
         layer: fields
             .get("layer")
-            .and_then(|value| retained_public_id(value, RetainedIdentityFamily::Layer))
+            .and_then(|value| declaration_public_id(value, DeclarationIdentityFamily::Layer))
             .map(|id| id.as_str().to_owned()),
         view: None,
         containing_scroll_region: None,
@@ -453,14 +453,14 @@ fn validate_image_fields(fields: &ImageFields<'_>) -> Result<(), ImageCompileErr
         let name = field.name();
         let value = field.value();
         let valid = match name {
-            "asset" => retained_public_id(value, RetainedIdentityFamily::Asset).is_some(),
+            "asset" => declaration_public_id(value, DeclarationIdentityFamily::Asset).is_some(),
             "target" | "proxy.id" => public_id(value).is_some(),
             "layer" | "proxy.layer" => {
-                retained_public_id(value, RetainedIdentityFamily::Layer).is_some()
+                declaration_public_id(value, DeclarationIdentityFamily::Layer).is_some()
             }
-            "action" => retained_public_id(value, RetainedIdentityFamily::Action).is_some(),
+            "action" => declaration_public_id(value, DeclarationIdentityFamily::Action).is_some(),
             "actions" => {
-                matches!(value, Expr::BracketSeq(values) if values.iter().all(|value| retained_public_id(value, RetainedIdentityFamily::Action).is_some()))
+                matches!(value, Expr::BracketSeq(values) if values.iter().all(|value| declaration_public_id(value, DeclarationIdentityFamily::Action).is_some()))
             }
             "x" | "y" | "width" | "height" | "size.width" | "size.height" | "margin.top"
             | "margin.right" | "margin.bottom" | "margin.left" | "transform.tx"
@@ -704,7 +704,7 @@ fn image_actions(fields: &ImageFields<'_>) -> Result<Vec<String>, ImageCompileEr
     let mut actions = Vec::new();
     if let Some(value) = fields.get("action") {
         actions.push(
-            retained_public_id(value, RetainedIdentityFamily::Action)
+            declaration_public_id(value, DeclarationIdentityFamily::Action)
                 .map(|id| id.as_str().to_owned())
                 .ok_or_else(|| fields.invalid("action", "expected an action entity reference"))?,
         );
@@ -715,7 +715,7 @@ fn image_actions(fields: &ImageFields<'_>) -> Result<Vec<String>, ImageCompileEr
         };
         for value in values {
             actions.push(
-                retained_public_id(value, RetainedIdentityFamily::Action)
+                declaration_public_id(value, DeclarationIdentityFamily::Action)
                     .map(|id| id.as_str().to_owned())
                     .ok_or_else(|| {
                         fields.invalid("actions", "expected a bracket sequence of action IDs")
@@ -774,7 +774,7 @@ fn image_proxies(
         role: fields.get("proxy.role").and_then(keyword),
         layer: fields
             .get("proxy.layer")
-            .and_then(|value| retained_public_id(value, RetainedIdentityFamily::Layer))
+            .and_then(|value| declaration_public_id(value, DeclarationIdentityFamily::Layer))
             .map(|id| id.as_str().to_owned()),
         depth_milli: fields
             .get("proxy.depth")
@@ -859,7 +859,7 @@ fn public_id(value: &Expr) -> Option<PublicId> {
     }
 }
 
-fn retained_public_id(value: &Expr, family: RetainedIdentityFamily) -> Option<PublicId> {
+fn declaration_public_id(value: &Expr, family: DeclarationIdentityFamily) -> Option<PublicId> {
     let id = public_id(value)?;
     family.validate_public_id(&id).ok()?;
     Some(id)

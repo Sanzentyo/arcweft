@@ -18,8 +18,8 @@ use crate::grammar::build::GrammarEventPath;
 use crate::grammar::callable_projection::PendingMethodReceiverProjection;
 use crate::grammar::contract_projection::PendingFlowContractClauseProjection;
 use crate::grammar::declaration_projection::{
-    PendingCharacterDeclarationProjection, PendingLayerDeclarationProjection,
-    PendingRetainedHeaderProjection,
+    PendingCharacterDeclarationProjection, PendingDeclarationHeaderProjection,
+    PendingLayerDeclarationProjection,
 };
 use crate::grammar::entry_projection::PendingEntryDeclarationProjection;
 use crate::grammar::event::{PendingPatternProjection, PendingTypeProjection};
@@ -156,7 +156,7 @@ pub(crate) struct AttachedNodeRecord {
     use_projection: Option<PendingUseProjection>,
     visibility_projection: Option<PendingVisibilityKind>,
     attribute_projection: Option<PendingOuterAttributeProjection>,
-    retained_header_projection: Option<PendingRetainedHeaderProjection>,
+    declaration_header_projection: Option<PendingDeclarationHeaderProjection>,
     character_projection: Option<PendingCharacterDeclarationProjection>,
     test_kind_projection: Option<PendingTestKindProjection>,
     layer_projection: Option<PendingLayerDeclarationProjection>,
@@ -188,7 +188,7 @@ pub(super) struct AttachedNodeRecordParts {
     pub(super) use_projection: Option<PendingUseProjection>,
     pub(super) visibility_projection: Option<PendingVisibilityKind>,
     pub(super) attribute_projection: Option<PendingOuterAttributeProjection>,
-    pub(super) retained_header_projection: Option<PendingRetainedHeaderProjection>,
+    pub(super) declaration_header_projection: Option<PendingDeclarationHeaderProjection>,
     pub(super) character_projection: Option<PendingCharacterDeclarationProjection>,
     pub(super) test_kind_projection: Option<PendingTestKindProjection>,
     pub(super) layer_projection: Option<PendingLayerDeclarationProjection>,
@@ -221,7 +221,7 @@ impl AttachedNodeRecord {
             use_projection: parts.use_projection,
             visibility_projection: parts.visibility_projection,
             attribute_projection: parts.attribute_projection,
-            retained_header_projection: parts.retained_header_projection,
+            declaration_header_projection: parts.declaration_header_projection,
             character_projection: parts.character_projection,
             test_kind_projection: parts.test_kind_projection,
             layer_projection: parts.layer_projection,
@@ -531,11 +531,11 @@ impl SyntaxSnapshotData {
         self.record(id).flow_declaration_projection.as_ref()
     }
 
-    pub(crate) fn retained_header_projection(
+    pub(crate) fn declaration_header_projection(
         self: &Arc<Self>,
         id: SyntaxNodeId,
-    ) -> Option<&PendingRetainedHeaderProjection> {
-        self.record(id).retained_header_projection.as_ref()
+    ) -> Option<&PendingDeclarationHeaderProjection> {
+        self.record(id).declaration_header_projection.as_ref()
     }
 
     pub(crate) fn attribute_projection(
@@ -783,8 +783,10 @@ impl SyntaxNodeHandle {
         self.snapshot.flow_declaration_projection(self.id)
     }
 
-    pub(crate) fn retained_header_projection(&self) -> Option<&PendingRetainedHeaderProjection> {
-        self.snapshot.retained_header_projection(self.id)
+    pub(crate) fn declaration_header_projection(
+        &self,
+    ) -> Option<&PendingDeclarationHeaderProjection> {
+        self.snapshot.declaration_header_projection(self.id)
     }
 
     pub(crate) fn attribute_projection(&self) -> Option<&PendingOuterAttributeProjection> {

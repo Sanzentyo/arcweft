@@ -5,6 +5,7 @@ use super::common::TextRange;
 pub struct EntityRef {
     body: String,
     delimited: bool,
+    authored: bool,
     range: TextRange,
     authored_body_range: Option<TextRange>,
 }
@@ -60,6 +61,7 @@ impl EntityRef {
         Self {
             body,
             delimited,
+            authored: false,
             range,
             authored_body_range: None,
         }
@@ -71,8 +73,23 @@ impl EntityRef {
         Self {
             body,
             delimited,
+            authored: true,
             range,
             authored_body_range: Some(authored_body_range),
+        }
+    }
+
+    /// Creates a normalized declaration identity while retaining that its
+    /// source spelling was explicit. Relative declaration IDs cannot expose
+    /// an exact authored body range after family normalization, so this
+    /// provenance is kept separately from `authored_body_range`.
+    pub(crate) fn normalized_authored(body: String, delimited: bool, range: TextRange) -> Self {
+        Self {
+            body,
+            delimited,
+            authored: true,
+            range,
+            authored_body_range: None,
         }
     }
 
@@ -112,6 +129,11 @@ impl EntityRef {
         self.delimited
     }
 
+    /// Whether the declaration identity was present in authored source.
+    pub const fn is_authored(&self) -> bool {
+        self.authored
+    }
+
     pub const fn range(&self) -> &TextRange {
         &self.range
     }
@@ -148,6 +170,14 @@ impl IdRef {
 
     pub const fn is_relative(&self) -> bool {
         matches!(self, Self::Relative(_) | Self::FamilyRelative(_))
+    }
+
+    /// Whether this ID came from an explicit authored identity position.
+    pub const fn is_authored(&self) -> bool {
+        match self {
+            Self::Absolute(entity) => entity.is_authored(),
+            Self::Relative(_) | Self::FamilyRelative(_) => true,
+        }
     }
 
     pub const fn relative_id(&self) -> Option<&RelativeId> {

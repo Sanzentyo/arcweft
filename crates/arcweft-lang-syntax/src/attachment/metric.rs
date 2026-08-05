@@ -792,7 +792,7 @@ mod tests {
         let snapshot = attach(concat!(
             "/// Frame duration\n",
             "#[test.fixture]\n",
-            "pub metric gauge @metric.frame_time frame_time: f32 {\n",
+            "pub metric gauge frame_time: f32 {\n",
             "    unit = \"ms\"\n",
             "    labels {\n",
             "        scene: String\n",

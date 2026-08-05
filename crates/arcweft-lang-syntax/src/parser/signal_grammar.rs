@@ -1,6 +1,6 @@
 //! Private retained Signal declaration grammar.
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -26,7 +26,7 @@ pub(super) fn emit_declaration(
     parser.start(SyntaxKind::SignalDeclarationItem, role);
     emit_retained_declaration_header(
         &mut parser,
-        RetainedIdentityFamily::Signal,
+        DeclarationIdentityFamily::Signal,
         emit_observable_type,
     );
     emit_logical_end_and_recovery(&mut parser);

@@ -45,7 +45,7 @@ fn source_range(source: &str, fragment: &str) -> SourceRange {
 #[test]
 fn canonical_view_owns_fixed_signature_exports_fragment_and_typed_values() {
     let source = concat!(
-        "pub view @view.MainDialogue MainDialogue(model: DialogueView) {\n",
+        "pub view MainDialogue(model: DialogueView) {\n",
         "    export part panel as dialogue_panel\n",
         "    Panel {\n",
         "        Text(model.character.display_name)\n",

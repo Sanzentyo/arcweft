@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -31,7 +31,7 @@ pub(super) fn emit_declaration(
 ) {
     let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::ActivityDeclarationItem, role);
-    emit_retained_declaration_header(&mut parser, RetainedIdentityFamily::Activity, |_| {});
+    emit_retained_declaration_header(&mut parser, DeclarationIdentityFamily::Activity, |_| {});
     parser.bump_trivia();
     let has_unexpected_header = reject_unexpected_header(&mut parser);
     parser.bump_trivia();

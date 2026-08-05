@@ -15,7 +15,7 @@ use crate::source_index::{
 };
 
 const STYLE_FREEZE_SOURCE: &str = concat!(
-    "style @style.freeze {\n",
+    "style freeze {\n",
     "    token primary: Color = white\n",
     "    token secondary: Length = 1\n",
     "    Panel > Button {\n",

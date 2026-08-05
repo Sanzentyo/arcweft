@@ -45,7 +45,7 @@ fn nth_source_range(source: &str, fragment: &str, occurrence: usize) -> SourceRa
 #[test]
 fn canonical_layer_owns_kind_singletons_policies_and_references() {
     let source = concat!(
-        "pub layer @layer.dialogue dialogue_ui: dialogue {\n",
+        "pub layer dialogue_ui: dialogue {\n",
         "    parent = @layer.root\n",
         "    phase = dialogue\n",
         "    z = 10\n",

@@ -1,6 +1,6 @@
 //! Final Activity interface lowering into retained item, member, scope, and local owners.
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedActivityContractBody, AttachedActivityContractClause,
     AttachedActivityContractEntry, AttachedActivityDeclaration, AttachedActivityEntry,
@@ -45,7 +45,8 @@ impl StagedHirModuleTransaction<'_> {
 
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
-        let header = project_retained_header(attached.header(), RetainedIdentityFamily::Activity)?;
+        let header =
+            project_retained_header(attached.header(), DeclarationIdentityFamily::Activity)?;
         let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
         let contract_scopes = self.allocate_item_contract_scopes(
             owner,

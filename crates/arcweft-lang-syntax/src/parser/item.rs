@@ -26,7 +26,7 @@ pub(super) fn classify_top_level_item(source: &str, tokens: &[LexToken]) -> Opti
         {
             return Some(SyntaxKind::ErrorItem);
         }
-        if matches!(kind, SyntaxKind::PredicateItem | SyntaxKind::ProofItem)
+        if kind == SyntaxKind::PredicateItem
             && declaration_name_is_entity_reference(source, &significant)
         {
             return Some(SyntaxKind::ErrorItem);

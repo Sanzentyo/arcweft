@@ -1,5 +1,6 @@
 //! Private Flow body grammar over the shared full-source cursor.
 
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -18,7 +19,7 @@ use crate::grammar::flow_projection::{
     PendingFlowPublicIdForm,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
-use crate::id_ref::{AuthoredIdRoot, SyntaxIdRefIssue};
+use crate::id_ref::SyntaxIdRefIssue;
 use crate::name::SyntaxName;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -171,17 +172,18 @@ fn emit_flow_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<Flow
     let malformed_delimited_absolute = projection.has_unclosed_delimited_absolute();
     let components = projection.components().to_vec().into_boxed_slice();
     let syntax = projection.into_syntax();
+    let flow_family = SyntaxName::try_new(DeclarationIdentityFamily::Flow.prefix())
+        .expect("fixed Flow family is an identifier");
     let canonical_flow_family = !malformed_delimited_absolute
-        && match (&marker_family, syntax.value()) {
-            (Some(family), Err(SyntaxIdRefIssue::MissingSuffix)) => family
-                .as_ref()
-                .is_none_or(|family| family.as_str() == "flow"),
-            (None, Ok(reference)) => match reference.root() {
-                AuthoredIdRoot::Absolute { .. } | AuthoredIdRoot::Relative { .. } => {
-                    matches!(reference.segments(), [family, _, ..] if family.as_str() == "flow")
-                }
-                AuthoredIdRoot::FamilyRelative { family, .. } => family.as_str() == "flow",
-            },
+        && match syntax.value() {
+            Ok(_) => syntax.normalized_for_family(&flow_family).1,
+            Err(SyntaxIdRefIssue::MissingSuffix) if marker_family.is_some() => {
+                marker_family.as_ref().is_none_or(|family| {
+                    family.as_ref().is_none_or(|family| {
+                        family.as_str() == DeclarationIdentityFamily::Flow.prefix()
+                    })
+                })
+            }
             _ => false,
         };
     let problem = if malformed_delimited_absolute {

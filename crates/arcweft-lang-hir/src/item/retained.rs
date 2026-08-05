@@ -1,7 +1,8 @@
 //! Retained-identity declarations and their secondary member arena.
 
 use arcweft_id::{
-    CharacterSurfaceAlias, DeclarationName, PublicId, PublicIdFamilyError, RetainedIdentityFamily,
+    CharacterSurfaceAlias, DeclarationIdentityFamily, DeclarationName, PublicId,
+    PublicIdFamilyError,
 };
 use thiserror::Error;
 
@@ -17,18 +18,18 @@ use super::{
 /// Retained identity and local name shared by the seven authored families.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirRetainedHeader {
-    family: RetainedIdentityFamily,
+    family: DeclarationIdentityFamily,
     public_id: HirRetainedPublicId,
     name: HirRetainedName,
 }
 
 impl HirRetainedHeader {
     pub(crate) fn try_new(
-        family: RetainedIdentityFamily,
+        family: DeclarationIdentityFamily,
         public_id: HirRetainedPublicId,
         name: HirRetainedName,
     ) -> Result<Self, HirRetainedHeaderError> {
-        if family == RetainedIdentityFamily::Asset {
+        if family == DeclarationIdentityFamily::Asset {
             return Err(HirRetainedHeaderError::AssetIsCatalogOwned);
         }
         match &public_id {
@@ -62,7 +63,7 @@ impl HirRetainedHeader {
         })
     }
 
-    pub const fn family(&self) -> RetainedIdentityFamily {
+    pub const fn family(&self) -> DeclarationIdentityFamily {
         self.family
     }
 
@@ -109,7 +110,6 @@ impl HirRetainedPublicId {
 /// Retained identity recovery without a fabricated valid public ID.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum HirRetainedPublicIdIssue {
-    Relative,
     WrongFamily(PublicId),
     Malformed,
     Missing,
@@ -182,7 +182,7 @@ impl HirCharacterDeclaration {
         &self,
         _expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
-        validate_retained_family(&self.header, RetainedIdentityFamily::Character)
+        validate_retained_family(&self.header, DeclarationIdentityFamily::Character)
     }
 }
 
@@ -212,7 +212,7 @@ impl HirViewDeclaration {
         exports: Box<[HirDeclarationMemberId]>,
         values: Box<[ExprId]>,
     ) -> Result<Self, HirItemInvariantError> {
-        validate_retained_family(&header, RetainedIdentityFamily::View)?;
+        validate_retained_family(&header, DeclarationIdentityFamily::View)?;
         let expected = owner.module();
         validate_scope(expected, callable_scope)?;
         validate_parameters(expected, &parameters)?;
@@ -272,7 +272,7 @@ impl HirViewDeclaration {
         &self,
         expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
-        validate_retained_family(&self.header, RetainedIdentityFamily::View)?;
+        validate_retained_family(&self.header, DeclarationIdentityFamily::View)?;
         validate_scope(expected, self.callable_scope)?;
         validate_parameters(expected, &self.parameters)?;
         for member in &self.exports {
@@ -300,7 +300,7 @@ impl HirActionDeclaration {
         callable_scope: ScopeId,
         parameters: Box<[HirParameter]>,
     ) -> Result<Self, HirItemInvariantError> {
-        validate_retained_family(&header, RetainedIdentityFamily::Action)?;
+        validate_retained_family(&header, DeclarationIdentityFamily::Action)?;
         let expected = callable_scope.module();
         validate_parameters(expected, &parameters)?;
         if parameters
@@ -332,7 +332,7 @@ impl HirActionDeclaration {
         &self,
         expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
-        validate_retained_family(&self.header, RetainedIdentityFamily::Action)?;
+        validate_retained_family(&self.header, DeclarationIdentityFamily::Action)?;
         validate_scope(expected, self.callable_scope)?;
         validate_parameters(expected, &self.parameters)?;
         if self
@@ -371,7 +371,7 @@ impl HirActivityDeclaration {
         requires: Box<[ExprId]>,
         ensures: Box<[ExprId]>,
     ) -> Result<Self, HirItemInvariantError> {
-        validate_retained_family(&header, RetainedIdentityFamily::Activity)?;
+        validate_retained_family(&header, DeclarationIdentityFamily::Activity)?;
         scopes.validate_module(owner.module())?;
         for member in inputs.iter().chain(outputs.iter()) {
             if member.item() != owner {
@@ -443,7 +443,7 @@ impl HirActivityDeclaration {
         &self,
         expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
-        validate_retained_family(&self.header, RetainedIdentityFamily::Activity)?;
+        validate_retained_family(&self.header, DeclarationIdentityFamily::Activity)?;
         self.scopes.validate_module(expected)?;
         for member in self.inputs.iter().chain(self.outputs.iter()) {
             if member.module() != expected {
@@ -482,7 +482,7 @@ impl HirSignalDeclaration {
         header: HirRetainedHeader,
         observable_type: TypeId,
     ) -> Result<Self, HirItemInvariantError> {
-        validate_retained_family(&header, RetainedIdentityFamily::Signal)?;
+        validate_retained_family(&header, DeclarationIdentityFamily::Signal)?;
         Ok(Self {
             header,
             observable_type,
@@ -501,7 +501,7 @@ impl HirSignalDeclaration {
         &self,
         expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
-        validate_retained_family(&self.header, RetainedIdentityFamily::Signal)?;
+        validate_retained_family(&self.header, DeclarationIdentityFamily::Signal)?;
         validate_type(expected, self.observable_type)
     }
 }
@@ -526,7 +526,7 @@ impl HirMetricDeclaration {
         labels: Box<[HirDeclarationMemberId]>,
         buckets: Option<HirDeclarationMemberId>,
     ) -> Result<Self, HirItemInvariantError> {
-        validate_retained_family(&header, RetainedIdentityFamily::Metric)?;
+        validate_retained_family(&header, DeclarationIdentityFamily::Metric)?;
         validate_type(owner.module(), value_type)?;
         let references = unit
             .iter()
@@ -583,7 +583,7 @@ impl HirMetricDeclaration {
         &self,
         expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
-        validate_retained_family(&self.header, RetainedIdentityFamily::Metric)?;
+        validate_retained_family(&self.header, DeclarationIdentityFamily::Metric)?;
         validate_type(expected, self.value_type)
     }
 }
@@ -616,7 +616,7 @@ impl HirLayerDeclaration {
         kind: HirLayerKind,
         members: Box<[HirDeclarationMemberId]>,
     ) -> Result<Self, HirItemInvariantError> {
-        validate_retained_family(&header, RetainedIdentityFamily::Layer)?;
+        validate_retained_family(&header, DeclarationIdentityFamily::Layer)?;
         validate_declaration_member_references(owner, &members)?;
         Ok(Self {
             header,
@@ -656,7 +656,7 @@ impl HirLayerDeclaration {
         &self,
         expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
-        validate_retained_family(&self.header, RetainedIdentityFamily::Layer)?;
+        validate_retained_family(&self.header, DeclarationIdentityFamily::Layer)?;
         for member in &self.members {
             if member.module() != expected {
                 return Err(HirItemInvariantError::ForeignChild {

@@ -48,7 +48,7 @@ use arcweft_core::{
     plan::{EntryRuntimeId, FlowOp, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan},
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
-use arcweft_id::{AssetId, AssetVirtualPath, PublicId, RetainedIdentityFamily};
+use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, PublicId};
 use arcweft_launch::LaunchKind;
 use arcweft_project::layout::AuthoredResourceRoots;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -1047,7 +1047,9 @@ fn static_image_asset_ref_runtime_arg(arg: &str) -> Option<String> {
         value.to_owned()
     };
     let id = PublicId::try_new(canonical).ok()?;
-    RetainedIdentityFamily::Asset.validate_public_id(&id).ok()?;
+    DeclarationIdentityFamily::Asset
+        .validate_public_id(&id)
+        .ok()?;
     Some(id.as_str().to_owned())
 }
 

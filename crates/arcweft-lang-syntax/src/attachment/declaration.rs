@@ -16,20 +16,21 @@ use super::node::{
 };
 use super::source_file::AttachedDelimiterState;
 use super::{
-    AstNode, AttachedExpressionNode, AttachedItemPrefix, NameNode, SyntaxAccessError, SyntaxNodeId,
-    TypedItemNode,
+    AstNode, AttachedExpressionNode, AttachedItemPrefix, NameNode, SyntaxAccessError,
+    SyntaxNodeHandle, SyntaxNodeId, TypedItemNode,
 };
 use crate::grammar::declaration_projection::{
     PendingCharacterAssignment, PendingCharacterBodyProjection, PendingCharacterInitializer,
-    PendingCharacterMemberProjection, PendingCharacterSurfaceAlias, PendingRetainedName,
-    PendingRetainedPublicId, PendingRetainedPublicIdIssue,
+    PendingCharacterMemberProjection, PendingCharacterSurfaceAlias,
+    PendingDeclarationHeaderProjection, PendingDeclarationName, PendingDeclarationPublicId,
+    PendingDeclarationPublicIdIssue,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 use crate::name::SyntaxName;
 
-/// Resolved or recovered public-ID state retained by a Character header.
+/// Resolved or recovered public-ID state shared by declaration headers.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AttachedRetainedPublicId {
+pub enum AttachedDeclarationPublicId {
     Derived,
     Explicit {
         syntax: AstNode<DeclarationPublicIdKind>,
@@ -37,17 +38,33 @@ pub enum AttachedRetainedPublicId {
     },
     Recovered {
         syntax: AstNode<DeclarationPublicIdKind>,
-        issue: AttachedRetainedPublicIdIssue,
+        issue: AttachedDeclarationPublicIdIssue,
     },
 }
 
-/// Typed retained-public-ID recovery selected by the parser.
+/// Typed declaration-public-ID recovery selected by the parser.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum AttachedRetainedPublicIdIssue {
-    Relative,
+pub enum AttachedDeclarationPublicIdIssue {
     WrongFamily(PublicId),
     Malformed,
     Missing,
+}
+
+/// Shared declaration identity bound to one exact public-ID child.
+///
+/// Callable declarations do not have the retained declaration-header wrapper,
+/// but their authored identity uses the same parser-selected public-ID state.
+/// Keeping this small identity owner lets proof attachment consume the shared
+/// projection without reconstructing the ID from source text.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedDeclarationIdentity {
+    public_id: AttachedDeclarationPublicId,
+}
+
+impl AttachedDeclarationIdentity {
+    pub const fn public_id(&self) -> &AttachedDeclarationPublicId {
+        &self.public_id
+    }
 }
 
 /// Resolved or recovered declaration name.
@@ -62,7 +79,7 @@ pub enum AttachedRetainedName {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttachedRetainedHeader {
     syntax: AstNode<DeclarationHeaderKind>,
-    public_id: AttachedRetainedPublicId,
+    public_id: AttachedDeclarationPublicId,
     name: AttachedRetainedName,
 }
 
@@ -71,7 +88,7 @@ impl AttachedRetainedHeader {
         &self.syntax
     }
 
-    pub const fn public_id(&self) -> &AttachedRetainedPublicId {
+    pub const fn public_id(&self) -> &AttachedDeclarationPublicId {
         &self.public_id
     }
 
@@ -295,9 +312,9 @@ impl AstNode<DeclarationHeaderKind> {
     pub fn retained_semantics(&self) -> Result<AttachedRetainedHeader, SyntaxAccessError> {
         let pending = self
             .syntax()
-            .retained_header_projection()
+            .declaration_header_projection()
             .cloned()
-            .ok_or(SyntaxAccessError::MissingRetainedHeaderProjection { id: self.id() })?;
+            .ok_or(SyntaxAccessError::MissingDeclarationHeaderProjection { id: self.id() })?;
         let public_id = attach_public_id(
             self.id(),
             self.optional_exact_child::<DeclarationPublicIdKind>(SyntaxRole::PublicId)?,
@@ -305,7 +322,7 @@ impl AstNode<DeclarationHeaderKind> {
         )?;
         let name_node = self
             .optional_family_child::<NameFamily>(SyntaxRole::Name)?
-            .ok_or(SyntaxAccessError::InvalidRetainedHeaderProjection { id: self.id() })?;
+            .ok_or(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: self.id() })?;
         let name = attach_name(self.id(), self, name_node, pending.name())?;
         Ok(AttachedRetainedHeader {
             syntax: self.clone(),
@@ -315,73 +332,80 @@ impl AstNode<DeclarationHeaderKind> {
     }
 }
 
+pub(super) fn attach_declaration_identity(
+    owner: &SyntaxNodeHandle,
+    pending: &PendingDeclarationHeaderProjection,
+) -> Result<AttachedDeclarationIdentity, SyntaxAccessError> {
+    let public_id = attach_public_id(
+        owner.id(),
+        owner
+            .optional_unique_child(SyntaxRole::PublicId)?
+            .map(|syntax| syntax.cast())
+            .transpose()?,
+        pending.public_id(),
+    )?;
+    Ok(AttachedDeclarationIdentity { public_id })
+}
+
 fn attach_public_id(
     owner: SyntaxNodeId,
     syntax: Option<AstNode<DeclarationPublicIdKind>>,
-    pending: &PendingRetainedPublicId,
-) -> Result<AttachedRetainedPublicId, SyntaxAccessError> {
+    pending: &PendingDeclarationPublicId,
+) -> Result<AttachedDeclarationPublicId, SyntaxAccessError> {
     match (pending, syntax) {
-        (PendingRetainedPublicId::Derived, None) => Ok(AttachedRetainedPublicId::Derived),
-        (PendingRetainedPublicId::Explicit { value, source }, Some(syntax)) => {
+        (PendingDeclarationPublicId::Derived, None) => Ok(AttachedDeclarationPublicId::Derived),
+        (PendingDeclarationPublicId::Explicit { value, source }, Some(syntax)) => {
             validate_retained_range(owner, syntax.range(), *source)?;
             if !syntax.syntax().children().is_empty() {
-                return Err(SyntaxAccessError::InvalidRetainedHeaderProjection { id: owner });
+                return Err(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: owner });
             }
-            Ok(AttachedRetainedPublicId::Explicit {
+            Ok(AttachedDeclarationPublicId::Explicit {
                 syntax,
                 value: value.clone(),
             })
         }
-        (PendingRetainedPublicId::Recovered { issue, source }, Some(syntax)) => {
+        (PendingDeclarationPublicId::Recovered { issue, source }, Some(syntax)) => {
             validate_retained_range(owner, syntax.range(), *source)?;
             let issue = match issue {
-                PendingRetainedPublicIdIssue::Relative => {
-                    if !syntax.syntax().children().is_empty() {
-                        return Err(SyntaxAccessError::InvalidRetainedHeaderProjection {
-                            id: owner,
-                        });
-                    }
-                    AttachedRetainedPublicIdIssue::Relative
-                }
-                PendingRetainedPublicIdIssue::WrongFamily(value) => {
+                PendingDeclarationPublicIdIssue::WrongFamily(value) => {
                     let child = syntax.required_exact_child::<WrongFamilyReferenceKind>(
                         SyntaxRole::Reference(0),
                     )?;
                     validate_retained_range(owner, child.range(), *source)?;
                     if syntax.syntax().children().len() != 1 {
-                        return Err(SyntaxAccessError::InvalidRetainedHeaderProjection {
+                        return Err(SyntaxAccessError::InvalidDeclarationHeaderProjection {
                             id: owner,
                         });
                     }
-                    AttachedRetainedPublicIdIssue::WrongFamily(value.clone())
+                    AttachedDeclarationPublicIdIssue::WrongFamily(value.clone())
                 }
-                PendingRetainedPublicIdIssue::Malformed => {
+                PendingDeclarationPublicIdIssue::Malformed => {
                     let child =
                         syntax.required_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?;
                     validate_retained_range(owner, child.range(), *source)?;
                     if syntax.syntax().children().len() != 1 {
-                        return Err(SyntaxAccessError::InvalidRetainedHeaderProjection {
+                        return Err(SyntaxAccessError::InvalidDeclarationHeaderProjection {
                             id: owner,
                         });
                     }
-                    AttachedRetainedPublicIdIssue::Malformed
+                    AttachedDeclarationPublicIdIssue::Malformed
                 }
-                PendingRetainedPublicIdIssue::Missing => {
+                PendingDeclarationPublicIdIssue::Missing => {
                     let child = syntax.required_exact_child::<MissingDeclarationIdKind>(
                         SyntaxRole::Recovery(0),
                     )?;
                     validate_retained_range(owner, child.range(), *source)?;
                     if syntax.syntax().children().len() != 1 {
-                        return Err(SyntaxAccessError::InvalidRetainedHeaderProjection {
+                        return Err(SyntaxAccessError::InvalidDeclarationHeaderProjection {
                             id: owner,
                         });
                     }
-                    AttachedRetainedPublicIdIssue::Missing
+                    AttachedDeclarationPublicIdIssue::Missing
                 }
             };
-            Ok(AttachedRetainedPublicId::Recovered { syntax, issue })
+            Ok(AttachedDeclarationPublicId::Recovered { syntax, issue })
         }
-        _ => Err(SyntaxAccessError::InvalidRetainedHeaderProjection { id: owner }),
+        _ => Err(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: owner }),
     }
 }
 
@@ -402,17 +426,17 @@ fn validate_retained_range(
 ) -> Result<(), SyntaxAccessError> {
     (actual == expected)
         .then_some(())
-        .ok_or(SyntaxAccessError::InvalidRetainedHeaderProjection { id: owner })
+        .ok_or(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: owner })
 }
 
 fn attach_name(
     owner: SyntaxNodeId,
     header: &AstNode<DeclarationHeaderKind>,
     syntax: NameNode,
-    pending: &PendingRetainedName,
+    pending: &PendingDeclarationName,
 ) -> Result<AttachedRetainedName, SyntaxAccessError> {
     match pending {
-        PendingRetainedName::Resolved { value, source }
+        PendingDeclarationName::Resolved { value, source }
             if syntax.kind() == SyntaxKind::NameDefinition =>
         {
             validate_retained_range(owner, syntax.range(), *source)?;
@@ -420,24 +444,26 @@ fn attach_name(
                 .optional_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?
                 .is_some()
             {
-                return Err(SyntaxAccessError::InvalidRetainedHeaderProjection { id: owner });
+                return Err(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: owner });
             }
             Ok(AttachedRetainedName::Resolved {
                 syntax,
                 value: value.clone(),
             })
         }
-        PendingRetainedName::Missing { insertion } if syntax.kind() == SyntaxKind::MissingName => {
+        PendingDeclarationName::Missing { insertion }
+            if syntax.kind() == SyntaxKind::MissingName =>
+        {
             validate_retained_range(owner, syntax.range(), *insertion)?;
             if header
                 .optional_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?
                 .is_some()
             {
-                return Err(SyntaxAccessError::InvalidRetainedHeaderProjection { id: owner });
+                return Err(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: owner });
             }
             Ok(AttachedRetainedName::Missing { syntax })
         }
-        PendingRetainedName::Invalid {
+        PendingDeclarationName::Invalid {
             insertion,
             recovery,
         } if syntax.kind() == SyntaxKind::MissingName => {
@@ -446,7 +472,7 @@ fn attach_name(
             validate_retained_range(owner, error.range(), *recovery)?;
             Ok(AttachedRetainedName::Invalid { syntax })
         }
-        _ => Err(SyntaxAccessError::InvalidRetainedHeaderProjection { id: owner }),
+        _ => Err(SyntaxAccessError::InvalidDeclarationHeaderProjection { id: owner }),
     }
 }
 
@@ -620,8 +646,8 @@ mod tests {
 
     use super::{
         AstNode, AttachedCharacterBody, AttachedCharacterInitializer, AttachedCharacterMember,
-        AttachedCharacterSurfaceAlias, AttachedRetainedName, AttachedRetainedPublicId,
-        AttachedRetainedPublicIdIssue, CharacterDeclarationItemKind,
+        AttachedCharacterSurfaceAlias, AttachedDeclarationPublicId,
+        AttachedDeclarationPublicIdIssue, AttachedRetainedName, CharacterDeclarationItemKind,
     };
     use crate::attachment::{
         GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData,
@@ -710,7 +736,7 @@ mod tests {
             Some(crate::attachment::source_file::AttachedVisibilityKind::Public)
         ));
         match declaration.header().public_id() {
-            AttachedRetainedPublicId::Explicit { syntax, value } => {
+            AttachedDeclarationPublicId::Explicit { syntax, value } => {
                 assert_eq!(value.as_str(), "character.alice");
                 let start = source.find("@character.alice").unwrap();
                 assert_eq!(
@@ -765,29 +791,27 @@ mod tests {
 
         assert!(matches!(
             semantics[0].header().public_id(),
-            AttachedRetainedPublicId::Recovered {
-                issue: AttachedRetainedPublicIdIssue::WrongFamily(value),
+            AttachedDeclarationPublicId::Recovered {
+                issue: AttachedDeclarationPublicIdIssue::WrongFamily(value),
                 ..
             } if value.as_str() == "view.alice"
         ));
         assert!(matches!(
             semantics[1].header().public_id(),
-            AttachedRetainedPublicId::Recovered {
-                issue: AttachedRetainedPublicIdIssue::Relative,
-                ..
-            }
+            AttachedDeclarationPublicId::Explicit { value, .. }
+                if value.as_str() == "character.relative"
         ));
         assert!(matches!(
             semantics[2].header().public_id(),
-            AttachedRetainedPublicId::Recovered {
-                issue: AttachedRetainedPublicIdIssue::Malformed,
+            AttachedDeclarationPublicId::Recovered {
+                issue: AttachedDeclarationPublicIdIssue::Malformed,
                 ..
             }
         ));
         assert!(matches!(
             semantics[3].header().public_id(),
-            AttachedRetainedPublicId::Recovered {
-                issue: AttachedRetainedPublicIdIssue::Missing,
+            AttachedDeclarationPublicId::Recovered {
+                issue: AttachedDeclarationPublicIdIssue::Missing,
                 ..
             }
         ));
@@ -802,6 +826,25 @@ mod tests {
         assert!(matches!(
             semantics[6].surface_alias(),
             AttachedCharacterSurfaceAlias::Missing { .. }
+        ));
+    }
+
+    #[test]
+    fn attached_family_relative_wrong_family_keeps_authored_family_value() {
+        let snapshot = attach("character @view:.alice WrongFamily {}\n");
+        let declarations = characters(&snapshot);
+        let [declaration] = declarations.as_slice() else {
+            panic!("expected one character declaration")
+        };
+        let semantics = declaration
+            .semantics()
+            .expect("attached character semantics");
+        assert!(matches!(
+            semantics.header().public_id(),
+            AttachedDeclarationPublicId::Recovered {
+                issue: AttachedDeclarationPublicIdIssue::WrongFamily(value),
+                ..
+            } if value.as_str() == "view.alice"
         ));
     }
 

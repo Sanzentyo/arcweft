@@ -1059,7 +1059,7 @@ fn predicate_and_proof_blocks_reject_non_contract_statement_families() {
 }
 
 #[test]
-fn entity_style_proof_name_uses_ordinary_error_item_recovery() {
+fn entity_style_proof_name_recovers_as_a_proof_item() {
     let source = "proof @legacy.fact() {}\nproof current() = ()\n";
     let built =
         parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
@@ -1075,8 +1075,44 @@ fn entity_style_proof_name_uses_ordinary_error_item_recovery() {
             .filter(|kind| matches!(kind, SyntaxKind::ProofItem | SyntaxKind::ErrorItem))
             .copied()
             .collect::<Vec<_>>(),
-        [SyntaxKind::ErrorItem, SyntaxKind::ProofItem]
+        [SyntaxKind::ProofItem, SyntaxKind::ProofItem]
     );
+    assert!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .any(|entry| entry.kind() == SyntaxKind::MissingName)
+    );
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
+fn explicit_proof_identity_is_retained_before_the_local_name() {
+    let source = "proof @proof:.hoge hoge() = ()\n";
+    let built =
+        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let entries = built.index().entries();
+
+    assert_eq!(
+        entries
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::ProofItem)
+            .count(),
+        1
+    );
+    assert!(
+        !entries
+            .iter()
+            .any(|entry| entry.kind() == SyntaxKind::ErrorItem)
+    );
+    assert!(entries.iter().any(|entry| {
+        entry.kind() == SyntaxKind::DeclarationPublicId && entry.role() == SyntaxRole::PublicId
+    }));
+    assert!(entries.iter().any(|entry| {
+        entry.kind() == SyntaxKind::NameDefinition && entry.role() == SyntaxRole::Name
+    }));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
 }
 
@@ -1097,7 +1133,7 @@ fn current_header_recovery_retains_missing_nodes_and_order_diagnostics() {
     assert_eq!(missing_name.missing_tokens().len(), 1);
     assert_eq!(
         missing_name.diagnostics()[0].code(),
-        "syntax.proof.missing_name"
+        "syntax.declaration.missing_name"
     );
 
     let missing_parameters = parse_shadow_document(

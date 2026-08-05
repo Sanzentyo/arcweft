@@ -1,10 +1,14 @@
 use super::common::TextRange;
 use super::ids::IdRef;
+use super::items::Attribute;
 
-/// Top-level `proof @proof.id { ... }` item kept for verifier lowering.
+/// Top-level `proof name { ... }` item kept for verifier lowering.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProofItem {
     id: IdRef,
+    name: String,
+    explicit_id: bool,
+    attrs: Vec<Attribute>,
     trust: ProofTrust,
     body: String,
     clauses: Vec<ProofClause>,
@@ -78,6 +82,9 @@ pub struct BenchItem {
 impl ProofItem {
     pub(crate) const fn new(
         id: IdRef,
+        name: String,
+        explicit_id: bool,
+        attrs: Vec<Attribute>,
         trust: ProofTrust,
         body: String,
         clauses: Vec<ProofClause>,
@@ -85,6 +92,9 @@ impl ProofItem {
     ) -> Self {
         Self {
             id,
+            name,
+            explicit_id,
+            attrs,
             trust,
             body,
             clauses,
@@ -94,6 +104,18 @@ impl ProofItem {
 
     pub const fn id(&self) -> &IdRef {
         &self.id
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn has_explicit_id(&self) -> bool {
+        self.explicit_id
+    }
+
+    pub fn attrs(&self) -> &[Attribute] {
+        &self.attrs
     }
 
     pub const fn trust(&self) -> &ProofTrust {

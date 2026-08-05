@@ -1,5 +1,6 @@
 //! Private native Style grammar over the shared lossless document cursor.
 
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -76,9 +77,9 @@ fn emit_style_id(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleId {
     if parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
         let source = parser.current().expect("Style ID token").range();
         let (_, authored) = emit_entity_reference(parser, SyntaxRole::Reference(0));
-        let (value, canonical_style_family) = authored.normalized_for_family(
-            &SyntaxName::try_new("style").expect("fixed Style family is an identifier"),
-        );
+        let style_family = SyntaxName::try_new(DeclarationIdentityFamily::Style.prefix())
+            .expect("fixed Style family is an identifier");
+        let (value, canonical_style_family) = authored.normalized_for_family(&style_family);
         if !canonical_style_family {
             parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
                 "syntax.style.id_family",
@@ -210,7 +211,8 @@ fn recovered_style_id(issue: SyntaxIdRefIssue, segment_count: u32) -> SyntaxIdRe
 
 fn style_family_root(parent_depth: usize) -> AuthoredIdRoot {
     AuthoredIdRoot::FamilyRelative {
-        family: SyntaxName::try_new("style").expect("fixed Style family is an identifier"),
+        family: SyntaxName::try_new(DeclarationIdentityFamily::Style.prefix())
+            .expect("fixed Style family is an identifier"),
         parent_depth,
     }
 }

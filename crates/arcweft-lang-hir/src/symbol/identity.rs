@@ -602,7 +602,7 @@ mod tests {
         let document = SourceDocument::try_new(
             SourceDocumentId::try_new("arcw:/main").unwrap(),
             SourceName::path("main.arcw"),
-            "flow @main main {}",
+            "flow main {}",
         )
         .unwrap();
         let world = ProjectSymbolWorldId::try_new(

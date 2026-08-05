@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::attachment::source_file::SourceFileEntryNode;
 use arcweft_lang_syntax::attachment::{
@@ -103,6 +103,73 @@ fn lower(database: &mut HirDatabase, parsed: &ParsedSource, key: &HirModuleKey) 
 fn resolve_item(module: &HirModule, ordinal: usize) -> &HirItem {
     let id = module.source_ordered_items()[ordinal];
     module.arenas().items().resolve(module.slots(), id).unwrap()
+}
+
+#[test]
+fn retained_identity_acceptance_matrix_keeps_one_typed_public_id() {
+    for (ordinal, (spelling, expected_origin)) in [
+        ("character Alice {}\n", HirPublicIdOrigin::DerivedFromName),
+        (
+            "character @character.Alice Alice {}\n",
+            HirPublicIdOrigin::Explicit,
+        ),
+        (
+            "character @character:.Alice Alice {}\n",
+            HirPublicIdOrigin::Explicit,
+        ),
+        ("character @.Alice Alice {}\n", HirPublicIdOrigin::Explicit),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let parsed = parse(
+            &format!("arcweft-test://retained/identity-matrix-{ordinal}"),
+            spelling,
+        );
+        assert!(parsed.diagnostics().is_empty(), "{spelling:?}");
+        let key = module_key(&parsed);
+        let mut database = HirDatabase::try_new().unwrap();
+        let module = lower(&mut database, &parsed, &key);
+        let HirItemKind::Character(character) = resolve_item(&module, 0).kind() else {
+            panic!("retained identity matrix must lower a Character item")
+        };
+        let public_id = character
+            .header()
+            .public_id()
+            .resolved()
+            .expect("accepted identity must retain a public ID");
+        assert_eq!(public_id.as_str(), "character.Alice");
+        assert_eq!(
+            character.header().public_id().origin(),
+            Some(expected_origin)
+        );
+    }
+
+    for (ordinal, spelling) in [
+        "character @view.Alice Alice {}\n",
+        "character @view:.Alice Alice {}\n",
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let parsed = parse(
+            &format!("arcweft-test://retained/identity-matrix-wrong-family-{ordinal}"),
+            spelling,
+        );
+        assert!(
+            parsed
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.code() == "syntax.declaration.wrong_family_id")
+        );
+        let key = module_key(&parsed);
+        let mut database = HirDatabase::try_new().unwrap();
+        let module = lower(&mut database, &parsed, &key);
+        let HirItemKind::Character(character) = resolve_item(&module, 0).kind() else {
+            panic!("wrong-family identity matrix must retain the Character item")
+        };
+        assert_eq!(character.header().public_id().resolved(), None);
+    }
 }
 
 fn action_callable_scope(module: &HirModule, ordinal: usize) -> ScopeId {
@@ -796,7 +863,7 @@ fn clean_signals_publish_retained_headers_types_and_slot_owned_whole_sources() {
         let HirItemKind::Signal(signal) = item.kind() else {
             panic!("final Signal item")
         };
-        assert_eq!(signal.header().family(), RetainedIdentityFamily::Signal);
+        assert_eq!(signal.header().family(), DeclarationIdentityFamily::Signal);
         assert!(matches!(
             signal.header().name(),
             HirRetainedName::Resolved(name) if name.as_str() == expected_name
@@ -905,7 +972,7 @@ fn clean_actions_publish_one_item_owned_callable_scope_and_ordered_parameters() 
     let parsed = parse(
         "arcweft-test://proof/final-hir-action-clean",
         concat!(
-            "pub action @action.feedback_submit feedback_submit(value: Feedback, count: Count);\n",
+            "pub action feedback_submit(value: Feedback, count: Count);\n",
             "action Continue()\n",
         ),
     );
@@ -939,7 +1006,7 @@ fn clean_actions_publish_one_item_owned_callable_scope_and_ordered_parameters() 
         let HirItemKind::Action(action) = item.kind() else {
             panic!("final Action item")
         };
-        assert_eq!(action.header().family(), RetainedIdentityFamily::Action);
+        assert_eq!(action.header().family(), DeclarationIdentityFamily::Action);
         assert_eq!(action.parameters().len(), expected_parameters);
         let callable_scope = action.callable_scope();
         action_scopes.push(callable_scope);
@@ -1386,7 +1453,7 @@ fn clean_character_publishes_typed_header_member_expression_and_slot_whole() {
     let parsed = parse(
         "arcweft-test://proof/character-final-hir-clean",
         concat!(
-            "character @character.alice Alice as alice {\n",
+            "character alice {\n",
             "    display_name = \"Alice\"\n",
             "}\n",
         ),
@@ -1409,16 +1476,16 @@ fn clean_character_publishes_typed_header_member_expression_and_slot_whole() {
         character.header().public_id(),
         HirRetainedPublicId::Resolved {
             value,
-            origin: HirPublicIdOrigin::Explicit,
+            origin: HirPublicIdOrigin::DerivedFromName,
         } if value.as_str() == "character.alice"
     ));
     assert!(matches!(
         character.header().name(),
-        HirRetainedName::Resolved(name) if name.as_str() == "Alice"
+        HirRetainedName::Resolved(name) if name.as_str() == "alice"
     ));
     assert!(matches!(
         character.surface_alias(),
-        HirCharacterSurfaceAlias::Resolved(alias) if alias.as_str() == "alice"
+        HirCharacterSurfaceAlias::Absent
     ));
 
     let member_id = character

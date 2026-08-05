@@ -289,6 +289,60 @@ fn canonical_proof_freezes_signature_contracts_proof_call_assertion_and_tail() {
 }
 
 #[test]
+fn proof_identity_acceptance_matrix_reaches_final_hir_as_typed_public_id() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-proof-explicit-identity",
+        concat!(
+            "proof bare() = ()\n",
+            "proof @proof.explicit explicit() = ()\n",
+            "proof @proof:.relative relative() = ()\n",
+            "proof @.short short() = ()\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+
+    for (ordinal, expected) in [
+        (0, None),
+        (1, Some("proof.explicit")),
+        (2, Some("proof.relative")),
+        (3, Some("proof.short")),
+    ] {
+        let (_, _, proof) = proof(&module, ordinal);
+        assert_eq!(proof.public_id().map(|id| id.as_str()), expected);
+    }
+}
+
+#[test]
+fn wrong_family_proof_identity_survives_as_recovery_without_a_fabricated_id() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-proof-wrong-family",
+        "proof @flow.foreign foreign() = ()\n",
+    );
+    assert!(
+        parsed
+            .diagnostics()
+            .iter()
+            .any(|diagnostic| diagnostic.code() == "syntax.declaration.wrong_family_id")
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let (_, item, proof) = proof(&module, 0);
+    assert_eq!(proof.public_id(), None);
+    assert_eq!(
+        item.state(),
+        &HirItemPoisonState::Poisoned(HirItemIssue::MalformedHeader)
+    );
+}
+
+#[test]
 fn proof_lowering_allocates_headers_contracts_and_body_in_the_accepted_order() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-proof-allocation-order",

@@ -1,6 +1,6 @@
 //! Private retained Character declaration grammar.
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -32,7 +32,7 @@ pub(super) fn emit_declaration(
     let owner = parser.start_projected_owner(SyntaxKind::CharacterDeclarationItem, role);
     let surface_alias = emit_retained_declaration_header(
         &mut parser,
-        RetainedIdentityFamily::Character,
+        DeclarationIdentityFamily::Character,
         emit_surface_alias,
     );
     parser.bump_trivia();

@@ -32,7 +32,7 @@ fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
 #[test]
 fn canonical_signal_rows_own_closed_typed_observable_shapes() {
     let source = concat!(
-        "pub signal @signal.current current: Watch<Ref<Flow>>\n",
+        "pub signal current: Watch<Ref<Flow>>\n",
         "signal events: Stream<GameEvent, EventError>\n",
         "signal sample: Sample<f32>\n",
     );
@@ -126,7 +126,7 @@ fn signal_defers_observable_shape_validation_but_rejects_source_policy_tails() {
 #[test]
 fn flow_body_signal_statement_never_enters_declaration_grammar() {
     let source = concat!(
-        "flow @flow.main {\n",
+        "flow main {\n",
         "    signal.set(@signal.current, next)\n",
         "    signal changed <- true\n",
         "}\n",
@@ -144,7 +144,7 @@ fn flow_body_signal_statement_never_enters_declaration_grammar() {
 #[test]
 fn signal_statement_and_postfix_expression_heads_use_structured_lookahead() {
     let source = concat!(
-        "flow @flow.main {\n",
+        "flow main {\n",
         "    signal(@signal.current, next)\n",
         "    signal::set(@signal.current, next)\n",
         "    signal[@signal.current]\n",

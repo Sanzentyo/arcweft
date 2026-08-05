@@ -1,6 +1,6 @@
 //! Final View lowering into one retained item, callable scope, and member arena.
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedCallableParameterKind, AttachedViewFragmentEntry, AttachedViewPartPath,
 };
@@ -37,7 +37,7 @@ impl StagedHirModuleTransaction<'_> {
 
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let prefix_issue = prefix.issue;
-        let header = project_retained_header(attached.header(), RetainedIdentityFamily::View)?;
+        let header = project_retained_header(attached.header(), DeclarationIdentityFamily::View)?;
         let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
 
         let mut parameters = Vec::with_capacity(attached.parameter_group().parameters().len());

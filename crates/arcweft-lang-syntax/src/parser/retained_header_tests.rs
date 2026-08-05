@@ -41,7 +41,6 @@ struct FamilyFixture {
     relative_id: &'static str,
     keyword_name: &'static str,
     wrong_id_text: &'static str,
-    relative_id_text: &'static str,
     keyword_text: &'static str,
 }
 
@@ -53,7 +52,6 @@ const FAMILY_FIXTURES: [FamilyFixture; 7] = [
         relative_id: "character @character:.Wrong Wrong {}\n",
         keyword_name: "character view {}\n",
         wrong_id_text: "@view.Wrong",
-        relative_id_text: "@character:.Wrong",
         keyword_text: "view",
     },
     FamilyFixture {
@@ -63,7 +61,6 @@ const FAMILY_FIXTURES: [FamilyFixture; 7] = [
         relative_id: "view @view:.Wrong Wrong() {}\n",
         keyword_name: "view action() {}\n",
         wrong_id_text: "@action.Wrong",
-        relative_id_text: "@view:.Wrong",
         keyword_text: "action",
     },
     FamilyFixture {
@@ -73,7 +70,6 @@ const FAMILY_FIXTURES: [FamilyFixture; 7] = [
         relative_id: "action @action:.Wrong Wrong()\n",
         keyword_name: "action signal()\n",
         wrong_id_text: "@signal.Wrong",
-        relative_id_text: "@action:.Wrong",
         keyword_text: "signal",
     },
     FamilyFixture {
@@ -83,7 +79,6 @@ const FAMILY_FIXTURES: [FamilyFixture; 7] = [
         relative_id: "activity @activity:.Wrong Wrong {}\n",
         keyword_name: "activity layer {}\n",
         wrong_id_text: "@layer.Wrong",
-        relative_id_text: "@activity:.Wrong",
         keyword_text: "layer",
     },
     FamilyFixture {
@@ -93,7 +88,6 @@ const FAMILY_FIXTURES: [FamilyFixture; 7] = [
         relative_id: "signal @signal:.Wrong Wrong: Watch<bool>\n",
         keyword_name: "signal metric: Watch<bool>\n",
         wrong_id_text: "@metric.Wrong",
-        relative_id_text: "@signal:.Wrong",
         keyword_text: "metric",
     },
     FamilyFixture {
@@ -103,7 +97,6 @@ const FAMILY_FIXTURES: [FamilyFixture; 7] = [
         relative_id: "metric gauge @metric:.Wrong Wrong: f32 {}\n",
         keyword_name: "metric gauge character: f32 {}\n",
         wrong_id_text: "@character.Wrong",
-        relative_id_text: "@metric:.Wrong",
         keyword_text: "character",
     },
     FamilyFixture {
@@ -113,7 +106,6 @@ const FAMILY_FIXTURES: [FamilyFixture; 7] = [
         relative_id: "layer @layer:.Wrong Wrong: overlay {}\n",
         keyword_name: "layer activity: overlay {}\n",
         wrong_id_text: "@activity.Wrong",
-        relative_id_text: "@layer:.Wrong",
         keyword_text: "activity",
     },
 ];
@@ -230,21 +222,18 @@ fn every_retained_family_reports_exact_wrong_family_id_and_preserves_a_sibling()
 }
 
 #[test]
-fn every_retained_family_reports_exact_relative_id_and_preserves_a_sibling() {
+fn every_retained_family_normalizes_relative_id_and_preserves_a_sibling() {
     for fixture in FAMILY_FIXTURES {
         let source = format!(
             "{}proof tail() {{ assert.check(true) }}\n",
             fixture.relative_id
         );
         let built = parse(&source);
-        let diagnostic = built
-            .diagnostics()
-            .iter()
-            .find(|diagnostic| diagnostic.code() == "syntax.declaration.relative_id")
-            .unwrap_or_else(|| panic!("missing relative-ID diagnostic for {:?}", fixture.kind));
-        assert_eq!(
-            diagnostic.range(),
-            source_range(&source, fixture.relative_id_text)
+        assert!(
+            built.diagnostics().is_empty(),
+            "relative declaration identity should be accepted for {:?}: {:?}",
+            fixture.kind,
+            built.diagnostics()
         );
         assert_eq!(count_kind(&built, SyntaxKind::DeclarationPublicId), 1);
         assert_eq!(count_kind(&built, fixture.kind), 1);

@@ -10,6 +10,7 @@ use crate::cst::{
     starts_leading_relative_entity_ref, starts_leading_relative_id,
 };
 use crate::types::parse_fn_signature;
+use arcweft_id::{DeclarationIdentityFamily, PublicId};
 
 use super::parse_expr_lossy;
 use super::recovery::{ParseError, RecoverySuggestion};
@@ -145,7 +146,11 @@ pub(super) fn parse_entity_decl_head(
                     return None;
                 };
                 (
-                    EntityRef::module_scoped_declaration(family, name, module_path, marker.range),
+                    EntityRef::normalized_authored(
+                        EntityRef::module_scoped_declaration_body(family, name, module_path),
+                        false,
+                        marker.range,
+                    ),
                     rest.to_owned(),
                 )
             }
@@ -284,7 +289,11 @@ pub(super) fn rebase_relative_declaration_entity(
     let Some(suffix) = entity.body().strip_prefix(&format!("{family}.")) else {
         return entity;
     };
-    EntityRef::module_scoped_declaration(family, suffix, module_path, *entity.range())
+    EntityRef::normalized_authored(
+        EntityRef::module_scoped_declaration_body(family, suffix, module_path),
+        false,
+        *entity.range(),
+    )
 }
 
 fn entity_bare_name_range(head: &str, base: usize, name: &str) -> TextRange {
@@ -330,7 +339,7 @@ pub(super) fn normalize_trailing_colon_id(entity: EntityRef, rest: &str) -> (Ent
     let body = entity.body().trim_end_matches(':').to_owned();
     let range = TextRange::new(entity.range().start(), entity.range().end() - 1);
     (
-        EntityRef::new(body, false, range),
+        EntityRef::normalized_authored(body, false, range),
         format!(": {}", rest.trim_start()),
     )
 }
@@ -477,8 +486,137 @@ pub(super) fn parse_required_decl_entity_ref<'a>(
         let entity = normalize_decl_id_ref(id, family, errors)?;
         Some((entity, rest))
     } else {
-        parse_required_entity_ref(input, base, errors)
+        let (entity, rest) = parse_required_entity_ref(input, base, errors)?;
+        validate_decl_entity_family(&entity, family, errors);
+        Some((entity, rest))
     }
+}
+
+fn validate_decl_entity_family(entity: &EntityRef, family: &str, errors: &mut Vec<ParseError>) {
+    let Some(expected) = DeclarationIdentityFamily::from_prefix(family) else {
+        return;
+    };
+    let Ok(public_id) = PublicId::try_new(entity.body().to_owned()) else {
+        return;
+    };
+    if expected.validate_public_id(&public_id).is_err() {
+        errors.push(simple_error(
+            entity.range().start(),
+            entity.range().end() - entity.range().start(),
+            "declaration id uses the wrong family",
+            &format!("@{family}.name"),
+        ));
+    }
+}
+
+/// Parses a declaration identity and its ordinary local name.
+///
+/// The optional identity is `None` for canonical local-name syntax. Explicit
+/// and family-relative forms are normalized to an [`EntityRef`] so callers can
+/// share one header parser without reconstructing the public ID from source.
+pub(super) fn parse_decl_identity_and_name<'a>(
+    input: &'a str,
+    family: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<(Option<EntityRef>, &'a str, &'a str)> {
+    let (id, name, tail) = parse_decl_identity_with_name_requirement(
+        input,
+        family,
+        base,
+        errors,
+        DeclNameRequirement::Required,
+    )?;
+    Some((id, name?, tail))
+}
+
+/// Parses a declaration identity whose explicit public ID may stand alone.
+///
+/// Source declarations use the following form for an elaborated header:
+/// `source @source.events: Source<T, E>`.  The identity parser remains shared
+/// with proofs and entities; only the source header's name requirement differs.
+pub(super) fn parse_decl_identity_and_optional_name<'a>(
+    input: &'a str,
+    family: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+) -> Option<(Option<EntityRef>, Option<&'a str>, &'a str)> {
+    parse_decl_identity_with_name_requirement(
+        input,
+        family,
+        base,
+        errors,
+        DeclNameRequirement::OptionalForExplicitId,
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum DeclNameRequirement {
+    Required,
+    OptionalForExplicitId,
+}
+
+fn parse_decl_identity_with_name_requirement<'a>(
+    input: &'a str,
+    family: &str,
+    base: usize,
+    errors: &mut Vec<ParseError>,
+    name_requirement: DeclNameRequirement,
+) -> Option<(Option<EntityRef>, Option<&'a str>, &'a str)> {
+    let input = input.trim_start();
+
+    if input.starts_with('@') {
+        let (parsed_id, rest) =
+            parse_required_decl_entity_ref_or_marker(input, family, base, errors)?;
+        match parsed_id {
+            DeclEntityId::Entity(entity) => {
+                let entity = rebase_relative_declaration_entity(entity, input, family, None);
+                let rest = rest.trim_start();
+                let Some((name, tail)) = crate::cst::split_leading_ident(rest) else {
+                    if name_requirement == DeclNameRequirement::OptionalForExplicitId {
+                        return Some((Some(entity), None, rest));
+                    }
+                    errors.push(simple_error(
+                        base,
+                        input.len(),
+                        &format!("{family} declaration requires an ordinary local name"),
+                        &format!("{family} @{family}.id name"),
+                    ));
+                    return None;
+                };
+                return Some((Some(entity), Some(name), tail));
+            }
+            DeclEntityId::NameMarker(marker) => {
+                let rest = rest.trim_start();
+                let Some((name, tail)) = crate::cst::split_leading_ident(rest) else {
+                    errors.push(simple_error(
+                        marker.range.start(),
+                        marker.range.end() - marker.range.start(),
+                        "relative declaration marker needs a following declaration name",
+                        &format!("@{family}:. name"),
+                    ));
+                    return None;
+                };
+                let entity = EntityRef::normalized_authored(
+                    EntityRef::module_scoped_declaration_body(family, name, None),
+                    false,
+                    marker.range,
+                );
+                return Some((Some(entity), Some(name), tail));
+            }
+        }
+    }
+
+    if let Some((name, rest)) = crate::cst::split_leading_ident(input) {
+        return Some((None, Some(name), rest));
+    }
+    errors.push(simple_error(
+        base,
+        input.len(),
+        &format!("{family} declaration requires an ordinary local name"),
+        &format!("{family} name"),
+    ));
+    None
 }
 
 pub(super) fn parse_required_decl_entity_ref_or_marker<'a>(
@@ -537,7 +675,7 @@ pub(super) fn normalize_decl_id_ref(
 ) -> Option<EntityRef> {
     match id {
         IdRef::Absolute(entity) => Some(entity),
-        IdRef::Relative(relative) => Some(EntityRef::new(
+        IdRef::Relative(relative) => Some(EntityRef::normalized_authored(
             format!("{family}.{}", relative.suffix()),
             false,
             *relative.range(),
@@ -552,7 +690,7 @@ pub(super) fn normalize_decl_id_ref(
                 ));
                 return None;
             }
-            Some(EntityRef::new(
+            Some(EntityRef::normalized_authored(
                 format!("{family}.{}", relative.relative().suffix()),
                 false,
                 *relative.range(),
@@ -777,14 +915,12 @@ pub(super) fn parse_required_id_ref<'a>(
         ));
         return None;
     }
-    {
-        errors.push(simple_error(
-            base,
-            input.len(),
-            "expected entity reference or relative id",
-            "@domain.path",
-        ));
-    }
+    errors.push(simple_error(
+        base,
+        input.len(),
+        "expected entity reference or relative id",
+        "@domain.path",
+    ));
     None
 }
 

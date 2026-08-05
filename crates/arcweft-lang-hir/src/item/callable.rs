@@ -1,5 +1,7 @@
 //! Callable, flow, predicate, and proof item payloads.
 
+use arcweft_id::PublicId;
+
 use crate::expr::HirThreadBody;
 use crate::identity::{ExprId, HirModuleId, ItemId, LocalId, PatternId, ScopeId, StmtId, TypeId};
 use crate::leaf::{HirIdRef, HirName};
@@ -630,6 +632,7 @@ impl HirPredicateBody {
 /// Final proof record with its three distinct contract scopes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirProof {
+    public_id: Option<PublicId>,
     name: HirRequiredName,
     generic_parameters: Box<[HirGenericParameter]>,
     parameters: Box<[HirParameter]>,
@@ -646,6 +649,7 @@ pub struct HirProof {
 impl HirProof {
     pub(crate) fn try_new(
         name: HirRequiredName,
+        public_id: Option<PublicId>,
         signature: HirCallableSignature,
         body: HirProofBody,
         scopes: HirContractScopes,
@@ -654,6 +658,7 @@ impl HirProof {
         validate_proof_body(expected, &body)?;
         validate_contract_scopes(expected, scopes.callable, scopes.requires, scopes.ensures)?;
         Ok(Self {
+            public_id,
             name,
             generic_parameters: signature.generic_parameters,
             parameters: signature.parameters,
@@ -670,6 +675,10 @@ impl HirProof {
 
     pub const fn name(&self) -> &HirRequiredName {
         &self.name
+    }
+
+    pub const fn public_id(&self) -> Option<&PublicId> {
+        self.public_id.as_ref()
     }
 
     pub const fn generic_parameters(&self) -> &[HirGenericParameter] {

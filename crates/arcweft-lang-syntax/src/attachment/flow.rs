@@ -3,6 +3,7 @@
 //! This module consumes parser-owned projections and attached child identities.
 //! It never rediscovers contract keywords, modes, or operands from source text.
 
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceSpan;
 
 use super::family::{ExpressionFamily, FamilyNode};
@@ -26,7 +27,7 @@ use crate::grammar::flow_projection::{
     PendingFlowPublicIdForm,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
-use crate::id_ref::{AuthoredIdRoot, SyntaxIdRefIssue, SyntaxIdRefPart, SyntaxIdRefSyntax};
+use crate::id_ref::{SyntaxIdRefIssue, SyntaxIdRefPart, SyntaxIdRefSyntax};
 use crate::name::SyntaxName;
 
 /// One exact entity-reference component bound to the accepted source revision.
@@ -819,8 +820,10 @@ fn attach_flow_public_id(
     }
     let value = match pending.form() {
         PendingFlowPublicIdForm::Authored => {
-            if pending.is_canonical_flow_family() && !authored_id_has_flow_family(pending.syntax())
-            {
+            let flow_family = SyntaxName::try_new(DeclarationIdentityFamily::Flow.prefix())
+                .expect("fixed Flow family is an identifier");
+            let (_, canonical_flow_family) = pending.syntax().normalized_for_family(&flow_family);
+            if pending.is_canonical_flow_family() && !canonical_flow_family {
                 return Err(invalid_flow(owner));
             }
             AttachedFlowIdSyntax::Authored(pending.syntax().clone())
@@ -860,18 +863,6 @@ fn attach_flow_public_id(
         canonical_flow_family: pending.is_canonical_flow_family(),
         components,
     })
-}
-
-fn authored_id_has_flow_family(syntax: &SyntaxIdRefSyntax) -> bool {
-    let Ok(reference) = syntax.value() else {
-        return false;
-    };
-    match reference.root() {
-        AuthoredIdRoot::Absolute { .. } | AuthoredIdRoot::Relative { .. } => {
-            matches!(reference.segments(), [family, _, ..] if family.as_str() == "flow")
-        }
-        AuthoredIdRoot::FamilyRelative { family, .. } => family.as_str() == "flow",
-    }
 }
 
 fn attach_flow_signature(

@@ -6,7 +6,7 @@
 //! a zero-based source ordinal and deliberately does not add a ninth raw HIR
 //! ID kind.
 
-use arcweft_id::RetainedIdentityFamily;
+use arcweft_id::DeclarationIdentityFamily;
 use thiserror::Error;
 
 use crate::expr::HirCallArgument;
@@ -962,7 +962,7 @@ fn validate_member_ids(
 
 fn validate_retained_family(
     header: &HirRetainedHeader,
-    expected: RetainedIdentityFamily,
+    expected: DeclarationIdentityFamily,
 ) -> Result<(), HirItemInvariantError> {
     if header.family() == expected {
         Ok(())

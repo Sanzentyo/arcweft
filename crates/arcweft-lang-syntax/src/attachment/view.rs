@@ -14,8 +14,8 @@ use super::node::{
 };
 use super::source_file::AttachedPath;
 use super::{
-    AttachedCallableParameter, AttachedExpressionNode, AttachedFixedParameterGroup,
-    AttachedItemPrefix, AttachedRetainedHeader, AttachedRetainedName, AttachedRetainedPublicId,
+    AttachedCallableParameter, AttachedDeclarationPublicId, AttachedExpressionNode,
+    AttachedFixedParameterGroup, AttachedItemPrefix, AttachedRetainedHeader, AttachedRetainedName,
     SyntaxAccessError, SyntaxNodeHandle, TypedItemNode,
 };
 
@@ -525,7 +525,7 @@ fn take_export_ordinal(
 fn retained_header_has_recovery(header: &AttachedRetainedHeader) -> bool {
     matches!(
         header.public_id(),
-        AttachedRetainedPublicId::Recovered { .. }
+        AttachedDeclarationPublicId::Recovered { .. }
     ) || !matches!(header.name(), AttachedRetainedName::Resolved { .. })
 }
 

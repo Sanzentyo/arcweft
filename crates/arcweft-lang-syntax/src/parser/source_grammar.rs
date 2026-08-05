@@ -1,5 +1,6 @@
 //! Attached `source` declaration grammar over the shared document cursor.
 
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
@@ -30,7 +31,7 @@ use crate::grammar::source_declaration_projection::{
     PendingSourceTypeState, SourceContractSyntaxKind, SourcePrivacySyntaxKind,
     SourceReplaySyntaxKind,
 };
-use crate::id_ref::{AuthoredIdRoot, SyntaxIdRefIssue};
+use crate::id_ref::SyntaxIdRefIssue;
 use crate::name::SyntaxName;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -144,32 +145,26 @@ fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdE
     } else {
         spelling
     };
-    let typed = typed_entity_reference(
+    let typed_projection = typed_entity_reference(
         LexToken {
             kind: SyntaxKind::EntityReferenceToken,
             range: id_range,
         },
         id_spelling,
-    )
-    .into_syntax();
+    );
+    let marker_family = typed_projection.empty_marker_family().cloned();
+    let typed = typed_projection.into_syntax();
     let malformed_delimited_absolute = id_spelling.starts_with("@<") && !id_spelling.ends_with('>');
-    let marker_family = source_id_marker_family(id_spelling);
+    let source_family = SyntaxName::try_new(DeclarationIdentityFamily::Source.prefix())
+        .expect("fixed Source family is an identifier");
     let canonical_source_family = !malformed_delimited_absolute
         && match typed.value() {
-            Ok(value) => match value.root() {
-                AuthoredIdRoot::Absolute { .. } => {
-                    value
-                        .segments()
-                        .first()
-                        .is_some_and(|segment| segment.as_str() == "source")
-                        && value.segments().len() > 1
-                }
-                AuthoredIdRoot::FamilyRelative { family, .. } => family.as_str() == "source",
-                AuthoredIdRoot::Relative { .. } => true,
-            },
-            Err(SyntaxIdRefIssue::MissingSuffix) => marker_family
-                .as_ref()
-                .is_some_and(|family| family.as_deref().is_none_or(|family| family == "source")),
+            Ok(_) => typed.normalized_for_family(&source_family).1,
+            Err(SyntaxIdRefIssue::MissingSuffix) => marker_family.as_ref().is_some_and(|family| {
+                family.as_ref().is_none_or(|family| {
+                    family.as_str() == DeclarationIdentityFamily::Source.prefix()
+                })
+            }),
             Err(_) => false,
         };
     let problem = if malformed_delimited_absolute {
@@ -184,7 +179,7 @@ fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdE
             Ok(_) => None,
         }
     };
-    let requires_name = source_id_marker_requires_name(id_spelling);
+    let requires_name = marker_family.is_some() || id_spelling == "@super.";
 
     parser.start(SyntaxKind::DeclarationPublicId, SyntaxRole::PublicId);
     if let Some(problem) = problem {
@@ -243,21 +238,6 @@ fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdE
             requires_name,
         },
     })
-}
-
-fn source_id_marker_requires_name(spelling: &str) -> bool {
-    source_id_marker_family(spelling).is_some() || spelling == "@super."
-}
-
-fn source_id_marker_family(spelling: &str) -> Option<Option<&str>> {
-    if spelling == "@." {
-        return Some(None);
-    }
-    spelling
-        .strip_prefix('@')
-        .and_then(|body| body.strip_suffix(":."))
-        .filter(|family| !family.is_empty())
-        .map(Some)
 }
 
 fn emit_optional_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceName {

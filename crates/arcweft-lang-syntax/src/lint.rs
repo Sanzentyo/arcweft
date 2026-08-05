@@ -123,12 +123,12 @@ impl SyntaxLintSeverity {
 pub fn lint_id_policy(tree: &TypedSyntaxTree) -> Vec<SyntaxLint> {
     let mut lints = Vec::new();
     for item in tree.items() {
-        lint_item_ids(item, tree, tree.source(), &mut lints);
+        lint_item_ids(item, tree, &mut lints);
     }
     lints
 }
 
-fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, source: &str, lints: &mut Vec<SyntaxLint>) {
+fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, lints: &mut Vec<SyntaxLint>) {
     let source_attrs = tree.attrs();
     match item {
         Item::Flow(flow) => {
@@ -145,7 +145,7 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, source: &str, lints: &mut 
                     lints,
                 );
             } else if let Some(id) = flow.id()
-                && source_range_starts_with_at(source, *id.range())
+                && id.is_authored()
             {
                 let name = flow
                     .name()
@@ -199,7 +199,7 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, source: &str, lints: &mut 
                     source_attrs,
                     lints,
                 );
-            } else if source_range_starts_with_at(source, *item.id().range())
+            } else if item.id().is_authored()
                 && let Some(name) = item.id().body().rsplit('.').next()
             {
                 lint_explicit_decl_id(
@@ -214,7 +214,35 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, source: &str, lints: &mut 
             }
         }
         Item::Source(source_item) => {
-            lint_source_identity(source_item, source, source_attrs, lints);
+            lint_source_identity(source_item, source_attrs, lints);
+        }
+        Item::Proof(proof) => {
+            if proof.has_explicit_id() {
+                lint_decl_identity(
+                    "proof",
+                    proof.id().body(),
+                    proof.name(),
+                    *proof.id().range(),
+                    proof.attrs(),
+                    source_attrs,
+                    lints,
+                );
+            }
+        }
+        Item::Style(style) => {
+            if style.id().is_authored()
+                && let Some(name) = style.id().body().rsplit('.').next()
+            {
+                lint_explicit_decl_id(
+                    "style",
+                    style.id().body(),
+                    name,
+                    *style.id().range(),
+                    style.attrs(),
+                    source_attrs,
+                    lints,
+                );
+            }
         }
         _ => {}
     }
@@ -222,7 +250,6 @@ fn lint_item_ids(item: &Item, tree: &TypedSyntaxTree, source: &str, lints: &mut 
 
 fn lint_source_identity(
     source: &SourceItem,
-    source_text: &str,
     source_attrs: &[Attribute],
     lints: &mut Vec<SyntaxLint>,
 ) {
@@ -239,7 +266,7 @@ fn lint_source_identity(
             );
         }
         (Some(id), None) => {
-            if source_range_starts_with_at(source_text, *id.range())
+            if id.is_authored()
                 && let Some(name) = id.body().rsplit('.').next()
             {
                 lint_explicit_decl_id(
@@ -255,12 +282,6 @@ fn lint_source_identity(
         }
         (None, _) => {}
     }
-}
-
-fn source_range_starts_with_at(source: &str, range: TextRange) -> bool {
-    source
-        .get(range.start()..range.end())
-        .is_some_and(|spelling| spelling.trim_start().starts_with('@'))
 }
 
 fn lint_decl_identity(
@@ -308,6 +329,10 @@ fn lint_explicit_decl_id(
     source_attrs: &[Attribute],
     lints: &mut Vec<SyntaxLint>,
 ) {
+    if is_generated(attrs, source_attrs) {
+        lint_generated_surface_form(kind, id, name, range, attrs, source_attrs, lints);
+        return;
+    }
     if allows_lint(attrs, source_attrs, SyntaxLintCode::ExplicitDeclId) {
         return;
     }
@@ -720,6 +745,74 @@ source @source.http_requests http_requests: Source<HttpRequest, HttpError> {
     }
 
     #[test]
+    fn lints_relative_entity_decl_identity_without_source_rescanning() {
+        let codes = lint_codes(
+            r"
+image @.pulse pulse {
+}
+",
+        );
+
+        assert!(codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
+        assert!(!codes.contains(&SyntaxLintCode::DeclBindingMismatch));
+    }
+
+    #[test]
+    fn lints_redundant_proof_decl_identity() {
+        let codes = lint_codes(
+            r"
+proof @proof.opening opening {
+}
+
+proof @proof:.relative relative {
+}
+
+proof @.short short {
+}
+",
+        );
+
+        assert_eq!(
+            codes
+                .iter()
+                .filter(|code| **code == SyntaxLintCode::RedundantDeclIdentity)
+                .count(),
+            3
+        );
+        assert!(!codes.contains(&SyntaxLintCode::DeclBindingMismatch));
+
+        let bare_codes = lint_codes(
+            r"
+proof canonical {
+}
+",
+        );
+        assert!(!bare_codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
+    }
+
+    #[test]
+    fn proof_identity_style_lints_respect_allow_and_generated_attributes() {
+        let allowed = lint_codes(
+            r#"
+#[allow(style::redundant_decl_identity)]
+proof @proof.allowed allowed {
+}
+"#,
+        );
+        assert!(!allowed.contains(&SyntaxLintCode::RedundantDeclIdentity));
+
+        let generated = lint_codes(
+            r#"
+#[generated]
+proof @proof.generated generated {
+}
+"#,
+        );
+        assert!(generated.contains(&SyntaxLintCode::GeneratedSurfaceForm));
+        assert!(!generated.contains(&SyntaxLintCode::RedundantDeclIdentity));
+    }
+
+    #[test]
     fn lints_decl_binding_mismatch_as_identity_error() {
         let codes = lint_codes(
             r"
@@ -765,6 +858,20 @@ flow @flow.opening opening {
 
         assert!(codes.contains(&SyntaxLintCode::GeneratedSurfaceForm));
         assert!(!codes.contains(&SyntaxLintCode::RedundantDeclIdentity));
+    }
+
+    #[test]
+    fn generated_marker_surfaces_generated_id_only_form() {
+        let codes = lint_codes(
+            r#"
+#[generated]
+flow @flow.opening {
+}
+"#,
+        );
+
+        assert!(codes.contains(&SyntaxLintCode::GeneratedSurfaceForm));
+        assert!(!codes.contains(&SyntaxLintCode::ExplicitDeclId));
     }
 
     #[test]

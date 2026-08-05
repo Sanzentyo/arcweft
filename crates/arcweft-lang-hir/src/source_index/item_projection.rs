@@ -9,12 +9,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use arcweft_lang_syntax::attachment::{
     AttachedActionDeclaration, AttachedAttributeValue, AttachedCharacterBody,
     AttachedCharacterDeclaration, AttachedCharacterDisplayNameMember, AttachedCharacterInitializer,
-    AttachedCharacterMember, AttachedCharacterSurfaceAlias, AttachedEnumBody,
-    AttachedExpressionNode, AttachedGenericParameter, AttachedItemPrefix,
-    AttachedNominalDeclaration, AttachedOuterAttribute, AttachedRequiredName,
-    AttachedRetainedHeader, AttachedRetainedName, AttachedRetainedPublicId,
-    AttachedRetainedPublicIdIssue, AttachedSignalDeclaration, AttachedStructBody,
-    AttachedTypeAliasDeclaration, AttachedTypeRefNode, AttachedWhereClause, TypedItemNode,
+    AttachedCharacterMember, AttachedCharacterSurfaceAlias, AttachedDeclarationPublicId,
+    AttachedDeclarationPublicIdIssue, AttachedEnumBody, AttachedExpressionNode,
+    AttachedGenericParameter, AttachedItemPrefix, AttachedNominalDeclaration,
+    AttachedOuterAttribute, AttachedRequiredName, AttachedRetainedHeader, AttachedRetainedName,
+    AttachedSignalDeclaration, AttachedStructBody, AttachedTypeAliasDeclaration,
+    AttachedTypeRefNode, AttachedWhereClause, TypedItemNode,
 };
 use arcweft_lang_syntax::expressions::{
     SyntaxCallArgumentListTerminator, SyntaxCallArgumentProjection, SyntaxRequiredTokenState,
@@ -1202,22 +1202,22 @@ fn retained_header_matches(
                     origin: HirPublicIdOrigin::DerivedFromName,
                     ..
                 },
-                AttachedRetainedPublicId::Derived,
+                AttachedDeclarationPublicId::Derived,
             ) if matches!(attached.name(), AttachedRetainedName::Resolved { .. }) => true,
             (
                 HirRetainedPublicId::Recovered(HirRetainedPublicIdIssue::DerivedFromRecoveredName),
-                AttachedRetainedPublicId::Derived,
+                AttachedDeclarationPublicId::Derived,
             ) if !matches!(attached.name(), AttachedRetainedName::Resolved { .. }) => true,
             (
                 HirRetainedPublicId::Resolved {
                     value: retained,
                     origin: HirPublicIdOrigin::Explicit,
                 },
-                AttachedRetainedPublicId::Explicit { value, .. },
+                AttachedDeclarationPublicId::Explicit { value, .. },
             ) => retained == value,
             (
                 HirRetainedPublicId::Recovered(retained),
-                AttachedRetainedPublicId::Recovered { issue, .. },
+                AttachedDeclarationPublicId::Recovered { issue, .. },
             ) => retained_public_id_issue_matches(retained, issue),
             _ => false,
         }
@@ -1225,15 +1225,14 @@ fn retained_header_matches(
 
 fn retained_public_id_issue_matches(
     retained: &HirRetainedPublicIdIssue,
-    attached: &AttachedRetainedPublicIdIssue,
+    attached: &AttachedDeclarationPublicIdIssue,
 ) -> bool {
     match (retained, attached) {
-        (HirRetainedPublicIdIssue::Relative, AttachedRetainedPublicIdIssue::Relative)
-        | (HirRetainedPublicIdIssue::Malformed, AttachedRetainedPublicIdIssue::Malformed)
-        | (HirRetainedPublicIdIssue::Missing, AttachedRetainedPublicIdIssue::Missing) => true,
+        (HirRetainedPublicIdIssue::Malformed, AttachedDeclarationPublicIdIssue::Malformed)
+        | (HirRetainedPublicIdIssue::Missing, AttachedDeclarationPublicIdIssue::Missing) => true,
         (
             HirRetainedPublicIdIssue::WrongFamily(retained),
-            AttachedRetainedPublicIdIssue::WrongFamily(attached),
+            AttachedDeclarationPublicIdIssue::WrongFamily(attached),
         ) => retained == attached,
         _ => false,
     }
@@ -1441,7 +1440,7 @@ fn retained_header_item_issue(attached: &AttachedRetainedHeader) -> Option<HirIt
     .or_else(|| {
         matches!(
             attached.public_id(),
-            AttachedRetainedPublicId::Recovered { .. }
+            AttachedDeclarationPublicId::Recovered { .. }
         )
         .then_some(HirItemIssue::MalformedHeader)
     })

@@ -19,8 +19,8 @@ use crate::grammar::attribute_projection::PendingOuterAttributeProjection;
 use crate::grammar::callable_projection::PendingMethodReceiverProjection;
 use crate::grammar::contract_projection::PendingFlowContractClauseProjection;
 use crate::grammar::declaration_projection::{
-    PendingCharacterDeclarationProjection, PendingLayerDeclarationProjection,
-    PendingRetainedHeaderProjection,
+    PendingCharacterDeclarationProjection, PendingDeclarationHeaderProjection,
+    PendingLayerDeclarationProjection,
 };
 use crate::grammar::entry_projection::PendingEntryDeclarationProjection;
 use crate::grammar::flow_projection::PendingFlowDeclarationProjection;
@@ -271,7 +271,7 @@ pub(crate) enum SyntaxEvent {
         use_projection: Option<PendingUseProjection>,
         visibility_projection: Option<PendingVisibilityKind>,
         attribute_projection: Option<PendingOuterAttributeProjection>,
-        retained_header_projection: Option<PendingRetainedHeaderProjection>,
+        declaration_header_projection: Option<PendingDeclarationHeaderProjection>,
         character_projection: Option<PendingCharacterDeclarationProjection>,
         test_kind_projection: Option<PendingTestKindProjection>,
         layer_projection: Option<PendingLayerDeclarationProjection>,
@@ -310,7 +310,7 @@ impl SyntaxEvent {
             use_projection: None,
             visibility_projection: None,
             attribute_projection: None,
-            retained_header_projection: None,
+            declaration_header_projection: None,
             character_projection: None,
             test_kind_projection: None,
             layer_projection: None,
@@ -340,7 +340,7 @@ impl SyntaxEvent {
             use_projection: None,
             visibility_projection: None,
             attribute_projection: None,
-            retained_header_projection: None,
+            declaration_header_projection: None,
             character_projection: None,
             test_kind_projection: None,
             layer_projection: None,
@@ -372,7 +372,7 @@ impl SyntaxEvent {
             use_projection: None,
             visibility_projection: None,
             attribute_projection: None,
-            retained_header_projection: None,
+            declaration_header_projection: None,
             character_projection: None,
             test_kind_projection: None,
             layer_projection: None,
@@ -404,7 +404,7 @@ impl SyntaxEvent {
             use_projection: None,
             visibility_projection: None,
             attribute_projection: None,
-            retained_header_projection: None,
+            declaration_header_projection: None,
             character_projection: None,
             test_kind_projection: None,
             layer_projection: None,
@@ -435,7 +435,7 @@ impl SyntaxEvent {
             use_projection: None,
             visibility_projection: None,
             attribute_projection: None,
-            retained_header_projection: None,
+            declaration_header_projection: None,
             character_projection: None,
             test_kind_projection: None,
             layer_projection: None,
@@ -467,7 +467,7 @@ impl SyntaxEvent {
             use_projection: None,
             visibility_projection: None,
             attribute_projection: None,
-            retained_header_projection: None,
+            declaration_header_projection: None,
             character_projection: None,
             test_kind_projection: None,
             layer_projection: None,
@@ -512,7 +512,7 @@ impl SyntaxEvent {
                 use_projection,
                 visibility_projection,
                 attribute_projection,
-                retained_header_projection,
+                declaration_header_projection,
                 character_projection,
                 test_kind_projection,
                 layer_projection,
@@ -554,7 +554,7 @@ impl SyntaxEvent {
                     Some(projection) => Some(projection.rebased(offset)?),
                     None => None,
                 },
-                retained_header_projection: match retained_header_projection {
+                declaration_header_projection: match declaration_header_projection {
                     Some(projection) => Some(projection.rebased(offset)?),
                     None => None,
                 },

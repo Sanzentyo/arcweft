@@ -97,7 +97,7 @@ fn assert_activity_freeze_rejects(
 #[test]
 fn canonical_activity_freezes_exact_scopes_members_locals_contracts_and_sites() {
     let source = concat!(
-        "pub activity @activity.truck TruckGame {\n",
+        "pub activity TruckGame {\n",
         "    mode = checkpointed_realtime\n",
         "    lifecycle = snapshot\n",
         "    input {\n",

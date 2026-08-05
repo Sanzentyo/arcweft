@@ -141,7 +141,7 @@ fn canonical_layer_freezes_closed_kind_members_and_exact_expression_owners() {
         "arcweft-test://proof/final-hir-layer-clean",
         concat!(
             "/// Dialogue surface\n",
-            "pub layer @layer.dialogue dialogue_ui: dialogue {\n",
+            "pub layer dialogue_ui: dialogue {\n",
             "    parent = @layer.root\n",
             "    phase = dialogue\n",
             "    z = 100\n",

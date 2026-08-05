@@ -26,7 +26,7 @@ fn trusted_proof_retains_the_exact_nonempty_reason() {
     let parsed = parse_trusted_proof_fixture(
         r#"
 #[verify.trusted(reason = "  signed external review  ")]
-proof @proof.external_review {
+proof external_review {
     check external_review_is_valid()
 }
 "#,
@@ -46,7 +46,7 @@ proof @proof.external_review {
     let escaped = parse_trusted_proof_fixture(
         r#"
 #[verify.trusted(reason = "line\nreview $(literal text)")]
-proof @proof.escaped_review {
+proof escaped_review {
     check external_review_is_valid()
 }
 "#,
@@ -62,12 +62,51 @@ proof @proof.escaped_review {
 }
 
 #[test]
+fn bare_proof_name_normalizes_to_proof_family_with_exact_name_range() {
+    let source = "  proof external_review {\n    check valid()\n}\n";
+    let parsed = parse_trusted_proof_fixture(source);
+
+    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+    let [Item::Proof(proof)] = parsed.typed_tree().items() else {
+        panic!("expected one proof declaration");
+    };
+    assert_eq!(proof.id().body(), "proof.external_review");
+    assert_eq!(&source[proof.id().range().as_range()], "external_review");
+}
+
+#[test]
+fn explicit_proof_identity_is_accepted_with_the_local_name() {
+    for (source, expected_id, expected_id_source) in [
+        (
+            "proof @proof.external_review external_review {\n    check valid()\n}\n",
+            "proof.external_review",
+            "@proof.external_review",
+        ),
+        (
+            "proof @proof:.relative_review relative_review {\n    check valid()\n}\n",
+            "proof.relative_review",
+            "@proof:.relative_review",
+        ),
+    ] {
+        let parsed = parse_trusted_proof_fixture(source);
+
+        assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
+        let [Item::Proof(proof)] = parsed.typed_tree().items() else {
+            panic!("expected one proof declaration");
+        };
+        assert_eq!(proof.id().body(), expected_id);
+        assert_eq!(proof.name(), expected_id.rsplit('.').next().unwrap());
+        assert_eq!(&source[proof.id().range().as_range()], expected_id_source);
+    }
+}
+
+#[test]
 fn malformed_trusted_proof_arguments_have_typed_diagnostics() {
     for (source, expected) in [
         (
             r"
 #[verify.trusted]
-proof @proof.missing_reason {
+proof missing_reason {
     check valid()
 }
 ",
@@ -76,7 +115,7 @@ proof @proof.missing_reason {
         (
             r"
 #[verify.trusted()]
-proof @proof.empty_arguments {
+proof empty_arguments {
     check valid()
 }
 ",
@@ -86,7 +125,7 @@ proof @proof.empty_arguments {
             r#"
 #[verify.trusted(reason = "first")]
 #[verify.trusted(reason = "second")]
-proof @proof.duplicate_attribute {
+proof duplicate_attribute {
     check valid()
 }
 "#,
@@ -95,7 +134,7 @@ proof @proof.duplicate_attribute {
         (
             r#"
 #[verify.trusted(reason = "first", reason = "second")]
-proof @proof.duplicate_reason {
+proof duplicate_reason {
     check valid()
 }
 "#,
@@ -104,7 +143,7 @@ proof @proof.duplicate_reason {
         (
             r"
 #[verify.trusted(reason = true)]
-proof @proof.non_string_reason {
+proof non_string_reason {
     check valid()
 }
 ",
@@ -113,7 +152,7 @@ proof @proof.non_string_reason {
         (
             r"
 #[verify.trusted(reason = build_review_reason())]
-proof @proof.expression_reason {
+proof expression_reason {
     check valid()
 }
 ",
@@ -122,7 +161,7 @@ proof @proof.expression_reason {
         (
             r#"
 #[verify.trusted(reason = "")]
-proof @proof.empty_reason {
+proof empty_reason {
     check valid()
 }
 "#,
@@ -131,7 +170,7 @@ proof @proof.empty_reason {
         (
             "
 #[verify.trusted(reason = \"\u{2003}\u{00a0}\")]
-proof @proof.whitespace_reason {
+proof whitespace_reason {
     check valid()
 }
 ",
@@ -140,7 +179,7 @@ proof @proof.whitespace_reason {
         (
             r#"
 #[verify.trusted(evidence = "external")]
-proof @proof.unknown_argument {
+proof unknown_argument {
     check valid()
 }
 "#,
@@ -149,7 +188,7 @@ proof @proof.unknown_argument {
         (
             r#"
 #[verify.trusted("external")]
-proof @proof.positional_argument {
+proof positional_argument {
     check valid()
 }
 "#,

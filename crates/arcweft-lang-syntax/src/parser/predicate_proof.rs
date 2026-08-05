@@ -4,9 +4,10 @@ use arcweft_source::SourceRange;
 
 use super::cursor::ShadowDocumentParser;
 use super::declaration::{
-    FixedParameterGrammar, emit_callable_contract_clauses, emit_extra_parameter_group_recovery,
-    emit_fixed_parameters, emit_generic_parameters, emit_missing_parameter_group, emit_name,
-    emit_outer_prefixes, emit_return_type, emit_visibility, emit_where_clause,
+    FixedParameterGrammar, emit_callable_contract_clauses, emit_declaration_identity,
+    emit_extra_parameter_group_recovery, emit_fixed_parameters, emit_generic_parameters,
+    emit_missing_parameter_group, emit_outer_prefixes, emit_return_type, emit_visibility,
+    emit_where_clause,
 };
 use super::expression::emit_expression;
 use super::lexer::LexToken;
@@ -29,7 +30,7 @@ pub(super) fn emit_declaration(
         SyntaxKind::PredicateItem | SyntaxKind::ProofItem
     ));
     let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
-    parser.start(kind, role);
+    let owner = parser.start_projected_owner(kind, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
     emit_visibility(&mut parser);
@@ -40,11 +41,25 @@ pub(super) fn emit_declaration(
     } else {
         "proof"
     };
+    let keyword_range = parser.current().map_or_else(
+        || SourceRange::new(parser.current_offset(), parser.current_offset()),
+        |token| token.range(),
+    );
     if parser.at(keyword) {
         parser.bump();
     }
     parser.bump_trivia();
-    emit_name(&mut parser, keyword);
+    if kind == SyntaxKind::ProofItem {
+        let identity = emit_declaration_identity(
+            &mut parser,
+            arcweft_id::DeclarationIdentityFamily::Proof,
+            keyword_range,
+        );
+        parser.set_declaration_header_projection(owner, identity);
+        parser.bump_trivia();
+    } else {
+        super::declaration::emit_name(&mut parser, keyword);
+    }
     parser.bump_trivia();
 
     if parser.at("<") {

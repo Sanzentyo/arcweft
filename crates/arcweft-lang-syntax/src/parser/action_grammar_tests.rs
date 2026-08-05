@@ -35,8 +35,7 @@ fn source_range(source: &str, fragment: &str) -> SourceRange {
 
 #[test]
 fn canonical_action_owns_a_typed_bodyless_channel_signature() {
-    let source =
-        "pub action @action.feedback.submit feedback_submit(value: Feedback, count: Count)\n";
+    let source = "pub action feedback_submit(value: Feedback, count: Count)\n";
     let built = parse(source);
     assert_eq!(count_kind(&built, SyntaxKind::ActionDeclarationItem), 1);
     assert_eq!(count_kind(&built, SyntaxKind::ActionSignature), 1);

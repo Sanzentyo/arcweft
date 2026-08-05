@@ -1,6 +1,5 @@
 use crate::ast::common::TextRange;
 use crate::ast::flow::{AuthoredExpr, SourceLocaleBlock, Stmt};
-use crate::ast::ids::EntityRef;
 use crate::ast::source::{
     SourceBackpressurePolicy, SourceEventPattern, SourceHandler, SourceHeader, SourceItem,
     SourceItemParts, SourceOverflowPolicy, SourcePrivacyPolicy, SourceReplayPolicy,
@@ -14,8 +13,7 @@ use crate::pattern::parse_pattern;
 use crate::types::parse_type_ref;
 
 use super::headers::{
-    DeclEntityId, normalize_trailing_colon_id, parse_name_and_tail,
-    parse_required_decl_entity_ref_or_marker, parse_visibility_prefix, simple_error, slice_offset,
+    parse_decl_identity_and_optional_name, parse_visibility_prefix, slice_offset,
 };
 use super::{
     Parser, collect_logical_block_items_with_base, parse_expr_lossy, parse_stmt_with_base,
@@ -67,45 +65,14 @@ impl Parser<'_> {
             .trim_start()
             .strip_prefix("source")?
             .trim_start();
-        let (id, name, signature_tail) = if after_source.starts_with('@') {
-            let id_base = head_base + slice_offset(head_trimmed, after_source);
-            match parse_required_decl_entity_ref_or_marker(
-                after_source,
-                "source",
-                id_base,
-                &mut self.errors,
-            )? {
-                (DeclEntityId::Entity(id), rest) => {
-                    let (id, tail) = normalize_trailing_colon_id(id, rest);
-                    let (name, tail) = parse_name_and_tail(&tail);
-                    (Some(id), name, tail.trim().to_owned())
-                }
-                (DeclEntityId::NameMarker(marker), rest) => {
-                    let (name, tail) = parse_name_and_tail(rest);
-                    let Some(name_value) = name.as_deref() else {
-                        self.errors.push(simple_error(
-                            marker.range.start(),
-                            marker.range.end() - marker.range.start(),
-                            "source declaration marker needs a following source name",
-                            "@source:. name()",
-                        ));
-                        return None;
-                    };
-                    (
-                        Some(EntityRef::new(
-                            format!("source.{name_value}"),
-                            false,
-                            marker.range,
-                        )),
-                        name,
-                        tail,
-                    )
-                }
-            }
-        } else {
-            let (name, tail) = parse_name_and_tail(after_source);
-            (None, name, tail)
-        };
+        let identity_base = head_base + slice_offset(head_trimmed, after_source);
+        let (id, name, signature_tail) = parse_decl_identity_and_optional_name(
+            after_source,
+            "source",
+            identity_base,
+            &mut self.errors,
+        )
+        .map(|(id, name, tail)| (id, name.map(str::to_owned), tail.trim().to_owned()))?;
 
         let signature_tail_source = signature_tail.trim();
         let signature_tail_base = head_base

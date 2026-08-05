@@ -25,8 +25,8 @@ use crate::grammar::attribute_projection::PendingOuterAttributeProjection;
 use crate::grammar::callable_projection::PendingMethodReceiverProjection;
 use crate::grammar::contract_projection::PendingFlowContractClauseProjection;
 use crate::grammar::declaration_projection::{
-    PendingCharacterDeclarationProjection, PendingLayerDeclarationProjection,
-    PendingRetainedHeaderProjection,
+    PendingCharacterDeclarationProjection, PendingDeclarationHeaderProjection,
+    PendingLayerDeclarationProjection,
 };
 use crate::grammar::entry_projection::PendingEntryDeclarationProjection;
 use crate::grammar::flow_projection::PendingFlowDeclarationProjection;
@@ -66,7 +66,7 @@ pub(crate) struct UnattachedGrammarEntry {
     use_projection: Option<PendingUseProjection>,
     visibility_projection: Option<PendingVisibilityKind>,
     attribute_projection: Option<PendingOuterAttributeProjection>,
-    retained_header_projection: Option<PendingRetainedHeaderProjection>,
+    declaration_header_projection: Option<PendingDeclarationHeaderProjection>,
     character_projection: Option<PendingCharacterDeclarationProjection>,
     test_kind_projection: Option<PendingTestKindProjection>,
     layer_projection: Option<PendingLayerDeclarationProjection>,
@@ -180,10 +180,10 @@ impl UnattachedGrammarEntry {
         self.view_export_projection.as_ref()
     }
 
-    pub(crate) const fn retained_header_projection(
+    pub(crate) const fn declaration_header_projection(
         &self,
-    ) -> Option<&PendingRetainedHeaderProjection> {
-        self.retained_header_projection.as_ref()
+    ) -> Option<&PendingDeclarationHeaderProjection> {
+        self.declaration_header_projection.as_ref()
     }
 }
 
@@ -277,8 +277,8 @@ impl GrammarBuild {
                         .attribute_projection()
                         .is_some_and(PendingOuterAttributeProjection::has_recovery)
                     || entry
-                        .retained_header_projection()
-                        .is_some_and(PendingRetainedHeaderProjection::has_recovery)
+                        .declaration_header_projection()
+                        .is_some_and(PendingDeclarationHeaderProjection::has_recovery)
                     || entry
                         .character_projection()
                         .is_some_and(PendingCharacterDeclarationProjection::has_recovery)
@@ -372,8 +372,8 @@ pub(crate) enum GrammarBuildError {
     MissingAttributeProjection { event: usize },
     #[error("node event {event} with kind {kind:?} carries an outer-attribute projection")]
     InvalidAttributeProjection { event: usize, kind: SyntaxKind },
-    #[error("node event {event} with kind {kind:?} carries a retained-header projection")]
-    InvalidRetainedHeaderProjection { event: usize, kind: SyntaxKind },
+    #[error("node event {event} with kind {kind:?} carries a declaration-header projection")]
+    InvalidDeclarationHeaderProjection { event: usize, kind: SyntaxKind },
     #[error("Character item event {event} has no required semantic projection")]
     MissingCharacterProjection { event: usize },
     #[error("node event {event} with kind {kind:?} carries a Character projection")]
@@ -542,7 +542,7 @@ fn unattached_entry(
         use_projection,
         visibility_projection,
         attribute_projection,
-        retained_header_projection,
+        declaration_header_projection,
         character_projection,
         test_kind_projection,
         layer_projection,
@@ -571,7 +571,7 @@ fn unattached_entry(
         use_projection: use_projection.clone(),
         visibility_projection: *visibility_projection,
         attribute_projection: attribute_projection.clone(),
-        retained_header_projection: retained_header_projection.clone(),
+        declaration_header_projection: declaration_header_projection.clone(),
         character_projection: character_projection.clone(),
         test_kind_projection: test_kind_projection.clone(),
         layer_projection: layer_projection.clone(),
@@ -826,7 +826,7 @@ fn validate_start_projections(
         assertion_projection,
         keyword_statement_projection,
         attribute_projection,
-        retained_header_projection,
+        declaration_header_projection,
         character_projection,
         test_kind_projection,
         layer_projection,
@@ -876,8 +876,10 @@ fn validate_start_projections(
     if kind != SyntaxKind::OuterAttribute && attribute_projection.is_some() {
         return Err(GrammarBuildError::InvalidAttributeProjection { event, kind });
     }
-    if kind != SyntaxKind::DeclarationHeader && retained_header_projection.is_some() {
-        return Err(GrammarBuildError::InvalidRetainedHeaderProjection { event, kind });
+    if !matches!(kind, SyntaxKind::DeclarationHeader | SyntaxKind::ProofItem)
+        && declaration_header_projection.is_some()
+    {
+        return Err(GrammarBuildError::InvalidDeclarationHeaderProjection { event, kind });
     }
     if kind == SyntaxKind::CharacterDeclarationItem && character_projection.is_none() {
         return Err(GrammarBuildError::MissingCharacterProjection { event });
@@ -1225,7 +1227,7 @@ mod tests {
                 use_projection: None,
                 visibility_projection: None,
                 attribute_projection: None,
-                retained_header_projection: None,
+                declaration_header_projection: None,
                 character_projection: None,
                 test_kind_projection: None,
                 layer_projection: None,
@@ -1266,7 +1268,7 @@ mod tests {
                 use_projection: None,
                 visibility_projection: None,
                 attribute_projection: None,
-                retained_header_projection: None,
+                declaration_header_projection: None,
                 character_projection: None,
                 test_kind_projection: None,
                 layer_projection: None,

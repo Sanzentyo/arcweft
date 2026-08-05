@@ -115,7 +115,7 @@ fn member(
 fn canonical_view_freezes_callable_parameters_exports_and_value_owners() {
     let source = concat!(
         "/// Main View\n",
-        "pub view @view.Main Main(count: u32 = 1) {\n",
+        "pub view Main(count: u32 = 1) {\n",
         "    export part panel as public.panel\n",
         "    Panel {}\n",
         "    Text(count)\n",

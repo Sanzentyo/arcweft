@@ -71,7 +71,7 @@ fn layer_attachment_owns_closed_kind_members_references_and_expressions() {
     let snapshot = attach(concat!(
         "/// Dialogue surface\n",
         "#[test.fixture]\n",
-        "pub layer @layer.dialogue dialogue_ui: dialogue {\n",
+        "pub layer dialogue_ui: dialogue {\n",
         "    parent = @layer.root\n",
         "    phase = dialogue\n",
         "    z = 100\n",

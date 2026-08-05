@@ -2790,7 +2790,7 @@ fn fatal_private_attachment_failure_rolls_back_initial_transaction() {
 fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
     let name = SourceName::path("rich-text-attachment-failure.arcw");
     let source = concat!(
-        "flow @flow.opening opening {\n",
+        "flow opening {\n",
         "    let line = alice[本文。[effect .wave amp=2 label=\"強い\"]]\n",
         "}\n",
     );

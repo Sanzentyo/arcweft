@@ -44,7 +44,7 @@ fn canonical_mixed_document_dispatches_all_seven_retained_rows() {
         "res dialogue_resource: DialogueResource {}\n",
         "fn helper() { true }\n",
         "proof invariant() { assert.check(true) }\n",
-        "style @style.native { Button { opacity = 1.0 } }\n",
+        "style native { Button { opacity = 1.0 } }\n",
     );
     let built = parse(source);
     for kind in [
@@ -77,7 +77,7 @@ fn comment_rich_mixed_document_remains_byte_exact() {
         "res dialogue_resource: DialogueResource {} // resource tail\n",
         "fn helper() { true } // function tail\n",
         "proof invariant() { assert.check(true) } // proof tail\n",
-        "style @style.native { Button { opacity = 1.0 } } // style tail\n",
+        "style native { Button { opacity = 1.0 } } // style tail\n",
     );
     let built = parse(source);
     for kind in [

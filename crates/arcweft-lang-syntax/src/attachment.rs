@@ -88,8 +88,8 @@ pub use choice::{
 pub use declaration::{
     AttachedCharacterAssignment, AttachedCharacterBody, AttachedCharacterDeclaration,
     AttachedCharacterDisplayNameMember, AttachedCharacterInitializer, AttachedCharacterMember,
-    AttachedCharacterSurfaceAlias, AttachedRetainedHeader, AttachedRetainedName,
-    AttachedRetainedPublicId, AttachedRetainedPublicIdIssue,
+    AttachedCharacterSurfaceAlias, AttachedDeclarationIdentity, AttachedDeclarationPublicId,
+    AttachedDeclarationPublicIdIssue, AttachedRetainedHeader, AttachedRetainedName,
 };
 pub use entry::{
     AttachedEntryBody, AttachedEntryDeclaration, AttachedEntryHttpMethod, AttachedEntryId,
@@ -416,7 +416,7 @@ impl<'a> AttachmentInventoryBuilder<'a> {
             use_projection: entry.use_projection().cloned(),
             visibility_projection: entry.visibility_projection(),
             attribute_projection: entry.attribute_projection().cloned(),
-            retained_header_projection: entry.retained_header_projection().cloned(),
+            declaration_header_projection: entry.declaration_header_projection().cloned(),
             character_projection: entry.character_projection().cloned(),
             test_kind_projection: entry.test_kind_projection().cloned(),
             layer_projection: entry.layer_projection().cloned(),
@@ -464,7 +464,7 @@ impl<'a> AttachmentInventoryBuilder<'a> {
                     use_projection: node.use_projection,
                     visibility_projection: node.visibility_projection,
                     attribute_projection: node.attribute_projection,
-                    retained_header_projection: node.retained_header_projection,
+                    declaration_header_projection: node.declaration_header_projection,
                     character_projection: node.character_projection,
                     test_kind_projection: node.test_kind_projection,
                     layer_projection: node.layer_projection,
@@ -513,8 +513,8 @@ struct PendingAttachment {
     visibility_projection: Option<crate::grammar::source_projection::PendingVisibilityKind>,
     attribute_projection:
         Option<crate::grammar::attribute_projection::PendingOuterAttributeProjection>,
-    retained_header_projection:
-        Option<crate::grammar::declaration_projection::PendingRetainedHeaderProjection>,
+    declaration_header_projection:
+        Option<crate::grammar::declaration_projection::PendingDeclarationHeaderProjection>,
     character_projection:
         Option<crate::grammar::declaration_projection::PendingCharacterDeclarationProjection>,
     test_kind_projection: Option<crate::grammar::test_projection::PendingTestKindProjection>,
@@ -1372,7 +1372,7 @@ mod tests {
         let source = concat!(
             "/// authored character\n",
             "#[authoring]\n",
-            "pub character @character.alice Alice as alice {\n",
+            "pub character alice {\n",
             "    display_name = \"Alice\"\n",
             "}\n",
         );
@@ -1406,7 +1406,7 @@ mod tests {
                 .rowan()
                 .text()
                 .to_string(),
-            "Alice"
+            "alice"
         );
         assert!(header.visibility().unwrap().is_some());
         assert_eq!(
@@ -1611,7 +1611,7 @@ mod tests {
     #[test]
     fn dialogue_rich_text_owns_ordered_ranged_attached_descendants() {
         let source = concat!(
-            "flow @flow.opening opening {\n",
+            "flow opening {\n",
             "    let line = alice[本文。",
             "[transform .offset x=4px pattern==value label='二 px' missing= bad=\\q]",
             "[fx warning(accent=\"urgent\")]",
@@ -1702,7 +1702,7 @@ mod tests {
     #[test]
     fn dialogue_only_canonical_tag_surfaces_gain_rich_text_identity() {
         let source = concat!(
-            "flow @flow.opening opening {\n",
+            "flow opening {\n",
             "    let line = alice[本文。",
             "\\[effect .wave]",
             "#[score]",
@@ -1873,9 +1873,8 @@ mod tests {
     #[test]
     fn attached_rich_text_ranges_match_the_public_lossless_scan() {
         let tag_source = "[effect .wave\u{3000}amp=2 label=\"游 ゴシック\"]";
-        let source = format!(
-            "flow @flow.opening opening {{\r\n    let line = alice[本文。{tag_source}]\r\n}}\r\n"
-        );
+        let source =
+            format!("flow opening {{\r\n    let line = alice[本文。{tag_source}]\r\n}}\r\n");
         let snapshot = attach(&source);
         assert_eq!(snapshot.root_handle().rowan().text().to_string(), source);
         let dialogue = attached_dialogue_content(&snapshot);
@@ -1962,7 +1961,7 @@ mod tests {
     #[test]
     fn equal_range_rich_text_recovery_nodes_keep_distinct_path_identity() {
         let source = concat!(
-            "flow @flow.opening opening {\n",
+            "flow opening {\n",
             "    let line = alice[本文。[effect \\q]]\n",
             "}\n",
         );

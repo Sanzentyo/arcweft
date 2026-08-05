@@ -11,6 +11,7 @@ use crate::grammar::callable_projection::{
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 use crate::patterns::{PatternComponentRole, PatternSyntaxFamily};
 
+use super::declaration::{AttachedDeclarationIdentity, attach_declaration_identity};
 use super::family::{ExpressionFamily, NameFamily, PatternFamily, TypeFamily};
 use super::node::{
     AssertionStatementKind, AstNode, CloseParenKind, EnsuresClauseKind, EqualsKind, ErrorNodeKind,
@@ -21,9 +22,10 @@ use super::node::{
 };
 use super::nominal::{optional_generics, required_name, where_clauses};
 use super::{
-    AttachedExpressionNode, AttachedGenericParameterGroup, AttachedItemPrefix, AttachedPatternNode,
-    AttachedRequiredName, AttachedRequiredPunctuation, AttachedTypeFamily, AttachedTypeRefNode,
-    AttachedWhereClause, DeclarationBodyNode, NameNode, SyntaxAccessError, TypedItemNode,
+    AttachedDeclarationPublicId, AttachedExpressionNode, AttachedGenericParameterGroup,
+    AttachedItemPrefix, AttachedPatternNode, AttachedRequiredName, AttachedRequiredPunctuation,
+    AttachedTypeFamily, AttachedTypeRefNode, AttachedWhereClause, DeclarationBodyNode, NameNode,
+    SyntaxAccessError, TypedItemNode,
 };
 
 /// One fixed Predicate parameter and its exact pattern/type children.
@@ -751,6 +753,7 @@ impl AttachedProofBody {
 pub struct AttachedProofDeclaration {
     syntax: AstNode<ProofItemKind>,
     prefix: AttachedItemPrefix,
+    identity: AttachedDeclarationIdentity,
     name: AttachedRequiredName,
     generics: Option<AttachedGenericParameterGroup>,
     parameter_group: AttachedFixedParameterGroup,
@@ -768,6 +771,14 @@ impl AttachedProofDeclaration {
 
     pub const fn prefix(&self) -> &AttachedItemPrefix {
         &self.prefix
+    }
+
+    pub const fn identity(&self) -> &AttachedDeclarationIdentity {
+        &self.identity
+    }
+
+    pub const fn public_id(&self) -> &AttachedDeclarationPublicId {
+        self.identity.public_id()
     }
 
     pub const fn name(&self) -> &AttachedRequiredName {
@@ -864,6 +875,12 @@ impl AstNode<ProofItemKind> {
     /// Binds the complete Proof declaration without a detached reader.
     pub fn semantics(&self) -> Result<AttachedProofDeclaration, SyntaxAccessError> {
         let item = TypedItemNode::Proof(self.clone());
+        let pending = self
+            .syntax()
+            .declaration_header_projection()
+            .cloned()
+            .ok_or(SyntaxAccessError::MissingDeclarationHeaderProjection { id: self.id() })?;
+        let identity = attach_declaration_identity(&self.syntax(), &pending)?;
         let mut next_parameter_ordinal = 0;
         let parameter_group = attach_parameter_group(
             self.required_exact_child::<FixedParameterGroupKind>(SyntaxRole::ParameterGroup)?,
@@ -879,6 +896,7 @@ impl AstNode<ProofItemKind> {
         Ok(AttachedProofDeclaration {
             syntax: self.clone(),
             prefix: item.attached_prefix()?,
+            identity,
             name: required_name(&item.syntax(), false)?,
             generics: optional_generics(&item.syntax())?,
             parameter_group,

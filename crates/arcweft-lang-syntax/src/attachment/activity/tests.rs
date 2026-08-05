@@ -69,7 +69,7 @@ fn activities(snapshot: &Arc<SyntaxSnapshotData>) -> Vec<AstNode<ActivityDeclara
 fn activity_attachment_owns_closed_policies_ports_and_contract_order() {
     let source = concat!(
         "/// Abstract game boundary\n",
-        "pub activity @activity.truck TruckGame {\n",
+        "pub activity TruckGame {\n",
         "    mode = checkpointed_realtime\n",
         "    lifecycle = snapshot\n",
         "    input {\n",

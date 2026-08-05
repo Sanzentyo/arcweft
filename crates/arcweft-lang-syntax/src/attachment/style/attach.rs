@@ -1,5 +1,6 @@
 //! Binding of parser-owned Style projections to revision-bound syntax.
 
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
 use crate::grammar::style_projection::{
@@ -91,10 +92,10 @@ fn attach_id(
                 else {
                     return Err(SyntaxAccessError::InvalidStyleProjection { id: owner.id() });
                 };
-                let (normalized, canonical) = projected.normalized_for_family(
-                    &crate::name::SyntaxName::try_new("style")
-                        .expect("fixed Style family is an identifier"),
-                );
+                let style_family =
+                    crate::name::SyntaxName::try_new(DeclarationIdentityFamily::Style.prefix())
+                        .expect("fixed Style family is an identifier");
+                let (normalized, canonical) = projected.normalized_for_family(&style_family);
                 if &normalized != value || canonical != *canonical_style_family {
                     return Err(SyntaxAccessError::InvalidStyleProjection { id: owner.id() });
                 }

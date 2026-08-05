@@ -98,7 +98,7 @@ fn canonical_style_lowers_typed_payloads_and_exact_child_owners() {
         concat!(
             "/// Main native theme.\n",
             "#[preview]\n",
-            "pub style @style.theme {\n",
+            "pub style theme {\n",
             "    token color.text: Color = white\n",
             "    Panel Button.primary:hover > .label:active {\n",
             "        background-color = color.text\n",
@@ -660,7 +660,7 @@ fn mixed_style_aggregate_accepts_the_exact_hir_member_limit() {
     let maximum = HirLimit::DeclarationMembers.maximum();
     let fixed_cost = 12_usize;
     let mut source = String::from(
-        "style @style.exact_budget {\n\
+        "style exact_budget {\n\
              token seed = 0\n\
              Panel:hover > Button:active { opacity = 1 }\n\
              when environment(text-scale >= 1) {\n\
@@ -826,7 +826,7 @@ fn style_name_bytes_accept_exact_and_reject_one_over_atomically() {
     let exact_name = "a".repeat(maximum);
     let exact = parse(
         "arcweft-test://proof/final-hir-style-name-exact",
-        &format!("style @style.name_exact {{\n    {exact_name} {{ opacity = 1 }}\n}}\n"),
+        &format!("style name_exact {{\n    {exact_name} {{ opacity = 1 }}\n}}\n"),
     );
     let exact_key = module_key(&exact);
     let mut exact_database = HirDatabase::try_new().unwrap();
@@ -837,7 +837,7 @@ fn style_name_bytes_accept_exact_and_reject_one_over_atomically() {
     let one_over_name = "a".repeat(maximum + 1);
     let one_over = parse(
         "arcweft-test://proof/final-hir-style-name-one-over",
-        &format!("style @style.name_one_over {{\n    {one_over_name} {{ opacity = 1 }}\n}}\n"),
+        &format!("style name_one_over {{\n    {one_over_name} {{ opacity = 1 }}\n}}\n"),
     );
     let one_over_key = module_key(&one_over);
     let mut one_over_database = HirDatabase::try_new().unwrap();

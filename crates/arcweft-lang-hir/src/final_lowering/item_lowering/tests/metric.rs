@@ -155,7 +155,7 @@ fn revise_type_scope(
 #[test]
 fn canonical_metric_freezes_closed_kinds_typed_members_and_expression_owners() {
     let source = concat!(
-        "pub metric gauge @metric.frame_time frame_time: f32 {\n",
+        "pub metric gauge frame_time: f32 {\n",
         "    unit = \"ms\"\n",
         "    labels {\n",
         "        scene: String\n",
@@ -378,7 +378,7 @@ fn recovered_metric_retains_reachable_values_global_member_order_and_primary_pre
 fn missing_metric_components_remain_typed_without_fabricated_members_or_values() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-metric-missing",
-        "metric @metric.missing missing\n",
+        "metric gauge missing\n",
     );
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
@@ -387,12 +387,9 @@ fn missing_metric_components_remain_typed_without_fabricated_members_or_values()
 
     assert_eq!(
         item.state(),
-        &HirItemPoisonState::Poisoned(HirItemIssue::MalformedHeader)
+        &HirItemPoisonState::Poisoned(HirItemIssue::Recovery)
     );
-    assert_eq!(
-        metric.kind(),
-        HirMetricKind::Recovered(HirMetricKindIssue::Missing)
-    );
+    assert_eq!(metric.kind(), HirMetricKind::Gauge);
     assert!(
         module
             .slots()

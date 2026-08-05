@@ -26,7 +26,7 @@ fn style_shadow_grammar_is_lossless_and_owns_typed_members() {
     let source = concat!(
         "/// Main authored theme.\n",
         "#[preview]\n",
-        "pub style @style.theme {\n",
+        "pub style theme {\n",
         "    token color.text: Color = rgba(255, 255, 255, 255)\n",
         "    Button.primary:hover > .label {\n",
         "        color = color.text\n",

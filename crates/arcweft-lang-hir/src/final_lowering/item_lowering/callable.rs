@@ -796,11 +796,29 @@ impl StagedHirModuleTransaction<'_> {
             return_type,
         )
         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let declaration = HirProof::try_new(name.value, signature, body, contract_scopes)
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let public_id = match attached.public_id() {
+            arcweft_lang_syntax::attachment::AttachedDeclarationPublicId::Explicit {
+                value,
+                ..
+            } => Some(value.clone()),
+            arcweft_lang_syntax::attachment::AttachedDeclarationPublicId::Derived
+            | arcweft_lang_syntax::attachment::AttachedDeclarationPublicId::Recovered { .. } => {
+                None
+            }
+        };
+        let declaration =
+            HirProof::try_new(name.value, public_id, signature, body, contract_scopes)
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let issue = prefix
             .issue
             .or(name.issue)
+            .or_else(|| {
+                matches!(
+                    attached.public_id(),
+                    arcweft_lang_syntax::attachment::AttachedDeclarationPublicId::Recovered { .. }
+                )
+                .then_some(HirItemIssue::MalformedHeader)
+            })
             .or_else(|| generic_recovery.then_some(HirItemIssue::MalformedHeader))
             .or_else(|| parameter_missing_type.then_some(HirItemIssue::MissingType))
             .or_else(|| parameter_recovery.then_some(HirItemIssue::MalformedHeader))

@@ -34,7 +34,7 @@ fn count_kind(built: &GrammarBuild, kind: SyntaxKind) -> usize {
 #[test]
 fn canonical_metric_rows_own_kind_type_members_labels_and_buckets() {
     let source = concat!(
-        "pub metric gauge @metric.frame_time frame_time: f32 {\n",
+        "pub metric gauge frame_time: f32 {\n",
         "    unit = \"ms\"\n",
         "    labels {\n",
         "        scene: String\n",
