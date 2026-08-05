@@ -1012,7 +1012,7 @@ mod tests {
                 SourceDocumentId::try_new("arcweft-test://image").expect("source ID"),
                 SourceName::path("main.arcw"),
                 r"
-pub image @image.glass_bg {
+pub image glass_bg {
     asset = @asset:.glass_bg
     x = 0px
     y = 0px
