@@ -22,11 +22,6 @@ impl TypeChecker<'_> {
     }
 
     fn check_source_generator(&mut self, item: &SourceItem) {
-        if item.name().is_some() {
-            self.errors.push(TypeCheckError::new(
-                "function-like `source name() -> Source<T, E>` is not canonical; use `source @source.id: Source<T, E> { ... }`".to_owned(),
-            ));
-        }
         let resolved_source = item
             .source_ty()
             .map(|ty| self.resolve_active_authored_type(ty));

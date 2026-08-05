@@ -6,7 +6,7 @@ use crate::ast::source::{
 };
 use crate::cst::{
     ArcweftPunctuation, find_top_level_matching_punctuation,
-    split_top_level_arcweft_punctuation_once, strip_prefix_arcweft_punctuation,
+    split_top_level_arcweft_punctuation_once,
 };
 use crate::expr::Expr;
 use crate::pattern::parse_pattern;
@@ -127,9 +127,7 @@ pub(super) fn parse_source_type_from_tail(
     base: usize,
 ) -> Option<crate::types::AuthoredTypeRef> {
     let tail = tail.trim();
-    let type_source = tail.strip_prefix(':').map(str::trim).or_else(|| {
-        strip_prefix_arcweft_punctuation(tail, ArcweftPunctuation::ThinArrow).map(str::trim)
-    })?;
+    let type_source = tail.strip_prefix(':').map(str::trim)?;
     let mut parsed = parse_type_ref(type_source).ok()?;
     parsed.rebase(base + slice_offset(tail, type_source));
     Some(parsed)

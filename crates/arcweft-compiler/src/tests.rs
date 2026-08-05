@@ -815,7 +815,7 @@ fn add(left: i64, right: i64) -> i64 {
     return left + right
 }
 
-flow @flow.main main() -> i64 {
+flow main() -> i64 {
     let named_missing = add(right = 1i64)
     return named_missing(2i64)
 }
@@ -3612,7 +3612,7 @@ flow @flow.main main() -> i64 {
     return warmup
 }
 
-pub source @source.values: Source<i64, String> {
+pub source values: Source<i64, String> {
     from input
     backpressure = latest
     replay = none

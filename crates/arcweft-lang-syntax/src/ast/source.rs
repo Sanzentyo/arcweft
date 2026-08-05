@@ -9,7 +9,7 @@ use thiserror::Error;
 /// Declarative `source` stream declaration.
 ///
 /// Source declarations are syntax-only at this layer. They preserve the source
-/// id or function-like name plus parsed policy/event statements so HIR and
+/// declaration identity plus parsed policy/event statements so HIR and
 /// later semantic passes do not need to reparse the body text.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SourceItem {
