@@ -212,6 +212,53 @@ design decision says otherwise.
   independently throwable contract is
   `docs/reviews/requests/2026-08-05-lang-01.5-typed-public-id-family-authority.md`.
 
+## Isolated completion validation 2026-08-06
+
+The declaration cut was reassembled in the clean
+`codex/proof-public-switch` worktree so that the protected integration WIP did
+not participate in its acceptance result.
+
+### Passed
+
+- `cargo fmt --all -- --check`
+- `CARGO_BUILD_JOBS=1 cargo check --workspace --all-targets --all-features`
+- `CARGO_BUILD_JOBS=1 cargo clippy --workspace --all-targets --all-features`
+  (existing warnings only)
+- `CARGO_BUILD_JOBS=1 cargo test --workspace --lib --tests --exclude arcweft-cli --quiet`
+- `cargo test -p arcweft-cli --lib --bins --quiet`
+- the CLI `runtime_native_options`, `check_core_cli`,
+  `native_style_parity_sample`, `release_trust_json`,
+  `responsive_stage_placement`, and
+  `seq04_8_4_persistent_cache_build_cli_goldens` integration gates
+- runtime-plan integration: 51 passed
+- `cargo +nightly -Zscript tools/structure-audit.rs --root .`: 4,117 files,
+  2,244 Rust files, 1,102,502 Rust physical LOC, 0 errors, 176 warnings
+- `git diff --check`
+
+### Failed with an existing Proof authority gap
+
+`cargo test -p arcweft-cli --test arcw_fixtures_check_run --quiet` reports two
+fixture-loop failures. The first check fixture and first run fixture both
+terminate with `sema.nominal.unknown_type` for capability-owned `FsError`.
+Restoring the redundant explicit Flow identity does not change the result, so
+this is not caused by canonical declaration spelling.
+
+The old compiler still consumes `parsed.typed_tree()` through
+`lower_document_to_hir`. That legacy `ExternCapabilityItem` retains function
+members and a raw body but drops associated-type members, while the final
+attached HIR already owns `HirCapabilityMember::AssociatedType` in the
+capability item scope. This gap was also recorded in the 2026-07-26 and
+2026-07-27 Proof implementation notes. It must close through the deletion-driven
+Proof public authority switch: publish the final capability member arena, move
+compiler and sema consumers to it, and delete the legacy raw-body reader in the
+same compiling cut. This declaration cut deliberately does not add a global
+`FsError`, raw-body reparse, fallback resolver, fixture alias, or compatibility
+projection.
+
+The aggregate `just test-workspace` therefore exits non-zero at that known CLI
+gate. An earlier parallel attempt also hit Windows OS error 1455 (page-file
+exhaustion); all conclusive reruns above used one Cargo build job.
+
 ## Ad hoc audit
 
 - `crates/arcweft-lang-syntax/src/attachment/flow.rs` no longer has a
