@@ -87,11 +87,11 @@ pub style modern_feedback_panel {
   }
 
   Column {
-    gap = 14px
+    row-gap = 14px
   }
 
   Row {
-    gap = 10px
+    column-gap = 10px
   }
 
   TextField {
