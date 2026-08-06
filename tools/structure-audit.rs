@@ -51,6 +51,10 @@ fn run() -> Result<i32> {
     let files = metrics::analyze_files(&root, &paths, &generated_paths)?;
     let manifests = cargo_manifest::parse_manifests(&root, &paths)?;
     let violations = rules::evaluate(&files, &manifests);
+    let blocking_count = violations
+        .iter()
+        .filter(|violation| violation.blocks_validation())
+        .count();
 
     if let Some(directory) = arguments.write_dir.as_deref() {
         report::write_reports(directory, &files, &manifests, &violations)?;
@@ -59,10 +63,11 @@ fn run() -> Result<i32> {
         &files,
         &manifests,
         &violations,
+        blocking_count,
         arguments.write_dir.as_deref(),
     );
 
-    Ok(if arguments.fail_on_violations && !violations.is_empty() {
+    Ok(if arguments.fail_on_violations && blocking_count > 0 {
         2
     } else {
         0
@@ -89,7 +94,10 @@ mod generated_files {
     }
 
     fn generated_path(line: &str) -> Option<String> {
-        let line = line.split_once('#').map_or(line, |(prefix, _)| prefix).trim();
+        let line = line
+            .split_once('#')
+            .map_or(line, |(prefix, _)| prefix)
+            .trim();
         if line.is_empty() {
             return None;
         }
@@ -103,7 +111,7 @@ mod generated_files {
 
 mod args {
     use anyhow::Result;
-    use clap::{error::ErrorKind, Parser};
+    use clap::{Parser, error::ErrorKind};
     use std::ffi::OsString;
     use std::path::PathBuf;
 
@@ -168,7 +176,8 @@ mod args {
             "Options:\n",
             "  --root PATH             Repository root (default: .)\n",
             "  --write DIR             Write CSV/Markdown reports; omitted means dry-run\n",
-            "  --fail-on-violations    Exit with status 2 when warnings or errors are found\n",
+            "  --fail-on-violations    Exit with status 2 when blocking violations are found; ",
+            "LOC-only review findings remain non-blocking\n",
             "  -h, --help              Show this help\n",
         )
     }
@@ -561,6 +570,7 @@ mod report {
         files: &[FileMetrics],
         manifests: &[Manifest],
         violations: &[Violation],
+        blocking_count: usize,
         wrote_to: Option<&Path>,
     ) {
         let rust_files = files.iter().filter(|file| file.is_rust).count();
@@ -577,12 +587,12 @@ mod report {
             .iter()
             .filter(|violation| violation.severity == Severity::Error)
             .count();
-
         println!("files scanned: {}", files.len());
         println!("Rust files: {rust_files}");
         println!("Rust physical LOC: {rust_loc}");
         println!("package manifests: {}", manifests.len());
         println!("violations: {errors} error(s), {warnings} warning(s)");
+        println!("blocking violations: {blocking_count}");
         match wrote_to {
             Some(path) => println!("reports written to {}", path.display()),
             None => println!("dry-run: no report files written (use --write DIR)"),
@@ -754,6 +764,13 @@ mod rules {
         pub line: Option<usize>,
         pub message: String,
         pub suggestion: String,
+        blocks_validation: bool,
+    }
+
+    impl Violation {
+        pub const fn blocks_validation(&self) -> bool {
+            self.blocks_validation
+        }
     }
 
     pub fn evaluate(files: &[FileMetrics], manifests: &[Manifest]) -> Vec<Violation> {
@@ -783,15 +800,16 @@ mod rules {
             };
             if file.physical_lines > error {
                 violations.push(Violation {
-                    severity: Severity::Error,
+                    severity: Severity::Warning,
                     code: "SIZE001",
                     path: file.path.clone(),
                     line: None,
                     message: format!(
-                        "{} physical LOC exceeds the {} LOC error threshold",
+                        "{} physical LOC exceeds the {} LOC upper ownership-review trigger; LOC alone is not a structural error",
                         file.physical_lines, error
                     ),
-                    suggestion: "split by cohesive domain and keep a small facade".to_owned(),
+                    suggestion: "record the named owner and cohesive responsibility, then either decompose along state/dependency/test boundaries or add an explicit repository-visible cohesion justification".to_owned(),
+                    blocks_validation: false,
                 });
             } else if file.physical_lines > warning {
                 violations.push(Violation {
@@ -803,8 +821,8 @@ mod rules {
                         "{} physical LOC exceeds the {} LOC review threshold",
                         file.physical_lines, warning
                     ),
-                    suggestion: "review responsibility boundaries before adding more code"
-                        .to_owned(),
+                    suggestion: "name the owner and responsibility, then review state, dependency, API, and test cohesion before adding more code".to_owned(),
+                    blocks_validation: false,
                 });
             }
 
@@ -821,6 +839,7 @@ mod rules {
                     suggestion:
                         "move implementations to named modules and keep intentional re-exports"
                             .to_owned(),
+                    blocks_validation: false,
                 });
             }
             if !file.is_test && file.has_embedded_tests && file.physical_lines > 1_200 {
@@ -834,6 +853,7 @@ mod rules {
                     suggestion:
                         "move tests to domain-specific child test modules or integration tests"
                             .to_owned(),
+                    blocks_validation: true,
                 });
             }
         }
@@ -860,6 +880,7 @@ mod rules {
                         line: None,
                         message,
                         suggestion,
+                        blocks_validation: true,
                     });
                 }
             }

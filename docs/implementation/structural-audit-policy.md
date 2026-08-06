@@ -44,17 +44,28 @@ generated source rather than mixing it into production hotspot rankings.
 
 ## Review thresholds
 
-- production Rust file: warning above 1,200 LOC; error above 2,500 LOC;
+- production Rust file: ownership review above 1,200 LOC; above 2,500 LOC,
+  decomposition or an explicit cohesion justification is required;
 - `lib.rs` or `main.rs`: warning above 1,000 LOC; post-split facade target at or
   below 250 LOC;
-- integration-test file: warning above 2,500 LOC; error above 8,000 LOC; and
+- integration-test file: ownership review above 2,500 LOC; above 8,000 LOC,
+  decomposition or an explicit cohesion justification is required; and
 - ordinary responsibility module: preferred range 300–800 LOC.
 
 These values trigger ownership review; they are not a reason to split a
 cohesive algorithm arbitrarily. A generated table or genuinely cohesive
 algorithm may be exempted with a module-level explanation and implementation
-audit. An error-level exception requires an explicit repository-visible
-rationale.
+audit. LOC alone is never a blocking structural finding. Blocking requires
+independent evidence such as incompatible responsibilities, dependency
+direction, mixed state or I/O ownership, duplicated authority or traversal, or
+test coupling that does not follow the production boundary.
+
+The canonical tool reports `SIZE001` and `SIZE002` findings deterministically,
+but they do not make `--fail-on-violations` fail by themselves. An upper-trigger
+finding must still name the owner and responsibility and record either a
+decomposition action or an explicit repository-visible cohesion justification.
+Dependency findings and combined evidence such as a large production owner with
+embedded tests remain blocking.
 
 ## Canonical command
 

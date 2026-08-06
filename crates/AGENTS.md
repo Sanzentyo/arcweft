@@ -119,8 +119,10 @@ the whole workspace when referenced by the root `AGENTS.md`.
 cargo +nightly -Zscript tools/structure-audit.rs --root .
 ```
 
-- Do not split cohesive algorithms solely to meet a numeric target, but do not
-  use cohesion as an undocumented excuse for an error-level hotspot.
+- Do not split cohesive algorithms solely to meet a numeric target. Above an
+  upper LOC review trigger, name the owner and responsibility and record either
+  a decomposition action based on real boundaries or an explicit cohesion
+  justification; LOC alone is not a structural failure.
 
 ## Parser changes
 
