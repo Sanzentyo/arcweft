@@ -65,7 +65,7 @@ but they do not make `--fail-on-violations` fail by themselves. An upper-trigger
 finding must still name the owner and responsibility and record either a
 decomposition action or an explicit repository-visible cohesion justification.
 Dependency findings and combined evidence such as a large production owner with
-embedded tests remain blocking.
+embedded tests remain blocking structural errors.
 
 ## Canonical command
 

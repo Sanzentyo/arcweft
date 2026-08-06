@@ -844,7 +844,7 @@ mod rules {
             }
             if !file.is_test && file.has_embedded_tests && file.physical_lines > 1_200 {
                 violations.push(Violation {
-                    severity: Severity::Warning,
+                    severity: Severity::Error,
                     code: "TEST001",
                     path: file.path.clone(),
                     line: None,
@@ -874,7 +874,7 @@ mod rules {
                     forbidden_dependency(manifest.package.as_str(), dependency.name.as_str())
                 {
                     violations.push(Violation {
-                        severity: Severity::Warning,
+                        severity: Severity::Error,
                         code,
                         path: manifest.path.clone(),
                         line: None,
