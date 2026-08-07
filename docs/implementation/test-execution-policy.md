@@ -37,7 +37,8 @@ At a coherent Rust cut, run:
 2. `cargo check --workspace --all-targets --all-features` when the cut crosses
    crates or public contracts;
 3. `cargo clippy --workspace --all-targets --all-features` when feasible;
-4. the structural audit when required by `structural-audit-policy.md`; and
+4. `just structure-audit` when required by `structural-audit-policy.md`, plus
+   `just structure-audit-gate` before accepting a structure-gated cut; and
 5. the matching runtime/render/Agent/MCP/capture tier described below.
 
 Use `cargo fmt` for changed Rust. Use `just verify` when the cut is broad enough

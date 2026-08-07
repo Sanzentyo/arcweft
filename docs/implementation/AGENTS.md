@@ -20,6 +20,10 @@ stable language or runtime design.
 - Use `test-execution-policy.md` to select validation and
   `structural-audit-policy.md` for structure evidence. Planned validation is
   never a substitute for command output.
+- For every touched or newly crossed structural review trigger, record the
+  named owner, cohesive responsibility, reviewed state/dependency/API/test
+  boundaries, and either a decomposition action or cohesion justification.
+  Do not report LOC reduction itself as the completed design result.
 - Keep generated structural reports in a task-named directory under
   `structure-audits/`; mark generated data and do not treat it as production
   source.

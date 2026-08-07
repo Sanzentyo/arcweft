@@ -7,6 +7,12 @@ fmt-check:
 clippy:
     @cargo clippy --workspace --all-targets --all-features
 
+structure-audit:
+    @cargo +nightly -Zscript tools/structure-audit.rs --root .
+
+structure-audit-gate:
+    @cargo +nightly -Zscript tools/structure-audit.rs --root . --fail-on-blocking
+
 test: test-workspace
 
 test-workspace:
