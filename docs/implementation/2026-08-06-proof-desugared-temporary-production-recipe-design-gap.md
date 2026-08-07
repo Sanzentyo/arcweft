@@ -1,11 +1,11 @@
 # Proof DesugaredTemporary production-recipe design gap
 
 - Request date: 2026-08-06
-- Repository evidence rechecked: 2026-08-06
+- Repository evidence rechecked: 2026-08-08
 - Inspected committed revision:
-  `f587e75750d9c5d9b6d8c84e0f098a4cfa80f68b`
-- Inspected worktree: branch `codex/proof-public-switch`, dirty with 1,284
-  changed paths (718 modified, 356 deleted, 210 untracked)
+  `52b8c917632358d2360e0bb2ea5c32ecc7ca562b`
+- Inspected worktree: branch `codex/proof-public-switch`, dirty with 1,391
+  changed paths
 - Status: `DESIGN_BLOCKED_ROLE_SPECIFIC_MATRIX_ONLY`
 
 ## Finding
@@ -50,25 +50,55 @@ producer and matrix rows; it does not reopen accepted substrate.
 This request does not decide Match lexical ownership. A source-backed Match
 `ExprId` or `StmtId` remains the semantic and transaction owner of its
 scrutinee and ordered arms. The Match delimiter creates no common `Block`
-scope: the scrutinee evaluates once in the inherited outer scope, and each arm
-uses its context-specific lexical owner (`MatchArm` for ordinary expression or
-statement arms, or the single nested `Block` owner for a braced Thread arm).
+scope: scrutinee name lookup uses the inherited outer lexical scope, while the
+Match ID owns its once-evaluation extent through arm selection until that Match
+evaluation exits. Each arm uses its context-specific lexical owner (`MatchArm`
+for ordinary expression or statement arms, or the single nested `Block` owner
+for a braced Thread arm).
 
 An implementation-local retained scrutinee value is not, by itself, a HIR
-synthetic temporary. If a later lowering actually materializes such a HIR node,
-the dedicated `MatchScrutinee` role—not the general `DesugaredTemporary`
-role—must own the exact-zero reservation. Therefore neither retaining nor
-deleting `DesugaredTemporary` may add a Match-level `Block`, merge sibling arm
-scopes, or change the once-evaluation and binding-cleanup rules.
+synthetic temporary. Current AWBC lowering nevertheless does materialize a
+codegen-local register. Flow `awbc_lower/flow.rs::lower_match` lowers the
+scrutinee once into a `FrameBuilder::temp` at the containing frame depth and
+does not emit `AwbcInstruction::Drop` or `Clear` for that register at the Flow
+Match join. Structured Flow selection instead keeps the evaluated value local
+to its selection helper, so it is released when that helper returns. Existing
+Flow parity evidence proves once-evaluation and arm-binding isolation, but does
+not prove equal join-time release.
+
+Expression `awbc_lower/expr.rs::lower_match_value_expr` also uses a temporary,
+but inside a synthetic control function whose selected paths `Return` and whose
+exhaustion path `Trap`s. It therefore has no equivalent enclosing-frame Match
+join. Its missing evidence is instead that return/trap frame exit releases the
+temporary and matches structured expression evaluation on every exit.
+
+This is a runtime-lifetime gap, not evidence for a lexical Match Block. If the
+final HIR materializes a synthetic child, the dedicated `MatchScrutinee`
+role—not the general `DesugaredTemporary` role—must own the exact-zero
+reservation. If the final HIR remains source-only, runtime/AWBC must still
+define and test a Match-owned codegen-local extent. Pattern rejection and a
+guard-false transition to the next arm retain that extent while discarding only
+the rejected arm's bindings. Flow releases the scrutinee exactly once when the
+Match evaluation exits through the selected arm's successful join, final
+no-match/mismatch, error, or terminating/frame-exit edge; expression Match must
+prove release at every control-function return/trap. Therefore neither
+retaining nor deleting `DesugaredTemporary` may add a Match-level `Block`,
+merge sibling arm scopes, assign the retained scrutinee lifetime to the
+inherited outer lexical scope, or weaken the once-evaluation and
+binding-cleanup rules.
 
 At this audit boundary, non-test final lowering has zero
 `SyntheticRole::MatchScrutinee` producers. Role-table presence is not production
 evidence. The returned producer inventory must therefore either provide a
 complete materialized MatchScrutinee producer/payload/reference/consumer recipe
-or classify Match as a no-producer construct and select direct deletion of the
-unreachable role claim. Until that decision is accepted, lowering retains the
-source-backed scrutinee expression, evaluates it once, and allocates no
-synthetic Match scrutinee child.
+including its Flow join/drop and expression frame-exit extents, or classify
+Match as a no-final-HIR-producer construct and specify the runtime/codegen-local
+register release that closes the currently observed structured-runtime/AWBC
+difference before
+selecting direct deletion of the unreachable role claim. Until that decision is
+accepted, lowering retains the source-backed scrutinee expression, evaluates it
+once, and allocates no synthetic Match scrutinee child; the current AWBC
+register lifetime is explicitly not accepted as exact join/drop evidence.
 
 ## Evidence and validation
 
