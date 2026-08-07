@@ -159,8 +159,10 @@ Phase 2.0 の `Engine` は headless structured-control-flow runtime slice であ
 pattern に束縛し、`let name = loop { break expr }` は `break expr` の値を
 loop result pattern に束縛する。
 `RuntimeStepInput::bindings` は ambient input として root runtime scope に束縛される。
-branch / match / while-let pattern binding は選択された block scope にだけ束縛され、
-guard 評価後や block 終了後には外側へ漏れない。
+branch / match / while-let pattern binding は選択された lexical scope にだけ束縛される。
+Match はコンテナ全体を覆う共通 Block を作らず、通常の arm はそれぞれ独立した
+`MatchArm` scope を所有し、Thread の braced arm だけが単一の `Block` scope を所有する。
+binding は guard 評価後や arm 終了後には外側や sibling arm へ漏れない。
 `Goto` / `GotoExpr` / `Return` / `ReturnExpr` は `FlowFiber` の cursor/status を更新する。
 `RuntimeStepInput.source_events` は replay-stable order に正規化され、`SourcePlan` handler と
 `StreamPlan` によって queue state と `RuntimeStreamEvent` に反映される。source / stream
