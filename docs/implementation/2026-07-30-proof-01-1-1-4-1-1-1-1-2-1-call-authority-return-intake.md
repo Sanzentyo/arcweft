@@ -13,10 +13,10 @@ Repository inputs:
 
 ## Archive identity and mechanical validation
 
-The externally returned archive was inspected at:
+The inspected archive is now retained as repository evidence at:
 
 ```text
-D:/sanze/Downloads/arcweft-proof-concurrency-v6.1.1.4.1.1.1.1.2.1-call-source-resolver-authority-correction-final-contract.zip
+docs/reviews/packages/arcweft-proof-concurrency-v6.1.1.4.1.1.1.1.2.1-call-source-resolver-authority-correction-final-contract.zip
 ```
 
 - byte length: `38,626`;
@@ -41,8 +41,9 @@ their internal manifests were recomputed. Their retained identities are:
 | AW-AH-009.3.3.3.1 accounting | 30,748 | `060332BC62273C34F267F0F15767FE6BBD328BE177CB8035E83F210267AB0D41` | 9/9 exact |
 | AW-AH-009.3.3.4 associated Capacity | 35,758 | `DD8096DEDEF9FE2446291B3849DCEABD8BB5192B88533AA12FEE2DFC3CCEC484` | 9/9 exact |
 
-The archive is not copied into Git. This path and digest are its retained
-identity.
+The repository path above and digest are its retained evidence identity; every
+sidecar remains inside the ZIP. The repository adjudication below, rather than
+the rejected package status alone, remains the implementation authority.
 
 ## Packaging and evidence defects
 

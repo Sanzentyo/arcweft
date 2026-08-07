@@ -6,10 +6,10 @@ Status: `RETURNED_ACCEPTED_READY_FOR_IMPLEMENTATION_WITH_EVIDENCE_NORMALIZATION`
 
 ## Archive identity and mechanical validation
 
-The externally returned archive was inspected at:
+The inspected archive is now retained in the repository at:
 
 ```text
-D:/sanze/Downloads/arcweft-proof-concurrency-v6.1.1.4.1.1.1.1.1.1.1-select-central-projection-and-accounting-correction-final-contract.zip
+docs/reviews/designs/proof-concurrency-v6.1.1.4.1.1.1.1.1.1.1/arcweft-proof-concurrency-v6.1.1.4.1.1.1.1.1.1.1-select-central-projection-and-accounting-correction-final-contract.zip
 ```
 
 - byte length: `61,791`;
@@ -29,8 +29,8 @@ D:/sanze/Downloads/arcweft-proof-concurrency-v6.1.1.4.1.1.1.1.1.1.1-select-centr
   against the four predecessor archives, with zero missing or mismatched
   members.
 
-The archive is mechanically valid. It is not copied into Git. This external
-path and digest are the retained archive identity.
+The archive is mechanically valid. The repository path above and digest are
+the retained archive identity; every sidecar remains inside the ZIP.
 
 ## Accepted final E13 contract
 
