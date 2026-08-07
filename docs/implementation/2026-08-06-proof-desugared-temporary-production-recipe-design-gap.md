@@ -61,6 +61,15 @@ role—must own the exact-zero reservation. Therefore neither retaining nor
 deleting `DesugaredTemporary` may add a Match-level `Block`, merge sibling arm
 scopes, or change the once-evaluation and binding-cleanup rules.
 
+At this audit boundary, non-test final lowering has zero
+`SyntheticRole::MatchScrutinee` producers. Role-table presence is not production
+evidence. The returned producer inventory must therefore either provide a
+complete materialized MatchScrutinee producer/payload/reference/consumer recipe
+or classify Match as a no-producer construct and select direct deletion of the
+unreachable role claim. Until that decision is accepted, lowering retains the
+source-backed scrutinee expression, evaluates it once, and allocates no
+synthetic Match scrutinee child.
+
 ## Evidence and validation
 
 Performed:

@@ -83,6 +83,26 @@ admitted. The exact mapping is:
 - `HirScopeKind::Flow` for the top-level Flow body; and
 - `HirScopeKind::Block` for Thread-expression and nested statement bodies.
 
+### Match scope normalization for F06
+
+`FLOW_THREAD_ITEM_MATRIX.tsv` row `F06` says that each arm is a “scope child of
+match statement scope.” The Match statement has no such container ScopeId, so
+that phrase is superseded rather than implemented literally.
+
+The source-backed Match `ExprId` or `StmtId` is the semantic and transaction
+owner of the scrutinee and ordered arms. The scrutinee is evaluated once in the
+inherited outer scope. For an ordinary expression or statement Match, every arm
+has one distinct `HirScopeKind::MatchArm` whose lexical parent is that same
+outer scope and whose typed owner is the Match ID. Pattern bindings, guard, and
+value or body share only that arm scope. An authored `BlockExpr` used as an
+expression-arm value creates one nested Block below its MatchArm scope.
+
+In Thread context, a braced Match arm instead has one Block scope which is also
+its `HirThreadBodyOwner::NestedScope`; no parallel MatchArm scope is created.
+Sibling arms remain distinct in every context. Tests `T-ITEM-F-06`,
+`T-ITEM-T-06`, `T-ITEM-R-06`, and the F06 portion of `T-BODY-09` are interpreted
+against this normalized graph, not against a fabricated Match-container scope.
+
 Postcondition `result` uses the existing `HirLocal` arena and
 `HirLocalKind::PostconditionResult`. An omitted return has
 `annotation = None`; an authored return has `annotation = Some(TypeId)`.

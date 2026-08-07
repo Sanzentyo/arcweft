@@ -95,6 +95,28 @@ with:
     out voice
 ```
 
+## Match scope ownership
+
+A `match` owns the semantic relationship between its scrutinee and ordered
+arms, but its delimiter does not create a container-wide lexical scope. The
+scrutinee is evaluated once in the inherited outer scope.
+
+Each ordinary expression or statement arm creates its own distinct arm scope.
+That scope is a direct child of the inherited outer scope and is owned by the
+source-backed Match expression or statement. Pattern bindings are visible to
+the guard and selected value or body of that arm only; they are not visible to
+a sibling arm or after the Match.
+
+An authored block used as an expression-arm value creates a nested Block scope
+below the arm scope. The Block is not a replacement for the ordinary arm
+boundary.
+
+A braced Match arm inside a Thread body is the one exception to that two-level
+shape: its single nested statement Block is itself the arm's lexical scope and
+Thread-body owner. It does not also receive a parallel arm scope. These rules
+never create one scope shared by all arms and never make an arm a child of a
+nonexistent Match-container scope.
+
 ## Scope
 
 The canonical statement form is `scope name { ... }`. The bare scope form

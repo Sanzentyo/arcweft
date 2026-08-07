@@ -66,6 +66,12 @@ typed Expression or statement-Block body. Block arms have no tail, and
 expression arms are not wrapped in a synthetic statement. A missing arm result
 uses one typed missing-required-tail expression under the arm scope.
 
+Every ordinary MatchArm scope has the inherited outer scope as its lexical
+parent and the source-backed Match `ExprId` or `StmtId` as its typed owner. It
+is not a child of a Match statement scope, because no Match-container ScopeId
+exists. Sibling arms therefore share a semantic Match owner without sharing a
+lexical scope.
+
 This does not make Match ownerless. The source-backed Match `ExprId` or
 `StmtId` remains the semantic and transaction owner of the scrutinee and every
 arm, while the scrutinee is evaluated in the inherited outer lexical scope.
@@ -78,8 +84,9 @@ itself require a fabricated HIR node or a Match-level Block scope.
 Thread context uses the accepted nested-Flow body owner instead: each braced
 statement Match arm has one Block scope which is also that arm's
 `HirThreadBodyOwner::NestedScope`. It does not create a parallel MatchArm scope
-above the Block. In every context, sibling arm scopes remain distinct and the
-Match delimiter itself is not a lexical Block owner.
+above or below the Block. That single Block is the arm scope. In every context,
+sibling arm scopes remain distinct and the Match delimiter itself is not a
+lexical Block owner.
 
 ## Known-family recovery and deletion
 
