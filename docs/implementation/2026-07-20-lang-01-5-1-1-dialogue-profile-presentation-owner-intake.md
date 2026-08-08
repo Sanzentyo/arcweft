@@ -45,6 +45,15 @@ The follow-up
 is therefore resolved by this corrected redelivery and must not be dispatched
 again.
 
+The later retained
+[`Lang-01.5.1.1.1` as-built return](../reviews/packages/arcweft-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation-final-contract.zip)
+at SHA-256
+`8B7FE4D8DA08B793AB039E612CCE5A27AF3EC34E39B9FA07533C81C1F901350F`
+confirms this owner/admission decision against current main and reports
+`CURRENT_MAIN_STATE=SATISFIED_BY_CURRENT_IMPLEMENTATION`. It is confirmation,
+not authority for a second implementation path; see the
+[2026-08-08 correction intake](2026-08-08-lang-01-5-1-correction-returns-intake.md).
+
 ## Final semantic contract
 
 The implementation goal is one compatibility-free authority cut:

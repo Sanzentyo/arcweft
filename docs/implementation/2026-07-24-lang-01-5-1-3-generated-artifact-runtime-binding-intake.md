@@ -1,5 +1,16 @@
 # Lang-01.5.1.3 generated artifact runtime-binding intake
 
+> Superseded on 2026-08-08 by the retained
+> [`generated-artifact runtime-binding fail-closed final contract`](../reviews/packages/arcweft-lang-01.5.1.3-generated-artifact-runtime-binding-fail-closed-final-contract.zip)
+> at SHA-256
+> `342D38E521C14F2CCE340355F4F4BC07241C8BFA89DA9B7C324B169869482027`.
+> In particular, the final crate owner is `arcweft-runtime-binding`, not
+> `arcweft-artifact-binding`, and the ID is
+> `GeneratedArtifactBindingId`, not the older slot model. Retain this note as
+> historical audit evidence only; use the
+> [2026-08-08 correction intake](2026-08-08-lang-01-5-1-correction-returns-intake.md)
+> for implementation authority.
+
 ## Status
 
 `ACCEPTED_IMPLEMENTATION_READY_DEFERRED`
