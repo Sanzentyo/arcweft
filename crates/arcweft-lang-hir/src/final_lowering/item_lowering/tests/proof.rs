@@ -9,7 +9,7 @@ use arcweft_lang_syntax::attachment::{
 use crate::expr::{HirExprKind, HirGenericExprIssue, HirPoisonState, HirRecoveryIssue};
 use crate::item::{HirProof, HirProofBody, ProofTrust};
 use crate::pattern::{HirPatternBinding, HirPatternBindingIssue, HirPatternKind};
-use crate::project::{HirProject, HirProjectExecutionError, HirProjectModule};
+use crate::project::{HirProjectBuilder, HirProjectExecutionError, HirProjectModule};
 use crate::scope::LocalLookup;
 use crate::source_index::{
     HirDeclarationSourceRole, HirExprSourceRole, HirItemSourceRole, HirSourceOwnerStatus,
@@ -437,7 +437,6 @@ fn malformed_proof_body_stays_queryable_while_following_proof_keeps_clean_identi
         HirSourcePresence::Present(&HirSourceSite::Span(following_syntax.source_span()))
     );
 
-    let snapshot = module.snapshot_id();
     let project_module = HirProjectModule::try_new(
         &database,
         key.package(),
@@ -446,13 +445,15 @@ fn malformed_proof_body_stays_queryable_while_following_proof_keeps_clean_identi
         Arc::clone(&module),
     )
     .unwrap();
-    let project = HirProject::try_new(&database, key.package().clone(), [project_module]).unwrap();
+    let mut builder = HirProjectBuilder::new(&database, key.package().clone());
+    builder.insert_module(project_module).unwrap();
+    let project = builder.finish().unwrap();
     assert_eq!(project.view().items().count(), 2);
     assert_eq!(
         project.executable_view().err(),
         Some(HirProjectExecutionError::RecoveredModule {
             module: key.path().clone(),
-            snapshot,
+            snapshot: module.snapshot_id(),
         })
     );
 }

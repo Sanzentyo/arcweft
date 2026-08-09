@@ -23,7 +23,7 @@ use crate::{
     database::HirDatabase,
     leaf::{HirEntityReference, HirIdRef, HirName, HirPath, HirPathRoot, HirPathSegment},
     lowering::{HirModuleKey, LoweringRequest},
-    project::{HirProject, HirProjectModule},
+    project::{HirProject, HirProjectBuilder, HirProjectModule},
     proof_return::HirProofReturnSemanticFactSet,
 };
 
@@ -100,7 +100,11 @@ fn project(source: &str) -> (Arc<SourceDocument>, HirProject) {
     assert!(outputs.is_empty());
     let module = HirProjectModule::try_new(&database, &package, &path, document.identity(), hir)
         .expect("root module binding");
-    let project = HirProject::try_new(&database, package, [module]).expect("HIR project");
+    let mut builder = HirProjectBuilder::new(&database, package);
+    builder
+        .insert_module(module)
+        .expect("root module insertion");
+    let project = builder.finish().expect("HIR project");
     (document, project)
 }
 
@@ -206,8 +210,11 @@ pub(super) fn project_modules(sources: &[(&str, &str)]) -> (Vec<Arc<SourceDocume
         .into_iter()
         .map(|(_, document, _)| document)
         .collect();
-    let project =
-        HirProject::try_new(&database, package, modules).expect("multi-module HIR project");
+    let mut builder = HirProjectBuilder::new(&database, package);
+    for module in modules {
+        builder.insert_module(module).expect("module insertion");
+    }
+    let project = builder.finish().expect("multi-module HIR project");
     (documents, project)
 }
 

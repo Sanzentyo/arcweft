@@ -10,7 +10,7 @@ use arcweft_character::{
 use arcweft_lang_hir::{
     database::HirDatabase,
     lowering::{HirModuleKey, LoweringRequest},
-    project::{HirProject, HirProjectModule},
+    project::{HirProjectBuilder, HirProjectModule},
     proof_return::HirProofReturnSemanticFactSet,
     symbol::{CallablePackageId, ProjectSymbolWorldId},
 };
@@ -378,8 +378,11 @@ fn final_native_outcomes(
         Arc::clone(&module),
     )
     .expect("project module");
-    let project = HirProject::try_new(&hir_database, package, [project_module])
-        .expect("module-preserving HIR project");
+    let mut builder = HirProjectBuilder::new(&hir_database, package);
+    builder
+        .insert_module(project_module)
+        .expect("module insertion");
+    let project = builder.finish().expect("module-preserving HIR project");
     let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(TypeCheckEnv::standard()),
         project.view(),

@@ -29,6 +29,7 @@ use crate::identity::{
 #[cfg(test)]
 use crate::item::HirDeclarationMemberIndexBuilder;
 use crate::item::{HirDeclarationMember, HirDeclarationMemberIndex, HirItem, HirItemKind};
+use crate::line_identity::HirDialogueLineCandidates;
 use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
 use crate::pattern::HirPattern;
 use crate::scope::{HirCapture, HirLocal, HirLocalKind, HirScope, HirScopeKind, HirScopeOwner};
@@ -446,6 +447,7 @@ pub struct HirModule {
     source_ordered_items: Box<[ItemId]>,
     declaration_members: HirDeclarationMemberIndex,
     source_components: HirSourceIndex,
+    dialogue_line_candidates: HirDialogueLineCandidates,
     invalidation_epoch: NonZeroU64,
 }
 
@@ -545,7 +547,8 @@ impl HirModule {
         } else {
             HirModuleStatus::Clean
         };
-        Ok(Self {
+        let empty_dialogue_lines = HirDialogueLineCandidates::empty(key.clone());
+        let mut module = Self {
             snapshot,
             key,
             provenance,
@@ -556,8 +559,11 @@ impl HirModule {
             source_ordered_items,
             declaration_members,
             source_components,
+            dialogue_line_candidates: empty_dialogue_lines,
             invalidation_epoch,
-        })
+        };
+        attach_dialogue_line_candidates(&mut module, parsed.diagnostics().len())?;
+        Ok(module)
     }
 
     /// Exact immutable module revision represented by this snapshot.
@@ -587,6 +593,10 @@ impl HirModule {
 
     pub fn diagnostics(&self) -> &[HirDiagnostic] {
         &self.diagnostics
+    }
+
+    pub(crate) const fn dialogue_line_candidates(&self) -> &HirDialogueLineCandidates {
+        &self.dialogue_line_candidates
     }
 
     /// Whether semantic, verifier, compiler, and runtime consumers may execute it.
@@ -621,7 +631,6 @@ impl HirModule {
         &self.arenas
     }
 
-    #[cfg(test)]
     pub(crate) const fn source_components(&self) -> &HirSourceIndex {
         &self.source_components
     }
@@ -1112,6 +1121,29 @@ impl HirModule {
         )
         .expect("test module parts are exact")
     }
+}
+
+fn attach_dialogue_line_candidates(
+    module: &mut HirModule,
+    syntax_diagnostic_count: usize,
+) -> Result<(), HirLowerFailure> {
+    let (candidates, line_diagnostics) =
+        crate::line_identity::module_candidates::build_module_candidates(module)?;
+    module.dialogue_line_candidates = candidates;
+    if line_diagnostics.is_empty() {
+        return Ok(());
+    }
+    let mut diagnostics = Vec::from(module.diagnostics.as_ref());
+    diagnostics.extend(
+        line_diagnostics
+            .iter()
+            .cloned()
+            .map(HirDiagnostic::LineIdentity),
+    );
+    diagnostics[syntax_diagnostic_count..].sort_by(HirDiagnostic::compare_for_publication);
+    module.diagnostics = Arc::from(diagnostics);
+    module.status = HirModuleStatus::Recovered;
+    Ok(())
 }
 
 struct ResolvedThreadBody<'a> {

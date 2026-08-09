@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
-use arcweft_lang_hir::project::{HirProject, HirProjectModule};
+use arcweft_lang_hir::project::{HirProjectBuilder, HirProjectModule};
 use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
@@ -74,7 +74,9 @@ fn public_final_hir_boundary_preserves_the_accepted_module_lease() {
         Arc::clone(&module),
     )
     .unwrap();
-    let project = HirProject::try_new(&database, package, [project_module]).unwrap();
+    let mut builder = HirProjectBuilder::new(&database, package);
+    builder.insert_module(project_module).unwrap();
+    let project = builder.finish().unwrap();
 
     let retained = project.module(&path).unwrap().module();
     assert!(Arc::ptr_eq(retained, &module));

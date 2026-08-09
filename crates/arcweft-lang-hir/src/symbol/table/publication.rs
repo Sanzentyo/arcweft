@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+use arcweft_id::PublicId;
 use arcweft_lang_syntax::ast::{
     common::Visibility,
     module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
@@ -15,7 +15,6 @@ use crate::item::{
     HirCapabilityMember, HirFlowIdentity, HirImplMember, HirItem, HirItemKind, HirItemPrefix,
     HirTraitMember, HirVisibility,
 };
-use crate::leaf::HirIdRef;
 use crate::module::HirModuleStatus;
 use crate::project::HirProjectView;
 use crate::source_index::{
@@ -851,67 +850,15 @@ impl ProjectSymbolTable {
 fn accepted_flow_identity(
     identity: &HirFlowIdentity,
 ) -> Option<(PublicId, FlowPublicationKind, HirFlowSourceRole)> {
-    match identity {
-        HirFlowIdentity::Name { name } => {
-            let name = DeclarationName::try_new(name.as_str()).ok()?;
-            let public_id = DeclarationIdentityFamily::Flow
-                .derive_public_id(&name)
-                .ok()?;
-            Some((
-                public_id,
-                FlowPublicationKind::ModuleScoped,
-                HirFlowSourceRole::Name,
-            ))
+    let identity_role = match identity {
+        HirFlowIdentity::Name { .. } | HirFlowIdentity::PublicIdAndName { .. } => {
+            HirFlowSourceRole::Name
         }
-        HirFlowIdentity::PublicId { public_id } => {
-            let (public_id, publication) = accepted_flow_public_id(public_id)?;
-            Some((public_id, publication, HirFlowSourceRole::PublicId))
-        }
-        HirFlowIdentity::PublicIdAndName { public_id, name } => {
-            let (public_id, publication) = accepted_flow_public_id(public_id)?;
-            if public_id.as_str().rsplit('.').next() != Some(name.as_str()) {
-                return None;
-            }
-            Some((public_id, publication, HirFlowSourceRole::Name))
-        }
-        HirFlowIdentity::Missing => None,
-    }
-}
-
-fn accepted_flow_public_id(reference: &HirIdRef) -> Option<(PublicId, FlowPublicationKind)> {
-    let (text, publication) = match reference {
-        HirIdRef::Absolute(reference) => (
-            reference.as_str().to_owned(),
-            FlowPublicationKind::AuthoredAbsolute,
-        ),
-        HirIdRef::Relative(relative) if relative.parent_depth() == 0 => (
-            format!(
-                "{}.{}",
-                DeclarationIdentityFamily::Flow.prefix(),
-                relative.suffix().as_str()
-            ),
-            FlowPublicationKind::ModuleScoped,
-        ),
-        HirIdRef::FamilyRelative(relative)
-            if relative.relative().parent_depth() == 0
-                && relative.family().as_str() == DeclarationIdentityFamily::Flow.prefix() =>
-        {
-            (
-                format!(
-                    "{}.{}",
-                    DeclarationIdentityFamily::Flow.prefix(),
-                    relative.relative().suffix().as_str()
-                ),
-                FlowPublicationKind::ModuleScoped,
-            )
-        }
-        HirIdRef::Relative(_) | HirIdRef::FamilyRelative(_) => return None,
+        HirFlowIdentity::PublicId { .. } => HirFlowSourceRole::PublicId,
+        HirFlowIdentity::Missing => return None,
     };
-    let public_id = PublicId::try_new(text).ok()?;
-    DeclarationIdentityFamily::Flow
-        .validate_public_id(&public_id)
-        .ok()?;
-    Some((public_id, publication))
+    let (public_id, publication) = identity.accepted_publication()?;
+    Some((public_id, publication, identity_role))
 }
 
 fn flow_symbol_path(public_id: &PublicId) -> Option<ProjectSymbolPath> {

@@ -157,7 +157,9 @@ fn recovery_diagnostics(module: &HirModule, owner: PatternId) -> Vec<&HirRecover
             {
                 Some(recovery)
             }
-            HirDiagnostic::Syntax(_) | HirDiagnostic::Recovery(_) => None,
+            HirDiagnostic::Syntax(_)
+            | HirDiagnostic::Recovery(_)
+            | HirDiagnostic::LineIdentity(_) => None,
         })
         .collect()
 }

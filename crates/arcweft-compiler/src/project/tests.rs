@@ -24,7 +24,9 @@ use arcweft_lang_syntax::{
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::ProjectSourceFile;
-use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange, identity::SourceSnapshotId};
+use arcweft_source::{
+    DiagnosticLabel, DiagnosticLabelStyle, SourceDocument, SourceRange, identity::SourceSnapshotId,
+};
 use std::{collections::BTreeMap, path::PathBuf};
 
 fn compilation_state(
@@ -353,6 +355,136 @@ fn multi_module_authored_proof_alias_to_unit_uses_one_semantic_project_transacti
         }
     }
     assert_eq!(proofs, 2);
+}
+
+fn dialogue_collision_project() -> (
+    ProjectSources,
+    ProjectCompilationContext,
+    Arc<SourceDocument>,
+    Arc<SourceDocument>,
+) {
+    let child = CanonicalModulePath::crate_root()
+        .join(ModuleSegment::new("child").expect("module segment"));
+    let root_text = "fn root_line() {\n    let line = alice(id = @say.shared)[before[strong]root[/strong]after]\n}\n";
+    let child_text = "fn child_line() {\n    let line = bob(id = @say.shared)[before[strong]child[/strong]after]\n}\n";
+    let root_document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://dialogue-collision/src/main.arcw")
+                .expect("root document ID"),
+            SourceName::path("src/main.arcw"),
+            root_text,
+        )
+        .expect("root source document"),
+    );
+    let child_document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://dialogue-collision/src/child.arcw")
+                .expect("child document ID"),
+            SourceName::path("src/child.arcw"),
+            child_text,
+        )
+        .expect("child source document"),
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        package("org.arcweft.dialogue-collision"),
+        BuildSpec::default(),
+        manifest_document("dialogue-collision"),
+        [
+            ProjectSourceFile::new(
+                CanonicalModulePath::crate_root(),
+                PathBuf::from("src/main.arcw"),
+                Arc::clone(&root_document),
+                [ModuleDependency::new(child.clone())],
+            ),
+            ProjectSourceFile::new(
+                child,
+                PathBuf::from("src/child.arcw"),
+                Arc::clone(&child_document),
+                [],
+            ),
+        ],
+    )
+    .expect("multi-module project sources");
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(project.package().id.as_str()).expect("package"),
+        root_document.identity().id().clone(),
+        "dialogue-collision-test",
+    )
+    .expect("symbol world");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&root_document), Arc::clone(&child_document)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registration facts");
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        None,
+        None,
+    );
+    (project, context, root_document, child_document)
+}
+
+#[test]
+fn project_dialogue_collision_projects_exact_cross_module_source_labels() {
+    let (project, context, root_document, child_document) = dialogue_collision_project();
+    let (mut session, parsed_sources) = compilation_state(&project);
+
+    let error = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect_err("duplicate dialogue line IDs reject the project transaction");
+    assert_eq!(
+        error.stage(),
+        ProjectCompileStage::HirProject.as_str(),
+        "diagnostics={:?}",
+        error.diagnostics(),
+    );
+    let [diagnostic] = error.diagnostics() else {
+        panic!("one collision diagnostic")
+    };
+    assert_eq!(
+        diagnostic
+            .diagnostic()
+            .code()
+            .expect("diagnostic code")
+            .as_str(),
+        "AW-CD-020"
+    );
+    let labels = diagnostic.diagnostic().labels();
+    assert_eq!(labels.len(), 2);
+    let root_start = root_document
+        .text()
+        .find("@say.shared")
+        .expect("root ID span");
+    let child_start = child_document
+        .text()
+        .find("@say.shared")
+        .expect("child ID span");
+    assert_eq!(labels[0].style(), DiagnosticLabelStyle::Primary);
+    assert_eq!(
+        labels[0].span(),
+        &child_document
+            .span(SourceRange::new(
+                child_start,
+                child_start + "@say.shared".len(),
+            ))
+            .expect("child exact span")
+    );
+    assert_eq!(labels[1].style(), DiagnosticLabelStyle::Secondary);
+    assert_eq!(
+        labels[1].span(),
+        &root_document
+            .span(SourceRange::new(
+                root_start,
+                root_start + "@say.shared".len(),
+            ))
+            .expect("root exact span")
+    );
 }
 
 #[test]

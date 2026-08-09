@@ -42,7 +42,13 @@ fn selected_bracket_dialogue_lowers_typed_content_and_exact_sources() {
         &["alice[前[strong]強調[/strong]後]".into()],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
-    assert_eq!(module.status(), HirModuleStatus::Clean);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert!(module.diagnostics().iter().any(|diagnostic| matches!(
+        diagnostic,
+        crate::diagnostic::HirDiagnostic::LineIdentity(line)
+            if line.code()
+                == crate::line_identity::DialogueLineDiagnosticCode::MissingLineSourceOwner
+    )));
 
     let owner = owners[0];
     let HirExprKind::DialogueContentApplication(application) = expression(&module, owner).kind()
@@ -145,7 +151,7 @@ fn missing_dialogue_content_is_empty_and_poisoned_without_fake_node() {
 fn dialogue_interpolation_and_immediate_coordinates_keep_same_arena_ids() {
     let parsed = parsed_source(
         "dialogue-interpolation-coordinates",
-        &["alice(id = @scene.entry, text_key = \"opening\")[こんにちは #[actor.name]]".into()],
+        &["alice(id = @say.entry, text_key = @text.entry)[こんにちは #[actor.name]]".into()],
     );
     let (module, owners, _) = lower_and_publish(&parsed);
     assert_eq!(module.status(), HirModuleStatus::Clean);

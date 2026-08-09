@@ -263,7 +263,9 @@ fn assert_missing_style_value(module: &HirModule, syntax: SyntaxNodeId, owner: E
             {
                 Some(diagnostic)
             }
-            HirDiagnostic::Syntax(_) | HirDiagnostic::Recovery(_) => None,
+            HirDiagnostic::Syntax(_)
+            | HirDiagnostic::Recovery(_)
+            | HirDiagnostic::LineIdentity(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(diagnostics.len(), 1);

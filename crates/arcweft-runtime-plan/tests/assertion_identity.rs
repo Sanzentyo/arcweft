@@ -14,7 +14,7 @@ use arcweft_lang_hir::{
     identity::StmtId,
     item::HirItemKind,
     lowering::{HirModuleKey, LoweringRequest},
-    project::{HirProject, HirProjectModule},
+    project::{HirProject, HirProjectBuilder, HirProjectModule},
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
     symbol::{
@@ -641,5 +641,9 @@ fn project_fixture(label: &str, source: &str) -> HirProject {
         module,
     )
     .expect("accepted module lease");
-    HirProject::try_new(&database, package, [project_module]).expect("fixture project")
+    let mut builder = HirProjectBuilder::new(&database, package);
+    builder
+        .insert_module(project_module)
+        .expect("module insertion");
+    builder.finish().expect("fixture project")
 }

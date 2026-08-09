@@ -744,7 +744,7 @@ mod tests {
     use arcweft_lang_hir::{
         database::HirDatabase,
         lowering::{HirModuleKey, LoweringRequest},
-        project::{HirProject, HirProjectModule},
+        project::{HirProjectBuilder, HirProjectModule},
         proof_return::HirProofReturnSemanticFactSet,
         symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId},
     };
@@ -835,7 +835,9 @@ bench @bench.opening {
             Arc::clone(&module),
         )
         .unwrap();
-        let project = HirProject::try_new(&database, package, [bound]).unwrap();
+        let mut builder = HirProjectBuilder::new(&database, package);
+        builder.insert_module(bound).unwrap();
+        let project = builder.finish().unwrap();
         let manifest = collect_script_tests(&project);
 
         assert_eq!(manifest.tests[0].id, "test.opening");

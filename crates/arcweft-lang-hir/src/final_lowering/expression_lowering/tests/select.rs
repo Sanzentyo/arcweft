@@ -98,7 +98,7 @@ fn recovery_diagnostics(module: &HirModule) -> Vec<&HirRecoveryDiagnostic> {
         .iter()
         .filter_map(|diagnostic| match diagnostic {
             HirDiagnostic::Recovery(diagnostic) => Some(diagnostic),
-            HirDiagnostic::Syntax(_) => None,
+            HirDiagnostic::Syntax(_) | HirDiagnostic::LineIdentity(_) => None,
         })
         .collect()
 }
@@ -695,7 +695,7 @@ fn e13_failed_freeze_retries_with_stable_owner_and_deduplicates_repeated_lowerin
         .iter()
         .find_map(|diagnostic| match diagnostic {
             HirDiagnostic::Recovery(diagnostic) => Some(diagnostic.clone()),
-            HirDiagnostic::Syntax(_) => None,
+            HirDiagnostic::Syntax(_) | HirDiagnostic::LineIdentity(_) => None,
         })
         .expect("missing-member recovery diagnostic");
     failed.stage_recovery_diagnostic(duplicate);
@@ -1110,10 +1110,10 @@ fn e13_freeze_enforces_exact_missing_and_descendant_diagnostic_obligations() {
         transaction
             .diagnostics
             .retain(|diagnostic| match diagnostic {
-                HirDiagnostic::Syntax(_) => true,
                 HirDiagnostic::Recovery(diagnostic) => {
                     (diagnostic.owner() == SyntheticOwner::Expr(outer)) == keep_outer
                 }
+                HirDiagnostic::Syntax(_) | HirDiagnostic::LineIdentity(_) => true,
             });
         assert!(matches!(
             transaction.finish(&mut database),

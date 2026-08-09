@@ -14,7 +14,7 @@ use arcweft_lang_hir::{
     expr::HirThreadFlowItem,
     item::HirItemKind,
     lowering::{HirModuleKey, LoweringRequest},
-    project::{HirProject, HirProjectModule},
+    project::{HirProjectBuilder, HirProjectModule},
     proof_return::HirProofReturnSemanticFactSet,
     stmt::HirStmtKind,
     symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId},
@@ -107,7 +107,11 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
         module,
     )
     .expect("accepted module lease");
-    let project = HirProject::try_new(&hir, package, [project_module]).expect("HIR project");
+    let mut builder = HirProjectBuilder::new(&hir, package);
+    builder
+        .insert_module(project_module)
+        .expect("module insertion");
+    let project = builder.finish().expect("HIR project");
     let executable = project.executable_view().expect("executable project");
     let (flow_owner, statement, condition) = executable
         .items()

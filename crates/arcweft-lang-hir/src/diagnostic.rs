@@ -13,13 +13,23 @@ use crate::source_index::{HirSourceQuery, HirSourceSite};
 pub enum HirDiagnostic {
     Syntax(SyntaxDiagnostic),
     Recovery(HirRecoveryDiagnostic),
+    LineIdentity(crate::line_identity::DialogueLineDiagnostic),
 }
 
 impl HirDiagnostic {
+    /// # Panics
+    ///
+    /// Panics only if an internally constructed module diagnostic violates the
+    /// invariant that every published module diagnostic has a primary source.
     pub fn source_site(&self) -> HirSourceSiteRef<'_> {
         match self {
             Self::Syntax(diagnostic) => HirSourceSiteRef::Span(diagnostic.primary()),
             Self::Recovery(diagnostic) => HirSourceSiteRef::Hir(diagnostic.primary()),
+            Self::LineIdentity(diagnostic) => HirSourceSiteRef::Span(
+                diagnostic
+                    .primary_span()
+                    .expect("published dialogue line diagnostics retain a primary source span"),
+            ),
         }
     }
 
@@ -37,6 +47,9 @@ impl HirDiagnostic {
                     .owner
                     .cmp(&right.owner)
                     .then_with(|| left.primary.cmp(&right.primary)),
+                (Self::LineIdentity(left), Self::LineIdentity(right)) => {
+                    left.compare_for_publication(right)
+                }
                 _ => Ordering::Equal,
             })
     }
@@ -44,7 +57,7 @@ impl HirDiagnostic {
     pub fn syntax(&self) -> Option<&SyntaxDiagnostic> {
         match self {
             Self::Syntax(diagnostic) => Some(diagnostic),
-            Self::Recovery(_) => None,
+            Self::Recovery(_) | Self::LineIdentity(_) => None,
         }
     }
 
@@ -52,6 +65,7 @@ impl HirDiagnostic {
         match self {
             Self::Syntax(_) => 0,
             Self::Recovery(_) => 1,
+            Self::LineIdentity(_) => 2,
         }
     }
 }

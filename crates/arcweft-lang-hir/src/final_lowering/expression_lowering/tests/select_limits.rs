@@ -112,7 +112,7 @@ fn recovery_diagnostic_owners(module: &HirModule) -> Vec<SyntheticOwner> {
         .iter()
         .filter_map(|diagnostic| match diagnostic {
             HirDiagnostic::Recovery(diagnostic) => Some(diagnostic.owner()),
-            HirDiagnostic::Syntax(_) => None,
+            HirDiagnostic::Syntax(_) | HirDiagnostic::LineIdentity(_) => None,
         })
         .collect()
 }

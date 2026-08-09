@@ -14,6 +14,7 @@ pub mod fx;
 pub mod identity;
 pub mod item;
 pub mod leaf;
+pub mod line_identity;
 pub mod lowering;
 pub mod module;
 pub mod pattern;

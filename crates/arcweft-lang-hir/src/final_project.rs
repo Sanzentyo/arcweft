@@ -16,6 +16,41 @@ use crate::item::{
 use crate::module::{HirModule, HirModuleStatus};
 use crate::symbol::CallablePackageId;
 
+#[path = "final_project/dialogue_lines.rs"]
+mod dialogue_lines;
+
+pub use self::dialogue_lines::{
+    AcceptedDialogueLine, AcceptedDialogueLineInventory, AcceptedDialogueLineSource,
+    DialogueLineIndex, DialogueLineProjectFatal, DialogueLineProjectRejection,
+};
+
+/// Package-qualified canonical key for one project module.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirPackageModuleKey {
+    package: CallablePackageId,
+    path: CanonicalModulePath,
+}
+
+impl HirPackageModuleKey {
+    pub(crate) fn new(package: CallablePackageId, path: CanonicalModulePath) -> Self {
+        Self { package, path }
+    }
+
+    pub const fn package(&self) -> &CallablePackageId {
+        &self.package
+    }
+
+    pub const fn path(&self) -> &CanonicalModulePath {
+        &self.path
+    }
+}
+
+impl From<&crate::lowering::HirModuleKey> for HirPackageModuleKey {
+    fn from(key: &crate::lowering::HirModuleKey) -> Self {
+        Self::new(key.package().clone(), key.path().clone())
+    }
+}
+
 /// One exact current module lease admitted to a final-HIR project.
 #[derive(Clone)]
 pub struct HirProjectModule {
@@ -129,33 +164,38 @@ impl HirProjectModule {
     pub const fn module(&self) -> &Arc<HirModule> {
         &self.module
     }
+
+    pub fn key(&self) -> HirPackageModuleKey {
+        HirPackageModuleKey::from(self.module.key())
+    }
 }
 
 /// Immutable package project that preserves every module-local HIR identity.
 pub struct HirProject {
-    package: CallablePackageId,
+    root_package: CallablePackageId,
     database: HirDatabaseId,
-    modules: BTreeMap<CanonicalModulePath, HirProjectModule>,
+    modules: BTreeMap<HirPackageModuleKey, HirProjectModule>,
+    dialogue_lines: AcceptedDialogueLineInventory,
 }
 
 /// Invalid final-HIR project generation.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum HirProjectError {
+pub enum HirProjectBuildError {
     #[error("HIR project contains {observed} modules, maximum is {maximum}")]
     ModuleLimit { observed: usize, maximum: usize },
-    #[error("HIR project contains duplicate module `{module}`")]
-    DuplicateModule { module: CanonicalModulePath },
+    #[error("HIR project contains duplicate module {key:?}")]
+    DuplicateModule { key: HirPackageModuleKey },
     #[error("HIR project maps source document {document:?} to both `{first}` and `{second}`")]
     DuplicateSourceDocument {
         document: SourceDocumentId,
         first: CanonicalModulePath,
         second: CanonicalModulePath,
     },
-    #[error("HIR project does not contain the crate root module")]
-    MissingRootModule,
-    #[error("HIR module `{module}` belongs to package {actual:?}, expected {expected:?}")]
-    WrongPackage {
-        module: CanonicalModulePath,
+    #[error("HIR project does not contain the crate root module for package {package:?}")]
+    MissingRootModule { package: CallablePackageId },
+    #[error("HIR module {key:?} belongs to package {actual:?}, expected {expected:?}")]
+    ModulePackageMismatch {
+        key: HirPackageModuleKey,
         expected: CallablePackageId,
         actual: CallablePackageId,
     },
@@ -175,94 +215,129 @@ pub enum HirProjectError {
         current: HirSnapshotId,
         supplied: HirSnapshotId,
     },
+    #[error(transparent)]
+    DialogueLines(#[from] DialogueLineProjectRejection),
+    #[error(transparent)]
+    DialogueLineFatal(#[from] DialogueLineProjectFatal),
 }
 
-impl HirProject {
-    pub fn try_new(
-        database: &HirDatabase,
-        package: CallablePackageId,
-        modules: impl IntoIterator<Item = HirProjectModule>,
-    ) -> Result<Self, HirProjectError> {
-        Self::try_new_with_limit(
+/// Sole transactional builder for one package-qualified final-HIR project.
+pub struct HirProjectBuilder<'database> {
+    database: &'database HirDatabase,
+    root_package: CallablePackageId,
+    modules: BTreeMap<HirPackageModuleKey, HirProjectModule>,
+    maximum_modules: usize,
+}
+
+impl<'database> HirProjectBuilder<'database> {
+    pub fn new(database: &'database HirDatabase, root_package: CallablePackageId) -> Self {
+        Self {
             database,
-            package,
-            modules,
-            HirLimit::ModulesPerDatabase.maximum(),
-        )
+            root_package,
+            modules: BTreeMap::new(),
+            maximum_modules: HirLimit::ModulesPerDatabase.maximum(),
+        }
     }
 
-    fn try_new_with_limit(
-        database: &HirDatabase,
-        package: CallablePackageId,
-        modules: impl IntoIterator<Item = HirProjectModule>,
-        maximum: usize,
-    ) -> Result<Self, HirProjectError> {
-        let mut module_map = BTreeMap::new();
-        for module in modules {
-            let observed = module_map.len().saturating_add(1);
-            if observed > maximum {
-                return Err(HirProjectError::ModuleLimit { observed, maximum });
-            }
-            let path = module.path().clone();
-            if module_map.insert(path.clone(), module).is_some() {
-                return Err(HirProjectError::DuplicateModule { module: path });
-            }
+    pub fn insert_module(&mut self, module: HirProjectModule) -> Result<(), HirProjectBuildError> {
+        let observed =
+            self.modules
+                .len()
+                .checked_add(1)
+                .ok_or(HirProjectBuildError::ModuleLimit {
+                    observed: usize::MAX,
+                    maximum: self.maximum_modules,
+                })?;
+        if observed > self.maximum_modules {
+            return Err(HirProjectBuildError::ModuleLimit {
+                observed,
+                maximum: self.maximum_modules,
+            });
         }
+        let key = module.key();
+        if self.modules.contains_key(&key) {
+            return Err(HirProjectBuildError::DuplicateModule { key });
+        }
+        self.modules.insert(key, module);
+        Ok(())
+    }
 
-        let root_path = CanonicalModulePath::crate_root();
-        if !module_map.contains_key(&root_path) {
-            return Err(HirProjectError::MissingRootModule);
+    pub fn finish(self) -> Result<HirProject, HirProjectBuildError> {
+        if let Some((key, _)) = self
+            .modules
+            .iter()
+            .find(|(key, _)| key.package() != &self.root_package)
+        {
+            return Err(HirProjectBuildError::ModulePackageMismatch {
+                key: key.clone(),
+                expected: self.root_package,
+                actual: key.package().clone(),
+            });
         }
-        let database_id = database.database_id();
+        let root_key =
+            HirPackageModuleKey::new(self.root_package.clone(), CanonicalModulePath::crate_root());
+        if !self.modules.contains_key(&root_key) {
+            return Err(HirProjectBuildError::MissingRootModule {
+                package: self.root_package,
+            });
+        }
+        let database_id = self.database.database_id();
 
         let mut source_paths = BTreeMap::new();
-        for (path, module) in &module_map {
-            if module.package() != &package {
-                return Err(HirProjectError::WrongPackage {
-                    module: path.clone(),
-                    expected: package.clone(),
-                    actual: module.package().clone(),
-                });
-            }
+        for (key, module) in &self.modules {
             let actual_database = module.module().module_id().database();
             if actual_database != database_id {
-                return Err(HirProjectError::WrongDatabase {
-                    module: path.clone(),
+                return Err(HirProjectBuildError::WrongDatabase {
+                    module: key.path().clone(),
                     expected: database_id,
                     actual: actual_database,
                 });
             }
-            let Some(current) = database.current_lineage(module.module().key()) else {
-                return Err(HirProjectError::MissingAcceptedModule {
-                    module: path.clone(),
+            let Some(current) = self.database.current_lineage(module.module().key()) else {
+                return Err(HirProjectBuildError::MissingAcceptedModule {
+                    module: key.path().clone(),
                 });
             };
             if !Arc::ptr_eq(&current, module.module()) {
-                return Err(HirProjectError::StaleModuleLease {
-                    module: path.clone(),
+                return Err(HirProjectBuildError::StaleModuleLease {
+                    module: key.path().clone(),
                     current: current.snapshot_id(),
                     supplied: module.module().snapshot_id(),
                 });
             }
             let document = module.source().id().clone();
-            if let Some(first) = source_paths.insert(document.clone(), path.clone()) {
-                return Err(HirProjectError::DuplicateSourceDocument {
+            if let Some(first) = source_paths.insert(document.clone(), key.path().clone()) {
+                return Err(HirProjectBuildError::DuplicateSourceDocument {
                     document,
                     first,
-                    second: path.clone(),
+                    second: key.path().clone(),
                 });
             }
         }
 
-        Ok(Self {
-            package,
+        let dialogue_lines = dialogue_lines::accept_dialogue_lines(self.modules.values())?;
+        Ok(HirProject {
+            root_package: self.root_package,
             database: database_id,
-            modules: module_map,
+            modules: self.modules,
+            dialogue_lines,
         })
     }
 
+    #[cfg(test)]
+    fn with_module_limit_for_test(mut self, maximum_modules: usize) -> Self {
+        self.maximum_modules = maximum_modules;
+        self
+    }
+}
+
+impl HirProject {
     pub const fn package(&self) -> &CallablePackageId {
-        &self.package
+        &self.root_package
+    }
+
+    pub const fn root_package(&self) -> &CallablePackageId {
+        &self.root_package
     }
 
     pub const fn database_id(&self) -> HirDatabaseId {
@@ -270,7 +345,18 @@ impl HirProject {
     }
 
     pub fn module(&self, path: &CanonicalModulePath) -> Option<&HirProjectModule> {
-        self.modules.get(path)
+        self.modules.get(&HirPackageModuleKey::new(
+            self.root_package.clone(),
+            path.clone(),
+        ))
+    }
+
+    pub fn module_by_key(&self, key: &HirPackageModuleKey) -> Option<&HirProjectModule> {
+        self.modules.get(key)
+    }
+
+    pub const fn dialogue_lines(&self) -> &AcceptedDialogueLineInventory {
+        &self.dialogue_lines
     }
 
     pub fn view(&self) -> HirProjectView<'_> {
@@ -280,10 +366,10 @@ impl HirProject {
     pub fn executable_view(
         &self,
     ) -> Result<HirExecutableProjectView<'_>, HirProjectExecutionError> {
-        for (path, module) in &self.modules {
+        for (key, module) in &self.modules {
             if module.module().status() == HirModuleStatus::Recovered {
                 return Err(HirProjectExecutionError::RecoveredModule {
-                    module: path.clone(),
+                    module: key.path().clone(),
                     snapshot: module.module().snapshot_id(),
                 });
             }
@@ -302,7 +388,7 @@ pub struct HirProjectView<'project> {
 
 impl<'project> HirProjectView<'project> {
     pub const fn package(self) -> &'project CallablePackageId {
-        &self.project.package
+        &self.project.root_package
     }
 
     pub fn modules(
@@ -312,11 +398,11 @@ impl<'project> HirProjectView<'project> {
         self.project
             .modules
             .iter()
-            .map(|(path, module)| (path, module.module()))
+            .map(|(key, module)| (key.path(), module.module()))
     }
 
     pub fn module(self, path: &CanonicalModulePath) -> Option<&'project Arc<HirModule>> {
-        self.project.modules.get(path).map(HirProjectModule::module)
+        self.project.module(path).map(HirProjectModule::module)
     }
 
     pub fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {

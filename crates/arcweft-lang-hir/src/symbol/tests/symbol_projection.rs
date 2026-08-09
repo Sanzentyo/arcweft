@@ -315,7 +315,9 @@ fn proof_artifact_id_is_session_only_and_snapshot_bound() {
         let module =
             HirProjectModule::try_new(database, package, path, parsed.document().identity(), hir)
                 .expect("root module binding");
-        HirProject::try_new(database, package.clone(), [module]).expect("HIR project")
+        let mut builder = HirProjectBuilder::new(database, package.clone());
+        builder.insert_module(module).expect("module insertion");
+        builder.finish().expect("HIR project")
     }
 
     fn registered_artifact(

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::item::HirItemKind;
 use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
-use arcweft_lang_hir::project::{HirProject, HirProjectModule};
+use arcweft_lang_hir::project::{HirProject, HirProjectBuilder, HirProjectModule};
 use arcweft_lang_hir::proof_return::{
     HirProofReturnHeader, HirProofReturnModuleLease, HirProofReturnProjectGeneration,
     HirProofReturnSemanticClass, HirProofReturnSemanticFactSet,
@@ -143,7 +143,9 @@ impl Fixture {
             Arc::clone(&module),
         )
         .unwrap();
-        let project = HirProject::try_new(&database, package.clone(), [project_module]).unwrap();
+        let mut builder = HirProjectBuilder::new(&database, package.clone());
+        builder.insert_module(project_module).unwrap();
+        let project = builder.finish().unwrap();
         let world = ProjectSymbolWorldId::try_new(
             package.clone(),
             document.identity().id().clone(),
@@ -337,7 +339,11 @@ impl MultiFixture {
                 .unwrap()
             })
             .collect::<Vec<_>>();
-        let project = HirProject::try_new(&database, package.clone(), project_modules).unwrap();
+        let mut builder = HirProjectBuilder::new(&database, package.clone());
+        for module in project_modules {
+            builder.insert_module(module).unwrap();
+        }
+        let project = builder.finish().unwrap();
         let root = modules.get(&CanonicalModulePath::crate_root()).unwrap();
         let world =
             ProjectSymbolWorldId::try_new(package.clone(), root.0.identity().id().clone(), "test")

@@ -1,17 +1,19 @@
 use std::sync::Arc;
 
+use arcweft_id::dialogue::DialogueLineId;
 use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use arcweft_lang_syntax::incremental::{ParsedSource, SyntaxDatabase};
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 
 use super::{
-    HirProject, HirProjectError, HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
-    exported_parts, styles,
+    HirPackageModuleKey, HirProject, HirProjectBuildError, HirProjectBuilder,
+    HirProjectExecutionError, HirProjectModule, HirProjectModuleError, exported_parts, styles,
 };
 use crate::database::HirDatabase;
 use crate::final_lowering::stage_unpublished_module_for_invariant_test;
 use crate::item::{HirDeclarationMemberKind, HirItemKind};
+use crate::line_identity::{DialogueLineDiagnostic, DialogueLineIdOrigin, DialogueTextKeyOrigin};
 use crate::lowering::{HirModuleKey, LoweringRequest};
 use crate::module::HirModule;
 use crate::symbol::CallablePackageId;
@@ -71,6 +73,31 @@ fn bind(
 ) -> HirProjectModule {
     let source_identity = module.provenance().source_identity().clone();
     HirProjectModule::try_new(database, package, path, &source_identity, module).unwrap()
+}
+
+fn build_project(
+    database: &HirDatabase,
+    package: CallablePackageId,
+    modules: impl IntoIterator<Item = HirProjectModule>,
+) -> Result<HirProject, HirProjectBuildError> {
+    let mut builder = HirProjectBuilder::new(database, package);
+    for module in modules {
+        builder.insert_module(module)?;
+    }
+    builder.finish()
+}
+
+fn build_project_with_limit(
+    database: &HirDatabase,
+    package: CallablePackageId,
+    modules: impl IntoIterator<Item = HirProjectModule>,
+    maximum: usize,
+) -> Result<HirProject, HirProjectBuildError> {
+    let mut builder = HirProjectBuilder::new(database, package).with_module_limit_for_test(maximum);
+    for module in modules {
+        builder.insert_module(module)?;
+    }
+    builder.finish()
 }
 
 fn root_module_fixture(
@@ -180,13 +207,15 @@ fn project_requires_canonical_root_module() {
     );
     let child = lower(&mut database, &child_source, &package, &child_path);
     assert_eq!(
-        HirProject::try_new(
+        build_project(
             &database,
             package.clone(),
             [bind(&database, &package, &child_path, child)],
         )
         .err(),
-        Some(HirProjectError::MissingRootModule)
+        Some(HirProjectBuildError::MissingRootModule {
+            package: package.clone(),
+        })
     );
 }
 
@@ -207,7 +236,7 @@ fn project_rejects_duplicate_path_and_source() {
     let child = lower(&mut database, &parsed, &package, &child_path);
 
     assert_eq!(
-        HirProject::try_new(
+        build_project(
             &database,
             package.clone(),
             [
@@ -216,12 +245,12 @@ fn project_rejects_duplicate_path_and_source() {
             ],
         )
         .err(),
-        Some(HirProjectError::DuplicateModule {
-            module: root_path.clone(),
+        Some(HirProjectBuildError::DuplicateModule {
+            key: HirPackageModuleKey::new(package.clone(), root_path.clone()),
         })
     );
     assert_eq!(
-        HirProject::try_new(
+        build_project(
             &database,
             package.clone(),
             [
@@ -230,7 +259,7 @@ fn project_rejects_duplicate_path_and_source() {
             ],
         )
         .err(),
-        Some(HirProjectError::DuplicateSourceDocument {
+        Some(HirProjectBuildError::DuplicateSourceDocument {
             document: parsed.document().identity().id().clone(),
             first: root_path,
             second: child_path,
@@ -264,7 +293,7 @@ fn ordered_project_iteration_preserves_module_ids() {
     assert_eq!(root_items.len(), 2);
     let child_item = child.source_ordered_items()[0];
 
-    let project = HirProject::try_new(
+    let project = build_project(
         &database,
         package.clone(),
         [
@@ -315,6 +344,175 @@ fn ordered_project_iteration_preserves_module_ids() {
     let executable = project.executable_view().unwrap();
     assert_eq!(executable.modules().len(), 2);
     assert_eq!(executable.items().count(), 3);
+}
+
+#[test]
+fn project_publishes_generated_dialogue_identity_from_typed_callable_owner() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/dialogue-generated",
+        "dialogue-generated.arcw",
+        "fn opening() {\n    let line = alice[前[strong]強調[/strong]後]\n}\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(module.is_executable(), "{:?}", module.diagnostics());
+    assert_eq!(
+        module.dialogue_line_candidates().records().len(),
+        1,
+        "expression inventory: {:#?}",
+        module
+            .expressions()
+            .map(|(id, expression)| (id, expression.kind()))
+            .collect::<Vec<_>>()
+    );
+    let project = build_project(
+        &database,
+        package.clone(),
+        [bind(&database, &package, &root_path, module)],
+    )
+    .unwrap();
+
+    let records = project.dialogue_lines().records();
+    assert_eq!(records.len(), 1);
+    let line = &records[0];
+    assert_eq!(
+        line.id().as_str(),
+        "say.fn.proof-final-project-tests.function.opening.001"
+    );
+    assert_eq!(
+        line.text_key().as_str(),
+        "text.fn.proof-final-project-tests.function.opening.001"
+    );
+    assert_eq!(line.id_origin(), DialogueLineIdOrigin::Generated);
+    assert_eq!(line.text_key_origin(), DialogueTextKeyOrigin::Derived);
+    assert_eq!(project.dialogue_lines().get(line.id()), Some(line));
+    assert_eq!(
+        project
+            .dialogue_lines()
+            .for_expr(line.source().application()),
+        Some(line)
+    );
+    assert_eq!(
+        project
+            .dialogue_lines()
+            .source_ordered()
+            .collect::<Vec<_>>(),
+        [line]
+    );
+}
+
+#[test]
+fn project_rejects_cross_module_dialogue_id_collision_with_exact_sites() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let child_path = root_path.join(ModuleSegment::new("chapter").unwrap());
+    let mut root_syntax = SyntaxDatabase::try_new().unwrap();
+    let root_source = parse_initial(
+        &mut root_syntax,
+        "arcweft-test://proof/final-project/dialogue-collision-root",
+        "dialogue-collision-root.arcw",
+        "fn root_line() {\n    let line = alice(id = @say.shared)[前[strong]ルート[/strong]後]\n}\n",
+    );
+    let mut child_syntax = SyntaxDatabase::try_new().unwrap();
+    let child_source = parse_initial(
+        &mut child_syntax,
+        "arcweft-test://proof/final-project/dialogue-collision-child",
+        "dialogue-collision-child.arcw",
+        "fn child_line() {\n    let line = bob(id = @say.shared)[前[strong]チャイルド[/strong]後]\n}\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let root = lower(&mut database, &root_source, &package, &root_path);
+    let child = lower(&mut database, &child_source, &package, &child_path);
+    assert!(root.is_executable(), "{:?}", root.diagnostics());
+    assert!(child.is_executable(), "{:?}", child.diagnostics());
+    let result = build_project(
+        &database,
+        package.clone(),
+        [
+            bind(&database, &package, &child_path, child),
+            bind(&database, &package, &root_path, root),
+        ],
+    );
+    let Some(HirProjectBuildError::DialogueLines(rejection)) = result.err() else {
+        panic!("duplicate line ID must atomically reject the project")
+    };
+    let [
+        DialogueLineDiagnostic::LineIdCollision {
+            id,
+            first,
+            conflicting,
+        },
+    ] = rejection.diagnostics()
+    else {
+        panic!("one typed collision diagnostic expected")
+    };
+    assert_eq!(
+        id,
+        &DialogueLineId::try_new("say.shared").expect("checked line ID")
+    );
+    assert_eq!(first.module().path(), &root_path);
+    assert_eq!(conflicting.module().path(), &child_path);
+    assert_eq!(first.span().source(), root_source.document().identity());
+    assert_eq!(
+        conflicting.span().source(),
+        child_source.document().identity()
+    );
+    let root_id_start = root_source
+        .document()
+        .text()
+        .find("@say.shared")
+        .expect("root line ID");
+    let child_id_start = child_source
+        .document()
+        .text()
+        .find("@say.shared")
+        .expect("child line ID");
+    assert_eq!(
+        first.span().range(),
+        SourceRange::new(root_id_start, root_id_start + "@say.shared".len())
+    );
+    assert_eq!(
+        conflicting.span().range(),
+        SourceRange::new(child_id_start, child_id_start + "@say.shared".len())
+    );
+    assert_eq!(
+        rejection.diagnostics()[0]
+            .to_source_diagnostic()
+            .labels()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn module_line_identity_error_publishes_no_candidate_or_project() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/dialogue-wrong-family",
+        "dialogue-wrong-family.arcw",
+        "fn opening() {\n    let line = alice(id = @scene.wrong)[前[strong]本文[/strong]後]\n}\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    assert!(!module.is_executable());
+    assert!(module.dialogue_line_candidates().records().is_empty());
+    assert!(module.diagnostics().iter().any(|diagnostic| matches!(
+        diagnostic,
+        crate::diagnostic::HirDiagnostic::LineIdentity(
+            DialogueLineDiagnostic::InvalidLineIdFamily { found, span }
+        ) if found == "scene" && span.source() == parsed.document().identity()
+    )));
+    let bound = bind(&database, &package, &root_path, module);
+    let project = build_project(&database, package, [bound]).unwrap();
+    assert!(project.dialogue_lines().records().is_empty());
+    assert!(project.executable_view().is_err());
 }
 
 #[test]
@@ -434,7 +632,7 @@ fn accepted_project_generation_remains_bound_to_its_original_exact_arc() {
     let first_module = lower(&mut database, &first, &package, &root_path);
     let first_snapshot = first_module.snapshot_id();
     let future_stale = bind(&database, &package, &root_path, Arc::clone(&first_module));
-    let project = HirProject::try_new(
+    let project = build_project(
         &database,
         package.clone(),
         [bind(
@@ -465,8 +663,8 @@ fn accepted_project_generation_remains_bound_to_its_original_exact_arc() {
     assert_eq!(retained.snapshot_id(), first_snapshot);
     assert_eq!(project.executable_view().unwrap().modules().len(), 1);
     assert_eq!(
-        HirProject::try_new(&database, package, [future_stale]).err(),
-        Some(HirProjectError::StaleModuleLease {
+        build_project(&database, package, [future_stale]).err(),
+        Some(HirProjectBuildError::StaleModuleLease {
             module: root_path,
             current: second_snapshot,
             supplied: first_snapshot,
@@ -495,25 +693,27 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
     let child = lower(&mut database, &parsed, &package, &child_path);
 
     assert!(matches!(
-        HirProject::try_new(
+        build_project(
             &database,
             CallablePackageId::try_new("wrong-project-package").unwrap(),
             [bind(&database, &package, &root_path, Arc::clone(&root),)],
         ),
-        Err(HirProjectError::WrongPackage { .. })
+        Err(HirProjectBuildError::ModulePackageMismatch { .. })
     ));
     assert_eq!(
-        HirProject::try_new(
+        build_project(
             &database,
             package.clone(),
             [bind(&database, &package, &child_path, Arc::clone(&child),)],
         )
         .err(),
-        Some(HirProjectError::MissingRootModule)
+        Some(HirProjectBuildError::MissingRootModule {
+            package: package.clone(),
+        })
     );
 
     assert_eq!(
-        HirProject::try_new(
+        build_project(
             &database,
             package.clone(),
             [
@@ -522,12 +722,12 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
             ],
         )
         .err(),
-        Some(HirProjectError::DuplicateModule {
-            module: root_path.clone(),
+        Some(HirProjectBuildError::DuplicateModule {
+            key: HirPackageModuleKey::new(package.clone(), root_path.clone()),
         })
     );
     assert_eq!(
-        HirProject::try_new(
+        build_project(
             &database,
             package.clone(),
             [
@@ -536,7 +736,7 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
             ],
         )
         .err(),
-        Some(HirProjectError::DuplicateSourceDocument {
+        Some(HirProjectBuildError::DuplicateSourceDocument {
             document: parsed.document().identity().id().clone(),
             first: root_path.clone(),
             second: child_path.clone(),
@@ -552,7 +752,7 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
     );
     let distinct_child = lower(&mut database, &distinct_parsed, &package, &child_path);
     assert!(
-        HirProject::try_new_with_limit(
+        build_project_with_limit(
             &database,
             package.clone(),
             [
@@ -569,7 +769,7 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
         .is_ok()
     );
     assert_eq!(
-        HirProject::try_new_with_limit(
+        build_project_with_limit(
             &database,
             package.clone(),
             [
@@ -584,7 +784,7 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
             1,
         )
         .err(),
-        Some(HirProjectError::ModuleLimit {
+        Some(HirProjectBuildError::ModuleLimit {
             observed: 2,
             maximum: 1
         })
@@ -605,7 +805,7 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
         &child_path,
     );
     assert!(matches!(
-        HirProject::try_new(
+        build_project(
             &database,
             package.clone(),
             [
@@ -613,7 +813,7 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
                 bind(&foreign_database, &package, &child_path, foreign),
             ],
         ),
-        Err(HirProjectError::WrongDatabase { .. })
+        Err(HirProjectBuildError::WrongDatabase { .. })
     ));
 }
 
@@ -657,7 +857,7 @@ fn project_view_allows_recovered_but_executable_view_rejects_first_canonical() {
     assert!(!first_recovered.is_executable());
     assert!(!last_recovered.is_executable());
     let first_snapshot = first_recovered.snapshot_id();
-    let project = HirProject::try_new(
+    let project = build_project(
         &database,
         package.clone(),
         [
@@ -726,7 +926,7 @@ fn project_with_view_exports_and_styles() -> (
     let mut database = HirDatabase::try_new().unwrap();
     let root = lower(&mut database, &root_source, &package, &root_path);
     let child = lower(&mut database, &child_source, &package, &child_path);
-    let project = HirProject::try_new(
+    let project = build_project(
         &database,
         package.clone(),
         [

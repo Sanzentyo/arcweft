@@ -1,11 +1,14 @@
 //! Final semantic payload for one ordinary `flow` declaration.
 
+use arcweft_id::{DeclarationIdentityFamily, DeclarationName, PublicId};
+
 use crate::expr::HirThreadBody;
 use crate::identity::{
     ExprId, HirModuleId, ItemId, LocalId, PatternId, ScopeId, StmtId, SyntheticOwner, TypeId,
 };
 use crate::leaf::{HirIdRef, HirName};
 use crate::source_index::HirSourceQuery;
+use crate::symbol::FlowPublicationKind;
 
 use super::callable::{
     HirContractScopes, HirGenericParameter, HirParameter, HirParameterKind, HirWherePredicate,
@@ -45,6 +48,63 @@ impl HirFlowIdentity {
     pub const fn is_missing(&self) -> bool {
         matches!(self, Self::Missing)
     }
+
+    /// Resolves the sole accepted Flow identity without consulting source
+    /// spelling or a project-symbol side table.
+    pub(crate) fn accepted_publication(&self) -> Option<(PublicId, FlowPublicationKind)> {
+        match self {
+            Self::Name { name } => {
+                let name = DeclarationName::try_new(name.as_str()).ok()?;
+                let public_id = DeclarationIdentityFamily::Flow
+                    .derive_public_id(&name)
+                    .ok()?;
+                Some((public_id, FlowPublicationKind::ModuleScoped))
+            }
+            Self::PublicId { public_id } => accepted_flow_public_id(public_id),
+            Self::PublicIdAndName { public_id, name } => {
+                let (public_id, publication) = accepted_flow_public_id(public_id)?;
+                (public_id.as_str().rsplit('.').next() == Some(name.as_str()))
+                    .then_some((public_id, publication))
+            }
+            Self::Missing => None,
+        }
+    }
+}
+
+fn accepted_flow_public_id(reference: &HirIdRef) -> Option<(PublicId, FlowPublicationKind)> {
+    let (text, publication) = match reference {
+        HirIdRef::Absolute(reference) => (
+            reference.as_str().to_owned(),
+            FlowPublicationKind::AuthoredAbsolute,
+        ),
+        HirIdRef::Relative(relative) if relative.parent_depth() == 0 => (
+            format!(
+                "{}.{}",
+                DeclarationIdentityFamily::Flow.prefix(),
+                relative.suffix().as_str()
+            ),
+            FlowPublicationKind::ModuleScoped,
+        ),
+        HirIdRef::FamilyRelative(relative)
+            if relative.relative().parent_depth() == 0
+                && relative.family().as_str() == DeclarationIdentityFamily::Flow.prefix() =>
+        {
+            (
+                format!(
+                    "{}.{}",
+                    relative.family().as_str(),
+                    relative.relative().suffix().as_str()
+                ),
+                FlowPublicationKind::ModuleScoped,
+            )
+        }
+        HirIdRef::Relative(_) | HirIdRef::FamilyRelative(_) => return None,
+    };
+    let public_id = PublicId::try_new(text).ok()?;
+    DeclarationIdentityFamily::Flow
+        .validate_public_id(&public_id)
+        .ok()?;
+    Some((public_id, publication))
 }
 
 /// Semantic Flow return shape without fabricating a type node for omitted Unit.

@@ -300,7 +300,9 @@ fn assert_item_owner_whole_recovery(module: &HirModule, owner: crate::identity::
             {
                 Some(diagnostic)
             }
-            HirDiagnostic::Syntax(_) | HirDiagnostic::Recovery(_) => None,
+            HirDiagnostic::Syntax(_)
+            | HirDiagnostic::Recovery(_)
+            | HirDiagnostic::LineIdentity(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(recovery.len(), 1);
@@ -886,7 +888,9 @@ fn nominal_recovery_matrix_keeps_recognized_families_and_owner_whole_diagnostics
                 {
                     Some(diagnostic)
                 }
-                HirDiagnostic::Syntax(_) | HirDiagnostic::Recovery(_) => None,
+                HirDiagnostic::Syntax(_)
+                | HirDiagnostic::Recovery(_)
+                | HirDiagnostic::LineIdentity(_) => None,
             })
             .collect::<Vec<_>>();
         assert_eq!(recovery.len(), 1, "{case}");
@@ -2117,7 +2121,7 @@ fn malformed_module_and_use_families_remain_typed_with_one_poison_diagnostic() {
         .iter()
         .filter_map(|diagnostic| match diagnostic {
             HirDiagnostic::Recovery(diagnostic) => Some(diagnostic),
-            HirDiagnostic::Syntax(_) => None,
+            HirDiagnostic::Syntax(_) | HirDiagnostic::LineIdentity(_) => None,
         })
         .collect::<Vec<_>>();
     assert_eq!(recovery.len(), module.source_ordered_items().len());

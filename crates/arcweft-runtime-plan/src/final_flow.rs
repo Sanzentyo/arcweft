@@ -1666,7 +1666,7 @@ mod tests {
     use arcweft_lang_hir::database::HirDatabase;
     use arcweft_lang_hir::item::HirItemKind;
     use arcweft_lang_hir::lowering::{HirModuleKey, LoweringRequest};
-    use arcweft_lang_hir::project::{HirProject, HirProjectModule};
+    use arcweft_lang_hir::project::{HirProject, HirProjectBuilder, HirProjectModule};
     use arcweft_lang_hir::proof_return::HirProofReturnSemanticFactSet;
     use arcweft_lang_hir::symbol::{
         CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId,
@@ -1852,6 +1852,10 @@ mod tests {
             module,
         )
         .expect("accepted module lease");
-        HirProject::try_new(&database, package, [project_module]).expect("fixture project")
+        let mut builder = HirProjectBuilder::new(&database, package);
+        builder
+            .insert_module(project_module)
+            .expect("module insertion");
+        builder.finish().expect("fixture project")
     }
 }

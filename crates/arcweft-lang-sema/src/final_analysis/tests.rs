@@ -18,7 +18,7 @@ use arcweft_lang_hir::{
     lowering::{HirModuleKey, LoweringRequest},
     module::HirModule,
     pattern::HirPatternKind,
-    project::{HirProject, HirProjectModule},
+    project::{HirProject, HirProjectBuilder, HirProjectModule},
     proof_return::HirProofReturnSemanticFactSet,
     source_index::{
         HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole,
@@ -278,7 +278,11 @@ fn fixture_with_all_registration_inputs_and_base(
             .expect("project module")
         })
         .collect::<Vec<_>>();
-    let project = HirProject::try_new(&database, package.clone(), modules).expect("HIR project");
+    let mut builder = HirProjectBuilder::new(&database, package.clone());
+    for module in modules {
+        builder.insert_module(module).expect("module insertion");
+    }
+    let project = builder.finish().expect("HIR project");
     let registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(base),
         project.view(),

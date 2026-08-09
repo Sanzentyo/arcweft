@@ -1272,7 +1272,8 @@ fn duplicate_binding_gets_distinct_poisoned_local_without_advancing_generation()
         .iter()
         .filter_map(|diagnostic| match diagnostic {
             crate::diagnostic::HirDiagnostic::Recovery(recovery) => Some(recovery.owner()),
-            crate::diagnostic::HirDiagnostic::Syntax(_) => None,
+            crate::diagnostic::HirDiagnostic::Syntax(_)
+            | crate::diagnostic::HirDiagnostic::LineIdentity(_) => None,
         })
         .filter(|owner| *owner == SyntheticOwner::Local(duplicate))
         .count();

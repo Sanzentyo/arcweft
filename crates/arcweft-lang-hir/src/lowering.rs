@@ -291,6 +291,8 @@ pub enum HirLowerFailure {
     },
     #[error(transparent)]
     Limit(#[from] HirLimitError),
+    #[error(transparent)]
+    DialogueLine(#[from] crate::line_identity::DialogueLineBuildFatal),
     #[error("HIR module identity allocation is exhausted")]
     ModuleIdentityExhausted,
     #[error("project HIR transaction contains no modules")]

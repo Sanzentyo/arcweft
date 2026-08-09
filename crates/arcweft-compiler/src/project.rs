@@ -34,7 +34,7 @@ use arcweft_lang_hir::{
     identity::{HirDatabaseCreateError, HirDatabaseId},
     lowering::{HirLoweringControl, HirModuleKey, LoweringRequest},
     module::HirModule,
-    project::{HirProject, HirProjectModule},
+    project::{HirProject, HirProjectBuildError, HirProjectBuilder, HirProjectModule},
     symbol::{CallablePackageId, ProjectSymbolTable},
 };
 #[cfg(test)]
@@ -638,8 +638,9 @@ where
             })?;
             project_modules.push(bound);
         }
-        let hir_project = Arc::new(
-            HirProject::try_new(&session.hir, package, project_modules).map_err(|error| {
+        let mut project_builder = HirProjectBuilder::new(&session.hir, package);
+        for module in project_modules {
+            project_builder.insert_module(module).map_err(|error| {
                 linked_error(
                     ProjectCompileStage::HirProject,
                     [
@@ -647,8 +648,28 @@ where
                             .with_code("hir.project"),
                     ],
                 )
-            })?,
-        );
+            })?;
+        }
+        let hir_project = Arc::new(project_builder.finish().map_err(|error| {
+            match error {
+                HirProjectBuildError::DialogueLines(rejection) => linked_error(
+                    ProjectCompileStage::HirProject,
+                    rejection
+                    .diagnostics()
+                    .iter()
+                    .map(
+                        arcweft_lang_hir::line_identity::DialogueLineDiagnostic::to_source_diagnostic,
+                    ),
+                ),
+                error => linked_error(
+                    ProjectCompileStage::HirProject,
+                    [
+                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                            .with_code("hir.project"),
+                    ],
+                ),
+            }
+        })?);
         let mut semantic_tail_diagnostics = Vec::new();
         for module in &modules {
             let projected = project_callable_tail_recovery_diagnostics(

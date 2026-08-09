@@ -20,7 +20,7 @@ use arcweft_compiler::project::{
 use arcweft_lang_hir::{
     database::HirDatabase,
     lowering::{HirModuleKey, LoweringRequest},
-    project::{HirProject, HirProjectModule},
+    project::{HirProject, HirProjectBuilder, HirProjectModule},
     proof_return::HirProofReturnSemanticFactSet,
     symbol::{
         CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolLinkError,
@@ -337,8 +337,9 @@ fn attached_project(
     assert!(outputs.is_empty());
     let bound = HirProjectModule::try_new(&database, &package, &path, document.identity(), hir)
         .expect("final HIR module binding");
-    let project =
-        Arc::new(HirProject::try_new(&database, package, [bound]).expect("final HIR project"));
+    let mut builder = HirProjectBuilder::new(&database, package);
+    builder.insert_module(bound).expect("module insertion");
+    let project = Arc::new(builder.finish().expect("final HIR project"));
     (parsed, project)
 }
 
