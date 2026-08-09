@@ -195,6 +195,47 @@ fn exact_root_dependency_and_declaration_free_hir_are_retained() {
 }
 
 #[test]
+fn compiled_semantic_authority_requires_one_checked_catalog_generation() {
+    let first_document = document(
+        "arcweft-project://accepted/semantic-authority-first.arcw",
+        "fn first() {}\n",
+    );
+    let second_document = document(
+        "arcweft-project://accepted/semantic-authority-second.arcw",
+        "fn second() {}\n",
+    );
+    let first = compiled_project(&[(CanonicalModulePath::crate_root(), first_document)]);
+    let second = compiled_project(&[(CanonicalModulePath::crate_root(), second_document)]);
+
+    validate_compiled_semantic_authority(
+        first.final_analysis(),
+        first.semantic_index(),
+        first.registered_world(),
+        first.project_symbols(),
+    )
+    .expect("one compiled generation retains its exact semantic authority");
+
+    assert!(matches!(
+        validate_compiled_semantic_authority(
+            first.final_analysis(),
+            second.semantic_index(),
+            first.registered_world(),
+            first.project_symbols(),
+        ),
+        Err(CompiledSemanticAuthorityError::CatalogLeaseMismatch)
+    ));
+    assert!(matches!(
+        validate_compiled_semantic_authority(
+            first.final_analysis(),
+            first.semantic_index(),
+            second.registered_world(),
+            second.project_symbols(),
+        ),
+        Err(CompiledSemanticAuthorityError::CatalogAuthority(_))
+    ));
+}
+
+#[test]
 fn recovered_tooling_lease_retains_exact_source_hir_and_navigation_without_semantics() {
     let root = document("arcweft-project://accepted/recovered.arcw", "fn {\n");
     let error = project_compilation(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))])

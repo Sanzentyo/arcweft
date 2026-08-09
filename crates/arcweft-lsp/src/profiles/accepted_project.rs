@@ -23,7 +23,7 @@ use arcweft_lang_hir::{
     },
 };
 use arcweft_lang_sema::{
-    callable::{CallTargetFact, SignatureOrigin},
+    callable::{CallTargetFact, CheckedCallableLookupError, SignatureOrigin},
     entry::CheckedEntryId,
     final_analysis::{CheckedExpressionResolution, CheckedValueResolution, FinalSemanticAnalysis},
     project_index::ProjectSemanticIndex,
@@ -260,6 +260,8 @@ pub(crate) enum AcceptedProjectSnapshotError {
         actual: SourceSetRevision,
     },
     CompiledToolingLeaseMismatch,
+    CompiledCheckedCatalogLeaseMismatch,
+    CompiledCheckedCatalogAuthority(CheckedCallableLookupError),
     CompiledModuleInventoryMismatch {
         project_only: Box<[CanonicalModulePath]>,
         compiled_only: Box<[CanonicalModulePath]>,
@@ -284,6 +286,12 @@ pub(crate) enum AcceptedProjectSnapshotError {
         conflicting: CanonicalModulePath,
     },
     SourceSet(SourceSetRevisionError),
+}
+
+#[derive(Debug)]
+enum CompiledSemanticAuthorityError {
+    CatalogLeaseMismatch,
+    CatalogAuthority(CheckedCallableLookupError),
 }
 
 impl std::fmt::Display for AcceptedProjectSnapshotError {
@@ -344,6 +352,14 @@ impl std::fmt::Display for AcceptedProjectSnapshotError {
                 formatter,
                 "compiled project does not retain the accepted tooling lease allocation"
             ),
+            Self::CompiledCheckedCatalogLeaseMismatch => write!(
+                formatter,
+                "compiled semantic report and project index do not retain the same checked callable catalog allocation"
+            ),
+            Self::CompiledCheckedCatalogAuthority(error) => write!(
+                formatter,
+                "compiled checked callable catalog is not admitted by the accepted semantic world: {error:?}"
+            ),
             Self::CompiledModuleInventoryMismatch {
                 project_only,
                 compiled_only,
@@ -394,6 +410,19 @@ impl std::error::Error for AcceptedProjectSnapshotError {
 impl From<SourceSetRevisionError> for AcceptedProjectSnapshotError {
     fn from(error: SourceSetRevisionError) -> Self {
         Self::SourceSet(error)
+    }
+}
+
+impl From<CompiledSemanticAuthorityError> for AcceptedProjectSnapshotError {
+    fn from(error: CompiledSemanticAuthorityError) -> Self {
+        match error {
+            CompiledSemanticAuthorityError::CatalogLeaseMismatch => {
+                Self::CompiledCheckedCatalogLeaseMismatch
+            }
+            CompiledSemanticAuthorityError::CatalogAuthority(error) => {
+                Self::CompiledCheckedCatalogAuthority(error)
+            }
+        }
     }
 }
 
@@ -628,6 +657,25 @@ fn validate_bound_hir_source(
     Ok(())
 }
 
+fn validate_compiled_semantic_authority(
+    analysis: &FinalSemanticAnalysis,
+    semantic_index: &ProjectSemanticIndex,
+    world: &RegisteredSemanticWorld,
+    symbols: &ProjectSymbolTable,
+) -> Result<(), CompiledSemanticAuthorityError> {
+    let checked = analysis.checked_callables();
+    if !Arc::ptr_eq(checked, semantic_index.checked_callables()) {
+        return Err(CompiledSemanticAuthorityError::CatalogLeaseMismatch);
+    }
+    checked
+        .validate_registered_authority(
+            world.environment().callable_catalog(),
+            symbols.world(),
+            *symbols.revision(),
+        )
+        .map_err(CompiledSemanticAuthorityError::CatalogAuthority)
+}
+
 impl AcceptedProjectSnapshot {
     #[allow(
         clippy::result_large_err,
@@ -641,6 +689,15 @@ impl AcceptedProjectSnapshot {
     ) -> Result<Self, AcceptedProjectSnapshotError> {
         if executable.is_some_and(|compiled| !Arc::ptr_eq(compiled.tooling_lease(), &tooling)) {
             return Err(AcceptedProjectSnapshotError::CompiledToolingLeaseMismatch);
+        }
+        if let Some(compiled) = executable {
+            validate_compiled_semantic_authority(
+                compiled.final_analysis(),
+                compiled.semantic_index(),
+                compiled.registered_world(),
+                compiled.project_symbols(),
+            )
+            .map_err(AcceptedProjectSnapshotError::from)?;
         }
         let mut source_builder = AcceptedSourceRegistryBuilder::default();
         for seed in source_seeds {

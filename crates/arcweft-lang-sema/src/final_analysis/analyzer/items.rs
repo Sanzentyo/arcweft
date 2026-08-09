@@ -677,7 +677,7 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
         checked
             .validate_registered_authority(
-                &staged.accepted,
+                staged.accepted.as_ref(),
                 self.symbols.world(),
                 *self.symbols.revision(),
             )

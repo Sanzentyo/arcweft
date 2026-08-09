@@ -500,14 +500,14 @@ impl CheckedCallableCatalog {
     /// accepted lease.
     pub fn validate_registered_authority(
         &self,
-        registered: &Arc<RegisteredCallableCatalog>,
+        registered: &RegisteredCallableCatalog,
         world: &ProjectSymbolWorldId,
         revision: ProjectSymbolRevision,
     ) -> Result<(), CheckedCallableLookupError> {
         let Some(retained) = &self.registered else {
             return Err(CheckedCallableLookupError::WrongFamily);
         };
-        if !Arc::ptr_eq(retained, registered) {
+        if !std::ptr::eq(retained.as_ref(), registered) {
             return Err(CheckedCallableLookupError::RecordPointerMismatch);
         }
         match &self.generation.origin {
