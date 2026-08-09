@@ -1124,7 +1124,9 @@ fn capture_limit_is_inclusive_and_atomic() {
     assert_eq!(retried.captures().count(), 3);
     assert!(Arc::ptr_eq(
         &retried,
-        &database.current(&key).expect("retried module is current")
+        &database
+            .current(&module_key(&revised))
+            .expect("retried module is current")
     ));
 }
 

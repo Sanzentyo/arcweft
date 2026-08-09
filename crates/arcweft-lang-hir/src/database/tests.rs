@@ -20,13 +20,27 @@ use crate::slot::{PreparedSlotCommit, StagedSlotTransaction};
 use crate::source_index::{HirSourceIndex, HirSourceSite};
 use crate::symbol::CallablePackageId;
 
-use super::{HirDatabase, HirSnapshotLookupError, StagedModuleCommit};
+use super::{HirDatabase, HirModuleRegistryKey, HirSnapshotLookupError, StagedModuleCommit};
 
 fn module_key(document: &str) -> HirModuleKey {
+    let document = SourceDocument::try_new(
+        SourceDocumentId::try_new(document).unwrap(),
+        SourceName::Generated,
+        "",
+    )
+    .unwrap();
     HirModuleKey::new(
         CallablePackageId::try_new("proof-database-tests").unwrap(),
         CanonicalModulePath::crate_root(),
-        SourceDocumentId::try_new(document).unwrap(),
+        document.identity().clone(),
+    )
+}
+
+fn parsed_module_key(parsed: &ParsedSource) -> HirModuleKey {
+    HirModuleKey::new(
+        CallablePackageId::try_new("proof-database-tests").unwrap(),
+        CanonicalModulePath::crate_root(),
+        parsed.document().identity().clone(),
     )
 }
 
@@ -41,7 +55,7 @@ fn validated(plan: &StagedModuleCommit) -> Arc<HirModule> {
 fn stage_and_commit(database: &mut HirDatabase, key: &HirModuleKey) -> Arc<HirModule> {
     let plan = database.stage_module(key).unwrap();
     let module = validated(&plan);
-    database.commit_module(plan, module).unwrap()
+    database.commit_module(&plan, module).unwrap()
 }
 
 fn publish_empty_slots(database: &mut HirDatabase, key: &HirModuleKey) -> Arc<HirModule> {
@@ -63,7 +77,7 @@ fn publish_empty_slots(database: &mut HirDatabase, key: &HirModuleKey) -> Arc<Hi
         .unwrap(),
     );
     database
-        .publish_module(plan, prepared, Arc::clone(&module))
+        .publish_module(&plan, prepared, Arc::clone(&module))
         .unwrap()
         .into_module()
 }
@@ -259,7 +273,7 @@ fn dropped_stage_consumes_neither_module_slot_nor_revision() {
     let committed_plan = database.stage_module(&key).unwrap();
     assert_eq!(committed_plan.snapshot_id(), expected_snapshot);
     let module = validated(&committed_plan);
-    let committed = database.commit_module(committed_plan, module).unwrap();
+    let committed = database.commit_module(&committed_plan, module).unwrap();
     assert!(Arc::ptr_eq(&committed, &database.current(&key).unwrap()));
     assert!(Arc::ptr_eq(
         &committed,
@@ -287,7 +301,7 @@ fn successful_revision_publish_retains_both_exact_arc_leases() {
         first.invalidation_epoch().get() + 1
     );
     let module = validated(&plan);
-    let second = database.commit_module(plan, module).unwrap();
+    let second = database.commit_module(&plan, module).unwrap();
 
     assert!(Arc::ptr_eq(&second, &database.current(&key).unwrap()));
     assert!(Arc::ptr_eq(
@@ -304,13 +318,13 @@ fn successful_revision_publish_retains_both_exact_arc_leases() {
 fn new_item_publication_derives_the_exact_changed_inventory() {
     let parsed = parsed_source();
     let mut database = HirDatabase::try_new().unwrap();
-    let key = module_key("arcweft-test://proof/database-atomic");
+    let key = parsed_module_key(&parsed);
     let plan = database.stage_module(&key).unwrap();
     let (prepared, module, item) = stage_item_module(&plan, &parsed, Some("first"));
     let item = item.unwrap();
 
     let output = database
-        .publish_module(plan, prepared, Arc::clone(&module))
+        .publish_module(&plan, prepared, Arc::clone(&module))
         .unwrap();
 
     assert!(Arc::ptr_eq(output.module(), &module));
@@ -327,34 +341,35 @@ fn new_item_publication_derives_the_exact_changed_inventory() {
 fn item_equal_revision_is_empty_and_payload_update_is_exactly_changed() {
     let (parsed, trivia) = parsed_source_with_trivia_revision();
     let mut database = HirDatabase::try_new().unwrap();
-    let key = module_key("arcweft-test://proof/database-atomic");
+    let key = parsed_module_key(&parsed);
 
     let first_plan = database.stage_module(&key).unwrap();
     let (first_prepared, first_module, first_item) =
         stage_item_module(&first_plan, &parsed, Some("first"));
     let first_item = first_item.unwrap();
     let first = database
-        .publish_module(first_plan, first_prepared, first_module)
+        .publish_module(&first_plan, first_prepared, first_module)
         .unwrap()
         .into_module();
 
-    let equal_plan = database.stage_module(&key).unwrap();
+    let trivia_key = parsed_module_key(&trivia);
+    let equal_plan = database.stage_module(&trivia_key).unwrap();
     let (equal_prepared, equal_module, equal_item) =
         stage_item_module(&equal_plan, &trivia, Some("first"));
     assert_eq!(equal_item, Some(first_item));
     let equal = database
-        .publish_module(equal_plan, equal_prepared, equal_module)
+        .publish_module(&equal_plan, equal_prepared, equal_module)
         .unwrap();
     assert_eq!(equal.invalidations().previous(), Some(first.snapshot_id()));
     assert!(equal.invalidations().is_empty());
 
-    let changed_plan = database.stage_module(&key).unwrap();
+    let changed_plan = database.stage_module(&trivia_key).unwrap();
     let previous = changed_plan.previous().unwrap().snapshot_id();
     let (changed_prepared, changed_module, changed_item) =
         stage_item_module(&changed_plan, &trivia, Some("second"));
     assert_eq!(changed_item, Some(first_item));
     let changed = database
-        .publish_module(changed_plan, changed_prepared, changed_module)
+        .publish_module(&changed_plan, changed_prepared, changed_module)
         .unwrap();
 
     assert_eq!(changed.invalidations().previous(), Some(previous));
@@ -368,14 +383,14 @@ fn item_equal_revision_is_empty_and_payload_update_is_exactly_changed() {
 fn item_retirement_is_derived_without_caller_facts() {
     let parsed = parsed_source();
     let mut database = HirDatabase::try_new().unwrap();
-    let key = module_key("arcweft-test://proof/database-atomic");
+    let key = parsed_module_key(&parsed);
 
     let first_plan = database.stage_module(&key).unwrap();
     let (first_prepared, first_module, item) =
         stage_item_module(&first_plan, &parsed, Some("retired"));
     let item = item.unwrap();
     database
-        .publish_module(first_plan, first_prepared, first_module)
+        .publish_module(&first_plan, first_prepared, first_module)
         .unwrap();
 
     let retired_plan = database.stage_module(&key).unwrap();
@@ -383,7 +398,7 @@ fn item_retirement_is_derived_without_caller_facts() {
         stage_item_module(&retired_plan, &parsed, None);
     assert_eq!(current_item, None);
     let retired = database
-        .publish_module(retired_plan, retired_prepared, retired_module)
+        .publish_module(&retired_plan, retired_prepared, retired_module)
         .unwrap();
 
     assert!(retired.invalidations().changed_items().is_empty());
@@ -398,20 +413,21 @@ fn status_only_transition_invalidates_execution_and_symbols() {
     let recovered = parsed_source_with("fn {\n");
     assert!(!recovered.diagnostics().is_empty());
     let mut database = HirDatabase::try_new().unwrap();
-    let key = module_key("arcweft-test://proof/database-atomic");
+    let key = parsed_module_key(&clean);
 
     let clean_plan = database.stage_module(&key).unwrap();
     let (clean_prepared, clean_module, _) = stage_item_module(&clean_plan, &clean, None);
     database
-        .publish_module(clean_plan, clean_prepared, clean_module)
+        .publish_module(&clean_plan, clean_prepared, clean_module)
         .unwrap();
 
-    let recovered_plan = database.stage_module(&key).unwrap();
+    let recovered_key = parsed_module_key(&recovered);
+    let recovered_plan = database.stage_module(&recovered_key).unwrap();
     let (recovered_prepared, recovered_module, _) =
         stage_item_module(&recovered_plan, &recovered, None);
     assert_eq!(recovered_module.status(), HirModuleStatus::Recovered);
     let output = database
-        .publish_module(recovered_plan, recovered_prepared, recovered_module)
+        .publish_module(&recovered_plan, recovered_prepared, recovered_module)
         .unwrap();
 
     assert!(output.invalidations().changed_items().is_empty());
@@ -439,7 +455,7 @@ fn database_publishes_the_exact_prepared_slot_and_module_leases_together() {
         .unwrap(),
     );
     let output = database
-        .publish_module(plan, prepared, Arc::clone(&module))
+        .publish_module(&plan, prepared, Arc::clone(&module))
         .unwrap();
 
     assert!(Arc::ptr_eq(output.module(), &module));
@@ -470,7 +486,7 @@ fn update_publication_requires_the_exact_current_slot_ancestry() {
         .unwrap(),
     );
     let first = database
-        .publish_module(first_plan, first_prepared, Arc::clone(&first_module))
+        .publish_module(&first_plan, first_prepared, Arc::clone(&first_module))
         .unwrap()
         .into_module();
 
@@ -490,7 +506,7 @@ fn update_publication_requires_the_exact_current_slot_ancestry() {
         .unwrap(),
     );
     assert!(matches!(
-        database.publish_module(rejected_plan, unrelated, rejected_module),
+        database.publish_module(&rejected_plan, unrelated, rejected_module),
         Err(HirLowerFailure::Invariant(
             HirInvariantFailure::InvalidModuleCommit
         ))
@@ -515,7 +531,7 @@ fn update_publication_requires_the_exact_current_slot_ancestry() {
     );
     let accepted = database
         .publish_module(
-            accepted_plan,
+            &accepted_plan,
             accepted_prepared,
             Arc::clone(&accepted_module),
         )
@@ -547,7 +563,7 @@ fn stale_slot_snapshot_cannot_publish_through_a_newer_module_plan() {
         .unwrap(),
     );
     assert!(matches!(
-        database.publish_module(plan, stale, module),
+        database.publish_module(&plan, stale, module),
         Err(HirLowerFailure::Invariant(
             HirInvariantFailure::InvalidModuleCommit
         ))
@@ -597,14 +613,14 @@ fn competing_plans_from_one_current_arc_publish_only_the_first() {
         .unwrap(),
     );
     let accepted_output = database
-        .publish_module(plan_a, prepared_a, Arc::clone(&module_a))
+        .publish_module(&plan_a, prepared_a, Arc::clone(&module_a))
         .unwrap();
     assert!(accepted_output.invalidations().is_empty());
     let accepted = accepted_output.into_module();
     assert!(Arc::ptr_eq(&accepted, &module_a));
 
     assert!(matches!(
-        database.publish_module(plan_b, prepared_b, module_b),
+        database.publish_module(&plan_b, prepared_b, module_b),
         Err(HirLowerFailure::Invariant(
             HirInvariantFailure::InvalidModuleCommit
         ))
@@ -625,7 +641,7 @@ fn competing_plans_from_one_current_arc_publish_only_the_first() {
 fn non_item_arena_change_does_not_fabricate_item_invalidations() {
     let parsed = parsed_source();
     let mut database = HirDatabase::try_new().unwrap();
-    let key = module_key("arcweft-test://proof/database-atomic");
+    let key = parsed_module_key(&parsed);
     let plan = database.stage_module(&key).unwrap();
     let mut slots = StagedSlotTransaction::new(plan.module_id(), plan.revision());
     let mut scopes = StagedArena::<HirScope, ScopeId>::new();
@@ -677,7 +693,7 @@ fn non_item_arena_change_does_not_fabricate_item_invalidations() {
         )
         .unwrap(),
     );
-    let output = database.publish_module(plan, prepared, module).unwrap();
+    let output = database.publish_module(&plan, prepared, module).unwrap();
     assert!(output.invalidations().is_empty());
     assert_eq!(observable_slots.committed_slot_count(), 1);
     assert!(Arc::ptr_eq(
@@ -743,7 +759,7 @@ fn mismatched_validated_snapshot_publishes_nothing() {
     ));
 
     assert!(matches!(
-        database.commit_module(plan, mismatched),
+        database.commit_module(&plan, mismatched),
         Err(HirLowerFailure::Invariant(
             HirInvariantFailure::InvalidModuleCommit
         ))
@@ -802,7 +818,10 @@ fn revision_exhaustion_is_atomic() {
         key.clone(),
         NonZeroU64::MIN,
     ));
-    let state = database.modules.get_mut(&key).unwrap();
+    let state = database
+        .modules
+        .get_mut(&HirModuleRegistryKey::from(&key))
+        .unwrap();
     state.current = Arc::clone(&exhausted);
     state
         .snapshots
@@ -826,7 +845,10 @@ fn cache_epoch_exhaustion_is_atomic() {
         key.clone(),
         NonZeroU64::new(u64::MAX).unwrap(),
     ));
-    let state = database.modules.get_mut(&key).unwrap();
+    let state = database
+        .modules
+        .get_mut(&HirModuleRegistryKey::from(&key))
+        .unwrap();
     state.current = Arc::clone(&exhausted);
     state
         .snapshots

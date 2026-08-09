@@ -282,7 +282,7 @@ fn proof_artifact_id_is_session_only_and_snapshot_bound() {
         let key = HirModuleKey::new(
             package.clone(),
             path.clone(),
-            parsed.document().identity().id().clone(),
+            parsed.document().identity().clone(),
         );
         let world = ProjectSymbolWorldId::try_new(
             package.clone(),

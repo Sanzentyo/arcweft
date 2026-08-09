@@ -1724,7 +1724,10 @@ fn stale_failed_relower_keeps_old_publication_and_retry_reuses_every_identity() 
         .attached_pattern(initial_attached.id())
         .expect("retained revised Pattern");
     let key = module_key(&initial);
-    assert_eq!(key, module_key(&revised));
+    let revised_key = module_key(&revised);
+    assert_eq!(key.package(), revised_key.package());
+    assert_eq!(key.path(), revised_key.path());
+    assert_ne!(key.source(), revised_key.source());
 
     let mut database = HirDatabase::try_new().expect("HIR database");
     let mut accepted = stage(&database, &initial);
@@ -1780,6 +1783,8 @@ fn stale_failed_relower_keeps_old_publication_and_retry_reuses_every_identity() 
         .into_module();
     assert!(Arc::ptr_eq(
         &replacement,
-        &database.current(&key).expect("replacement becomes current")
+        &database
+            .current(&revised_key)
+            .expect("replacement becomes current")
     ));
 }

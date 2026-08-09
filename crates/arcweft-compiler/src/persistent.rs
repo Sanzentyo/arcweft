@@ -1497,11 +1497,7 @@ return "done"
         let package = CallablePackageId::try_new("compiler-persistent-tests")
             .expect("persistent test package ID");
         let path = CanonicalModulePath::crate_root();
-        let key = HirModuleKey::new(
-            package.clone(),
-            path,
-            parsed.document().identity().id().clone(),
-        );
+        let key = HirModuleKey::new(package.clone(), path, parsed.document().identity().clone());
         let mut database = HirDatabase::try_new().expect("persistent test HIR database");
         let world = ProjectSymbolWorldId::try_new(
             package,

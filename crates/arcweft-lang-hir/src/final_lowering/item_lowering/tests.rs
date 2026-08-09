@@ -87,7 +87,15 @@ fn module_key(parsed: &ParsedSource) -> HirModuleKey {
     HirModuleKey::new(
         CallablePackageId::try_new("proof-source-file-item-tests").unwrap(),
         CanonicalModulePath::crate_root(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
+    )
+}
+
+fn revision_key(base: &HirModuleKey, parsed: &ParsedSource) -> HirModuleKey {
+    HirModuleKey::new(
+        base.package().clone(),
+        base.path().clone(),
+        parsed.document().identity().clone(),
     )
 }
 
@@ -96,9 +104,10 @@ fn stage<'source>(
     parsed: &'source ParsedSource,
     key: &HirModuleKey,
 ) -> StagedHirModuleTransaction<'source> {
+    let key = revision_key(key, parsed);
     super::super::stage_unpublished_module_for_invariant_test(
         database,
-        LoweringRequest::try_new(key.clone(), parsed).unwrap(),
+        LoweringRequest::try_new(key, parsed).unwrap(),
         crate::lowering::HirLoweringControl::new(),
     )
     .unwrap()
@@ -116,6 +125,7 @@ fn lower_with_proof_return_classes(
     key: &HirModuleKey,
     classes: impl IntoIterator<Item = HirProofReturnSemanticClass>,
 ) -> Arc<HirModule> {
+    let key = revision_key(key, parsed);
     let world = ProjectSymbolWorldId::try_new(
         key.package().clone(),
         parsed.document().identity().id().clone(),
@@ -126,7 +136,7 @@ fn lower_with_proof_return_classes(
         ProjectSymbolRevision::try_for_documents([parsed.document().identity()]).unwrap();
     let transaction = database
         .stage_proof_return_project(
-            [LoweringRequest::try_new(key.clone(), parsed).unwrap()],
+            [LoweringRequest::try_new(key, parsed).unwrap()],
             world,
             revision,
             [parsed.document().identity()],

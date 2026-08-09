@@ -232,7 +232,7 @@ fn module_key(parsed: &ParsedSource) -> HirModuleKey {
     HirModuleKey::new(
         CallablePackageId::try_new("proof-expression-lowering-tests").expect("package ID"),
         CanonicalModulePath::crate_root(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
     )
 }
 
@@ -2144,7 +2144,10 @@ fn numeric_sequence_rollback_and_relowering_publish_one_recovery_diagnostic() {
     let revised_attached = attached_expressions(&revised).pop().unwrap();
     assert_eq!(initial_attached.id(), revised_attached.id());
     let key = module_key(&initial);
-    assert_eq!(key, module_key(&revised));
+    let revised_key = module_key(&revised);
+    assert_eq!(key.package(), revised_key.package());
+    assert_eq!(key.path(), revised_key.path());
+    assert_ne!(key.source(), revised_key.source());
 
     let mut database = HirDatabase::try_new().expect("HIR database");
     let mut initial_transaction = stage(&database, &initial);
@@ -2235,7 +2238,9 @@ fn numeric_sequence_rollback_and_relowering_publish_one_recovery_diagnostic() {
         1
     );
     assert!(Arc::ptr_eq(
-        &database.current(&key).expect("revised module is current"),
+        &database
+            .current(&revised_key)
+            .expect("revised module is current"),
         &revised_module
     ));
 
@@ -2868,7 +2873,10 @@ fn invalid_attached_identity_and_scope_publish_no_partial_expression_state() {
         .expect("retained revised expression");
     assert_eq!(initial_attached.id(), revised_attached.id());
     let key = module_key(&initial);
-    assert_eq!(key, module_key(&revised));
+    let revised_key = module_key(&revised);
+    assert_eq!(key.package(), revised_key.package());
+    assert_eq!(key.path(), revised_key.path());
+    assert_ne!(key.source(), revised_key.source());
 
     let mut database = HirDatabase::try_new().expect("HIR database");
     let mut accepted_transaction = stage(&database, &initial);

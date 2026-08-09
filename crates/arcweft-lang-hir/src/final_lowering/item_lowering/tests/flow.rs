@@ -1388,7 +1388,10 @@ fn rejected_flow_revision_preserves_prior_publication_and_retry_identity() {
         )
         .unwrap();
     let key = module_key(&initial);
-    assert_eq!(module_key(&revised), key);
+    let revised_key = module_key(&revised);
+    assert_eq!(revised_key.package(), key.package());
+    assert_eq!(revised_key.path(), key.path());
+    assert_ne!(revised_key.source(), key.source());
 
     let mut database = HirDatabase::try_new().unwrap();
     let prior = lower(&mut database, &initial, &key);
@@ -1458,7 +1461,9 @@ fn rejected_flow_revision_preserves_prior_publication_and_retry_identity() {
         output.module().invalidation_epoch().get(),
         prior_epoch.get() + 1
     );
-    let accepted = database.current(&key).expect("retried Flow is current");
+    let accepted = database
+        .current(&revised_key)
+        .expect("retried Flow is current");
     assert!(Arc::ptr_eq(&accepted, output.module()));
     assert_eq!(
         flow_query(&accepted, &revised, failed_owner, HirFlowSourceRole::Name,).owner_status(),

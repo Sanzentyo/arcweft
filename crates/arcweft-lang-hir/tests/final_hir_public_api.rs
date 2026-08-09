@@ -35,7 +35,7 @@ fn public_final_hir_boundary_preserves_the_accepted_module_lease() {
     let key = HirModuleKey::new(
         package.clone(),
         path.clone(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
     );
     let mut database = HirDatabase::try_new().unwrap();
     let world = ProjectSymbolWorldId::try_new(

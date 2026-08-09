@@ -347,11 +347,7 @@ fn final_native_outcomes(
     let transaction = hir_database
         .stage_proof_return_project(
             [LoweringRequest::try_new(
-                HirModuleKey::new(
-                    package.clone(),
-                    path.clone(),
-                    document.identity().id().clone(),
-                ),
+                HirModuleKey::new(package.clone(), path.clone(), document.identity().clone()),
                 &parsed,
             )
             .expect("lowering request")],

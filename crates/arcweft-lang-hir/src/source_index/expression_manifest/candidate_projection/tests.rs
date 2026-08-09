@@ -508,7 +508,7 @@ fn module_key(parsed: &ParsedSource) -> HirModuleKey {
     HirModuleKey::new(
         CallablePackageId::try_new("candidate-freeze-tests").expect("package ID"),
         CanonicalModulePath::crate_root(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
     )
 }
 

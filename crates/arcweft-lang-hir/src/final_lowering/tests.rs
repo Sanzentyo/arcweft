@@ -65,7 +65,15 @@ fn key(parsed: &ParsedSource) -> HirModuleKey {
     HirModuleKey::new(
         CallablePackageId::try_new("proof-final-lowering-tests").unwrap(),
         CanonicalModulePath::crate_root(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
+    )
+}
+
+fn revision_key(base: &HirModuleKey, parsed: &ParsedSource) -> HirModuleKey {
+    HirModuleKey::new(
+        base.package().clone(),
+        base.path().clone(),
+        parsed.document().identity().clone(),
     )
 }
 
@@ -74,9 +82,10 @@ fn stage<'source>(
     parsed: &'source ParsedSource,
     key: &HirModuleKey,
 ) -> StagedHirModuleTransaction<'source> {
+    let key = revision_key(key, parsed);
     super::stage_unpublished_module_for_invariant_test(
         database,
-        LoweringRequest::try_new(key.clone(), parsed).unwrap(),
+        LoweringRequest::try_new(key, parsed).unwrap(),
         crate::lowering::HirLoweringControl::new(),
     )
     .unwrap()
@@ -87,6 +96,7 @@ fn publish_attached_project(
     parsed: &ParsedSource,
     key: &HirModuleKey,
 ) -> crate::database::HirLowerOutput {
+    let key = revision_key(key, parsed);
     let world = ProjectSymbolWorldId::try_new(
         key.package().clone(),
         parsed.document().identity().id().clone(),
@@ -97,7 +107,7 @@ fn publish_attached_project(
         ProjectSymbolRevision::try_for_documents([parsed.document().identity()]).unwrap();
     let transaction = database
         .stage_proof_return_project(
-            [LoweringRequest::try_new(key.clone(), parsed).unwrap()],
+            [LoweringRequest::try_new(key, parsed).unwrap()],
             world,
             revision,
             [parsed.document().identity()],
@@ -146,6 +156,27 @@ fn allocate_module_scope(
 }
 
 #[test]
+fn source_revision_mismatch_fails_before_database_staging() {
+    let (initial, revised) = parsed_revisions("arcweft-test://proof/source-revision-mismatch");
+    let initial_key = key(&initial);
+    let expected = initial.document().identity().clone();
+    let actual = revised.document().identity().clone();
+    assert_eq!(expected.id(), actual.id());
+    assert_ne!(expected, actual);
+
+    let database = HirDatabase::try_new().unwrap();
+    let before = database.test_state();
+    assert!(matches!(
+        LoweringRequest::try_new(initial_key, &revised),
+        Err(HirLowerFailure::SourceIdentityMismatch {
+            expected: rejected_expected,
+            actual: rejected_actual,
+        }) if rejected_expected == expected && rejected_actual == actual
+    ));
+    assert_eq!(database.test_state(), before);
+}
+
+#[test]
 fn empty_attached_source_publishes_first_and_second_revisions_atomically() {
     let (initial, revised) = parsed_revisions("arcweft-test://proof/final-lowering-empty");
     let key = key(&initial);
@@ -178,7 +209,7 @@ fn empty_attached_source_publishes_first_and_second_revisions_atomically() {
     assert!(second.invalidations().is_empty());
     assert!(Arc::ptr_eq(
         second.module(),
-        &database.current(&key).unwrap()
+        &database.current(&revision_key(&key, &revised)).unwrap()
     ));
     assert!(Arc::ptr_eq(
         &first_module,
@@ -215,7 +246,9 @@ fn database_owned_entry_lowers_the_complete_attached_source_atomically() {
     );
     assert!(Arc::ptr_eq(
         second.module(),
-        &database.current(&key).expect("second revision is current")
+        &database
+            .current(&revision_key(&key, &revised))
+            .expect("second revision is current")
     ));
 }
 
@@ -314,7 +347,10 @@ fn stale_syntax_snapshot_lowering_is_rejected_atomically() {
                 && supplied == initial.snapshot_id().clone()
     ));
     assert_eq!(database.test_state(), before);
-    assert!(Arc::ptr_eq(&database.current(&key).unwrap(), &accepted));
+    assert!(Arc::ptr_eq(
+        &database.current(&revision_key(&key, &revised)).unwrap(),
+        &accepted
+    ));
 }
 
 #[test]

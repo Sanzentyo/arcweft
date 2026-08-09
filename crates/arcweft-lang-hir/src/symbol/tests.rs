@@ -68,11 +68,7 @@ fn project(source: &str) -> (Arc<SourceDocument>, HirProject) {
         "{:?}",
         parsed.diagnostics()
     );
-    let key = HirModuleKey::new(
-        package.clone(),
-        path.clone(),
-        document.identity().id().clone(),
-    );
+    let key = HirModuleKey::new(package.clone(), path.clone(), document.identity().clone());
     let world = ProjectSymbolWorldId::try_new(
         package.clone(),
         document.identity().id().clone(),
@@ -175,11 +171,7 @@ pub(super) fn project_modules(sources: &[(&str, &str)]) -> (Vec<Arc<SourceDocume
         .stage_proof_return_project(
             staged.iter().map(|(path, document, parsed)| {
                 LoweringRequest::try_new(
-                    HirModuleKey::new(
-                        package.clone(),
-                        path.clone(),
-                        document.identity().id().clone(),
-                    ),
+                    HirModuleKey::new(package.clone(), path.clone(), document.identity().clone()),
                     parsed,
                 )
                 .expect("lowering request")

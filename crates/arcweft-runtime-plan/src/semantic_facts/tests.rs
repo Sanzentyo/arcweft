@@ -46,7 +46,7 @@ fn project_fixture(label: &str, source: &str) -> HirProject {
     let key = HirModuleKey::new(
         package.clone(),
         path.clone(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
     );
     let mut database = HirDatabase::try_new().expect("HIR database");
     let world = ProjectSymbolWorldId::try_new(

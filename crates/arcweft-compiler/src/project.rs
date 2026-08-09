@@ -1075,7 +1075,7 @@ where
             let key = HirModuleKey::new(
                 package.clone(),
                 source.module().clone(),
-                document.identity().id().clone(),
+                document.identity().clone(),
             );
             let request = LoweringRequest::try_new(key, parsed).map_err(|error| {
                 module_error(
@@ -1301,7 +1301,7 @@ fn cached_unit_matches(
             && module.parsed().is_same_snapshot(parsed)
             && parsed.document().identity() == source.document().identity()
             && module.hir().key().path() == expected
-            && module.hir().key().document() == parsed.document().identity().id()
+            && module.hir().key().source() == parsed.document().identity()
             && module.hir().provenance().syntax_snapshot() == parsed.snapshot_id()
             && module.hir().provenance().source_identity() == parsed.document().identity()
             && module.hir().is_cache_eligible()

@@ -63,14 +63,23 @@ fn module_key(parsed: &ParsedSource) -> HirModuleKey {
     HirModuleKey::new(
         CallablePackageId::try_new("proof-hir-module-resolution-tests").unwrap(),
         CanonicalModulePath::crate_root(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
+    )
+}
+
+fn revision_key(base: &HirModuleKey, parsed: &ParsedSource) -> HirModuleKey {
+    HirModuleKey::new(
+        base.package().clone(),
+        base.path().clone(),
+        parsed.document().identity().clone(),
     )
 }
 
 fn lower(database: &mut HirDatabase, parsed: &ParsedSource, key: &HirModuleKey) -> Arc<HirModule> {
+    let key = revision_key(key, parsed);
     let mut transaction = stage_unpublished_module_for_invariant_test(
         database,
-        LoweringRequest::try_new(key.clone(), parsed).unwrap(),
+        LoweringRequest::try_new(key, parsed).unwrap(),
         crate::lowering::HirLoweringControl::new(),
     )
     .unwrap();
@@ -855,7 +864,7 @@ fn same_lineage_revisions_resolve_stable_new_and_retired_item_identity_exactly()
 
     let retained_old = database.snapshot(old_snapshot).unwrap();
     let retained_current = database.snapshot(current.snapshot_id()).unwrap();
-    let current_lookup = database.current(&key).unwrap();
+    let current_lookup = database.current(&revision_key(&key, &revised)).unwrap();
     assert!(Arc::ptr_eq(&old, &retained_old));
     assert!(Arc::ptr_eq(&current, &retained_current));
     assert!(Arc::ptr_eq(&current, &current_lookup));

@@ -93,7 +93,7 @@ fn runtime_projection_emits_stable_diagnostic_without_message_parsing() {
     let key = HirModuleKey::new(
         package.clone(),
         path.clone(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
     );
     let mut hir = HirDatabase::try_new().expect("HIR database");
     let world = ProjectSymbolWorldId::try_new(

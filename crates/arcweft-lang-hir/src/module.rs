@@ -62,7 +62,7 @@ impl HirModuleProvenance {
     fn try_from_parsed(key: &HirModuleKey, parsed: &ParsedSource) -> Result<Self, HirLowerFailure> {
         if parsed.snapshot_id().source() != parsed.source_snapshot_id()
             || parsed.source_snapshot_id().name() != parsed.document().display_name()
-            || key.document() != parsed.document().identity().id()
+            || key.source() != parsed.document().identity()
         {
             return Err(HirInvariantFailure::InvalidModuleProvenance.into());
         }
@@ -1070,7 +1070,7 @@ impl HirModule {
         }
         let name = SourceName::path("proof/hir-module-test.arcw");
         let document = Arc::new(
-            SourceDocument::try_new(key.document().clone(), name.clone(), "")
+            SourceDocument::try_new(key.source().id().clone(), name.clone(), "")
                 .expect("test source identity is valid"),
         );
         let mut syntax = SyntaxDatabase::try_new().expect("test syntax database");

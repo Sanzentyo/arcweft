@@ -155,7 +155,7 @@ struct HirLoweringTestScript {
 pub struct HirModuleKey {
     package: CallablePackageId,
     path: CanonicalModulePath,
-    document: SourceDocumentId,
+    source: SourceDocumentIdentity,
 }
 
 impl HirModuleKey {
@@ -163,12 +163,12 @@ impl HirModuleKey {
     pub fn new(
         package: CallablePackageId,
         path: CanonicalModulePath,
-        document: SourceDocumentId,
+        source: SourceDocumentIdentity,
     ) -> Self {
         Self {
             package,
             path,
-            document,
+            source,
         }
     }
 
@@ -182,9 +182,9 @@ impl HirModuleKey {
         &self.path
     }
 
-    /// Logical source document admitted for this module.
-    pub const fn document(&self) -> &SourceDocumentId {
-        &self.document
+    /// Exact source document and revision admitted for this module.
+    pub const fn source(&self) -> &SourceDocumentIdentity {
+        &self.source
     }
 }
 
@@ -200,11 +200,17 @@ impl<'source> LoweringRequest<'source> {
         key: HirModuleKey,
         source: &'source ParsedSource,
     ) -> Result<Self, HirLowerFailure> {
-        let actual_document = source.document().identity().id();
-        if key.document() != actual_document {
+        let actual_source = source.document().identity();
+        if key.source().id() != actual_source.id() {
             return Err(HirLowerFailure::SourceDocumentMismatch {
-                expected: key.document().clone(),
-                actual: actual_document.clone(),
+                expected: key.source().id().clone(),
+                actual: actual_source.id().clone(),
+            });
+        }
+        if key.source() != actual_source {
+            return Err(HirLowerFailure::SourceIdentityMismatch {
+                expected: key.source().clone(),
+                actual: actual_source.clone(),
             });
         }
 

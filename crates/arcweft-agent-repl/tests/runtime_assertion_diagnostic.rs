@@ -68,7 +68,7 @@ fn agent_debug_diagnostic_projects_fresh_session_fault() {
     let module_key = HirModuleKey::new(
         package.clone(),
         module_path.clone(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
     );
     let mut hir = HirDatabase::try_new().expect("HIR database");
     let world = ProjectSymbolWorldId::try_new(

@@ -6,7 +6,9 @@ use arcweft_lang_syntax::attachment::node::FunctionBodyKind;
 use arcweft_lang_syntax::attachment::{DeclarationBodyNode, StatementNode, SyntaxNodeId};
 use arcweft_lang_syntax::incremental::{ParsedSource, SyntaxDatabase};
 use arcweft_source::identity::SourceSnapshotId;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
+use arcweft_source::{
+    SourceDocument, SourceDocumentId, SourceDocumentIdentity, SourceName, SourceRange,
+};
 
 use crate::arena::{ArenaSnapshot, StagedArena};
 use crate::diagnostic::{HirDiagnostic, HirRecoveryDiagnostic, HirRecoveryPrimary};
@@ -63,11 +65,11 @@ fn snapshot(module: HirModuleId) -> HirSnapshotId {
     HirSnapshotId::new(module, HirRevision::INITIAL)
 }
 
-fn key(document: &SourceDocumentId) -> HirModuleKey {
+fn key(source: &SourceDocumentIdentity) -> HirModuleKey {
     HirModuleKey::new(
         CallablePackageId::try_new("proof-module-tests").unwrap(),
         CanonicalModulePath::crate_root(),
-        document.clone(),
+        source.clone(),
     )
 }
 
@@ -92,7 +94,7 @@ fn build(parsed: &ParsedSource, module: HirModuleId) -> Result<HirModule, HirLow
         .unwrap();
     HirModule::try_new(
         snapshot,
-        key(parsed.document().identity().id()),
+        key(parsed.document().identity()),
         parsed,
         diagnostics(parsed),
         Arc::clone(slots.snapshot()),
@@ -131,7 +133,7 @@ impl RecoveryModuleFixture {
         } = self;
         HirModule::try_new(
             snapshot(owner),
-            key(parsed.document().identity().id()),
+            key(parsed.document().identity()),
             &parsed,
             diagnostics,
             slots,
@@ -539,7 +541,7 @@ fn missing_parser_diagnostics_are_rejected_before_module_publication() {
         .unwrap();
     let result = HirModule::try_new(
         snapshot,
-        key(parsed.document().identity().id()),
+        key(parsed.document().identity()),
         &parsed,
         Arc::from([]),
         Arc::clone(slots.snapshot()),
@@ -566,10 +568,15 @@ fn foreign_document_key_is_rejected_as_provenance_not_rebased() {
     let slots = StagedSlotTransaction::new(owner, HirRevision::INITIAL)
         .prepare()
         .unwrap();
-    let foreign = SourceDocumentId::try_new("arcweft-test://proof/foreign").unwrap();
+    let foreign = SourceDocument::try_new(
+        SourceDocumentId::try_new("arcweft-test://proof/foreign").unwrap(),
+        SourceName::Generated,
+        "",
+    )
+    .unwrap();
     let result = HirModule::try_new(
         snapshot,
-        key(&foreign),
+        key(foreign.identity()),
         &parsed,
         diagnostics(&parsed),
         Arc::clone(slots.snapshot()),

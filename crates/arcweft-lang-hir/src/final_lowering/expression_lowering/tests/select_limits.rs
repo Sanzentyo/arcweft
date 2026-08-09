@@ -411,7 +411,7 @@ fn exercise_lowered_total_slot_case(third_batch: &[&str], prefill: usize, exact:
         ));
         assert!(transaction.finish(&mut database).is_err());
         let current = database
-            .current(&key)
+            .current_lineage(&key)
             .expect("retired revision stays current");
         assert!(Arc::ptr_eq(&current, &accepted_before_direct));
         assert_eq!(current.slots().committed_slot_count(), prefill);

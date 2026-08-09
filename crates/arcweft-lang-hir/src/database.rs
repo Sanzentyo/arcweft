@@ -4,6 +4,8 @@ use core::num::{NonZeroU32, NonZeroU64};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_source::SourceDocumentId;
 use thiserror::Error;
 
 use crate::identity::{
@@ -15,11 +17,29 @@ use crate::module::HirModule;
 use crate::slot::PreparedSlotCommit;
 #[cfg(test)]
 use crate::slot::SlotLifetimeTestState;
+use crate::symbol::CallablePackageId;
 
 struct ModuleState {
     module: HirModuleId,
     current: Arc<HirModule>,
     snapshots: BTreeMap<HirRevision, Arc<HirModule>>,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+struct HirModuleRegistryKey {
+    package: CallablePackageId,
+    path: CanonicalModulePath,
+    document: SourceDocumentId,
+}
+
+impl From<&HirModuleKey> for HirModuleRegistryKey {
+    fn from(key: &HirModuleKey) -> Self {
+        Self {
+            package: key.package().clone(),
+            path: key.path().clone(),
+            document: key.source().id().clone(),
+        }
+    }
 }
 
 /// Exact immutable database state used only by transactional unit tests.
@@ -336,7 +356,7 @@ pub enum HirSnapshotLookupError {
 /// Process-local identity authority and immutable module-snapshot registry.
 pub struct HirDatabase {
     id: HirDatabaseId,
-    modules: BTreeMap<HirModuleKey, ModuleState>,
+    modules: BTreeMap<HirModuleRegistryKey, ModuleState>,
     next_module_slot: NonZeroU32,
     module_limit: usize,
 }
@@ -364,7 +384,14 @@ impl HirDatabase {
     /// Returns the exact accepted lease for a module key.
     pub fn current(&self, key: &HirModuleKey) -> Option<Arc<HirModule>> {
         self.modules
-            .get(key)
+            .get(&HirModuleRegistryKey::from(key))
+            .filter(|state| state.current.key() == key)
+            .map(|state| Arc::clone(&state.current))
+    }
+
+    pub(crate) fn current_lineage(&self, key: &HirModuleKey) -> Option<Arc<HirModule>> {
+        self.modules
+            .get(&HirModuleRegistryKey::from(key))
             .map(|state| Arc::clone(&state.current))
     }
 
@@ -374,9 +401,9 @@ impl HirDatabase {
             database: self.id,
             modules: self
                 .modules
-                .iter()
-                .map(|(key, state)| HirDatabaseModuleTestState {
-                    key: key.clone(),
+                .values()
+                .map(|state| HirDatabaseModuleTestState {
+                    key: state.current.key().clone(),
                     module: state.module,
                     current: Arc::clone(&state.current),
                     snapshots: state
@@ -422,7 +449,8 @@ impl HirDatabase {
         &self,
         key: &HirModuleKey,
     ) -> Result<StagedModuleCommit, HirLowerFailure> {
-        if let Some(state) = self.modules.get(key) {
+        let registry = HirModuleRegistryKey::from(key);
+        if let Some(state) = self.modules.get(&registry) {
             let revision = state
                 .current
                 .snapshot_id()
@@ -491,7 +519,7 @@ impl HirDatabase {
         keys.sort();
         let mut unique = BTreeSet::new();
         for key in &keys {
-            if !unique.insert(key.clone()) {
+            if !unique.insert(HirModuleRegistryKey::from(key)) {
                 return Err(HirLowerFailure::DuplicateModuleRequest {
                     module: key.path().clone(),
                 });
@@ -499,7 +527,7 @@ impl HirDatabase {
         }
         let new_count = keys
             .iter()
-            .filter(|key| !self.modules.contains_key(*key))
+            .filter(|key| !self.modules.contains_key(&HirModuleRegistryKey::from(*key)))
             .count();
         let observed = self.modules.len().saturating_add(new_count);
         if observed > self.module_limit {
@@ -514,7 +542,8 @@ impl HirDatabase {
         let mut next_new_slot = self.next_module_slot;
         let mut plans = Vec::with_capacity(keys.len());
         for key in keys {
-            if let Some(state) = self.modules.get(&key) {
+            let registry = HirModuleRegistryKey::from(&key);
+            if let Some(state) = self.modules.get(&registry) {
                 let revision = state
                     .current
                     .snapshot_id()
@@ -574,11 +603,11 @@ impl HirDatabase {
     #[cfg(test)]
     pub(crate) fn publish_module(
         &mut self,
-        plan: StagedModuleCommit,
+        plan: &StagedModuleCommit,
         prepared_slots: PreparedSlotCommit,
         module: Arc<HirModule>,
     ) -> Result<HirLowerOutput, HirLowerFailure> {
-        self.validate_module_commit(&plan, &module)?;
+        self.validate_module_commit(plan, &module)?;
         if !Arc::ptr_eq(module.slots(), prepared_slots.snapshot()) {
             return Err(HirInvariantFailure::InvalidModuleCommit.into());
         }
@@ -586,7 +615,10 @@ impl HirDatabase {
         if !prepared_slots.validates_ancestry(previous_slots) {
             return Err(HirInvariantFailure::InvalidModuleCommit.into());
         }
-        let previous = self.modules.get(plan.key()).map(|state| &state.current);
+        let previous = self
+            .modules
+            .get(&HirModuleRegistryKey::from(plan.key()))
+            .map(|state| &state.current);
         let invalidations = HirInvalidationSet::derive(previous, &module)?;
 
         let published_slots = prepared_slots
@@ -611,12 +643,13 @@ impl HirDatabase {
         let mut new_module_slot = self.next_module_slot;
         let mut invalidations = Vec::with_capacity(prepared.len());
         for commit in &prepared {
-            if !keys.insert(commit.plan.key().clone()) {
+            let registry = HirModuleRegistryKey::from(commit.plan.key());
+            if !keys.insert(registry.clone()) {
                 return Err(HirLowerFailure::DuplicateModuleRequest {
                     module: commit.plan.key().path().clone(),
                 });
             }
-            if self.modules.contains_key(commit.plan.key()) {
+            if self.modules.contains_key(&registry) {
                 self.validate_module_commit(&commit.plan, &commit.module)?;
             } else {
                 if commit.plan.previous().is_some()
@@ -649,10 +682,7 @@ impl HirDatabase {
                 .slots
                 .validate_publish()
                 .map_err(|_| HirInvariantFailure::InvalidModuleCommit)?;
-            let previous = self
-                .modules
-                .get(commit.plan.key())
-                .map(|state| &state.current);
+            let previous = self.modules.get(&registry).map(|state| &state.current);
             invalidations.push(HirInvalidationSet::derive(previous, &commit.module)?);
         }
 
@@ -664,7 +694,7 @@ impl HirDatabase {
                 .expect("project slot proposals were prevalidated before publication");
             debug_assert!(Arc::ptr_eq(commit.module.slots(), &published_slots));
             let module = Arc::clone(&commit.module);
-            self.insert_validated_module(commit.plan, &module);
+            self.insert_validated_module(&commit.plan, &module);
             outputs.push(HirLowerOutput::new(module, invalidations));
         }
         Ok(outputs)
@@ -675,7 +705,7 @@ impl HirDatabase {
         &mut self,
         commit: PreparedHirModuleCommit,
     ) -> Result<HirLowerOutput, HirLowerFailure> {
-        self.publish_module(commit.plan, commit.slots, commit.module)
+        self.publish_module(&commit.plan, commit.slots, commit.module)
     }
 
     fn validate_module_commit(
@@ -690,7 +720,8 @@ impl HirDatabase {
             return Err(HirInvariantFailure::InvalidModuleCommit.into());
         }
 
-        if let Some(state) = self.modules.get(&plan.key) {
+        let registry = HirModuleRegistryKey::from(&plan.key);
+        if let Some(state) = self.modules.get(&registry) {
             let Some(previous) = plan.previous.as_ref() else {
                 return Err(HirInvariantFailure::InvalidModuleCommit.into());
             };
@@ -720,8 +751,9 @@ impl HirDatabase {
         Ok(())
     }
 
-    fn insert_validated_module(&mut self, plan: StagedModuleCommit, module: &Arc<HirModule>) {
-        if let Some(state) = self.modules.get_mut(&plan.key) {
+    fn insert_validated_module(&mut self, plan: &StagedModuleCommit, module: &Arc<HirModule>) {
+        let registry = HirModuleRegistryKey::from(&plan.key);
+        if let Some(state) = self.modules.get_mut(&registry) {
             state.snapshots.insert(plan.revision(), Arc::clone(module));
             state.current = Arc::clone(module);
         } else {
@@ -730,7 +762,7 @@ impl HirDatabase {
             let mut snapshots = BTreeMap::new();
             snapshots.insert(revision, Arc::clone(module));
             self.modules.insert(
-                plan.key,
+                registry,
                 ModuleState {
                     module: module_id,
                     current: Arc::clone(module),
@@ -751,10 +783,10 @@ impl HirDatabase {
     #[cfg(test)]
     fn commit_module(
         &mut self,
-        plan: StagedModuleCommit,
+        plan: &StagedModuleCommit,
         module: Arc<HirModule>,
     ) -> Result<Arc<HirModule>, HirLowerFailure> {
-        self.validate_module_commit(&plan, &module)?;
+        self.validate_module_commit(plan, &module)?;
         self.insert_validated_module(plan, &module);
         Ok(module)
     }

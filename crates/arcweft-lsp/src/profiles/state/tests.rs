@@ -302,11 +302,7 @@ fn attached_project(
         .expect("attached test source");
     let package = CallablePackageId::try_new("cache.tests").expect("package");
     let path = CanonicalModulePath::crate_root();
-    let key = HirModuleKey::new(
-        package.clone(),
-        path.clone(),
-        document.identity().id().clone(),
-    );
+    let key = HirModuleKey::new(package.clone(), path.clone(), document.identity().clone());
     let mut database = HirDatabase::try_new().expect("test HIR database");
     let world = ProjectSymbolWorldId::try_new(
         package.clone(),

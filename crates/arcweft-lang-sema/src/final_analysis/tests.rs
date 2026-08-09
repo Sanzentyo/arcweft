@@ -306,11 +306,7 @@ fn publish_fixture_modules(
         .stage_proof_return_project(
             staged.iter().map(|(path, document, parsed)| {
                 LoweringRequest::try_new(
-                    HirModuleKey::new(
-                        package.clone(),
-                        path.clone(),
-                        document.identity().id().clone(),
-                    ),
+                    HirModuleKey::new(package.clone(), path.clone(), document.identity().clone()),
                     parsed,
                 )
                 .expect("lowering request")

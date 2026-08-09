@@ -798,11 +798,7 @@ bench @bench.opening {
         );
         let package = CallablePackageId::try_new("arcweft-test-manifest-tests").unwrap();
         let path = CanonicalModulePath::crate_root();
-        let key = HirModuleKey::new(
-            package.clone(),
-            path.clone(),
-            document.identity().id().clone(),
-        );
+        let key = HirModuleKey::new(package.clone(), path.clone(), document.identity().clone());
         let mut database = HirDatabase::try_new().unwrap();
         let world = ProjectSymbolWorldId::try_new(
             package.clone(),

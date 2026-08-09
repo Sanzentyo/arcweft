@@ -75,11 +75,7 @@ fn publish_headerless_project_modules(
         .stage_proof_return_project(
             modules.iter().map(|(path, document, parsed)| {
                 LoweringRequest::try_new(
-                    HirModuleKey::new(
-                        package.clone(),
-                        path.clone(),
-                        document.identity().id().clone(),
-                    ),
+                    HirModuleKey::new(package.clone(), path.clone(), document.identity().clone()),
                     parsed,
                 )
                 .unwrap()
@@ -810,11 +806,7 @@ fn staged_multi_module_project_classifies_every_proof_before_atomic_publication(
         .stage_proof_return_project(
             modules.iter().map(|(path, document, parsed)| {
                 LoweringRequest::try_new(
-                    HirModuleKey::new(
-                        package.clone(),
-                        path.clone(),
-                        document.identity().id().clone(),
-                    ),
+                    HirModuleKey::new(package.clone(), path.clone(), document.identity().clone()),
                     parsed,
                 )
                 .unwrap()

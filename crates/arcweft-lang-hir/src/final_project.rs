@@ -99,7 +99,7 @@ impl HirProjectModule {
             });
         }
 
-        let Some(current) = database.current(module.key()) else {
+        let Some(current) = database.current_lineage(module.key()) else {
             return Err(HirProjectModuleError::MissingAcceptedModule {
                 module: expected_path.clone(),
             });
@@ -232,7 +232,7 @@ impl HirProject {
                     actual: actual_database,
                 });
             }
-            let Some(current) = database.current(module.module().key()) else {
+            let Some(current) = database.current_lineage(module.module().key()) else {
                 return Err(HirProjectError::MissingAcceptedModule {
                     module: path.clone(),
                 });

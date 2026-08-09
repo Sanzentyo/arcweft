@@ -397,11 +397,7 @@ mod tests {
                 ParseOptions::default(),
             )
             .expect("attached fixture parse");
-        let key = HirModuleKey::new(
-            package.clone(),
-            path,
-            parsed.document().identity().id().clone(),
-        );
+        let key = HirModuleKey::new(package.clone(), path, parsed.document().identity().clone());
         let mut database = HirDatabase::try_new().expect("HIR database");
         let world = ProjectSymbolWorldId::try_new(
             package,

@@ -42,7 +42,7 @@ fn check(content: &str) -> super::CheckedRichTextReport {
     let key = HirModuleKey::new(
         package.clone(),
         CanonicalModulePath::crate_root(),
-        document.identity().id().clone(),
+        document.identity().clone(),
     );
     let world = ProjectSymbolWorldId::try_new(
         package,

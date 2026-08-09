@@ -51,7 +51,7 @@ fn lower(
     let key = HirModuleKey::new(
         package.clone(),
         path.clone(),
-        parsed.document().identity().id().clone(),
+        parsed.document().identity().clone(),
     );
     let mut transaction = stage_unpublished_module_for_invariant_test(
         database,
