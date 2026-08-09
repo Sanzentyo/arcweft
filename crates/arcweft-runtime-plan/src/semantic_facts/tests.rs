@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use arcweft_core::plan::FlowRuntimeId;
+use arcweft_core::plan::{FlowRuntimeId, RuntimeLineId};
 use arcweft_core::value::RuntimeValue;
 use arcweft_lang_hir::database::HirDatabase;
 use arcweft_lang_hir::expr::HirExprKind;
@@ -138,6 +138,18 @@ fn call_expression(project: &HirProject) -> arcweft_lang_hir::identity::ExprId {
         .expect("fixture call expression")
 }
 
+fn entity_reference(project: &HirProject) -> arcweft_lang_hir::identity::ExprId {
+    project
+        .executable_view()
+        .expect("clean fixture")
+        .modules()
+        .flat_map(|(_, module)| module.expressions())
+        .find_map(|(id, expression)| {
+            matches!(expression.kind(), HirExprKind::EntityReference(_)).then_some(id)
+        })
+        .expect("fixture entity-reference expression")
+}
+
 #[test]
 fn semantic_facts_are_bound_to_the_exact_accepted_generation() {
     let first = project_fixture("generation-first", "fn root() {}\n");
@@ -212,6 +224,30 @@ fn wrong_expression_family_is_not_reinterpreted() {
             expression: owner,
             expected: RuntimeSemanticFactFamily::Value,
         }
+    );
+}
+
+#[test]
+fn dialogue_line_fact_owns_the_checked_path_only_runtime_identity() {
+    let project = project_fixture(
+        "dialogue-line",
+        "fn root() {\n    let line: Ref<DialogueLine> = @say.story.greeting\n}\n",
+    );
+    let owner = entity_reference(&project);
+    let line = RuntimeLineId::from_source_entity_body("say.story.greeting")
+        .expect("checked dialogue line conversion");
+    let mut input = RuntimePlanSemanticFactInput::new();
+    input.push_value(owner, RuntimeResolvedValue::DialogueLine(line.clone()));
+
+    let facts = RuntimePlanSemanticFacts::try_new(
+        project.executable_view().expect("executable fixture"),
+        input,
+    )
+    .expect("typed dialogue-line runtime fact");
+    assert_eq!(line.canonical_label(), "story.greeting");
+    assert_eq!(
+        facts.value(owner),
+        Some(&RuntimeResolvedValue::DialogueLine(line))
     );
 }
 

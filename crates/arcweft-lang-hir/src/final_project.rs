@@ -405,6 +405,13 @@ impl<'project> HirProjectView<'project> {
         self.project.module(path).map(HirProjectModule::module)
     }
 
+    /// Returns the dialogue-line inventory accepted by this exact project
+    /// generation. Consumers borrow this authority instead of reconstructing
+    /// line identities from module source.
+    pub const fn dialogue_lines(self) -> &'project AcceptedDialogueLineInventory {
+        self.project.dialogue_lines()
+    }
+
     pub fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {
         self.project.modules.values().flat_map(|module| {
             module
@@ -577,6 +584,11 @@ impl<'project> HirExecutableProjectView<'project> {
     /// tooling-capable project owner or reconstructing a module from its path.
     pub fn module(self, path: &CanonicalModulePath) -> Option<&'project Arc<HirModule>> {
         self.view.module(path)
+    }
+
+    /// Returns the line inventory owned by the admitted project generation.
+    pub const fn dialogue_lines(self) -> &'project AcceptedDialogueLineInventory {
+        self.view.dialogue_lines()
     }
 
     pub fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {

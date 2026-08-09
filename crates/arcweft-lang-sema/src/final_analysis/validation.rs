@@ -445,6 +445,7 @@ pub(super) fn validate_bindings(
 pub(super) fn validate_expressions(
     symbols: &ProjectSymbolTable,
     modules: &BTreeMap<HirModuleId, &HirModule>,
+    dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
     expressions: &BTreeMap<ExprId, CheckedExpression>,
     calls: &BTreeMap<ExprId, CallTargetFacts>,
     type_resolutions: &BTreeMap<TypeId, TypeResolutionReport>,
@@ -476,7 +477,7 @@ pub(super) fn validate_expressions(
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        validate_expression_resolution(symbols, modules, fact.resolution())?;
+        validate_expression_resolution(symbols, modules, dialogue_lines, fact.resolution())?;
         if let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)) =
             fact.resolution()
             && &item.ty() != fact.ty()
@@ -600,6 +601,10 @@ fn expression_resolution_matches(
         )
         | (HirExprKind::Path(_) | HirExprKind::Select(_), CheckedExpressionResolution::Effect(_))
         | (
+            HirExprKind::EntityReference(_),
+            CheckedExpressionResolution::DialogueLineReference(_),
+        )
+        | (
             HirExprKind::Call(_),
             CheckedExpressionResolution::Call
             | CheckedExpressionResolution::ViewCall(_)
@@ -674,6 +679,7 @@ const fn structural_resolution_matches(kind: &HirExprKind) -> bool {
 fn validate_expression_resolution(
     symbols: &ProjectSymbolTable,
     modules: &BTreeMap<HirModuleId, &HirModule>,
+    dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
     resolution: &CheckedExpressionResolution,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match resolution {
@@ -703,6 +709,10 @@ fn validate_expression_resolution(
                 .then_some(())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
+        CheckedExpressionResolution::DialogueLineReference(target) => dialogue_lines
+            .get(target)
+            .map(|_| ())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
         CheckedExpressionResolution::PostfixBracket(_)
         | CheckedExpressionResolution::Effect(_)
         | CheckedExpressionResolution::ViewCall(_)

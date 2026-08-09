@@ -13,7 +13,7 @@ use arcweft_core::{
     plan::{
         FlowRuntimeId, RuntimeIteratorEvidence, RuntimeIteratorIdentityWitnessCalls,
         RuntimeIteratorWitnessCalls, RuntimeIteratorWitnessEvidence,
-        RuntimeIteratorWitnessExecutable, RuntimeTraitMethodId,
+        RuntimeIteratorWitnessExecutable, RuntimeLineId, RuntimeTraitMethodId,
     },
     step::RuntimeHostCallMode,
     time::LogicalDuration,
@@ -246,6 +246,16 @@ pub fn project_runtime_semantic_facts(
             }
             CheckedExpressionResolution::PostfixBracket(resolution) => {
                 input.push_postfix_candidate(owner, resolution.candidate());
+            }
+            CheckedExpressionResolution::DialogueLineReference(target) => {
+                let line =
+                    RuntimeLineId::from_source_entity_body(target.as_str()).map_err(|error| {
+                        RuntimeSemanticProjectionError::Value {
+                            owner,
+                            reason: error.to_string(),
+                        }
+                    })?;
+                input.push_value(owner, RuntimeResolvedValue::DialogueLine(line));
             }
             CheckedExpressionResolution::Call
             | CheckedExpressionResolution::ViewCall(_)

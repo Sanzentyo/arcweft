@@ -2,10 +2,11 @@
 
 use super::{
     AssertionRuntimePolicy, CallableDeclarationKey, CharacterId, CharacterNominalType,
-    CheckedRichTextReport, DeclarationIdentityFamily, EffectSet, EnvironmentBindingId, ExprId,
-    GenericTypeOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily, HirLiteral,
-    HirName, ItemId, LocalId, ProjectNominalDeclaration, ProjectNominalDeclarationId, PublicId,
-    SemanticTypeDigest, TypeKind, TypeParameterSubstitutions,
+    CheckedRichTextReport, DeclarationIdentityFamily, DialogueLineId, EffectSet,
+    EnvironmentBindingId, ExprId, GenericTypeOwnerId, GenericTypeParameterId, HirFlowIdentity,
+    HirItemFamily, HirLiteral, HirName, ItemId, LocalId, ProjectNominalDeclaration,
+    ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, TypeKind,
+    TypeParameterSubstitutions,
 };
 use arcweft_lang_hir::symbol::ExternalDeclarationId;
 
@@ -430,6 +431,9 @@ pub enum CheckedExpressionResolution {
     StyleValue(arcweft_view::style::ViewSpecifiedValue),
     /// The typed callee leaf of a Style value constructor.
     StyleCallee(CheckedStyleCallee),
+    /// Exact accepted dialogue-line target selected for an entity-reference
+    /// leaf under the `DialogueLine` expected family.
+    DialogueLineReference(DialogueLineId),
     DialogueApplication {
         character: ItemId,
         rich_text: Box<CheckedRichTextReport>,

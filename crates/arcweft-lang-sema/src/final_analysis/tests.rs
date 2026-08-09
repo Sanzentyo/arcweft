@@ -3268,6 +3268,93 @@ flow @flow.root root {
 }
 
 #[test]
+fn dialogue_line_reference_uses_accepted_project_inventory() {
+    let fixture = fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let line = alice[前[strong]強調[/strong]後]
+}
+
+fn reference() {
+    let selected: Ref<DialogueLine> = @say.fn.final-analysis-tests.function.opening.001
+}
+",
+        None,
+    );
+    let analysis = analyze(&fixture).unwrap_or_else(|error| {
+        panic!(
+            "typed dialogue-line reference analysis: {error:?}; accepted={:?}",
+            fixture
+                .project
+                .dialogue_lines()
+                .records()
+                .iter()
+                .map(|line| line.id().as_str())
+                .collect::<Vec<_>>()
+        )
+    });
+    let (expression, target) = analysis
+        .expressions()
+        .find_map(|(owner, checked)| {
+            let CheckedExpressionResolution::DialogueLineReference(target) = checked.resolution()
+            else {
+                return None;
+            };
+            Some((owner, target))
+        })
+        .expect("accepted dialogue-line reference fact");
+    assert_eq!(
+        target.as_str(),
+        "say.fn.final-analysis-tests.function.opening.001"
+    );
+
+    let index = ProjectSemanticIndex::try_from_final_project(
+        ProgramHash::new("dialogue-line-reference"),
+        fixture.project.executable_view().expect("executable HIR"),
+        &fixture.symbols,
+        &analysis,
+        &CheckedEntryCatalog::default(),
+    )
+    .expect("dialogue-line project index");
+    let [reference] = index.dialogue_line_references() else {
+        panic!("one accepted dialogue-line reference")
+    };
+    assert_eq!(reference.target(), target);
+    assert_eq!(reference.expression(), expression);
+    assert_eq!(reference.module().package(), fixture.project.package());
+    let reference_start = fixture
+        .root_document
+        .text()
+        .rfind("@say.fn.final-analysis-tests.function.opening.001")
+        .expect("reference source spelling");
+    assert_eq!(
+        reference.source().range(),
+        SourceRange::new(
+            reference_start,
+            reference_start + "@say.fn.final-analysis-tests.function.opening.001".len()
+        )
+    );
+}
+
+#[test]
+fn dialogue_line_reference_rejects_target_outside_accepted_inventory() {
+    let fixture = fixture(
+        r"
+fn reference() {
+    let selected: Ref<DialogueLine> = @say.missing
+}
+",
+        None,
+    );
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::ValueResolutionFailed { .. })
+    ));
+}
+
+#[test]
 fn entry_entity_reference_reads_exact_final_hir_item_owner() {
     let fixture = fixture(
         r"

@@ -12,7 +12,8 @@ use arcweft_core::entry::{RuntimeCallableId, RuntimeNominalTypeId};
 pub use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::pattern::{RuntimeCheckedType, RuntimeCheckedVariantCase};
 use arcweft_core::plan::{
-    FlowRuntimeId, RuntimeIteratorEvidence, RuntimeReceiverMode, RuntimeTraitMethodId,
+    FlowRuntimeId, RuntimeIteratorEvidence, RuntimeLineId, RuntimeReceiverMode,
+    RuntimeTraitMethodId,
 };
 use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::value::{
@@ -386,6 +387,9 @@ pub enum RuntimeResolvedValue {
     Local(LocalId),
     ProjectCallable(RuntimeProjectCallable),
     ProjectItem(RuntimeProjectItem),
+    /// Checked one-way lowering of a durable `say.*` identity into the
+    /// path-only runtime line domain.
+    DialogueLine(RuntimeLineId),
     Intrinsic(RuntimeIntrinsic),
     Registered(RuntimeRegisteredValueId),
     Constant(RuntimeValue),
@@ -985,7 +989,10 @@ impl RuntimePlanSemanticFacts {
             )?;
             validate_resolved_value(&modules, value)?;
             match (resolve_expr(&modules, *expression)?, value) {
-                (HirExprKind::Path(_), RuntimeResolvedValue::ProjectItem(_))
+                (
+                    HirExprKind::Path(_),
+                    RuntimeResolvedValue::ProjectItem(_) | RuntimeResolvedValue::DialogueLine(_),
+                )
                 | (
                     HirExprKind::EntityReference(_),
                     RuntimeResolvedValue::Local(_)
@@ -999,7 +1006,10 @@ impl RuntimePlanSemanticFacts {
                         expected: RuntimeSemanticFactFamily::Value,
                     });
                 }
-                (HirExprKind::EntityReference(_), RuntimeResolvedValue::ProjectItem(_))
+                (
+                    HirExprKind::EntityReference(_),
+                    RuntimeResolvedValue::ProjectItem(_) | RuntimeResolvedValue::DialogueLine(_),
+                )
                 | (HirExprKind::Path(_), _) => {}
                 _ => unreachable!("value fact family was checked immediately above"),
             }
@@ -1492,7 +1502,8 @@ fn validate_resolved_value(
             .map_err(|_| RuntimeSemanticFactsError::UnresolvedLocal { local: *local }),
         RuntimeResolvedValue::ProjectCallable(callable) => validate_callable(modules, callable),
         RuntimeResolvedValue::ProjectItem(item) => validate_project_item(modules, item),
-        RuntimeResolvedValue::Intrinsic(_)
+        RuntimeResolvedValue::DialogueLine(_)
+        | RuntimeResolvedValue::Intrinsic(_)
         | RuntimeResolvedValue::Registered(_)
         | RuntimeResolvedValue::Constant(_) => Ok(()),
     }

@@ -1268,6 +1268,15 @@ impl Analyzer<'_, '_, '_> {
                         .check_entry_reference(owner, reference, expected)
                         .map(Some);
                 }
+                if matches!(
+                    expected,
+                    Some(TypeKind::Ref(entity))
+                        if entity.kind() == &EntityKind::DialogueLine
+                ) {
+                    return self
+                        .check_dialogue_line_reference(owner, reference, expected)
+                        .map(Some);
+                }
                 let source = expression_span(module, owner)?;
                 let item = self
                     .resolve_checked_entity_reference(module, reference, source)
@@ -1304,6 +1313,33 @@ impl Analyzer<'_, '_, '_> {
         }
         .map(Some)
     }
+
+    fn check_dialogue_line_reference(
+        &self,
+        owner: ExprId,
+        reference: &HirIdRef,
+        expected: Option<&TypeKind>,
+    ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
+        let HirIdRef::Absolute(reference) = reference else {
+            return Err(FinalSemanticAnalysisError::ValueResolutionFailed { owner });
+        };
+        let target = arcweft_id::dialogue::DialogueLineId::try_new(reference.as_str())
+            .map_err(|_| FinalSemanticAnalysisError::ValueResolutionFailed { owner })?;
+        if self.project.dialogue_lines().get(&target).is_none() {
+            return Err(FinalSemanticAnalysisError::ValueResolutionFailed { owner });
+        }
+        let ty = TypeKind::entity_ref(EntityKind::DialogueLine);
+        if expected.is_some_and(|expected| !expected.accepts(&ty)) {
+            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+        }
+        Ok(CheckedExpression::new(
+            ty,
+            CheckedTypeSelection::Expected,
+            EffectSet::new(),
+            CheckedExpressionResolution::DialogueLineReference(target),
+        ))
+    }
+
     fn check_entry_reference(
         &self,
         owner: ExprId,

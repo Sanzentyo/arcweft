@@ -115,14 +115,8 @@ impl FinalSemanticAnalysis {
         checked_callables
             .validate_project_generation(symbols.world(), *symbols.revision())
             .map_err(|_| FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
-        let modules = project
-            .modules()
-            .map(|(_, module)| (module.module_id(), module.as_ref()))
-            .collect::<BTreeMap<_, _>>();
-        let snapshots = modules
-            .iter()
-            .map(|(id, module)| (*id, module.snapshot_id()))
-            .collect::<BTreeMap<_, _>>();
+        let (modules, snapshots) = project_generation_maps(project);
+        let dialogue_lines = project.dialogue_lines();
 
         let types = collect_unique(input.types, SemanticFactFamily::Type)?;
         let locals = collect_unique(input.locals, SemanticFactFamily::Local)?;
@@ -176,7 +170,14 @@ impl FinalSemanticAnalysis {
         control.check()?;
         validate_bindings(&modules, &locals, &captures)?;
         control.check()?;
-        validate_expressions(symbols, &modules, &expressions, &calls, &type_resolutions)?;
+        validate_expressions(
+            symbols,
+            &modules,
+            dialogue_lines,
+            &expressions,
+            &calls,
+            &type_resolutions,
+        )?;
         control.check()?;
         validate_patterns(symbols, &modules, &patterns)?;
         control.check()?;
@@ -192,7 +193,6 @@ impl FinalSemanticAnalysis {
         let work = collect_work(inventory)?;
         let diagnostics = collect_final_diagnostics(&modules, &types, &expressions, &items)?;
         control.check()?;
-
         Ok(Self {
             snapshots,
             symbol_world: symbols.world().clone(),
@@ -370,6 +370,23 @@ impl FinalSemanticAnalysis {
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
     }
+}
+
+fn project_generation_maps(
+    project: HirExecutableProjectView<'_>,
+) -> (
+    BTreeMap<HirModuleId, &HirModule>,
+    BTreeMap<HirModuleId, HirSnapshotId>,
+) {
+    let modules = project
+        .modules()
+        .map(|(_, module)| (module.module_id(), module.as_ref()))
+        .collect::<BTreeMap<_, _>>();
+    let snapshots = modules
+        .iter()
+        .map(|(id, module)| (*id, module.snapshot_id()))
+        .collect();
+    (modules, snapshots)
 }
 
 fn collect_final_diagnostics(

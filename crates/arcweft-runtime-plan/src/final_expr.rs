@@ -57,6 +57,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 Some(RuntimeResolvedValue::ProjectItem(item)) => {
                     Ok(RuntimeExpr::EntityRef(item.public_id().as_str().to_owned()))
                 }
+                Some(RuntimeResolvedValue::DialogueLine(line)) => {
+                    Ok(RuntimeExpr::EntityRef(line.canonical_label()))
+                }
                 Some(_) => Err(format!(
                     "checked value fact for entity expression {id:?} has the wrong family"
                 )),
@@ -306,6 +309,7 @@ impl<'hir> FinalExprLowerer<'hir> {
             RuntimeResolvedValue::Intrinsic(_)
             | RuntimeResolvedValue::ProjectCallable(_)
             | RuntimeResolvedValue::ProjectItem(_)
+            | RuntimeResolvedValue::DialogueLine(_)
             | RuntimeResolvedValue::Registered(_) => Err(format!(
                 "resolved callable/project value at {id:?} requires a typed runtime function-value identity"
             )),

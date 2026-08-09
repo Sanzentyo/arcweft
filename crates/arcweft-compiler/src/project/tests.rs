@@ -267,6 +267,38 @@ fn noop_project_rebuild_reuses_the_exact_accepted_hir_project_arc() {
 }
 
 #[test]
+fn dialogue_line_reference_reaches_runtime_lowering_from_one_accepted_generation() {
+    let (project, context) = removed_role_project(
+        r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let line = alice[前[strong]強調[/strong]後]
+}
+
+flow reference {
+    let selected: Ref<DialogueLine> = @say.fn.org.arcweft.removed-role.function.opening.001
+}
+",
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("typed dialogue-line reference compiles through runtime lowering");
+
+    let [line] = compiled.hir_project().dialogue_lines().records() else {
+        panic!("one accepted dialogue line")
+    };
+    assert_eq!(
+        line.id().as_str(),
+        "say.fn.org.arcweft.removed-role.function.opening.001"
+    );
+    let [reference] = compiled.semantic_index().dialogue_line_references() else {
+        panic!("one accepted dialogue-line reference")
+    };
+    assert_eq!(reference.target(), line.id());
+}
+
+#[test]
 fn multi_module_authored_proof_alias_to_unit_uses_one_semantic_project_transaction() {
     let aliases = CanonicalModulePath::crate_root()
         .join(ModuleSegment::new("aliases").expect("module segment"));

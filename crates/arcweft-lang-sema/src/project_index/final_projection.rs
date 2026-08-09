@@ -13,10 +13,10 @@ use arcweft_lang_hir::{
     item::HirItemKind,
     leaf::{HirIdRef, HirIdRefValue},
     module::HirModule,
-    project::{HirExecutableProjectView, HirProjectItemRef},
+    project::{HirExecutableProjectView, HirPackageModuleKey, HirProjectItemRef},
     source_index::{
-        HirEntrySourcePart, HirFlowSourceRole, HirItemSourceRole, HirSourcePresence,
-        HirSourceQuery, HirSourceSite, HirStmtSourceRole, HirStyleSourceRole,
+        HirEntrySourcePart, HirExprSourceRole, HirFlowSourceRole, HirItemSourceRole,
+        HirSourcePresence, HirSourceQuery, HirSourceSite, HirStmtSourceRole, HirStyleSourceRole,
     },
     stmt::{HirSelectStmt, HirStmtKind},
     symbol::{CallableDeclarationKey, ProjectSymbolTable, ResolvedProjectSymbol},
@@ -34,9 +34,9 @@ use crate::{
 };
 
 use super::{
-    EntitySymbol, ProgramHash, ProjectEntityId, ProjectFlowControlSummary,
-    ProjectGraphDependencyRelation, ProjectGraphDependencyRelationKind, ProjectGraphRelation,
-    ProjectGraphRelationKind, ProjectGraphSymbolRef, ProjectSemanticIndex,
+    AcceptedDialogueLineReference, EntitySymbol, ProgramHash, ProjectEntityId,
+    ProjectFlowControlSummary, ProjectGraphDependencyRelation, ProjectGraphDependencyRelationKind,
+    ProjectGraphRelation, ProjectGraphRelationKind, ProjectGraphSymbolRef, ProjectSemanticIndex,
     ProjectSemanticIndexError, SemanticHash, TypeName, entry_roles, nominal,
 };
 
@@ -60,6 +60,8 @@ impl ProjectSemanticIndex {
             entry_roles::checked_entry_records_and_edges(entries);
         (index.project_nominals, index.project_nominal_references) =
             nominal::checked_project_nominals(symbols, analysis)?;
+        index.dialogue_line_references =
+            checked_dialogue_line_references(project, analysis)?.into_boxed_slice();
 
         project_nominal_types(&mut index, symbols)?;
         retained_entities(&mut index, project, symbols, analysis)?;
@@ -69,6 +71,49 @@ impl ProjectSemanticIndex {
         validate_relation_endpoints(&index)?;
         Ok(index)
     }
+}
+
+fn checked_dialogue_line_references(
+    project: HirExecutableProjectView<'_>,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<Vec<AcceptedDialogueLineReference>, ProjectSemanticIndexError> {
+    let modules = project
+        .modules()
+        .map(|(_, module)| (module.module_id(), module.as_ref()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut references = Vec::new();
+    for (owner, checked) in analysis.expressions() {
+        let CheckedExpressionResolution::DialogueLineReference(target) = checked.resolution()
+        else {
+            continue;
+        };
+        if project.dialogue_lines().get(target).is_none() {
+            return Err(ProjectSemanticIndexError::MissingAcceptedDialogueLine {
+                target: target.clone(),
+            });
+        }
+        let module = modules
+            .get(&owner.module())
+            .copied()
+            .ok_or(ProjectSemanticIndexError::MissingDialogueLineReferenceModule { owner })?;
+        let lookup = module.source_site(
+            module.provenance().source_identity(),
+            HirSourceQuery::Expr {
+                owner,
+                role: HirExprSourceRole::Whole,
+            },
+        )?;
+        let HirSourcePresence::Present(HirSourceSite::Span(source)) = lookup.presence() else {
+            return Err(ProjectSemanticIndexError::MissingDialogueLineReferenceSource { owner });
+        };
+        references.push(AcceptedDialogueLineReference::new(
+            target.clone(),
+            source.clone(),
+            HirPackageModuleKey::from(module.key()),
+            owner,
+        ));
+    }
+    Ok(references)
 }
 
 fn callable_dependencies(

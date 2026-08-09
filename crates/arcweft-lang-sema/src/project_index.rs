@@ -12,12 +12,16 @@ use crate::callable::{
 use crate::entry::{CheckedEntryCatalog, CheckedEntryId};
 use crate::env::{EffectCapability, FunctionSignature, TypeCheckEnv};
 use crate::types::{EntityType, TypeKind};
-use arcweft_id::PublicId;
-use arcweft_lang_hir::symbol::{
-    CallableDeclarationKey, CallableDeclarationOwner, FlowDeclarationId,
-    nominal::ProjectNominalDeclarationId,
+use arcweft_id::{PublicId, dialogue::DialogueLineId};
+use arcweft_lang_hir::{
+    identity::ExprId,
+    project::HirPackageModuleKey,
+    symbol::{
+        CallableDeclarationKey, CallableDeclarationOwner, FlowDeclarationId,
+        nominal::ProjectNominalDeclarationId,
+    },
 };
-use arcweft_source::SourceAnchor;
+use arcweft_source::{SourceAnchor, SourceSpan};
 use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
 
@@ -187,6 +191,48 @@ pub struct DebugQuerySymbol {
     signature: FunctionSignature,
 }
 
+/// One source-backed reference to a dialogue line accepted by the same final
+/// HIR project and semantic generation.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AcceptedDialogueLineReference {
+    target: DialogueLineId,
+    source: SourceSpan,
+    module: HirPackageModuleKey,
+    expression: ExprId,
+}
+
+impl AcceptedDialogueLineReference {
+    pub const fn new(
+        target: DialogueLineId,
+        source: SourceSpan,
+        module: HirPackageModuleKey,
+        expression: ExprId,
+    ) -> Self {
+        Self {
+            target,
+            source,
+            module,
+            expression,
+        }
+    }
+
+    pub const fn target(&self) -> &DialogueLineId {
+        &self.target
+    }
+
+    pub const fn source(&self) -> &SourceSpan {
+        &self.source
+    }
+
+    pub const fn module(&self) -> &HirPackageModuleKey {
+        &self.module
+    }
+
+    pub const fn expression(&self) -> ExprId {
+        self.expression
+    }
+}
+
 /// Source, bundle, or remote semantic snapshot for Agent Script compilation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectSemanticIndex {
@@ -201,6 +247,7 @@ pub struct ProjectSemanticIndex {
     entry_role_edges: Vec<ProjectEntryRoleEdge>,
     project_nominals: BTreeMap<ProjectNominalDeclarationId, ProjectNominalIndexRecord>,
     project_nominal_references: Box<[ProjectNominalReferenceEdge]>,
+    dialogue_line_references: Box<[AcceptedDialogueLineReference]>,
     types: BTreeMap<TypeName, TypeKind>,
     debug_queries: BTreeMap<QualifiedName, DebugQuerySymbol>,
     relations: Vec<ProjectGraphRelation>,
@@ -243,6 +290,12 @@ pub enum ProjectSemanticIndexError {
     InvalidCallableIdentity { name: String, message: String },
     #[error("HIR project module `{module}` is not bound to its source document")]
     MissingProjectSource { module: String },
+    #[error("accepted dialogue line `{target}` is missing from the project generation")]
+    MissingAcceptedDialogueLine { target: DialogueLineId },
+    #[error("dialogue-line reference expression {owner:?} has no accepted project module")]
+    MissingDialogueLineReferenceModule { owner: ExprId },
+    #[error("dialogue-line reference expression {owner:?} has no exact source span")]
+    MissingDialogueLineReferenceSource { owner: ExprId },
     #[error(
         "accepted type-check report has no semantic type for final-HIR root {root:?}: {reason}"
     )]
@@ -768,6 +821,7 @@ impl ProjectSemanticIndex {
             entry_role_edges: Vec::new(),
             project_nominals: BTreeMap::new(),
             project_nominal_references: Box::new([]),
+            dialogue_line_references: Box::new([]),
             types: BTreeMap::new(),
             debug_queries: BTreeMap::new(),
             relations: Vec::new(),
@@ -906,6 +960,10 @@ impl ProjectSemanticIndex {
 
     pub fn project_nominal_references(&self) -> &[ProjectNominalReferenceEdge] {
         &self.project_nominal_references
+    }
+
+    pub fn dialogue_line_references(&self) -> &[AcceptedDialogueLineReference] {
+        &self.dialogue_line_references
     }
 
     pub fn project_nominal(
