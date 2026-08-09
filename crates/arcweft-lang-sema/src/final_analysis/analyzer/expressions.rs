@@ -1556,7 +1556,7 @@ impl Analyzer<'_, '_, '_> {
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
         match target.kind() {
             HirExprKind::Path(_) => Ok((configuration_owner, None)),
-            HirExprKind::Call(call) if !application.coordinates().is_empty() => {
+            HirExprKind::Call(call) => {
                 let arcweft_lang_hir::expr::HirCallCallee::Value { value } = call.callee() else {
                     return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
                 };

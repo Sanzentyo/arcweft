@@ -3,7 +3,14 @@
 use std::{collections::HashMap, sync::Arc};
 
 use arcweft_id::dialogue::DialogueLineId;
-use arcweft_lang_hir::project::{AcceptedDialogueLine, HirProject};
+use arcweft_lang_hir::{
+    expr::HirExprKind,
+    module::HirModule,
+    project::{AcceptedDialogueLine, HirPackageModuleKey, HirProject},
+    source_index::{
+        HirExprSourceRole, HirSourceOwnerStatus, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    },
+};
 use arcweft_lang_sema::project_index::ProjectSemanticIndex;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 use arcweft_verify_lsp::LspPositionMapper;
@@ -82,7 +89,11 @@ pub(crate) fn prepare_rename(
     let hir = project.hir_project();
     let index = executable.semantic_index();
     let cursor = symbol_at(project, hir, index, document, offset)?;
-    cursor.line.source().id_coordinate_span()?;
+    if cursor.line.source().id_coordinate_span().is_none() {
+        return Some(PrepareRenameResponse::DefaultBehavior {
+            default_behavior: true,
+        });
+    }
     Some(PrepareRenameResponse::RangeWithPlaceholder {
         range: document
             .line_index()
@@ -108,7 +119,6 @@ pub(crate) fn rename(
     let hir = project.hir_project();
     let index = executable.semantic_index();
     let cursor = symbol_at(project, hir, index, document, offset)?;
-    let declaration = cursor.line.source().id_coordinate_span()?;
     let replacement = DialogueLineId::try_new(new_name.to_owned()).ok()?;
     if matches!(
         cursor.line.text_key_origin(),
@@ -122,12 +132,16 @@ pub(crate) fn rename(
     }
 
     let mut changes = HashMap::<Uri, Vec<TextEdit>>::new();
-    push_edit(
-        project,
-        &mut changes,
-        declaration,
-        &format!("@{replacement}"),
-    )?;
+    if let Some(declaration) = cursor.line.source().id_coordinate_span() {
+        push_edit(
+            project,
+            &mut changes,
+            declaration,
+            &format!("@{replacement}"),
+        )?;
+    } else {
+        push_generated_id_materialization(project, hir, &mut changes, cursor.line, &replacement)?;
+    }
     for reference in index
         .dialogue_line_references()
         .iter()
@@ -188,6 +202,7 @@ fn symbol_at<'a>(
         .filter_map(|line| {
             line.source()
                 .id_coordinate_span()
+                .or_else(|| generated_anchor(hir, line))
                 .filter(|source| span_contains(source, identity, offset))
                 .map(|source| DialogueLineCursor { line, source })
         })
@@ -213,6 +228,26 @@ fn declaration_source(line: &AcceptedDialogueLine) -> &SourceSpan {
     line.source()
         .id_coordinate_span()
         .unwrap_or_else(|| line.source().application_span())
+}
+
+fn generated_anchor<'project>(
+    hir: &'project HirProject,
+    line: &'project AcceptedDialogueLine,
+) -> Option<&'project SourceSpan> {
+    let source = line.source();
+    let module = hir
+        .module_by_key(&HirPackageModuleKey::from(source.module()))?
+        .module();
+    [HirExprSourceRole::OpenBracket, HirExprSourceRole::Colon]
+        .into_iter()
+        .find_map(|role| {
+            present_span(
+                module,
+                source.application_span().source(),
+                source.application(),
+                role,
+            )
+        })
 }
 
 fn span_contains(source: &SourceSpan, identity: &SourceDocumentIdentity, offset: usize) -> bool {
@@ -244,6 +279,137 @@ fn push_edit(
     let range = accepted
         .line_index()
         .range_from_byte_span(source.range().start(), source.range().end());
+    changes
+        .entry(uri)
+        .or_default()
+        .push(TextEdit::new(range, replacement.to_owned()));
+    Some(())
+}
+
+#[allow(
+    clippy::mutable_key_type,
+    reason = "LSP WorkspaceEdit requires Uri keys"
+)]
+fn push_generated_id_materialization(
+    project: &AcceptedProjectSnapshot,
+    hir: &HirProject,
+    changes: &mut HashMap<Uri, Vec<TextEdit>>,
+    line: &AcceptedDialogueLine,
+    replacement: &DialogueLineId,
+) -> Option<()> {
+    let source = line.source();
+    let module = hir
+        .module_by_key(&HirPackageModuleKey::from(source.module()))?
+        .module();
+    let application = module.resolve_expr(source.application()).ok()?;
+    let HirExprKind::DialogueContentApplication(application) = application.kind() else {
+        return None;
+    };
+    let target = module.resolve_expr(application.target()).ok()?;
+    let (identity, offset, text) = if let HirExprKind::Call(call) = target.kind() {
+        if call.arguments().is_empty() {
+            let site = present_site(
+                module,
+                source.application_span().source(),
+                application.target(),
+                HirExprSourceRole::CallArgumentListEmptyInsertion,
+            )?;
+            (
+                site.source_identity(),
+                source_site_offset(site),
+                format!("id = @{replacement}"),
+            )
+        } else {
+            let close = present_site(
+                module,
+                source.application_span().source(),
+                application.target(),
+                HirExprSourceRole::CallArgumentListClose,
+            )?;
+            let has_trailing_separator = present_site(
+                module,
+                source.application_span().source(),
+                application.target(),
+                HirExprSourceRole::CallArgumentTrailingSeparator,
+            )
+            .is_some();
+            (
+                close.source_identity(),
+                source_site_offset(close),
+                format!(
+                    "{}id = @{replacement}",
+                    if has_trailing_separator { " " } else { ", " }
+                ),
+            )
+        }
+    } else {
+        generated_anchor(hir, line)?;
+        let target = present_span(
+            module,
+            source.application_span().source(),
+            source.application(),
+            HirExprSourceRole::Target,
+        )?;
+        (
+            target.source(),
+            target.range().end(),
+            format!("(id = @{replacement})"),
+        )
+    };
+    push_insertion(project, changes, identity, offset, &text)
+}
+
+fn present_site<'module>(
+    module: &'module HirModule,
+    source: &SourceDocumentIdentity,
+    owner: arcweft_lang_hir::identity::ExprId,
+    role: HirExprSourceRole,
+) -> Option<&'module HirSourceSite> {
+    let lookup = module
+        .source_site(source, HirSourceQuery::Expr { owner, role })
+        .ok()?;
+    if lookup.owner_status() != HirSourceOwnerStatus::Clean {
+        return None;
+    }
+    match lookup.presence() {
+        HirSourcePresence::Present(site) => Some(site),
+        HirSourcePresence::AbsentOptional => None,
+    }
+}
+
+fn present_span<'module>(
+    module: &'module HirModule,
+    source: &SourceDocumentIdentity,
+    owner: arcweft_lang_hir::identity::ExprId,
+    role: HirExprSourceRole,
+) -> Option<&'module SourceSpan> {
+    match present_site(module, source, owner, role)? {
+        HirSourceSite::Span(span) => Some(span),
+        HirSourceSite::Insertion(_) => None,
+    }
+}
+
+fn source_site_offset(site: &HirSourceSite) -> usize {
+    match site {
+        HirSourceSite::Span(span) => span.range().start(),
+        HirSourceSite::Insertion(insertion) => insertion.offset(),
+    }
+}
+
+#[allow(
+    clippy::mutable_key_type,
+    reason = "LSP WorkspaceEdit requires Uri keys"
+)]
+fn push_insertion(
+    project: &AcceptedProjectSnapshot,
+    changes: &mut HashMap<Uri, Vec<TextEdit>>,
+    source: &SourceDocumentIdentity,
+    offset: usize,
+    replacement: &str,
+) -> Option<()> {
+    let accepted = project.source(source)?;
+    let uri = accepted.locator().uri()?.clone();
+    let range = accepted.line_index().range_from_byte_span(offset, offset);
     changes
         .entry(uri)
         .or_default()

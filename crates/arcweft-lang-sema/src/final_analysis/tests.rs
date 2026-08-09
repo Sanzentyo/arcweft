@@ -3391,6 +3391,25 @@ fn opening() {
 }
 
 #[test]
+fn coordinate_free_dialogue_call_is_typed_configuration_metadata() {
+    let fixture = fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let line = alice()[前[strong]強調[/strong]後]
+}
+",
+        None,
+    );
+    let analysis = analyze(&fixture).expect("coordinate-free dialogue configuration analysis");
+    assert!(analysis.expressions().any(|(_, checked)| matches!(
+        checked.resolution(),
+        CheckedExpressionResolution::DialogueConfiguration { .. }
+    )));
+}
+
+#[test]
 fn entry_entity_reference_reads_exact_final_hir_item_owner() {
     let fixture = fixture(
         r"

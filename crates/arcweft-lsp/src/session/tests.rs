@@ -235,6 +235,152 @@ fn reference() {
 }
 
 #[test]
+fn generated_dialogue_line_rename_materializes_immediate_id_coordinate() {
+    let source = r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let line = alice()[前[strong]生成[/strong]後]
+}
+";
+    let (_project, session, uri) =
+        accepted_project_session("generated-dialogue-line-rename", source);
+    let profile = session.profile_for_uri(&uri);
+    let accepted = profile
+        .accepted_environment()
+        .expect("generated dialogue-line project is accepted");
+    let [line] = accepted.project().hir_project().dialogue_lines().records() else {
+        panic!("one generated dialogue line")
+    };
+    assert!(line.source().id_coordinate_span().is_none());
+    let document = session.documents.get(&uri).expect("open source document");
+    let bracket_offset = source.find("()[").expect("dialogue bracket") + 2;
+    assert!(matches!(
+        crate::features::dialogue_lines::prepare_rename(profile, document, bracket_offset),
+        Some(lsp_types::PrepareRenameResponse::DefaultBehavior {
+            default_behavior: true
+        })
+    ));
+
+    let edit = crate::features::dialogue_lines::rename(
+        profile,
+        &session.documents,
+        document,
+        bracket_offset,
+        "say.story.materialized",
+    )
+    .expect("generated line materialization edit");
+    let edits = edit
+        .changes
+        .expect("workspace changes")
+        .remove(&uri)
+        .expect("source edits");
+    let [insertion] = edits.as_slice() else {
+        panic!("one generated ID insertion")
+    };
+    assert_eq!(insertion.new_text, "id = @say.story.materialized");
+    assert_eq!(insertion.range.start, insertion.range.end);
+    assert_eq!(
+        insertion.range.start,
+        document
+            .line_index()
+            .position_from_byte_offset(source.find("alice()").expect("target call") + 6)
+    );
+
+    let materialized = source.replacen("alice()", "alice(id = @say.story.materialized)", 1);
+    let (_project, materialized_session, materialized_uri) =
+        accepted_project_session("materialized-dialogue-line", &materialized);
+    let materialized_profile = materialized_session.profile_for_uri(&materialized_uri);
+    let materialized_project = materialized_profile
+        .accepted_environment()
+        .expect("materialized project is accepted");
+    let [line] = materialized_project
+        .project()
+        .hir_project()
+        .dialogue_lines()
+        .records()
+    else {
+        panic!("one materialized dialogue line")
+    };
+    assert_eq!(line.id().as_str(), "say.story.materialized");
+    assert_eq!(
+        line.id_origin(),
+        arcweft_lang_hir::line_identity::DialogueLineIdOrigin::ExplicitAbsolute
+    );
+}
+
+#[test]
+fn generated_dialogue_line_rename_uses_typed_call_and_target_insertion_sites() {
+    let call_source = r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let line = alice(text_key = @text.story.fixed)[前[strong]生成[/strong]後]
+}
+";
+    let (_project, call_session, call_uri) =
+        accepted_project_session("generated-line-call-insertion", call_source);
+    let call_profile = call_session.profile_for_uri(&call_uri);
+    assert!(call_profile.accepted_environment().is_some());
+    let call_document = call_session
+        .documents
+        .get(&call_uri)
+        .expect("open call source");
+    let call_bracket = call_source.find(")[").expect("call dialogue bracket") + 1;
+    let call_edit = crate::features::dialogue_lines::rename(
+        call_profile,
+        &call_session.documents,
+        call_document,
+        call_bracket,
+        "say.story.call_materialized",
+    )
+    .expect("nonempty call materialization");
+    let mut call_edits = call_edit
+        .changes
+        .expect("call workspace changes")
+        .remove(&call_uri)
+        .expect("call source edits");
+    assert_eq!(call_edits.len(), 1);
+    let call_edit = call_edits.pop().expect("one call edit");
+    assert_eq!(call_edit.new_text, ", id = @say.story.call_materialized");
+    assert_eq!(call_edit.range.start, call_edit.range.end);
+
+    let path_source = r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let line = alice[前[strong]生成[/strong]後]
+}
+";
+    let (_project, path_session, path_uri) =
+        accepted_project_session("generated-line-target-insertion", path_source);
+    let path_profile = path_session.profile_for_uri(&path_uri);
+    assert!(path_profile.accepted_environment().is_some());
+    let path_document = path_session
+        .documents
+        .get(&path_uri)
+        .expect("open path source");
+    let path_bracket = path_source.find("alice[").expect("path dialogue bracket") + 5;
+    let path_edit = crate::features::dialogue_lines::rename(
+        path_profile,
+        &path_session.documents,
+        path_document,
+        path_bracket,
+        "say.story.path_materialized",
+    )
+    .expect("path target materialization");
+    let mut path_edits = path_edit
+        .changes
+        .expect("path workspace changes")
+        .remove(&path_uri)
+        .expect("path source edits");
+    assert_eq!(path_edits.len(), 1);
+    let path_edit = path_edits.pop().expect("one path edit");
+    assert_eq!(path_edit.new_text, "(id = @say.story.path_materialized)");
+    assert_eq!(path_edit.range.start, path_edit.range.end);
+}
+
+#[test]
 fn workspace_edit_normalization_is_deterministic_and_deduplicated() {
     let current = "file:///b.arcw".parse::<Uri>().expect("current URI");
     let other = "file:///a.arcw".parse::<Uri>().expect("other URI");
