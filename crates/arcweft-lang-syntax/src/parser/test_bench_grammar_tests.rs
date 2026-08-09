@@ -1,7 +1,7 @@
 use arcweft_source::SourceRange;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::event::PendingSyntaxDiagnostic;
 use crate::grammar::kinds::SyntaxKind;
@@ -34,8 +34,7 @@ bench @bench.score {
     assert(metric.allocations <= 2)
 }
 "#;
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     for expected in [
@@ -81,8 +80,7 @@ fn missing_plan_header_parts_and_bodies_recover_before_following_proofs() {
         "bench @bench.no_body\n",
         "proof next() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let codes = built
         .diagnostics()
@@ -123,8 +121,7 @@ fn unclosed_plan_body_synchronizes_before_the_next_declaration() {
         "    measure { pure(score) }\n",
         "proof after_bench() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::TestItem), 1);
@@ -163,8 +160,7 @@ fn unexpected_plan_header_tokens_are_recovered_without_hiding_the_body() {
         "bench @bench.extra unexpected { report { cpu_time } }\n",
         "proof next() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::TestItem), 1);

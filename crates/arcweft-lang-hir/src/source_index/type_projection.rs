@@ -112,6 +112,10 @@ impl From<TypeRefComponentRole> for HirTypeSourceRole {
 impl StagedHirSourceIndex {
     /// Projects one final type owner's complete role manifest directly from
     /// the exact attached type grammar transaction.
+    #[allow(
+        clippy::result_large_err,
+        reason = "type staging failures retain the complete typed owner, component, and syntax evidence"
+    )]
     pub(crate) fn stage_attached_type(
         &mut self,
         parsed: &ParsedSource,
@@ -190,6 +194,10 @@ impl StagedHirSourceIndex {
 impl HirSourceIndex {
     /// Re-derives every source-backed type manifest from the exact accepted
     /// syntax snapshot and checks it against the final semantic arena.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one projection validates source-backed and synthetic return types against the complete typed owner matrix"
+    )]
     pub(crate) fn validates_attached_types(
         &self,
         parsed: &ParsedSource,

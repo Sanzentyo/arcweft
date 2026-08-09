@@ -855,6 +855,8 @@ pub(super) fn agent_generic_object_hit_region(object: &AgentObservedObject) -> A
         proxy_id: None,
         proxy_type: None,
         proxy_declaration: None,
+        proxy_schema: None,
+        proxy_fields: Vec::new(),
         proxy_role: None,
         proxy_layer: object.resolved_object_layer(),
         depth: object.resolved_object_depth(),
@@ -873,6 +875,8 @@ pub(super) fn agent_image_proxy_hit_region(
         proxy_id: Some(proxy.id.clone()),
         proxy_type: proxy.type_name.clone(),
         proxy_declaration: proxy.declaration.clone(),
+        proxy_schema: proxy.schema.clone(),
+        proxy_fields: proxy.fields.clone(),
         proxy_role: proxy.role.clone(),
         proxy_layer: proxy
             .layer

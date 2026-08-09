@@ -24,6 +24,10 @@ use super::{
 use crate::source_index::block_projection::BlockValidationArenas;
 use crate::source_index::expression_manifest::leaf::path_projection_matches;
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one View projection validates header, parts, retained members, source roles, and poison state together"
+)]
 pub(super) fn payload_matches(
     owner: ItemId,
     attached: &AttachedViewDeclaration,

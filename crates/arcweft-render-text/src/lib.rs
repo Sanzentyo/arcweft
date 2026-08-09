@@ -1,45 +1,17 @@
 //! Sans I/O text source resolution for Arcweft players.
 //!
-//! The root is a deliberate facade. Responsibility modules own the authored
-//! model, dialogue resolution, playback projection, presentation metadata, and
-//! canonical post-resolution document respectively.
+//! This crate owns dialogue resolution, playback validation, and the canonical
+//! post-resolution document. Shared authored and frame data live in
+//! `arcweft-text-model`.
 
-pub mod catalog;
-pub mod frame;
-pub mod playback;
 pub mod resolved_document;
-pub mod rich_effects;
-pub mod rich_text;
-pub mod style;
-
-pub use arcweft_presentation::fx::{FxApplication, FxTarget};
 
 mod resolve_frame;
 
-pub use catalog::{
-    LineDisplayArg, LineDisplayCatalog, LineDisplayCatalogError, LineDisplaySpec, RichTextAssignOp,
-    RichTextCascadeLayer, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
-};
-pub use frame::{
-    LineDisplayFrame, RichTextControlMarker, RichTextDisplayMap, RichTextHostEventMarker,
-    RichTextRange, RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource,
-};
-pub use playback::{LineDisplayFrameValidationError, LineDisplayStage, LineDisplayStageEnd};
-pub use resolve_frame::{LineDisplayError, RuntimeLineContext};
+pub use resolve_frame::{LineDisplayError, RuntimeLineContext, resolve_frame};
 pub use resolved_document::{
     LanguageTag, ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextRunSource,
     ResolvedTextStyle, TextColor, TextDocumentRevision, TextFontFamily, TextResolveError,
-    TextSlant, TextStyleCascade, TextWeight,
-};
-pub use rich_effects::{
-    Milli, RichTextAngle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
-    RichTextObjectProxy, RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation,
-    RichTextRubyPosition, RichTextTransform, RichTextTransformOrigin, RichTextVec2,
-    RichTextVerticalLatinMode, RichTextWritingMode, parse_decimal_milli, parse_milli_token,
-    parse_z_index_token,
-};
-pub use rich_text::{DialogueHostEvent, RichTextControl, RichTextDocument, RichTextNode};
-pub use style::{
-    RichTextColor, RichTextFontFamily, RichTextPresentationStyle, RichTextStyle,
-    presentation_from_styles,
+    TextSlant, TextStyleCascade, TextWeight, resolve_document, resolve_document_with_source,
+    resolve_stage_document,
 };

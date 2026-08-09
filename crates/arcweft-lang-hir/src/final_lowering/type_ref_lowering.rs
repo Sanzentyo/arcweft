@@ -8,17 +8,16 @@ use arcweft_lang_syntax::types::{
     TraitBound, TypeEffectRow, TypeRef, TypeRefComponentRole, TypeRefNodeStep, TypeRefRegionPart,
 };
 
-use crate::callable_source::HirEffectName;
 use crate::diagnostic::{HirRecoveryDiagnostic, HirRecoveryPrimary};
 use crate::expr::{HirBorrowKind, HirPoisonState, HirRecoveryIssue};
 use crate::identity::{HirLimit, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole, TypeId};
 use crate::leaf::{HirElidedRegion, HirName, HirRegionName, HirTypeRegion, HirTypeRegionIssue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::{
     HirSourceQuery, HirSourceSite, HirTypeRegionSourcePart, HirTypeSourceRole,
 };
 use crate::type_ref::{
-    HirAssociatedTypeBinding, HirFunctionType, HirGenericType, HirGenericTypeIssue,
+    HirAssociatedTypeBinding, HirEffectName, HirFunctionType, HirGenericType, HirGenericTypeIssue,
     HirProjectionType, HirReferenceType, HirTraitBoundType, HirType, HirTypeEffectRow,
     HirTypeError, HirTypeKind,
 };

@@ -113,10 +113,7 @@ pub(super) fn agent_repl_initial_state(
     let (debug_store, debug_db_path) = agent_repl_debug_store(options)?;
     let trace = agent_repl_trace_resources(options)?;
     let connection = agent_repl_initial_connection(options)?;
-    let command_surface = agent_repl_initial_command_surface(options).map_err(|message| {
-        eprintln!("error: failed to initialize typed Agent REPL command surface: {message}");
-        ExitCode::FAILURE
-    })?;
+    let command_surface = agent_repl_initial_command_surface(options);
     let remote_connection =
         agent_repl_connect_remote_session(connection.as_ref()).map_err(|message| {
             eprintln!("error: {message}");
@@ -146,15 +143,17 @@ struct AgentReplCommandSurface {
     project_path: Option<String>,
 }
 
-fn agent_repl_initial_command_surface(
-    options: &AgentReplOptions,
-) -> Result<AgentReplCommandSurface, String> {
-    let project = agent_script_project_index(&[])?;
-    let program_hash = project.program_hash().as_str().to_owned();
-    let project_entities = agent_project_entities(&project)?;
-    let project_graph = agent_project_graph(&project)?;
+fn agent_repl_initial_command_surface(options: &AgentReplOptions) -> AgentReplCommandSurface {
+    let program_hash = "cli-agent-repl".to_owned();
+    let project_entities = Vec::new();
+    let project_graph = arcweft_agent_protocol::protocol::AgentProjectGraph::default();
     let repl_session = arcweft_agent_repl::ReplSession::new(
-        arcweft_agent_repl::ReplBaseSnapshot::from_project("cli-agent-repl", project),
+        arcweft_agent_repl::ReplBaseSnapshot::new(
+            "cli-agent-repl",
+            &ProgramHash::new(&program_hash),
+            std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
+        ),
         arcweft_agent_repl::ReplSessionOptions::default(),
     );
     let agent_session = CliAgentSession::new(
@@ -164,11 +163,11 @@ fn agent_repl_initial_command_surface(
         project_entities,
         project_graph,
     );
-    Ok(AgentReplCommandSurface {
+    AgentReplCommandSurface {
         repl_session,
         agent_session,
         project_path: options.path.as_ref().map(|path| path.display().to_string()),
-    })
+    }
 }
 
 pub(super) fn agent_repl_scripted_command(
@@ -872,13 +871,14 @@ pub(super) fn agent_repl_type(
     input: &str,
     fragment_source: &str,
 ) -> AgentReplCellReport {
-    let fragment = agent_repl_parse_fragment(fragment_source);
-    let parse = agent_repl_fragment_report(&fragment);
-    let compiled = match agent_repl_compile_fragment(index, fragment_source, &fragment) {
+    let classification = agent_repl_classify_cell(fragment_source);
+    let parse = agent_repl_classification_report(&classification);
+    let compiled = match agent_repl_compile_classified_cell(index, fragment_source, &classification)
+    {
         Ok(compiled) => compiled,
         Err(message) => return agent_repl_error(index, input, "meta", message),
     };
-    let Some(ty) = agent_repl_display_type(&compiled.typecheck_report) else {
+    let Some(ty) = agent_repl_display_type(&compiled.0, compiled.1) else {
         return agent_repl_error(
             index,
             input,
@@ -903,14 +903,17 @@ pub(super) fn agent_repl_ast(
     input: &str,
     fragment_source: &str,
 ) -> AgentReplCellReport {
-    let fragment = agent_repl_parse_fragment(fragment_source);
+    let classification = agent_repl_classify_cell(fragment_source);
+    let ast = (classification.completion.kind == AgentReplCellCompletionKind::Complete
+        && classification.fragment_kind != AgentReplFragmentKind::Unknown)
+        .then(|| format!("{:#?}", classification.fragment_kind));
     agent_repl_ok(
         index,
         input,
         "meta",
         serde_json::json!({
-            "parse": agent_repl_fragment_report(&fragment),
-            "ast": fragment.kind().map(|kind| format!("{kind:#?}")),
+            "parse": agent_repl_classification_report(&classification),
+            "ast": ast,
         }),
     )
 }
@@ -920,23 +923,15 @@ pub(super) fn agent_repl_hir(
     input: &str,
     fragment_source: &str,
 ) -> AgentReplCellReport {
-    let fragment = agent_repl_parse_fragment(fragment_source);
-    if agent_repl_inspection_source(index, fragment_source, &fragment).is_none() {
-        return agent_repl_error(
-            index,
-            input,
-            "meta",
-            "fragment is not complete enough to lower to HIR".to_owned(),
-        );
-    }
-    match agent_repl_compile_fragment(index, fragment_source, &fragment) {
-        Ok(compiled) => agent_repl_ok(
+    let classification = agent_repl_classify_cell(fragment_source);
+    match agent_repl_compile_classified_cell(index, fragment_source, &classification) {
+        Ok((compiled, _)) => agent_repl_ok(
             index,
             input,
             "meta",
             serde_json::json!({
-                "parse": agent_repl_fragment_report(&fragment),
-                "hir": format!("{:#?}", compiled.hir),
+                "parse": agent_repl_classification_report(&classification),
+                "hir": agent_repl_format_hir_project(&compiled.hir_project),
             }),
         ),
         Err(error) => agent_repl_error(index, input, "meta", error.clone()),
@@ -948,9 +943,10 @@ pub(super) fn agent_repl_bytecode(
     input: &str,
     fragment_source: &str,
 ) -> AgentReplCellReport {
-    let fragment = agent_repl_parse_fragment(fragment_source);
-    let compiled = match agent_repl_compile_fragment(index, fragment_source, &fragment) {
-        Ok(compiled) => compiled,
+    let classification = agent_repl_classify_cell(fragment_source);
+    let compiled = match agent_repl_compile_classified_cell(index, fragment_source, &classification)
+    {
+        Ok((compiled, _)) => compiled,
         Err(message) => return agent_repl_error(index, input, "meta", message),
     };
     let stats = compiled.bundle.bytecode.program.stats();
@@ -959,7 +955,7 @@ pub(super) fn agent_repl_bytecode(
         input,
         "meta",
         serde_json::json!({
-            "parse": agent_repl_fragment_report(&fragment),
+            "parse": agent_repl_classification_report(&classification),
             "entry_id": compiled.manifest.entry_id.as_str(),
             "controller_id": compiled.manifest.controller_id.as_str(),
             "entries": &compiled.bundle.bytecode.program.entries,
@@ -1188,12 +1184,12 @@ pub(super) fn agent_repl_save(
 ) -> AgentReplCellReport {
     let path = PathBuf::from(raw_path);
     let source = agent_repl_saved_source(state);
-    let project = match agent_script_project_index(&[]) {
-        Ok(project) => project,
+    let target = match agent_script_standalone_compile_target(&[]) {
+        Ok(target) => target,
         Err(error) => return agent_repl_error(index, input, "meta", error),
     };
     if let Err(error) =
-        compile_agent_script_source(&path, source.clone(), "entry.agent.main", &project)
+        compile_agent_script_source(&path, source.clone(), "entry.agent.main", &target)
     {
         return agent_repl_error(
             index,
@@ -1308,74 +1304,173 @@ pub(super) fn agent_repl_parse_cell(input: &str) -> serde_json::Value {
         .unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }))
 }
 
-pub(super) fn agent_repl_fragment_report(fragment: &ParsedFragment) -> serde_json::Value {
-    serde_json::to_value(agent_repl_classification_from_fragment(fragment))
+fn agent_repl_classification_report(
+    classification: &AgentReplCellClassification,
+) -> serde_json::Value {
+    serde_json::to_value(classification)
         .unwrap_or_else(|error| serde_json::json!({ "error": error.to_string() }))
 }
 
-pub(super) fn agent_repl_compile_fragment(
+fn agent_repl_compile_classified_cell(
     index: usize,
     input: &str,
-    fragment: &ParsedFragment,
-) -> Result<arcweft_compiler::types::CompiledAgentBundle, String> {
-    let source = agent_repl_inspection_source(index, input, fragment)
-        .ok_or_else(|| "fragment is not complete enough to compile".to_owned())?;
-    let project = agent_script_project_index(&[])?;
+    classification: &AgentReplCellClassification,
+) -> Result<
+    (
+        arcweft_compiler::types::CompiledAgentBundle,
+        arcweft_source::SourceRange,
+    ),
+    String,
+> {
+    let (source, authored_source_range) =
+        agent_repl_inspection_source(index, input, classification)?;
+    let target = agent_script_standalone_compile_target(&[])?;
     compile_agent_script_source(
         Path::new("<agent-repl>"),
         source,
         &format!("entry.agent.repl.cell_{index}"),
-        &project,
+        &target,
     )
+    .map(|compiled| (compiled.artifact, authored_source_range))
 }
 
-pub(super) fn agent_repl_cell_source(
+fn agent_repl_inspection_document_source(
     index: usize,
     input: &str,
-    fragment: &ParsedFragment,
     live_binding_prelude: &str,
-) -> String {
-    let item_prefix = matches!(fragment.kind(), Some(ParsedFragmentKind::Items))
-        .then(|| format!("{input}\n\n"))
-        .unwrap_or_default();
-    let cell_body = if matches!(fragment.kind(), Some(ParsedFragmentKind::Items)) {
-        "    Ok(())".to_owned()
-    } else if input.starts_with("return ") || input.contains("\nreturn ") {
-        indent_agent_repl_body(input)
-    } else {
-        format!("{}\n    Ok(())", indent_agent_repl_body(input))
-    };
-    let body = if live_binding_prelude.trim().is_empty() {
-        cell_body
-    } else {
-        format!(
-            "{}\n{}",
-            indent_agent_repl_body(live_binding_prelude),
-            cell_body
-        )
-    };
-    format!(
-        "{item_prefix}fn repl_cell_{index}() -> Result<Unit, AgentError>\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n{body}\n}}\n\nentry agent @entry.agent.repl.cell_{index} {{\n    controller = repl_cell_{index}\n}}\n"
+) -> (String, arcweft_source::SourceRange) {
+    let mut source = format!(
+        "fn repl_cell_{index}() -> Result<Unit, AgentError>\neffects {{ agent.observe, agent.act.semantic, agent.act.physical, agent.wait, agent.capture, agent.resource.read, debug.read, debug.record, rag.query }}\n{{\n"
+    );
+    if !live_binding_prelude.trim().is_empty() {
+        source.push_str(&indent_agent_repl_body(live_binding_prelude));
+        source.push('\n');
+    }
+    let authored_source_start = source.len();
+    source.push_str(&indent_agent_repl_body(input));
+    let authored_source_end = source.len();
+    if !input.starts_with("return ") && !input.contains("\nreturn ") {
+        source.push_str("\n    Ok(())");
+    }
+    write!(
+        source,
+        "\n}}\n\nentry agent @entry.agent.repl.cell_{index} {{\n    controller = repl_cell_{index}\n}}\n"
+    )
+    .expect("writing to String cannot fail");
+    (
+        source,
+        arcweft_source::SourceRange::new(authored_source_start, authored_source_end),
     )
 }
 
-pub(super) fn agent_repl_inspection_source(
+fn agent_repl_inspection_source(
     index: usize,
     input: &str,
-    fragment: &ParsedFragment,
-) -> Option<String> {
-    (matches!(fragment.completion(), ParseCompletion::Complete) && fragment.errors().is_empty())
-        .then(|| agent_repl_cell_source(index, input, fragment, ""))
+    classification: &AgentReplCellClassification,
+) -> Result<(String, arcweft_source::SourceRange), String> {
+    if classification.completion.kind != AgentReplCellCompletionKind::Complete {
+        return Err(format!(
+            "fragment is {:?}; expected a complete fragment",
+            classification.completion.kind
+        ));
+    }
+    if !classification.errors.is_empty() {
+        return Err(classification
+            .errors
+            .iter()
+            .map(|error| error.message.as_str())
+            .collect::<Vec<_>>()
+            .join("; "));
+    }
+    match classification.fragment_kind {
+        AgentReplFragmentKind::Expression | AgentReplFragmentKind::Statements => {}
+        AgentReplFragmentKind::Items => {
+            return Err(
+                "item inspection requires the whole attached synthetic-document owner".to_owned(),
+            );
+        }
+        AgentReplFragmentKind::Unknown => {
+            return Err(
+                "source-free fragment grammar did not select a compilable family".to_owned(),
+            );
+        }
+    }
+    Ok(agent_repl_inspection_document_source(index, input, ""))
 }
 
-pub(super) fn agent_repl_display_type(report: &TypeCheckReport) -> Option<String> {
-    report
-        .judgments
-        .iter()
-        .rev()
-        .find(|judgment| judgment.rule == TypeJudgmentRule::Return)
-        .or_else(|| report.judgments.iter().next_back())
-        .map(|judgment| format!("{:?}", judgment.ty))
+fn agent_repl_display_type(
+    compiled: &arcweft_compiler::types::CompiledAgentBundle,
+    authored_source_range: arcweft_source::SourceRange,
+) -> Option<String> {
+    use arcweft_lang_hir::source_index::{
+        HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    };
+
+    let mut selected = None;
+    for (_, module) in compiled.hir_project.view().modules() {
+        for (owner, _) in module.expressions() {
+            let lookup = module
+                .source_site(
+                    module.provenance().source_identity(),
+                    HirSourceQuery::Expr {
+                        owner,
+                        role: HirExprSourceRole::Whole,
+                    },
+                )
+                .expect("published expression owner accepts its typed whole-source role");
+            let HirSourcePresence::Present(HirSourceSite::Span(span)) = lookup.presence() else {
+                continue;
+            };
+            let range = span.range();
+            if range.start() < authored_source_range.start()
+                || range.end() > authored_source_range.end()
+            {
+                continue;
+            }
+            let Some(expression) = compiled.semantic_analysis.expression(owner) else {
+                continue;
+            };
+            let candidate = (
+                range.end(),
+                range.end() - range.start(),
+                format!("{:?}", expression.ty()),
+            );
+            if selected
+                .as_ref()
+                .is_none_or(|current: &(usize, usize, String)| {
+                    candidate.0 > current.0 || (candidate.0 == current.0 && candidate.1 > current.1)
+                })
+            {
+                selected = Some(candidate);
+            }
+        }
+    }
+    selected.map(|(_, _, ty)| ty)
+}
+
+fn agent_repl_format_hir_project(project: &arcweft_lang_hir::project::HirProject) -> String {
+    use std::fmt::Write as _;
+
+    let mut output = String::new();
+    writeln!(
+        output,
+        "package={:?} database={:?}",
+        project.package(),
+        project.database_id()
+    )
+    .expect("writing REPL HIR metadata to a String cannot fail");
+    let view = project.view();
+    for item in view.items() {
+        writeln!(
+            output,
+            "\nmodule={} item={:?}\n{:#?}",
+            item.module_path(),
+            item.id(),
+            item.item()
+        )
+        .expect("writing REPL HIR item to a String cannot fail");
+    }
+    output
 }
 
 pub(super) fn apply_agent_repl_capture_target(

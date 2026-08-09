@@ -1,7 +1,5 @@
 //! Typed source-role vocabulary for native Style item owners.
 
-use super::flow_role::HirFlowSourceRole;
-
 /// Source-order path to one native Style body nested through environment bodies.
 ///
 /// The empty path selects the outer sheet body. Every ordinal is an index into
@@ -10,28 +8,28 @@ use super::flow_role::HirFlowSourceRole;
 /// validation owns applicability; this value retains only the exact typed
 /// ordinal sequence and invents no depth limit or secondary Style identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) struct HirStyleBodyPath(Box<[u32]>);
+pub struct HirStyleBodyPath(Box<[u32]>);
 
 impl HirStyleBodyPath {
     /// Selects the outer body of one Style item.
-    pub(crate) fn root() -> Self {
+    pub fn root() -> Self {
         Self(Box::new([]))
     }
 
     /// Owns the exact source-order environment path supplied by Style lowering.
-    pub(crate) fn from_ordinals(ordinals: Box<[u32]>) -> Self {
+    pub fn from_ordinals(ordinals: Box<[u32]>) -> Self {
         Self(ordinals)
     }
 
     /// Returns the source-order environment ordinals from outermost to innermost.
-    pub(crate) const fn ordinals(&self) -> &[u32] {
+    pub const fn ordinals(&self) -> &[u32] {
         &self.0
     }
 }
 
 /// Source component of one top-level native Style token.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirStyleTokenSourcePart {
+pub enum HirStyleTokenSourcePart {
     Whole,
     Key,
     Assignment,
@@ -49,7 +47,7 @@ pub(crate) enum HirStyleTokenSourcePart {
 /// appear here: their existing `ExprId` and `TypeId` source roles remain the
 /// sole owners of those component trees.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirStyleBodySourcePart {
+pub enum HirStyleBodySourcePart {
     BodyWhole,
     RuleSelector {
         rule: u32,
@@ -110,7 +108,7 @@ pub(crate) enum HirStyleBodySourcePart {
 ///
 /// Token ordinals index the source-ordered `HirStyleItem::tokens` inventory.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirStyleSourceRole {
+pub enum HirStyleSourceRole {
     ItemId,
     Token {
         ordinal: u32,
@@ -120,13 +118,6 @@ pub(crate) enum HirStyleSourceRole {
         path: HirStyleBodyPath,
         part: HirStyleBodySourcePart,
     },
-}
-
-/// Typed item source-role family admitted by the sole source index.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirItemSourceRole {
-    Flow(HirFlowSourceRole),
-    Style(HirStyleSourceRole),
 }
 
 #[cfg(test)]

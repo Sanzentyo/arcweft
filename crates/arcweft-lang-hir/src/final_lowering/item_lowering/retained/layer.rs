@@ -15,7 +15,7 @@ use crate::item::{
     HirLayerMemberValue, HirLayerPolicyMember, HirLayerReferenceMember, HirRenderPhase,
 };
 use crate::leaf::HirIdRefValue;
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 
 use super::super::super::{StagedHirModuleTransaction, require_limit};
 use super::super::{LoweredItemProjection, item_state};

@@ -2,21 +2,21 @@
 
 use std::sync::Arc;
 
-use arcweft_lang_hir::symbol::{
-    CallableDeclarationId, CallablePackageId, ProjectSymbolTargetId,
-    nominal::ProjectNominalSourceError,
+use arcweft_lang_hir::{
+    identity::TypeId,
+    symbol::{CallableDeclarationKey, CallablePackageId, ProjectSymbolTargetId},
 };
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-use arcweft_source::{SourceDocumentIdentity, SourceSpan};
+use arcweft_source::SourceSpan;
 use thiserror::Error;
 
 use crate::nominal::{NominalResolutionIndexError, TypeResolutionInputError};
 
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
-    CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameterIndex,
-    CallableProviderId, DataLastCallableId, FloatWidth, ProjectCallablePath, ProjectNameBinding,
-    StdFloatOperation, TraitCallableId,
+    CallableLookupKey, CallableMethodRole, CallableName, CallableOverloadIndex,
+    CallableParameterIndex, CallableProviderId, DataLastCallableId, FloatWidth,
+    ProjectCallablePath, ProjectNameBinding, StdFloatOperation,
 };
 
 #[derive(Clone, Debug, Eq, Error, Hash, PartialEq)]
@@ -53,7 +53,6 @@ pub enum CallableIndexKind {
     Group,
     Parameter,
     Overload,
-    Argument,
     ArgumentSlot,
     LexicalBinding,
     FunctionValue,
@@ -203,6 +202,21 @@ pub enum CallableCatalogError {
     MissingRustProvenance,
     #[error("environment callable record requires its accepted publication digest")]
     MissingEnvironmentPublicationDigest,
+    #[error("method validator role does not agree with candidate identity")]
+    MethodValidatorCandidateMismatch {
+        role: CallableMethodRole,
+        candidate: Box<CallableCandidateId>,
+    },
+    #[error("method validator role does not agree with lookup key")]
+    MethodValidatorLookupMismatch {
+        role: CallableMethodRole,
+        key: Box<CallableLookupKey>,
+    },
+    #[error("method validator role does not agree with effect authority")]
+    MethodValidatorEffectAuthorityMismatch {
+        role: CallableMethodRole,
+        candidate: Box<CallableCandidateId>,
+    },
     #[error("callable set cannot be empty")]
     EmptyCandidateSet,
     #[error("candidate set contains mismatched lookup keys")]
@@ -311,6 +325,7 @@ pub enum SignatureWorkKind {
     SpecificityChecks,
     Overloads,
     Parameters,
+    ArgumentProjections,
     DiagnosticConsiderations,
 }
 
@@ -336,13 +351,6 @@ pub struct SignatureLimitExceeded {
     pub maximum: u64,
 }
 
-/// Invalid custom signature-query limit configuration.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum SignatureLimitConfigurationError {
-    #[error("signature query limit {kind:?} must be positive")]
-    Zero { kind: SignatureLimitKind },
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CorruptCallableCatalogReason {
     EmptySet,
@@ -364,8 +372,6 @@ pub enum ResolveCallError {
     WorldMismatch,
     #[error("call source does not match the accepted document")]
     SourceIdentityMismatch,
-    #[error("call source span is invalid")]
-    InvalidSourceSpan,
     #[error("candidate {candidate:?} has no call group {group:?}")]
     InvalidCallGroup {
         candidate: Box<CallableCandidateId>,
@@ -378,14 +384,20 @@ pub enum ResolveCallError {
         candidates: Arc<[CallableCandidateId]>,
     },
     #[error("trait method is ambiguous between {candidates:?}")]
-    AmbiguousTraitMethod { candidates: Arc<[TraitCallableId]> },
+    AmbiguousTraitMethod {
+        candidates: Arc<[super::CheckedCallableId]>,
+    },
+    #[error("trait or inherent method is inaccessible")]
+    InaccessibleMethod {
+        candidates: Arc<[super::CheckedCallableId]>,
+    },
     #[error("data-last call is ambiguous between {candidates:?}")]
     DataLastAmbiguity {
         candidates: Arc<[DataLastCallableId]>,
     },
     #[error("callable catalog is corrupt at {key:?}: {reason:?}")]
     CorruptCatalog {
-        key: CallableLookupKey,
+        key: Box<CallableLookupKey>,
         reason: CorruptCallableCatalogReason,
     },
     #[error("resolved callable violates an identity invariant")]
@@ -396,45 +408,6 @@ pub enum ResolveCallError {
     SignatureLimit(#[from] SignatureLimitExceeded),
     #[error("signature query counter overflowed")]
     SignatureArithmeticOverflow { counter: SignatureWorkKind },
-}
-
-/// Failure to publish or read checker-owned call-target facts.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub enum CallTargetFactError {
-    /// Focused facts were requested from a report produced in another mode.
-    #[error("focused call-target facts require focused checker mode")]
-    FocusedModeRequired,
-    /// The focused source does not belong to the accepted project.
-    #[error("focused call source is not part of the accepted project: {document:?}")]
-    FocusedSourceUnavailable { document: SourceDocumentIdentity },
-    /// The focused call was not encountered during checking.
-    #[error("focused call target {call:?} was not recorded")]
-    FocusedTargetMissing { call: SourceSpan },
-    /// The focused call was encountered more than once.
-    #[error("focused call target {call:?} was recorded more than once")]
-    FocusedTargetDuplicate { call: SourceSpan },
-    /// Two committed calls reused one checker expression identity.
-    #[error("call-target expression {expression:?} was recorded more than once")]
-    DuplicateExpression {
-        expression: crate::checker::TypeExpressionId,
-    },
-    /// Checked facts could not be retained for a source-backed call.
-    #[error("call target {call:?} could not retain checked facts: {reason}")]
-    Unavailable {
-        call: SourceSpan,
-        reason: SemanticSignatureError,
-    },
-    /// Resolution failed before a checked fact could be committed.
-    #[error("call target {call:?} could not be resolved: {reason}")]
-    Resolve {
-        call: SourceSpan,
-        reason: Box<ResolveCallError>,
-    },
-    /// Focused signature-query accounting failed.
-    #[error("focused signature accounting failed: {reason:?}")]
-    SignatureAccounting {
-        reason: super::SignatureAccountingError,
-    },
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -455,6 +428,10 @@ pub enum SemanticSignatureError {
     SourceIdentityMismatch,
     #[error("semantic signature contains an invalid span")]
     InvalidSpan,
+    #[error("checked call callee classification is inconsistent with final HIR")]
+    InvalidCalleeClassification,
+    #[error("checked call accounting is inconsistent with its retained facts")]
+    InvalidCallAccounting,
     #[error(transparent)]
     Limit(#[from] CallableQueryLimitError),
 }
@@ -470,6 +447,7 @@ pub enum CallableDiagnosticCode {
     NoViableSignature,
     DiagnosticsTruncated,
     AmbiguousTraitMethod,
+    InaccessibleMethod,
     DuplicateArgument,
     ParameterAlreadyBound,
     UnknownNamedArgument,
@@ -538,14 +516,9 @@ pub enum CallableCatalogBuildError {
     #[error("project module {module:?} has no source")]
     MissingProjectModuleSource { module: CanonicalModulePath },
     #[error("project callable identity mismatch for {declaration:?}")]
-    ProjectIdentityMismatch { declaration: CallableDeclarationId },
+    ProjectIdentityMismatch { declaration: CallableDeclarationKey },
     #[error("project callable signature has invalid source evidence at {span:?}")]
     InvalidProjectSignatureSource { span: SourceSpan },
-    #[error("project callable signature source binding failed at {span:?}: {reason:?}")]
-    ProjectSignatureSourceBinding {
-        span: SourceSpan,
-        reason: Box<ProjectNominalSourceError>,
-    },
     #[error("project callable signature nominal input failed at {span:?}: {reason:?}")]
     ProjectSignatureResolutionInput {
         span: SourceSpan,
@@ -556,8 +529,8 @@ pub enum CallableCatalogBuildError {
         span: SourceSpan,
         reason: Box<NominalResolutionIndexError>,
     },
-    #[error("project callable signature type lacks accepted-world evidence at {span:?}")]
-    DetachedProjectSignatureType { span: SourceSpan },
+    #[error("project callable signature type {owner:?} has no accepted nominal outcome")]
+    InvalidProjectSignatureTypeOutcome { owner: TypeId },
     #[error(
         "extern Rust alias {path:?} for {package}::{export:?} matches {candidates} callable records"
     )]
@@ -594,10 +567,9 @@ impl CallableCatalogBuildError {
             | Self::MissingProjectModuleSource { .. }
             | Self::ProjectIdentityMismatch { .. }
             | Self::InvalidProjectSignatureSource { .. }
-            | Self::ProjectSignatureSourceBinding { .. }
             | Self::ProjectSignatureResolutionInput { .. }
             | Self::ProjectSignatureResolutionIndex { .. }
-            | Self::DetachedProjectSignatureType { .. }
+            | Self::InvalidProjectSignatureTypeOutcome { .. }
             | Self::AmbiguousRustExternBinding { .. }
             | Self::InvalidRecord(_)
             | Self::InvalidPublication(_)
@@ -612,11 +584,10 @@ impl ResolveCallError {
             Self::Cancelled => CallableDiagnosticCode::Cancelled,
             Self::DeadlineExceeded => CallableDiagnosticCode::DeadlineExceeded,
             Self::WorldMismatch => CallableDiagnosticCode::WorldMismatch,
-            Self::SourceIdentityMismatch | Self::InvalidSourceSpan => {
-                CallableDiagnosticCode::SourceIdentityMismatch
-            }
+            Self::SourceIdentityMismatch => CallableDiagnosticCode::SourceIdentityMismatch,
             Self::AmbiguousOverload { .. } => CallableDiagnosticCode::AmbiguousOverload,
             Self::AmbiguousTraitMethod { .. } => CallableDiagnosticCode::AmbiguousTraitMethod,
+            Self::InaccessibleMethod { .. } => CallableDiagnosticCode::InaccessibleMethod,
             Self::DataLastAmbiguity { .. } => CallableDiagnosticCode::DataLastAmbiguity,
             Self::CorruptCatalog { .. } => CallableDiagnosticCode::CorruptCallableCatalog,
             Self::InvalidCallGroup { .. } => CallableDiagnosticCode::InvalidCallGroup,

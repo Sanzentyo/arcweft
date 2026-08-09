@@ -61,14 +61,14 @@ impl PendingFlowPublicId {
 
     pub(crate) fn has_recovery(&self) -> bool {
         !self.canonical_flow_family
-            || match (&self.form, self.syntax.value()) {
-                (PendingFlowPublicIdForm::Authored, Ok(_)) => false,
-                (
-                    PendingFlowPublicIdForm::DerivedFromEmptyMarker { .. },
-                    Err(SyntaxIdRefIssue::MissingSuffix),
-                ) => false,
-                _ => true,
-            }
+            || !matches!(
+                (&self.form, self.syntax.value()),
+                (PendingFlowPublicIdForm::Authored, Ok(_))
+                    | (
+                        PendingFlowPublicIdForm::DerivedFromEmptyMarker { .. },
+                        Err(SyntaxIdRefIssue::MissingSuffix)
+                    )
+            )
     }
 
     fn rebased(&self, offset: usize) -> Option<Self> {

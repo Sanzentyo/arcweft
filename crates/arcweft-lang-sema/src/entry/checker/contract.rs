@@ -1,22 +1,18 @@
 use arcweft_lang_hir::{
-    model::{HirFlow, HirFunction, HirModule},
-    symbol::{CallableDeclarationId, CallablePackageId},
+    identity::ItemId,
+    item::{HirFlowItem, HirFunctionItem, HirGenericParameter, HirParameterKind, HirRequiredName},
+    symbol::CallablePackageId,
 };
-use arcweft_lang_syntax::{
-    ast::flow::ContractClause,
-    reference::BorrowKind,
-    types::{AuthoredTypeRef, FnReceiverKind, GenericParam},
-};
+use arcweft_lang_syntax::reference::BorrowKind;
 
 use crate::{
     callable::{
-        CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallableRecord,
+        CallableParameterPassing, CallableParameterPresence, CallableParameterType,
+        CheckedCallableExecution, CheckedCallableFacts, EffectContractOrigin,
     },
-    check::TypeCheckReport,
-    effect_model::CallableId,
     effect_row::EffectRowTail,
     effects::EffectSet,
-    nominal::ResolvedTypeRefOutcome,
+    final_analysis::{CheckedFunctionExecution, CheckedItemRole, FinalSemanticAnalysis},
     types::{ArrayLength, MapKind, TypeKind},
 };
 
@@ -31,7 +27,7 @@ use super::{
 };
 
 pub(super) struct EntryContractBuilder<'a> {
-    typecheck: &'a TypeCheckReport,
+    analysis: &'a FinalSemanticAnalysis,
     package: &'a CallablePackageId,
 }
 
@@ -43,21 +39,20 @@ pub(super) struct ReducerContractNominals<'a> {
 
 impl<'a> EntryContractBuilder<'a> {
     pub(super) const fn new(
-        typecheck: &'a TypeCheckReport,
+        analysis: &'a FinalSemanticAnalysis,
         package: &'a CallablePackageId,
     ) -> Self {
-        Self { typecheck, package }
+        Self { analysis, package }
     }
 
     pub(super) fn initializer(
         &self,
-        module: &HirModule,
-        function: &HirFunction,
-        record: &CallableRecord,
-        declaration: &CallableDeclarationId,
+        function: &HirFunctionItem,
+        facts: &CheckedCallableFacts,
         state: &BoundNominalTypeKey,
     ) -> Result<CanonicalCallableContract, String> {
-        let (contract, effects_explicit) = self.callable(module, function, record)?;
+        require_direct_frame(facts, "initializer")?;
+        let (contract, effects_explicit) = self.callable(function, facts)?;
         require_no_generics(&contract.signature, "initializer")?;
         require_empty_parameter_group(&contract.signature, "initializer")?;
         require_result(
@@ -66,19 +61,18 @@ impl<'a> EntryContractBuilder<'a> {
             "initializer",
         )?;
         require_explicit_empty_effects(&contract, effects_explicit, "initializer")?;
-        self.require_inferred_empty(declaration, "initializer")?;
+        require_inferred_empty(facts, "initializer")?;
         Ok(contract)
     }
 
     pub(super) fn reducer(
         &self,
-        module: &HirModule,
-        function: &HirFunction,
-        record: &CallableRecord,
-        declaration: &CallableDeclarationId,
+        function: &HirFunctionItem,
+        facts: &CheckedCallableFacts,
         nominals: ReducerContractNominals<'_>,
     ) -> Result<CanonicalCallableContract, String> {
-        let (contract, effects_explicit) = self.callable(module, function, record)?;
+        require_direct_frame(facts, "reducer")?;
+        let (contract, effects_explicit) = self.callable(function, facts)?;
         require_no_generics(&contract.signature, "reducer")?;
         let [group] = contract.signature.groups.as_slice() else {
             return Err("reducer must declare exactly one parameter group".to_owned());
@@ -123,18 +117,17 @@ impl<'a> EntryContractBuilder<'a> {
             "reducer",
         )?;
         require_explicit_empty_effects(&contract, effects_explicit, "reducer")?;
-        self.require_inferred_empty(declaration, "reducer")?;
+        require_inferred_empty(facts, "reducer")?;
         Ok(contract)
     }
 
     pub(super) fn agent_controller(
         &self,
-        module: &HirModule,
-        function: &HirFunction,
-        record: &CallableRecord,
-        declaration: &CallableDeclarationId,
+        function: &HirFunctionItem,
+        facts: &CheckedCallableFacts,
     ) -> Result<(CanonicalCallableContract, EffectSet, EffectSet), String> {
-        let (contract, effects_explicit) = self.callable(module, function, record)?;
+        require_direct_frame(facts, "Agent controller")?;
+        let (contract, effects_explicit) = self.callable(function, facts)?;
         require_no_generics(&contract.signature, "Agent controller")?;
         require_empty_parameter_group(&contract.signature, "Agent controller")?;
         require_result(
@@ -151,7 +144,7 @@ impl<'a> EntryContractBuilder<'a> {
         if !effects_explicit {
             return Err("Agent controller must declare an explicit closed effect row".to_owned());
         }
-        let inferred = self.inferred_effects(declaration)?;
+        let inferred = inferred_effects(facts, "Agent controller")?;
         if !inferred
             .effects_not_covered_by(&contract.contract_effects)
             .is_empty()
@@ -166,36 +159,22 @@ impl<'a> EntryContractBuilder<'a> {
 
     pub(super) fn flow(
         &self,
-        module: &HirModule,
-        flow: &HirFlow,
+        owner: ItemId,
+        flow: &HirFlowItem,
         state: &BoundNominalTypeKey,
     ) -> Result<CanonicalFlowContract, String> {
-        let signature = flow
-            .signature()
-            .ok_or_else(|| "initial flow must declare one owned State parameter".to_owned())?;
-        if !signature.generic_params().is_empty() || !signature.where_clauses().is_empty() {
+        if !flow.generic_parameters().is_empty() || !flow.where_predicates().is_empty() {
             return Err("initial flow must not declare generics or where predicates".to_owned());
         }
-        let [group] = signature.param_groups() else {
-            return Err("initial flow must declare exactly one parameter group".to_owned());
-        };
-        let [parameter] = group.params() else {
+        let [parameter] = flow.parameters() else {
             return Err("initial flow must take exactly one owned State parameter".to_owned());
         };
-        if parameter.is_rest()
-            || parameter.default().is_some()
-            || parameter.receiver_kind().is_some()
-        {
+        if parameter.kind() != HirParameterKind::Fixed || parameter.default().is_some() {
             return Err(
                 "initial flow State parameter must be fixed, required, and non-receiver".to_owned(),
             );
         }
-        let parameter_type = self.canonical_authored_type(
-            module,
-            parameter
-                .ty()
-                .ok_or_else(|| "initial flow State parameter must declare a type".to_owned())?,
-        )?;
+        let parameter_type = self.canonical_type_id(parameter.ty())?;
         let expected_state = CanonicalType::Nominal(state.clone());
         if parameter_type != expected_state {
             return Err(format!(
@@ -215,13 +194,20 @@ impl<'a> EntryContractBuilder<'a> {
                     ty: parameter_type,
                 }],
             }],
-            result: Some(match signature.return_type() {
-                Some(result) => self.canonical_authored_type(module, result)?,
+            result: Some(match flow.result().authored_type() {
+                Some(result) => self.canonical_type_id(result)?,
                 None => CanonicalType::Atomic(CanonicalAtomic::Unit),
             }),
             where_predicates: Vec::new(),
         };
-        let contract_effects = self.flow_effects(flow)?;
+        let checked = self
+            .analysis
+            .item(owner)
+            .ok_or_else(|| format!("accepted final analysis has no item fact for {owner:?}"))?;
+        if !matches!(checked.role(), CheckedItemRole::Flow { .. }) {
+            return Err("selected initial-flow item has no checked Flow role".to_owned());
+        }
+        let contract_effects = checked.effects().clone();
         Ok(CanonicalFlowContract {
             signature: Some(signature),
             contract_effects,
@@ -229,52 +215,63 @@ impl<'a> EntryContractBuilder<'a> {
         })
     }
 
-    #[allow(
+    #[expect(
         clippy::too_many_lines,
-        reason = "canonical callable construction keeps accepted schema and authored signature cross-checks in one boundary"
+        reason = "the Entry callable-role matrix validates signature, effects, suspension, and ordinary-function role as one contract"
     )]
     fn callable(
         &self,
-        module: &HirModule,
-        function: &HirFunction,
-        record: &CallableRecord,
+        function: &HirFunctionItem,
+        facts: &CheckedCallableFacts,
     ) -> Result<(CanonicalCallableContract, bool), String> {
-        let schema = record.schema();
-        let surface = function.signature();
-        if schema.groups().len() != surface.param_groups().len() {
+        let schema = facts.signature();
+        if schema.groups().len() != function.parameter_groups().len() {
             return Err(
                 "accepted callable schema disagrees with source parameter groups".to_owned(),
             );
         }
         let mut groups = Vec::with_capacity(schema.groups().len());
-        for (schema_group, source_group) in schema.groups().iter().zip(surface.param_groups()) {
-            if schema_group.parameters().len() != source_group.params().len() {
+        for (schema_group, source_group) in schema.groups().iter().zip(function.parameter_groups())
+        {
+            if schema_group.parameters().len() != source_group.parameters().len() {
                 return Err("accepted callable schema disagrees with source parameters".to_owned());
             }
             let parameters = schema_group
                 .parameters()
                 .iter()
-                .zip(source_group.params())
+                .zip(source_group.parameters())
                 .map(|(schema_parameter, source_parameter)| {
                     let CallableParameterType::Exact(schema_type) = schema_parameter.ty() else {
                         return Err(
                             "entry role callable has an unchecked parameter type".to_owned()
                         );
                     };
-                    let authored = source_parameter
-                        .ty()
-                        .ok_or_else(|| "entry role parameter must declare a type".to_owned())?;
-                    let checked = self.checked_authored_type(module, authored)?;
+                    let checked = self.checked_type(source_parameter.ty())?;
                     if checked != schema_type {
                         return Err(
                             "accepted callable schema disagrees with checked source parameter type"
                                 .to_owned(),
                         );
                     }
+                    let source_rest = source_parameter.kind() == HirParameterKind::RestPositional;
+                    let schema_rest = matches!(
+                        schema_parameter.passing(),
+                        CallableParameterPassing::RestPositional
+                            | CallableParameterPassing::RestNamed
+                    );
+                    if source_rest != schema_rest
+                        || source_parameter.default().is_some()
+                            != (schema_parameter.presence() == CallableParameterPresence::Defaulted)
+                    {
+                        return Err(
+                            "accepted callable schema disagrees with source parameter arity"
+                                .to_owned(),
+                        );
+                    }
                     Ok(CanonicalParameter {
                         passing: schema_parameter.passing(),
                         presence: schema_parameter.presence(),
-                        receiver: receiver_tag(source_parameter.receiver_kind()),
+                        receiver: 0,
                         ty: self.canonical_type_kind(checked)?,
                     })
                 })
@@ -284,39 +281,38 @@ impl<'a> EntryContractBuilder<'a> {
                 parameters,
             });
         }
-        let generics = surface
-            .generic_params()
+        let generics = function
+            .generic_parameters()
             .iter()
             .map(|generic| match generic {
-                GenericParam::Lifetime(lifetime) => Ok(CanonicalGenericParameter::Lifetime(
-                    lifetime.name().to_owned(),
+                HirGenericParameter::Lifetime { name } => Ok(CanonicalGenericParameter::Lifetime(
+                    required_name(name)?.to_owned(),
                 )),
-                GenericParam::Type(parameter) => Ok(CanonicalGenericParameter::Type {
-                    name: parameter.name().as_str().to_owned(),
-                    bounds: parameter
-                        .bounds()
+                HirGenericParameter::Type { name, bounds } => Ok(CanonicalGenericParameter::Type {
+                    name: required_name(name)?.to_owned(),
+                    bounds: bounds
                         .iter()
-                        .map(|bound| self.canonical_authored_type(module, bound))
+                        .map(|bound| self.canonical_type_id(*bound))
                         .collect::<Result<Vec<_>, _>>()?,
                 }),
             })
             .collect::<Result<Vec<_>, String>>()?;
-        let where_predicates = surface
-            .where_clauses()
+        let where_predicates = function
+            .where_predicates()
             .iter()
             .map(|predicate| {
                 Ok(CanonicalWherePredicate {
-                    subject: self.canonical_authored_type(module, predicate.subject())?,
+                    subject: self.canonical_type_id(predicate.subject())?,
                     bounds: predicate
                         .bounds()
                         .iter()
-                        .map(|bound| self.canonical_authored_type(module, bound))
+                        .map(|bound| self.canonical_type_id(*bound))
                         .collect::<Result<Vec<_>, _>>()?,
                 })
             })
             .collect::<Result<Vec<_>, String>>()?;
-        let checked_result = match surface.return_type() {
-            Some(result) => self.checked_authored_type(module, result)?,
+        let checked_result = match function.return_type() {
+            Some(result) => self.checked_type(result)?,
             None if schema.result() == &TypeKind::Unit => schema.result(),
             None => {
                 return Err(
@@ -331,7 +327,7 @@ impl<'a> EntryContractBuilder<'a> {
             );
         }
         let result = Some(self.canonical_type_kind(checked_result)?);
-        let declared = schema.effects().declared();
+        let declared = facts.exposed_row();
         if declared.tail() != EffectRowTail::Closed {
             return Err("entry role callable effect row must be closed".to_owned());
         }
@@ -345,94 +341,21 @@ impl<'a> EntryContractBuilder<'a> {
                 },
                 contract_effects: declared.concrete().clone(),
             },
-            function
-                .contracts()
-                .iter()
-                .any(|contract| matches!(contract, ContractClause::Effects(_))),
+            facts.effect_contract_origin() == Some(EffectContractOrigin::Authored),
         ))
     }
 
-    fn flow_effects(&self, flow: &HirFlow) -> Result<EffectSet, String> {
-        let id = flow
-            .id()
-            .ok_or_else(|| "initial flow must retain a canonical source ID".to_owned())?;
-        let name = flow
-            .name()
-            .ok_or_else(|| "initial flow must retain its source-level name".to_owned())?;
-        let callable = CallableId::source_flow(name);
-        let summary = self
-            .typecheck
-            .effects
-            .effect_rows()
-            .summary(&callable)
-            .ok_or_else(|| format!("initial flow `{}` has no effect-row evidence", id.body()))?;
-        let row = summary.upper_bound().unwrap_or_else(|| summary.inferred());
-        self.typecheck
-            .effects
-            .resolve_effect_row(row)
-            .map_err(|error| format!("cannot close initial flow effect contract: {error}"))
+    fn checked_type(&self, owner: arcweft_lang_hir::identity::TypeId) -> Result<&TypeKind, String> {
+        self.analysis.ty(owner).ok_or_else(|| {
+            format!("accepted final semantic analysis has no type fact for {owner:?}")
+        })
     }
 
-    fn require_inferred_empty(
+    fn canonical_type_id(
         &self,
-        declaration: &CallableDeclarationId,
-        role: &str,
-    ) -> Result<(), String> {
-        let inferred = self.inferred_effects(declaration)?;
-        if inferred.is_empty() {
-            Ok(())
-        } else {
-            Err(format!("{role} must infer no effects, found {inferred}"))
-        }
-    }
-
-    fn inferred_effects(&self, declaration: &CallableDeclarationId) -> Result<EffectSet, String> {
-        let callable = CallableId::project_function(declaration);
-        let summary = self
-            .typecheck
-            .effects
-            .effect_rows()
-            .summary(&callable)
-            .ok_or_else(|| {
-                format!("accepted callable `{declaration}` has no effect-row evidence")
-            })?;
-        self.typecheck
-            .effects
-            .resolve_effect_row(summary.inferred())
-            .map_err(|error| format!("cannot close effect row for `{declaration}`: {error}"))
-    }
-
-    fn checked_authored_type<'b>(
-        &'b self,
-        module: &HirModule,
-        authored: &AuthoredTypeRef,
-    ) -> Result<&'b TypeKind, String> {
-        let root = super::source_span(module, *authored.root_source().whole());
-        let report = self
-            .typecheck
-            .nominal_resolutions
-            .report(&root)
-            .ok_or_else(|| {
-                format!("accepted type-check report has no nominal-resolution fact for {root:?}")
-            })?;
-        match report.outcome() {
-            ResolvedTypeRefOutcome::Complete(product) => Ok(product.recovered()),
-            ResolvedTypeRefOutcome::Poisoned(poisoned) => Err(format!(
-                "entry contract type is poisoned by {} nominal error(s)",
-                poisoned.causes().len()
-            )),
-            ResolvedTypeRefOutcome::Detached(_) => {
-                Err("entry contract type was resolved without accepted project evidence".to_owned())
-            }
-        }
-    }
-
-    fn canonical_authored_type(
-        &self,
-        module: &HirModule,
-        authored: &AuthoredTypeRef,
+        owner: arcweft_lang_hir::identity::TypeId,
     ) -> Result<CanonicalType, String> {
-        self.canonical_type_kind(self.checked_authored_type(module, authored)?)
+        self.canonical_type_kind(self.checked_type(owner)?)
     }
 
     #[allow(
@@ -667,6 +590,49 @@ impl<'a> EntryContractBuilder<'a> {
     }
 }
 
+fn required_name(name: &HirRequiredName) -> Result<&str, String> {
+    match name {
+        HirRequiredName::Resolved(name) => Ok(name.as_str()),
+        HirRequiredName::Missing | HirRequiredName::Invalid => {
+            Err("accepted executable callable retained a recovered generic name".to_owned())
+        }
+    }
+}
+
+fn require_direct_frame(facts: &CheckedCallableFacts, role: &str) -> Result<(), String> {
+    match facts.execution() {
+        CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame) => Ok(()),
+        CheckedCallableExecution::Runtime(CheckedFunctionExecution::StreamFactory { .. }) => {
+            Err(format!("{role} must be an ordinary direct-frame function"))
+        }
+        CheckedCallableExecution::DispatchContract => {
+            Err(format!("{role} cannot be a bodyless dispatch contract"))
+        }
+    }
+}
+
+fn inferred_effects(facts: &CheckedCallableFacts, role: &str) -> Result<EffectSet, String> {
+    let row = facts
+        .actual_row()
+        .ok_or_else(|| format!("{role} has no checked body-inference effect row"))?;
+    if row.tail() != EffectRowTail::Closed {
+        return Err(format!(
+            "{role} inferred effect row `{}` is not closed",
+            row.display_label()
+        ));
+    }
+    Ok(row.concrete().clone())
+}
+
+fn require_inferred_empty(facts: &CheckedCallableFacts, role: &str) -> Result<(), String> {
+    let inferred = inferred_effects(facts, role)?;
+    if inferred.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("{role} must infer no effects, found {inferred}"))
+    }
+}
+
 fn require_no_generics(signature: &CanonicalSignature, role: &str) -> Result<(), String> {
     if signature.generics.is_empty() && signature.where_predicates.is_empty() {
         Ok(())
@@ -730,15 +696,6 @@ fn require_explicit_empty_effects(
     }
 }
 
-fn receiver_tag(receiver: Option<FnReceiverKind>) -> u8 {
-    match receiver {
-        None => 0,
-        Some(FnReceiverKind::Owned) => 1,
-        Some(FnReceiverKind::SharedRef) => 2,
-        Some(FnReceiverKind::MutRef) => 3,
-    }
-}
-
 fn canonical_atomic(path: &str) -> Option<CanonicalAtomic> {
     Some(match path {
         "bool" => CanonicalAtomic::Bool,
@@ -790,8 +747,6 @@ fn canonical_constructor(path: &str) -> Option<CanonicalConstructor> {
         "Stream" => CanonicalConstructor::Stream,
         "Source" => CanonicalConstructor::Source,
         "Reduction" => CanonicalConstructor::Reduction,
-        "Speaker" => CanonicalConstructor::Speaker,
-        "SpeakerPreset" => CanonicalConstructor::SpeakerPreset,
         "Ref" => CanonicalConstructor::Ref,
         "Probe" => CanonicalConstructor::Probe,
         "ThreadHandle" => CanonicalConstructor::ThreadHandle,

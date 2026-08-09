@@ -3,19 +3,24 @@
 mod checker;
 mod digest;
 
-#[cfg(test)]
-mod bind_tests;
-#[cfg(test)]
-mod identity_tests;
-#[cfg(test)]
-mod tests;
-
-use std::{collections::BTreeMap, fmt};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    fmt,
+};
 
 use arcweft_data::TypeShape;
 use arcweft_id::PublicId;
-use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
-use arcweft_lang_syntax::ast::{items::Attribute, module_path::CanonicalModulePath};
+use arcweft_lang_hir::{
+    expr::HirExprKind,
+    identity::ItemId,
+    item::HirAttribute,
+    leaf::{HirDurationLiteral, HirIntegerLiteral, HirLiteral, HirPathSegment},
+    module::HirModule,
+    symbol::{
+        CallableDeclarationDigest, CallableDeclarationId, CallablePackageId, FlowDeclarationId,
+    },
+};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::SourceSpan;
 use thiserror::Error;
 
@@ -27,9 +32,16 @@ pub use checker::{CheckedEntryDiagnostic, check_project_entries};
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CheckedEntryId(PublicId);
 
-/// Canonical public identity of one checked source flow.
+/// Checked identity of one accepted source Flow.
+///
+/// The declaration digest is the semantic identity. `public_id` is retained
+/// separately for diagnostics and presentation and is never parsed back into
+/// a declaration identity.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CheckedFlowId(PublicId);
+pub struct CheckedFlowId {
+    declaration_digest: CallableDeclarationDigest,
+    public_id: PublicId,
+}
 
 /// Entry-binding projection of an ordinary nominal declaration.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -109,6 +121,7 @@ pub struct CheckedEntryCatalog {
 /// Checked stateful entry and every explicit role identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedStatefulEntry {
+    source_item: ItemId,
     id: CheckedEntryId,
     kind: CheckedStatefulEntryKind,
     state: CheckedNominalRole,
@@ -139,6 +152,7 @@ pub struct CheckedCallableRole {
 /// Checked initial source-flow role.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedInitialFlowRole {
+    source_item: ItemId,
     id: CheckedFlowId,
     contract_digest: FlowContractDigest,
     state_parameter_name: String,
@@ -148,6 +162,7 @@ pub struct CheckedInitialFlowRole {
 /// Checked Agent entry over an ordinary function declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedAgentEntry {
+    source_item: ItemId,
     id: CheckedEntryId,
     controller: CheckedCallableRole,
     policy: CheckedAgentPolicy,
@@ -186,6 +201,7 @@ pub struct AgentBudgetError {
 /// Checked non-stateful entry retained by the existing launch model.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CheckedExistingEntry {
+    source_item: ItemId,
     id: CheckedEntryId,
     kind: CheckedEntryKind,
     binding_digest: CheckedEntryBindingDigest,
@@ -209,12 +225,27 @@ impl CheckedEntryId {
 }
 
 impl CheckedFlowId {
-    fn try_new(value: impl Into<String>) -> Result<Self, arcweft_id::IdError> {
-        PublicId::try_new(value).map(Self)
+    fn from_declaration(declaration: &FlowDeclarationId) -> Self {
+        Self {
+            declaration_digest: declaration.semantic_digest(),
+            public_id: declaration.public_id().clone(),
+        }
     }
 
     pub const fn public_id(&self) -> &PublicId {
-        &self.0
+        &self.public_id
+    }
+
+    pub const fn declaration_digest(&self) -> &CallableDeclarationDigest {
+        &self.declaration_digest
+    }
+
+    #[cfg(test)]
+    fn for_test(public_id: PublicId, declaration_digest: CallableDeclarationDigest) -> Self {
+        Self {
+            declaration_digest,
+            public_id,
+        }
     }
 }
 
@@ -341,6 +372,15 @@ impl CheckedEntryCatalog {
 }
 
 impl CheckedEntryBinding {
+    /// Exact final-HIR Entry item accepted into this checked binding.
+    pub const fn source_item(&self) -> ItemId {
+        match self {
+            Self::Stateful(entry) => entry.source_item,
+            Self::Agent(entry) => entry.source_item,
+            Self::Existing(entry) => entry.source_item,
+        }
+    }
+
     pub const fn id(&self) -> &CheckedEntryId {
         match self {
             Self::Stateful(entry) => &entry.id,
@@ -381,6 +421,10 @@ impl CheckedEntryBinding {
 }
 
 impl CheckedStatefulEntry {
+    pub const fn source_item(&self) -> ItemId {
+        self.source_item
+    }
+
     pub const fn id(&self) -> &CheckedEntryId {
         &self.id
     }
@@ -443,6 +487,10 @@ impl CheckedCallableRole {
 }
 
 impl CheckedInitialFlowRole {
+    pub const fn source_item(&self) -> ItemId {
+        self.source_item
+    }
+
     pub const fn id(&self) -> &CheckedFlowId {
         &self.id
     }
@@ -461,6 +509,10 @@ impl CheckedInitialFlowRole {
 }
 
 impl CheckedAgentEntry {
+    pub const fn source_item(&self) -> ItemId {
+        self.source_item
+    }
+
     pub const fn id(&self) -> &CheckedEntryId {
         &self.id
     }
@@ -479,6 +531,24 @@ impl CheckedAgentEntry {
 
     pub const fn policy_digest(&self) -> &CheckedAgentPolicyDigest {
         &self.policy_digest
+    }
+
+    pub const fn binding_digest(&self) -> &CheckedEntryBindingDigest {
+        &self.binding_digest
+    }
+}
+
+impl CheckedExistingEntry {
+    pub const fn source_item(&self) -> ItemId {
+        self.source_item
+    }
+
+    pub const fn id(&self) -> &CheckedEntryId {
+        &self.id
+    }
+
+    pub const fn kind(&self) -> &CheckedEntryKind {
+        &self.kind
     }
 
     pub const fn binding_digest(&self) -> &CheckedEntryBindingDigest {
@@ -516,12 +586,49 @@ impl CheckedAgentPolicy {
 }
 
 impl AgentBudget {
-    /// Parses and validates the effective budget from ordinary function attributes.
-    pub fn from_attributes(attributes: &[Attribute]) -> Result<Self, AgentBudgetError> {
-        attributes
+    /// Projects the effective budget directly from final-HIR function attributes.
+    ///
+    /// Attribute arguments retain typed expression owners; this boundary never
+    /// slices or reparses attribute source text.
+    pub fn from_hir_attributes(
+        module: &HirModule,
+        attributes: &[HirAttribute],
+    ) -> Result<Self, AgentBudgetError> {
+        let mut budget = Self::default_checked();
+        let mut assigned = BTreeSet::new();
+        for attribute in attributes
             .iter()
-            .filter(|attribute| attribute.name() == "budget")
-            .try_fold(Self::default_checked(), Self::apply_attribute)
+            .filter(|attribute| simple_attribute_name(attribute) == Some("budget"))
+        {
+            if attribute.arguments().is_empty() {
+                return Err(AgentBudgetError {
+                    message: "budget attribute requires named arguments".to_owned(),
+                });
+            }
+            for argument in attribute.arguments() {
+                let Some(name) = argument.resolved_name() else {
+                    return Err(AgentBudgetError {
+                        message: "budget arguments must use `key = value`".to_owned(),
+                    });
+                };
+                let key = name.as_str();
+                if !assigned.insert(key.to_owned()) {
+                    return Err(AgentBudgetError {
+                        message: format!("budget key `{key}` is assigned more than once"),
+                    });
+                }
+                let expression =
+                    module
+                        .resolve_expr(argument.value())
+                        .map_err(|_| AgentBudgetError {
+                            message: format!(
+                                "budget key `{key}` refers to a foreign or stale expression"
+                            ),
+                        })?;
+                budget.apply_hir_value(key, expression.kind())?;
+            }
+        }
+        Ok(budget)
     }
 
     fn default_checked() -> Self {
@@ -537,36 +644,27 @@ impl AgentBudget {
         }
     }
 
-    fn apply_attribute(mut self, attribute: &Attribute) -> Result<Self, AgentBudgetError> {
-        let args = attribute.args().ok_or_else(|| AgentBudgetError {
-            message: "budget attribute requires key/value arguments".to_owned(),
-        })?;
-        for item in args
-            .split(',')
-            .map(str::trim)
-            .filter(|item| !item.is_empty())
-        {
-            let (key, value) = item.split_once('=').ok_or_else(|| AgentBudgetError {
-                message: format!("budget item `{item}` must use key = value"),
-            })?;
-            let value = value.trim();
-            match key.trim() {
-                "timeout" => self.logical_timeout_millis = parse_budget_duration(value)?,
-                "steps" => self.max_vm_steps = parse_budget_u64(value)?,
-                "host_calls" => self.max_host_calls = parse_budget_u32(value)?,
-                "observations" => self.max_observations = parse_budget_u32(value)?,
-                "captures" => self.max_captures = parse_budget_u32(value)?,
-                "stored_bytes" => self.max_capture_bytes = parse_budget_u64(value)?,
-                "rag_queries" => self.max_rag_queries = parse_budget_u32(value)?,
-                "context_bytes" => self.max_context_bytes = parse_budget_u64(value)?,
-                other => {
-                    return Err(AgentBudgetError {
-                        message: format!("unsupported budget key `{other}`"),
-                    });
-                }
+    fn apply_hir_value(
+        &mut self,
+        key: &str,
+        expression: &HirExprKind,
+    ) -> Result<(), AgentBudgetError> {
+        match key {
+            "timeout" => self.logical_timeout_millis = budget_duration_millis(expression)?,
+            "steps" => self.max_vm_steps = budget_integer_u64(expression, key)?,
+            "host_calls" => self.max_host_calls = budget_integer_u32(expression, key)?,
+            "observations" => self.max_observations = budget_integer_u32(expression, key)?,
+            "captures" => self.max_captures = budget_integer_u32(expression, key)?,
+            "stored_bytes" => self.max_capture_bytes = budget_integer_u64(expression, key)?,
+            "rag_queries" => self.max_rag_queries = budget_integer_u32(expression, key)?,
+            "context_bytes" => self.max_context_bytes = budget_integer_u64(expression, key)?,
+            other => {
+                return Err(AgentBudgetError {
+                    message: format!("unsupported budget key `{other}`"),
+                });
             }
         }
-        Ok(self)
+        Ok(())
     }
 
     pub const fn logical_timeout_millis(self) -> u64 {
@@ -602,41 +700,75 @@ impl AgentBudget {
     }
 }
 
-fn parse_budget_duration(value: &str) -> Result<u64, AgentBudgetError> {
-    let (number, multiplier) = value
-        .trim()
-        .strip_suffix("ms")
-        .map(|number| (number, 1))
-        .or_else(|| value.trim().strip_suffix('s').map(|number| (number, 1_000)))
-        .ok_or_else(|| AgentBudgetError {
-            message: format!("budget timeout `{value}` must use an `ms` or `s` suffix"),
-        })?;
-    parse_budget_u64(number)?
-        .checked_mul(multiplier)
-        .ok_or_else(|| AgentBudgetError {
-            message: format!("budget timeout `{value}` overflows"),
-        })
+fn simple_attribute_name(attribute: &HirAttribute) -> Option<&str> {
+    let [HirPathSegment::Identifier(name)] = attribute.path().segments() else {
+        return None;
+    };
+    Some(name.as_str())
 }
 
-fn parse_budget_u32(value: &str) -> Result<u32, AgentBudgetError> {
-    u32::try_from(parse_budget_u64(value)?).map_err(|_| AgentBudgetError {
-        message: format!("budget value `{value}` does not fit in u32"),
-    })
-}
-
-fn parse_budget_u64(value: &str) -> Result<u64, AgentBudgetError> {
-    let trimmed = value.trim();
-    let number = ["usize", "u64", "u32"]
-        .into_iter()
-        .find_map(|suffix| trimmed.strip_suffix(suffix))
-        .unwrap_or(trimmed);
-    let digits = number.replace('_', "");
-    if digits.is_empty() || !digits.chars().all(|character| character.is_ascii_digit()) {
+fn budget_duration_millis(expression: &HirExprKind) -> Result<u64, AgentBudgetError> {
+    let HirExprKind::Literal(HirLiteral::Duration(HirDurationLiteral::Value(value))) = expression
+    else {
         return Err(AgentBudgetError {
-            message: format!("budget value `{value}` must be a non-negative integer"),
+            message: "budget `timeout` must be one valid Duration literal".to_owned(),
+        });
+    };
+    let (millis, remainder) =
+        divide_limbs_by_u32(value.semantic_value().nanoseconds().limbs_le(), 1_000_000);
+    if remainder != 0 {
+        return Err(AgentBudgetError {
+            message: "budget `timeout` must resolve to whole milliseconds".to_owned(),
         });
     }
-    digits.parse().map_err(|error| AgentBudgetError {
-        message: format!("invalid budget value `{value}`: {error}"),
+    limbs_to_u64(&millis).ok_or_else(|| AgentBudgetError {
+        message: "budget `timeout` does not fit in u64 milliseconds".to_owned(),
     })
+}
+
+fn budget_integer_u32(expression: &HirExprKind, key: &str) -> Result<u32, AgentBudgetError> {
+    let value = budget_integer_u64(expression, key)?;
+    u32::try_from(value).map_err(|_| AgentBudgetError {
+        message: format!("budget `{key}` does not fit in u32"),
+    })
+}
+
+fn budget_integer_u64(expression: &HirExprKind, key: &str) -> Result<u64, AgentBudgetError> {
+    let HirExprKind::Literal(HirLiteral::Integer(HirIntegerLiteral::Value { magnitude, .. })) =
+        expression
+    else {
+        return Err(AgentBudgetError {
+            message: format!("budget `{key}` must be one non-negative integer literal"),
+        });
+    };
+    limbs_to_u64(magnitude.limbs_le()).ok_or_else(|| AgentBudgetError {
+        message: format!("budget `{key}` does not fit in u64"),
+    })
+}
+
+fn limbs_to_u64(limbs: &[u32]) -> Option<u64> {
+    match limbs {
+        [] => Some(0),
+        [low] => Some(u64::from(*low)),
+        [low, high] => Some(u64::from(*low) | (u64::from(*high) << 32)),
+        _ => None,
+    }
+}
+
+fn divide_limbs_by_u32(limbs: &[u32], divisor: u32) -> (Vec<u32>, u32) {
+    let mut quotient = vec![0; limbs.len()];
+    let mut remainder = 0_u64;
+    for (ordinal, limb) in limbs.iter().enumerate().rev() {
+        let dividend = (remainder << 32) | u64::from(*limb);
+        quotient[ordinal] =
+            u32::try_from(dividend / u64::from(divisor)).expect("base-2^32 quotient limb fits u32");
+        remainder = dividend % u64::from(divisor);
+    }
+    while quotient.last() == Some(&0) {
+        quotient.pop();
+    }
+    (
+        quotient,
+        u32::try_from(remainder).expect("division remainder is below the u32 divisor"),
+    )
 }

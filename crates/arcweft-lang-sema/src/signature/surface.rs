@@ -1,38 +1,85 @@
-//! Bounded typed-HIR call-surface selection before semantic checking.
+//! Bounded final-HIR call-surface selection before semantic checking.
 
 use std::cmp::Ordering;
 
 use arcweft_lang_hir::{
-    entry::HirEntryItem,
-    model::{HirFlowItem, HirModule, HirTopLevelDecl},
-};
-use arcweft_lang_syntax::{
-    ast::{
-        choice::{ChoiceAction, ChoiceBlock, ChoiceItem, ChoiceOption, ChoicePlanItem},
-        common::TextRange,
-        dialogue::{DialogueContent, DialogueToken},
-        flow::{ContractClause, FlowItem, SelectBranchHead, Stmt, StmtMatchArm, WaitTarget},
-        items::ImplMember,
-        line_plan::{LinePlan, LinePlanItem, TriggerPattern},
-        pattern::{Pattern, VariantPatternPayload},
+    expr::{
+        HirCallArgument, HirCallArgumentListTerminator, HirCallCallee, HirCallExpr, HirCallValue,
+        HirExprKind, HirRequiredTokenState,
     },
-    expr::{ArgumentListSyntax, CallArgumentRecoverySyntax, CallExpr, Expr, MatchExprArm},
+    identity::ExprId,
+    module::HirModule,
+    source_index::{HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite},
 };
-use arcweft_source::SourceDocument;
+use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
-use crate::{
-    callable::{
-        ResolveCallError, SignatureQueryStep, SignatureQueryStepControl, SignatureQueryWorkMeter,
-        SignatureWorkKind,
-    },
-    checker::FocusedCallSite,
+use crate::callable::{ResolveCallError, SignatureQueryWorkMeter, SignatureWorkKind};
+
+use super::{
+    SignatureQueryControl, SignatureQueryError, SignatureQueryStep, SignatureQueryStepControl,
+    map_signature_accounting_error,
 };
-
-use super::{SignatureQueryControl, SignatureQueryError, map_signature_accounting_error};
 
 pub(super) struct SignatureSurfaceSelection {
     pub(super) site: Option<FocusedCallSite>,
     pub(super) unsupported_surface: bool,
+}
+
+/// One exact final-HIR Call selected by a cursor inside its argument list.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct FocusedCallSite {
+    expression: ExprId,
+    call: SourceSpan,
+    callee: SourceSpan,
+    arguments: SourceSpan,
+    active_argument: Option<usize>,
+    recovery_nodes: usize,
+    missing_close_delimiter: bool,
+    argument_content: SourceRange,
+    open_paren_start: usize,
+    byte_offset: Option<usize>,
+}
+
+impl FocusedCallSite {
+    pub(crate) const fn expression(&self) -> ExprId {
+        self.expression
+    }
+
+    pub(crate) const fn call(&self) -> &SourceSpan {
+        &self.call
+    }
+
+    pub(crate) const fn arguments(&self) -> &SourceSpan {
+        &self.arguments
+    }
+
+    pub(crate) const fn callee(&self) -> &SourceSpan {
+        &self.callee
+    }
+
+    pub(crate) const fn active_argument(&self) -> Option<usize> {
+        self.active_argument
+    }
+
+    pub(crate) const fn recovery_nodes(&self) -> usize {
+        self.recovery_nodes
+    }
+
+    pub(crate) const fn missing_close_delimiter(&self) -> bool {
+        self.missing_close_delimiter
+    }
+
+    pub(crate) fn compare_focus(&self, current: &Self) -> Ordering {
+        if strictly_contains(current.argument_content, self.argument_content) {
+            return Ordering::Greater;
+        }
+        if strictly_contains(self.argument_content, current.argument_content) {
+            return Ordering::Less;
+        }
+        range_len(current.argument_content)
+            .cmp(&range_len(self.argument_content))
+            .then_with(|| self.open_paren_start.cmp(&current.open_paren_start))
+    }
 }
 
 pub(super) fn select_signature_surface(
@@ -86,640 +133,86 @@ impl SurfaceScanner<'_> {
 
     fn scan_module(&mut self) -> Result<(), SignatureQueryError> {
         self.visit_node()?;
-        for flow in self.module.flows() {
+        for _ in self.module.items() {
             self.visit_node()?;
-            if !self.owns_module(flow.module_path()) {
-                continue;
-            }
-            self.scan_contracts(flow.contracts())?;
-            self.scan_flow_items(flow.body())?;
         }
-        for function in self.module.functions() {
+        for _ in self.module.scopes() {
             self.visit_node()?;
-            if !self.owns_module(function.module_path()) {
-                continue;
-            }
-            for parameter in function
-                .signature()
-                .param_groups()
-                .iter()
-                .flat_map(arcweft_lang_syntax::types::FnParamGroup::params)
-            {
-                self.visit_node()?;
-                if let Some(default) = parameter.default() {
-                    self.scan_expr(default)?;
+        }
+        for _ in self.module.locals() {
+            self.visit_node()?;
+        }
+        for _ in self.module.statements() {
+            self.visit_node()?;
+        }
+        for _ in self.module.patterns() {
+            self.visit_node()?;
+        }
+        for _ in self.module.types() {
+            self.visit_node()?;
+        }
+        for _ in self.module.captures() {
+            self.visit_node()?;
+        }
+        for (expression_id, expression) in self.module.expressions() {
+            self.visit_node()?;
+            match expression.kind() {
+                HirExprKind::Call(call) => self.scan_call(expression_id, call)?,
+                HirExprKind::DialogueContentApplication(_) | HirExprKind::PostfixBracket(_) => {
+                    self.mark_unsupported(expression_id)?;
                 }
+                _ => {}
             }
-            self.scan_contracts(function.contracts())?;
-            self.scan_stmts(function.statements())?;
-            if let Some(value) = function.value() {
-                self.scan_expr(value.expr())?;
-            }
-        }
-        for declaration in self.module.declarations() {
-            self.scan_declaration(declaration)?;
         }
         Ok(())
     }
 
-    fn owns_module(
-        &self,
-        owner: Option<&arcweft_lang_syntax::ast::module_path::CanonicalModulePath>,
-    ) -> bool {
-        let owner = owner.unwrap_or_else(|| self.module.module_path());
-        self.module
-            .project_source_document(owner)
-            .is_some_and(|source| source.identity() == self.document.identity())
-    }
-
-    fn scan_declaration(
+    fn scan_call(
         &mut self,
-        declaration: &HirTopLevelDecl,
-    ) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match declaration {
-            HirTopLevelDecl::Impl(item) => {
-                for member in item.members() {
-                    if let ImplMember::Function {
-                        body_statements,
-                        body_value,
-                        ..
-                    } = member
-                    {
-                        self.scan_stmts(body_statements)?;
-                        if let Some(value) = body_value {
-                            self.scan_expr(value.expr())?;
-                        }
-                    }
-                }
-            }
-            HirTopLevelDecl::Entry(item) => {
-                for item in item.items() {
-                    if let HirEntryItem::Option { value, .. } = item {
-                        self.scan_expr(value)?;
-                    }
-                }
-            }
-            HirTopLevelDecl::Source(source) => {
-                if self.owns_module(source.module_path()) {
-                    self.scan_stmts(source.item().body_statements())?;
-                }
-            }
-            HirTopLevelDecl::TypeAlias(_)
-            | HirTopLevelDecl::Trait(_)
-            | HirTopLevelDecl::Enum(_)
-            | HirTopLevelDecl::EntityDecl(_)
-            | HirTopLevelDecl::ExternCapability(_)
-            | HirTopLevelDecl::Proof(_)
-            | HirTopLevelDecl::Test(_)
-            | HirTopLevelDecl::Bench(_)
-            | HirTopLevelDecl::Struct(_)
-            | HirTopLevelDecl::Style(_) => {}
-        }
-        Ok(())
-    }
-
-    fn scan_contracts(&mut self, contracts: &[ContractClause]) -> Result<(), SignatureQueryError> {
-        for contract in contracts {
-            self.visit_node()?;
-            match contract {
-                ContractClause::Requires { expr, .. }
-                | ContractClause::Ensures { expr, .. }
-                | ContractClause::Invariant { expr, .. }
-                | ContractClause::Assume { expr }
-                | ContractClause::NoEffect(expr)
-                | ContractClause::Decreases(expr) => self.scan_expr(expr)?,
-                ContractClause::Reads(items)
-                | ContractClause::Effects(items)
-                | ContractClause::Modifies(items) => {
-                    for item in items {
-                        self.scan_expr(item)?;
-                    }
-                }
-            }
-        }
-        Ok(())
-    }
-
-    fn scan_flow_items(&mut self, items: &[HirFlowItem]) -> Result<(), SignatureQueryError> {
-        for item in items {
-            self.visit_node()?;
-            match item {
-                HirFlowItem::Stmt(stmt) => self.scan_stmt(stmt)?,
-                HirFlowItem::Dialogue(dialogue) => self.scan_dialogue(dialogue)?,
-                HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
-                    self.scan_hir_choice(choice)?;
-                }
-                HirFlowItem::LetScope { scope, .. } => {
-                    self.scan_stmts(scope.statements())?;
-                    if let Some(value) = scope.value() {
-                        self.scan_expr(value)?;
-                    }
-                }
-                HirFlowItem::LetLoop { block, .. } | HirFlowItem::Loop(block) => {
-                    self.scan_flow_items(block.body())?;
-                }
-                HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
-                    self.scan_expr(await_with.expr())?;
-                    for branch in await_with.branches() {
-                        self.scan_pattern(branch.pattern())?;
-                        self.scan_flow_items(branch.body())?;
-                    }
-                }
-                HirFlowItem::Thread(thread) => self.scan_flow_items(thread.body())?,
-                HirFlowItem::If(block) => {
-                    self.scan_expr(block.condition())?;
-                    self.scan_flow_items(block.body())?;
-                    self.scan_flow_items(block.else_body())?;
-                }
-                HirFlowItem::IfLet(block) => {
-                    self.scan_expr(block.expr())?;
-                    if let Some(guard) = block.guard() {
-                        self.scan_expr(guard)?;
-                    }
-                    self.scan_flow_items(block.body())?;
-                    self.scan_flow_items(block.else_body())?;
-                }
-                HirFlowItem::Match(block) => {
-                    self.scan_expr(block.expr())?;
-                    for arm in block.arms() {
-                        self.scan_pattern(arm.pattern())?;
-                        if let Some(guard) = arm.guard() {
-                            self.scan_expr(guard)?;
-                        }
-                        self.scan_flow_items(arm.body())?;
-                    }
-                }
-                HirFlowItem::While(block) => {
-                    self.scan_expr(block.condition())?;
-                    self.scan_flow_items(block.body())?;
-                }
-                HirFlowItem::WhileLet(block) => {
-                    self.scan_expr(block.expr())?;
-                    if let Some(guard) = block.guard() {
-                        self.scan_expr(guard)?;
-                    }
-                    self.scan_flow_items(block.body())?;
-                }
-                HirFlowItem::For(block) => {
-                    self.scan_expr(block.source())?;
-                    self.scan_flow_items(block.body())?;
-                }
-                HirFlowItem::Select(block) => {
-                    for branch in block.branches() {
-                        self.scan_select_head(branch.head())?;
-                        self.scan_flow_items(branch.body())?;
-                    }
-                }
-                HirFlowItem::SourceLocale(block) => self.scan_flow_items(block.body())?,
-                HirFlowItem::Scope(block) => self.scan_flow_items(block.body())?,
-                HirFlowItem::Include(_) => {}
-            }
-        }
-        Ok(())
-    }
-
-    fn scan_dialogue(
-        &mut self,
-        dialogue: &arcweft_lang_hir::model::HirDialogue,
-    ) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        for value in dialogue
-            .checked_line_setup_expressions()
-            .chain(dialogue.focus())
-            .chain(dialogue.cleanup())
-        {
-            self.scan_expr(value)?;
-        }
-        for range in [dialogue.style_range(), dialogue.rich_text_range()]
-            .into_iter()
-            .flatten()
-        {
-            self.mark_unsupported_range(*range);
-        }
-        self.scan_dialogue_content(dialogue.content())?;
-        if let Some(plan) = dialogue.plan() {
-            self.scan_line_plan(plan)?;
-        }
-        Ok(())
-    }
-
-    fn scan_hir_choice(
-        &mut self,
-        choice: &arcweft_lang_hir::model::HirChoice,
-    ) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        for item in choice.items() {
-            self.scan_choice_item(item)?;
-        }
-        for option in choice.options() {
-            if let Some(condition) = option.condition() {
-                self.scan_expr(condition)?;
-            }
-            if let Some(value) = option.value() {
-                self.scan_expr(value)?;
-            }
-            self.scan_choice_action(option.action())?;
-        }
-        if let Some(plan) = choice.plan() {
-            for item in plan.items() {
-                self.scan_choice_plan_item(item)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn scan_stmts(&mut self, statements: &[Stmt]) -> Result<(), SignatureQueryError> {
-        for statement in statements {
-            self.scan_stmt(statement)?;
-        }
-        Ok(())
-    }
-
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the exhaustive statement walk defines which typed expressions consume search work"
-    )]
-    fn scan_stmt(&mut self, statement: &Stmt) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match statement {
-            Stmt::Assertion(assertion) => {
-                for condition in assertion.conditions() {
-                    self.scan_expr(condition)?;
-                }
-            }
-            Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
-                self.scan_expr(expr)?;
-            }
-            Stmt::Goto(expr) => {
-                if let Some(range) = expr.range() {
-                    self.mark_unsupported_range(range);
-                }
-                self.scan_expr(expr.expr())?;
-            }
-            Stmt::Defer { expr, .. }
-            | Stmt::Yield(expr)
-            | Stmt::Close(expr)
-            | Stmt::Out { expr, .. }
-            | Stmt::Select(expr)
-            | Stmt::Break {
-                expr: Some(expr), ..
-            } => self.scan_expr(expr.expr())?,
-            Stmt::Assign { target, expr }
-            | Stmt::Signal {
-                target,
-                value: expr,
-            }
-            | Stmt::LifetimeSet { target, expr } => {
-                self.scan_expr(target.expr())?;
-                self.scan_expr(expr.expr())?;
-            }
-            Stmt::LetElse {
-                expr, else_body, ..
-            } => {
-                self.scan_expr(expr.expr())?;
-                self.scan_stmts(else_body)?;
-            }
-            Stmt::LetActionReceive { pattern, action } => {
-                self.scan_pattern(pattern)?;
-                self.scan_expr(action.expr())?;
-            }
-            Stmt::LetChoice { choice, .. } => self.scan_choice_block(choice)?,
-            Stmt::LetScope { scope, .. } => {
-                self.scan_stmts(scope.statements())?;
-                if let Some(value) = scope.value() {
-                    self.scan_expr(value)?;
-                }
-            }
-            Stmt::LetAwait { .. }
-            | Stmt::LetLoop { .. }
-            | Stmt::Break { expr: None, .. }
-            | Stmt::Continue { .. }
-            | Stmt::Raw(_) => {}
-            Stmt::Thread(thread) => self.scan_syntax_flow_items(thread.body())?,
-            Stmt::DeferBlock { statements, .. }
-            | Stmt::On {
-                body: statements, ..
-            }
-            | Stmt::Loop { body: statements } => self.scan_stmts(statements)?,
-            Stmt::UnsafeLifetime { reason, body, .. } => {
-                if let Some(reason) = reason {
-                    self.scan_expr(reason)?;
-                }
-                self.scan_stmts(body)?;
-            }
-            Stmt::Wait(WaitTarget::Duration(expr) | WaitTarget::Expr(expr)) => {
-                self.scan_expr(expr.expr())?;
-            }
-            Stmt::If {
-                condition,
-                body,
-                else_body,
-            } => {
-                self.scan_expr(condition.expr())?;
-                self.scan_stmts(body)?;
-                self.scan_stmts(else_body)?;
-            }
-            Stmt::While { condition, body } => {
-                self.scan_expr(condition.expr())?;
-                self.scan_stmts(body)?;
-            }
-            Stmt::WhileLet {
-                pattern,
-                expr,
-                guard,
-                body,
-            } => {
-                self.scan_pattern(pattern)?;
-                self.scan_expr(expr.expr())?;
-                if let Some(guard) = guard {
-                    self.scan_expr(guard.expr())?;
-                }
-                self.scan_stmts(body)?;
-            }
-            Stmt::For {
-                pattern,
-                source,
-                body,
-            } => {
-                self.scan_pattern(pattern)?;
-                self.scan_expr(source.expr())?;
-                self.scan_stmts(body)?;
-            }
-            Stmt::Match { expr, arms } => self.scan_stmt_match(expr.expr(), arms)?,
-        }
-        Ok(())
-    }
-
-    fn scan_syntax_flow_items(&mut self, items: &[FlowItem]) -> Result<(), SignatureQueryError> {
-        for item in items {
-            self.visit_node()?;
-            match item {
-                FlowItem::Stmt(stmt) => self.scan_stmt(stmt)?,
-                FlowItem::Choice(choice) => self.scan_choice_block(choice)?,
-                FlowItem::If(block) => {
-                    self.scan_expr(block.condition())?;
-                    self.scan_syntax_flow_items(block.body())?;
-                    self.scan_syntax_flow_items(block.else_body())?;
-                }
-                FlowItem::IfLet(block) => {
-                    self.scan_pattern(block.pattern())?;
-                    self.scan_expr(block.expr())?;
-                    if let Some(guard) = block.guard() {
-                        self.scan_expr(guard)?;
-                    }
-                    self.scan_syntax_flow_items(block.body())?;
-                    self.scan_syntax_flow_items(block.else_body())?;
-                }
-                FlowItem::Match(block) => {
-                    self.scan_expr(block.expr())?;
-                    for arm in block.arms() {
-                        self.scan_pattern(arm.pattern())?;
-                        if let Some(guard) = arm.guard() {
-                            self.scan_expr(guard)?;
-                        }
-                        self.scan_syntax_flow_items(arm.body())?;
-                    }
-                }
-                FlowItem::Loop(block) => self.scan_syntax_flow_items(block.body())?,
-                FlowItem::While(block) => {
-                    self.scan_expr(block.condition())?;
-                    self.scan_syntax_flow_items(block.body())?;
-                }
-                FlowItem::WhileLet(block) => {
-                    self.scan_pattern(block.pattern())?;
-                    self.scan_expr(block.expr())?;
-                    if let Some(guard) = block.guard() {
-                        self.scan_expr(guard)?;
-                    }
-                    self.scan_syntax_flow_items(block.body())?;
-                }
-                FlowItem::For(block) => {
-                    self.scan_pattern(block.pattern())?;
-                    self.scan_expr(block.source())?;
-                    self.scan_syntax_flow_items(block.body())?;
-                }
-                FlowItem::Select(block) => {
-                    for branch in block.branches() {
-                        self.scan_select_head(branch.head())?;
-                        self.scan_syntax_flow_items(branch.body())?;
-                    }
-                }
-                FlowItem::SourceLocale(block) => self.scan_syntax_flow_items(block.body())?,
-                FlowItem::Scope(block) => self.scan_syntax_flow_items(block.body())?,
-                FlowItem::AwaitWith(_)
-                | FlowItem::SpeakerLine(_)
-                | FlowItem::ContentCall(_)
-                | FlowItem::Include(_)
-                | FlowItem::Raw(_) => {}
-            }
-        }
-        Ok(())
-    }
-
-    #[allow(
-        clippy::too_many_lines,
-        reason = "the exhaustive expression walk is the typed search and accounting boundary"
-    )]
-    fn scan_expr(&mut self, expression: &Expr) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match expression {
-            Expr::Call(call) => {
-                self.scan_call(call)?;
-                self.scan_expr(call.callee())?;
-                for argument in call.args() {
-                    self.scan_expr(argument.value())?;
-                }
-            }
-            Expr::Tuple(items) | Expr::BracketSeq(items) => {
-                for item in items {
-                    self.scan_expr(item)?;
-                }
-            }
-            Expr::ArrayRepeat { value, len } => {
-                self.scan_expr(value)?;
-                self.scan_expr(len)?;
-            }
-            Expr::Select(select) => self.scan_expr(select.target())?,
-            Expr::DialogueCall {
-                callee,
-                content,
-                plan,
-            } => {
-                self.scan_expr(callee)?;
-                self.scan_dialogue_content(content)?;
-                if let Some(plan) = plan {
-                    self.scan_line_plan(plan)?;
-                }
-            }
-            Expr::Index { target, index } => {
-                self.scan_expr(target)?;
-                self.scan_expr(index)?;
-            }
-            Expr::Pipe { lhs, rhs } | Expr::Binary { lhs, rhs, .. } => {
-                self.scan_expr(lhs)?;
-                self.scan_expr(rhs)?;
-            }
-            Expr::Try(try_expr) => self.scan_expr(try_expr.operand())?,
-            Expr::Closure { body, .. } | Expr::Unary { expr: body, .. } => self.scan_expr(body)?,
-            Expr::Await(awaited) => self.scan_expr(awaited.operand())?,
-            Expr::Borrow(borrow) => self.scan_expr(borrow.operand())?,
-            Expr::Deref(deref) => self.scan_expr(deref.operand())?,
-            Expr::Thread { block } => self.scan_syntax_flow_items(block.body())?,
-            Expr::Range { start, end, .. } => {
-                if let Some(start) = start {
-                    self.scan_expr(start)?;
-                }
-                if let Some(end) = end {
-                    self.scan_expr(end)?;
-                }
-            }
-            Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
-                for (_, value) in fields {
-                    self.scan_expr(value)?;
-                }
-            }
-            Expr::Block { statements, value }
-            | Expr::ComputationBlock {
-                statements, value, ..
-            }
-            | Expr::NamedBlock {
-                statements, value, ..
-            } => {
-                self.scan_stmts(statements)?;
-                if let Some(value) = value.as_ref() {
-                    self.scan_expr(value)?;
-                }
-            }
-            Expr::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                self.scan_expr(condition)?;
-                self.scan_expr(then_branch)?;
-                if let Some(else_branch) = else_branch {
-                    self.scan_expr(else_branch)?;
-                }
-            }
-            Expr::IfLet {
-                pattern,
-                expr,
-                guard,
-                then_branch,
-                else_branch,
-            } => {
-                self.scan_pattern(pattern)?;
-                self.scan_expr(expr)?;
-                if let Some(guard) = guard {
-                    self.scan_expr(guard)?;
-                }
-                self.scan_expr(then_branch)?;
-                if let Some(else_branch) = else_branch {
-                    self.scan_expr(else_branch)?;
-                }
-            }
-            Expr::Match { scrutinee, arms } => {
-                self.scan_expr(scrutinee)?;
-                for arm in arms {
-                    self.scan_match_expr_arm(arm)?;
-                }
-            }
-            Expr::Literal(_)
-            | Expr::Path(_)
-            | Expr::ShortVariant(_)
-            | Expr::Placeholder(_)
-            | Expr::EntityRef(_)
-            | Expr::LifetimePath { .. }
-            | Expr::NumericBracketSeq(_)
-            | Expr::Raw(_) => {}
-        }
-        Ok(())
-    }
-
-    fn scan_call(&mut self, call: &CallExpr) -> Result<(), SignatureQueryError> {
-        let Some(parenthesized) = call.parenthesized_syntax() else {
-            self.charge_call_surface_work(call.args().len())?;
-            self.unsupported_surface |=
-                call.range().start() <= self.byte_offset && self.byte_offset <= call.range().end();
-            return Ok(());
-        };
-        self.scan_argument_list(
-            call.range(),
-            call.callee_range(),
-            parenthesized.argument_list(),
-            call.args().len(),
-        )
-    }
-
-    fn charge_call_surface_work(
-        &mut self,
-        argument_count: usize,
+        expression_id: ExprId,
+        call: &HirCallExpr,
     ) -> Result<(), SignatureQueryError> {
         self.work
             .charge(SignatureWorkKind::CandidateCalls, 1)
             .map_err(map_signature_accounting_error)?;
-        for _ in 0..argument_count {
+        for _ in call.arguments() {
             self.poll_operation()?;
             self.work
                 .charge(SignatureWorkKind::Arguments, 1)
                 .map_err(map_signature_accounting_error)?;
         }
-        Ok(())
-    }
 
-    fn scan_argument_list(
-        &mut self,
-        call: TextRange,
-        callee: TextRange,
-        arguments: &ArgumentListSyntax,
-        argument_count: usize,
-    ) -> Result<(), SignatureQueryError> {
-        self.charge_call_surface_work(argument_count)?;
-        let recovery_nodes = arguments
+        let recovery_nodes = call
             .arguments()
             .iter()
-            .filter(|argument| {
-                matches!(
-                    argument.recovery(),
-                    CallArgumentRecoverySyntax::Recovered { .. }
-                )
-            })
+            .filter(|argument| argument_is_recovered(argument))
             .count()
-            + usize::from(arguments.terminator().close_paren().is_none());
+            + usize::from(call.terminator() == HirCallArgumentListTerminator::RecoveredMissing);
         for _ in 0..recovery_nodes {
             self.poll_operation()?;
             self.work
                 .charge(SignatureWorkKind::RecoveryNodes, 1)
                 .map_err(map_signature_accounting_error)?;
         }
-        if !arguments.contains_signature_cursor(self.byte_offset) {
+
+        let Some(candidate) = self.focused_call_site(expression_id, call)? else {
             return Ok(());
-        }
+        };
         self.poll_operation()?;
         self.work
             .charge(SignatureWorkKind::NestedCalls, 1)
             .map_err(map_signature_accounting_error)?;
-        let Some(candidate) = FocusedCallSite::from_argument_list(
-            call,
-            callee,
-            arguments,
-            self.document,
-            self.byte_offset,
-        ) else {
-            return Ok(());
-        };
         match self.selected.as_ref() {
             None => self.selected = Some(candidate),
             Some(current) => match candidate.compare_focus(current) {
                 Ordering::Greater => self.selected = Some(candidate),
                 Ordering::Less => {}
                 Ordering::Equal
-                    if candidate.call() == current.call()
+                    if candidate.expression() == current.expression()
                         && candidate.arguments() == current.arguments() => {}
                 Ordering::Equal => {
                     return Err(super::SignatureSemanticUnavailable::AmbiguousCallRange {
-                        document: self.document.identity().clone(),
+                        document: Box::new(self.document.identity().clone()),
                         byte_offset: self.byte_offset,
                     }
                     .into());
@@ -729,273 +222,182 @@ impl SurfaceScanner<'_> {
         Ok(())
     }
 
-    fn scan_pattern(&mut self, pattern: &Pattern) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match pattern {
-            Pattern::Literal(expression) => self.scan_expr(expression)?,
-            Pattern::Tuple(items) | Pattern::BracketSeq { items, .. } => {
-                for item in items {
-                    self.scan_pattern(item)?;
-                }
+    fn focused_call_site(
+        &self,
+        expression_id: ExprId,
+        call: &HirCallExpr,
+    ) -> Result<Option<FocusedCallSite>, SignatureQueryError> {
+        let Some(active_argument) = self
+            .module
+            .call_active_argument_slot(self.document.identity(), expression_id, self.byte_offset)
+            .map_err(|error| super::SignatureSemanticUnavailable::SourceQuery {
+                owner: expression_id,
+                error: Box::new(error),
+            })?
+        else {
+            return Ok(None);
+        };
+        let call_span = self.required_span(expression_id, HirExprSourceRole::Whole)?;
+        let callee = self.callee_span(expression_id, call.callee())?;
+        let open = self.required_span(expression_id, HirExprSourceRole::CallArgumentListOpen)?;
+        let (content_end, list_end) = match call.terminator() {
+            HirCallArgumentListTerminator::Closed => {
+                let close =
+                    self.required_span(expression_id, HirExprSourceRole::CallArgumentListClose)?;
+                (close.range().start(), close.range().end())
             }
-            Pattern::Record { fields, .. } => {
-                for field in fields {
-                    self.scan_pattern(field.pattern())?;
-                }
+            HirCallArgumentListTerminator::RecoveredMissing => {
+                let insertion = self.required_offset(
+                    expression_id,
+                    HirExprSourceRole::CallArgumentListRecoveryEnd,
+                )?;
+                (insertion, insertion)
             }
-            Pattern::Whole { pattern, .. } => self.scan_pattern(pattern)?,
-            Pattern::Variant {
-                payload: Some(payload),
-                ..
-            } => match payload {
-                VariantPatternPayload::Tuple(items) => {
-                    for item in items {
-                        self.scan_pattern(item)?;
-                    }
-                }
-                VariantPatternPayload::Record { fields, .. } => {
-                    for field in fields {
-                        self.scan_pattern(field.pattern())?;
-                    }
-                }
-            },
-            Pattern::Raw(_)
-            | Pattern::Entity(_)
-            | Pattern::Ident(_)
-            | Pattern::MutIdent(_)
-            | Pattern::Variant { payload: None, .. }
-            | Pattern::Discard
-            | Pattern::Typed { .. } => {}
-        }
-        Ok(())
+        };
+        let content = SourceRange::new(open.range().end(), content_end);
+        let arguments = self
+            .document
+            .span(SourceRange::new(open.range().start(), list_end))
+            .map_err(map_span_error)?;
+        Ok(Some(FocusedCallSite {
+            expression: expression_id,
+            call: call_span,
+            callee,
+            arguments,
+            active_argument: Some(active_argument),
+            recovery_nodes: call
+                .arguments()
+                .iter()
+                .filter(|argument| argument_is_recovered(argument))
+                .count()
+                + usize::from(call.terminator() == HirCallArgumentListTerminator::RecoveredMissing),
+            missing_close_delimiter: matches!(
+                call.terminator(),
+                HirCallArgumentListTerminator::RecoveredMissing
+            ),
+            argument_content: content,
+            open_paren_start: open.range().start(),
+            byte_offset: Some(self.byte_offset),
+        }))
     }
 
-    fn scan_choice_block(&mut self, choice: &ChoiceBlock) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        for option in choice.options() {
-            self.scan_choice_option(option)?;
-        }
-        Ok(())
-    }
-
-    fn scan_choice_item(&mut self, item: &ChoiceItem) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match item {
-            ChoiceItem::Let { pattern, expr } => {
-                self.scan_pattern(pattern)?;
-                self.scan_expr(expr)?;
+    fn callee_span(
+        &self,
+        expression_id: ExprId,
+        callee: &HirCallCallee,
+    ) -> Result<SourceSpan, SignatureQueryError> {
+        match callee {
+            HirCallCallee::Value { .. } => {
+                self.required_span(expression_id, HirExprSourceRole::CallCallee)
             }
-            ChoiceItem::If { condition, items } => {
-                self.scan_expr(condition)?;
-                for item in items {
-                    self.scan_choice_item(item)?;
-                }
-            }
-            ChoiceItem::For {
-                pattern,
-                source,
-                items,
-            } => {
-                self.scan_pattern(pattern)?;
-                self.scan_expr(source)?;
-                for item in items {
-                    self.scan_choice_item(item)?;
-                }
-            }
-            ChoiceItem::Match { expr, arms } => {
-                self.scan_expr(expr)?;
-                for arm in arms {
-                    self.scan_pattern(arm.pattern())?;
-                    if let Some(guard) = arm.guard() {
-                        self.scan_expr(guard)?;
-                    }
-                    for item in arm.items() {
-                        self.scan_choice_item(item)?;
-                    }
-                }
-            }
-            ChoiceItem::Option(option) => self.scan_choice_option(option)?,
-            ChoiceItem::Raw(_) => {}
-        }
-        Ok(())
-    }
-
-    fn scan_choice_option(&mut self, option: &ChoiceOption) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        for expression in [
-            option.id_expr(),
-            option.value(),
-            option.enabled(),
-            option.visible(),
-            option.order(),
-            option.hotkey(),
-        ]
-        .into_iter()
-        .flatten()
-        {
-            self.scan_expr(expression)?;
-        }
-        for field in option.view_fields() {
-            self.scan_expr(field.value())?;
-        }
-        self.scan_choice_action(option.action())
-    }
-
-    fn scan_choice_action(&mut self, action: &ChoiceAction) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match action {
-            ChoiceAction::Out(expression) => self.scan_expr(expression)?,
-            ChoiceAction::SelectBlock(statements) => self.scan_stmts(statements)?,
-            ChoiceAction::Goto(_) | ChoiceAction::None => {}
-        }
-        Ok(())
-    }
-
-    fn scan_choice_plan_item(&mut self, item: &ChoicePlanItem) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match item {
-            ChoicePlanItem::Option { value, .. } => self.scan_expr(value)?,
-            ChoicePlanItem::Timeout { duration, body } => {
-                self.scan_expr(duration)?;
-                self.scan_stmts(body)?;
-            }
-            ChoicePlanItem::Cancel { body, .. } => self.scan_stmts(body)?,
-            ChoicePlanItem::OnSelect { pattern, body } => {
-                self.scan_pattern(pattern)?;
-                self.scan_stmts(body)?;
-            }
-            ChoicePlanItem::Raw(_) => {}
-        }
-        Ok(())
-    }
-
-    fn scan_stmt_match(
-        &mut self,
-        expression: &Expr,
-        arms: &[StmtMatchArm],
-    ) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        self.scan_expr(expression)?;
-        for arm in arms {
-            self.scan_pattern(arm.pattern())?;
-            if let Some(guard) = arm.guard() {
-                self.scan_expr(guard)?;
-            }
-            self.scan_stmts(arm.body())?;
-        }
-        Ok(())
-    }
-
-    fn scan_match_expr_arm(&mut self, arm: &MatchExprArm) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        self.scan_pattern(arm.pattern())?;
-        if let Some(guard) = arm.guard() {
-            self.scan_expr(guard)?;
-        }
-        self.scan_expr(arm.value())
-    }
-
-    fn scan_select_head(&mut self, head: &SelectBranchHead) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match head {
-            SelectBranchHead::Bind { source, .. } => self.scan_expr(source)?,
-            SelectBranchHead::Frame(pattern) | SelectBranchHead::Event(pattern) => {
-                self.scan_pattern(pattern)?;
-            }
-            SelectBranchHead::Raw(_) => {}
-        }
-        Ok(())
-    }
-
-    fn scan_dialogue_content(
-        &mut self,
-        content: &DialogueContent,
-    ) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        for token in content.tokens() {
-            match token {
-                DialogueToken::Expr(expression) => self.scan_expr(expression.expr())?,
-                DialogueToken::Tag(tag) | DialogueToken::InferredTag(tag) => {
-                    if let Some(range) = content.source_range(tag.range()) {
-                        self.mark_unsupported_range(range);
-                    }
-                }
-                DialogueToken::Text(_)
-                | DialogueToken::Raw(_)
-                | DialogueToken::Mark(_)
-                | DialogueToken::EndTag(_)
-                | DialogueToken::InferredEndTag
-                | DialogueToken::Ruby { .. }
-                | DialogueToken::Escape(_) => {}
+            HirCallCallee::UnresolvedDot { .. } | HirCallCallee::Associated { .. } => {
+                let receiver =
+                    self.required_site(expression_id, HirExprSourceRole::CallAssociatedReceiver)?;
+                let member =
+                    self.required_site(expression_id, HirExprSourceRole::CallAssociatedMember)?;
+                self.document
+                    .span(SourceRange::new(site_start(&receiver), site_end(&member)))
+                    .map_err(map_span_error)
             }
         }
-        Ok(())
     }
 
-    fn mark_unsupported_range(&mut self, range: arcweft_lang_syntax::ast::common::TextRange) {
+    fn mark_unsupported(&mut self, expression_id: ExprId) -> Result<(), SignatureQueryError> {
+        let span = self.required_span(expression_id, HirExprSourceRole::Whole)?;
         self.unsupported_surface |=
-            range.start() <= self.byte_offset && self.byte_offset <= range.end();
-    }
-
-    fn scan_line_plan(&mut self, plan: &LinePlan) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        for item in plan.items() {
-            self.scan_line_plan_item(item)?;
-        }
+            span.range().start() <= self.byte_offset && self.byte_offset <= span.range().end();
         Ok(())
     }
 
-    fn scan_line_plan_item(&mut self, item: &LinePlanItem) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match item {
-            LinePlanItem::Init(statements) => self.scan_stmts(statements)?,
-            LinePlanItem::Thread(thread) => self.scan_syntax_flow_items(thread.body())?,
-            LinePlanItem::On { trigger, body } => {
-                self.scan_trigger(trigger)?;
-                self.scan_stmts(body)?;
-            }
-            LinePlanItem::Stmt(statement) => self.scan_stmt(statement)?,
-            LinePlanItem::Option { value, .. }
-            | LinePlanItem::Let { expr: value, .. }
-            | LinePlanItem::Out(value)
-            | LinePlanItem::Expr(value) => self.scan_expr(value)?,
-            LinePlanItem::TimedCue { anchor, body } => {
-                self.scan_expr(anchor)?;
-                self.scan_expr(body)?;
-            }
-            LinePlanItem::CancelRule(rule) => self.scan_stmts(rule.action())?,
-            LinePlanItem::TimelineAssert(assertion) => self.scan_expr(assertion.condition())?,
-            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
-                for item in items {
-                    self.scan_line_plan_item(item)?;
-                }
-            }
-            LinePlanItem::Raw(_) => {}
+    fn required_span(
+        &self,
+        owner: ExprId,
+        role: HirExprSourceRole,
+    ) -> Result<SourceSpan, SignatureQueryError> {
+        match self.required_site(owner, role)? {
+            HirSourceSite::Span(span) => Ok(span),
+            HirSourceSite::Insertion(insertion) => self
+                .document
+                .span(SourceRange::new(insertion.offset(), insertion.offset()))
+                .map_err(map_span_error),
         }
-        Ok(())
     }
 
-    fn scan_trigger(&mut self, trigger: &TriggerPattern) -> Result<(), SignatureQueryError> {
-        self.visit_node()?;
-        match trigger {
-            TriggerPattern::Signal { target, value } => {
-                self.scan_expr(target)?;
-                if let Some(value) = value.as_ref().as_ref() {
-                    self.scan_pattern(value)?;
-                }
-            }
-            TriggerPattern::Timeout(expression) | TriggerPattern::Expr(expression) => {
-                self.scan_expr(expression)?;
-            }
-            TriggerPattern::Input(pattern)
-            | TriggerPattern::Event(pattern)
-            | TriggerPattern::Mark(pattern)
-            | TriggerPattern::Select(pattern)
-            | TriggerPattern::Task(pattern)
-            | TriggerPattern::Scope(pattern) => self.scan_pattern(pattern)?,
-        }
-        Ok(())
+    fn required_offset(
+        &self,
+        owner: ExprId,
+        role: HirExprSourceRole,
+    ) -> Result<usize, SignatureQueryError> {
+        Ok(site_start(&self.required_site(owner, role)?))
     }
+
+    fn required_site(
+        &self,
+        owner: ExprId,
+        role: HirExprSourceRole,
+    ) -> Result<HirSourceSite, SignatureQueryError> {
+        self.optional_site(owner, role)?.ok_or_else(|| {
+            super::SignatureSemanticUnavailable::MissingSourceComponent { owner, role }.into()
+        })
+    }
+
+    fn optional_site(
+        &self,
+        owner: ExprId,
+        role: HirExprSourceRole,
+    ) -> Result<Option<HirSourceSite>, SignatureQueryError> {
+        let lookup = self
+            .module
+            .source_site(
+                self.document.identity(),
+                HirSourceQuery::Expr { owner, role },
+            )
+            .map_err(|error| super::SignatureSemanticUnavailable::SourceQuery {
+                owner,
+                error: Box::new(error),
+            })?;
+        Ok(match lookup.presence() {
+            HirSourcePresence::Present(site) => Some(site.clone()),
+            HirSourcePresence::AbsentOptional => None,
+        })
+    }
+}
+
+fn argument_is_recovered(argument: &HirCallArgument) -> bool {
+    let value_missing = matches!(argument.value_state(), HirCallValue::Missing { .. });
+    match argument {
+        HirCallArgument::Positional { .. } => value_missing,
+        HirCallArgument::Named { name, equals, .. } => {
+            name.resolved().is_none() || *equals != HirRequiredTokenState::Present || value_missing
+        }
+        HirCallArgument::Spread { ellipsis, .. } => {
+            *ellipsis != HirRequiredTokenState::Present || value_missing
+        }
+    }
+}
+
+fn site_start(site: &HirSourceSite) -> usize {
+    match site {
+        HirSourceSite::Span(span) => span.range().start(),
+        HirSourceSite::Insertion(insertion) => insertion.offset(),
+    }
+}
+
+fn site_end(site: &HirSourceSite) -> usize {
+    match site {
+        HirSourceSite::Span(span) => span.range().end(),
+        HirSourceSite::Insertion(insertion) => insertion.offset(),
+    }
+}
+
+fn range_len(range: SourceRange) -> usize {
+    range.end().saturating_sub(range.start())
+}
+
+fn strictly_contains(outer: SourceRange, inner: SourceRange) -> bool {
+    outer.start() <= inner.start()
+        && inner.end() <= outer.end()
+        && (outer.start() < inner.start() || inner.end() < outer.end())
 }
 
 fn map_control_error(error: ResolveCallError) -> SignatureQueryError {
@@ -1004,4 +406,8 @@ fn map_control_error(error: ResolveCallError) -> SignatureQueryError {
         ResolveCallError::DeadlineExceeded => SignatureQueryError::DeadlineExceeded,
         error => SignatureQueryError::Resolve(error),
     }
+}
+
+fn map_span_error(_: arcweft_source::SourceSpanError) -> SignatureQueryError {
+    crate::callable::SemanticSignatureError::InvalidSpan.into()
 }

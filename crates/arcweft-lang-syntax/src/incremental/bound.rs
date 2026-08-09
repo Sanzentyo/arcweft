@@ -2,7 +2,10 @@
 
 use std::sync::Arc;
 
-use arcweft_source::{SourceDocument, SourceSpan, SourceSpanError};
+use arcweft_source::{
+    Diagnostic, DiagnosticLabel, DiagnosticSeverity, DiagnosticSuggestion, SourceDocument,
+    SourceSpan, SourceSpanError,
+};
 
 use crate::attachment::{SyntaxSnapshotData, SyntaxSnapshotId};
 use crate::grammar::budget::SyntaxParseStats;
@@ -27,6 +30,9 @@ pub struct SyntaxDiagnostic {
     code: &'static str,
     primary: SourceSpan,
     related: Option<SourceSpan>,
+    related_message: Option<String>,
+    expected: Box<[String]>,
+    suggestions: Box<[DiagnosticSuggestion]>,
     message: String,
 }
 
@@ -83,7 +89,6 @@ impl ParsedSourceData {
         self.status
     }
 
-    #[cfg(test)]
     pub(crate) const fn stats(&self) -> SyntaxParseStats {
         self.stats
     }
@@ -121,6 +126,24 @@ impl SyntaxDiagnostic {
                 .related_range()
                 .map(|range| document.span(range))
                 .transpose()?,
+            related_message: diagnostic.related_message().map(str::to_owned),
+            expected: diagnostic.expected().to_vec().into_boxed_slice(),
+            suggestions: diagnostic
+                .suggestions()
+                .iter()
+                .map(|suggestion| {
+                    suggestion.edits().iter().try_fold(
+                        DiagnosticSuggestion::new(suggestion.message(), suggestion.applicability()),
+                        |bound, edit| {
+                            Ok(bound.with_edit(arcweft_source::SourceEdit::new(
+                                document.span(edit.range())?,
+                                edit.replacement(),
+                            )))
+                        },
+                    )
+                })
+                .collect::<Result<Vec<_>, SourceSpanError>>()?
+                .into_boxed_slice(),
             message: diagnostic.message().to_owned(),
         })
     }
@@ -143,6 +166,26 @@ impl SyntaxDiagnostic {
     /// Human-readable diagnostic detail; never an identity key.
     pub fn message(&self) -> &str {
         &self.message
+    }
+
+    /// Builds the complete generic recovery diagnostic retained by this snapshot.
+    pub fn diagnostic(&self) -> Diagnostic {
+        let mut diagnostic = Diagnostic::new(DiagnosticSeverity::Error, self.message.clone())
+            .with_code(self.code)
+            .with_label(DiagnosticLabel::primary(self.primary.clone(), None));
+        if let Some(related) = &self.related {
+            diagnostic = diagnostic.with_label(DiagnosticLabel::secondary(
+                related.clone(),
+                self.related_message.clone(),
+            ));
+        }
+        if !self.expected.is_empty() {
+            diagnostic = diagnostic.with_note(format!("expected: {}", self.expected.join(", ")));
+        }
+        self.suggestions
+            .iter()
+            .cloned()
+            .fold(diagnostic, Diagnostic::with_suggestion)
     }
 }
 
@@ -167,6 +210,9 @@ mod tests {
                 primary: document.span(range).expect("valid diagnostic span"),
                 related: related.map(|range| document.span(range).expect("valid related span")),
                 message: message.to_owned(),
+                related_message: None,
+                expected: Box::new([]),
+                suggestions: Box::new([]),
             };
         let second = diagnostic("E_SECOND", SourceRange::new(2, 3), None, "second");
         let first = diagnostic("E_FIRST", SourceRange::new(0, 1), None, "first");

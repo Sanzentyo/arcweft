@@ -1,12 +1,11 @@
 use super::project::{CheckedModule, load_and_check_with_env};
 use super::shared::print_json;
 use crate::output::{
-    BorrowCheckProfileStats, RuntimeProfilePhase, ScriptBenchPureHelperBatchSummary,
+    FinalSemanticProfileStats, RuntimeProfilePhase, ScriptBenchPureHelperBatchSummary,
     ScriptBenchPureHelperDeterministicSummary, ScriptBenchPureHelperMeasurementSummary,
     ScriptBenchPureHelperStatsSummary, ScriptBenchPureHelperTimingSamples,
-    ScriptBenchPureHelperTimingSummary, TypeCheckProfileStats,
+    ScriptBenchPureHelperTimingSummary,
 };
-use arcweft_compiler::lower::lower_source_pure_helper_candidates;
 use arcweft_core::{
     plan::{
         RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin, RuntimePureInputType,
@@ -27,7 +26,6 @@ use arcweft_lang_jit_cranelift::{
 };
 use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_runtime_host::{HostSystemInfo, host_system_info};
-use arcweft_runtime_plan::pure::PureHelperCandidate;
 use clap::{Args, ValueEnum};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitCode};
@@ -736,16 +734,14 @@ pub(in crate::app) struct JitCheckTarget {
 
 #[derive(Clone, serde::Serialize)]
 pub(in crate::app) struct JitCheckSourceCompilerReport {
-    typecheck: TypeCheckProfileStats,
-    borrow_check: BorrowCheckProfileStats,
+    semantic: FinalSemanticProfileStats,
     phases: Vec<RuntimeProfilePhase>,
 }
 
 impl From<&CheckedModule> for JitCheckSourceCompilerReport {
     fn from(checked: &CheckedModule) -> Self {
         Self {
-            typecheck: TypeCheckProfileStats::from(&checked.typecheck_report),
-            borrow_check: BorrowCheckProfileStats::from(&checked.typecheck_report.stats),
+            semantic: FinalSemanticProfileStats::from(checked.compiled.final_analysis().as_ref()),
             phases: checked.phases.clone(),
         }
     }
@@ -934,24 +930,24 @@ impl JitCheckTarget {
     }
 
     pub(in crate::app) fn from_candidate(
-        candidate: &PureHelperCandidate,
+        candidate: &RuntimePureHelper,
         source_compiler: Option<JitCheckSourceCompilerReport>,
     ) -> Result<Self, ExitCode> {
-        let input_names = candidate.input_names().to_vec();
+        let input_names = candidate.input_names.clone();
         if input_names.len() > 4 {
             eprintln!(
                 "error: pure helper `{}` has {} input(s); current JIT check supports at most 4",
-                candidate.name(),
+                candidate.name,
                 input_names.len()
             );
             return Err(ExitCode::from(2));
         }
         Ok(Self {
-            name: candidate.name().to_owned(),
+            name: candidate.name.clone(),
             source: JitCheckHelperSource::Source,
             source_compiler,
             input_names,
-            expr: candidate.expr().clone(),
+            expr: candidate.expr.clone(),
         })
     }
 
@@ -1037,13 +1033,10 @@ fn jit_check_source_target(
     helper_name: Option<&str>,
 ) -> Result<JitCheckTarget, ExitCode> {
     let checked = load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())?;
-    let pure_report = lower_source_pure_helper_candidates(&checked.hir).map_err(|errors| {
-        for error in errors {
-            eprintln!("error: {error}");
-        }
-        ExitCode::FAILURE
-    })?;
-    let candidate = select_jit_helper_candidate(&pure_report.candidates, helper_name)?;
+    let candidate = select_jit_helper_candidate(
+        &checked.compiled.runtime_plan().plan.pure_helpers,
+        helper_name,
+    )?;
     JitCheckTarget::from_candidate(
         candidate,
         Some(JitCheckSourceCompilerReport::from(&checked)),
@@ -1051,13 +1044,13 @@ fn jit_check_source_target(
 }
 
 fn select_jit_helper_candidate<'a>(
-    candidates: &'a [PureHelperCandidate],
+    candidates: &'a [RuntimePureHelper],
     helper_name: Option<&str>,
-) -> Result<&'a PureHelperCandidate, ExitCode> {
+) -> Result<&'a RuntimePureHelper, ExitCode> {
     if let Some(name) = helper_name {
         return candidates
             .iter()
-            .find(|candidate| candidate.name() == name)
+            .find(|candidate| candidate.name == name)
             .ok_or_else(|| {
                 eprintln!("error: pure helper `{name}` was not found");
                 ExitCode::FAILURE

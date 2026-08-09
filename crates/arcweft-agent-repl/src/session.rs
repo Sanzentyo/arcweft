@@ -1,9 +1,12 @@
 use arcweft_agent_runner::effect_policy::AgentEffectRegistry;
 use arcweft_agent_runner::session::{AgentSession, RagService};
-use arcweft_compiler::types::CompiledAgentBundle;
 use arcweft_core::bytecode::BytecodeVerificationBudget;
 use arcweft_debug_model::sink::DebugEventSink;
-use arcweft_lang_sema::project_index::ProjectSemanticIndex;
+use arcweft_lang_sema::{
+    env::TypeCheckEnv,
+    project_index::{EntitySymbol, ProgramHash},
+};
+use std::sync::Arc;
 
 use crate::binding::{
     ReplBindingInvalidation, ReplBindingRecord, ReplBindingSnapshotKind, ReplBindingStatus,
@@ -14,7 +17,7 @@ use crate::cell::{
     ReplCellInput, ReplCellList, ReplCellRecord, ReplEvaluateOutcome, ReplResetOptions,
     ReplResetOutcome, ReplUndoOptions, ReplUndoOutcome,
 };
-use crate::compile::compile_repl_cell;
+use crate::compile::{CompiledReplCell, compile_repl_cell};
 use crate::error::ReplTransactionError;
 use crate::evidence::{ReplBindingEvidence, ReplGenerationEvidence, ReplGenerationId};
 use crate::hash::hash_parts;
@@ -32,7 +35,8 @@ use crate::tier::{
 #[derive(Clone, Debug)]
 pub struct ReplBaseSnapshot {
     label: String,
-    project: ProjectSemanticIndex,
+    typecheck_environment: Arc<TypeCheckEnv>,
+    target_entities: Vec<EntitySymbol>,
     program_hash: String,
     generation: ReplGenerationId,
 }
@@ -68,7 +72,7 @@ pub struct ReplSession {
 struct ValidatedReplCell {
     cell_id: ReplCellId,
     parsed: ParsedReplCell,
-    compiled: CompiledAgentBundle,
+    compiled: CompiledReplCell,
     bytecode_stats: ReplBytecodeStats,
     verified_effects: Vec<String>,
     commit_hash: String,
@@ -76,12 +80,17 @@ struct ValidatedReplCell {
 
 impl ReplBaseSnapshot {
     #[must_use]
-    pub fn from_project(label: impl Into<String>, project: ProjectSemanticIndex) -> Self {
-        let program_hash = project.program_hash().as_str().to_owned();
+    pub fn new(
+        label: impl Into<String>,
+        program_hash: &ProgramHash,
+        typecheck_environment: Arc<TypeCheckEnv>,
+        target_entities: impl IntoIterator<Item = EntitySymbol>,
+    ) -> Self {
         Self {
             label: label.into(),
-            project,
-            program_hash,
+            typecheck_environment,
+            target_entities: target_entities.into_iter().collect(),
+            program_hash: program_hash.as_str().to_owned(),
             generation: ReplGenerationId::base(),
         }
     }
@@ -92,8 +101,14 @@ impl ReplBaseSnapshot {
     }
 
     #[must_use]
-    pub fn project(&self) -> &ProjectSemanticIndex {
-        &self.project
+    /// Exact type-check environment accepted for synthetic REPL compilation.
+    pub const fn typecheck_environment(&self) -> &Arc<TypeCheckEnv> {
+        &self.typecheck_environment
+    }
+
+    /// Explicit non-callable target metadata overlaid after semantic publication.
+    pub fn target_entities(&self) -> &[EntitySymbol] {
+        &self.target_entities
     }
 
     #[must_use]
@@ -177,6 +192,7 @@ impl ReplSession {
         let parsed = classify_repl_cell(cell_id, input, &prelude)?;
         let compiled = compile_repl_cell(&parsed, &self.base)?;
         compiled
+            .artifact
             .bundle
             .bytecode
             .program
@@ -187,7 +203,7 @@ impl ReplSession {
         let launch_policy = self.options.capabilities.runtime_policy();
         AgentEffectRegistry::canonical()
             .authorization_for_artifact(
-                &compiled.manifest.verified_effects.inferred,
+                &compiled.artifact.manifest.verified_effects.inferred,
                 &launch_policy,
             )
             .map_err(|error| ReplTransactionError::EffectPolicy {
@@ -207,8 +223,9 @@ impl ReplSession {
                 ),
             });
         }
-        let stats = ReplBytecodeStats::from(compiled.bundle.bytecode.program.stats());
+        let stats = ReplBytecodeStats::from(compiled.artifact.bundle.bytecode.program.stats());
         let verified_effects = compiled
+            .artifact
             .manifest
             .verified_effects
             .inferred
@@ -236,17 +253,13 @@ impl ReplSession {
     }
 
     fn commit_validated_cell(&mut self, validated: ValidatedReplCell) -> usize {
-        let bytecode = validated.compiled.bundle.bytecode.program.clone();
-        let entry = validated
-            .compiled
-            .bundle
-            .manifest
-            .entry
-            .as_deref()
-            .map(|entry| {
-                arcweft_core::plan::EntryRuntimeId::from_source_entity_body(entry)
-                    .expect("checked REPL bundles retain an exact canonical entry")
-            });
+        let bytecode = validated.compiled.artifact.bundle.bytecode.program.clone();
+        let entry = Some(
+            arcweft_core::plan::EntryRuntimeId::from_source_entity_body(
+                validated.compiled.artifact.manifest.entry_id.as_str(),
+            )
+            .expect("checked REPL bundles retain an exact canonical entry"),
+        );
         let mut record = ReplCellRecord::new(
             validated.cell_id,
             validated.parsed.kind,
@@ -260,9 +273,9 @@ impl ReplSession {
             entry,
             validated.bytecode_stats,
             validated.verified_effects,
-            validated.parsed.bindings,
+            validated.compiled.bindings,
         );
-        let bundle = validated.compiled.bundle;
+        let bundle = validated.compiled.artifact.bundle;
         let committed = CommittedReplCell::new(record.clone(), bytecode, bundle);
         self.cells.push(committed);
         self.bindings.extend(record.bindings.clone());

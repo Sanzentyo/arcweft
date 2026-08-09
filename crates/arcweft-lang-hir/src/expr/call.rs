@@ -15,7 +15,8 @@ use crate::leaf::HirName;
 pub struct HirCallArgumentOrdinal(u16);
 
 impl HirCallArgumentOrdinal {
-    pub(crate) fn try_new(value: usize) -> Result<Self, HirCallArgumentOrdinalError> {
+    /// Converts a zero-based source argument position into the bounded final-HIR ordinal.
+    pub fn try_from_usize(value: usize) -> Result<Self, HirCallArgumentOrdinalError> {
         let limit = HirLimit::CallArguments.maximum();
         if value >= limit {
             return Err(HirCallArgumentOrdinalError {
@@ -31,6 +32,10 @@ impl HirCallArgumentOrdinal {
             })
     }
 
+    pub(crate) fn try_new(value: usize) -> Result<Self, HirCallArgumentOrdinalError> {
+        Self::try_from_usize(value)
+    }
+
     /// Returns the zero-based authored argument position.
     pub const fn get(self) -> u16 {
         self.0
@@ -39,7 +44,7 @@ impl HirCallArgumentOrdinal {
 
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 #[error("Call argument ordinal {ordinal} exceeds the exclusive limit {limit}")]
-pub(crate) struct HirCallArgumentOrdinalError {
+pub struct HirCallArgumentOrdinalError {
     ordinal: usize,
     limit: usize,
 }
@@ -49,7 +54,8 @@ pub(crate) struct HirCallArgumentOrdinalError {
 pub struct HirCallTypeArgumentOrdinal(u16);
 
 impl HirCallTypeArgumentOrdinal {
-    pub(crate) fn try_new(value: usize) -> Result<Self, HirCallTypeArgumentOrdinalError> {
+    /// Converts a zero-based source type-argument position into the bounded final-HIR ordinal.
+    pub fn try_from_usize(value: usize) -> Result<Self, HirCallTypeArgumentOrdinalError> {
         let limit = HirLimit::CallTypeArguments.maximum();
         if value >= limit {
             return Err(HirCallTypeArgumentOrdinalError {
@@ -65,6 +71,10 @@ impl HirCallTypeArgumentOrdinal {
             })
     }
 
+    pub(crate) fn try_new(value: usize) -> Result<Self, HirCallTypeArgumentOrdinalError> {
+        Self::try_from_usize(value)
+    }
+
     /// Returns the zero-based authored type-argument position.
     pub const fn get(self) -> u16 {
         self.0
@@ -73,7 +83,7 @@ impl HirCallTypeArgumentOrdinal {
 
 #[derive(Clone, Copy, Debug, Eq, Error, Hash, Ord, PartialEq, PartialOrd)]
 #[error("Call type-argument ordinal {ordinal} exceeds the exclusive limit {limit}")]
-pub(crate) struct HirCallTypeArgumentOrdinalError {
+pub struct HirCallTypeArgumentOrdinalError {
     ordinal: usize,
     limit: usize,
 }
@@ -120,16 +130,7 @@ impl HirCallExpr {
             return Err(HirCallBuildError::ChildStateShapeMismatch);
         }
 
-        let expected = callee.module();
-        callee
-            .validate_module(expected)
-            .map_err(|_| HirCallBuildError::ChildIdentityMismatch)?;
-        explicit_type_application
-            .validate_module(expected)
-            .map_err(|_| HirCallBuildError::ChildIdentityMismatch)?;
         for (argument, state) in arguments.iter().zip(child_states.argument_values) {
-            validate_expr(expected, argument.value())
-                .map_err(|_| HirCallBuildError::ChildIdentityMismatch)?;
             if matches!(argument.value_state(), HirCallValue::Missing { .. })
                 && !matches!(state, HirCallChildPoison::Poisoned)
             {
@@ -170,11 +171,14 @@ impl HirCallExpr {
 
     pub(crate) fn issues(&self, child_states: HirCallChildStates<'_>) -> Box<[HirCallIssue]> {
         let mut issues = Vec::new();
-        if child_states.callee == HirCallChildPoison::Poisoned {
+        if matches!(
+            (&self.callee, child_states.callee),
+            (HirCallCallee::Value { .. }, HirCallChildPoison::Poisoned)
+        ) {
             issues.push(HirCallIssue::InvalidCalleeExpression);
         }
 
-        if let Some((receiver, member)) = self.callee.associated_parts() {
+        if let Some((receiver, separator, member)) = self.callee.associated_parts() {
             match receiver {
                 HirAssociatedReceiver::Resolved { .. } => {}
                 HirAssociatedReceiver::InvalidPresent { .. } => {
@@ -189,6 +193,9 @@ impl HirCallExpr {
                 HirAssociatedReceiver::NominalError { error, .. } => {
                     issues.push(HirCallIssue::AssociatedReceiverNominalError(*error));
                 }
+            }
+            match separator {
+                HirAssociatedSeparator::Present(_) => {}
             }
             match member {
                 HirRecoveredName::Valid(_) => {}
@@ -248,8 +255,9 @@ impl HirCallExpr {
         let associated_recovery =
             self.callee
                 .associated_parts()
-                .is_some_and(|(receiver, member)| {
+                .is_some_and(|(receiver, separator, member)| {
                     !matches!(receiver, HirAssociatedReceiver::Resolved { .. })
+                        || !matches!(separator, HirAssociatedSeparator::Present(_))
                         || !matches!(member, HirRecoveredName::Valid(_))
                 });
         let type_application_recovery = match &self.explicit_type_application {
@@ -390,91 +398,95 @@ fn append_argument_issues(
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirCallCallee {
     Value {
-        expression: ExprId,
+        value: ExprId,
     },
     UnresolvedDot {
         value_receiver: ExprId,
         nominal_receiver: HirAssociatedReceiver,
+        separator: HirAssociatedSeparator,
         member: HirRecoveredName,
     },
     Associated {
         receiver: HirAssociatedReceiver,
+        separator: HirAssociatedSeparator,
         member: HirRecoveredName,
-        syntax: HirAssociatedCallSyntax,
     },
 }
 
 impl HirCallCallee {
     pub(crate) const fn value(expression: ExprId) -> Self {
-        Self::Value { expression }
+        Self::Value { value: expression }
     }
 
     pub(crate) const fn unresolved_dot(
         value_receiver: ExprId,
         nominal_receiver: HirAssociatedReceiver,
+        separator: HirAssociatedSeparator,
         member: HirRecoveredName,
     ) -> Self {
         Self::UnresolvedDot {
             value_receiver,
             nominal_receiver,
+            separator,
             member,
         }
     }
 
     pub(crate) const fn associated(
         receiver: HirAssociatedReceiver,
+        separator: HirAssociatedSeparator,
         member: HirRecoveredName,
-        syntax: HirAssociatedCallSyntax,
     ) -> Self {
         Self::Associated {
             receiver,
+            separator,
             member,
-            syntax,
         }
     }
 
     pub const fn value_expression(&self) -> Option<ExprId> {
         match self {
-            Self::Value { expression } => Some(*expression),
+            Self::Value { value } => Some(*value),
             Self::UnresolvedDot { value_receiver, .. } => Some(*value_receiver),
             Self::Associated { .. } => None,
         }
     }
 
-    pub const fn associated_parts(&self) -> Option<(&HirAssociatedReceiver, &HirRecoveredName)> {
+    pub const fn associated_parts(
+        &self,
+    ) -> Option<(
+        &HirAssociatedReceiver,
+        &HirAssociatedSeparator,
+        &HirRecoveredName,
+    )> {
         match self {
             Self::UnresolvedDot {
                 nominal_receiver,
+                separator,
                 member,
                 ..
-            } => Some((nominal_receiver, member)),
+            } => Some((nominal_receiver, separator, member)),
             Self::Associated {
-                receiver, member, ..
-            } => Some((receiver, member)),
+                receiver,
+                separator,
+                member,
+            } => Some((receiver, separator, member)),
             Self::Value { .. } => None,
-        }
-    }
-
-    const fn module(&self) -> HirModuleId {
-        match self {
-            Self::Value { expression } => expression.module(),
-            Self::UnresolvedDot { value_receiver, .. } => value_receiver.module(),
-            Self::Associated { receiver, .. } => receiver.module(),
         }
     }
 
     fn validate_module(&self, expected: HirModuleId) -> Result<(), HirExprInvariantError> {
         match self {
-            Self::Value { expression } => validate_expr(expected, *expression),
+            Self::Value { value } => validate_expr(expected, *value),
             Self::UnresolvedDot {
                 value_receiver,
                 nominal_receiver,
                 ..
             } => {
                 validate_expr(expected, *value_receiver)?;
-                validate_module(expected, nominal_receiver.module())
+                nominal_receiver.validate_module(expected)
             }
-            Self::Associated { receiver, .. } => validate_module(expected, receiver.module()),
+            Self::Associated { receiver, .. } => receiver.validate_module(expected),
         }
     }
 }
@@ -494,7 +506,6 @@ pub enum HirAssociatedReceiver {
         supplied: u16,
     },
     NominalError {
-        anchor: TypeId,
         error: HirAssociatedReceiverError,
     },
 }
@@ -508,18 +519,21 @@ impl HirAssociatedReceiver {
         Self::InvalidPresent { poisoned }
     }
 
-    pub const fn type_id(&self) -> TypeId {
+    pub const fn type_id(&self) -> Option<TypeId> {
         match self {
-            Self::Resolved { receiver } => *receiver,
+            Self::Resolved { receiver } => Some(*receiver),
             Self::InvalidPresent { poisoned } | Self::BareGenericArity { poisoned, .. } => {
-                *poisoned
+                Some(*poisoned)
             }
-            Self::NominalError { anchor, .. } => *anchor,
+            Self::NominalError { .. } => None,
         }
     }
 
-    const fn module(&self) -> HirModuleId {
-        self.type_id().module()
+    fn validate_module(&self, expected: HirModuleId) -> Result<(), HirExprInvariantError> {
+        match self.type_id() {
+            Some(ty) => validate_module(expected, ty.module()),
+            None => Ok(()),
+        }
     }
 }
 
@@ -537,6 +551,12 @@ pub enum HirAssociatedReceiverError {
 pub enum HirAssociatedCallSyntax {
     DotFallback,
     ExplicitDoubleColon,
+}
+
+/// Required associated-call separator, including exact recovery intent.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirAssociatedSeparator {
+    Present(HirAssociatedCallSyntax),
 }
 
 /// Required or recovered identifier without a fabricated name.
@@ -738,12 +758,14 @@ pub enum HirCallArgument {
 }
 
 impl HirCallArgument {
+    #[cfg(test)]
     pub(crate) const fn positional(value: ExprId) -> Self {
         Self::Positional {
             value: HirCallValue::Present { value },
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn named(name: HirName, value: ExprId) -> Self {
         Self::Named {
             name: HirRecoveredName::Valid(name),
@@ -752,6 +774,7 @@ impl HirCallArgument {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn spread(value: ExprId) -> Self {
         Self::Spread {
             value: HirCallValue::Present { value },
@@ -759,6 +782,7 @@ impl HirCallArgument {
         }
     }
 
+    #[cfg(test)]
     pub(crate) const fn missing_positional(recovery: ExprId) -> Self {
         Self::Positional {
             value: HirCallValue::Missing { recovery },
@@ -840,14 +864,13 @@ pub(crate) enum HirCallBuildError {
     LimitExceeded { limit: HirLimit, observed: usize },
     #[error("Call child-state slices do not match the structural payload")]
     ChildStateShapeMismatch,
-    #[error("Call child identity belongs to a foreign module")]
-    ChildIdentityMismatch,
 }
 
 /// Canonically ordered Call recovery retained by root poison and diagnostics.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirCallIssue {
     InvalidCalleeExpression,
+    UnresolvedDotMember,
     InvalidAssociatedReceiver,
     AssociatedReceiverNominalError(HirAssociatedReceiverError),
     BareGenericArity {
@@ -904,16 +927,17 @@ pub enum HirCallIssue {
 impl HirCallIssue {
     const fn key(&self) -> HirCallIssueKey {
         match self {
-            Self::InvalidCalleeExpression => HirCallIssueKey::new(0, 0, 0, 0),
+            Self::InvalidCalleeExpression => HirCallIssueKey::new(0, 0, 0, 1),
+            Self::UnresolvedDotMember => HirCallIssueKey::new(0, 0, 0, 2),
             Self::InvalidAssociatedReceiver => HirCallIssueKey::new(1, 0, 0, 0),
             Self::AssociatedReceiverNominalError(error) => {
                 HirCallIssueKey::new(1, 0, 1, *error as u16)
             }
             Self::BareGenericArity { declared, supplied } => {
-                HirCallIssueKey::new(1, 0, 2, declared.saturating_add(*supplied))
+                HirCallIssueKey::new(1, 0, 3, declared.saturating_add(*supplied))
             }
-            Self::MissingAssociatedMember => HirCallIssueKey::new(1, 0, 3, 0),
-            Self::InvalidAssociatedMember => HirCallIssueKey::new(1, 0, 3, 1),
+            Self::MissingAssociatedMember => HirCallIssueKey::new(1, 0, 5, 0),
+            Self::InvalidAssociatedMember => HirCallIssueKey::new(1, 0, 5, 1),
             Self::MissingTypeApplicationClose => HirCallIssueKey::new(2, 0, 0, 0),
             Self::InvalidTypeApplicationClose => HirCallIssueKey::new(2, 0, 0, 1),
             Self::MissingTypeArgument { argument } => HirCallIssueKey::new(2, argument.get(), 1, 0),

@@ -20,10 +20,11 @@ use arcweft_presentation::text_input::{
     TextGeometryTransform, TextInputClientSnapshot, TextInputGeometrySnapshot,
 };
 use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextRunSource, ResolvedTextStyle, RichTextRange, TextFontFamily,
+    ResolvedTextDocument, ResolvedTextRunSource, ResolvedTextStyle, TextFontFamily,
     TextResolveError, TextSlant, TextWeight,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize, TextLayoutError};
+use arcweft_text_model::{LineDisplayStage, RichTextRange};
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -1389,7 +1390,7 @@ impl SharedFramePlanContext {
     pub fn push_prepared_rich_text_stage(
         &mut self,
         frame: &mut PreparedFrame,
-        stage: arcweft_render_text::LineDisplayStage<'_>,
+        stage: LineDisplayStage<'_>,
         request: &PreparedRichTextStageRequest,
         fx_resolver: &dyn arcweft_presentation::fx::FxApplicationResolver,
     ) -> Result<PreparedRichTextStageResult, FramePlanError> {

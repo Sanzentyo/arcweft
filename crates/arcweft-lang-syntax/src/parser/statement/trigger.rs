@@ -2,7 +2,7 @@
 
 use arcweft_source::SourceRange;
 
-use super::super::cursor::ShadowDocumentParser;
+use super::super::cursor::DocumentParser;
 use super::super::expression::emit_expression;
 use super::super::pattern::emit_pattern;
 use super::super::shadow_recovery::{
@@ -25,7 +25,7 @@ enum TriggerCallKind {
 }
 
 pub(super) fn emit_trigger_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) {
@@ -36,32 +36,32 @@ pub(super) fn emit_trigger_pattern(
 
     match kind {
         TriggerCallKind::Input => {
-            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::InputTriggerPattern)
+            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::InputTriggerPattern);
         }
         TriggerCallKind::Event => {
-            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::EventTriggerPattern)
+            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::EventTriggerPattern);
         }
         TriggerCallKind::Signal => emit_signal_call(parser, end, close, role),
         TriggerCallKind::Timeout => {
-            emit_unary_expression_call(parser, end, close, role, SyntaxKind::TimeoutTriggerPattern)
+            emit_unary_expression_call(parser, end, close, role, SyntaxKind::TimeoutTriggerPattern);
         }
         TriggerCallKind::Mark => {
-            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::MarkTriggerPattern)
+            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::MarkTriggerPattern);
         }
         TriggerCallKind::Select => {
-            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::SelectTriggerPattern)
+            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::SelectTriggerPattern);
         }
         TriggerCallKind::Task => {
-            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::TaskTriggerPattern)
+            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::TaskTriggerPattern);
         }
         TriggerCallKind::Scope => {
-            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::ScopeTriggerPattern)
+            emit_unary_pattern_call(parser, end, close, role, SyntaxKind::ScopeTriggerPattern);
         }
     }
 }
 
 fn trigger_call_shape(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
 ) -> Option<(TriggerCallKind, Option<usize>)> {
     let kind = match parser.current_text()? {
@@ -88,7 +88,7 @@ fn trigger_call_shape(
 }
 
 fn emit_unary_pattern_call(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     close: Option<usize>,
     role: SyntaxRole,
@@ -98,7 +98,7 @@ fn emit_unary_pattern_call(
     emit_trigger_call_open(parser);
     let close = close.unwrap_or(end);
     parser.bump_trivia();
-    let argument_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
+    let argument_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", ")"]);
     if parser.cursor() < argument_end {
         emit_pattern(parser, argument_end, SyntaxRole::Pattern);
     } else {
@@ -111,7 +111,7 @@ fn emit_unary_pattern_call(
 }
 
 fn emit_unary_expression_call(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     close: Option<usize>,
     role: SyntaxRole,
@@ -121,7 +121,7 @@ fn emit_unary_expression_call(
     emit_trigger_call_open(parser);
     let close = close.unwrap_or(end);
     parser.bump_trivia();
-    let argument_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
+    let argument_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", ")"]);
     if parser.cursor() < argument_end {
         emit_expression(parser, argument_end, SyntaxRole::Operand);
     } else {
@@ -138,7 +138,7 @@ fn emit_unary_expression_call(
 }
 
 fn emit_signal_call(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     close: Option<usize>,
     role: SyntaxRole,
@@ -147,7 +147,7 @@ fn emit_signal_call(
     emit_trigger_call_open(parser);
     let close = close.unwrap_or(end);
     parser.bump_trivia();
-    let target_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
+    let target_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", ")"]);
     if parser.cursor() < target_end {
         emit_expression(parser, target_end, SyntaxRole::Target);
     } else {
@@ -162,7 +162,7 @@ fn emit_signal_call(
     if parser.cursor() < close && parser.at(",") {
         parser.bump();
         parser.bump_trivia();
-        let pattern_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
+        let pattern_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", ")"]);
         if parser.cursor() < pattern_end {
             emit_pattern(parser, pattern_end, SyntaxRole::Pattern);
         } else {
@@ -175,13 +175,13 @@ fn emit_signal_call(
     parser.finish();
 }
 
-fn emit_trigger_call_open(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_trigger_call_open(parser: &mut DocumentParser<'_, '_>) {
     parser.bump();
     parser.bump_trivia();
     emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
 }
 
-fn emit_extra_arguments_recovery(parser: &mut ShadowDocumentParser<'_, '_>, close: usize) {
+fn emit_extra_arguments_recovery(parser: &mut DocumentParser<'_, '_>, close: usize) {
     parser.bump_trivia();
     if parser.cursor() < close {
         let start = parser.current_offset();
@@ -197,7 +197,7 @@ fn emit_extra_arguments_recovery(parser: &mut ShadowDocumentParser<'_, '_>, clos
     }
 }
 
-fn finish_trigger_call(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, close: usize) {
+fn finish_trigger_call(parser: &mut DocumentParser<'_, '_>, end: usize, close: usize) {
     bump_until(parser, close);
     emit_close_delimiter(
         parser,
@@ -221,7 +221,7 @@ fn finish_trigger_call(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, cl
 }
 
 fn emit_missing_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
     message: &'static str,
 ) {
@@ -235,7 +235,7 @@ fn emit_missing_expression(
     )));
 }
 
-fn emit_missing_pattern(parser: &mut ShadowDocumentParser<'_, '_>, message: &'static str) {
+fn emit_missing_pattern(parser: &mut DocumentParser<'_, '_>, message: &'static str) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingPattern, SyntaxRole::Pattern);
     parser.finish();

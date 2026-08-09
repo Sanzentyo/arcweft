@@ -13,7 +13,7 @@ use crate::expressions::{
     SyntaxRequiredTokenState,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
-use crate::parser::cursor::ShadowDocumentParser;
+use crate::parser::cursor::DocumentParser;
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
@@ -22,7 +22,7 @@ use crate::parser::shadow_recovery::{
 use crate::parser::statement::emit_braced_block;
 
 pub(super) fn emit_block_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     _end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -38,7 +38,7 @@ pub(super) fn emit_block_expression(
 }
 
 pub(super) fn emit_unbraced_block_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -60,7 +60,7 @@ pub(super) fn emit_unbraced_block_expression(
 }
 
 pub(super) fn emit_if_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -77,11 +77,11 @@ pub(super) fn emit_if_expression(
         role,
     );
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     if let_keyword {
         if parser.at("let") {
             parser.bump();
-            parser.bump_trivia();
+            parser.bump_trivia_before(end);
         }
         let head = emit_if_let_head(parser, end);
         let branches = emit_if_branches(parser, end);
@@ -151,7 +151,7 @@ pub(super) fn emit_if_expression(
 }
 
 fn emit_if_condition(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
 ) -> (SyntaxExpressionSlot, SourceRange) {
     let branch = find_expression_boundary(parser, parser.cursor(), end, &["{", "else"]);
@@ -168,7 +168,7 @@ struct IfLetHead {
     guard: Option<(SyntaxExpressionSlot, SourceRange)>,
 }
 
-fn emit_if_let_head(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> IfLetHead {
+fn emit_if_let_head(parser: &mut DocumentParser<'_, '_>, end: usize) -> IfLetHead {
     let branch = find_expression_boundary(parser, parser.cursor(), end, &["{", "else"]);
     let assignment = find_expression_boundary(parser, parser.cursor(), branch, &["="]);
     let pattern_start = parser.event_position();
@@ -179,7 +179,7 @@ fn emit_if_let_head(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> If
     bump_until(parser, assignment);
     if parser.at("=") {
         parser.bump();
-        parser.bump_trivia();
+        parser.bump_trivia_before(branch);
     }
     let guard = find_expression_boundary(parser, parser.cursor(), branch, &["when"]);
     let (scrutinee, scrutinee_range) = expression_slot(parser, guard);
@@ -187,7 +187,7 @@ fn emit_if_let_head(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> If
     bump_until(parser, guard);
     let guard = if parser.at("when") {
         parser.bump();
-        parser.bump_trivia();
+        parser.bump_trivia_before(branch);
         let guard = expression_slot(parser, branch);
         emit_expression(parser, branch, SyntaxRole::Guard);
         bump_until(parser, branch);
@@ -210,8 +210,8 @@ struct IfBranches {
     else_range: SourceRange,
 }
 
-fn emit_if_branches(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> IfBranches {
-    parser.bump_trivia();
+fn emit_if_branches(parser: &mut DocumentParser<'_, '_>, end: usize) -> IfBranches {
+    parser.bump_trivia_before(end);
     let then_branch = if parser.at("{") {
         emit_block(parser, SyntaxRole::ThenBranch)
     } else {
@@ -221,7 +221,7 @@ fn emit_if_branches(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> If
     let then_range = parser
         .completed_range(then_branch.start_event)
         .expect("if then branch retains one exact source range");
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     if !parser.at("else") {
         let insertion = SourceRange::new(then_range.end(), then_range.end());
         return IfBranches {
@@ -232,7 +232,7 @@ fn emit_if_branches(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> If
         };
     }
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     let else_branch = if parser.at("if") {
         emit_if_expression(parser, end, SyntaxRole::ElseBranch)
     } else if parser.at("{") {
@@ -253,14 +253,14 @@ fn emit_if_branches(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> If
 }
 
 pub(super) fn emit_match_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
     let start_event = parser.event_position();
     let owner = parser.start_projected_owner(SyntaxKind::MatchExpression, role);
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     let open = find_expression_boundary(parser, parser.cursor(), end, &["{"]);
     let (scrutinee, scrutinee_range) = expression_slot(parser, open);
     emit_expression(parser, open, SyntaxRole::Scrutinee);
@@ -297,7 +297,7 @@ pub(super) fn emit_match_expression(
         scrutinee_range,
     )];
     loop {
-        parser.bump_trivia();
+        parser.bump_trivia_before(close);
         if parser.cursor() >= close || parser.at("}") {
             break;
         }
@@ -306,7 +306,7 @@ pub(super) fn emit_match_expression(
         let arm = emit_match_arm(parser, close, ordinal);
         arms.push(arm.projection);
         components.extend(arm.components);
-        parser.bump_trivia();
+        parser.bump_trivia_before(close);
         if parser.at(",") {
             parser.bump();
         }
@@ -345,7 +345,7 @@ struct EmittedMatchArm {
 }
 
 fn emit_match_arm(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     ordinal: u32,
 ) -> EmittedMatchArm {
@@ -361,7 +361,7 @@ fn emit_match_arm(
     bump_until(parser, guard);
     let guard = if parser.at("when") {
         parser.bump();
-        parser.bump_trivia();
+        parser.bump_trivia_before(arrow);
         let guard = emit_expression_node(parser, arrow, SyntaxRole::Guard);
         let slot = completed_slot(parser, guard);
         let range = parser
@@ -378,16 +378,16 @@ fn emit_match_arm(
             .expect("an authored Match arrow retains its token")
             .range();
         parser.bump();
-        parser.bump_trivia();
         (SyntaxRequiredTokenState::Present, range)
     } else {
         let at = parser.current_offset();
         (SyntaxRequiredTokenState::Missing, SourceRange::new(at, at))
     };
+    let value_end = match_arm_value_end(parser, close);
+    parser.bump_trivia_before(value_end);
     let value = if parser.at("{") {
         emit_block(parser, SyntaxRole::Body)
     } else {
-        let value_end = match_arm_value_end(parser, close);
         let value = emit_expression_node(parser, value_end, SyntaxRole::Body);
         bump_until(parser, value_end);
         value
@@ -449,7 +449,7 @@ fn emit_match_arm(
     }
 }
 
-fn match_arm_value_end(parser: &ShadowDocumentParser<'_, '_>, close: usize) -> usize {
+fn match_arm_value_end(parser: &DocumentParser<'_, '_>, close: usize) -> usize {
     let mut depth = 0_usize;
     for index in parser.cursor()..close {
         let Some(token) = parser.token_at(index) else {
@@ -469,7 +469,7 @@ fn match_arm_value_end(parser: &ShadowDocumentParser<'_, '_>, close: usize) -> u
 }
 
 fn find_expression_boundary(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
     boundaries: &[&str],
@@ -492,7 +492,7 @@ fn find_expression_boundary(
     end
 }
 
-fn emit_block(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
+fn emit_block(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
     let start_event = parser.event_position();
     let owner = parser.start_projected_owner(SyntaxKind::BlockExpression, role);
     emit_block_contents(parser, SyntaxRole::Body);
@@ -504,7 +504,7 @@ fn emit_block(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) -> Co
     CompletedNode { start_event }
 }
 
-pub(super) fn emit_block_contents(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) {
+pub(super) fn emit_block_contents(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) {
     emit_braced_block(
         parser,
         SyntaxKind::FunctionItem,

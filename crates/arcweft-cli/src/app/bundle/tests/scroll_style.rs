@@ -21,15 +21,7 @@ fn assert_scroll_regions_match_unstyled_baseline(
         )
         .expect("fixture source document"),
     );
-    let parsed = arcweft_lang_syntax::parser::parse_document_with_source(
-        document,
-        arcweft_lang_syntax::parser::ParseOptions::default(),
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("baseline HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("baseline sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("baseline sidecars lower");
     let baseline_program = sidecars.program.expect("baseline program sidecar");
     assert_eq!(
         styled_program.scroll_regions,
@@ -77,12 +69,8 @@ flow test {
   view(@view:.StyledScroll)
 }
 "#;
-    let parsed = parse_bundle_fixture("scroll-style/typed-style-defaults", source);
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let document = bundle_fixture_document("scroll-style/typed-style-defaults", source);
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
 
     let program = sidecars.program.as_ref().expect("program sidecar");
     assert_eq!(
@@ -186,15 +174,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = arcweft_lang_syntax::parser::parse_document_with_source(
-        document,
-        arcweft_lang_syntax::parser::ParseOptions::default(),
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
 
     let program = sidecars.program.as_ref().expect("program sidecar");
     assert_eq!(

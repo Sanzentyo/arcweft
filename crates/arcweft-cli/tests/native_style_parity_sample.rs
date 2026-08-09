@@ -2,12 +2,13 @@ use std::fs;
 use std::path::Path;
 use std::sync::Arc;
 
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
 use arcweft_lang_syntax::{
-    ast::{items::Item, style::StyleBodyItem},
-    expr::Expr,
+    attachment::{AttachedStyleBody, AttachedStyleExpression, AttachedStyleMember, TypedItemNode},
+    expressions::{ExpressionProjection, SyntaxCallProjection},
+    incremental::SyntaxDatabase,
+    parser::ParseOptions,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId};
 
 #[test]
 fn native_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
@@ -25,55 +26,82 @@ fn native_style_parity_sample_authors_observable_and_view_styles_in_dsl() {
         )
         .expect("sample source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-
-    assert!(
-        parsed.errors().is_empty(),
-        "native-style-parity should parse cleanly: {:?}",
-        parsed.errors()
-    );
+    let mut syntax = SyntaxDatabase::try_new().expect("sample syntax database");
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            document,
+            ParseOptions::default(),
+        )
+        .expect("native-style-parity source attaches");
     let style = parsed
-        .typed_tree()
         .items()
-        .iter()
+        .expect("sample source-item inventory")
+        .into_iter()
         .find_map(|item| match item {
-            Item::Style(style) if style.id().body() == "style.native_style_parity" => Some(style),
+            TypedItemNode::Style(style) => {
+                let style = style.semantics().expect("attached Style semantics");
+                let is_sample_style = style
+                    .id()
+                    .reference()
+                    .and_then(|reference| reference.value().ok())
+                    .is_some_and(|reference| {
+                        reference.segments().len() == 1
+                            && reference.segments()[0].as_str() == "native_style_parity"
+                    });
+                is_sample_style.then_some(style)
+            }
             _ => None,
         })
         .expect("native-style-parity style item");
 
-    let sheet = style.sheet();
-    assert!(sheet.tokens().iter().any(|token| {
-        token.public_id() == "color.accent"
+    assert!(!style.has_recovery(), "sample Style remains fully attached");
+    assert!(style.body().members().iter().any(|member| {
+        let AttachedStyleMember::Token(token) = member else {
+            return false;
+        };
+        token
+            .name()
+            .value()
+            .is_ok_and(|name| name.as_str() == "color.accent")
             && matches!(
-                token.value().expr(),
-                Expr::Call(call)
-                    if call.callee().dotted_selector_label().as_deref() == Some("rgba")
+                token.value(),
+                AttachedStyleExpression::Authored(value)
+                    if matches!(
+                        value.projection(),
+                        ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(_))
+                    ) && value.children().first().is_some_and(|callee| {
+                        callee
+                            .authored_semantic()
+                            .ok()
+                            .flatten()
+                            .and_then(|callee| callee.path().cloned())
+                            .is_some_and(|path| {
+                                path.segments().len() == 1
+                                    && path.segments()[0].source_text() == "rgba"
+                            })
+                    })
             )
     }));
-    assert!(style_body_has_predicate(sheet.body(), "hover"));
-    assert!(style_body_has_predicate(sheet.body(), "active"));
-    assert!(style_body_has_predicate(sheet.body(), "focus-visible"));
-    assert!(style_body_has_predicate(sheet.body(), "composing"));
+    assert!(style_body_has_predicate(style.body(), "hover"));
+    assert!(style_body_has_predicate(style.body(), "active"));
+    assert!(style_body_has_predicate(style.body(), "focus-visible"));
+    assert!(style_body_has_predicate(style.body(), "composing"));
 }
 
-fn style_body_has_predicate(body: &[StyleBodyItem], expected: &str) -> bool {
-    body.iter().any(|item| match item {
-        StyleBodyItem::Rule(rule) => style_rule_has_predicate(rule, expected),
-        StyleBodyItem::Environment(environment) => {
+fn style_body_has_predicate(body: &AttachedStyleBody, expected: &str) -> bool {
+    body.members().iter().any(|member| match member {
+        AttachedStyleMember::Rule(rule) => rule.selector().sequences().iter().any(|sequence| {
+            sequence.predicates().iter().any(|predicate| {
+                predicate
+                    .name()
+                    .value()
+                    .is_ok_and(|name| name.as_str() == expected)
+            })
+        }),
+        AttachedStyleMember::Environment(environment) => {
             style_body_has_predicate(environment.body(), expected)
         }
-    })
-}
-
-fn style_rule_has_predicate(
-    rule: &arcweft_lang_syntax::ast::style::StyleRuleDecl,
-    expected: &str,
-) -> bool {
-    rule.selector().sequences().iter().any(|sequence| {
-        sequence
-            .predicates()
-            .iter()
-            .any(|predicate| predicate.name() == expected)
+        AttachedStyleMember::Token(_) | AttachedStyleMember::Error { .. } => false,
     })
 }

@@ -23,50 +23,52 @@ mod retained;
 mod source;
 mod trait_impl;
 
-pub(crate) use self::host::{
+pub use self::host::{
     HirCapabilityAssociatedType, HirCapabilityFunction, HirCapabilityMember, HirErrorItem,
     HirExternCapabilityItem, HirItemIssue,
 };
-pub(crate) use self::member_index::{HirDeclarationMemberIndex, HirDeclarationMemberIndexBuilder};
-pub(crate) use self::retained::{
+pub(crate) use self::member_index::HirDeclarationMemberIndexBuilder;
+pub use self::member_index::{HirDeclarationMemberIndex, HirDeclarationMemberIndexResolveError};
+pub use self::retained::{
     HirAccessibilityPolicy, HirActionDeclaration, HirActivityDeclaration, HirActivityLifecycle,
     HirActivityMode, HirActivityPortMember, HirCapturePolicy, HirCharacterAssignmentState,
     HirCharacterDeclaration, HirCharacterDisplayNameMember, HirCharacterMemberRecovery,
     HirCharacterSurfaceAlias, HirDeclarationMember, HirDeclarationMemberArena,
     HirDeclarationMemberId, HirDeclarationMemberIssue, HirDeclarationMemberKind,
-    HirDeclarationMemberPoisonState, HirHitTestPolicy, HirInputPolicy, HirLayerAssignmentState,
-    HirLayerDeclaration, HirLayerExpressionMember, HirLayerKind, HirLayerKindIssue,
-    HirLayerMemberPayload, HirLayerMemberValue, HirLayerPolicyMember, HirLayerReferenceMember,
-    HirMetricAssignmentState, HirMetricBucketsMember, HirMetricBucketsValue, HirMetricDeclaration,
-    HirMetricKind, HirMetricKindIssue, HirMetricLabelMember, HirMetricUnitMember,
-    HirMetricUnitValue, HirPublicIdOrigin, HirRenderPhase, HirRetainedHeader, HirRetainedName,
-    HirRetainedPublicId, HirRetainedPublicIdIssue, HirSignalDeclaration, HirViewDeclaration,
-    HirViewExportMember,
+    HirDeclarationMemberPoisonState, HirDeclarationMemberResolveError, HirHitTestPolicy,
+    HirInputPolicy, HirLayerAssignmentState, HirLayerDeclaration, HirLayerExpressionMember,
+    HirLayerKind, HirLayerKindIssue, HirLayerMemberPayload, HirLayerMemberValue,
+    HirLayerPolicyMember, HirLayerReferenceMember, HirMetricAssignmentState,
+    HirMetricBucketsMember, HirMetricBucketsValue, HirMetricDeclaration, HirMetricKind,
+    HirMetricKindIssue, HirMetricLabelMember, HirMetricUnitMember, HirMetricUnitValue,
+    HirPublicIdOrigin, HirRenderPhase, HirRetainedHeader, HirRetainedName, HirRetainedPublicId,
+    HirRetainedPublicIdIssue, HirSignalDeclaration, HirViewDeclaration, HirViewExportMember,
 };
-pub(crate) use self::trait_impl::{
+pub use self::trait_impl::{
     HirImplAssociatedType, HirImplFunction, HirImplItem, HirImplMember, HirMethodParameter,
     HirMethodParameterGroup, HirMethodReceiver, HirMethodReceiverKind, HirTraitAssociatedType,
     HirTraitFunction, HirTraitItem, HirTraitMember,
 };
 
-pub(crate) use self::callable::{
+pub use self::callable::{
     HirCallableSignature, HirContractScopes, HirFunctionBody, HirFunctionItem,
     HirFunctionParameterGroup, HirFunctionSignature, HirGenericParameter, HirParameter,
     HirParameterKind, HirPredicate, HirPredicateBody, HirProof, HirProofBody, HirWherePredicate,
+    ProofTrust, TrustReason, TrustReasonError,
 };
-pub(crate) use self::entry::{
+pub use self::entry::{
     HirEntryBody, HirEntryDeclaration, HirEntryGoto, HirEntryId, HirEntryKind, HirEntryKindIssue,
     HirEntryMember, HirEntryOption, HirEntryOptionValue, HirEntryPathBinding, HirEntryPathValue,
     HirEntryPunctuationState, HirEntryRoute, HirEntryRouteBinding, HirEntryRouteBindings,
     HirEntryTarget, HirEntryTypeBinding, HirHttpMethod, HirHttpMethodIssue, HirHttpMethodValue,
     HirRoutePath, HirRoutePathIssue, HirRoutePathValue,
 };
-pub(crate) use self::flow::{
+pub use self::flow::{
     HirContractCondition, HirContractMode, HirContractOperandList, HirFlowContractClause,
     HirFlowIdentity, HirFlowIssue, HirFlowIssueClass, HirFlowIssueOwner, HirFlowItem,
     HirFlowPoison, HirFlowResultLocal, HirFlowReturn,
 };
-pub(crate) use self::host::{
+pub use self::host::{
     HirBenchItem, HirStyleAssignOperation, HirStyleAssignOperationIssue, HirStyleBodyIssue,
     HirStyleBodyItem, HirStyleCombinator, HirStyleDeclaration, HirStyleEnvironment,
     HirStyleEnvironmentClause, HirStyleEnvironmentComparison, HirStyleEnvironmentComparisonIssue,
@@ -75,11 +77,11 @@ pub(crate) use self::host::{
     HirStyleSelectorSequence, HirStyleToken, HirStyleTokenIssue, HirTestItem, HirTestKind,
     HirTestKindIssue,
 };
-pub(crate) use self::nominal::{
+pub use self::nominal::{
     HirEnumItem, HirEnumVariant, HirResourceDeclaration, HirResourceField, HirStructField,
     HirStructItem, HirTypeAliasItem,
 };
-pub(crate) use self::source::{
+pub use self::source::{
     HirSourceBackpressurePolicy, HirSourceBackpressureValue, HirSourceBody,
     HirSourceBoundedArgument, HirSourceChildState, HirSourceEventIssue, HirSourceEventPattern,
     HirSourceExpressionValue, HirSourceHandler, HirSourceHandlerBody, HirSourceHeaders,
@@ -190,7 +192,7 @@ impl HirItem {
         kind.validate_module(owner.module())?;
         validate_member_ids(owner, kind.family(), &members)?;
         kind.validate_member_row(owner, &members)?;
-        if !item_state_matches_kind(&kind, &state) {
+        if !item_state_matches_kind(&kind, state) {
             return Err(HirItemInvariantError::InvalidPoisonState);
         }
         Ok(Self {
@@ -227,12 +229,12 @@ impl HirItem {
         &self.state
     }
 
-    pub(crate) const fn is_poisoned(&self) -> bool {
+    pub const fn is_poisoned(&self) -> bool {
         self.state.is_poisoned()
     }
 }
 
-fn item_state_matches_kind(kind: &HirItemKind, state: &HirItemPoisonState) -> bool {
+fn item_state_matches_kind(kind: &HirItemKind, state: HirItemPoisonState) -> bool {
     if matches!(kind, HirItemKind::Error(_)) {
         return matches!(
             state,
@@ -462,6 +464,75 @@ impl HirItemKind {
             Self::Source(_) => HirItemFamily::Source,
             Self::Style(_) => HirItemFamily::Style,
             Self::Error(_) => HirItemFamily::Error,
+        }
+    }
+
+    /// Returns every authored effect-identity expression owned by this item in
+    /// source order.
+    ///
+    /// Conditions and state/resource contract operands are deliberately not
+    /// effect identities. Flow `effects` operands and `no_effect` operands do
+    /// share the same typed effect projection as ordinary Function and extern
+    /// capability effect clauses.
+    pub fn effect_expression_roots(&self) -> Vec<ExprId> {
+        match self {
+            Self::Function(function) => function
+                .effect_clauses()
+                .iter()
+                .flat_map(HirContractOperandList::operands)
+                .copied()
+                .collect(),
+            Self::Flow(flow) => flow
+                .contracts()
+                .iter()
+                .flat_map(|contract| match contract {
+                    HirFlowContractClause::Effects(operands) => operands.operands(),
+                    HirFlowContractClause::NoEffect { expression } => {
+                        std::slice::from_ref(expression)
+                    }
+                    HirFlowContractClause::Requires(_)
+                    | HirFlowContractClause::Ensures(_)
+                    | HirFlowContractClause::Invariant(_)
+                    | HirFlowContractClause::Assume { .. }
+                    | HirFlowContractClause::Reads(_)
+                    | HirFlowContractClause::Modifies(_)
+                    | HirFlowContractClause::Decreases { .. } => &[],
+                })
+                .copied()
+                .collect(),
+            Self::ExternCapability(capability) => capability
+                .members()
+                .iter()
+                .filter_map(|member| match member {
+                    HirCapabilityMember::Function(function) => Some(function.effects()),
+                    HirCapabilityMember::AssociatedType(_) | HirCapabilityMember::Error => None,
+                })
+                .flatten()
+                .copied()
+                .collect(),
+            Self::Module(_)
+            | Self::Use(_)
+            | Self::Predicate(_)
+            | Self::Proof(_)
+            | Self::Trait(_)
+            | Self::Impl(_)
+            | Self::Enum(_)
+            | Self::Struct(_)
+            | Self::TypeAlias(_)
+            | Self::Resource(_)
+            | Self::Character(_)
+            | Self::View(_)
+            | Self::Action(_)
+            | Self::Activity(_)
+            | Self::Signal(_)
+            | Self::Metric(_)
+            | Self::Layer(_)
+            | Self::Entry(_)
+            | Self::Test(_)
+            | Self::Bench(_)
+            | Self::Source(_)
+            | Self::Style(_)
+            | Self::Error(_) => Vec::new(),
         }
     }
 
@@ -849,6 +920,10 @@ fn validate_signature(
     validate_type(expected, return_type)
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the validator mirrors the closed ordinary-function signature schema without an intermediate carrier"
+)]
 fn validate_function_signature(
     expected: HirModuleId,
     generic_parameters: &[HirGenericParameter],
@@ -856,6 +931,7 @@ fn validate_function_signature(
     where_predicates: &[HirWherePredicate],
     requires: &[ExprId],
     ensures: &[ExprId],
+    effects: &[HirContractOperandList],
     return_type: Option<TypeId>,
 ) -> Result<(), HirItemInvariantError> {
     validate_generic_parameters(expected, generic_parameters)?;
@@ -863,6 +939,9 @@ fn validate_function_signature(
     validate_where_predicates(expected, where_predicates)?;
     validate_exprs(expected, requires)?;
     validate_exprs(expected, ensures)?;
+    for effect_clause in effects {
+        validate_exprs(expected, effect_clause.operands())?;
+    }
     validate_optional_type(expected, return_type)
 }
 

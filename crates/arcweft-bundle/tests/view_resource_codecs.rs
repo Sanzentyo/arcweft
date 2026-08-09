@@ -20,12 +20,12 @@ use arcweft_bundle::resource_codec::view::{
     ViewThemeResource, ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
     migrated_view_section_compatibility,
 };
-use arcweft_render_text::{RichTextDocument, RichTextNode};
+use arcweft_text_model::{RichTextDocument, RichTextNode};
 
 use arcweft_bundle::resource_codec::{
-    FieldId, ProductResourceEnvelope, ProductSectionCodecKind, ProductSourceRef, PublicIdTable,
-    ResourceField, ResourceWireType, SectionCodecBudget, SourceMapSection, SourceRangeRef,
-    ValidatedViewProduct, ViewProductValidationError, ViewProductValidationLimits,
+    FieldId, ProductResourceEnvelope, ProductSectionCodecKind, PublicIdTable, ResourceField,
+    ResourceWireType, SectionCodecBudget, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
+    ViewProductValidationError, ViewProductValidationLimits,
 };
 use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironmentOverrides, SystemColor,
@@ -33,7 +33,7 @@ use arcweft_presentation::appearance::{
 use arcweft_presentation::fx::{
     FiniteF32, FxId, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
     ViewColorValue, ViewElementState, ViewPropertyKind, ViewSpecifiedValue, ViewStylePredicate,
     ViewStyleSelector, ViewStyleSelectorSequence, ViewStyleValueKind,
@@ -1535,7 +1535,7 @@ fn source_map(label: &str, text: &str) -> SourceMapSection {
 fn source_refs(source_map: &SourceMapSection) -> Vec<ProductSourceRef> {
     source_map
         .documents()
-        .map(ProductSourceRef::from_document)
+        .map(arcweft_bundle::resource_codec::SourceMapDocument::product_source_ref)
         .collect()
 }
 

@@ -17,6 +17,7 @@ mod release;
 mod release_sign;
 mod remote_embedding;
 pub(in crate::app) mod runtime;
+mod runtime_artifact;
 pub(crate) mod shared;
 mod tooling;
 pub(in crate::app) mod verify;

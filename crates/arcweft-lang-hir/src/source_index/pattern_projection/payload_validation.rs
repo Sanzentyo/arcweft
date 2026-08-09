@@ -32,8 +32,7 @@ use crate::slot::{HirOrigin, SlotSnapshot};
 
 struct PatternRoot {
     owner: PatternId,
-    start: usize,
-    end: usize,
+    attached: AttachedPatternNode,
 }
 
 pub(super) struct PatternPayloadValidation<'a> {
@@ -49,27 +48,28 @@ impl<'a> PatternPayloadValidation<'a> {
         slots: &'a SlotSnapshot,
         patterns: &'a ArenaSnapshot<HirPattern, PatternId>,
     ) -> Option<Self> {
-        let mut roots = patterns
-            .try_iter_prepared(slots)
-            .ok()?
-            .filter_map(|(owner, _)| {
-                let metadata = slots.resolve_prepared(owner).ok()?;
-                let HirOrigin::Source(source) = metadata.origin() else {
-                    return None;
-                };
-                let attached = parsed.attached_pattern(source.syntax()).ok()?;
-                if !attached.path().steps().is_empty() {
-                    return None;
-                }
-                let range = attached.whole_source_span().range();
-                Some(PatternRoot {
-                    owner,
-                    start: range.start(),
-                    end: range.end(),
-                })
-            })
-            .collect::<Vec<_>>();
-        roots.sort_by_key(|root| (root.start, root.end));
+        let mut roots = Vec::new();
+        for (owner, _) in patterns.try_iter_prepared(slots).ok()? {
+            let metadata = slots.resolve_prepared(owner).ok()?;
+            let HirOrigin::Source(source) = metadata.origin() else {
+                continue;
+            };
+            let attached = parsed.attached_pattern(source.syntax()).ok()?;
+            let root = attached.root().ok()?;
+            if root != attached {
+                continue;
+            }
+            if roots
+                .iter()
+                .any(|candidate: &PatternRoot| candidate.attached == root)
+            {
+                return None;
+            }
+            roots.push(PatternRoot {
+                owner,
+                attached: root,
+            });
+        }
         Some(Self {
             parsed,
             slots,
@@ -89,15 +89,13 @@ impl<'a> PatternPayloadValidation<'a> {
     }
 
     fn root_owner(&self, attached: &AttachedPatternNode) -> Option<PatternId> {
-        let span = attached.whole_source_span();
-        if span.source() != self.parsed.document().identity() {
+        if attached.snapshot_id() != self.parsed.snapshot_id() {
             return None;
         }
-        let range = span.range();
+        let attached_root = attached.root().ok()?;
         self.roots
             .iter()
-            .filter(|root| root.start <= range.start() && root.end >= range.end())
-            .min_by_key(|root| root.end - root.start)
+            .find(|root| root.attached == attached_root)
             .map(|root| root.owner)
     }
 

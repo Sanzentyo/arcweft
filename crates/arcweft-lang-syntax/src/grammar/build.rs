@@ -1,10 +1,5 @@
 //! Validation and lossless Rowan construction for staged grammar events.
 
-#![allow(
-    dead_code,
-    reason = "the shadow grammar remains crate-private until the atomic syntax switch"
-)]
-
 use arcweft_source::SourceDocument;
 use rowan::{GreenNode, GreenNodeBuilder};
 use std::sync::Arc;
@@ -12,8 +7,8 @@ use thiserror::Error;
 
 use super::budget::SyntaxParseStats;
 use super::event::{
-    ExpectedToken, PendingPatternProjection, PendingSyntaxDiagnostic, PendingTypeProjection,
-    SyntaxEvent,
+    ExpectedToken, PendingPatternProjection, PendingStartProjection, PendingSyntaxDiagnostic,
+    PendingTypeProjection, SyntaxEvent,
 };
 use super::kinds::{IdentityClass, SyntaxKind, SyntaxRole};
 use super::source_projection::{
@@ -34,7 +29,7 @@ use crate::grammar::keyword_statement_projection::PendingKeywordStatementProject
 use crate::grammar::source_declaration_projection::PendingSourceDeclarationProjection;
 use crate::grammar::style_projection::PendingStyleDeclarationProjection;
 use crate::grammar::test_projection::PendingTestKindProjection;
-use crate::grammar::view_projection::PendingViewExportProjection;
+use crate::grammar::view_projection::{PendingViewExportProjection, PendingViewFragmentProjection};
 use crate::incremental::SyntaxLimit;
 
 /// Element-index path from the green root to one identity-bearing node.
@@ -57,26 +52,7 @@ pub(crate) struct UnattachedGrammarEntry {
     kind: SyntaxKind,
     role: SyntaxRole,
     path: GrammarEventPath,
-    expression_projection: Option<PendingExpressionProjection>,
-    assertion_projection: Option<PendingAssertionProjection>,
-    keyword_statement_projection: Option<PendingKeywordStatementProjection>,
-    type_projection: Option<PendingTypeProjection>,
-    pattern_projection: Option<PendingPatternProjection>,
-    path_projection: Option<PendingPathProjection>,
-    use_projection: Option<PendingUseProjection>,
-    visibility_projection: Option<PendingVisibilityKind>,
-    attribute_projection: Option<PendingOuterAttributeProjection>,
-    declaration_header_projection: Option<PendingDeclarationHeaderProjection>,
-    character_projection: Option<PendingCharacterDeclarationProjection>,
-    test_kind_projection: Option<PendingTestKindProjection>,
-    layer_projection: Option<PendingLayerDeclarationProjection>,
-    entry_projection: Option<PendingEntryDeclarationProjection>,
-    style_projection: Option<PendingStyleDeclarationProjection>,
-    source_declaration_projection: Option<PendingSourceDeclarationProjection>,
-    method_receiver_projection: Option<PendingMethodReceiverProjection>,
-    contract_clause_projection: Option<PendingFlowContractClauseProjection>,
-    flow_declaration_projection: Option<PendingFlowDeclarationProjection>,
-    view_export_projection: Option<PendingViewExportProjection>,
+    projection: PendingStartProjection,
 }
 
 impl UnattachedGrammarEntry {
@@ -92,98 +68,159 @@ impl UnattachedGrammarEntry {
         &self.path
     }
 
-    pub(crate) const fn expression_projection(&self) -> Option<&PendingExpressionProjection> {
-        self.expression_projection.as_ref()
+    pub(crate) fn expression_projection(&self) -> Option<&PendingExpressionProjection> {
+        match &self.projection {
+            PendingStartProjection::Expression(projection) => Some(projection),
+            _ => None,
+        }
     }
 
     pub(crate) const fn assertion_projection(&self) -> Option<PendingAssertionProjection> {
-        self.assertion_projection
+        match &self.projection {
+            PendingStartProjection::Assertion(projection) => Some(*projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn keyword_statement_projection(
+    pub(crate) fn keyword_statement_projection(
         &self,
     ) -> Option<&PendingKeywordStatementProjection> {
-        self.keyword_statement_projection.as_ref()
+        match &self.projection {
+            PendingStartProjection::KeywordStatement(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn type_projection(&self) -> Option<&PendingTypeProjection> {
-        self.type_projection.as_ref()
+    pub(crate) fn type_projection(&self) -> Option<&PendingTypeProjection> {
+        match &self.projection {
+            PendingStartProjection::Type(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn pattern_projection(&self) -> Option<&PendingPatternProjection> {
-        self.pattern_projection.as_ref()
+    pub(crate) fn pattern_projection(&self) -> Option<&PendingPatternProjection> {
+        match &self.projection {
+            PendingStartProjection::Pattern(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn path_projection(&self) -> Option<&PendingPathProjection> {
-        self.path_projection.as_ref()
+    pub(crate) fn path_projection(&self) -> Option<&PendingPathProjection> {
+        match &self.projection {
+            PendingStartProjection::Path(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn use_projection(&self) -> Option<&PendingUseProjection> {
-        self.use_projection.as_ref()
+    pub(crate) fn use_projection(&self) -> Option<&PendingUseProjection> {
+        match &self.projection {
+            PendingStartProjection::Use(projection) => Some(projection),
+            _ => None,
+        }
     }
 
     pub(crate) const fn visibility_projection(&self) -> Option<PendingVisibilityKind> {
-        self.visibility_projection
+        match &self.projection {
+            PendingStartProjection::Visibility(projection) => Some(*projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn attribute_projection(&self) -> Option<&PendingOuterAttributeProjection> {
-        self.attribute_projection.as_ref()
+    pub(crate) fn attribute_projection(&self) -> Option<&PendingOuterAttributeProjection> {
+        match &self.projection {
+            PendingStartProjection::Attribute(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn character_projection(
-        &self,
-    ) -> Option<&PendingCharacterDeclarationProjection> {
-        self.character_projection.as_ref()
+    pub(crate) fn character_projection(&self) -> Option<&PendingCharacterDeclarationProjection> {
+        match &self.projection {
+            PendingStartProjection::Character(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn test_kind_projection(&self) -> Option<&PendingTestKindProjection> {
-        self.test_kind_projection.as_ref()
+    pub(crate) fn test_kind_projection(&self) -> Option<&PendingTestKindProjection> {
+        match &self.projection {
+            PendingStartProjection::TestKind(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn layer_projection(&self) -> Option<&PendingLayerDeclarationProjection> {
-        self.layer_projection.as_ref()
+    pub(crate) fn layer_projection(&self) -> Option<&PendingLayerDeclarationProjection> {
+        match &self.projection {
+            PendingStartProjection::Layer(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn entry_projection(&self) -> Option<&PendingEntryDeclarationProjection> {
-        self.entry_projection.as_ref()
+    pub(crate) fn entry_projection(&self) -> Option<&PendingEntryDeclarationProjection> {
+        match &self.projection {
+            PendingStartProjection::Entry(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn style_projection(&self) -> Option<&PendingStyleDeclarationProjection> {
-        self.style_projection.as_ref()
+    pub(crate) fn style_projection(&self) -> Option<&PendingStyleDeclarationProjection> {
+        match &self.projection {
+            PendingStartProjection::Style(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn source_declaration_projection(
+    pub(crate) fn source_declaration_projection(
         &self,
     ) -> Option<&PendingSourceDeclarationProjection> {
-        self.source_declaration_projection.as_ref()
+        match &self.projection {
+            PendingStartProjection::SourceDeclaration(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn method_receiver_projection(
-        &self,
-    ) -> Option<&PendingMethodReceiverProjection> {
-        self.method_receiver_projection.as_ref()
+    pub(crate) fn method_receiver_projection(&self) -> Option<&PendingMethodReceiverProjection> {
+        match &self.projection {
+            PendingStartProjection::MethodReceiver(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn contract_clause_projection(
+    pub(crate) fn contract_clause_projection(
         &self,
     ) -> Option<&PendingFlowContractClauseProjection> {
-        self.contract_clause_projection.as_ref()
+        match &self.projection {
+            PendingStartProjection::ContractClause(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn flow_declaration_projection(
-        &self,
-    ) -> Option<&PendingFlowDeclarationProjection> {
-        self.flow_declaration_projection.as_ref()
+    pub(crate) fn flow_declaration_projection(&self) -> Option<&PendingFlowDeclarationProjection> {
+        match &self.projection {
+            PendingStartProjection::FlowDeclaration(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn view_export_projection(&self) -> Option<&PendingViewExportProjection> {
-        self.view_export_projection.as_ref()
+    pub(crate) fn view_export_projection(&self) -> Option<&PendingViewExportProjection> {
+        match &self.projection {
+            PendingStartProjection::ViewExport(projection) => Some(projection),
+            _ => None,
+        }
     }
 
-    pub(crate) const fn declaration_header_projection(
+    pub(crate) fn view_fragment_projection(&self) -> Option<&PendingViewFragmentProjection> {
+        match &self.projection {
+            PendingStartProjection::ViewFragment(projection) => Some(projection),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn declaration_header_projection(
         &self,
     ) -> Option<&PendingDeclarationHeaderProjection> {
-        self.declaration_header_projection.as_ref()
+        match &self.projection {
+            PendingStartProjection::DeclarationHeader(projection) => Some(projection),
+            _ => None,
+        }
     }
 }
 
@@ -300,6 +337,9 @@ impl GrammarBuild {
                     || entry
                         .view_export_projection()
                         .is_some_and(PendingViewExportProjection::has_recovery)
+                    || entry
+                        .view_fragment_projection()
+                        .is_some_and(PendingViewFragmentProjection::has_recovery)
             })
     }
 }
@@ -414,6 +454,10 @@ pub(crate) enum GrammarBuildError {
     MissingViewExportProjection { event: usize },
     #[error("node event {event} with kind {kind:?} carries a View export projection")]
     InvalidViewExportProjection { event: usize, kind: SyntaxKind },
+    #[error("View fragment event {event} has no required structural projection")]
+    MissingViewFragmentProjection { event: usize },
+    #[error("node event {event} with kind {kind:?} carries a View fragment projection")]
+    InvalidViewFragmentProjection { event: usize, kind: SyntaxKind },
     #[error("node event {event} marks non-group kind {kind:?} as a transparent expression group")]
     InvalidTransparentExpressionGroup { event: usize, kind: SyntaxKind },
     #[error("syntax limit {0:?} was exceeded while staging the grammar tree")]
@@ -532,28 +576,7 @@ fn unattached_entry(
     path: &[u32],
 ) -> Option<UnattachedGrammarEntry> {
     let SyntaxEvent::StartNode {
-        kind,
-        expression_projection,
-        assertion_projection,
-        keyword_statement_projection,
-        type_projection,
-        pattern_projection,
-        path_projection,
-        use_projection,
-        visibility_projection,
-        attribute_projection,
-        declaration_header_projection,
-        character_projection,
-        test_kind_projection,
-        layer_projection,
-        entry_projection,
-        style_projection,
-        source_declaration_projection,
-        method_receiver_projection,
-        contract_clause_projection,
-        flow_declaration_projection,
-        view_export_projection,
-        ..
+        kind, projection, ..
     } = event
     else {
         return None;
@@ -562,26 +585,7 @@ fn unattached_entry(
         kind: *kind,
         role,
         path: GrammarEventPath(path.into()),
-        expression_projection: expression_projection.clone(),
-        assertion_projection: *assertion_projection,
-        keyword_statement_projection: keyword_statement_projection.clone(),
-        type_projection: type_projection.clone(),
-        pattern_projection: pattern_projection.clone(),
-        path_projection: path_projection.clone(),
-        use_projection: use_projection.clone(),
-        visibility_projection: *visibility_projection,
-        attribute_projection: attribute_projection.clone(),
-        declaration_header_projection: declaration_header_projection.clone(),
-        character_projection: character_projection.clone(),
-        test_kind_projection: test_kind_projection.clone(),
-        layer_projection: layer_projection.clone(),
-        entry_projection: entry_projection.clone(),
-        style_projection: style_projection.clone(),
-        source_declaration_projection: source_declaration_projection.clone(),
-        method_receiver_projection: method_receiver_projection.clone(),
-        contract_clause_projection: contract_clause_projection.clone(),
-        flow_declaration_projection: flow_declaration_projection.clone(),
-        view_export_projection: view_export_projection.clone(),
+        projection: projection.clone(),
     })
 }
 
@@ -821,101 +825,164 @@ fn validate_start_projections(
     kind: SyntaxKind,
     start: &SyntaxEvent,
 ) -> Result<(), GrammarBuildError> {
-    let SyntaxEvent::StartNode {
-        expression_projection,
-        assertion_projection,
-        keyword_statement_projection,
-        attribute_projection,
-        declaration_header_projection,
-        character_projection,
-        test_kind_projection,
-        layer_projection,
-        entry_projection,
-        style_projection,
-        source_declaration_projection,
-        method_receiver_projection,
-        contract_clause_projection,
-        flow_declaration_projection,
-        view_export_projection,
-        ..
-    } = start
-    else {
+    let SyntaxEvent::StartNode { projection, .. } = start else {
         unreachable!("projection validation receives only StartNode events")
     };
-    if PendingExpressionProjection::kind_requires_projection(kind)
-        && expression_projection.is_none()
-    {
-        return Err(GrammarBuildError::MissingExpressionProjection { event, kind });
+    validate_required_start_projection(event, kind, projection)?;
+    validate_selected_start_projection(event, kind, projection)
+}
+
+fn validate_required_start_projection(
+    event: usize,
+    kind: SyntaxKind,
+    projection: &PendingStartProjection,
+) -> Result<(), GrammarBuildError> {
+    let missing = match kind {
+        kind if PendingExpressionProjection::kind_requires_projection(kind)
+            && !matches!(projection, PendingStartProjection::Expression(_)) =>
+        {
+            Some(GrammarBuildError::MissingExpressionProjection { event, kind })
+        }
+        SyntaxKind::AssertionStatement
+            if !matches!(projection, PendingStartProjection::Assertion(_)) =>
+        {
+            Some(GrammarBuildError::MissingAssertionProjection { event })
+        }
+        kind if PendingKeywordStatementProjection::kind_requires_projection(kind)
+            && !matches!(projection, PendingStartProjection::KeywordStatement(_)) =>
+        {
+            Some(GrammarBuildError::MissingKeywordStatementProjection { event, kind })
+        }
+        SyntaxKind::InnerAttribute | SyntaxKind::OuterAttribute
+            if !matches!(projection, PendingStartProjection::Attribute(_)) =>
+        {
+            Some(GrammarBuildError::MissingAttributeProjection { event })
+        }
+        SyntaxKind::CharacterDeclarationItem
+            if !matches!(projection, PendingStartProjection::Character(_)) =>
+        {
+            Some(GrammarBuildError::MissingCharacterProjection { event })
+        }
+        SyntaxKind::TestItem if !matches!(projection, PendingStartProjection::TestKind(_)) => {
+            Some(GrammarBuildError::MissingTestKindProjection { event })
+        }
+        SyntaxKind::LayerDeclarationItem
+            if !matches!(projection, PendingStartProjection::Layer(_)) =>
+        {
+            Some(GrammarBuildError::MissingLayerProjection { event })
+        }
+        SyntaxKind::EntryDeclarationItem
+            if !matches!(projection, PendingStartProjection::Entry(_)) =>
+        {
+            Some(GrammarBuildError::MissingEntryProjection { event })
+        }
+        SyntaxKind::StyleItem if !matches!(projection, PendingStartProjection::Style(_)) => {
+            Some(GrammarBuildError::MissingStyleProjection { event })
+        }
+        SyntaxKind::SourceItem
+            if !matches!(projection, PendingStartProjection::SourceDeclaration(_)) =>
+        {
+            Some(GrammarBuildError::MissingSourceDeclarationProjection { event })
+        }
+        kind if flow_only_contract_kind(kind)
+            && !matches!(projection, PendingStartProjection::ContractClause(_)) =>
+        {
+            Some(GrammarBuildError::MissingFlowContractProjection { event, kind })
+        }
+        SyntaxKind::FlowItem
+            if !matches!(projection, PendingStartProjection::FlowDeclaration(_)) =>
+        {
+            Some(GrammarBuildError::MissingFlowDeclarationProjection { event })
+        }
+        SyntaxKind::ViewExportDeclaration
+            if !matches!(projection, PendingStartProjection::ViewExport(_)) =>
+        {
+            Some(GrammarBuildError::MissingViewExportProjection { event })
+        }
+        SyntaxKind::ViewFragment
+            if !matches!(projection, PendingStartProjection::ViewFragment(_)) =>
+        {
+            Some(GrammarBuildError::MissingViewFragmentProjection { event })
+        }
+        _ => None,
+    };
+    match missing {
+        Some(error) => Err(error),
+        None => Ok(()),
     }
-    if expression_projection
-        .as_ref()
-        .is_some_and(|projection| !projection.accepts_kind(kind))
-    {
-        return Err(GrammarBuildError::InvalidExpressionProjection { event, kind });
+}
+
+fn validate_selected_start_projection(
+    event: usize,
+    kind: SyntaxKind,
+    projection: &PendingStartProjection,
+) -> Result<(), GrammarBuildError> {
+    let invalid = match projection {
+        PendingStartProjection::Expression(projection) if !projection.accepts_kind(kind) => {
+            Some(GrammarBuildError::InvalidExpressionProjection { event, kind })
+        }
+        PendingStartProjection::Assertion(_) if kind != SyntaxKind::AssertionStatement => {
+            Some(GrammarBuildError::InvalidAssertionProjection { event, kind })
+        }
+        PendingStartProjection::KeywordStatement(projection) if !projection.accepts_kind(kind) => {
+            Some(GrammarBuildError::InvalidKeywordStatementProjection { event, kind })
+        }
+        PendingStartProjection::Attribute(_)
+            if !matches!(
+                kind,
+                SyntaxKind::InnerAttribute | SyntaxKind::OuterAttribute
+            ) =>
+        {
+            Some(GrammarBuildError::InvalidAttributeProjection { event, kind })
+        }
+        PendingStartProjection::DeclarationHeader(_)
+            if !matches!(kind, SyntaxKind::DeclarationHeader | SyntaxKind::ProofItem) =>
+        {
+            Some(GrammarBuildError::InvalidDeclarationHeaderProjection { event, kind })
+        }
+        PendingStartProjection::Character(_) if kind != SyntaxKind::CharacterDeclarationItem => {
+            Some(GrammarBuildError::InvalidCharacterProjection { event, kind })
+        }
+        PendingStartProjection::TestKind(_) if kind != SyntaxKind::TestItem => {
+            Some(GrammarBuildError::InvalidTestKindProjection { event, kind })
+        }
+        PendingStartProjection::Layer(_) if kind != SyntaxKind::LayerDeclarationItem => {
+            Some(GrammarBuildError::InvalidLayerProjection { event, kind })
+        }
+        PendingStartProjection::Entry(_) if kind != SyntaxKind::EntryDeclarationItem => {
+            Some(GrammarBuildError::InvalidEntryProjection { event, kind })
+        }
+        PendingStartProjection::Style(_) if kind != SyntaxKind::StyleItem => {
+            Some(GrammarBuildError::InvalidStyleProjection { event, kind })
+        }
+        PendingStartProjection::SourceDeclaration(_) if kind != SyntaxKind::SourceItem => {
+            Some(GrammarBuildError::InvalidSourceDeclarationProjection { event, kind })
+        }
+        PendingStartProjection::MethodReceiver(_) if kind != SyntaxKind::Parameter => {
+            Some(GrammarBuildError::InvalidMethodReceiverProjection { event, kind })
+        }
+        PendingStartProjection::ContractClause(projection) if !projection.accepts_kind(kind) => {
+            Some(GrammarBuildError::InvalidFlowContractProjection { event, kind })
+        }
+        PendingStartProjection::FlowDeclaration(_) if kind != SyntaxKind::FlowItem => {
+            Some(GrammarBuildError::InvalidFlowDeclarationProjection { event, kind })
+        }
+        PendingStartProjection::ViewExport(_) if kind != SyntaxKind::ViewExportDeclaration => {
+            Some(GrammarBuildError::InvalidViewExportProjection { event, kind })
+        }
+        PendingStartProjection::ViewFragment(_) if kind != SyntaxKind::ViewFragment => {
+            Some(GrammarBuildError::InvalidViewFragmentProjection { event, kind })
+        }
+        _ => None,
+    };
+    match invalid {
+        Some(error) => Err(error),
+        None => Ok(()),
     }
-    if kind == SyntaxKind::AssertionStatement && assertion_projection.is_none() {
-        return Err(GrammarBuildError::MissingAssertionProjection { event });
-    }
-    if kind != SyntaxKind::AssertionStatement && assertion_projection.is_some() {
-        return Err(GrammarBuildError::InvalidAssertionProjection { event, kind });
-    }
-    if PendingKeywordStatementProjection::kind_requires_projection(kind)
-        && keyword_statement_projection.is_none()
-    {
-        return Err(GrammarBuildError::MissingKeywordStatementProjection { event, kind });
-    }
-    if keyword_statement_projection
-        .as_ref()
-        .is_some_and(|projection| !projection.accepts_kind(kind))
-    {
-        return Err(GrammarBuildError::InvalidKeywordStatementProjection { event, kind });
-    }
-    if kind == SyntaxKind::OuterAttribute && attribute_projection.is_none() {
-        return Err(GrammarBuildError::MissingAttributeProjection { event });
-    }
-    if kind != SyntaxKind::OuterAttribute && attribute_projection.is_some() {
-        return Err(GrammarBuildError::InvalidAttributeProjection { event, kind });
-    }
-    if !matches!(kind, SyntaxKind::DeclarationHeader | SyntaxKind::ProofItem)
-        && declaration_header_projection.is_some()
-    {
-        return Err(GrammarBuildError::InvalidDeclarationHeaderProjection { event, kind });
-    }
-    if kind == SyntaxKind::CharacterDeclarationItem && character_projection.is_none() {
-        return Err(GrammarBuildError::MissingCharacterProjection { event });
-    }
-    if kind != SyntaxKind::CharacterDeclarationItem && character_projection.is_some() {
-        return Err(GrammarBuildError::InvalidCharacterProjection { event, kind });
-    }
-    if kind == SyntaxKind::TestItem && test_kind_projection.is_none() {
-        return Err(GrammarBuildError::MissingTestKindProjection { event });
-    }
-    if kind != SyntaxKind::TestItem && test_kind_projection.is_some() {
-        return Err(GrammarBuildError::InvalidTestKindProjection { event, kind });
-    }
-    if kind == SyntaxKind::LayerDeclarationItem && layer_projection.is_none() {
-        return Err(GrammarBuildError::MissingLayerProjection { event });
-    }
-    if kind != SyntaxKind::LayerDeclarationItem && layer_projection.is_some() {
-        return Err(GrammarBuildError::InvalidLayerProjection { event, kind });
-    }
-    if kind == SyntaxKind::EntryDeclarationItem && entry_projection.is_none() {
-        return Err(GrammarBuildError::MissingEntryProjection { event });
-    }
-    if kind != SyntaxKind::EntryDeclarationItem && entry_projection.is_some() {
-        return Err(GrammarBuildError::InvalidEntryProjection { event, kind });
-    }
-    validate_style_projection(event, kind, style_projection.as_ref())?;
-    if kind == SyntaxKind::SourceItem && source_declaration_projection.is_none() {
-        return Err(GrammarBuildError::MissingSourceDeclarationProjection { event });
-    }
-    if kind != SyntaxKind::SourceItem && source_declaration_projection.is_some() {
-        return Err(GrammarBuildError::InvalidSourceDeclarationProjection { event, kind });
-    }
-    if kind != SyntaxKind::Parameter && method_receiver_projection.is_some() {
-        return Err(GrammarBuildError::InvalidMethodReceiverProjection { event, kind });
-    }
-    let flow_only_contract_kind = matches!(
+}
+
+const fn flow_only_contract_kind(kind: SyntaxKind) -> bool {
+    matches!(
         kind,
         SyntaxKind::InvariantClause
             | SyntaxKind::AssumeClause
@@ -924,43 +991,7 @@ fn validate_start_projections(
             | SyntaxKind::NoEffectClause
             | SyntaxKind::ModifiesClause
             | SyntaxKind::DecreasesClause
-    );
-    if flow_only_contract_kind && contract_clause_projection.is_none() {
-        return Err(GrammarBuildError::MissingFlowContractProjection { event, kind });
-    }
-    if contract_clause_projection
-        .as_ref()
-        .is_some_and(|projection| !projection.accepts_kind(kind))
-    {
-        return Err(GrammarBuildError::InvalidFlowContractProjection { event, kind });
-    }
-    if kind == SyntaxKind::FlowItem && flow_declaration_projection.is_none() {
-        return Err(GrammarBuildError::MissingFlowDeclarationProjection { event });
-    }
-    if kind != SyntaxKind::FlowItem && flow_declaration_projection.is_some() {
-        return Err(GrammarBuildError::InvalidFlowDeclarationProjection { event, kind });
-    }
-    if kind == SyntaxKind::ViewExportDeclaration && view_export_projection.is_none() {
-        return Err(GrammarBuildError::MissingViewExportProjection { event });
-    }
-    if kind != SyntaxKind::ViewExportDeclaration && view_export_projection.is_some() {
-        return Err(GrammarBuildError::InvalidViewExportProjection { event, kind });
-    }
-    Ok(())
-}
-
-fn validate_style_projection(
-    event: usize,
-    kind: SyntaxKind,
-    projection: Option<&PendingStyleDeclarationProjection>,
-) -> Result<(), GrammarBuildError> {
-    if kind == SyntaxKind::StyleItem && projection.is_none() {
-        return Err(GrammarBuildError::MissingStyleProjection { event });
-    }
-    if kind != SyntaxKind::StyleItem && projection.is_some() {
-        return Err(GrammarBuildError::InvalidStyleProjection { event, kind });
-    }
-    Ok(())
+    )
 }
 
 #[cfg(test)]
@@ -971,7 +1002,9 @@ mod tests {
     use crate::assertion::AssertionMode;
     use crate::expressions::{ExpressionProjection, PendingExpressionProjection};
     use crate::grammar::assertion_projection::PendingAssertionProjection;
-    use crate::grammar::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
+    use crate::grammar::event::{
+        ExpectedToken, PendingStartProjection, PendingSyntaxDiagnostic, SyntaxEvent,
+    };
     use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
     fn document(text: &str) -> SourceDocument {
@@ -986,7 +1019,7 @@ mod tests {
     #[test]
     fn lossless_build_retains_utf8_trivia_and_identity_paths() {
         let document = document("proof π() {} // ok\r\n");
-        let events = [
+        let events = vec![
             SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
             SyntaxEvent::start(SyntaxKind::ProofItem, SyntaxRole::Element(0)),
             SyntaxEvent::token(SyntaxKind::KeywordToken, SourceRange::new(0, 5)),
@@ -1216,28 +1249,9 @@ mod tests {
                 kind: SyntaxKind::ExpressionList,
                 role: SyntaxRole::Element(0),
                 transparent_expression_group: false,
-                expression_projection: None,
-                assertion_projection: Some(PendingAssertionProjection::new(Some(
-                    AssertionMode::Check,
-                ))),
-                keyword_statement_projection: None,
-                type_projection: None,
-                pattern_projection: None,
-                path_projection: None,
-                use_projection: None,
-                visibility_projection: None,
-                attribute_projection: None,
-                declaration_header_projection: None,
-                character_projection: None,
-                test_kind_projection: None,
-                layer_projection: None,
-                entry_projection: None,
-                source_declaration_projection: None,
-                method_receiver_projection: None,
-                contract_clause_projection: None,
-                flow_declaration_projection: None,
-                view_export_projection: None,
-                style_projection: None,
+                projection: PendingStartProjection::Assertion(PendingAssertionProjection::new(
+                    Some(AssertionMode::Check),
+                )),
             },
             SyntaxEvent::FinishNode,
             SyntaxEvent::FinishNode,
@@ -1259,26 +1273,7 @@ mod tests {
                 kind: SyntaxKind::ExpressionList,
                 role: SyntaxRole::Element(0),
                 transparent_expression_group: true,
-                expression_projection: None,
-                assertion_projection: None,
-                keyword_statement_projection: None,
-                type_projection: None,
-                pattern_projection: None,
-                path_projection: None,
-                use_projection: None,
-                visibility_projection: None,
-                attribute_projection: None,
-                declaration_header_projection: None,
-                character_projection: None,
-                test_kind_projection: None,
-                layer_projection: None,
-                entry_projection: None,
-                source_declaration_projection: None,
-                method_receiver_projection: None,
-                contract_clause_projection: None,
-                flow_declaration_projection: None,
-                view_export_projection: None,
-                style_projection: None,
+                projection: PendingStartProjection::None,
             },
             SyntaxEvent::FinishNode,
             SyntaxEvent::FinishNode,

@@ -16,7 +16,7 @@ use crate::leaf::{
     HirIntegerIssue, HirIntegerLiteral, HirIntegerRadix, HirIntegerSuffix, HirLiteral,
     HirStringIssue, HirStringLiteral, HirUnitNumberIssue, HirUnitNumberLiteral, HirUnitNumberUnit,
 };
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure};
 
 use super::require_limit;
 

@@ -2,16 +2,15 @@
 
 use arcweft_source::{SourceRange, SourceSpan};
 
-use super::access::TypedSyntaxTree;
 use super::family::{
     AttributeFamily, AttributeNode, FamilyNode, NameFamily, NameNode, RecoveryFamily, RecoveryNode,
 };
 use super::item::TypedItemNode;
 use super::node::{
-    AstNode, CloseBraceKind, ModuleDeclarationKind, NameReferenceKind, OpenBraceKind, PathKind,
-    SourceFileKind, UseDeclarationKind, VisibilityKind,
+    AstNode, CloseBraceKind, InnerAttributeKind, ModuleDeclarationKind, NameReferenceKind,
+    OpenBraceKind, PathKind, SourceFileKind, UseDeclarationKind, VisibilityKind,
 };
-use super::{SyntaxAccessError, SyntaxNodeHandle, SyntaxNodeId};
+use super::{AttachedInnerAttribute, SyntaxAccessError, SyntaxNodeHandle, SyntaxNodeId};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
 use crate::grammar::source_projection::{
     PendingPathRoot, PendingPathSegmentKind, PendingUseGroupMember, PendingUseTreeKind,
@@ -42,23 +41,6 @@ impl SourceFileEntryNode {
             Self::Attribute(node) => node.source_span(),
             Self::Item(node) => node.source_span(),
         }
-    }
-}
-
-impl TypedSyntaxTree {
-    /// Returns every identity-bearing source-file child in authored order.
-    pub fn entries(&self) -> Result<Vec<SourceFileEntryNode>, SyntaxAccessError> {
-        self.root().entries()
-    }
-
-    /// Returns source-file attributes in authored order.
-    pub fn attributes(&self) -> Result<Vec<AttributeNode>, SyntaxAccessError> {
-        self.root().attributes()
-    }
-
-    /// Returns every exact source-item family in authored order.
-    pub fn items(&self) -> Result<Vec<TypedItemNode>, SyntaxAccessError> {
-        self.root().items()
     }
 }
 
@@ -101,6 +83,15 @@ impl AstNode<SourceFileKind> {
     /// Returns direct source-file attributes in authored order.
     pub fn attributes(&self) -> Result<Vec<AttributeNode>, SyntaxAccessError> {
         self.ordered_family_children::<AttributeFamily>(SyntaxRoleClass::Attribute)
+    }
+
+    /// Returns source-level inner attributes in authored order.
+    pub fn inner_attributes(&self) -> Result<Vec<AttachedInnerAttribute>, SyntaxAccessError> {
+        self.attributes()?
+            .into_iter()
+            .filter(|attribute| attribute.kind() == SyntaxKind::InnerAttribute)
+            .map(|attribute| attribute.syntax().cast::<InnerAttributeKind>()?.semantics())
+            .collect()
     }
 
     /// Returns direct source items, including Module and Use, in authored order.
@@ -154,6 +145,8 @@ pub enum AttachedPathSegmentKind {
     Identifier,
     /// A keyword accepted by the path grammar.
     Keyword,
+    /// An external-project-capable segment validated by the path grammar.
+    ProjectSymbol,
     /// A lifetime-shaped segment accepted by the path grammar.
     Lifetime,
 }
@@ -246,6 +239,7 @@ impl AttachedPath {
                 kind: match segment.kind() {
                     PendingPathSegmentKind::Identifier => AttachedPathSegmentKind::Identifier,
                     PendingPathSegmentKind::Keyword => AttachedPathSegmentKind::Keyword,
+                    PendingPathSegmentKind::ProjectSymbol => AttachedPathSegmentKind::ProjectSymbol,
                     PendingPathSegmentKind::Lifetime => AttachedPathSegmentKind::Lifetime,
                 },
                 source: segment.source(),
@@ -638,6 +632,9 @@ impl AstNode<UseDeclarationKind> {
                     {
                         PendingPathSegmentKind::Identifier => AttachedPathSegmentKind::Identifier,
                         PendingPathSegmentKind::Keyword => AttachedPathSegmentKind::Keyword,
+                        PendingPathSegmentKind::ProjectSymbol => {
+                            AttachedPathSegmentKind::ProjectSymbol
+                        }
                         PendingPathSegmentKind::Lifetime => AttachedPathSegmentKind::Lifetime,
                     },
                     alias,
@@ -691,19 +688,19 @@ mod tests {
     use std::sync::Arc;
 
     use arcweft_source::identity::SourceSnapshotId;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
     use super::{
         AstNode, AttachedDelimiterState, AttachedPathRoot, AttachedPathSegmentKind,
         AttachedUseGroupChild, AttachedUseTree, AttachedVisibilityKind, ModuleDeclarationKind,
-        SourceFileEntryNode, TypedItemNode, TypedSyntaxTree, UseDeclarationKind,
+        SourceFileEntryNode, SourceFileKind, TypedItemNode, UseDeclarationKind,
     };
     use crate::attachment::{
         GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotId,
         attach_typed_tree,
     };
     use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
-    use crate::parser::{ParseOptions, parse_shadow_document};
+    use crate::parser::{ParseOptions, parse_document};
 
     fn attach(text: &str) -> Arc<crate::attachment::SyntaxSnapshotData> {
         let document = Arc::new(
@@ -714,7 +711,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+        let build = parse_document(&document, ParseOptions::default()).unwrap();
         let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(91).unwrap());
         let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
         let snapshot = SyntaxSnapshotId::new(
@@ -745,8 +742,14 @@ mod tests {
         .unwrap()
     }
 
-    fn module_item(tree: &TypedSyntaxTree) -> AstNode<ModuleDeclarationKind> {
-        let mut modules = tree.items().unwrap().into_iter().filter_map(|item| {
+    fn source_file(
+        snapshot: &Arc<crate::attachment::SyntaxSnapshotData>,
+    ) -> AstNode<SourceFileKind> {
+        snapshot.root_handle().cast().unwrap()
+    }
+
+    fn module_item(root: &AstNode<SourceFileKind>) -> AstNode<ModuleDeclarationKind> {
+        let mut modules = root.items().unwrap().into_iter().filter_map(|item| {
             if let TypedItemNode::Module(module) = item {
                 Some(module)
             } else {
@@ -758,8 +761,8 @@ mod tests {
         module
     }
 
-    fn use_items(tree: &TypedSyntaxTree) -> Vec<AstNode<UseDeclarationKind>> {
-        tree.items()
+    fn use_items(root: &AstNode<SourceFileKind>) -> Vec<AstNode<UseDeclarationKind>> {
+        root.items()
             .unwrap()
             .into_iter()
             .filter_map(|item| {
@@ -781,8 +784,8 @@ mod tests {
             "use super.common.route_gate as gate\n",
             "fn next() {}\n",
         ));
-        let tree = snapshot.typed_tree().unwrap();
-        let entries = tree.entries().unwrap();
+        let root = source_file(&snapshot);
+        let entries = root.entries().unwrap();
         assert!(matches!(
             entries.as_slice(),
             [
@@ -795,13 +798,13 @@ mod tests {
         ));
         assert_eq!(entries[0].id().lineage(), entries[4].id().lineage());
         assert_eq!(
-            tree.attributes().unwrap()[0].role(),
+            root.attributes().unwrap()[0].role(),
             SyntaxRole::Attribute(0)
         );
-        assert_eq!(tree.items().unwrap()[0].role(), SyntaxRole::Target);
-        assert_eq!(tree.items().unwrap()[2].role(), SyntaxRole::Reference(1));
-        assert_eq!(tree.items().unwrap()[3].role(), SyntaxRole::Element(0));
-        assert_eq!(tree.items().unwrap()[3].kind(), SyntaxKind::FunctionItem);
+        assert_eq!(root.items().unwrap()[0].role(), SyntaxRole::Target);
+        assert_eq!(root.items().unwrap()[2].role(), SyntaxRole::Reference(1));
+        assert_eq!(root.items().unwrap()[3].role(), SyntaxRole::Element(0));
+        assert_eq!(root.items().unwrap()[3].kind(), SyntaxKind::FunctionItem);
     }
 
     #[test]
@@ -812,8 +815,8 @@ mod tests {
             "use super.super.common.route_gate\n",
             "use local.item\n",
         ));
-        let tree = snapshot.typed_tree().unwrap();
-        let module = module_item(&tree).path().unwrap();
+        let root = source_file(&snapshot);
+        let module = module_item(&root).path().unwrap();
         assert!(matches!(module.root(), AttachedPathRoot::Crate { .. }));
         assert_eq!(
             module
@@ -824,7 +827,7 @@ mod tests {
             ["game", "story"]
         );
 
-        let uses = use_items(&tree);
+        let uses = use_items(&root);
         let paths = uses
             .iter()
             .map(|import| match import.tree().unwrap() {
@@ -844,12 +847,55 @@ mod tests {
     }
 
     #[test]
+    fn use_paths_attach_external_project_segments_without_source_reparse() {
+        let snapshot = attach(concat!(
+            "use character.hero-pack.2d\n",
+            "use character.hero-pack.{2d, alternate-name as alternate}\n",
+        ));
+        let imports = use_items(&source_file(&snapshot));
+        let AttachedUseTree::Path { path, .. } = imports[0].tree().unwrap() else {
+            panic!("direct external path")
+        };
+        assert_eq!(
+            path.segments()
+                .iter()
+                .map(|segment| (segment.kind(), segment.source_text()))
+                .collect::<Vec<_>>(),
+            [
+                (AttachedPathSegmentKind::Keyword, "character"),
+                (AttachedPathSegmentKind::ProjectSymbol, "hero-pack"),
+                (AttachedPathSegmentKind::ProjectSymbol, "2d"),
+            ]
+        );
+        assert_eq!(
+            path.segments()[1].source_span().range(),
+            SourceRange::new(14, 23)
+        );
+
+        let AttachedUseTree::Group {
+            module, children, ..
+        } = imports[1].tree().unwrap()
+        else {
+            panic!("grouped external path")
+        };
+        assert_eq!(module.segments()[1].source_text(), "hero-pack");
+        assert!(matches!(
+            children.as_ref(),
+            [AttachedUseGroupChild::Binding(numeric), AttachedUseGroupChild::Binding(named)]
+                if numeric.kind() == AttachedPathSegmentKind::ProjectSymbol
+                    && numeric.name().source_text() == "2d"
+                    && named.kind() == AttachedPathSegmentKind::ProjectSymbol
+                    && named.name().source_text() == "alternate-name"
+        ));
+    }
+
+    #[test]
     fn use_projection_owns_glob_group_alias_and_recovery_without_range_pairing() {
         let snapshot = attach(concat!(
             "use crate.game.prelude.*\n",
             "use self.characters.{alice, bob as narrator, , carol as}\n",
         ));
-        let imports = use_items(&snapshot.typed_tree().unwrap());
+        let imports = use_items(&source_file(&snapshot));
         let AttachedUseTree::Glob { marker, alias, .. } = imports[0].tree().unwrap() else {
             panic!("glob import");
         };
@@ -893,7 +939,7 @@ mod tests {
     #[test]
     fn missing_module_path_keeps_one_path_identity_and_typed_missing_name() {
         let snapshot = attach("mod\n");
-        let path = module_item(&snapshot.typed_tree().unwrap()).path().unwrap();
+        let path = module_item(&source_file(&snapshot)).path().unwrap();
         assert!(matches!(path.root(), AttachedPathRoot::ImplicitCrate));
         assert!(path.segments().is_empty());
         assert_eq!(path.missing_name().unwrap().kind(), SyntaxKind::MissingName);
@@ -908,13 +954,13 @@ mod tests {
             "use parent\n",
             "use parent.parent\n",
         ));
-        let tree = snapshot.typed_tree().unwrap();
-        let module = module_item(&tree).path().unwrap();
+        let root = source_file(&snapshot);
+        let module = module_item(&root).path().unwrap();
         assert!(matches!(module.root(), AttachedPathRoot::Crate { .. }));
         assert!(module.segments().is_empty());
         assert!(module.missing_name().is_some());
 
-        let uses = use_items(&tree);
+        let uses = use_items(&root);
         let paths = uses
             .iter()
             .map(|import| match import.tree().unwrap() {
@@ -946,7 +992,7 @@ mod tests {
             "pub(other) use crate.invalid\n",
             "use crate.members.{alice, self, 'scope}\n",
         ));
-        let imports = use_items(&snapshot.typed_tree().unwrap());
+        let imports = use_items(&source_file(&snapshot));
         assert_eq!(
             imports[0].visibility().unwrap().unwrap().kind(),
             AttachedVisibilityKind::Public
@@ -995,7 +1041,7 @@ mod tests {
         ));
 
         let missing = attach("use crate.members.{alice\n");
-        let import = use_items(&missing.typed_tree().unwrap()).remove(0);
+        let import = use_items(&source_file(&missing)).remove(0);
         let AttachedUseTree::Group { close, .. } = import.tree().unwrap() else {
             panic!("group import")
         };

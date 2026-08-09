@@ -63,8 +63,6 @@ pub enum TypeMismatchPathSegment {
     ProjectionTrait,
     ProjectionAssociation,
     ProjectionSubject,
-    SpeakerKind,
-    SpeakerPresetKind,
     CharacterPatchKind,
     CharacterFamily,
     CharacterOwner,
@@ -923,32 +921,6 @@ impl TypeKind {
                             mismatch.prepend(TypeMismatchPathSegment::ProjectionSubject)
                         })
                 }
-            }
-            Self::Speaker(expected) => {
-                let Self::Speaker(actual_kind) = actual else {
-                    unreachable!("equal discriminants")
-                };
-                (expected != actual_kind).then(|| {
-                    TypeMismatch::at(
-                        self,
-                        actual,
-                        TypeMismatchPathSegment::SpeakerKind,
-                        TypeMismatchReason::NonTypeParameter,
-                    )
-                })
-            }
-            Self::SpeakerPreset(expected) => {
-                let Self::SpeakerPreset(actual_kind) = actual else {
-                    unreachable!("equal discriminants")
-                };
-                (expected != actual_kind).then(|| {
-                    TypeMismatch::at(
-                        self,
-                        actual,
-                        TypeMismatchPathSegment::SpeakerPresetKind,
-                        TypeMismatchReason::NonTypeParameter,
-                    )
-                })
             }
             Self::CharacterPatch(expected) => {
                 let Self::CharacterPatch(actual_kind) = actual else {

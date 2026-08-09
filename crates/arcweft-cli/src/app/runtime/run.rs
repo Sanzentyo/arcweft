@@ -7,7 +7,9 @@ use super::profile::report_path;
 use super::script_bench::script_bench_selection;
 use super::script_test::script_test_selection;
 use super::serve::{RuntimeServeSelectionConfig, runtime_serve_selection};
-use super::steps::{NativeRunSource, run_runtime_steps, runtime_step_run_config_from_run_options};
+use super::steps::{
+    NativeRunHost, NativeRunSource, run_runtime_steps, runtime_step_run_config_from_run_options,
+};
 use crate::app::bundle::{
     build_patch_bundle_artifact_from_awfb_bytes, compile_bundle_for_selection,
     write_bundle_artifact, write_patch_bundle_artifact,
@@ -18,6 +20,7 @@ use crate::app::project::ProfileOptions;
 use crate::app::project::{
     CheckedModule, SourceSelection, load_and_check_selection, native_host_policy_for_selection,
     resolve_source_selection_or_default_profile, runtime_pure_config_for_selection,
+    verify_compiled_project,
 };
 use crate::app::shared::print_json;
 use crate::output::{RuntimeExecutorTier, RuntimeRunReport};
@@ -32,9 +35,7 @@ use arcweft_launch::{LaunchKind, LaunchPlayerViewportFit, resolve::ResolvedLaunc
 use arcweft_layout::ScalePolicy;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
 use arcweft_runtime_host::{NativeAdapterRegistrar, host_system_info};
-use arcweft_verify::{
-    BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
-};
+use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy, VerificationReport};
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -152,11 +153,14 @@ fn runtime_run_headless_command(
     let trace = run_runtime_steps(
         plan,
         &entry,
-        Some(NativeRunSource::new(selection.path(), &file_roots)),
+        NativeRunHost {
+            source: Some(NativeRunSource::new(selection.path(), &file_roots)),
+            policy: &host_policy,
+            adapter_registrars,
+        },
         runtime_step_run_config_from_run_options(options, pure_config),
-        &host_policy,
-        adapter_registrars,
         &options.values,
+        &checked.execution_diagnostics,
     )?;
     let report = RuntimeRunReport {
         host_system: host_system_info(),
@@ -185,13 +189,16 @@ fn print_runtime_run_report(
             step.flow_events.len(),
             step.line_effects.len(),
             step.task_requests.len(),
-            step.diagnostics.len()
+            step.diagnostics.len() + step.assertion_diagnostics.len()
         );
         for event in &step.flow_events {
             println!("  event {event}");
         }
         for effect in &step.line_effects {
             println!("  effect {effect}");
+        }
+        for diagnostic in &step.assertion_diagnostics {
+            eprintln!("error[{}]: {}", diagnostic.code, diagnostic.message);
         }
     }
     println!(
@@ -204,15 +211,14 @@ fn print_runtime_run_report(
 }
 
 fn require_runtime_verification_safety(checked: &CheckedModule) -> Result<(), ExitCode> {
-    let verification = verify_module_with_env(
-        &checked.hir,
-        &checked.env,
+    let verification = verify_compiled_project(
+        &checked.compiled,
         VerificationPolicy {
             mode: VerificationMode::Dev,
             backend: BackendKind::Emit,
             allow_trusted_proofs: true,
         },
-    );
+    )?;
     if verification.has_blocking_runtime_safety_gaps() {
         emit_runtime_verification_diagnostics(&checked.source_document, &verification);
         return Err(ExitCode::FAILURE);
@@ -416,6 +422,8 @@ fn run_watch_target(
         );
     }
 
+    let mut selection = selection.clone();
+
     let output_dir = match runner {
         CliRuntimeRunner::Web => WEB_LOCAL_BUNDLE_DIR,
         CliRuntimeRunner::Auto | CliRuntimeRunner::Headless => {
@@ -423,10 +431,10 @@ fn run_watch_target(
         }
         CliRuntimeRunner::Native => unreachable!("native watch returned above"),
     };
-    let output = run_bundle_output_path(selection, output_dir);
+    let output = run_bundle_output_path(&selection, output_dir);
     apply_watch_entry_override(options, &mut initial_bundle);
     let mut base_bytes = write_watch_bundle(&output, &initial_bundle, &mut phases)?;
-    let mut inputs = watch_inputs(selection)?;
+    let mut inputs = watch_inputs(&selection)?;
     println!(
         "watch: built {} ({} input(s), runner={})",
         output.display(),
@@ -440,7 +448,7 @@ fn run_watch_target(
                 .file_name()
                 .and_then(std::ffi::OsStr::to_str)
                 .unwrap_or("game.awfb"),
-            web_player_frame_fit_query(selection)
+            web_player_frame_fit_query(&selection)
         );
     }
 
@@ -452,12 +460,19 @@ fn run_watch_target(
         }
         iterations += 1;
         thread::sleep(Duration::from_millis(options.watch_poll_ms));
-        let next_inputs = watch_inputs(selection)?;
+        if let Err(code) = selection.refresh() {
+            eprintln!("watch: source reload failed; keeping previous bundle active");
+            if max_iterations.is_some() {
+                return Err(code);
+            }
+            continue;
+        }
+        let next_inputs = watch_inputs(&selection)?;
         if next_inputs == inputs {
             continue;
         }
         let mut next_phases = Vec::new();
-        match compile_watch_bundle(options, selection, &mut next_phases) {
+        match compile_watch_bundle(options, &selection, &mut next_phases) {
             Ok(next_bundle) => {
                 let next_bytes =
                     next_bundle
@@ -472,11 +487,11 @@ fn run_watch_target(
                     eprintln!("error: failed to encode watched patch bundle: {error}");
                     ExitCode::FAILURE
                 })?;
-                let patch_output = watch_patch_output_path(selection, &artifact);
+                let patch_output = watch_patch_output_path(&selection, &artifact);
                 write_patch_bundle_artifact(&patch_output, patch_bytes)?;
                 write_bundle_artifact(&output, next_bytes.clone(), &mut next_phases)?;
                 let transport_output = write_watch_patch_transport_envelope(
-                    selection,
+                    &selection,
                     runner,
                     &output,
                     &patch_output,
@@ -528,7 +543,7 @@ fn run_native_windowed_watch_target(
             thread::spawn(move || {
                 if let Err(code) = native_windowed_watch_producer_loop(
                     &options,
-                    &selection,
+                    selection,
                     &output,
                     base_bytes,
                     inputs,
@@ -555,7 +570,7 @@ fn run_native_windowed_watch_target(
 #[cfg(feature = "native-player")]
 fn native_windowed_watch_producer_loop(
     options: &RuntimeRunOptions,
-    selection: &SourceSelection,
+    mut selection: SourceSelection,
     output: &Path,
     mut base_bytes: Vec<u8>,
     mut inputs: BTreeMap<PathBuf, WatchFileState>,
@@ -569,12 +584,19 @@ fn native_windowed_watch_producer_loop(
         }
         iterations = iterations.saturating_add(1);
         thread::sleep(Duration::from_millis(options.watch_poll_ms));
-        let next_inputs = watch_inputs(selection)?;
+        if let Err(code) = selection.refresh() {
+            eprintln!("watch: source reload failed; keeping previous bundle active");
+            if max_iterations.is_some() {
+                return Err(code);
+            }
+            continue;
+        }
+        let next_inputs = watch_inputs(&selection)?;
         if next_inputs == inputs {
             continue;
         }
         let mut next_phases = Vec::new();
-        match compile_watch_bundle(options, selection, &mut next_phases) {
+        match compile_watch_bundle(options, &selection, &mut next_phases) {
             Ok(next_bundle) => {
                 let next_bytes =
                     next_bundle
@@ -589,11 +611,11 @@ fn native_windowed_watch_producer_loop(
                     eprintln!("error: failed to encode watched patch bundle: {error}");
                     ExitCode::FAILURE
                 })?;
-                let patch_output = watch_patch_output_path(selection, &artifact);
+                let patch_output = watch_patch_output_path(&selection, &artifact);
                 write_patch_bundle_artifact(&patch_output, patch_bytes.clone())?;
                 write_bundle_artifact(output, next_bytes.clone(), &mut next_phases)?;
                 let transport_output = write_watch_patch_transport_envelope(
-                    selection,
+                    &selection,
                     CliRuntimeRunner::Native,
                     output,
                     &patch_output,
@@ -794,7 +816,7 @@ fn watch_input_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCo
     let mut paths = vec![selection.path().to_path_buf()];
     if let Some(manifest) = selection.project_manifest() {
         paths.push(manifest.to_path_buf());
-        paths.extend(watch_project_source_paths(manifest)?);
+        paths.extend(watch_project_source_paths(selection));
     } else if let Some(topology) = selection.profile_topology() {
         paths.extend(
             topology
@@ -806,16 +828,14 @@ fn watch_input_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCo
     Ok(paths)
 }
 
-fn watch_project_source_paths(manifest: &Path) -> Result<Vec<PathBuf>, ExitCode> {
-    let project = arcweft_project_loader::project::load(manifest).map_err(|error| {
-        eprintln!("error: {error}");
-        ExitCode::FAILURE
-    })?;
-    Ok(project
+fn watch_project_source_paths(selection: &SourceSelection) -> Vec<PathBuf> {
+    selection
+        .loaded_project()
+        .expect("project selections retain their accepted loaded project")
         .sources()
         .modules()
         .map(|source| source.path().to_path_buf())
-        .collect())
+        .collect()
 }
 
 fn watch_authored_resource_paths(selection: &SourceSelection) -> Result<Vec<PathBuf>, ExitCode> {
@@ -1109,10 +1129,8 @@ flow opening { return "ok" }
         )
         .expect("nested source writes");
         let manifest = root.join("arcw.toml");
-        let selection = SourceSelection::Project {
-            manifest: manifest.clone(),
-            path: source_root.join("main.arcw"),
-        };
+        let selection = crate::app::project::resolve_project_root_source_selection(&manifest)
+            .expect("project selection loads");
 
         let inputs = watch_input_paths(&selection).expect("watch inputs resolve");
 
@@ -1149,10 +1167,9 @@ version = "0.1.0"
         let content = content_dir.join("catalog.json");
         fs::write(&asset, [0_u8, 1, 2, 3]).expect("asset writes");
         fs::write(&content, br#"{"chapter":2}"#).expect("content writes");
-        let selection = SourceSelection::Project {
-            manifest: root.join("arcw.toml"),
-            path: source,
-        };
+        let selection =
+            crate::app::project::resolve_project_root_source_selection(&root.join("arcw.toml"))
+                .expect("project selection loads");
 
         let inputs = watch_input_paths(&selection).expect("watch inputs resolve");
 
@@ -1180,18 +1197,59 @@ version = "0.1.0"
         .expect("manifest writes");
         let source = source_root.join("main.arcw");
         fs::write(&source, r#"flow main { return "ok" }"#).expect("main source writes");
-        let selection = SourceSelection::Project {
-            manifest: root.join("arcw.toml"),
-            path: source,
-        };
+        let mut selection =
+            crate::app::project::resolve_project_root_source_selection(&root.join("arcw.toml"))
+                .expect("project selection loads");
         let before = watch_inputs(&selection).expect("initial watch inputs");
         let asset_dir = root.join("assets").join("view");
         fs::create_dir_all(&asset_dir).expect("asset dir");
         fs::write(asset_dir.join("logo.png"), [0_u8, 1, 2, 3]).expect("asset writes");
 
+        selection.refresh().expect("project selection reloads");
         let after = watch_inputs(&selection).expect("updated watch inputs");
 
         assert_ne!(before, after);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn watch_inputs_detect_modules_added_by_an_explicit_project_reload() {
+        let root = temp_project_root("watch-module-additions");
+        let source_root = root.join("src");
+        fs::create_dir_all(&source_root).expect("source dir");
+        fs::write(
+            root.join("arcw.toml"),
+            r#"
+schema = 1
+
+[package]
+id = "org.arcweft.test.watch-module-addition-test"
+version = "0.1.0"
+"#,
+        )
+        .expect("manifest writes");
+        let source = source_root.join("main.arcw");
+        fs::write(&source, r#"flow main { return "ok" }"#).expect("main source writes");
+        let mut selection =
+            crate::app::project::resolve_project_root_source_selection(&root.join("arcw.toml"))
+                .expect("project selection loads");
+        let before = watch_inputs(&selection).expect("initial watch inputs");
+        let added = source_root.join("routes").join("opening.arcw");
+        fs::create_dir_all(added.parent().expect("module parent")).expect("module dir");
+        fs::write(
+            &added,
+            r#"mod routes.opening
+flow opening { return "ok" }
+"#,
+        )
+        .expect("added module writes");
+
+        selection.refresh().expect("project selection reloads");
+        let after = watch_inputs(&selection).expect("updated watch inputs");
+
+        assert!(!before.contains_key(&added));
+        assert!(after.contains_key(&added));
 
         let _ = fs::remove_dir_all(root);
     }

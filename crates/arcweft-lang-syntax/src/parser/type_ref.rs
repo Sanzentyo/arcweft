@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::shadow_recovery::trimmed_end;
 use crate::ast::common::TextRange;
 use crate::grammar::event::PendingSyntaxDiagnostic;
@@ -58,7 +58,7 @@ impl EmittedTypeProjection {
 }
 
 pub(super) fn emit_type(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> EmittedTypeProjection {
@@ -127,7 +127,7 @@ pub(super) fn emit_type(
 /// Parses one exact token interval once so an enclosing grammar family can
 /// commit it without reopening source text or running a second type grammar.
 pub(super) fn prepare_type(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Result<PreparedTypeProjection, crate::types::TypeParseError> {
@@ -148,7 +148,7 @@ pub(super) fn prepare_type(
 /// [`emit_type`], so it neither reopens source text nor creates a second type
 /// grammar.
 pub(super) fn nominal_type_prefix_end(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> usize {
@@ -221,7 +221,7 @@ pub(super) fn nominal_type_prefix_end(
 
 /// Emits a type prepared by the same active grammar transaction.
 pub(super) fn emit_prepared_type(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
     prepared: PreparedTypeProjection,
 ) -> EmittedTypeProjection {
@@ -249,11 +249,11 @@ pub(super) fn emit_prepared_type(
 /// Emits the recovery type selected by a failed canonical type transaction
 /// without reopening the source slice or running a second type parser.
 pub(super) fn emit_recovered_type(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
     start: usize,
     end: usize,
-    error: crate::types::TypeParseError,
+    error: &crate::types::TypeParseError,
 ) -> EmittedTypeProjection {
     assert_eq!(
         parser.cursor(),
@@ -294,7 +294,7 @@ pub(super) fn emit_recovered_type(
 }
 
 fn emit_semantic_type(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     tree: u64,
@@ -525,7 +525,7 @@ fn semantic_kind(value: &TypeRef) -> SyntaxKind {
 }
 
 fn canonical_tokens<'source>(
-    parser: &ShadowDocumentParser<'source, '_>,
+    parser: &DocumentParser<'source, '_>,
     start: usize,
     end: usize,
 ) -> Vec<TypeToken<'source>> {
@@ -543,7 +543,7 @@ struct IndexedTypeToken<'source> {
 }
 
 fn canonical_indexed_tokens<'source>(
-    parser: &ShadowDocumentParser<'source, '_>,
+    parser: &DocumentParser<'source, '_>,
     start: usize,
     end: usize,
 ) -> Vec<IndexedTypeToken<'source>> {
@@ -616,7 +616,7 @@ fn punctuation(spelling: &str) -> TypeTokenKind<'_> {
     }
 }
 
-fn significant_range(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> TextRange {
+fn significant_range(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> TextRange {
     let first = (start..end)
         .filter_map(|index| parser.token_at(index))
         .find(|token| !is_trivia(token.kind()));
@@ -642,7 +642,7 @@ fn is_trivia(kind: SyntaxKind) -> bool {
     )
 }
 
-fn bump_before(parser: &mut ShadowDocumentParser<'_, '_>, offset: usize) {
+fn bump_before(parser: &mut DocumentParser<'_, '_>, offset: usize) {
     while parser
         .current()
         .is_some_and(|token| token.range().end() <= offset)
@@ -652,7 +652,7 @@ fn bump_before(parser: &mut ShadowDocumentParser<'_, '_>, offset: usize) {
 }
 
 fn token_end_boundary(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     offset: usize,
     fallback_end: usize,
 ) -> usize {
@@ -665,10 +665,10 @@ fn token_end_boundary(
         .unwrap_or(fallback_end)
 }
 
-fn projection_tree(parser: &ShadowDocumentParser<'_, '_>) -> u64 {
+fn projection_tree(parser: &DocumentParser<'_, '_>) -> u64 {
     u64::try_from(parser.event_position()).expect("grammar event limits fit projection identity")
 }
 
-fn recovery_index(parser: &ShadowDocumentParser<'_, '_>) -> u32 {
+fn recovery_index(parser: &DocumentParser<'_, '_>) -> u32 {
     u32::try_from(parser.event_position()).unwrap_or(u32::MAX)
 }

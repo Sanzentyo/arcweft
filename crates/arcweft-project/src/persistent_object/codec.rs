@@ -451,7 +451,7 @@ fn put_parsed_syntax(
     put_syntax_stats(writer, &value.stats);
     put_diagnostic_summary(writer, &value.diagnostics)?;
     put_stage_inputs(writer, &value.stage_inputs)?;
-    put_parsed_evidence(writer, &value.evidence)?;
+    put_parsed_evidence(writer, &value.evidence);
     Ok(())
 }
 
@@ -927,33 +927,30 @@ fn read_source_span(reader: &mut BinaryReader<'_>) -> Result<StableSourceSpanObj
 }
 
 fn put_syntax_stats(writer: &mut BinaryWriter, value: &SyntaxStatsObject) {
-    writer.put_u64(value.bytes);
-    writer.put_u64(value.lines);
-    writer.put_u64(value.cst_lex_passes);
-    writer.put_u64(value.punctuation_scans);
-    writer.put_u64(value.punctuation_scan_bytes);
-    writer.put_u64(value.line_owned_bytes);
-    writer.put_u64(value.block_owned_bytes);
-    writer.put_u64(value.raw_owned_bytes);
-    writer.put_u64(value.wiki_scan_performed);
-    writer.put_u64(value.dialogue_rescue_expr_parse_attempts);
-    writer.put_u64(value.numeric_seq_summaries);
+    writer.put_u64(value.accepted_source_bytes);
+    writer.put_u64(value.lexer_tokens);
+    writer.put_u64(value.grammar_events);
+    writer.put_u64(value.top_level_items);
+    writer.put_u64(value.statements);
+    writer.put_u64(value.expressions);
+    writer.put_u64(value.type_nodes);
+    writer.put_u64(value.pattern_nodes);
+    writer.put_u64(value.identity_bearing_nodes);
+    writer.put_u64(value.diagnostic_identities);
 }
 
 fn read_syntax_stats(reader: &mut BinaryReader<'_>) -> Result<SyntaxStatsObject, AwboError> {
     Ok(SyntaxStatsObject {
-        bytes: reader.read_u64("stats.bytes")?,
-        lines: reader.read_u64("stats.lines")?,
-        cst_lex_passes: reader.read_u64("stats.cst_lex_passes")?,
-        punctuation_scans: reader.read_u64("stats.punctuation_scans")?,
-        punctuation_scan_bytes: reader.read_u64("stats.punctuation_scan_bytes")?,
-        line_owned_bytes: reader.read_u64("stats.line_owned_bytes")?,
-        block_owned_bytes: reader.read_u64("stats.block_owned_bytes")?,
-        raw_owned_bytes: reader.read_u64("stats.raw_owned_bytes")?,
-        wiki_scan_performed: reader.read_u64("stats.wiki_scan_performed")?,
-        dialogue_rescue_expr_parse_attempts: reader
-            .read_u64("stats.dialogue_rescue_expr_parse_attempts")?,
-        numeric_seq_summaries: reader.read_u64("stats.numeric_seq_summaries")?,
+        accepted_source_bytes: reader.read_u64("stats.accepted_source_bytes")?,
+        lexer_tokens: reader.read_u64("stats.lexer_tokens")?,
+        grammar_events: reader.read_u64("stats.grammar_events")?,
+        top_level_items: reader.read_u64("stats.top_level_items")?,
+        statements: reader.read_u64("stats.statements")?,
+        expressions: reader.read_u64("stats.expressions")?,
+        type_nodes: reader.read_u64("stats.type_nodes")?,
+        pattern_nodes: reader.read_u64("stats.pattern_nodes")?,
+        identity_bearing_nodes: reader.read_u64("stats.identity_bearing_nodes")?,
+        diagnostic_identities: reader.read_u64("stats.diagnostic_identities")?,
     })
 }
 
@@ -1049,11 +1046,8 @@ fn read_optional_span(
     }
 }
 
-fn put_parsed_evidence(
-    writer: &mut BinaryWriter,
-    value: &ParsedSyntaxEvidenceObject,
-) -> Result<(), AwboError> {
-    writer.put_string("parsed_evidence.root_kind", &value.root_kind)?;
+fn put_parsed_evidence(writer: &mut BinaryWriter, value: &ParsedSyntaxEvidenceObject) {
+    writer.put_u32(value.root_kind);
     writer.put_digest(value.cst_shape_digest);
     writer.put_digest(value.line_index_digest);
     writer.put_u64(value.cst_node_count);
@@ -1062,15 +1056,13 @@ fn put_parsed_evidence(
     writer.put_u64(value.typed_attribute_count);
     writer.put_u64(value.typed_use_count);
     writer.put_u64(value.typed_item_count);
-    writer.put_u64(value.wiki_link_count);
-    Ok(())
 }
 
 fn read_parsed_evidence(
     reader: &mut BinaryReader<'_>,
 ) -> Result<ParsedSyntaxEvidenceObject, AwboError> {
     Ok(ParsedSyntaxEvidenceObject {
-        root_kind: reader.read_string("parsed_evidence.root_kind")?,
+        root_kind: reader.read_u32("parsed_evidence.root_kind")?,
         cst_shape_digest: reader.read_digest("parsed_evidence.cst_shape_digest")?,
         line_index_digest: reader.read_digest("parsed_evidence.line_index_digest")?,
         cst_node_count: reader.read_u64("parsed_evidence.cst_node_count")?,
@@ -1079,7 +1071,6 @@ fn read_parsed_evidence(
         typed_attribute_count: reader.read_u64("parsed_evidence.typed_attribute_count")?,
         typed_use_count: reader.read_u64("parsed_evidence.typed_use_count")?,
         typed_item_count: reader.read_u64("parsed_evidence.typed_item_count")?,
-        wiki_link_count: reader.read_u64("parsed_evidence.wiki_link_count")?,
     })
 }
 
@@ -1181,22 +1172,21 @@ mod tests {
             source_digest: key.source_digest,
             source_span: span(),
             stats: SyntaxStatsObject {
-                bytes: 16,
-                lines: 1,
-                cst_lex_passes: 1,
-                punctuation_scans: 1,
-                punctuation_scan_bytes: 16,
-                line_owned_bytes: 0,
-                block_owned_bytes: 0,
-                raw_owned_bytes: 0,
-                wiki_scan_performed: 0,
-                dialogue_rescue_expr_parse_attempts: 0,
-                numeric_seq_summaries: 0,
+                accepted_source_bytes: 16,
+                lexer_tokens: 3,
+                grammar_events: 2,
+                top_level_items: 1,
+                statements: 0,
+                expressions: 0,
+                type_nodes: 0,
+                pattern_nodes: 0,
+                identity_bearing_nodes: 2,
+                diagnostic_identities: 1,
             },
             diagnostics: diagnostic_summary(),
             stage_inputs: key.stage_inputs(),
             evidence: ParsedSyntaxEvidenceObject {
-                root_kind: "root".to_owned(),
+                root_kind: 0,
                 cst_shape_digest: digest("cst-shape"),
                 line_index_digest: digest("line-index"),
                 cst_node_count: 2,
@@ -1205,7 +1195,6 @@ mod tests {
                 typed_attribute_count: 0,
                 typed_use_count: 0,
                 typed_item_count: 1,
-                wiki_link_count: 0,
             },
         })
     }

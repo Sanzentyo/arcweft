@@ -14,20 +14,22 @@ use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequest, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
-use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_host_adapter::{HostAdapter, HostAdapterError, HostTaskMetrics, HostTaskOutcome};
-use arcweft_render_text::LineDisplayCatalog;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_host::{
     BundleRunnerError, BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode,
     NativeAdapterRegistrar, run_bundle_file_with_native_adapters, run_bundle_with_native_adapters,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
 use std::fs;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
+}
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
@@ -41,26 +43,6 @@ fn cli_entry(entry: &str, flow: &str) -> RuntimeEntrySpec {
         target: RuntimeEntryTarget::Flow(flow_id(flow)),
         roles: RuntimeEntryRoles::None,
     }
-}
-
-fn dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-host-integration-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-host-integration-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
 }
 
 #[test]
@@ -274,9 +256,9 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
     )
     .expect("custom bundle plan is valid")
     .with_entries(vec![cli_entry("entry.custom", "flow.custom")]);
-    let display = LineDisplayCatalog::new(dialogue_revision());
+    let dialogue_content = DialogueContentCatalog::new();
     let product_awbc = include_product_awbc.then(|| {
-        AwbcLowerer::new(&plan, &display, "custom.arcw")
+        AwbcLowerer::new(&plan, &dialogue_content, "custom.arcw")
             .lower()
             .expect("custom product AWBC lowers")
             .program
@@ -292,6 +274,7 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
             adapter_manifest_ids: vec!["custom-echo".to_owned()],
             required_host_calls: vec!["custom.echo".to_owned()],
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.custom".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -305,7 +288,7 @@ fn custom_echo_bundle_with_product_awbc(include_product_awbc: bool) -> ArcweftBu
             "flow custom { await custom.echo(\"hello\") return \"custom-done\" }",
         ),
         program,
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_adapter_manifests([BundleAdapterManifest {

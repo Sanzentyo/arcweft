@@ -5,7 +5,6 @@ use std::{collections::BTreeMap, sync::Arc};
 use arcweft_source::SourceDocumentIdentity;
 
 use crate::{
-    documents::rebind_overlay,
     profiles::state::{
         AcceptedEnvironmentGeneration, AcceptedProfileEnvironment, AcceptedProfileKey,
         LspProfileState,
@@ -227,10 +226,7 @@ impl ArcweftLspSession {
             let Some(accepted_source) = accepted.project().sources().by_uri(&uri.to_uri()) else {
                 continue;
             };
-            let actual = rebind_overlay(snapshot, accepted_source).map_or_else(
-                |_| snapshot.source_document().identity().clone(),
-                |document| document.identity().clone(),
-            );
+            let actual = snapshot.source_document().identity().clone();
             let revision = PendingOverlayRevision::new(
                 uri.clone(),
                 snapshot.version(),

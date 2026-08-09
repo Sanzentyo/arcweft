@@ -10,8 +10,10 @@ pub mod state;
 mod uri;
 
 pub use diagnostic::{LspProfileDiagnostic, LspProfileDiagnosticKind};
+pub use load::LspProfileResolver;
+#[cfg(test)]
+pub(crate) use load::LspProfileTestHarness;
 pub(crate) use load::apply_registered_topology;
-pub use load::{LspProfileBuild, LspProfileResolver};
 pub use model::{LspProfile, ProfileSourceSelection};
 
 #[cfg(test)]
@@ -25,3 +27,15 @@ pub(crate) use uri::file_path_from_uri;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "../tests/character_completions.rs"]
+mod character_completions_tests;
+
+#[cfg(test)]
+#[path = "../tests/character_manifest_profile.rs"]
+mod character_manifest_profile_tests;
+
+#[cfg(test)]
+#[path = "../tests/character_nominal_identity.rs"]
+mod character_nominal_identity_tests;

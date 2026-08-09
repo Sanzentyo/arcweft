@@ -1,6 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::expressions::ExpressionProjection;
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::event::PendingSyntaxDiagnostic;
@@ -34,8 +34,7 @@ pub res @image.room room: std.presentation.Image {
     visible = true,
 }
 ";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     for expected in [
@@ -74,8 +73,7 @@ fn generic_head_is_structural_but_non_path_heads_are_rejected() {
         "res weather: WeatherIcon<Heavy> { severity = 3 }\n",
         "res borrowed: &Image { visible = true }\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ResourceDeclarationItem), 2);
@@ -101,8 +99,7 @@ fn malformed_resource_headers_have_owned_recovery_ranges() {
         "res no_body: Image\n",
         "proof next() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let codes = built
         .diagnostics()
@@ -144,8 +141,7 @@ fn malformed_field_does_not_hide_later_fields_or_items() {
         "}\n",
         "proof next() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let codes = built
         .diagnostics()
@@ -170,8 +166,7 @@ fn comparison_and_missing_initializer_keep_exact_sibling_boundaries() {
         "    visible = true\n",
         "}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ResourceFieldInitializer), 3);
@@ -204,8 +199,7 @@ fn comparison_and_missing_initializer_keep_exact_sibling_boundaries() {
 #[test]
 fn removed_entity_scaffold_and_old_family_heads_do_not_create_resources() {
     let source = concat!("entity room: Image {}\n", "image room {}\n");
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
 
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::ResourceDeclarationItem),

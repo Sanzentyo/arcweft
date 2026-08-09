@@ -4,8 +4,8 @@ use arcweft_source::SourceSpan;
 
 use super::family::{ExprNode, RecoveryFamily, RecoveryNode};
 use super::node::{
-    AstNode, CallArgumentKind, CloseBracketKind, DocBlockKind, ExactAstKind, OpenBracketKind,
-    OuterAttributeKind, PathKind,
+    AstNode, CallArgumentKind, CloseBracketKind, DocBlockKind, ExactAstKind, InnerAttributeKind,
+    OpenBracketKind, OuterAttributeKind, PathKind,
 };
 use super::source_file::{
     AttachedDelimiterState, AttachedPath, AttachedPathRoot, AttachedPathSegmentKind,
@@ -49,7 +49,7 @@ impl AstNode<DocBlockKind> {
 /// Authored or missing value owned by one ordinary attribute argument.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedAttributeValue {
-    Authored(AttachedExpressionNode),
+    Authored(Box<AttachedExpressionNode>),
     Missing(ExprNode),
 }
 
@@ -92,7 +92,7 @@ impl AttachedAttributeArgument {
     }
 }
 
-/// Current grammar form retained by an outer attribute.
+/// Current grammar form retained by a source or item attribute.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedOuterAttributeForm {
     Marker,
@@ -118,7 +118,7 @@ impl AttachedOuterAttributeForm {
     }
 }
 
-/// Parser-selected outer-attribute recovery without a fabricated path or Call.
+/// Parser-selected attribute recovery without a fabricated path or Call.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AttachedOuterAttributeIssue {
     MissingPath,
@@ -138,8 +138,70 @@ pub struct AttachedOuterAttribute {
     components: Box<[AttachedAttributeComponent]>,
 }
 
+/// One exact, structured source-level inner attribute.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedInnerAttribute {
+    syntax: AstNode<InnerAttributeKind>,
+    open: AstNode<OpenBracketKind>,
+    close: AstNode<CloseBracketKind>,
+    path: AttachedPath,
+    form: AttachedOuterAttributeForm,
+    issue: Option<AttachedOuterAttributeIssue>,
+    recovery: Option<RecoveryNode>,
+    components: Box<[AttachedAttributeComponent]>,
+}
+
 impl AttachedOuterAttribute {
     pub const fn syntax(&self) -> &AstNode<OuterAttributeKind> {
+        &self.syntax
+    }
+
+    pub const fn open(&self) -> &AstNode<OpenBracketKind> {
+        &self.open
+    }
+
+    pub const fn close(&self) -> &AstNode<CloseBracketKind> {
+        &self.close
+    }
+
+    pub const fn path(&self) -> &AttachedPath {
+        &self.path
+    }
+
+    pub const fn form(&self) -> &AttachedOuterAttributeForm {
+        &self.form
+    }
+
+    pub fn arguments(&self) -> &[AttachedAttributeArgument] {
+        self.form.arguments()
+    }
+
+    pub const fn issue(&self) -> Option<AttachedOuterAttributeIssue> {
+        self.issue
+    }
+
+    pub const fn recovery(&self) -> Option<&RecoveryNode> {
+        self.recovery.as_ref()
+    }
+
+    pub fn components(&self) -> &[AttachedAttributeComponent] {
+        &self.components
+    }
+
+    pub fn component(&self, role: ExpressionComponentRole) -> Option<&SourceSpan> {
+        self.components
+            .iter()
+            .find(|component| component.role == role)
+            .map(|component| &component.source)
+    }
+
+    pub fn close_state(&self) -> AttachedDelimiterState {
+        delimiter_state(&self.close)
+    }
+}
+
+impl AttachedInnerAttribute {
+    pub const fn syntax(&self) -> &AstNode<InnerAttributeKind> {
         &self.syntax
     }
 
@@ -207,11 +269,29 @@ impl AttachedItemPrefix {
     pub const fn visibility(&self) -> Option<&AttachedVisibility> {
         self.visibility.as_ref()
     }
+
+    pub(crate) fn remove_proof_trust_attributes(&mut self) {
+        self.attributes = self
+            .attributes
+            .iter()
+            .filter(|attribute| !is_verify_trusted_attribute(attribute))
+            .cloned()
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+    }
 }
 
 impl TypedItemNode {
     /// Binds the common declaration prefix without reparsing source text.
     pub fn attached_prefix(&self) -> Result<AttachedItemPrefix, SyntaxAccessError> {
+        let mut prefix = self.attached_prefix_including_proof_trust()?;
+        prefix.remove_proof_trust_attributes();
+        Ok(prefix)
+    }
+
+    pub(crate) fn attached_prefix_including_proof_trust(
+        &self,
+    ) -> Result<AttachedItemPrefix, SyntaxAccessError> {
         let documentation = self
             .documentation()?
             .map(|syntax| syntax.semantics())
@@ -234,82 +314,30 @@ impl TypedItemNode {
     }
 }
 
+pub(crate) fn is_verify_trusted_attribute(attribute: &AttachedOuterAttribute) -> bool {
+    matches!(attribute.path().root(), AttachedPathRoot::ImplicitCrate)
+        && matches!(
+            attribute.path().segments(),
+            [verify, trusted]
+                if verify.kind() == AttachedPathSegmentKind::Identifier
+                    && trusted.kind() == AttachedPathSegmentKind::Identifier
+                    && verify.source_text() == "verify"
+                    && trusted.source_text() == "trusted"
+        )
+}
+
 impl AstNode<OuterAttributeKind> {
     /// Returns the parser-owned dotted path and ordinary argument grammar.
     pub fn semantics(&self) -> Result<AttachedOuterAttribute, SyntaxAccessError> {
-        let pending = self
-            .syntax()
-            .attribute_projection()
-            .cloned()
-            .ok_or(SyntaxAccessError::MissingAttributeProjection { id: self.id() })?;
-        if !pending.validates_components(self.range()) {
-            return Err(SyntaxAccessError::InvalidAttributeProjection { id: self.id() });
-        }
-        let open = exact_attribute_delimiter::<OpenBracketKind>(self, SyntaxRole::OpenDelimiter)?;
-        let close =
-            exact_attribute_delimiter::<CloseBracketKind>(self, SyntaxRole::CloseDelimiter)?;
-        let path =
-            AttachedPath::from_syntax(self.required_exact_child::<PathKind>(SyntaxRole::Target)?)?;
-        let issue = pending.issue().map(|issue| match issue {
-            PendingOuterAttributeIssue::MissingPath => AttachedOuterAttributeIssue::MissingPath,
-            PendingOuterAttributeIssue::InvalidShape => AttachedOuterAttributeIssue::InvalidShape,
-        });
-        if !attribute_path_matches_issue(&path, issue) {
-            return Err(SyntaxAccessError::InvalidAttributeProjection { id: self.id() });
-        }
-        let recoveries =
-            self.ordered_family_children::<RecoveryFamily>(SyntaxRoleClass::Recovery)?;
-        let recovery = match recoveries.as_slice() {
-            [] => None,
-            [recovery] => Some(recovery.clone()),
-            _ => return Err(SyntaxAccessError::InvalidAttributeProjection { id: self.id() }),
-        };
-        let recovery_shape_valid = match issue {
-            None => recovery.is_none(),
-            Some(AttachedOuterAttributeIssue::MissingPath) => true,
-            Some(AttachedOuterAttributeIssue::InvalidShape) => recovery.is_some(),
-        };
-        if !recovery_shape_valid {
-            return Err(SyntaxAccessError::InvalidAttributeProjection { id: self.id() });
-        }
-        let form = match pending.form() {
-            PendingOuterAttributeForm::Marker => {
-                if !self
-                    .ordered_exact_children::<CallArgumentKind>(SyntaxRoleClass::Argument)?
-                    .is_empty()
-                {
-                    return Err(SyntaxAccessError::InvalidAttributeProjection { id: self.id() });
-                }
-                AttachedOuterAttributeForm::Marker
-            }
-            PendingOuterAttributeForm::Parenthesized {
-                arguments,
-                terminator,
-            } => {
-                let syntax_arguments =
-                    self.ordered_exact_children::<CallArgumentKind>(SyntaxRoleClass::Argument)?;
-                if syntax_arguments.len() != arguments.len() {
-                    return Err(SyntaxAccessError::InvalidAttributeProjection { id: self.id() });
-                }
-                let arguments = syntax_arguments
-                    .into_iter()
-                    .zip(arguments.iter())
-                    .map(|(syntax, projection)| {
-                        attach_attribute_argument(
-                            self.id(),
-                            syntax,
-                            projection,
-                            pending.components(),
-                        )
-                    })
-                    .collect::<Result<Vec<_>, _>>()?
-                    .into_boxed_slice();
-                AttachedOuterAttributeForm::Parenthesized {
-                    arguments,
-                    terminator: *terminator,
-                }
-            }
-        };
+        let AttachedAttributeParts {
+            open,
+            close,
+            path,
+            form,
+            issue,
+            recovery,
+            components,
+        } = attach_attribute(self)?;
         Ok(AttachedOuterAttribute {
             syntax: self.clone(),
             open,
@@ -318,21 +346,137 @@ impl AstNode<OuterAttributeKind> {
             form,
             issue,
             recovery,
-            components: pending
-                .components()
-                .iter()
-                .map(|component| AttachedAttributeComponent {
-                    role: component.role(),
-                    source: self.syntax().source_span_for_range(component.range()),
-                })
-                .collect::<Vec<_>>()
-                .into_boxed_slice(),
+            components,
         })
     }
 }
 
-fn exact_attribute_delimiter<K: ExactAstKind>(
-    owner: &AstNode<OuterAttributeKind>,
+impl AstNode<InnerAttributeKind> {
+    /// Returns the parser-owned source-level attribute path and arguments.
+    pub fn semantics(&self) -> Result<AttachedInnerAttribute, SyntaxAccessError> {
+        let AttachedAttributeParts {
+            open,
+            close,
+            path,
+            form,
+            issue,
+            recovery,
+            components,
+        } = attach_attribute(self)?;
+        Ok(AttachedInnerAttribute {
+            syntax: self.clone(),
+            open,
+            close,
+            path,
+            form,
+            issue,
+            recovery,
+            components,
+        })
+    }
+}
+
+struct AttachedAttributeParts {
+    open: AstNode<OpenBracketKind>,
+    close: AstNode<CloseBracketKind>,
+    path: AttachedPath,
+    form: AttachedOuterAttributeForm,
+    issue: Option<AttachedOuterAttributeIssue>,
+    recovery: Option<RecoveryNode>,
+    components: Box<[AttachedAttributeComponent]>,
+}
+
+fn attach_attribute<K: ExactAstKind>(
+    owner: &AstNode<K>,
+) -> Result<AttachedAttributeParts, SyntaxAccessError> {
+    let pending = owner
+        .syntax()
+        .attribute_projection()
+        .cloned()
+        .ok_or(SyntaxAccessError::MissingAttributeProjection { id: owner.id() })?;
+    if !pending.validates_components(owner.range()) {
+        return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner.id() });
+    }
+    let open = exact_attribute_delimiter::<K, OpenBracketKind>(owner, SyntaxRole::OpenDelimiter)?;
+    let close =
+        exact_attribute_delimiter::<K, CloseBracketKind>(owner, SyntaxRole::CloseDelimiter)?;
+    let path =
+        AttachedPath::from_syntax(owner.required_exact_child::<PathKind>(SyntaxRole::Target)?)?;
+    let issue = pending.issue().map(|issue| match issue {
+        PendingOuterAttributeIssue::MissingPath => AttachedOuterAttributeIssue::MissingPath,
+        PendingOuterAttributeIssue::InvalidShape => AttachedOuterAttributeIssue::InvalidShape,
+    });
+    if !attribute_path_matches_issue(&path, issue) {
+        return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner.id() });
+    }
+    let recoveries = owner.ordered_family_children::<RecoveryFamily>(SyntaxRoleClass::Recovery)?;
+    let recovery = match recoveries.as_slice() {
+        [] => None,
+        [recovery] => Some(recovery.clone()),
+        _ => return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner.id() }),
+    };
+    let recovery_shape_valid = match issue {
+        None => recovery.is_none(),
+        Some(AttachedOuterAttributeIssue::MissingPath) => true,
+        Some(AttachedOuterAttributeIssue::InvalidShape) => recovery.is_some(),
+    };
+    if !recovery_shape_valid {
+        return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner.id() });
+    }
+    let form = match pending.form() {
+        PendingOuterAttributeForm::Marker => {
+            if !owner
+                .ordered_exact_children::<CallArgumentKind>(SyntaxRoleClass::Argument)?
+                .is_empty()
+            {
+                return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner.id() });
+            }
+            AttachedOuterAttributeForm::Marker
+        }
+        PendingOuterAttributeForm::Parenthesized {
+            arguments,
+            terminator,
+        } => {
+            let syntax_arguments =
+                owner.ordered_exact_children::<CallArgumentKind>(SyntaxRoleClass::Argument)?;
+            if syntax_arguments.len() != arguments.len() {
+                return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner.id() });
+            }
+            let arguments = syntax_arguments
+                .into_iter()
+                .zip(arguments.iter())
+                .map(|(syntax, projection)| {
+                    attach_attribute_argument(owner.id(), syntax, projection, pending.components())
+                })
+                .collect::<Result<Vec<_>, _>>()?
+                .into_boxed_slice();
+            AttachedOuterAttributeForm::Parenthesized {
+                arguments,
+                terminator: *terminator,
+            }
+        }
+    };
+    Ok(AttachedAttributeParts {
+        open,
+        close,
+        path,
+        form,
+        issue,
+        recovery,
+        components: pending
+            .components()
+            .iter()
+            .map(|component| AttachedAttributeComponent {
+                role: component.role(),
+                source: owner.syntax().source_span_for_range(component.range()),
+            })
+            .collect::<Vec<_>>()
+            .into_boxed_slice(),
+    })
+}
+
+fn exact_attribute_delimiter<O: ExactAstKind, K: ExactAstKind>(
+    owner: &AstNode<O>,
     role: SyntaxRole,
 ) -> Result<AstNode<K>, SyntaxAccessError> {
     let candidates = owner
@@ -384,9 +528,8 @@ fn attach_attribute_argument(
     projection: &SyntaxCallArgumentProjection,
     components: &[PendingExpressionComponent],
 ) -> Result<AttachedAttributeArgument, SyntaxAccessError> {
-    let argument = match syntax.role() {
-        SyntaxRole::Argument(argument) => argument,
-        _ => return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner }),
+    let SyntaxRole::Argument(argument) = syntax.role() else {
+        return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner });
     };
     let whole = attribute_component_range(
         components,
@@ -441,7 +584,7 @@ fn attach_attribute_argument(
             AttachedAttributeValue::Missing(value)
         }
         (SyntaxExpressionSlot::Authored, kind) if kind != SyntaxKind::MissingExpression => {
-            AttachedAttributeValue::Authored(value.semantic()?)
+            AttachedAttributeValue::Authored(Box::new(value.semantic()?))
         }
         _ => return Err(SyntaxAccessError::InvalidAttributeProjection { id: owner }),
     };

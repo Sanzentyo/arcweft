@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_syntax::ast::dialogue`
+ --> tests/ui/removed_legacy_speaker_content.rs:1:31
+  |
+1 | use arcweft_lang_syntax::ast::dialogue::{ContentCall, SpeakerLine};
+  |                               ^^^^^^^^ could not find `dialogue` in `ast`

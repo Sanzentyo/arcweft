@@ -493,14 +493,16 @@ fn normalize_runtime_value(
                 })
         }
         RuntimeValue::Variant {
-            path,
+            owner,
+            ordinal,
             name,
             payload,
         } => payload
             .map(|payload| normalize_runtime_value(*payload).map(Box::new))
             .transpose()
             .map(|payload| RuntimeValue::Variant {
-                path,
+                owner,
+                ordinal,
                 name,
                 payload,
             }),
@@ -532,7 +534,7 @@ pub(super) fn replace_runtime_value(
 pub(super) fn empty_runtime_value(
     value: &RuntimeValue,
 ) -> Result<RuntimeValue, CharacterDialogueValueError> {
-    if let Some(none) = value.option_none_with_same_path() {
+    if let Some(none) = value.option_none_with_same_owner() {
         return Ok(none);
     }
     match value {

@@ -1,24 +1,18 @@
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 
-use arcweft_id::{IdError, PublicId};
 use arcweft_source::{
-    MAX_REGISTRATION_SOURCE_BYTES, SourceDocument, SourceDocumentId, SourceName, SourceRevision,
-    SourceSetRevision, SourceSetRevisionError,
+    MAX_PRODUCT_SOURCE_ID_INPUT_BYTES, MAX_REGISTRATION_SOURCE_BYTES, ProductSourceId,
+    ProductSourceIdentityError, ProductSourceRef, SourceDocument, SourceDocumentId, SourceName,
+    SourceRevision, SourceSetRevision, SourceSetRevisionError,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::SourceMapBuildError;
 
 pub const MAX_SOURCE_MAP_DOCUMENTS: usize = 65_536;
-pub const MAX_PRODUCT_SOURCE_ID_INPUT_BYTES: usize = 4_096;
 pub const MAX_SOURCE_DISPLAY_NAME_BYTES: usize = 4_096;
 pub const MAX_SOURCE_BYTES_PER_DOCUMENT: u64 = MAX_REGISTRATION_SOURCE_BYTES;
 pub const MAX_SOURCE_MAP_TOTAL_UTF8_BYTES: u64 = 67_108_864;
-
-/// Stable product identity derived only from one logical source-document ID.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ProductSourceId(PublicId);
 
 /// Exact source document embedded in a canonical product source map.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -37,63 +31,6 @@ pub struct SourceMapSection {
     source_set_revision: SourceSetRevision,
     pub(super) primary_document_id: Option<SourceDocumentId>,
     documents: Vec<SourceMapDocument>,
-}
-
-impl ProductSourceId {
-    pub fn try_for_document_id(id: &SourceDocumentId) -> Result<Self, SourceMapBuildError> {
-        let bytes = id.as_str().len();
-        if bytes > MAX_PRODUCT_SOURCE_ID_INPUT_BYTES {
-            return Err(SourceMapBuildError::DocumentIdTooLong {
-                id: id.clone(),
-                bytes,
-                limit: MAX_PRODUCT_SOURCE_ID_INPUT_BYTES,
-            });
-        }
-        let length = u32::try_from(bytes).map_err(|_| SourceMapBuildError::ArithmeticOverflow)?;
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(b"arcweft-product-source-id-v1\0");
-        hasher.update(&length.to_le_bytes());
-        hasher.update(id.as_str().as_bytes());
-        let digest = hasher.finalize();
-        let mut value = String::with_capacity(7 + 64);
-        value.push_str("source.");
-        digest.as_bytes().iter().try_for_each(|byte| {
-            write!(&mut value, "{byte:02x}").map_err(|_| SourceMapBuildError::ArithmeticOverflow)
-        })?;
-        PublicId::try_new(value)
-            .map(Self)
-            .map_err(|_| SourceMapBuildError::ArithmeticOverflow)
-    }
-
-    pub const fn public_id(&self) -> &PublicId {
-        &self.0
-    }
-
-    pub fn as_str(&self) -> &str {
-        self.0.as_str()
-    }
-
-    pub(crate) fn try_from_encoded(value: String) -> Result<Self, IdError> {
-        PublicId::try_new(value).map(Self)
-    }
-}
-
-impl Serialize for ProductSourceId {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for ProductSourceId {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        Self::try_from_encoded(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
-    }
 }
 
 impl SourceMapDocument {
@@ -117,6 +54,12 @@ impl SourceMapDocument {
         self.source_len
     }
 
+    /// Projects the exact lower-layer product source reference retained by
+    /// static product records.
+    pub fn product_source_ref(&self) -> ProductSourceRef {
+        ProductSourceRef::new(self.id.clone(), self.revision, self.source_len)
+    }
+
     pub fn text(&self) -> &str {
         &self.utf8
     }
@@ -129,7 +72,7 @@ impl SourceMapSection {
     /// Document records are sorted by `ProductSourceId` for deterministic
     /// lookup and encoding; that sort never changes the explicit primary.
     pub fn try_from_documents(documents: &[&SourceDocument]) -> Result<Self, SourceMapBuildError> {
-        Self::try_from_documents_with(documents, ProductSourceId::try_for_document_id)
+        Self::try_from_documents_with(documents, derive_product_source_id)
     }
 
     fn try_from_documents_with(
@@ -309,6 +252,16 @@ impl SourceMapSection {
             .ok()
             .map(|index| &self.documents[index])
     }
+}
+
+fn derive_product_source_id(id: &SourceDocumentId) -> Result<ProductSourceId, SourceMapBuildError> {
+    ProductSourceId::try_for_document_id(id).map_err(|error| match error {
+        ProductSourceIdentityError::DocumentIdTooLong { id, bytes, limit } => {
+            SourceMapBuildError::DocumentIdTooLong { id, bytes, limit }
+        }
+        ProductSourceIdentityError::ArithmeticOverflow
+        | ProductSourceIdentityError::InvalidPublicId => SourceMapBuildError::ArithmeticOverflow,
+    })
 }
 
 impl Serialize for SourceMapSection {

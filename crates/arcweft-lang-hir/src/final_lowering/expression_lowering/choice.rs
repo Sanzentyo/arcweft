@@ -22,7 +22,7 @@ use crate::expr::{
 };
 use crate::identity::{ExprId, HirLimit, LocalId, ScopeId, SyntheticOwner};
 use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::{HirExprSourceRole, HirSourceSite};
 
@@ -31,7 +31,7 @@ use super::super::{StagedHirModuleTransaction, require_limit};
 
 pub(super) struct ChoiceLoweringState {
     owner: ExprId,
-    next_missing_expression: u32,
+    next_required_expression: u32,
     recovered: bool,
 }
 
@@ -39,17 +39,31 @@ impl ChoiceLoweringState {
     const fn new(owner: ExprId) -> Self {
         Self {
             owner,
-            next_missing_expression: 0,
+            next_required_expression: 0,
             recovered: false,
         }
     }
 
-    fn take_missing_expression_ordinal(&mut self) -> Result<u32, HirLowerFailure> {
-        let ordinal = self.next_missing_expression;
-        self.next_missing_expression = ordinal
+    fn take_required_expression_ordinal(&mut self) -> Result<u32, HirLowerFailure> {
+        let ordinal = self.next_required_expression;
+        let observed = usize::try_from(ordinal)
+            .map_err(|_| HirInvariantFailure::InvalidSlotCommit)?
+            .checked_add(1)
+            .ok_or(HirInvariantFailure::InvalidSlotCommit)?;
+        require_limit(HirLimit::SyntheticDescendantsPerOwner, observed)?;
+        self.next_required_expression = ordinal
             .checked_add(1)
             .ok_or(HirInvariantFailure::InvalidSlotCommit)?;
         Ok(ordinal)
+    }
+
+    fn skip_required_expression(&mut self) -> Result<(), HirLowerFailure> {
+        self.take_required_expression_ordinal().map(|_| ())
+    }
+
+    fn required_expression_count(&self) -> Result<usize, HirLowerFailure> {
+        usize::try_from(self.next_required_expression)
+            .map_err(|_| HirInvariantFailure::InvalidSlotCommit.into())
     }
 
     pub(super) const fn owner(&self) -> ExprId {
@@ -133,6 +147,11 @@ impl StagedHirModuleTransaction<'_> {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
         }
 
+        let expected_required_expressions = syntax.required_expression_slots().len();
+        require_limit(
+            HirLimit::SyntheticDescendantsPerOwner,
+            expected_required_expressions,
+        )?;
         let mut state = ChoiceLoweringState::new(owner);
         let id = syntax
             .id()
@@ -157,6 +176,9 @@ impl StagedHirModuleTransaction<'_> {
             .transpose()?;
         if syntax.has_recovery() {
             state.mark_recovered();
+        }
+        if state.required_expression_count()? != expected_required_expressions {
+            return Err(HirInvariantFailure::InvalidArenaCommit.into());
         }
 
         let choice = HirChoiceExpr::new(id, body, plan);
@@ -193,7 +215,7 @@ impl StagedHirModuleTransaction<'_> {
             AttachedRequiredChoiceBody::Missing(missing) => {
                 let scope = self.allocate_choice_scope(
                     missing.id(),
-                    missing.source_span(),
+                    &missing.source_span(),
                     owner,
                     parent_scope,
                 )?;
@@ -214,7 +236,7 @@ impl StagedHirModuleTransaction<'_> {
     ) -> Result<PreparedChoiceBody<'attached>, HirLowerFailure> {
         let scope = self.allocate_choice_scope(
             attached.syntax().id(),
-            attached.syntax().source_span(),
+            &attached.syntax().source_span(),
             owner,
             parent_scope,
         )?;
@@ -239,7 +261,7 @@ impl StagedHirModuleTransaction<'_> {
             AttachedChoiceMatchArmBody::Single(item) => {
                 let scope = self.allocate_choice_scope(
                     arm.syntax().id(),
-                    arm.syntax().source_span(),
+                    &arm.syntax().source_span(),
                     owner,
                     parent_scope,
                 )?;
@@ -252,7 +274,7 @@ impl StagedHirModuleTransaction<'_> {
             AttachedChoiceMatchArmBody::Missing(missing) => {
                 let scope = self.allocate_choice_scope(
                     missing.id(),
-                    missing.source_span(),
+                    &missing.source_span(),
                     owner,
                     parent_scope,
                 )?;
@@ -265,6 +287,10 @@ impl StagedHirModuleTransaction<'_> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the explicit stack is one non-recursive source-order traversal over the complete nested Choice body grammar"
+    )]
     fn finish_choice_body(
         &mut self,
         prepared: PreparedChoiceBody<'_>,
@@ -597,6 +623,10 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
         state: &mut ChoiceLoweringState,
     ) -> Result<ExprId, HirLowerFailure> {
+        // Every declared required-expression slot advances the same semantic
+        // preorder. Authored versus missing recovery is deliberately not an
+        // input to later RecoveryOperand identities.
+        let ordinal = state.take_required_expression_ordinal()?;
         let expression = match attached {
             RequiredStatementExpressionNode::Expression(expression) => {
                 let expression = expression
@@ -611,7 +641,6 @@ impl StagedHirModuleTransaction<'_> {
                     &missing.source_span(),
                 )
                 .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
-                let ordinal = state.take_missing_expression_ordinal()?;
                 self.lower_missing_owned_expression(
                     SyntheticOwner::Expr(state.owner()),
                     scope,
@@ -639,11 +668,11 @@ impl StagedHirModuleTransaction<'_> {
     fn allocate_choice_scope(
         &mut self,
         syntax: arcweft_lang_syntax::attachment::SyntaxNodeId,
-        source: SourceSpan,
+        source: &SourceSpan,
         owner: ExprId,
         parent: ScopeId,
     ) -> Result<ScopeId, HirLowerFailure> {
-        let source = HirSourceSite::from_attached_span(self.request.source().document(), &source)
+        let source = HirSourceSite::from_attached_span(self.request.source().document(), source)
             .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
         let reservation = self
             .arenas

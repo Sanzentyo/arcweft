@@ -1,8 +1,8 @@
 use crate::effect_row::{EffectRow, EffectRowTail};
 use arcweft_character::id::{CharacterId, CharacterPartId};
+use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_syntax::{
-    ast::module_path::ModulePathRoot, expr::LifetimeScopeKind, literal::IntSuffix,
-    reference::BorrowKind, types::TypePath,
+    ast::module_path::ModulePathRoot, literal::IntSuffix, reference::BorrowKind, types::TypePath,
 };
 use core::fmt;
 
@@ -23,6 +23,56 @@ pub use nominal::{
     OpenNominalType, ProjectNominalType, TypePoisonId,
 };
 pub(crate) use substitution::TypeParameterSubstitutions;
+
+/// Runtime lifetime-registry scope retained by checked semantic types.
+///
+/// This is semantic identity, not parser syntax. Final HIR projects authored
+/// names into this owner exactly once while resolving a type region.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum LifetimeScopeKind {
+    Frame,
+    Tick,
+    Cue,
+    Line,
+    Scene,
+    Flow,
+    Session,
+    Global,
+    Persistent,
+    Named(String),
+}
+
+impl LifetimeScopeKind {
+    pub fn parse(source: &str) -> Self {
+        match source {
+            "frame" => Self::Frame,
+            "tick" => Self::Tick,
+            "cue" => Self::Cue,
+            "line" => Self::Line,
+            "scene" => Self::Scene,
+            "flow" => Self::Flow,
+            "session" => Self::Session,
+            "global" => Self::Global,
+            "persistent" => Self::Persistent,
+            name => Self::Named(name.to_owned()),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Frame => "frame",
+            Self::Tick => "tick",
+            Self::Cue => "cue",
+            Self::Line => "line",
+            Self::Scene => "scene",
+            Self::Flow => "flow",
+            Self::Session => "session",
+            Self::Global => "global",
+            Self::Persistent => "persistent",
+            Self::Named(name) => name.as_str(),
+        }
+    }
+}
 
 /// Statically known or deliberately unresolved length of an array type.
 ///
@@ -45,21 +95,6 @@ pub enum ArrayLength {
 }
 
 impl ArrayLength {
-    /// Returns whether this length leaves overload applicability open.
-    #[must_use]
-    pub(crate) const fn has_open_components(&self) -> bool {
-        matches!(self, Self::Generic(_) | Self::Error(_) | Self::Inferred)
-    }
-
-    /// Returns whether this length is known to equal `actual`.
-    #[must_use]
-    pub(crate) const fn matches_const(&self, actual: usize) -> bool {
-        match self {
-            Self::Const(expected) => *expected == actual,
-            Self::Generic(_) | Self::Error(_) | Self::Inferred => true,
-        }
-    }
-
     /// Returns whether an expected array length can accept an actual one.
     ///
     /// A concrete length is exact. Generic, recovery, and inference lengths
@@ -277,6 +312,29 @@ impl EntityKind {
             .find(|family| family.authored_type_name() == Some(name))
             .cloned()
     }
+
+    /// Maps a typed retained-declaration family to its value-level entity
+    /// reference family. Proofs are callable declarations rather than entity
+    /// references and therefore have no mapping here.
+    #[must_use]
+    pub const fn from_declaration_identity_family(
+        family: DeclarationIdentityFamily,
+    ) -> Option<Self> {
+        match family {
+            DeclarationIdentityFamily::Asset => Some(Self::Asset),
+            DeclarationIdentityFamily::Character => Some(Self::Character),
+            DeclarationIdentityFamily::View => Some(Self::View),
+            DeclarationIdentityFamily::Action => Some(Self::Action),
+            DeclarationIdentityFamily::Activity => Some(Self::Activity),
+            DeclarationIdentityFamily::Signal => Some(Self::Signal),
+            DeclarationIdentityFamily::Metric => Some(Self::Metric),
+            DeclarationIdentityFamily::Layer => Some(Self::Layer),
+            DeclarationIdentityFamily::Flow => Some(Self::Flow),
+            DeclarationIdentityFamily::Source => Some(Self::Source),
+            DeclarationIdentityFamily::Style => Some(Self::Style),
+            DeclarationIdentityFamily::Proof => None,
+        }
+    }
 }
 
 /// Entity reference type with optional payload type.
@@ -401,8 +459,6 @@ pub enum TypeKind {
         trait_name: Option<String>,
         assoc: String,
     },
-    Speaker(EntityKind),
-    SpeakerPreset(EntityKind),
     CharacterPatch(EntityKind),
     FocusPatch,
     /// Manifest-backed character enum with structural nominal identity.
@@ -416,13 +472,6 @@ pub enum TypeKind {
     Choice(Vec<TypeKind>),
     Unit,
     Never,
-}
-
-/// Sema-owned classification of a value accepted as authored speaker-line sugar.
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub enum SpeakerLineType {
-    Preset(EntityKind),
-    Speaker(EntityKind),
 }
 
 impl From<IntSuffix> for TypeKind {
@@ -467,161 +516,7 @@ impl EntityType {
 }
 
 impl TypeKind {
-    /// Classifies only the semantic types accepted by speaker-line sugar.
-    #[must_use]
-    pub fn speaker_line_classification(&self) -> Option<SpeakerLineType> {
-        match self {
-            Self::SpeakerPreset(kind) => Some(SpeakerLineType::Preset(kind.clone())),
-            Self::Speaker(kind) => Some(SpeakerLineType::Speaker(kind.clone())),
-            Self::Ref(entity) if entity.kind() == &EntityKind::Character => {
-                Some(SpeakerLineType::Speaker(EntityKind::Character))
-            }
-            _ => None,
-        }
-    }
-
     pub const ACTION_EVENT_TYPE_NAME: &'static str = "ActionEvent";
-
-    pub(crate) fn resolve_effect_rows_with<E>(
-        &self,
-        resolve: &mut impl FnMut(&EffectRow) -> Result<EffectRow, E>,
-    ) -> Result<Self, E> {
-        if let Some(resolved) = self.resolve_nominal_effect_rows_with(resolve) {
-            return resolved;
-        }
-        let resolved = match self {
-            Self::Range(inner) => Self::Range(Box::new(inner.resolve_effect_rows_with(resolve)?)),
-            Self::IteratorState { family, item } => Self::IteratorState {
-                family: *family,
-                item: Box::new(item.resolve_effect_rows_with(resolve)?),
-            },
-            Self::Ref(entity) => Self::Ref(EntityType::new(
-                entity.kind().clone(),
-                entity
-                    .value()
-                    .map(|value| value.resolve_effect_rows_with(resolve))
-                    .transpose()?,
-            )),
-            Self::Probe(inner) => Self::Probe(Box::new(inner.resolve_effect_rows_with(resolve)?)),
-            Self::Vec(inner) => Self::Vec(Box::new(inner.resolve_effect_rows_with(resolve)?)),
-            Self::Array { item, len } => Self::Array {
-                item: Box::new(item.resolve_effect_rows_with(resolve)?),
-                len: len.clone(),
-            },
-            Self::Slice(inner) => Self::Slice(Box::new(inner.resolve_effect_rows_with(resolve)?)),
-            Self::Seq(inner) => Self::Seq(Box::new(inner.resolve_effect_rows_with(resolve)?)),
-            Self::Map { kind, key, value } => Self::Map {
-                kind: *kind,
-                key: Box::new(key.resolve_effect_rows_with(resolve)?),
-                value: Box::new(value.resolve_effect_rows_with(resolve)?),
-            },
-            Self::BorrowRef {
-                kind,
-                lifetime,
-                inner,
-            } => Self::BorrowRef {
-                kind: *kind,
-                lifetime: lifetime.clone(),
-                inner: Box::new(inner.resolve_effect_rows_with(resolve)?),
-            },
-            Self::Need { ready, error } => Self::Need {
-                ready: Box::new(ready.resolve_effect_rows_with(resolve)?),
-                error: Box::new(error.resolve_effect_rows_with(resolve)?),
-            },
-            Self::Stream { item, error } => Self::Stream {
-                item: Box::new(item.resolve_effect_rows_with(resolve)?),
-                error: Box::new(error.resolve_effect_rows_with(resolve)?),
-            },
-            Self::Source { item, error } => Self::Source {
-                item: Box::new(item.resolve_effect_rows_with(resolve)?),
-                error: Box::new(error.resolve_effect_rows_with(resolve)?),
-            },
-            Self::Result { ok, error } => Self::Result {
-                ok: Box::new(ok.resolve_effect_rows_with(resolve)?),
-                error: Box::new(error.resolve_effect_rows_with(resolve)?),
-            },
-            Self::Option(inner) => Self::Option(Box::new(inner.resolve_effect_rows_with(resolve)?)),
-            Self::ThreadHandle(inner) => {
-                Self::ThreadHandle(Box::new(inner.resolve_effect_rows_with(resolve)?))
-            }
-            Self::Shared(inner) => Self::Shared(Box::new(inner.resolve_effect_rows_with(resolve)?)),
-            Self::Function {
-                params,
-                return_type,
-                effects,
-            } => Self::Function {
-                params: params
-                    .iter()
-                    .map(|param| param.resolve_effect_rows_with(resolve))
-                    .collect::<Result<_, _>>()?,
-                return_type: Box::new(return_type.resolve_effect_rows_with(resolve)?),
-                effects: resolve(effects)?,
-            },
-            Self::Projection {
-                subject,
-                trait_name,
-                assoc,
-            } => Self::Projection {
-                subject: Box::new(subject.resolve_effect_rows_with(resolve)?),
-                trait_name: trait_name.clone(),
-                assoc: assoc.clone(),
-            },
-            Self::Tuple(items) => Self::Tuple(
-                items
-                    .iter()
-                    .map(|item| item.resolve_effect_rows_with(resolve))
-                    .collect::<Result<_, _>>()?,
-            ),
-            Self::Choice(alternatives) => Self::Choice(
-                alternatives
-                    .iter()
-                    .map(|alternative| alternative.resolve_effect_rows_with(resolve))
-                    .collect::<Result<_, _>>()?,
-            ),
-            // Every remaining variant is a leaf: it contains neither a nested
-            // `TypeKind` nor an `EffectRow`, so resolution is identity.
-            _ => self.clone(),
-        };
-        Ok(resolved)
-    }
-
-    fn resolve_nominal_effect_rows_with<E>(
-        &self,
-        resolve: &mut impl FnMut(&EffectRow) -> Result<EffectRow, E>,
-    ) -> Option<Result<Self, E>> {
-        let mut resolve_arguments = |arguments: &[Self]| {
-            arguments
-                .iter()
-                .map(|argument| argument.resolve_effect_rows_with(resolve))
-                .collect::<Result<Vec<_>, E>>()
-        };
-        Some(match self {
-            Self::ProjectNominal(nominal) => {
-                resolve_arguments(nominal.arguments()).map(|arguments| {
-                    Self::ProjectNominal(ProjectNominalType::new(
-                        nominal.declaration().clone(),
-                        arguments,
-                    ))
-                })
-            }
-            Self::AcceptedNominal(nominal) => {
-                resolve_arguments(nominal.arguments()).map(|arguments| {
-                    Self::AcceptedNominal(AcceptedNominalType::new(
-                        nominal.declaration().clone(),
-                        arguments,
-                    ))
-                })
-            }
-            Self::OpenNominal(nominal) => resolve_arguments(nominal.arguments()).map(|arguments| {
-                Self::OpenNominal(OpenNominalType::new(
-                    nominal.rule().clone(),
-                    nominal.path().clone(),
-                    arguments,
-                ))
-            }),
-            _ => return None,
-        })
-    }
 
     /// Returns the canonical Arcweft surface spelling for this semantic type.
     ///
@@ -706,8 +601,6 @@ impl TypeKind {
                 || format!("{}::{assoc}", subject.source_label()),
                 |trait_name| format!("<{} as {trait_name}>::{assoc}", subject.source_label()),
             ),
-            Self::Speaker(kind) => format!("Speaker<{kind:?}>"),
-            Self::SpeakerPreset(kind) => format!("SpeakerPreset<{kind:?}>"),
             Self::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),
             Self::CharacterNominal(nominal) => nominal.source_label(),
             Self::Tuple(items) => format!(
@@ -992,8 +885,8 @@ impl fmt::Display for TypeKind {
 }
 
 #[cfg(test)]
-mod speaker_line_tests {
-    use super::{EntityKind, SpeakerLineType, TypeKind};
+mod entity_kind_tests {
+    use super::EntityKind;
 
     #[test]
     fn authored_entity_families_round_trip_without_other() {
@@ -1059,28 +952,6 @@ mod speaker_line_tests {
             ]
         );
         assert_eq!(EntityKind::Other("plugin".to_owned()).as_str(), "plugin");
-    }
-
-    #[test]
-    fn semantic_types_are_the_only_speaker_line_classifier() {
-        let character = EntityKind::Character;
-        assert_eq!(
-            TypeKind::SpeakerPreset(character.clone()).speaker_line_classification(),
-            Some(SpeakerLineType::Preset(character.clone()))
-        );
-        assert_eq!(
-            TypeKind::Speaker(character.clone()).speaker_line_classification(),
-            Some(SpeakerLineType::Speaker(character.clone()))
-        );
-        assert_eq!(
-            TypeKind::entity_ref(character.clone()).speaker_line_classification(),
-            Some(SpeakerLineType::Speaker(character))
-        );
-        assert!(
-            TypeKind::Named("SpeakerPreset".to_owned())
-                .speaker_line_classification()
-                .is_none()
-        );
     }
 }
 

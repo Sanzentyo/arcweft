@@ -2,9 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use crate::resource_codec::{
-    ProductSourceRef, ProductSourceRefIndex, SourceRangeRef, ViewProductBuildError,
-};
+use crate::resource_codec::{ProductSourceRefIndex, SourceRangeRef, ViewProductBuildError};
+use arcweft_source::ProductSourceRef;
 
 use super::{ViewProgramResource, ViewStyleResource};
 

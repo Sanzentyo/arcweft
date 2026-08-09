@@ -88,6 +88,29 @@ fn names_preserve_validated_code_points_and_path_roots() {
 }
 
 #[test]
+fn lexical_path_names_include_keyword_classified_leaves_but_exclude_qualified_paths() {
+    let receiver = HirPath::try_new(
+        HirPathRoot::ImplicitCrate,
+        vec![HirPathSegment::ProjectSymbol(
+            HirProjectSymbolSegment::try_new(Box::<str>::from("self"))
+                .expect("receiver keyword is a project-capable segment"),
+        )]
+        .into_boxed_slice(),
+    )
+    .expect("receiver path");
+    assert_eq!(receiver.lexical_name(), Some("self"));
+
+    let qualified = receiver.with_terminal_member(&name("field"));
+    assert_eq!(qualified.lexical_name(), None);
+    let explicit = HirPath::try_new(
+        HirPathRoot::SelfModule,
+        vec![HirPathSegment::Identifier(name("value"))].into_boxed_slice(),
+    )
+    .expect("explicit module path");
+    assert_eq!(explicit.lexical_name(), None);
+}
+
+#[test]
 fn path_resolution_context_rejects_a_foreign_scope() {
     let owner_module = module(1, 1);
     let snapshot = HirSnapshotId::new(owner_module, HirRevision::INITIAL);
@@ -324,6 +347,27 @@ fn arbitrary_integer_and_decimal_carriers_are_canonical() {
         suffix: Some(HirIntegerSuffix::USize),
     };
     assert!(matches!(literal, HirIntegerLiteral::Value { .. }));
+}
+
+#[test]
+fn semantic_numeric_values_own_canonical_decimal_formatting() {
+    assert_eq!(big_uint(&[]).to_decimal_string(), "0");
+    assert_eq!(big_uint(&[u32::MAX]).to_decimal_string(), "4294967295");
+    assert_eq!(big_uint(&[0, 1]).to_decimal_string(), "4294967296");
+
+    let decimal = |digits: &[u8], scale, exponent| {
+        HirDecimal::try_new(
+            HirDecimalDigits::try_new(digits.to_vec().into_boxed_slice())
+                .expect("fixture coefficient is canonical"),
+            scale,
+            exponent,
+        )
+        .expect("fixture decimal is canonical")
+    };
+    assert_eq!(decimal(&[0], 0, 0).to_decimal_string(), "0");
+    assert_eq!(decimal(&[1], 0, 2).to_decimal_string(), "100");
+    assert_eq!(decimal(&[1, 2, 3], 2, 0).to_decimal_string(), "1.23");
+    assert_eq!(decimal(&[5], 3, 0).to_decimal_string(), "0.005");
 }
 
 #[test]

@@ -1,5 +1,4 @@
-use crate::cell::ReplCellKind;
-use arcweft_lang_syntax::parser::recovery::ParseError;
+use arcweft_lang_syntax::incremental::SyntaxDiagnostic;
 use thiserror::Error;
 
 /// Transaction phase used for deterministic diagnostics and rollback audits.
@@ -18,8 +17,6 @@ pub enum ReplTransactionPhase {
 /// Coordinate space retained with parser diagnostics at the REPL boundary.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReplParseCoordinateSpace {
-    /// UTF-8 byte offsets in the normalized authored cell source.
-    CellSourceUtf8Bytes,
     /// UTF-8 byte offsets in the generated compilation source.
     SyntheticSourceUtf8Bytes,
 }
@@ -32,14 +29,9 @@ pub enum ReplTransactionError {
     CommandInputDelegated { command: String },
     #[error("REPL cell is incomplete or invalid: {message}")]
     IncompleteOrInvalid { message: String },
-    #[error("REPL cell kind mismatch: expected {expected:?}, got {actual:?}")]
-    UnexpectedCellKind {
-        expected: ReplCellKind,
-        actual: ReplCellKind,
-    },
-    #[error("REPL cell parsing failed")]
-    Parse {
-        diagnostics: Vec<ParseError>,
+    #[error("REPL attached source parsing failed")]
+    AttachedParse {
+        diagnostics: Vec<SyntaxDiagnostic>,
         coordinate_space: ReplParseCoordinateSpace,
     },
     #[error("{phase:?} failed: {message}")]
@@ -63,8 +55,7 @@ impl ReplTransactionError {
         match self {
             Self::CommandInputDelegated { .. }
             | Self::IncompleteOrInvalid { .. }
-            | Self::UnexpectedCellKind { .. }
-            | Self::Parse { .. } => ReplTransactionPhase::ClassifyParse,
+            | Self::AttachedParse { .. } => ReplTransactionPhase::ClassifyParse,
             Self::Compile { phase, .. } => *phase,
             Self::EffectPolicy { .. } => ReplTransactionPhase::SemanticEffectChecks,
             Self::Verifier { .. } => ReplTransactionPhase::VerifierGate,
@@ -73,11 +64,11 @@ impl ReplTransactionError {
         }
     }
 
-    /// Typed parser diagnostics retained by a failed cell transaction.
+    /// Revision-bound attached-source diagnostics retained by project compilation.
     #[must_use]
-    pub fn parse_diagnostics(&self) -> Option<&[ParseError]> {
+    pub fn attached_parse_diagnostics(&self) -> Option<&[SyntaxDiagnostic]> {
         match self {
-            Self::Parse { diagnostics, .. } => Some(diagnostics),
+            Self::AttachedParse { diagnostics, .. } => Some(diagnostics),
             _ => None,
         }
     }
@@ -86,7 +77,7 @@ impl ReplTransactionError {
     #[must_use]
     pub const fn parse_coordinate_space(&self) -> Option<ReplParseCoordinateSpace> {
         match self {
-            Self::Parse {
+            Self::AttachedParse {
                 coordinate_space, ..
             } => Some(*coordinate_space),
             _ => None,
@@ -99,7 +90,6 @@ impl ReplParseCoordinateSpace {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::CellSourceUtf8Bytes => "source_utf8_bytes",
             Self::SyntheticSourceUtf8Bytes => "synthetic_source",
         }
     }

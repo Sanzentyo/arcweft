@@ -24,35 +24,33 @@ use arcweft_lang_syntax::text::{
 };
 
 use crate::dialogue_application::{
-    HirDialogueContent, HirDialogueContentApplication, HirDialogueContentError,
-    HirDialogueContentId, HirDialogueCoordinate, HirDialogueNode, HirDialogueNodeId,
-    HirDialogueNodeKind, HirPostfixBracket, HirPostfixBracketCandidates,
-    HirPostfixCandidateFailure, HirPostfixCandidateFailureKind, HirRichTextArgument,
-    HirRichTextArgumentId, HirRichTextArgumentIssue, HirRichTextEndTag, HirRichTextIssue,
-    HirRichTextTag, HirRichTextTagId, HirRichTextTagIdentity, HirRichTextTagPayload,
-    HirRichTextValue, HirRuby, HirTextFragment, HirUnresolvedRichTextTag,
+    HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId, HirDialogueCoordinate,
+    HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirPostfixBracket,
+    HirPostfixBracketCandidates, HirPostfixCandidateFailure, HirPostfixCandidateFailureKind,
+    HirRichTextArgument, HirRichTextArgumentId, HirRichTextArgumentIssue, HirRichTextEndTag,
+    HirRichTextIssue, HirRichTextTag, HirRichTextTagId, HirRichTextTagIdentity,
+    HirRichTextTagPayload, HirRichTextValue, HirRuby, HirTextFragment, HirUnresolvedRichTextTag,
 };
 use crate::expr::{HirExprKind, HirExpressionRecoveryIssue, HirGenericExprIssue, HirRecoveryIssue};
 use crate::identity::{ExprId, ScopeId};
 use crate::leaf::HirProjectSymbolSegment;
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
-use crate::source_index::{HirDialogueNodeSourcePart, HirExprSourceRole, HirRichTextTagSourcePart};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
+use crate::source_index::{HirExprSourceRole, expression_component_role};
 
-use super::super::name_projection::{name, name_issue, require_attempted_name_limit};
+use super::super::name_projection::{name, require_attempted_name_limit};
 use super::StagedHirModuleTransaction;
 
 impl StagedHirModuleTransaction<'_> {
     pub(super) fn preflight_dialogue_content_application(
-        &self,
         attached: &AttachedExpressionNode,
         application: &SyntaxDialogueApplicationProjection,
     ) -> Result<(), HirLowerFailure> {
-        if attached
+        let targets = attached
             .children()
-            .first()
-            .map(AttachedExpressionChild::ordinal)
-            != Some(0)
-        {
+            .iter()
+            .filter(|child| child.component_role() == ExpressionComponentRole::Target)
+            .collect::<Vec<_>>();
+        if !matches!(targets.as_slice(), [target] if target.authored().is_some()) {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
         }
         let SyntaxDialogueContentProjection::Present(content) = application.content() else {
@@ -81,14 +79,15 @@ impl StagedHirModuleTransaction<'_> {
     }
 
     pub(super) fn preflight_postfix_bracket(
-        &self,
         attached: &AttachedExpressionNode,
         _postfix: &SyntaxPostfixBracketProjection,
     ) -> Result<(), HirLowerFailure> {
-        if attached.children().len() == 1
-            && attached.children()[0].ordinal() == 0
-            && attached.children()[0].authored().is_some()
-        {
+        if matches!(
+            attached.children(),
+            [target]
+                if target.component_role() == ExpressionComponentRole::Target
+                    && target.authored().is_some()
+        ) {
             Ok(())
         } else {
             Err(HirInvariantFailure::InvalidArenaCommit.into())
@@ -108,7 +107,11 @@ impl StagedHirModuleTransaction<'_> {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
         }
 
-        let target_child = self.expression_child(attached, 0, SyntaxExpressionSlot::Authored)?;
+        let target_child = Self::expression_child(
+            attached,
+            ExpressionComponentRole::Target,
+            SyntaxExpressionSlot::Authored,
+        )?;
         let target_attached = target_child
             .authored_semantic()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -167,7 +170,11 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
         projection: &SyntaxPostfixBracketProjection,
     ) -> Result<(HirPostfixBracket, Option<HirRecoveryIssue>), HirLowerFailure> {
-        let target_child = self.expression_child(attached, 0, SyntaxExpressionSlot::Authored)?;
+        let target_child = Self::expression_child(
+            attached,
+            ExpressionComponentRole::Target,
+            SyntaxExpressionSlot::Authored,
+        )?;
         let target_attached = target_child
             .authored_semantic()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -245,6 +252,7 @@ impl StagedHirModuleTransaction<'_> {
         }
 
         let mut nodes = Vec::with_capacity(source.nodes().len());
+        let paired_starts = paired_start_tags(source, &tags)?;
         for (ordinal, source_node) in source.nodes().iter().enumerate() {
             let id = HirDialogueNodeId::try_new(content, ordinal)
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
@@ -252,6 +260,7 @@ impl StagedHirModuleTransaction<'_> {
                 content,
                 &tags,
                 source_node,
+                paired_starts[ordinal],
                 nested.node_values[ordinal],
                 recovery,
             )?;
@@ -270,83 +279,66 @@ impl StagedHirModuleTransaction<'_> {
         content: &SyntaxDialogueContent,
         recovery: &mut Option<HirRecoveryIssue>,
     ) -> Result<LoweredDialogueNested, HirLowerFailure> {
-        let mut slots = Vec::new();
-        for (ordinal, node) in content.nodes().iter().enumerate() {
-            let SyntaxDialogueNodeProjection::Interpolation(slot) = node else {
-                continue;
-            };
-            let source_ordinal =
-                u32::try_from(ordinal).map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-            let component = attached
-                .component(ExpressionComponentRole::DialogueNode {
-                    ordinal: source_ordinal,
-                    part: SyntaxDialogueNodeSourcePart::Interpolation,
-                })
-                .ok_or(HirInvariantFailure::InvalidSourceSpan)?;
-            slots.push(DialogueNestedSlot {
-                start: component.range().start(),
-                end: component.range().end(),
-                owner: DialogueNestedOwner::Node(ordinal),
-                slot: *slot,
-                role: HirExprSourceRole::DialogueNode {
-                    ordinal: source_ordinal,
-                    part: HirDialogueNodeSourcePart::Interpolation,
-                },
-            });
-        }
-        for (ordinal, tag) in content.tags().iter().enumerate() {
-            let slot = match tag.payload() {
-                SyntaxRichTextTagPayloadProjection::FxCall(slot)
-                | SyntaxRichTextTagPayloadProjection::DialogueCall(slot)
-                | SyntaxRichTextTagPayloadProjection::Condition(slot) => *slot,
-                SyntaxRichTextTagPayloadProjection::Arguments
-                | SyntaxRichTextTagPayloadProjection::None => continue,
-            };
-            let source_ordinal =
-                u32::try_from(ordinal).map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-            let component = attached
-                .component(ExpressionComponentRole::RichTextTag {
-                    tag: source_ordinal,
-                    part: SyntaxRichTextTagSourcePart::Payload,
-                })
-                .ok_or(HirInvariantFailure::InvalidSourceSpan)?;
-            slots.push(DialogueNestedSlot {
-                start: component.range().start(),
-                end: component.range().end(),
-                owner: DialogueNestedOwner::Tag(ordinal),
-                slot,
-                role: HirExprSourceRole::RichTextTag {
-                    tag: source_ordinal,
-                    part: HirRichTextTagSourcePart::Payload,
-                },
-            });
-        }
-        slots.sort_by_key(|slot| (slot.start, slot.end));
-        if attached.children().len()
-            != slots
-                .len()
-                .checked_add(1)
-                .ok_or(HirInvariantFailure::InvalidArenaCommit)?
-        {
-            return Err(HirInvariantFailure::InvalidArenaCommit.into());
-        }
-
         let mut node_values = vec![None; content.nodes().len()];
         let mut tag_values = vec![None; content.tags().len()];
-        for (position, slot) in slots.into_iter().enumerate() {
-            let ordinal = u32::try_from(
-                position
-                    .checked_add(1)
-                    .ok_or(HirInvariantFailure::InvalidArenaCommit)?,
-            )
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-            let child = self.expression_child(attached, ordinal, slot.slot)?;
-            let value =
-                self.lower_dialogue_nested_expression(owner, scope, child, slot.role, recovery)?;
-            let destination = match slot.owner {
-                DialogueNestedOwner::Node(node) => &mut node_values[node],
-                DialogueNestedOwner::Tag(tag) => &mut tag_values[tag],
+        for child in attached
+            .children()
+            .iter()
+            .filter(|child| child.component_role() != ExpressionComponentRole::Target)
+        {
+            let component_role = child.component_role();
+            let (slot, destination) = match component_role {
+                ExpressionComponentRole::DialogueNode {
+                    ordinal,
+                    part: SyntaxDialogueNodeSourcePart::Interpolation,
+                } => {
+                    let index = usize::try_from(ordinal)
+                        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                    let SyntaxDialogueNodeProjection::Interpolation(slot) = content
+                        .nodes()
+                        .get(index)
+                        .ok_or(HirInvariantFailure::InvalidArenaCommit)?
+                    else {
+                        return Err(HirInvariantFailure::InvalidArenaCommit.into());
+                    };
+                    (*slot, &mut node_values[index])
+                }
+                ExpressionComponentRole::RichTextTag {
+                    tag,
+                    part: SyntaxRichTextTagSourcePart::Payload,
+                } => {
+                    let index = usize::try_from(tag)
+                        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+                    let tag = content
+                        .tags()
+                        .get(index)
+                        .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+                    let slot = match tag.payload() {
+                        SyntaxRichTextTagPayloadProjection::FxCall(slot)
+                        | SyntaxRichTextTagPayloadProjection::DialogueCall(slot)
+                        | SyntaxRichTextTagPayloadProjection::Condition(slot) => *slot,
+                        SyntaxRichTextTagPayloadProjection::Arguments
+                        | SyntaxRichTextTagPayloadProjection::None => {
+                            return Err(HirInvariantFailure::InvalidArenaCommit.into());
+                        }
+                    };
+                    (slot, &mut tag_values[index])
+                }
+                _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
             };
+            if child.authored().is_some() != matches!(slot, SyntaxExpressionSlot::Authored) {
+                return Err(HirInvariantFailure::InvalidArenaCommit.into());
+            }
+            let role = expression_component_role(attached.projection(), component_role)
+                .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+            let value = self.lower_dialogue_nested_expression(
+                attached.projection(),
+                owner,
+                scope,
+                child,
+                role,
+                recovery,
+            )?;
             if destination.replace(value).is_some() {
                 return Err(HirInvariantFailure::InvalidArenaCommit.into());
             }
@@ -359,6 +351,7 @@ impl StagedHirModuleTransaction<'_> {
 
     fn lower_dialogue_nested_expression(
         &mut self,
+        projection: &arcweft_lang_syntax::expressions::ExpressionProjection,
         owner: ExprId,
         scope: ScopeId,
         child: &AttachedExpressionChild,
@@ -372,7 +365,7 @@ impl StagedHirModuleTransaction<'_> {
             self.lower_attached_expression_inner(&semantic, scope)?
         } else {
             recovery.get_or_insert(HirRecoveryIssue::MissingOperand { role });
-            return self.lower_missing_expression(owner, scope, child, role);
+            return self.lower_missing_expression(projection, owner, scope, child);
         };
         if self.staged_expression_is_poisoned(value)? {
             recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
@@ -383,24 +376,34 @@ impl StagedHirModuleTransaction<'_> {
     }
 }
 
-#[derive(Clone, Copy)]
-enum DialogueNestedOwner {
-    Node(usize),
-    Tag(usize),
-}
-
-#[derive(Clone, Copy)]
-struct DialogueNestedSlot {
-    start: usize,
-    end: usize,
-    owner: DialogueNestedOwner,
-    slot: SyntaxExpressionSlot,
-    role: HirExprSourceRole,
-}
-
 struct LoweredDialogueNested {
     node_values: Vec<Option<ExprId>>,
     tag_values: Vec<Option<ExprId>>,
+}
+
+fn paired_start_tags(
+    source: &SyntaxDialogueContent,
+    tags: &[HirRichTextTag],
+) -> Result<Vec<Option<HirRichTextTagId>>, HirLowerFailure> {
+    let mut paired_starts = vec![None; source.nodes().len()];
+    for (ordinal, source_tag) in source.tags().iter().enumerate() {
+        let Some(end_node) = source_tag.paired_end_node() else {
+            continue;
+        };
+        let end_node =
+            usize::try_from(end_node).map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let paired = tags
+            .get(ordinal)
+            .map(HirRichTextTag::id)
+            .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+        let destination = paired_starts
+            .get_mut(end_node)
+            .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+        if destination.replace(paired).is_some() {
+            return Err(HirInvariantFailure::InvalidArenaCommit.into());
+        }
+    }
+    Ok(paired_starts)
 }
 
 fn project_tag(
@@ -504,6 +507,7 @@ fn project_node(
     content: HirDialogueContentId,
     tags: &[HirRichTextTag],
     source: &SyntaxDialogueNodeProjection,
+    paired_start: Option<HirRichTextTagId>,
     expression: Option<ExprId>,
     recovery: &mut Option<HirRecoveryIssue>,
 ) -> Result<HirDialogueNodeKind, HirLowerFailure> {
@@ -553,7 +557,7 @@ fn project_node(
         SyntaxDialogueNodeProjection::AuthoredEndTag(end)
         | SyntaxDialogueNodeProjection::InferredEndTag(end) => {
             require_absent_expression(expression)?;
-            let projected = project_end_tag(end, recovery)?;
+            let projected = project_end_tag(end, paired_start, recovery)?;
             if matches!(source, SyntaxDialogueNodeProjection::AuthoredEndTag(_)) {
                 Ok(HirDialogueNodeKind::AuthoredEndTag(projected))
             } else {
@@ -563,22 +567,6 @@ fn project_node(
         SyntaxDialogueNodeProjection::Interpolation(_) => Ok(HirDialogueNodeKind::Interpolation(
             expression.ok_or(HirInvariantFailure::InvalidArenaCommit)?,
         )),
-        SyntaxDialogueNodeProjection::Control(control) => {
-            require_absent_expression(expression)?;
-            Ok(HirDialogueNodeKind::Control((*control).into()))
-        }
-        SyntaxDialogueNodeProjection::Mark(Ok(source_name)) => {
-            require_absent_expression(expression)?;
-            Ok(HirDialogueNodeKind::Mark(name(source_name)?))
-        }
-        SyntaxDialogueNodeProjection::Mark(Err(issue)) => {
-            require_absent_expression(expression)?;
-            require_attempted_name_limit(issue)?;
-            recovery.get_or_insert(HirRecoveryIssue::InvalidName(name_issue(issue)));
-            Ok(HirDialogueNodeKind::Error(
-                HirDialogueContentError::UnclassifiedToken,
-            ))
-        }
         SyntaxDialogueNodeProjection::LineBreak(kind) => {
             require_absent_expression(expression)?;
             Ok(HirDialogueNodeKind::LineBreak((*kind).into()))
@@ -595,6 +583,7 @@ fn project_node(
 
 fn project_end_tag(
     source: &SyntaxRichTextEndTagProjection,
+    paired_start: Option<HirRichTextTagId>,
     recovery: &mut Option<HirRecoveryIssue>,
 ) -> Result<HirRichTextEndTag, HirLowerFailure> {
     let identity = source
@@ -606,6 +595,7 @@ fn project_end_tag(
         recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(issue.clone()));
     }
     Ok(HirRichTextEndTag::new(
+        paired_start,
         identity,
         source.is_inferred(),
         issue,
@@ -620,14 +610,21 @@ fn project_tag_identity(
         SyntaxRichTextTagIdentity::Builtin(builtin) => {
             Ok(HirRichTextTagIdentity::Builtin((*builtin).into()))
         }
-        SyntaxRichTextTagIdentity::Marker(Ok(source_name)) => {
-            Ok(HirRichTextTagIdentity::Marker(name(source_name)?))
+        SyntaxRichTextTagIdentity::DotSelector(Ok(source_name)) => {
+            require_attempted_project_segment_limit(source_name.as_str().len())?;
+            let segment = HirProjectSymbolSegment::try_new(source_name.as_str().into())
+                .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
+            let issue = HirRichTextIssue::UnknownRegisteredTag;
+            recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(issue.clone()));
+            Ok(HirRichTextTagIdentity::Unresolved(
+                HirUnresolvedRichTextTag::new(segment, issue),
+            ))
         }
-        SyntaxRichTextTagIdentity::Marker(Err(issue)) => {
+        SyntaxRichTextTagIdentity::DotSelector(Err(issue)) => {
             require_attempted_name_limit(issue)?;
             let segment =
                 attempted_project_segment(issue).ok_or(HirInvariantFailure::InvalidArenaCommit)?;
-            let issue = HirRichTextIssue::UnknownTag;
+            let issue = HirRichTextIssue::UnknownRegisteredTag;
             recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(issue.clone()));
             Ok(HirRichTextTagIdentity::Unresolved(
                 HirUnresolvedRichTextTag::new(segment, issue),
@@ -682,7 +679,7 @@ fn require_attempted_project_segment_limit(observed: usize) -> Result<(), HirLow
     if observed <= crate::identity::HirLimit::NameBytes.maximum() {
         Ok(())
     } else {
-        Err(crate::lower::HirLimitError::with_maximum(
+        Err(crate::lowering::HirLimitError::with_maximum(
             crate::identity::HirLimit::NameBytes,
             observed,
             crate::identity::HirLimit::NameBytes.maximum(),

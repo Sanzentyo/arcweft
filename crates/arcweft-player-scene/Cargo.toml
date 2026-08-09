@@ -15,6 +15,7 @@ arcweft-image = { workspace = true }
 arcweft-layout.workspace = true
 arcweft-presentation = { workspace = true }
 arcweft-render-text = { workspace = true }
+arcweft-text-model = { workspace = true }
 arcweft-render-wgpu = { workspace = true }
 arcweft-runtime-driver = { workspace = true }
 arcweft-text-layout = { workspace = true }
@@ -27,7 +28,6 @@ thiserror.workspace = true
 [dev-dependencies]
 arcweft-core = { workspace = true }
 arcweft-dialogue = { workspace = true }
-arcweft-resource-model = { workspace = true }
 arcweft-source = { workspace = true }
 serde_json.workspace = true
 

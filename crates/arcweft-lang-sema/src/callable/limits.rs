@@ -1,6 +1,4 @@
 //! Inclusive callable catalog and query limits.
-#[cfg(test)]
-use super::SignatureLimitConfigurationError;
 use super::{
     CallableBuildLimitError, CallableQueryLimitError, SignatureLimitExceeded, SignatureLimitKind,
     SignatureWorkKind,
@@ -113,49 +111,6 @@ impl SignatureQueryLimits {
     pub const fn work_units(self) -> u64 {
         self.work_units
     }
-
-    #[cfg(test)]
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "tests need independent exact and one-over controls for every public limit"
-    )]
-    pub(crate) fn try_for_test(
-        candidate_calls: u64,
-        overloads: u64,
-        parameters_per_signature: u64,
-        nested_calls: u64,
-        recovery_nodes: u64,
-        source_bytes: u64,
-        diagnostics: u64,
-        work_units: u64,
-    ) -> Result<Self, SignatureLimitConfigurationError> {
-        let limits = [
-            (SignatureLimitKind::CandidateCalls, candidate_calls),
-            (SignatureLimitKind::Overloads, overloads),
-            (
-                SignatureLimitKind::ParametersPerSignature,
-                parameters_per_signature,
-            ),
-            (SignatureLimitKind::NestedCalls, nested_calls),
-            (SignatureLimitKind::RecoveryNodes, recovery_nodes),
-            (SignatureLimitKind::SourceBytes, source_bytes),
-            (SignatureLimitKind::Diagnostics, diagnostics),
-            (SignatureLimitKind::WorkUnits, work_units),
-        ];
-        if let Some((kind, _)) = limits.into_iter().find(|(_, value)| *value == 0) {
-            return Err(SignatureLimitConfigurationError::Zero { kind });
-        }
-        Ok(Self {
-            candidate_calls,
-            overloads,
-            parameters_per_signature,
-            nested_calls,
-            recovery_nodes,
-            source_bytes,
-            diagnostics,
-            work_units,
-        })
-    }
 }
 
 impl CallableLimits {
@@ -210,6 +165,7 @@ impl CallableLimits {
         max_parameters_per_callable: usize,
         max_overloads_per_key: usize,
         max_candidates_per_call: usize,
+        max_nested_calls: usize,
         max_recovery_nodes: usize,
         max_diagnostics: usize,
         max_catalog_build_work: u64,
@@ -221,7 +177,7 @@ impl CallableLimits {
             max_parameters_per_callable,
             max_overloads_per_key,
             max_candidates_per_call,
-            max_nested_calls: 32,
+            max_nested_calls,
             max_recovery_nodes,
             max_diagnostics,
             max_source_bytes: 8_388_608,
@@ -239,10 +195,6 @@ pub(crate) struct CatalogBuildWork {
     limit: u64,
 }
 
-#[allow(
-    dead_code,
-    reason = "exact work-report accessors are consumed by the remaining catalog audit cut"
-)]
 impl CatalogBuildWork {
     pub(crate) const fn new(limit: u64) -> Self {
         Self { consumed: 0, limit }
@@ -264,16 +216,6 @@ impl CatalogBuildWork {
         self.consumed = next;
         Ok(())
     }
-
-    pub(crate) const fn consumed(self) -> u64 {
-        self.consumed
-    }
-    pub(crate) const fn remaining(self) -> u64 {
-        self.limit - self.consumed
-    }
-    pub(crate) const fn limit(self) -> u64 {
-        self.limit
-    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -283,32 +225,89 @@ pub(crate) struct ResolverWork {
     resolver: u64,
     argument_mapping: u64,
     type_checks: u64,
-    associated: AssociatedResolverWorkReport,
+    call: CallResolverAccountingReport,
 }
 
+/// Closed resolver-work and committed-publication counters for one final Call
+/// transaction.
+///
+/// Candidate probe/replay entries count candidate × authored-argument visits;
+/// fixed spread slots deliberately remain separate in the crate-owned
+/// `physical_candidate_argument_evaluations` trace. These counters are
+/// observations of work already charged through [`ResolverWork`], not a
+/// second work budget.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub(crate) struct AssociatedResolverWorkReport {
-    typed_environment_lookups: u64,
-    capacity_selectors: u64,
-    capacity_materializations: u64,
-    trait_resolutions: u64,
+pub struct CallResolverAccountingReport {
+    logical_argument_checks: u64,
+    resolver_invocations: u64,
+    candidate_argument_probes: u64,
+    selected_replay_argument_visits: u64,
+    retained_argument_fact_publications: u64,
 }
 
-impl AssociatedResolverWorkReport {
+impl CallResolverAccountingReport {
     const ZERO: Self = Self {
-        typed_environment_lookups: 0,
-        capacity_selectors: 0,
-        capacity_materializations: 0,
-        trait_resolutions: 0,
+        logical_argument_checks: 0,
+        resolver_invocations: 0,
+        candidate_argument_probes: 0,
+        selected_replay_argument_visits: 0,
+        retained_argument_fact_publications: 0,
     };
+
+    pub const fn logical_argument_checks(self) -> u64 {
+        self.logical_argument_checks
+    }
+
+    pub const fn resolver_invocations(self) -> u64 {
+        self.resolver_invocations
+    }
+
+    pub const fn candidate_argument_probes(self) -> u64 {
+        self.candidate_argument_probes
+    }
+
+    pub const fn selected_replay_argument_visits(self) -> u64 {
+        self.selected_replay_argument_visits
+    }
+
+    pub const fn retained_argument_fact_publications(self) -> u64 {
+        self.retained_argument_fact_publications
+    }
+
+    #[cfg(test)]
+    pub(crate) fn delta_from(self, before: Self) -> Result<Self, CallableQueryLimitError> {
+        Ok(Self {
+            logical_argument_checks: self
+                .logical_argument_checks
+                .checked_sub(before.logical_argument_checks)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+            resolver_invocations: self
+                .resolver_invocations
+                .checked_sub(before.resolver_invocations)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+            candidate_argument_probes: self
+                .candidate_argument_probes
+                .checked_sub(before.candidate_argument_probes)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+            selected_replay_argument_visits: self
+                .selected_replay_argument_visits
+                .checked_sub(before.selected_replay_argument_visits)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+            retained_argument_fact_publications: self
+                .retained_argument_fact_publications
+                .checked_sub(before.retained_argument_fact_publications)
+                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
+        })
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum AssociatedResolverStep {
-    TypedEnvironmentLookup,
-    CapacitySelector,
-    CapacityMaterialization,
-    TraitResolution,
+enum CallResolverAccountingEvent {
+    LogicalArgumentCheck,
+    ResolverInvocation,
+    CandidateArgumentProbe,
+    SelectedReplayArgumentVisit,
+    RetainedArgumentFactPublication,
 }
 
 /// Current registered-candidate recursion owned by one focused callable query.
@@ -351,17 +350,8 @@ impl CallableQueryDepth {
     pub(crate) const fn is_active(self) -> bool {
         self.current != 0
     }
-
-    #[cfg(test)]
-    pub(crate) const fn current(self) -> usize {
-        self.current
-    }
 }
 
-#[allow(
-    dead_code,
-    reason = "exact work-report accessors are consumed by semantic signature query reporting"
-)]
 impl ResolverWork {
     pub(crate) const fn new(limit: u64) -> Self {
         Self {
@@ -370,16 +360,17 @@ impl ResolverWork {
             resolver: 0,
             argument_mapping: 0,
             type_checks: 0,
-            associated: AssociatedResolverWorkReport::ZERO,
+            call: CallResolverAccountingReport::ZERO,
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn reset(&mut self) {
         self.consumed = 0;
         self.resolver = 0;
         self.argument_mapping = 0;
         self.type_checks = 0;
-        self.associated = AssociatedResolverWorkReport::ZERO;
+        self.call = CallResolverAccountingReport::ZERO;
     }
 
     pub(crate) fn charge(&mut self, units: u64) -> Result<(), CallableQueryLimitError> {
@@ -397,28 +388,72 @@ impl ResolverWork {
         self.charge_component(units, ResolverWorkComponent::TypeCheck)
     }
 
-    pub(crate) fn record_associated_step(
+    pub(crate) fn record_logical_argument_checks(
         &mut self,
-        step: AssociatedResolverStep,
+        units: u64,
     ) -> Result<(), CallableQueryLimitError> {
-        let counter = match step {
-            AssociatedResolverStep::TypedEnvironmentLookup => {
-                &mut self.associated.typed_environment_lookups
-            }
-            AssociatedResolverStep::CapacitySelector => &mut self.associated.capacity_selectors,
-            AssociatedResolverStep::CapacityMaterialization => {
-                &mut self.associated.capacity_materializations
-            }
-            AssociatedResolverStep::TraitResolution => &mut self.associated.trait_resolutions,
-        };
-        *counter = counter
-            .checked_add(1)
-            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
-        Ok(())
+        self.record_call_event(CallResolverAccountingEvent::LogicalArgumentCheck, units)
     }
 
-    pub(crate) const fn associated_report(&self) -> AssociatedResolverWorkReport {
-        self.associated
+    pub(crate) fn record_resolver_invocation(&mut self) -> Result<(), CallableQueryLimitError> {
+        self.record_call_event(CallResolverAccountingEvent::ResolverInvocation, 1)
+    }
+
+    pub(crate) fn record_candidate_argument_probes(
+        &mut self,
+        units: u64,
+    ) -> Result<(), CallableQueryLimitError> {
+        self.record_call_event(CallResolverAccountingEvent::CandidateArgumentProbe, units)
+    }
+
+    pub(crate) fn record_selected_replay_argument_visits(
+        &mut self,
+        units: u64,
+    ) -> Result<(), CallableQueryLimitError> {
+        self.record_call_event(
+            CallResolverAccountingEvent::SelectedReplayArgumentVisit,
+            units,
+        )
+    }
+
+    pub(crate) fn record_retained_argument_fact_publications(
+        &mut self,
+        units: u64,
+    ) -> Result<(), CallableQueryLimitError> {
+        self.record_call_event(
+            CallResolverAccountingEvent::RetainedArgumentFactPublication,
+            units,
+        )
+    }
+
+    pub(crate) const fn call_accounting(&self) -> CallResolverAccountingReport {
+        self.call
+    }
+
+    fn record_call_event(
+        &mut self,
+        event: CallResolverAccountingEvent,
+        units: u64,
+    ) -> Result<(), CallableQueryLimitError> {
+        let counter = match event {
+            CallResolverAccountingEvent::LogicalArgumentCheck => {
+                &mut self.call.logical_argument_checks
+            }
+            CallResolverAccountingEvent::ResolverInvocation => &mut self.call.resolver_invocations,
+            CallResolverAccountingEvent::CandidateArgumentProbe => {
+                &mut self.call.candidate_argument_probes
+            }
+            CallResolverAccountingEvent::SelectedReplayArgumentVisit => {
+                &mut self.call.selected_replay_argument_visits
+            }
+            CallResolverAccountingEvent::RetainedArgumentFactPublication => {
+                &mut self.call.retained_argument_fact_publications
+            }
+        };
+        *counter = counter
+            .checked_add(units)
+            .ok_or(CallableQueryLimitError::ArithmeticOverflow)?;
+        Ok(())
     }
 
     fn charge_component(
@@ -451,75 +486,6 @@ impl ResolverWork {
         }
         Ok(())
     }
-
-    pub(crate) const fn consumed(self) -> u64 {
-        self.consumed
-    }
-    pub(crate) const fn remaining(self) -> u64 {
-        self.limit - self.consumed
-    }
-    pub(crate) const fn limit(self) -> u64 {
-        self.limit
-    }
-
-    pub(crate) fn signature_report(
-        self,
-        recovery_nodes: usize,
-        diagnostics: usize,
-        limits: &CallableLimits,
-    ) -> Result<SignatureWorkReport, CallableQueryLimitError> {
-        SignatureWorkReport::try_new(
-            self.resolver,
-            self.argument_mapping,
-            self.type_checks,
-            recovery_nodes,
-            diagnostics,
-            limits,
-        )
-    }
-}
-
-impl AssociatedResolverWorkReport {
-    pub(crate) fn delta_from(self, before: Self) -> Result<Self, CallableQueryLimitError> {
-        Ok(Self {
-            typed_environment_lookups: self
-                .typed_environment_lookups
-                .checked_sub(before.typed_environment_lookups)
-                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
-            capacity_selectors: self
-                .capacity_selectors
-                .checked_sub(before.capacity_selectors)
-                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
-            capacity_materializations: self
-                .capacity_materializations
-                .checked_sub(before.capacity_materializations)
-                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
-            trait_resolutions: self
-                .trait_resolutions
-                .checked_sub(before.trait_resolutions)
-                .ok_or(CallableQueryLimitError::ArithmeticOverflow)?,
-        })
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn typed_environment_lookups(self) -> u64 {
-        self.typed_environment_lookups
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn capacity_selectors(self) -> u64 {
-        self.capacity_selectors
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn capacity_materializations(self) -> u64 {
-        self.capacity_materializations
-    }
-
-    #[cfg(test)]
-    pub(crate) const fn trait_resolutions(self) -> u64 {
-        self.trait_resolutions
-    }
 }
 
 #[derive(Clone, Copy)]
@@ -535,15 +501,28 @@ pub struct SignatureWorkReport {
     resolver: u64,
     argument_mapping: u64,
     type_checks: u64,
+    call: CallResolverAccountingReport,
     recovery_nodes: usize,
     diagnostics: usize,
 }
 
 impl SignatureWorkReport {
-    pub fn try_new(
+    /// Builds the public work envelope from immutable final-call facts without
+    /// replaying resolution or argument checking.
+    pub(crate) fn from_final_call_facts(
+        call: CallResolverAccountingReport,
+        recovery_nodes: usize,
+        diagnostics: usize,
+        limits: &CallableLimits,
+    ) -> Result<Self, CallableQueryLimitError> {
+        Self::try_new(0, 0, 0, call, recovery_nodes, diagnostics, limits)
+    }
+
+    pub(crate) fn try_new(
         resolver: u64,
         argument_mapping: u64,
         type_checks: u64,
+        call: CallResolverAccountingReport,
         recovery_nodes: usize,
         diagnostics: usize,
         limits: &CallableLimits,
@@ -564,6 +543,7 @@ impl SignatureWorkReport {
             resolver,
             argument_mapping,
             type_checks,
+            call,
             recovery_nodes,
             diagnostics,
         };
@@ -586,6 +566,9 @@ impl SignatureWorkReport {
     }
     pub const fn type_checks(&self) -> u64 {
         self.type_checks
+    }
+    pub const fn call_accounting(&self) -> CallResolverAccountingReport {
+        self.call
     }
     pub const fn recovery_nodes(&self) -> usize {
         self.recovery_nodes
@@ -679,14 +662,21 @@ impl SignatureQueryResolutionWork {
 pub struct SignatureQueryProjectionWork {
     overloads: u64,
     parameters: u64,
+    argument_projections: u64,
     diagnostic_considerations: u64,
 }
 
 impl SignatureQueryProjectionWork {
-    pub const fn new(overloads: u64, parameters: u64, diagnostic_considerations: u64) -> Self {
+    pub const fn new(
+        overloads: u64,
+        parameters: u64,
+        argument_projections: u64,
+        diagnostic_considerations: u64,
+    ) -> Self {
         Self {
             overloads,
             parameters,
+            argument_projections,
             diagnostic_considerations,
         }
     }
@@ -696,6 +686,9 @@ impl SignatureQueryProjectionWork {
     }
     pub const fn parameters(self) -> u64 {
         self.parameters
+    }
+    pub const fn argument_projections(self) -> u64 {
+        self.argument_projections
     }
     pub const fn diagnostic_considerations(self) -> u64 {
         self.diagnostic_considerations
@@ -749,6 +742,7 @@ pub(crate) struct SignatureQueryWorkMeter {
     specificity_checks: u64,
     overloads: u64,
     parameters: u64,
+    argument_projections: u64,
     diagnostic_considerations: u64,
     total: u64,
 }
@@ -767,6 +761,7 @@ impl SignatureQueryWorkMeter {
             specificity_checks: 0,
             overloads: 0,
             parameters: 0,
+            argument_projections: 0,
             diagnostic_considerations: 0,
             total: 0,
         }
@@ -845,6 +840,7 @@ impl SignatureQueryWorkMeter {
             projection: SignatureQueryProjectionWork::new(
                 self.overloads,
                 self.parameters,
+                self.argument_projections,
                 self.diagnostic_considerations,
             ),
             total: self.total,
@@ -864,6 +860,7 @@ impl SignatureQueryWorkMeter {
             SignatureWorkKind::SpecificityChecks => self.specificity_checks,
             SignatureWorkKind::Overloads => self.overloads,
             SignatureWorkKind::Parameters => self.parameters,
+            SignatureWorkKind::ArgumentProjections => self.argument_projections,
             SignatureWorkKind::DiagnosticConsiderations => self.diagnostic_considerations,
         }
     }
@@ -883,6 +880,7 @@ impl SignatureQueryWorkMeter {
             SignatureWorkKind::SpecificityChecks => &mut self.specificity_checks,
             SignatureWorkKind::Overloads => &mut self.overloads,
             SignatureWorkKind::Parameters => &mut self.parameters,
+            SignatureWorkKind::ArgumentProjections => &mut self.argument_projections,
             SignatureWorkKind::DiagnosticConsiderations => &mut self.diagnostic_considerations,
         }
     }
@@ -910,7 +908,57 @@ impl SignatureQueryWorkMeter {
             | SignatureWorkKind::ArgumentBindings
             | SignatureWorkKind::SpecificityChecks
             | SignatureWorkKind::Parameters
+            | SignatureWorkKind::ArgumentProjections
             | SignatureWorkKind::DiagnosticConsiderations => None,
         }
+    }
+}
+
+#[cfg(test)]
+mod final_call_accounting_tests {
+    use super::*;
+
+    #[test]
+    fn final_call_counters_remain_separate_and_reset_together() {
+        let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
+        let before = work.call_accounting();
+        work.record_logical_argument_checks(2)
+            .expect("logical argument checks");
+        work.record_resolver_invocation()
+            .expect("one shared resolver entry");
+        work.record_candidate_argument_probes(4)
+            .expect("two candidates probe two arguments");
+        work.record_selected_replay_argument_visits(2)
+            .expect("selected replay visits each retained argument");
+        work.record_retained_argument_fact_publications(2)
+            .expect("fact publication retains each argument");
+
+        let report = work
+            .call_accounting()
+            .delta_from(before)
+            .expect("monotonic accounting delta");
+        assert_eq!(report.logical_argument_checks(), 2);
+        assert_eq!(report.resolver_invocations(), 1);
+        assert_eq!(report.candidate_argument_probes(), 4);
+        assert_eq!(report.selected_replay_argument_visits(), 2);
+        assert_eq!(report.retained_argument_fact_publications(), 2);
+
+        work.reset();
+        assert_eq!(work.call_accounting(), CallResolverAccountingReport::ZERO);
+    }
+
+    #[test]
+    fn signature_argument_projection_has_a_distinct_counter() {
+        let mut meter = SignatureQueryWorkMeter::new(PRODUCTION_SIGNATURE_LIMITS);
+        meter
+            .charge(SignatureWorkKind::Arguments, 3)
+            .expect("surface argument traversal");
+        meter
+            .charge(SignatureWorkKind::ArgumentProjections, 2)
+            .expect("public argument projection");
+        let report = meter.report();
+        assert_eq!(report.search().arguments(), 3);
+        assert_eq!(report.projection().argument_projections(), 2);
+        assert_eq!(report.total_work(), 5);
     }
 }

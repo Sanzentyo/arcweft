@@ -1,4 +1,4 @@
-//! Private module-preserving project owner for the final arena HIR.
+//! Module-preserving project owner for the final arena HIR.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -8,19 +8,23 @@ use arcweft_source::{SourceDocumentId, SourceDocumentIdentity};
 use thiserror::Error;
 
 use crate::database::HirDatabase;
-use crate::identity::{HirDatabaseId, HirLimit, HirSnapshotId, IdResolveError, ItemId};
-use crate::item::HirItem;
+use crate::identity::{HirDatabaseId, HirLimit, HirSnapshotId, ItemId};
+use crate::item::{
+    HirDeclarationMemberId, HirDeclarationMemberKind, HirItem, HirItemKind, HirStyleItem,
+    HirViewExportMember,
+};
 use crate::module::{HirModule, HirModuleStatus};
 use crate::symbol::CallablePackageId;
 
 /// One exact current module lease admitted to a final-HIR project.
-pub(crate) struct HirProjectModule {
+#[derive(Clone)]
+pub struct HirProjectModule {
     module: Arc<HirModule>,
 }
 
 /// Failed binding of an expected package/path/source to an accepted HIR lease.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(crate) enum HirProjectModuleError {
+pub enum HirProjectModuleError {
     #[error("HIR module package mismatch: expected {expected:?}, got {actual:?}")]
     WrongPackage {
         expected: CallablePackageId,
@@ -56,7 +60,11 @@ pub(crate) enum HirProjectModuleError {
 
 impl HirProjectModule {
     /// Checks and retains the exact current `Arc<HirModule>` from one database.
-    pub(crate) fn try_new(
+    #[allow(
+        clippy::result_large_err,
+        reason = "project lease rejection preserves complete typed package, path, source, and snapshot evidence"
+    )]
+    pub fn try_new(
         database: &HirDatabase,
         expected_package: &CallablePackageId,
         expected_path: &CanonicalModulePath,
@@ -106,25 +114,25 @@ impl HirProjectModule {
         Ok(Self { module })
     }
 
-    pub(crate) fn package(&self) -> &CallablePackageId {
+    pub fn package(&self) -> &CallablePackageId {
         self.module.key().package()
     }
 
-    pub(crate) fn path(&self) -> &CanonicalModulePath {
+    pub fn path(&self) -> &CanonicalModulePath {
         self.module.key().path()
     }
 
-    pub(crate) fn source(&self) -> &SourceDocumentIdentity {
+    pub fn source(&self) -> &SourceDocumentIdentity {
         self.module.provenance().source_identity()
     }
 
-    pub(crate) const fn module(&self) -> &Arc<HirModule> {
+    pub const fn module(&self) -> &Arc<HirModule> {
         &self.module
     }
 }
 
 /// Immutable package project that preserves every module-local HIR identity.
-pub(crate) struct HirProject {
+pub struct HirProject {
     package: CallablePackageId,
     database: HirDatabaseId,
     modules: BTreeMap<CanonicalModulePath, HirProjectModule>,
@@ -132,7 +140,7 @@ pub(crate) struct HirProject {
 
 /// Invalid final-HIR project generation.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(crate) enum HirProjectError {
+pub enum HirProjectError {
     #[error("HIR project contains {observed} modules, maximum is {maximum}")]
     ModuleLimit { observed: usize, maximum: usize },
     #[error("HIR project contains duplicate module `{module}`")]
@@ -170,7 +178,7 @@ pub(crate) enum HirProjectError {
 }
 
 impl HirProject {
-    pub(crate) fn try_new(
+    pub fn try_new(
         database: &HirDatabase,
         package: CallablePackageId,
         modules: impl IntoIterator<Item = HirProjectModule>,
@@ -253,23 +261,23 @@ impl HirProject {
         })
     }
 
-    pub(crate) const fn package(&self) -> &CallablePackageId {
+    pub const fn package(&self) -> &CallablePackageId {
         &self.package
     }
 
-    pub(crate) const fn database_id(&self) -> HirDatabaseId {
+    pub const fn database_id(&self) -> HirDatabaseId {
         self.database
     }
 
-    pub(crate) fn module(&self, path: &CanonicalModulePath) -> Option<&HirProjectModule> {
+    pub fn module(&self, path: &CanonicalModulePath) -> Option<&HirProjectModule> {
         self.modules.get(path)
     }
 
-    pub(crate) fn view(&self) -> HirProjectView<'_> {
+    pub fn view(&self) -> HirProjectView<'_> {
         HirProjectView { project: self }
     }
 
-    pub(crate) fn executable_view(
+    pub fn executable_view(
         &self,
     ) -> Result<HirExecutableProjectView<'_>, HirProjectExecutionError> {
         for (path, module) in &self.modules {
@@ -288,18 +296,30 @@ impl HirProject {
 
 /// Tooling view over clean and recovered project modules.
 #[derive(Clone, Copy)]
-pub(crate) struct HirProjectView<'project> {
+pub struct HirProjectView<'project> {
     project: &'project HirProject,
 }
 
 impl<'project> HirProjectView<'project> {
-    pub(crate) fn modules(
-        &self,
-    ) -> impl ExactSizeIterator<Item = &'project HirProjectModule> + 'project {
-        self.project.modules.values()
+    pub const fn package(self) -> &'project CallablePackageId {
+        &self.project.package
     }
 
-    pub(crate) fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {
+    pub fn modules(
+        self,
+    ) -> impl ExactSizeIterator<Item = (&'project CanonicalModulePath, &'project Arc<HirModule>)>
+    + 'project {
+        self.project
+            .modules
+            .iter()
+            .map(|(path, module)| (path, module.module()))
+    }
+
+    pub fn module(self, path: &CanonicalModulePath) -> Option<&'project Arc<HirModule>> {
+        self.project.modules.get(path).map(HirProjectModule::module)
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {
         self.project.modules.values().flat_map(|module| {
             module
                 .module()
@@ -311,48 +331,211 @@ impl<'project> HirProjectView<'project> {
     }
 }
 
+/// Iterates final View export members without flattening or rebasing their
+/// module-local item/member identities.
+///
+/// # Panics
+///
+/// Panics only if a previously validated project lease no longer resolves one
+/// of its source-ordered View items or export members.
+pub fn exported_parts(
+    project: HirProjectView<'_>,
+) -> impl Iterator<Item = ProjectExportedPartRef<'_>> {
+    project.project.modules.values().flat_map(|module| {
+        module
+            .module()
+            .source_ordered_items()
+            .iter()
+            .copied()
+            .filter_map(move |item| {
+                let payload = module
+                    .module()
+                    .resolve_item(item)
+                    .expect("validated project item identity resolves in its exact module lease");
+                match payload.kind() {
+                    HirItemKind::View(view) => Some((item, view.exports())),
+                    _ => None,
+                }
+            })
+            .flat_map(move |(item, exports)| {
+                exports.iter().copied().map(move |member| {
+                    let payload = module
+                        .module()
+                        .declaration_members()
+                        .resolve(member)
+                        .expect(
+                            "validated View member identity resolves in its exact module lease",
+                        );
+                    let HirDeclarationMemberKind::ViewExport(part) = payload.kind() else {
+                        unreachable!(
+                            "validated View export identity resolved to another member family"
+                        )
+                    };
+                    ProjectExportedPartRef {
+                        module,
+                        item,
+                        member,
+                        part,
+                    }
+                })
+            })
+    })
+}
+
+/// Iterates final Style items in canonical module and authored item order.
+///
+/// # Panics
+///
+/// Panics only if a previously validated project lease no longer resolves one
+/// of its source-ordered Style items.
+pub fn styles(project: HirProjectView<'_>) -> impl Iterator<Item = ProjectStyleRef<'_>> {
+    project.project.modules.values().flat_map(|module| {
+        module
+            .module()
+            .source_ordered_items()
+            .iter()
+            .copied()
+            .filter_map(move |item| {
+                let payload = module
+                    .module()
+                    .resolve_item(item)
+                    .expect("validated project item identity resolves in its exact module lease");
+                match payload.kind() {
+                    HirItemKind::Style(style) => Some(ProjectStyleRef {
+                        module,
+                        item,
+                        style,
+                    }),
+                    _ => None,
+                }
+            })
+    })
+}
+
+/// One module-qualified View export retained by the final declaration-member
+/// arena.
+#[derive(Clone, Copy)]
+pub struct ProjectExportedPartRef<'project> {
+    module: &'project HirProjectModule,
+    item: ItemId,
+    member: HirDeclarationMemberId,
+    part: &'project HirViewExportMember,
+}
+
+impl<'project> ProjectExportedPartRef<'project> {
+    pub fn module_path(self) -> &'project CanonicalModulePath {
+        self.module.path()
+    }
+
+    pub const fn item(self) -> ItemId {
+        self.item
+    }
+
+    pub const fn member(self) -> HirDeclarationMemberId {
+        self.member
+    }
+
+    pub const fn part(self) -> &'project HirViewExportMember {
+        self.part
+    }
+}
+
+/// One module-qualified Style item retained by the final item arena.
+#[derive(Clone, Copy)]
+pub struct ProjectStyleRef<'project> {
+    module: &'project HirProjectModule,
+    item: ItemId,
+    style: &'project HirStyleItem,
+}
+
+impl<'project> ProjectStyleRef<'project> {
+    pub fn module_path(self) -> &'project CanonicalModulePath {
+        self.module.path()
+    }
+
+    pub const fn item(self) -> ItemId {
+        self.item
+    }
+
+    pub const fn style(self) -> &'project HirStyleItem {
+        self.style
+    }
+}
+
 /// Executable-only project view, constructible only after full status checking.
 #[derive(Clone, Copy)]
-pub(crate) struct HirExecutableProjectView<'project> {
+pub struct HirExecutableProjectView<'project> {
     view: HirProjectView<'project>,
 }
 
 impl<'project> HirExecutableProjectView<'project> {
-    pub(crate) fn modules(
-        &self,
-    ) -> impl ExactSizeIterator<Item = &'project HirProjectModule> + 'project {
+    /// Returns the exact tooling-capable view embedded by this executable
+    /// admission without reopening or reconstructing the accepted project.
+    pub const fn project_view(self) -> HirProjectView<'project> {
+        self.view
+    }
+
+    /// Exact package identity admitted by this executable project generation.
+    pub const fn package(self) -> &'project CallablePackageId {
+        self.view.package()
+    }
+
+    pub fn modules(
+        self,
+    ) -> impl ExactSizeIterator<Item = (&'project CanonicalModulePath, &'project Arc<HirModule>)>
+    + 'project {
         self.view.modules()
     }
 
-    pub(crate) fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {
+    /// Resolves one exact executable module lease without reopening the
+    /// tooling-capable project owner or reconstructing a module from its path.
+    pub fn module(self, path: &CanonicalModulePath) -> Option<&'project Arc<HirModule>> {
+        self.view.module(path)
+    }
+
+    pub fn items(&self) -> impl Iterator<Item = HirProjectItemRef<'project>> + 'project {
         self.view.items()
     }
 }
 
 /// One module-qualified item identity in deterministic project iteration.
 #[derive(Clone, Copy)]
-pub(crate) struct HirProjectItemRef<'project> {
+pub struct HirProjectItemRef<'project> {
     module: &'project HirProjectModule,
     id: ItemId,
 }
 
 impl<'project> HirProjectItemRef<'project> {
-    pub(crate) fn module_path(self) -> &'project CanonicalModulePath {
+    pub fn module_path(self) -> &'project CanonicalModulePath {
         self.module.path()
     }
 
-    pub(crate) const fn id(self) -> ItemId {
+    pub const fn id(self) -> ItemId {
         self.id
     }
 
-    pub(crate) fn item(self) -> Result<&'project HirItem, IdResolveError> {
-        self.module.module().resolve_item(self.id)
+    /// Exact accepted module lease that qualifies this item identity.
+    pub const fn module(self) -> &'project Arc<HirModule> {
+        self.module.module()
+    }
+
+    /// Resolves this qualified item from its exact accepted module lease.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the validated project item identity no longer resolves
+    /// in the accepted module lease.
+    pub fn item(self) -> &'project HirItem {
+        self.module
+            .module()
+            .resolve_item(self.id)
+            .expect("validated project item identity resolves in its exact module lease")
     }
 }
 
 /// Recovered modules remain visible to tooling but cannot enter execution.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(crate) enum HirProjectExecutionError {
+pub enum HirProjectExecutionError {
     #[error("HIR module `{module}` at {snapshot:?} is recovered and not executable")]
     RecoveredModule {
         module: CanonicalModulePath,

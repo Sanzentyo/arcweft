@@ -12,7 +12,7 @@ use crate::attachment::{
 };
 use crate::grammar::SyntaxKind;
 use crate::id_ref::{AuthoredIdRoot, SyntaxIdRefIssue};
-use crate::parser::{ParseOptions, parse_shadow_document};
+use crate::parser::{ParseOptions, parse_document};
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
     try_attach(text).unwrap()
@@ -27,7 +27,7 @@ fn try_attach(text: &str) -> Result<Arc<SyntaxSnapshotData>, crate::attachment::
         )
         .unwrap(),
     );
-    let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
     let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(211).unwrap());
     let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
     let snapshot = SyntaxSnapshotId::new(

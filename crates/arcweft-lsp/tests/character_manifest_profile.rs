@@ -1,6 +1,6 @@
 use arcweft_character::id::CharacterId;
 use arcweft_lang_sema::types::CharacterNominalType;
-use arcweft_lsp::profiles::LspProfileResolver;
+use arcweft_lsp::profiles::{LspProfileResolver, LspProfileTestHarness};
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use std::{
     fs,
@@ -73,11 +73,14 @@ compression = "none"
         ),
     );
 
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("game".to_owned()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("game".to_owned()),
+    ));
     let build = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
         .expect("profile construction");
-    let profile = build.profile();
+    let profile = build.publish_for_test();
 
     assert!(
         profile.diagnostics().is_empty(),
@@ -87,9 +90,11 @@ compression = "none"
     assert_eq!(profile.characters().len(), 1);
     let character = CharacterId::try_new("character.akane").expect("character");
     assert_eq!(
-        build
-            .candidate()
-            .world()
+        profile
+            .accepted_environment()
+            .expect("published profile environment")
+            .registered_world()
+            .expect("clean profile executable")
             .environment()
             .character_enum_variants(&CharacterNominalType::Look { character })
             .expect("registered look variants")

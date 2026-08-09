@@ -29,8 +29,8 @@ error[E0277]: the trait bound `SyntheticOwner: serde::de::DeserializeOwned` is n
    |                            ^^^^^^^^^^^^^^ the trait `for<'de> Deserialize<'de>` is not implemented for `SyntheticOwner`
    |
    = help: the following other types implement trait `Deserialize<'de>`:
-             &'a Path
              &'a [u8]
+             &'a std::path::Path
              &'a str
              ()
              (T,)
@@ -76,8 +76,8 @@ error[E0277]: the trait bound `SyntheticKey: serde::de::DeserializeOwned` is not
    |                            ^^^^^^^^^^^^ the trait `for<'de> Deserialize<'de>` is not implemented for `SyntheticKey`
    |
    = help: the following other types implement trait `Deserialize<'de>`:
-             &'a Path
              &'a [u8]
+             &'a std::path::Path
              &'a str
              ()
              (T,)
@@ -123,8 +123,8 @@ error[E0277]: the trait bound `SyntheticKeyFingerprintInput: serde::de::Deserial
    |                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the trait `for<'de> Deserialize<'de>` is not implemented for `SyntheticKeyFingerprintInput`
    |
    = help: the following other types implement trait `Deserialize<'de>`:
-             &'a Path
              &'a [u8]
+             &'a std::path::Path
              &'a str
              ()
              (T,)

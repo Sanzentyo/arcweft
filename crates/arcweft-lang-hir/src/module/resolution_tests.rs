@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::sync::Arc;
 
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
@@ -8,9 +9,10 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, S
 
 use crate::database::HirDatabase;
 use crate::expr::{HirExprKind, HirRecordField};
+use crate::final_lowering::stage_unpublished_module_for_invariant_test;
 use crate::identity::{HirIdKind, HirTypedId, IdResolveError, LocalGeneration};
 use crate::leaf::{HirPathRoot, HirPathSegment, HirPathValue};
-use crate::lower::{HirModuleKey, LoweringRequest};
+use crate::lowering::{HirModuleKey, LoweringRequest};
 use crate::scope::{HirLocalKind, LocalLookup};
 use crate::slot::HirOrigin;
 use crate::source_index::{HirSourceLookupError, HirSourceSite};
@@ -66,12 +68,13 @@ fn module_key(parsed: &ParsedSource) -> HirModuleKey {
 }
 
 fn lower(database: &mut HirDatabase, parsed: &ParsedSource, key: &HirModuleKey) -> Arc<HirModule> {
-    let mut transaction = database
-        .stage_final_hir(LoweringRequest::try_new(key.clone(), parsed).unwrap())
-        .unwrap();
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    let mut transaction = stage_unpublished_module_for_invariant_test(
+        database,
+        LoweringRequest::try_new(key.clone(), parsed).unwrap(),
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .unwrap();
+    transaction.lower_parsed_source_items(parsed).unwrap();
     transaction.finish(database).unwrap().into_module()
 }
 
@@ -345,6 +348,10 @@ fn duplicate_recovered_shorthand_uses_the_clean_same_generation_member() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one accepted-module matrix resolves and iterates every typed arena owner"
+)]
 fn accepted_module_resolves_and_iterates_all_eight_typed_arenas() {
     let mut syntax = SyntaxDatabase::try_new().unwrap();
     let parsed = parse_in(
@@ -470,7 +477,11 @@ fn accepted_module_resolves_and_iterates_all_eight_typed_arenas() {
 }
 
 #[test]
-fn syntax_lookup_round_trips_source_allocations_and_preserves_typed_errors() {
+#[allow(
+    clippy::too_many_lines,
+    reason = "one source-backed-node matrix pairs every typed arena family with its exact HIR kind"
+)]
+fn every_source_backed_node_maps_to_exact_hir_kind() {
     let mut syntax = SyntaxDatabase::try_new().unwrap();
     let parsed = parse_in(
         &mut syntax,
@@ -541,7 +552,7 @@ fn syntax_lookup_round_trips_source_allocations_and_preserves_typed_errors() {
     assert!(source_types > 0);
     assert!(source_patterns > 0);
 
-    let item_syntax = parsed.tree().items().unwrap()[0].id();
+    let item_syntax = parsed.items().unwrap()[0].id();
     assert!(matches!(
         module.local_for_syntax(item_syntax),
         Err(HirSourceLookupError::KindMismatch {
@@ -559,7 +570,7 @@ fn syntax_lookup_round_trips_source_allocations_and_preserves_typed_errors() {
         }) if syntax == item_syntax
     ));
 
-    let TypedItemNode::Function(function) = &parsed.tree().items().unwrap()[0] else {
+    let TypedItemNode::Function(function) = &parsed.items().unwrap()[0] else {
         panic!("fixture must contain one Function")
     };
     let name_syntax = function.semantics().unwrap().name().syntax().id();
@@ -571,7 +582,7 @@ fn syntax_lookup_round_trips_source_allocations_and_preserves_typed_errors() {
         }) if syntax == name_syntax
     ));
 
-    let sibling_syntax = sibling.tree().items().unwrap()[0].id();
+    let sibling_syntax = sibling.items().unwrap()[0].id();
     assert!(matches!(
         module.item_for_syntax(sibling_syntax),
         Err(HirSourceLookupError::WrongSyntaxLineage { expected, actual })
@@ -579,13 +590,64 @@ fn syntax_lookup_round_trips_source_allocations_and_preserves_typed_errors() {
                 && actual == sibling.snapshot_id().lineage()
     ));
 
-    let foreign_syntax = foreign.tree().items().unwrap()[0].id();
+    let foreign_syntax = foreign.items().unwrap()[0].id();
     assert!(matches!(
         module.item_for_syntax(foreign_syntax),
         Err(HirSourceLookupError::WrongSyntaxDatabase { expected, actual })
             if expected == parsed.snapshot_id().lineage().database()
                 && actual == foreign.snapshot_id().lineage().database()
     ));
+}
+
+#[test]
+fn same_line_hir_nodes_do_not_collide() {
+    const SOURCE: &str =
+        "fn same_line((left, right): (I32, I32)) -> I32 { let sum = left + right; sum }\n";
+
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_source_in(
+        &mut syntax,
+        "arcweft-test://proof/hir-module-same-line-identities",
+        "proof/hir-module-same-line-identities.arcw",
+        SOURCE,
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+
+    let mut source_backed = Vec::new();
+    macro_rules! collect_source_backed {
+        ($nodes:expr) => {
+            for (id, _) in $nodes {
+                if matches!(module.metadata(id).unwrap().origin(), HirOrigin::Source(_)) {
+                    source_backed.push(id.raw());
+                }
+            }
+        };
+    }
+    collect_source_backed!(module.items());
+    collect_source_backed!(module.scopes());
+    collect_source_backed!(module.locals());
+    collect_source_backed!(module.expressions());
+    collect_source_backed!(module.statements());
+    collect_source_backed!(module.types());
+    collect_source_backed!(module.patterns());
+    collect_source_backed!(module.captures());
+
+    assert!(
+        source_backed.len() > 12,
+        "fixture must exercise same-line density"
+    );
+    assert_eq!(
+        source_backed.iter().copied().collect::<BTreeSet<_>>().len(),
+        source_backed.len(),
+        "source-backed nodes sharing one physical line must retain distinct typed identities"
+    );
 }
 
 #[test]
@@ -621,6 +683,10 @@ fn activity_port_local_round_trips_its_existing_source_owner() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one revision matrix proves stable, new, and retired identity resolution across the same lineage"
+)]
 fn same_lineage_revisions_resolve_stable_new_and_retired_item_identity_exactly() {
     const INITIAL_SOURCE: &str = "fn stable() {}\nactivity Retired {}\n";
     const REVISED_ITEM: &str = "fn created() {}\n";
@@ -637,7 +703,7 @@ fn same_lineage_revisions_resolve_stable_new_and_retired_item_identity_exactly()
         "{:?}",
         initial.diagnostics()
     );
-    let initial_items = initial.tree().items().unwrap();
+    let initial_items = initial.items().unwrap();
     assert_eq!(initial_items.len(), 2);
     let stable_syntax = initial_items[0].id();
     let retired_syntax = initial_items[1].id();
@@ -673,7 +739,7 @@ fn same_lineage_revisions_resolve_stable_new_and_retired_item_identity_exactly()
         revised.snapshot_id().lineage()
     );
     assert_ne!(initial.snapshot_id(), revised.snapshot_id());
-    let revised_items = revised.tree().items().unwrap();
+    let revised_items = revised.items().unwrap();
     assert_eq!(revised_items.len(), 2);
     assert_eq!(revised_items[0].id(), stable_syntax);
     let created_syntax = revised_items[1].id();

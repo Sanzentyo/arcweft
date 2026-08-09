@@ -379,7 +379,7 @@ pub(super) fn agent_observe_image_resource(
     if image.uri != output.uri {
         return None;
     }
-    Some(report.image_resource(image, &output.bytes))
+    Some(report.image_resource(image, agent_binary_resource_body(&output.bytes)))
 }
 
 pub(super) fn agent_observe_cached_image_resource(
@@ -392,7 +392,7 @@ pub(super) fn agent_observe_cached_image_resource(
         return None;
     }
     let image = report.images.iter().find(|image| image.uri == uri)?;
-    Some(report.image_resource(image, &output.bytes))
+    Some(report.image_resource(image, agent_binary_resource_body(&output.bytes)))
 }
 
 pub(super) fn agent_json_error(error: &serde_json::Error) -> ExitCode {

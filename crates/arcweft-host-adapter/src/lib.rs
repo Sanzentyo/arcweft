@@ -393,11 +393,13 @@ impl<'a> HostCallArgs<'a> {
     pub fn variant(&self, index: usize) -> Result<HostCallVariantArg<'a>, String> {
         match self.positional.get(index).map(|payload| &payload.0) {
             Some(RuntimeValue::Variant {
-                path,
+                owner,
+                ordinal,
                 name,
                 payload,
             }) => Ok(HostCallVariantArg {
-                path: path.as_deref(),
+                owner,
+                ordinal: *ordinal,
                 name,
                 payload: payload.as_deref(),
             }),
@@ -427,7 +429,8 @@ impl<'a> HostCallArgs<'a> {
 /// Borrowed enum-like variant argument decoded from a host-call payload.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct HostCallVariantArg<'a> {
-    pub path: Option<&'a str>,
+    pub owner: &'a arcweft_core::pattern::RuntimeVariantIdentity,
+    pub ordinal: u32,
     pub name: &'a str,
     pub payload: Option<&'a RuntimeValue>,
 }
@@ -585,11 +588,18 @@ mod tests {
 
     #[test]
     fn custom_host_call_args_decode_variant_payloads() {
+        let nominal = arcweft_core::entry::RuntimeNominalTypeId::try_new("WindowMode")
+            .expect("test nominal identity");
+        let owner = arcweft_core::pattern::RuntimeVariantIdentity::Nominal {
+            nominal,
+            semantic_identity: arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes([7; 32]),
+        };
         let request = HostTaskRequest::custom(
             "fixture",
             "op",
             [RuntimePayload(RuntimeValue::Variant {
-                path: Some("WindowMode".to_owned()),
+                owner: owner.clone(),
+                ordinal: 4,
                 name: "Fullscreen".to_owned(),
                 payload: None,
             })],
@@ -600,7 +610,8 @@ mod tests {
         assert_eq!(
             variant,
             HostCallVariantArg {
-                path: Some("WindowMode"),
+                owner: &owner,
+                ordinal: 4,
                 name: "Fullscreen",
                 payload: None,
             }

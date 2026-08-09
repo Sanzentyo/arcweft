@@ -504,6 +504,10 @@ fn layer_reference_recovery_poison_propagates_to_its_item() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one module-member index matrix freezes and resolves composite identities across all owned arenas"
+)]
 fn module_member_index_freezes_multiple_arenas_and_resolves_composite_ids() {
     let local = module(10, 1);
     let owner = typed_id::<ItemId>(local, 1);
@@ -756,6 +760,8 @@ fn predicate_and_proof_keep_typed_contract_scopes_and_body_children() {
         HirRequiredName::Resolved(name("preserve_order")),
         None,
         signature,
+        crate::proof_return::HirProofReturnSemanticClass::Poisoned,
+        ProofTrust::Verified,
         HirProofBody::Error {
             scope: body_scope,
             expression: typed_id(foreign, 1),

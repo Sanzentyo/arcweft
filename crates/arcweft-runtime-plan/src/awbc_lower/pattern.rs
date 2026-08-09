@@ -1,8 +1,11 @@
 use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::AwbcInventory;
 use crate::awbc_lower::table_index;
-use arcweft_core::awbc::schema::{AwbcPattern, AwbcPatternId, AwbcRecordPatternField, AwbcTypeId};
-use arcweft_core::pattern::{RuntimePattern, RuntimeRecordPatternField};
+use arcweft_core::awbc::schema::{
+    AwbcPattern, AwbcPatternId, AwbcRecordPatternField, AwbcRuntimeType, AwbcSignedIntKind,
+    AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
+};
+use arcweft_core::pattern::{RuntimeCheckedType, RuntimePattern, RuntimeRecordPatternField};
 
 /// Lowers runtime patterns into executable AWBC pattern graph nodes.
 pub(crate) fn lower_pattern(
@@ -23,7 +26,7 @@ pub(crate) fn lower_pattern(
         RuntimePattern::Typed { name, ty } => {
             let name_id = inventory.intern_string(name);
             let register = frame.local(name, name_id, inventory.dynamic_ty());
-            let expected = Some(type_label(inventory, ty));
+            let expected = Some(intern_runtime_type(inventory, ty));
             inventory.intern_pattern(AwbcPattern::Bind {
                 target: register,
                 mutable: false,
@@ -46,14 +49,21 @@ pub(crate) fn lower_pattern(
                 .collect();
             inventory.intern_pattern(AwbcPattern::Tuple(items))
         }
-        RuntimePattern::Record { fields, rest, .. } => {
+        RuntimePattern::Record {
+            owner,
+            fields,
+            rest,
+        } => {
             let fields = fields
                 .iter()
                 .enumerate()
                 .map(|(index, field)| record_field(inventory, frame, index, field))
                 .collect();
+            let ty = owner
+                .as_ref()
+                .map(|owner| intern_runtime_type(inventory, owner));
             inventory.intern_pattern(AwbcPattern::Record {
-                ty: None,
+                ty,
                 fields,
                 rest: *rest,
             })
@@ -69,14 +79,20 @@ pub(crate) fn lower_pattern(
                 .collect();
             inventory.intern_pattern(AwbcPattern::Sequence { items, rest })
         }
-        RuntimePattern::Variant { name, payload, .. } => {
+        RuntimePattern::Variant {
+            owner,
+            ordinal,
+            name,
+            payload,
+        } => {
             let payload = payload
                 .as_deref()
                 .map(|payload| lower_pattern(inventory, frame, payload));
             let case_name = inventory.intern_string(name);
+            let ty = intern_runtime_type(inventory, owner);
             inventory.intern_pattern(AwbcPattern::Variant {
-                ty: None,
-                case: stable_case(name),
+                ty,
+                case: *ordinal,
                 case_name,
                 payload,
             })
@@ -142,17 +158,123 @@ fn record_field(
     }
 }
 
-fn type_label(inventory: &mut AwbcInventory, ty: &str) -> AwbcTypeId {
-    match ty {
-        "bool" => inventory.bool_ty(),
-        "i64" => inventory.i64_ty(),
-        "String" => inventory.string_ty(),
-        _ => inventory.dynamic_ty(),
-    }
-}
-
-fn stable_case(value: &str) -> u32 {
-    value.bytes().fold(2_166_136_261_u32, |acc, byte| {
-        acc.wrapping_mul(16_777_619) ^ u32::from(byte)
-    })
+#[allow(
+    clippy::too_many_lines,
+    reason = "the exhaustive checked-type to AWBC schema projection is one closed recursive type-family matrix"
+)]
+pub(crate) fn intern_runtime_type(
+    inventory: &mut AwbcInventory,
+    ty: &RuntimeCheckedType,
+) -> AwbcTypeId {
+    let projected = match ty {
+        RuntimeCheckedType::Never => AwbcRuntimeType::Choice(Vec::new()),
+        RuntimeCheckedType::Unit => AwbcRuntimeType::Unit,
+        RuntimeCheckedType::Bool => AwbcRuntimeType::Bool,
+        RuntimeCheckedType::Signed(width) => AwbcRuntimeType::Int(match width {
+            arcweft_core::value::RuntimeSignedIntWidth::I8 => AwbcSignedIntKind::I8,
+            arcweft_core::value::RuntimeSignedIntWidth::I16 => AwbcSignedIntKind::I16,
+            arcweft_core::value::RuntimeSignedIntWidth::I32 => AwbcSignedIntKind::I32,
+            arcweft_core::value::RuntimeSignedIntWidth::I64 => AwbcSignedIntKind::I64,
+            arcweft_core::value::RuntimeSignedIntWidth::I128 => AwbcSignedIntKind::I128,
+            arcweft_core::value::RuntimeSignedIntWidth::ISize => AwbcSignedIntKind::ISize,
+        }),
+        RuntimeCheckedType::Unsigned(width) => AwbcRuntimeType::UInt(match width {
+            arcweft_core::value::RuntimeUnsignedIntWidth::U8 => AwbcUnsignedIntKind::U8,
+            arcweft_core::value::RuntimeUnsignedIntWidth::U16 => AwbcUnsignedIntKind::U16,
+            arcweft_core::value::RuntimeUnsignedIntWidth::U32 => AwbcUnsignedIntKind::U32,
+            arcweft_core::value::RuntimeUnsignedIntWidth::U64 => AwbcUnsignedIntKind::U64,
+            arcweft_core::value::RuntimeUnsignedIntWidth::U128 => AwbcUnsignedIntKind::U128,
+            arcweft_core::value::RuntimeUnsignedIntWidth::USize => AwbcUnsignedIntKind::USize,
+        }),
+        RuntimeCheckedType::F32 => AwbcRuntimeType::F32,
+        RuntimeCheckedType::F64 => AwbcRuntimeType::F64,
+        RuntimeCheckedType::String => AwbcRuntimeType::String,
+        RuntimeCheckedType::Char => AwbcRuntimeType::Char,
+        RuntimeCheckedType::Duration => AwbcRuntimeType::Duration,
+        RuntimeCheckedType::EntityReference => AwbcRuntimeType::EntityRef,
+        RuntimeCheckedType::Bytes => {
+            let item = inventory.intern_type(AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U8));
+            AwbcRuntimeType::Sequence(item)
+        }
+        RuntimeCheckedType::Sequence(item) => {
+            AwbcRuntimeType::Sequence(intern_runtime_type(inventory, item))
+        }
+        RuntimeCheckedType::Tuple(items) => AwbcRuntimeType::Tuple(
+            items
+                .iter()
+                .map(|item| intern_runtime_type(inventory, item))
+                .collect(),
+        ),
+        RuntimeCheckedType::Choice(alternatives) => AwbcRuntimeType::Choice(
+            alternatives
+                .iter()
+                .map(|alternative| intern_runtime_type(inventory, alternative))
+                .collect(),
+        ),
+        RuntimeCheckedType::Nominal {
+            nominal,
+            semantic_identity,
+        } => AwbcRuntimeType::Nominal {
+            public_id: inventory.intern_string(nominal.as_str()),
+            semantic_identity: *semantic_identity.as_bytes(),
+        },
+        RuntimeCheckedType::Variant {
+            nominal,
+            semantic_identity,
+            cases,
+        } => AwbcRuntimeType::Variant {
+            owner: AwbcVariantIdentity::Nominal {
+                public_id: inventory.intern_string(nominal.as_str()),
+                semantic_identity: *semantic_identity.as_bytes(),
+            },
+            cases: cases
+                .iter()
+                .map(|case| AwbcVariantCase {
+                    name: inventory.intern_string(&case.name),
+                    payload: case
+                        .payload
+                        .as_deref()
+                        .map(|payload| intern_runtime_type(inventory, payload)),
+                })
+                .collect(),
+        },
+        RuntimeCheckedType::Result { ok, error } => {
+            let ok = intern_runtime_type(inventory, ok);
+            let error = intern_runtime_type(inventory, error);
+            let ok_name = inventory.intern_string("Ok");
+            let error_name = inventory.intern_string("Err");
+            AwbcRuntimeType::Variant {
+                owner: AwbcVariantIdentity::Result,
+                cases: vec![
+                    AwbcVariantCase {
+                        name: ok_name,
+                        payload: Some(ok),
+                    },
+                    AwbcVariantCase {
+                        name: error_name,
+                        payload: Some(error),
+                    },
+                ],
+            }
+        }
+        RuntimeCheckedType::Option(item) => {
+            let item = intern_runtime_type(inventory, item);
+            let some_name = inventory.intern_string("Some");
+            let none_name = inventory.intern_string("None");
+            AwbcRuntimeType::Variant {
+                owner: AwbcVariantIdentity::Option,
+                cases: vec![
+                    AwbcVariantCase {
+                        name: some_name,
+                        payload: Some(item),
+                    },
+                    AwbcVariantCase {
+                        name: none_name,
+                        payload: None,
+                    },
+                ],
+            }
+        }
+    };
+    inventory.intern_type(projected)
 }

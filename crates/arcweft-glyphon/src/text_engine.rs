@@ -9,6 +9,7 @@ use arcweft_text_layout::{
     FontFaceId, FontInventoryHash, LayoutPoint, LayoutRect, LayoutSize, ShapedGlyphKey,
     ShapedTextGlyph, ShapedTextRun, TextShapeRequest, TextShaper,
 };
+use arcweft_text_model::{RichTextInlineDirection, RichTextRange, RichTextWritingMode};
 use glyphon::cosmic_text::{CacheKeyFlags, Fallback, FeatureTag, FontFeatures, LineIter};
 use glyphon::{
     Attrs, Buffer, CacheKey, Family, FontSystem, Metrics, Shaping, Style, SwashCache, Weight, Wrap,
@@ -387,10 +388,7 @@ impl GlyphonTextEngine {
 
         let family = selected_family(request.style.font_families(), self.font_system.db());
         let mut features = FontFeatures::new();
-        if !matches!(
-            request.writing_mode,
-            arcweft_render_text::RichTextWritingMode::HorizontalTb
-        ) {
+        if !matches!(request.writing_mode, RichTextWritingMode::HorizontalTb) {
             features.enable(FeatureTag::new(b"vert"));
             features.enable(FeatureTag::new(b"vrt2"));
         }
@@ -436,10 +434,7 @@ impl GlyphonTextEngine {
                 .unwrap_or(u32::MAX);
             let shaped = ShapedTextGlyph {
                 key: glyph.key,
-                source_range: arcweft_render_text::RichTextRange::new(
-                    glyph.source_start,
-                    glyph.source_end,
-                ),
+                source_range: RichTextRange::new(glyph.source_start, glyph.source_end),
                 line_index: glyph.line_index,
                 cluster_index,
                 offset,
@@ -475,7 +470,7 @@ impl GlyphonTextEngine {
         font_size: f32,
         line_height: f32,
         word_spacing: f32,
-        direction: arcweft_render_text::RichTextInlineDirection,
+        direction: RichTextInlineDirection,
         attrs: &Attrs<'_>,
     ) -> Result<Vec<PendingGlyph>, GlyphonTextEngineError> {
         if line.is_empty() {
@@ -635,7 +630,7 @@ impl TextShaper for GlyphonTextEngine {
             cached
         } else {
             let shaped = self.shape_uncached(TextShapeRequest {
-                source_range: arcweft_render_text::RichTextRange::new(0, request.text.len()),
+                source_range: RichTextRange::new(0, request.text.len()),
                 ..request
             })?;
             self.shape_cache.insert(key, shaped.clone());
@@ -824,14 +819,11 @@ fn text_style(slant: arcweft_render_text::TextSlant) -> Style {
     }
 }
 
-fn text_with_explicit_direction(
-    text: &str,
-    direction: arcweft_render_text::RichTextInlineDirection,
-) -> (String, usize) {
+fn text_with_explicit_direction(text: &str, direction: RichTextInlineDirection) -> (String, usize) {
     let control = match direction {
-        arcweft_render_text::RichTextInlineDirection::Auto => return (text.to_owned(), 0),
-        arcweft_render_text::RichTextInlineDirection::Ltr => '\u{202a}',
-        arcweft_render_text::RichTextInlineDirection::Rtl => '\u{202b}',
+        RichTextInlineDirection::Auto => return (text.to_owned(), 0),
+        RichTextInlineDirection::Ltr => '\u{202a}',
+        RichTextInlineDirection::Rtl => '\u{202b}',
     };
     let mut wrapped = String::with_capacity(text.len() + 6);
     wrapped.push(control);
@@ -993,19 +985,19 @@ fn weight_tag(value: arcweft_render_text::TextWeight) -> u8 {
     }
 }
 
-fn writing_mode_tag(value: arcweft_render_text::RichTextWritingMode) -> u8 {
+fn writing_mode_tag(value: RichTextWritingMode) -> u8 {
     match value {
-        arcweft_render_text::RichTextWritingMode::HorizontalTb => 0,
-        arcweft_render_text::RichTextWritingMode::VerticalRl => 1,
-        arcweft_render_text::RichTextWritingMode::VerticalLr => 2,
+        RichTextWritingMode::HorizontalTb => 0,
+        RichTextWritingMode::VerticalRl => 1,
+        RichTextWritingMode::VerticalLr => 2,
     }
 }
 
-fn direction_tag(value: arcweft_render_text::RichTextInlineDirection) -> u8 {
+fn direction_tag(value: RichTextInlineDirection) -> u8 {
     match value {
-        arcweft_render_text::RichTextInlineDirection::Auto => 0,
-        arcweft_render_text::RichTextInlineDirection::Ltr => 1,
-        arcweft_render_text::RichTextInlineDirection::Rtl => 2,
+        RichTextInlineDirection::Auto => 0,
+        RichTextInlineDirection::Ltr => 1,
+        RichTextInlineDirection::Rtl => 2,
     }
 }
 
@@ -1049,11 +1041,9 @@ fn exact_pixel_u32(value: u32) -> Option<f32> {
 #[cfg(test)]
 mod tests {
     use super::{GlyphonTextEngine, GlyphonTextEngineError, TextShapeCacheLimits};
-    use arcweft_render_text::{
-        ResolvedTextStyle, RichTextInlineDirection, RichTextRange, RichTextWritingMode, TextColor,
-        TextFontFamily,
-    };
+    use arcweft_render_text::{ResolvedTextStyle, TextColor, TextFontFamily};
     use arcweft_text_layout::{TextShapeRequest, TextShaper};
+    use arcweft_text_model::{RichTextInlineDirection, RichTextRange, RichTextWritingMode};
 
     const TEST_FONT: &[u8] = include_bytes!("../../../vendor/glyphon/examples/Inter-Bold.ttf");
 

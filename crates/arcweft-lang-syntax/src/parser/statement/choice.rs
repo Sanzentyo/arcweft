@@ -5,7 +5,7 @@ mod plan;
 
 use arcweft_source::SourceRange;
 
-use super::super::cursor::ShadowDocumentParser;
+use super::super::cursor::DocumentParser;
 use super::super::expression::{CompletedNode, emit_entity_reference, emit_expression};
 use super::super::pattern::emit_pattern;
 use super::super::shadow_recovery::{
@@ -43,7 +43,7 @@ struct ChoiceStatementExtent {
 }
 
 pub(super) fn logical_choice_end(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     choice_start: usize,
     suite_owner_start: usize,
     limit: usize,
@@ -52,7 +52,7 @@ pub(super) fn logical_choice_end(
 }
 
 fn choice_expression_extent(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     choice_start: usize,
     suite_owner_start: usize,
     limit: usize,
@@ -86,7 +86,7 @@ fn choice_expression_extent(
             return None;
         }
         match body {
-            Some(ChoiceBodyIntroducer::Indented(_)) => {
+            Some(ChoiceBodyIntroducer::Indented(_)) | None => {
                 if token_indent(parser, candidate) != token_indent(parser, suite_owner_start) {
                     return None;
                 }
@@ -97,11 +97,6 @@ fn choice_expression_extent(
                 if later_line
                     && token_indent(parser, candidate) != token_indent(parser, suite_owner_start)
                 {
-                    return None;
-                }
-            }
-            None => {
-                if token_indent(parser, candidate) != token_indent(parser, suite_owner_start) {
                     return None;
                 }
             }
@@ -136,7 +131,7 @@ fn choice_expression_extent(
 }
 
 fn plan_end(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     choice_start: usize,
     with: usize,
     limit: usize,
@@ -154,7 +149,7 @@ fn plan_end(
 }
 
 pub(in crate::parser) fn emit_choice_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -220,7 +215,7 @@ pub(in crate::parser) fn emit_choice_expression(
 }
 
 fn emit_indented_choice_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     interval: IndentedSuiteInterval,
     item_kind: SyntaxKind,
     role: SyntaxRole,
@@ -291,7 +286,7 @@ fn emit_indented_choice_body(
     parser.finish();
 }
 
-fn emit_choice_colon(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_choice_colon(parser: &mut DocumentParser<'_, '_>) {
     debug_assert!(parser.at(":"));
     parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
     parser.bump();
@@ -299,7 +294,7 @@ fn emit_choice_colon(parser: &mut ShadowDocumentParser<'_, '_>) {
 }
 
 fn emit_indented_suite_issue(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     issue: IndentedSuiteIssue,
 ) {
@@ -323,7 +318,7 @@ fn is_choice_item_head(kind: Option<SyntaxKind>, spelling: Option<&str>) -> bool
 }
 
 fn nested_choice_body_introducer(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     owner_start: usize,
     limit: usize,
 ) -> Option<ChoiceBodyIntroducer> {
@@ -357,7 +352,7 @@ const fn choice_body_start(body: Option<ChoiceBodyIntroducer>) -> Option<usize> 
 }
 
 fn emit_choice_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     role: SyntaxRole,
@@ -402,7 +397,7 @@ fn emit_choice_body(
 /// Finds one braced Choice item boundary while keeping a next-line `else`
 /// attached to the `if` that owns it.
 fn find_choice_item_terminator(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<(usize, bool)> {
@@ -445,7 +440,7 @@ struct ChoiceIfSegmentBoundary {
 /// exposes a second `else` after a terminal branch as the next recoverable
 /// Choice item boundary.
 fn choice_if_segment_boundary(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> ChoiceIfSegmentBoundary {
@@ -484,11 +479,7 @@ fn choice_if_segment_boundary(
 /// Collects the owner-level `else` separators for one already bounded Choice
 /// item with a single forward scan. Branch emission then consumes this list
 /// monotonically instead of rescanning the unconsumed tail for every branch.
-fn choice_if_else_tokens(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> Vec<usize> {
+fn choice_if_else_tokens(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Vec<usize> {
     let mut depth = 0_usize;
     let mut separators = Vec::new();
     for index in start..end {
@@ -509,7 +500,7 @@ fn choice_if_else_tokens(
 }
 
 fn emit_choice_item(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -536,7 +527,7 @@ fn emit_choice_item(
 }
 
 fn emit_choice_if(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     role: SyntaxRole,
@@ -598,7 +589,7 @@ fn emit_choice_if(
 }
 
 fn emit_choice_for(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -648,7 +639,7 @@ fn emit_choice_for(
 }
 
 fn emit_choice_match(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -675,11 +666,7 @@ fn emit_choice_match(
     parser.finish();
 }
 
-fn emit_choice_match_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    item_kind: SyntaxKind,
-) {
+fn emit_choice_match_body(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
     parser.start(SyntaxKind::ChoiceBody, SyntaxRole::Body);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
     let close = find_matching_close_before(parser, parser.cursor(), end, "{").unwrap_or(end);
@@ -707,7 +694,7 @@ fn emit_choice_match_body(
 }
 
 fn emit_choice_match_arm(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -751,7 +738,7 @@ fn emit_choice_match_arm(
 }
 
 fn emit_choice_option(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -794,7 +781,7 @@ fn emit_choice_option(
 }
 
 fn emit_choice_option_for(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -837,11 +824,7 @@ fn emit_choice_option_for(
     parser.finish();
 }
 
-fn emit_choice_option_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    item_kind: SyntaxKind,
-) {
+fn emit_choice_option_body(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
     parser.start(SyntaxKind::ChoiceOptionBody, SyntaxRole::Body);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
     let close = find_matching_close_before(parser, parser.cursor(), end, "{").unwrap_or(end);
@@ -874,7 +857,7 @@ fn emit_choice_option_body(
 }
 
 fn emit_indented_choice_option_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     interval: IndentedSuiteInterval,
     item_kind: SyntaxKind,
 ) {
@@ -939,7 +922,7 @@ fn emit_indented_choice_option_body(
 }
 
 fn emit_choice_compact_arm(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -1027,7 +1010,7 @@ fn emit_choice_compact_arm(
 }
 
 fn finish_choice_delimited_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     code: &'static str,
     message: &'static str,
 ) {
@@ -1050,7 +1033,7 @@ fn finish_choice_delimited_body(
 }
 
 fn emit_missing_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
     code: &'static str,
     message: &'static str,
@@ -1066,7 +1049,7 @@ fn emit_missing_body(
 }
 
 fn emit_missing_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
     code: &'static str,
     message: &'static str,
@@ -1082,7 +1065,7 @@ fn emit_missing_expression(
 }
 
 fn emit_recovery(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     code: &'static str,
@@ -1101,7 +1084,7 @@ fn emit_recovery(
 }
 
 fn emit_missing_token_diagnostic(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     code: &'static str,
     message: &'static str,
 ) {

@@ -1,11 +1,5 @@
-error[E0432]: unresolved import `arcweft_lang_syntax::ast::flow::BorrowBlock`
- --> tests/ui/removed_borrow_block.rs:1:38
+error[E0432]: unresolved import `arcweft_lang_syntax::ast::flow`
+ --> tests/ui/removed_borrow_block.rs:1:31
   |
 1 | use arcweft_lang_syntax::ast::flow::{BorrowBlock, FlowItem};
-  |                                      ^^^^^^^^^^^ no `BorrowBlock` in `ast::flow`
-
-error[E0599]: no variant, associated function, or constant named `BorrowBlock` found for enum `arcweft_lang_syntax::ast::flow::FlowItem` in the current scope
- --> tests/ui/removed_borrow_block.rs:4:22
-  |
-4 |     if let FlowItem::BorrowBlock(_borrow) = item {}
-  |                      ^^^^^^^^^^^ variant, associated function, or constant not found in `arcweft_lang_syntax::ast::flow::FlowItem`
+  |                               ^^^^ could not find `flow` in `ast`

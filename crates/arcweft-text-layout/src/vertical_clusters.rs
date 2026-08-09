@@ -4,7 +4,7 @@ use crate::{
     GlyphOrientation, GlyphVerticalForm,
     vertical_orientation::{UnicodeVerticalOrientation, unicode_vertical_orientation},
 };
-use arcweft_render_text::RichTextVerticalLatinMode;
+use arcweft_text_model::RichTextVerticalLatinMode;
 use std::{collections::HashSet, ops::Range};
 use unicode_linebreak::{BreakOpportunity, linebreaks};
 use unicode_segmentation::UnicodeSegmentation as _;

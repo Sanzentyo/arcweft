@@ -165,7 +165,7 @@ struct ViewEvaluator<'a> {
 }
 
 struct DialogueTextInput<'a> {
-    frame: &'a arcweft_render_text::LineDisplayFrame,
+    frame: &'a arcweft_text_model::LineDisplayFrame,
     state: crate::dialogue::DialogueViewState,
 }
 
@@ -260,14 +260,14 @@ impl BundleViewRuntime {
         bindings: &[RuntimeBinding],
         reduce_motion: bool,
     ) -> BundleViewFrame {
-        if let Err(error) = self.validate_authorized_dialogue_inputs(dialogue) {
+        if let Err(error) = self.validate_dialogue_inputs(dialogue) {
             return BundleViewFrame {
                 mounts: Vec::new(),
                 diagnostics: vec![BundleViewDiagnostic::invalid_dialogue_view_owner(&error)],
             };
         }
-        let mut active_required_dialogue_views = self.declared_dialogue_views.clone();
-        active_required_dialogue_views.extend(dialogue.iter().map(|input| input.view.clone()));
+        let active_required_dialogue_views =
+            dialogue.iter().map(|input| input.view.clone()).collect();
         for binding in bindings {
             self.root_bindings
                 .insert(binding.name.clone(), binding.value.clone());
@@ -388,30 +388,11 @@ impl BundleViewRuntime {
             }
             if handle.is_render_visible() {
                 evaluated_handles.insert(handle.id.clone());
-                let profile_style = evaluator
-                    .dialogue_inputs
-                    .get(&handle.id)
-                    .and_then(|input| input.frame.profile_style.clone());
-                let mut style_scopes = ViewStyleScopeStack::default();
-                if let Some(profile_style) = profile_style
-                    && let Err(error) = style_scopes.enter_dialogue_profile(
-                        &profile_style,
-                        &mut evaluator.style_scope_allocator,
-                    )
-                {
-                    evaluator.record_failure(
-                        &key,
-                        &view,
-                        None,
-                        EvaluationFailure::style_scope(None, error),
-                    );
-                    continue;
-                }
                 output.extend(evaluator.evaluate_occurrence(
                     key,
                     definition_index,
                     0,
-                    style_scopes,
+                    ViewStyleScopeStack::default(),
                 ));
             }
         }

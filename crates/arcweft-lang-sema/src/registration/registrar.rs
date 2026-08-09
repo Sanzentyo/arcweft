@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_character::{
     id::CharacterId,
@@ -48,8 +45,9 @@ use super::{
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     model::{
         AcceptedNominalVisibilityIndex, AcceptedNominalWorld, CharacterInventoryRevision,
-        CharacterRegistrar, CharacterRegistrationRequest, RegisteredExternalOwner,
-        RegisteredSemanticWorld, RegisteredTypeCheckEnv,
+        CharacterRegistrar, CharacterRegistrationRequest, ProofReturnRegistrationPrelude,
+        ProofReturnRegistrationRequest, RegisteredExternalOwner, RegisteredSemanticWorld,
+        RegisteredTypeCheckEnv,
     },
     source_index::CharacterDefinitionIndex,
 };
@@ -60,23 +58,17 @@ pub(super) struct ManifestRecord {
     sources: Vec<SourceSpan>,
 }
 
-impl ManifestRecord {
-    fn primary_source(&self) -> &SourceSpan {
-        self.sources
-            .first()
-            .expect("every manifest record retains at least one source")
-    }
-}
-
 impl CharacterRegistrar {
+    /// Freezes the exact project symbols and accepted nominal world needed to
+    /// classify authored Proof returns while their bodies remain unallocated.
     #[allow(
         clippy::too_many_lines,
         clippy::needless_pass_by_value,
-        reason = "registration consumes one request as a fail-closed transaction into an accepted semantic world"
+        reason = "the pre-publication registration transaction validates one complete accepted source world"
     )]
-    pub fn register(
-        request: CharacterRegistrationRequest<'_>,
-    ) -> Result<RegisteredSemanticWorld, CharacterRegistrationReport> {
+    pub fn prepare_proof_return_headers(
+        request: ProofReturnRegistrationRequest<'_>,
+    ) -> Result<ProofReturnRegistrationPrelude, CharacterRegistrationReport> {
         let Some(fallback) = request
             .facts
             .document(request.facts.world().root_document())
@@ -97,12 +89,13 @@ impl CharacterRegistrar {
                 ),
             ]));
         }
-        let mut diagnostics = validate_project_sources(&request, &fallback);
+        let mut diagnostics =
+            validate_proof_return_project_sources(request.project, request.facts, &fallback);
         if !diagnostics.is_empty() {
             return Err(CharacterRegistrationReport::from_diagnostics(diagnostics));
         }
 
-        let link = match ProjectSymbolTable::link(
+        let link = match ProjectSymbolTable::link_proof_return_headers(
             request.project,
             request.facts.external_declarations(),
         ) {
@@ -121,10 +114,10 @@ impl CharacterRegistrar {
             }
         };
         let mut work = link.work_charged();
-
-        let manifests = collect_manifests(&request, &mut work, &mut diagnostics, &fallback);
+        let manifests = collect_manifests(request.facts, &mut work, &mut diagnostics, &fallback);
         let owners = build_external_owners(
-            &request,
+            &request.base,
+            request.facts,
             &link,
             &manifests,
             &mut work,
@@ -191,7 +184,7 @@ impl CharacterRegistrar {
         }
 
         let (accepted_base, visibility) =
-            match accepted_external_environment(&request, &link, &owners) {
+            match accepted_external_environment(&request.base, request.facts, &link, &owners) {
                 Ok(environment) => environment,
                 Err(error) => {
                     return Err(CharacterRegistrationReport::from_diagnostics(vec![
@@ -235,7 +228,454 @@ impl CharacterRegistrar {
             }
         }
         let environment_aliases = environment_external_alias_records(
-            &request,
+            &request.base,
+            request.facts,
+            &link,
+            nominal_world.external_owners(),
+            &environment_bindings,
+        )
+        .map_err(|error| {
+            CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { error },
+                    fallback.clone(),
+                    [],
+                ),
+            ])
+        })?;
+        let nominal_world = Arc::new(
+            nominal_world
+                .try_with_environment_bindings(environment_bindings, environment_aliases)
+                .map_err(|error| {
+                    CharacterRegistrationReport::from_diagnostics(vec![
+                        CharacterRegistrationDiagnostic::new(
+                            CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { error },
+                            fallback.clone(),
+                            [],
+                        ),
+                    ])
+                })?,
+        );
+        let rust_metadata_inputs = request
+            .facts
+            .environment_inputs()
+            .flat_map(|input| input.input().rust_metadata().iter().cloned())
+            .collect::<Vec<_>>();
+        let rust_metadata = Arc::new(
+            nominal_world
+                .try_project_rust_metadata(
+                    &rust_metadata_inputs,
+                    NominalResolutionLimits::PRODUCTION,
+                    NominalAggregationLimits::PRODUCTION,
+                )
+                .map_err(environment_projection_registration_report)?,
+        );
+        let symbols = Arc::new(link.into_table());
+        Ok(ProofReturnRegistrationPrelude {
+            generation: request.generation,
+            symbols,
+            nominal_world,
+            rust_metadata,
+            characters,
+            character_variants,
+            character_descriptor: descriptor,
+            character_digest: digest,
+            character_revision: revision,
+        })
+    }
+
+    /// Completes registration from the exact prelude that classified Proof
+    /// returns. The published project must be the same module/snapshot/source
+    /// generation; symbols and nominal resolution are not rebuilt.
+    #[allow(
+        clippy::too_many_lines,
+        clippy::needless_pass_by_value,
+        reason = "one atomic continuation publishes callable and character consumers from the frozen prelude"
+    )]
+    pub fn finish_proof_return_registration(
+        project: arcweft_lang_hir::project::HirProjectView<'_>,
+        facts: &super::model::ProjectRegistrationFacts,
+        prelude: ProofReturnRegistrationPrelude,
+    ) -> Result<RegisteredSemanticWorld, CharacterRegistrationReport> {
+        let Some(fallback) = facts
+            .document(facts.world().root_document())
+            .or_else(|| facts.documents().next().map(AsRef::as_ref))
+            .map(full_span)
+        else {
+            return Err(CharacterRegistrationReport::from_diagnostics(Vec::new()).with_omitted(1));
+        };
+        let module_count = project.modules().count();
+        if module_count != prelude.generation.modules().len()
+            || project.modules().any(|(_, module)| {
+                prelude
+                    .generation
+                    .validate_module_transaction(
+                        module.key().package(),
+                        module.key().path(),
+                        module.snapshot_id(),
+                        module.provenance().syntax_snapshot(),
+                        module.provenance().source_identity(),
+                    )
+                    .is_err()
+            })
+        {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::StaleSource {
+                        expected: prelude.generation.revision(),
+                        actual: *facts.symbol_revision(),
+                    },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+
+        let ProofReturnRegistrationPrelude {
+            generation: _,
+            symbols,
+            nominal_world,
+            rust_metadata,
+            characters,
+            character_variants,
+            character_descriptor,
+            character_digest,
+            character_revision,
+        } = prelude;
+        let mut callable_builder = RegisteredCallableCatalogBuilder::for_nominal_world(
+            &nominal_world,
+            PRODUCTION_CALLABLE_LIMITS,
+        );
+        if let Err(error) = callable_builder.add_project(project, &symbols, &nominal_world) {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+        if let Err(error) =
+            callable_builder.add_project_bindings(project, &symbols, |target| match target {
+                ProjectSymbolTargetId::External(declaration) => {
+                    match nominal_world.external_owners().get(declaration) {
+                        Some(RegisteredExternalOwner::Character(_)) => {
+                            Some(TypeKind::Ref(EntityType::new(EntityKind::Character, None)))
+                        }
+                        Some(RegisteredExternalOwner::Environment(owner)) => nominal_world
+                            .environment_binding(owner.value_binding())
+                            .cloned(),
+                        None => None,
+                    }
+                }
+                ProjectSymbolTargetId::Module(_) => Some(TypeKind::Named("Module".to_owned())),
+                ProjectSymbolTargetId::Nominal(declaration) => {
+                    Some(TypeKind::Named(declaration.name().as_str().to_owned()))
+                }
+                ProjectSymbolTargetId::Retained(public_id) => symbols
+                    .retained(public_id)
+                    .and_then(|symbol| {
+                        EntityKind::from_declaration_identity_family(symbol.family())
+                    })
+                    .map(|kind| TypeKind::Ref(EntityType::new(kind, None))),
+                ProjectSymbolTargetId::Callable(_)
+                | ProjectSymbolTargetId::StructuralCallable(_) => None,
+            })
+        {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+        let standard_publication = match nominal_world
+            .typecheck_env()
+            .standard_callable_publication(nominal_world.stamp(), &PRODUCTION_CALLABLE_LIMITS)
+        {
+            Ok(publication) => publication,
+            Err(error) => {
+                let error = crate::callable::CallableCatalogBuildError::from(error);
+                return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                        fallback,
+                        [],
+                    ),
+                ]));
+            }
+        };
+        if let Err(error) = callable_builder.add_environment(standard_publication) {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+        for input in facts.environment_inputs() {
+            let publication = match nominal_world.try_project_environment_publication(
+                input,
+                NominalResolutionLimits::PRODUCTION,
+                NominalAggregationLimits::PRODUCTION,
+                &PRODUCTION_CALLABLE_LIMITS,
+            ) {
+                Ok(publication) => publication,
+                Err(report) => return Err(environment_projection_registration_report(report)),
+            };
+            if let Err(error) = callable_builder.add_environment(publication) {
+                return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                        fallback,
+                        [],
+                    ),
+                ]));
+            }
+        }
+        let callables = match callable_builder.finish() {
+            Ok(callables) => Arc::new(callables),
+            Err(error) => {
+                return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::CallableCatalog { code: error.code() },
+                        fallback,
+                        [],
+                    ),
+                ]));
+            }
+        };
+        let environment_digest = super::environment_digest::derive(
+            &nominal_world,
+            rust_metadata.digest().as_bytes(),
+            callables.digest().as_bytes(),
+            facts,
+            character_digest,
+            character_revision,
+        );
+        let environment = Arc::new(RegisteredTypeCheckEnv {
+            nominal_world,
+            rust_metadata,
+            callables,
+            characters,
+            character_variants,
+            character_descriptor,
+            character_digest,
+            character_revision,
+            environment_digest,
+        });
+        let character_definitions =
+            match CharacterDefinitionIndex::try_build(facts, &symbols, &environment) {
+                Ok(index) => Arc::new(index),
+                Err(report) => {
+                    let diagnostics = report
+                        .errors()
+                        .iter()
+                        .map(|error| {
+                            CharacterRegistrationDiagnostic::new(
+                                CharacterRegistrationDiagnosticKind::DefinitionIndex {
+                                    error: error.clone(),
+                                },
+                                error
+                                    .primary_span()
+                                    .cloned()
+                                    .unwrap_or_else(|| fallback.clone()),
+                                [],
+                            )
+                        })
+                        .collect();
+                    return Err(CharacterRegistrationReport::from_diagnostics(diagnostics)
+                        .with_omitted(report.omitted_errors()));
+                }
+            };
+        Ok(RegisteredSemanticWorld {
+            symbols,
+            environment,
+            character_definitions,
+        })
+    }
+}
+
+impl ManifestRecord {
+    fn primary_source(&self) -> &SourceSpan {
+        self.sources
+            .first()
+            .expect("every manifest record retains at least one source")
+    }
+}
+
+impl CharacterRegistrar {
+    #[allow(
+        clippy::too_many_lines,
+        clippy::needless_pass_by_value,
+        reason = "registration consumes one request as a fail-closed transaction into an accepted semantic world"
+    )]
+    pub fn register(
+        request: CharacterRegistrationRequest<'_>,
+    ) -> Result<RegisteredSemanticWorld, CharacterRegistrationReport> {
+        let Some(fallback) = request
+            .facts
+            .document(request.facts.world().root_document())
+            .or_else(|| request.facts.documents().next().map(AsRef::as_ref))
+            .map(full_span)
+        else {
+            return Err(CharacterRegistrationReport::from_diagnostics(Vec::new()).with_omitted(1));
+        };
+        if request.facts.symbol_revision() != request.facts.external_declarations().revision() {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::StaleSource {
+                        expected: *request.facts.symbol_revision(),
+                        actual: *request.facts.external_declarations().revision(),
+                    },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+        let mut diagnostics = validate_project_sources(&request, &fallback);
+        if !diagnostics.is_empty() {
+            return Err(CharacterRegistrationReport::from_diagnostics(diagnostics));
+        }
+
+        let link = match ProjectSymbolTable::link(
+            request.project,
+            request.facts.external_declarations(),
+        ) {
+            Ok(link) => link,
+            Err(report) => {
+                diagnostics.extend(report.diagnostics().iter().cloned().map(|error| {
+                    let primary = link_error_source(&error).unwrap_or_else(|| fallback.clone());
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::ProjectSymbol { error },
+                        primary,
+                        [],
+                    )
+                }));
+                return Err(CharacterRegistrationReport::from_diagnostics(diagnostics)
+                    .with_omitted(report.omitted_diagnostics()));
+            }
+        };
+        let mut work = link.work_charged();
+
+        let manifests = collect_manifests(request.facts, &mut work, &mut diagnostics, &fallback);
+        let owners = build_external_owners(
+            &request.base,
+            request.facts,
+            &link,
+            &manifests,
+            &mut work,
+            &mut diagnostics,
+            &fallback,
+        );
+        for symbol in link.table().external_symbols() {
+            if !owners.contains_key(&symbol.declaration()) {
+                diagnostics.push(CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::ExternalUnknown {
+                        declaration: symbol.declaration(),
+                    },
+                    symbol.declaration_span().clone(),
+                    [],
+                ));
+            }
+        }
+        audit_character_spellings(link.table(), &owners, &manifests, &mut diagnostics);
+        if !diagnostics.is_empty() {
+            return Err(CharacterRegistrationReport::from_diagnostics(diagnostics));
+        }
+
+        let characters = manifests
+            .into_iter()
+            .map(|(owner, record)| (owner, record.manifest))
+            .collect::<BTreeMap<_, _>>();
+        let character_variants = character_variants(&characters);
+        let Ok(descriptor) = build_descriptor(link.table(), &characters, &owners) else {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::DescriptorTamper {
+                        expected: super::model::CharacterInventoryDigest([0; 32]),
+                        actual: super::model::CharacterInventoryDigest([0; 32]),
+                    },
+                    fallback,
+                    [],
+                ),
+            ]));
+        };
+        let digest = descriptor_digest(&descriptor);
+        let revision = match next_revision(request.previous, request.facts.world(), digest) {
+            Ok(revision) => revision,
+            Err(previous) => {
+                return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                    CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::RevisionOverflow { previous },
+                        fallback,
+                        [],
+                    ),
+                ]));
+            }
+        };
+        if work > CharacterRegistrationLimits::PRODUCTION.work() {
+            return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::WorkOverflow {
+                        attempted: work,
+                        maximum: CharacterRegistrationLimits::PRODUCTION.work(),
+                    },
+                    fallback,
+                    [],
+                ),
+            ]));
+        }
+
+        let (accepted_base, visibility) =
+            match accepted_external_environment(&request.base, request.facts, &link, &owners) {
+                Ok(environment) => environment,
+                Err(error) => {
+                    return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                        CharacterRegistrationDiagnostic::new(
+                            CharacterRegistrationDiagnosticKind::AcceptedNominalCatalog { error },
+                            fallback,
+                            [],
+                        ),
+                    ]));
+                }
+            };
+        let nominal_world = AcceptedNominalWorld::new(
+            accepted_base,
+            request.facts.world().clone(),
+            *request.facts.symbol_revision(),
+            owners,
+            visibility,
+        );
+        let mut environment_bindings = BTreeMap::new();
+        for input in request.facts.environment_inputs() {
+            let projected = nominal_world
+                .try_project_environment_bindings(
+                    input,
+                    NominalResolutionLimits::PRODUCTION,
+                    NominalAggregationLimits::PRODUCTION,
+                )
+                .map_err(environment_projection_registration_report)?;
+            for (id, ty) in projected {
+                if environment_bindings.insert(id, ty).is_some() {
+                    return Err(CharacterRegistrationReport::from_diagnostics(vec![
+                        CharacterRegistrationDiagnostic::new(
+                            CharacterRegistrationDiagnosticKind::CallableCatalog {
+                                code:
+                                    crate::callable::CallableDiagnosticCode::CorruptCallableCatalog,
+                            },
+                            fallback.clone(),
+                            [],
+                        ),
+                    ]));
+                }
+            }
+        }
+        let environment_aliases = environment_external_alias_records(
+            &request.base,
+            request.facts,
             &link,
             nominal_world.external_owners(),
             &environment_bindings,
@@ -311,7 +751,15 @@ impl CharacterRegistrar {
                     ProjectSymbolTargetId::Nominal(declaration) => {
                         Some(TypeKind::Named(declaration.name().as_str().to_owned()))
                     }
-                    ProjectSymbolTargetId::Callable(_) => None,
+                    ProjectSymbolTargetId::Retained(public_id) => link
+                        .table()
+                        .retained(public_id)
+                        .and_then(|symbol| {
+                            EntityKind::from_declaration_identity_family(symbol.family())
+                        })
+                        .map(|kind| TypeKind::Ref(EntityType::new(kind, None))),
+                    ProjectSymbolTargetId::Callable(_)
+                    | ProjectSymbolTargetId::StructuralCallable(_) => None,
                 }
             })
         {
@@ -484,18 +932,17 @@ fn environment_projection_registration_report(
     reason = "accepted catalog construction preserves its complete typed atomic-failure evidence"
 )]
 fn accepted_external_environment(
-    request: &CharacterRegistrationRequest<'_>,
+    base: &Arc<TypeCheckEnv>,
+    facts: &super::model::ProjectRegistrationFacts,
     link: &arcweft_lang_hir::symbol::ProjectSymbolLinkOutput,
     owners: &BTreeMap<ExternalDeclarationId, RegisteredExternalOwner>,
 ) -> Result<(Arc<TypeCheckEnv>, AcceptedNominalVisibilityIndex), AcceptedNominalCatalogError> {
-    request
-        .base
-        .nominal_catalog()
+    base.nominal_catalog()
         .validate_scopes_for(OpenNominalEnvironment::Accepted)?;
-    let mut environment = request.base.as_ref().clone();
+    let mut environment = base.as_ref().clone();
     let mut visible = BTreeMap::new();
     let mut inaccessible = BTreeMap::new();
-    for input in request.facts.environment_inputs() {
+    for input in facts.environment_inputs() {
         for nominal in input.input().nominal_inventory() {
             environment.try_insert_nominal_record(AcceptedNominalRecord::try_new(
                 nominal.id().clone(),
@@ -520,8 +967,7 @@ fn accepted_external_environment(
         let Some(owner) = owners.get(&declaration) else {
             continue;
         };
-        let seed = request
-            .facts
+        let seed = facts
             .external_declarations()
             .declaration(seed_id)
             .expect("linked external seeds belong to the accepted registration facts");
@@ -553,7 +999,8 @@ fn accepted_external_environment(
 }
 
 fn environment_external_alias_records(
-    request: &CharacterRegistrationRequest<'_>,
+    base: &Arc<TypeCheckEnv>,
+    facts: &super::model::ProjectRegistrationFacts,
     link: &arcweft_lang_hir::symbol::ProjectSymbolLinkOutput,
     owners: &BTreeMap<ExternalDeclarationId, RegisteredExternalOwner>,
     bindings: &BTreeMap<crate::env::identity::EnvironmentBindingId, TypeKind>,
@@ -565,15 +1012,14 @@ fn environment_external_alias_records(
         };
         let Some(ty) = bindings
             .get(owner.value_binding())
-            .or_else(|| request.base.environment_binding(owner.value_binding()))
+            .or_else(|| base.environment_binding(owner.value_binding()))
         else {
             continue;
         };
         if matches!(ty, TypeKind::AcceptedNominal(_)) {
             continue;
         }
-        let seed = request
-            .facts
+        let seed = facts
             .external_declarations()
             .declaration(seed_id)
             .expect("linked external seeds belong to the accepted registration facts");
@@ -598,11 +1044,8 @@ fn validate_project_sources(
     fallback: &SourceSpan,
 ) -> Vec<CharacterRegistrationDiagnostic> {
     let mut diagnostics = Vec::new();
-    for (module, _) in request.project.modules() {
-        let identity = request
-            .project
-            .source(module)
-            .expect("each HIR project module has a source identity");
+    for (_, module) in request.project.modules() {
+        let identity = module.provenance().source_identity();
         let primary = request
             .facts
             .document(identity.id())
@@ -632,13 +1075,49 @@ fn validate_project_sources(
     diagnostics
 }
 
+fn validate_proof_return_project_sources(
+    project: arcweft_lang_hir::proof_return::HirProofReturnHeaderProjectView<'_, '_>,
+    facts: &super::model::ProjectRegistrationFacts,
+    fallback: &SourceSpan,
+) -> Vec<CharacterRegistrationDiagnostic> {
+    let mut diagnostics = Vec::new();
+    for (_, module) in project.modules() {
+        let identity = module.source_identity();
+        let primary = facts
+            .document(identity.id())
+            .map_or_else(|| fallback.clone(), full_span);
+        let Some(document) = facts.document(identity.id()) else {
+            diagnostics.push(CharacterRegistrationDiagnostic::new(
+                CharacterRegistrationDiagnosticKind::WrongDocument {
+                    expected: facts.world().root_document().clone(),
+                    actual: identity.id().clone(),
+                },
+                primary,
+                [],
+            ));
+            continue;
+        };
+        if document.identity().revision() != identity.revision() {
+            diagnostics.push(CharacterRegistrationDiagnostic::new(
+                CharacterRegistrationDiagnosticKind::WrongRevision {
+                    expected: document.identity().revision(),
+                    actual: identity.revision(),
+                },
+                primary,
+                [full_span(document)],
+            ));
+        }
+    }
+    diagnostics
+}
+
 fn collect_manifests(
-    request: &CharacterRegistrationRequest<'_>,
+    facts: &super::model::ProjectRegistrationFacts,
     work: &mut u64,
     diagnostics: &mut Vec<CharacterRegistrationDiagnostic>,
     fallback: &SourceSpan,
 ) -> BTreeMap<CharacterId, ManifestRecord> {
-    let catalog_count = u64::try_from(request.facts.catalogs().len()).unwrap_or(u64::MAX);
+    let catalog_count = u64::try_from(facts.catalogs().len()).unwrap_or(u64::MAX);
     if catalog_count > CharacterRegistrationLimits::PRODUCTION.catalogs() {
         diagnostics.push(CharacterRegistrationDiagnostic::new(
             CharacterRegistrationDiagnosticKind::Limit {
@@ -652,14 +1131,13 @@ fn collect_manifests(
     }
     let mut occurrences = 0_u64;
     let mut manifests = BTreeMap::<CharacterId, ManifestRecord>::new();
-    for (catalog_index, catalog) in request.facts.catalogs().enumerate() {
+    for (catalog_index, catalog) in facts.catalogs().enumerate() {
         charge(work, 1, fallback, diagnostics);
         for (manifest_index, source_backed) in catalog.manifests().enumerate() {
             occurrences = occurrences.saturating_add(1);
             let manifest = source_backed.manifest();
             let owner = manifest.character().clone();
-            let source = request
-                .facts
+            let source = facts
                 .manifest_owner_source(catalog_index, manifest_index)
                 .cloned()
                 .unwrap_or_else(|| {
@@ -693,7 +1171,7 @@ fn collect_manifests(
                         actual: source.source().revision(),
                     },
                     source.clone(),
-                    request.facts.document(expected_source.id()).map(full_span),
+                    facts.document(expected_source.id()).map(full_span),
                 ));
             }
             charge_manifest(work, manifest, &source, diagnostics);
@@ -778,7 +1256,8 @@ pub(super) fn merge_manifest_occurrence(
 }
 
 fn build_external_owners(
-    request: &CharacterRegistrationRequest<'_>,
+    base: &Arc<TypeCheckEnv>,
+    facts: &super::model::ProjectRegistrationFacts,
     link: &arcweft_lang_hir::symbol::ProjectSymbolLinkOutput,
     manifests: &BTreeMap<CharacterId, ManifestRecord>,
     work: &mut u64,
@@ -786,7 +1265,7 @@ fn build_external_owners(
     fallback: &SourceSpan,
 ) -> BTreeMap<ExternalDeclarationId, RegisteredExternalOwner> {
     let mut owners = BTreeMap::new();
-    for contribution in request.facts.external_owner_contributions() {
+    for contribution in facts.external_owner_contributions() {
         charge(work, 1, &contribution.owner_source, diagnostics);
         let Some(declaration) = link.seed_declaration(contribution.seed) else {
             diagnostics.push(CharacterRegistrationDiagnostic::new(
@@ -801,13 +1280,8 @@ fn build_external_owners(
         let valid_owner = match &contribution.target {
             RegisteredExternalOwner::Character(owner) => manifests.contains_key(owner),
             RegisteredExternalOwner::Environment(owner) => {
-                request
-                    .base
-                    .environment_binding(owner.value_binding())
-                    .is_some()
-                    || request
-                        .facts
-                        .declares_environment_binding(owner.value_binding())
+                base.environment_binding(owner.value_binding()).is_some()
+                    || facts.declares_environment_binding(owner.value_binding())
             }
         };
         if !valid_owner {
@@ -951,7 +1425,20 @@ fn audit_character_spellings(
                             )],
                         },
                         record.primary_source().clone(),
-                        [symbol.source().clone()],
+                        [symbol.declaration_span().clone()],
+                    ));
+                }
+                Ok(ResolvedProjectSymbol::StructuralCallable(symbol)) => {
+                    diagnostics.push(CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::AliasCollision {
+                            spelling: path,
+                            expected: *declaration,
+                            conflicting: vec![ProjectSymbolTargetId::StructuralCallable(
+                                symbol.declaration().clone(),
+                            )],
+                        },
+                        record.primary_source().clone(),
+                        [symbol.declaration_span().clone()],
                     ));
                 }
                 Ok(ResolvedProjectSymbol::Nominal(symbol)) => {
@@ -963,6 +1450,19 @@ fn audit_character_spellings(
                         },
                         record.primary_source().clone(),
                         [symbol.source().whole().clone()],
+                    ));
+                }
+                Ok(ResolvedProjectSymbol::Retained(symbol)) => {
+                    diagnostics.push(CharacterRegistrationDiagnostic::new(
+                        CharacterRegistrationDiagnosticKind::AliasCollision {
+                            spelling: path,
+                            expected: *declaration,
+                            conflicting: vec![ProjectSymbolTargetId::Retained(
+                                symbol.public_id().clone(),
+                            )],
+                        },
+                        record.primary_source().clone(),
+                        [symbol.declaration_span().clone()],
                     ));
                 }
                 Ok(ResolvedProjectSymbol::Module(module)) => {
@@ -1010,7 +1510,7 @@ fn audit_character_spellings(
 
 fn character_variants(
     characters: &BTreeMap<CharacterId, CharacterManifest>,
-) -> BTreeMap<CharacterNominalType, BTreeSet<String>> {
+) -> BTreeMap<CharacterNominalType, Box<[String]>> {
     let mut variants = BTreeMap::new();
     for (owner, manifest) in characters {
         variants.insert(
@@ -1021,7 +1521,8 @@ fn character_variants(
                 .looks()
                 .iter()
                 .map(|look| look.id().as_str().to_owned())
-                .collect(),
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
         );
         variants.insert(
             CharacterNominalType::Part {
@@ -1031,7 +1532,8 @@ fn character_variants(
                 .parts()
                 .iter()
                 .map(|part| part.id().as_str().to_owned())
-                .collect(),
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
         );
         for part in manifest.parts() {
             variants.insert(
@@ -1042,7 +1544,8 @@ fn character_variants(
                 part.variants()
                     .iter()
                     .map(|variant| variant.id().as_str().to_owned())
-                    .collect(),
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
             );
         }
     }
@@ -1223,7 +1726,8 @@ impl<'a> From<&'a CharacterPartSelection> for CanonicalSelection<'a> {
 
 fn link_error_source(error: &ProjectSymbolLinkError) -> Option<SourceSpan> {
     match error {
-        ProjectSymbolLinkError::DuplicateDeclaration { duplicate, .. } => Some(duplicate.clone()),
+        ProjectSymbolLinkError::DuplicateDeclaration { sites, .. } => sites.last().cloned(),
+        ProjectSymbolLinkError::DuplicatePublicId { duplicate, .. } => Some(duplicate.clone()),
         ProjectSymbolLinkError::InaccessibleImport { source, .. }
         | ProjectSymbolLinkError::VisibilityEscalation { source, .. }
         | ProjectSymbolLinkError::AmbiguousImport { source, .. }

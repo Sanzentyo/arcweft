@@ -2,30 +2,35 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt::Write as _,
     path::{Path, PathBuf},
-    str::FromStr,
     sync::Arc,
 };
 
+use arcweft_compiler::project::{CompiledProject, ProjectToolingLease};
 use arcweft_lang_hir::{
-    model::HirModule,
+    expr::HirExprKind,
+    item::{HirItemKind, HirUseBindingKind},
+    leaf::HirIdRef,
+    module::HirModule,
     project::HirProject,
+    source_index::{
+        HirExprSourceRole, HirIdRefSourcePart, HirItemSourceRole, HirSourcePresence,
+        HirSourceQuery, HirSourceSite, HirUseBindingSourcePart, HirUseSourceRole,
+    },
     symbol::{
-        CallableDeclarationId, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+        CallableDeclarationKey, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+        ProjectValueLookup,
     },
 };
 use arcweft_lang_sema::{
-    check::{TypeCheckReport, analyze_registered_project_types},
-    entry::{CheckedEntryId, check_project_entries},
-    project_index::{ProjectSemanticIndex, project_semantic_index_from_checked_project},
+    callable::{CallTargetFact, SignatureOrigin},
+    entry::CheckedEntryId,
+    final_analysis::{CheckedExpressionResolution, CheckedValueResolution, FinalSemanticAnalysis},
+    project_index::ProjectSemanticIndex,
     registration::{CharacterRegistrationLimits, RegisteredSemanticWorld},
 };
-use arcweft_lang_syntax::ast::{
-    common::UseTreeKind,
-    module_path::CanonicalModulePath,
-    symbol_path::{ProjectSymbolPath, SymbolPath},
-};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceDocumentIdentity, SourceRange, SourceSetRevision,
     SourceSetRevisionError, SourceSpan,
@@ -102,7 +107,7 @@ impl AcceptedProjectLimitKind {
 pub(crate) struct AcceptedSourceDocuments {
     world: ProjectSymbolWorldId,
     symbol_revision: ProjectSymbolRevision,
-    all_source_revision: SourceSetRevision,
+    character_source_revision: Option<SourceSetRevision>,
     by_identity: BTreeMap<SourceDocumentIdentity, AcceptedSourceDocument>,
     by_uri: BTreeMap<LspUriKey, SourceDocumentIdentity>,
 }
@@ -175,12 +180,10 @@ struct AcceptedSourceRegistryBuilder {
     source_bytes: u64,
 }
 
-/// One immutable HIR/source/module carrier published with an accepted world.
+/// One immutable HIR/source/module carrier published from an accepted tooling lease.
 #[derive(Debug)]
 pub(crate) struct AcceptedProjectSnapshot {
-    hir: Arc<HirProject>,
-    typecheck: Arc<TypeCheckReport>,
-    semantic_index: Arc<ProjectSemanticIndex>,
+    tooling: Arc<ProjectToolingLease>,
     callable_references: Arc<[AcceptedCallableReference]>,
     entry_references: Arc<[AcceptedEntryReference]>,
     sources: AcceptedSourceDocuments,
@@ -191,7 +194,7 @@ pub(crate) struct AcceptedProjectSnapshot {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct AcceptedCallableReference {
-    declaration: CallableDeclarationId,
+    declaration: CallableDeclarationKey,
     source: SourceSpan,
 }
 
@@ -202,7 +205,7 @@ pub(crate) struct AcceptedEntryReference {
 }
 
 impl AcceptedCallableReference {
-    pub(crate) const fn declaration(&self) -> &CallableDeclarationId {
+    pub(crate) const fn declaration(&self) -> &CallableDeclarationKey {
         &self.declaration
     }
 
@@ -256,28 +259,20 @@ pub(crate) enum AcceptedProjectSnapshotError {
         expected: SourceSetRevision,
         actual: SourceSetRevision,
     },
-    ModuleInventoryMismatch {
-        hir_only: Box<[CanonicalModulePath]>,
-        symbol_only: Box<[CanonicalModulePath]>,
+    CompiledToolingLeaseMismatch,
+    CompiledModuleInventoryMismatch {
+        project_only: Box<[CanonicalModulePath]>,
+        compiled_only: Box<[CanonicalModulePath]>,
     },
-    MissingProjectSource {
-        module: CanonicalModulePath,
-    },
-    MissingSymbolSource {
+    MissingCompiledModule {
         module: CanonicalModulePath,
     },
     MissingModuleDocument {
         module: CanonicalModulePath,
         source: SourceDocumentIdentity,
     },
-    MissingHirSource {
+    CompiledModuleLeaseMismatch {
         module: CanonicalModulePath,
-    },
-    ModuleSourceMismatch {
-        module: CanonicalModulePath,
-        project: SourceDocumentIdentity,
-        hir: SourceDocumentIdentity,
-        symbols: SourceDocumentIdentity,
     },
     HirTextMismatch {
         module: CanonicalModulePath,
@@ -288,9 +283,6 @@ pub(crate) enum AcceptedProjectSnapshotError {
         first: CanonicalModulePath,
         conflicting: CanonicalModulePath,
     },
-    TypeCheck(String),
-    EntryBinding(String),
-    SemanticIndex(String),
     SourceSet(SourceSetRevisionError),
 }
 
@@ -348,40 +340,30 @@ impl std::fmt::Display for AcceptedProjectSnapshotError {
                 formatter,
                 "accepted character source revision mismatch: expected {expected:?}, actual {actual:?}"
             ),
-            Self::ModuleInventoryMismatch {
-                hir_only,
-                symbol_only,
+            Self::CompiledToolingLeaseMismatch => write!(
+                formatter,
+                "compiled project does not retain the accepted tooling lease allocation"
+            ),
+            Self::CompiledModuleInventoryMismatch {
+                project_only,
+                compiled_only,
             } => write!(
                 formatter,
-                "HIR/symbol module inventory mismatch: HIR-only {hir_only:?}, symbol-only {symbol_only:?}"
+                "compiled/HIR project module inventory mismatch: project-only {project_only:?}, compiled-only {compiled_only:?}"
             ),
-            Self::MissingProjectSource { module } => {
+            Self::MissingCompiledModule { module } => {
                 write!(
                     formatter,
-                    "HIR project module has no source identity: {module:?}"
-                )
-            }
-            Self::MissingSymbolSource { module } => {
-                write!(
-                    formatter,
-                    "symbol module has no source identity: {module:?}"
+                    "compiled module is absent from the accepted HIR project: {module:?}"
                 )
             }
             Self::MissingModuleDocument { module, source } => write!(
                 formatter,
                 "module source is absent from accepted documents: {module:?} -> {source:?}"
             ),
-            Self::MissingHirSource { module } => {
-                write!(formatter, "module HIR has no retained source: {module:?}")
-            }
-            Self::ModuleSourceMismatch {
-                module,
-                project,
-                hir,
-                symbols,
-            } => write!(
+            Self::CompiledModuleLeaseMismatch { module } => write!(
                 formatter,
-                "module source mismatch for {module:?}: project {project:?}, HIR {hir:?}, symbols {symbols:?}"
+                "compiled module does not retain the HIR project's exact Arc lease: {module:?}"
             ),
             Self::HirTextMismatch { module, source } => write!(
                 formatter,
@@ -395,18 +377,6 @@ impl std::fmt::Display for AcceptedProjectSnapshotError {
                 formatter,
                 "accepted source maps to multiple modules: {source:?} -> {first:?}, {conflicting:?}"
             ),
-            Self::TypeCheck(message) => {
-                write!(
-                    formatter,
-                    "accepted project type checking failed: {message}"
-                )
-            }
-            Self::EntryBinding(message) => {
-                write!(formatter, "accepted entry binding failed: {message}")
-            }
-            Self::SemanticIndex(message) => {
-                write!(formatter, "accepted semantic index failed: {message}")
-            }
             Self::SourceSet(error) => std::fmt::Display::fmt(error, formatter),
         }
     }
@@ -435,10 +405,8 @@ pub(crate) enum AcceptedHirLookupError {
     #[error("accepted HIR source identity differs from its key")]
     SourceIdentityMismatch {
         key: AcceptedModuleKey,
-        actual: Option<SourceDocumentIdentity>,
+        actual: SourceDocumentIdentity,
     },
-    #[error("accepted HIR source document is absent")]
-    MissingSourceDocument { key: AcceptedModuleKey },
     #[error("accepted HIR source document differs from its key")]
     SourceDocumentMismatch {
         key: AcceptedModuleKey,
@@ -628,12 +596,12 @@ impl AcceptedSourceRegistryBuilder {
         self,
         world: ProjectSymbolWorldId,
         symbol_revision: ProjectSymbolRevision,
-        character_source_revision: SourceSetRevision,
+        character_source_revision: Option<SourceSetRevision>,
     ) -> AcceptedSourceDocuments {
         AcceptedSourceDocuments {
             world,
             symbol_revision,
-            all_source_revision: character_source_revision,
+            character_source_revision,
             by_identity: self.by_identity,
             by_uri: self.by_uri,
         }
@@ -667,38 +635,52 @@ impl AcceptedProjectSnapshot {
         reason = "one admission boundary validates and preserves the exact HIR, symbol, source, and document identity tuple"
     )]
     pub(crate) fn try_new(
-        hir: Arc<HirProject>,
-        world: &RegisteredSemanticWorld,
+        tooling: Arc<ProjectToolingLease>,
+        executable: Option<&CompiledProject>,
         source_seeds: Vec<AcceptedSourceDocumentSeed>,
     ) -> Result<Self, AcceptedProjectSnapshotError> {
+        if executable.is_some_and(|compiled| !Arc::ptr_eq(compiled.tooling_lease(), &tooling)) {
+            return Err(AcceptedProjectSnapshotError::CompiledToolingLeaseMismatch);
+        }
         let mut source_builder = AcceptedSourceRegistryBuilder::default();
         for seed in source_seeds {
             source_builder.insert(seed)?;
         }
-        let character_source_revision = source_builder.validate_world(world)?;
+        let character_source_revision = executable
+            .map(CompiledProject::registered_world)
+            .map(|world| source_builder.validate_world(world))
+            .transpose()?;
 
-        let symbols = world.symbols();
+        let symbols = tooling.project_symbols();
+        let hir = tooling.hir_project();
         let hir_modules = hir
+            .view()
             .modules()
             .map(|(module, _)| module.clone())
             .collect::<BTreeSet<_>>();
-        let symbol_modules = symbols.modules().cloned().collect::<BTreeSet<_>>();
-        if hir_modules != symbol_modules {
-            return Err(AcceptedProjectSnapshotError::ModuleInventoryMismatch {
-                hir_only: hir_modules
-                    .difference(&symbol_modules)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice(),
-                symbol_only: symbol_modules
-                    .difference(&hir_modules)
-                    .cloned()
-                    .collect::<Vec<_>>()
-                    .into_boxed_slice(),
-            });
+        let compiled_modules = tooling
+            .modules()
+            .iter()
+            .map(|module| module.module().clone())
+            .collect::<BTreeSet<_>>();
+        if hir_modules != compiled_modules {
+            return Err(
+                AcceptedProjectSnapshotError::CompiledModuleInventoryMismatch {
+                    project_only: hir_modules
+                        .difference(&compiled_modules)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                    compiled_only: compiled_modules
+                        .difference(&hir_modules)
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .into_boxed_slice(),
+                },
+            );
         }
 
-        let module_count = u64::try_from(hir_modules.len()).map_err(|_| {
+        let module_count = u64::try_from(compiled_modules.len()).map_err(|_| {
             AcceptedProjectSnapshotError::ArithmeticOverflow {
                 counter: AcceptedProjectLimitKind::Modules,
             }
@@ -709,57 +691,48 @@ impl AcceptedProjectSnapshot {
             }
         })?;
         let mut module_by_source = BTreeMap::new();
-        for module in hir_modules {
-            let project_source = hir.source(&module).cloned().ok_or_else(|| {
-                AcceptedProjectSnapshotError::MissingProjectSource {
+        for compiled_module in tooling.modules() {
+            let module = compiled_module.module();
+            let hir_module = hir.view().module(module).ok_or_else(|| {
+                AcceptedProjectSnapshotError::MissingCompiledModule {
                     module: module.clone(),
                 }
             })?;
-            let hir_module = hir
-                .module(&module)
-                .expect("module inventory was collected from this HIR project");
-            let hir_source = hir_module.source_identity().cloned().ok_or_else(|| {
-                AcceptedProjectSnapshotError::MissingHirSource {
+            if !Arc::ptr_eq(hir_module, compiled_module.hir()) {
+                return Err(AcceptedProjectSnapshotError::CompiledModuleLeaseMismatch {
                     module: module.clone(),
-                }
-            })?;
-            let symbol_source = symbols.source_identity(&module).cloned().ok_or_else(|| {
-                AcceptedProjectSnapshotError::MissingSymbolSource {
-                    module: module.clone(),
-                }
-            })?;
-            if project_source != hir_source || project_source != symbol_source {
-                return Err(AcceptedProjectSnapshotError::ModuleSourceMismatch {
-                    module,
-                    project: project_source,
-                    hir: hir_source,
-                    symbols: symbol_source,
                 });
             }
+            let hir_source = hir_module.provenance().source_identity().clone();
             let accepted = source_builder
                 .by_identity
-                .get(&project_source)
+                .get_mut(&hir_source)
                 .ok_or_else(|| AcceptedProjectSnapshotError::MissingModuleDocument {
                     module: module.clone(),
-                    source: project_source.clone(),
+                    source: hir_source.clone(),
                 })?;
-            let bound_document = hir_module.source_document().ok_or_else(|| {
-                AcceptedProjectSnapshotError::MissingHirSource {
-                    module: module.clone(),
-                }
-            })?;
+            let bound_document = hir_module.provenance().document();
+            let parsed_document = compiled_module.parsed().document_lease();
             validate_bound_hir_source(
-                &module,
-                &project_source,
+                module,
+                &hir_source,
                 bound_document.identity(),
                 bound_document.text(),
+                parsed_document.text(),
+            )?;
+            validate_bound_hir_source(
+                module,
+                &hir_source,
+                parsed_document.identity(),
+                parsed_document.text(),
                 accepted.document.text(),
             )?;
-            if let Some(first) = module_by_source.insert(project_source.clone(), module.clone()) {
+            accepted.document = Arc::clone(parsed_document);
+            if let Some(first) = module_by_source.insert(hir_source.clone(), module.clone()) {
                 return Err(AcceptedProjectSnapshotError::ConflictingModuleMapping {
-                    source: project_source,
+                    source: hir_source,
                     first,
-                    conflicting: module,
+                    conflicting: module.clone(),
                 });
             }
         }
@@ -776,74 +749,19 @@ impl AcceptedProjectSnapshot {
             modules: module_count,
             source_bytes: source_builder.source_bytes,
         };
-        let linked = hir.linked_module();
-        let typecheck = analyze_registered_project_types(&linked, world);
-        if !typecheck.diagnostics.is_empty() {
-            return Err(AcceptedProjectSnapshotError::TypeCheck(
-                typecheck
-                    .diagnostics
-                    .iter()
-                    .map(ToString::to_string)
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            ));
-        }
-        let checked_entries = check_project_entries(
-            hir.as_ref(),
-            world.symbols(),
-            world.environment().callable_catalog(),
-            &typecheck,
-        )
-        .map_err(|diagnostics| {
-            AcceptedProjectSnapshotError::EntryBinding(
-                diagnostics
-                    .iter()
-                    .map(|diagnostic| diagnostic.message().to_owned())
-                    .collect::<Vec<_>>()
-                    .join("; "),
-            )
-        })?;
-        let source_set_revision = symbols.revision().as_source_set().as_bytes().iter().fold(
-            String::with_capacity(64),
-            |mut output, byte| {
-                write!(&mut output, "{byte:02x}")
-                    .expect("formatting a byte into a String cannot fail");
-                output
-            },
-        );
-        let semantic_index = Arc::new(
-            project_semantic_index_from_checked_project(
-                hir.as_ref(),
-                symbols,
-                &typecheck,
-                arcweft_lang_sema::project_index::ProgramHash::new(format!(
-                    "lsp:source-set-v1:{source_set_revision}"
-                )),
-                &checked_entries,
-            )
-            .map_err(|error| AcceptedProjectSnapshotError::SemanticIndex(error.to_string()))?,
-        );
         let sources = source_builder.finish(
             symbols.world().clone(),
             *symbols.revision(),
             character_source_revision,
         );
-        let mut callable_references = typecheck
-            .project_callable_references
-            .iter()
-            .filter_map(|reference| {
-                let identity = hir.source(reference.module())?;
-                let source = sources.get(identity)?;
-                let start = reference.range().start();
-                let end = reference.range().end();
-                let span = source.document().span(SourceRange::new(start, end)).ok()?;
-                Some(AcceptedCallableReference {
-                    declaration: reference.declaration().clone(),
-                    source: span,
-                })
-            })
-            .collect::<Vec<_>>();
-        callable_references.extend(import_callable_references(&hir, symbols, &sources));
+        let mut callable_references = import_callable_references(hir.as_ref(), symbols, &sources);
+        if let Some(compiled) = executable {
+            callable_references.extend(final_call_references(
+                hir.as_ref(),
+                compiled.final_analysis(),
+                &sources,
+            ));
+        }
         callable_references.sort_by(|left, right| {
             left.source
                 .source()
@@ -859,32 +777,14 @@ impl AcceptedProjectSnapshot {
                 .then_with(|| left.declaration.cmp(&right.declaration))
         });
         callable_references.dedup();
-        let mut entry_references = Vec::new();
-        for reference in &typecheck.project_entity_references {
-            let Some(identity) = hir.source(reference.module()) else {
-                continue;
-            };
-            let Some(source) = sources.get(identity) else {
-                continue;
-            };
-            let Some(entry) = semantic_index
-                .entry_records()
-                .keys()
-                .find(|entry| entry.public_id().as_str() == reference.name())
-            else {
-                continue;
-            };
-            let Ok(span) = source.document().span(SourceRange::new(
-                reference.range().start(),
-                reference.range().end(),
-            )) else {
-                continue;
-            };
-            entry_references.push(AcceptedEntryReference {
-                entry: entry.clone(),
-                source: span,
-            });
-        }
+        let mut entry_references = executable.map_or_else(Vec::new, |compiled| {
+            final_entry_references(
+                hir.as_ref(),
+                compiled.final_analysis(),
+                compiled.semantic_index(),
+                &sources,
+            )
+        });
         entry_references.sort_by(|left, right| {
             left.source
                 .source()
@@ -901,9 +801,7 @@ impl AcceptedProjectSnapshot {
         });
         entry_references.dedup();
         Ok(Self {
-            hir,
-            typecheck: Arc::new(typecheck),
-            semantic_index,
+            tooling,
             callable_references: callable_references.into(),
             entry_references: entry_references.into(),
             sources,
@@ -912,16 +810,17 @@ impl AcceptedProjectSnapshot {
         })
     }
 
-    pub(crate) const fn hir_project(&self) -> &Arc<HirProject> {
-        &self.hir
+    pub(crate) fn hir_project(&self) -> &Arc<HirProject> {
+        self.tooling.hir_project()
     }
 
-    pub(crate) const fn typecheck(&self) -> &Arc<TypeCheckReport> {
-        &self.typecheck
+    pub(crate) const fn tooling_lease(&self) -> &Arc<ProjectToolingLease> {
+        &self.tooling
     }
 
-    pub(crate) const fn semantic_index(&self) -> &Arc<ProjectSemanticIndex> {
-        &self.semantic_index
+    /// Exact project-symbol authority published with this accepted generation.
+    pub(crate) fn project_symbols(&self) -> &ProjectSymbolTable {
+        self.tooling.project_symbols()
     }
 
     pub(crate) fn callable_references(&self) -> &[AcceptedCallableReference] {
@@ -960,6 +859,16 @@ impl AcceptedProjectSnapshot {
             })
     }
 
+    /// Returns the compiler-retained grammar lease for one accepted module key.
+    pub(crate) fn parsed_source(&self, key: &AcceptedModuleKey) -> Option<&ParsedSource> {
+        self.tooling
+            .modules()
+            .iter()
+            .find(|module| module.module() == key.module())
+            .filter(|module| module.source() == key.source())
+            .map(arcweft_compiler::project::CompiledProjectModule::parsed)
+    }
+
     #[allow(
         clippy::result_large_err,
         reason = "lookup failures retain the exact accepted module and source key"
@@ -967,20 +876,20 @@ impl AcceptedProjectSnapshot {
     pub(crate) fn hir(
         &self,
         key: &AcceptedModuleKey,
-    ) -> Result<&HirModule, AcceptedHirLookupError> {
+    ) -> Result<&Arc<HirModule>, AcceptedHirLookupError> {
         let hir = self
-            .hir
+            .tooling
+            .hir_project()
+            .view()
             .module(key.module())
             .ok_or_else(|| AcceptedHirLookupError::MissingModule { key: key.clone() })?;
-        if hir.source_identity() != Some(key.source()) {
+        if hir.provenance().source_identity() != key.source() {
             return Err(AcceptedHirLookupError::SourceIdentityMismatch {
                 key: key.clone(),
-                actual: hir.source_identity().cloned(),
+                actual: hir.provenance().source_identity().clone(),
             });
         }
-        let document = hir
-            .source_document()
-            .ok_or_else(|| AcceptedHirLookupError::MissingSourceDocument { key: key.clone() })?;
+        let document = hir.provenance().document();
         if document.identity() != key.source() {
             return Err(AcceptedHirLookupError::SourceDocumentMismatch {
                 key: key.clone(),
@@ -990,96 +899,219 @@ impl AcceptedProjectSnapshot {
         Ok(hir)
     }
 
+    /// Returns the exact accepted HIR lease for one accepted open-document lease.
+    ///
+    /// LSP feature readers must not reparse the overlay or reconstruct a
+    /// detached HIR. Equal bytes in a copied source document are not accepted;
+    /// the live store must own the compiler-retained document lease.
+    pub(crate) fn hir_for_open_document(
+        &self,
+        uri: &Uri,
+        document: &Arc<SourceDocument>,
+    ) -> Option<&Arc<HirModule>> {
+        let source = self.sources.by_uri(uri)?;
+        if !Arc::ptr_eq(&source.document, document) {
+            return None;
+        }
+        let key = self.module_key(source.document.identity())?;
+        self.hir(&key).ok()
+    }
+
     #[allow(dead_code, reason = "retained for bounded accepted-project metrics")]
     pub(crate) const fn footprint(&self) -> AcceptedProjectFootprint {
         self.footprint
     }
 }
 
+fn final_entry_references(
+    project: &HirProject,
+    analysis: &FinalSemanticAnalysis,
+    semantic_index: &ProjectSemanticIndex,
+    sources: &AcceptedSourceDocuments,
+) -> Vec<AcceptedEntryReference> {
+    let mut references = Vec::new();
+    for (owner, checked) in analysis.expressions() {
+        let CheckedExpressionResolution::Value(CheckedValueResolution::Entry(reference)) =
+            checked.resolution()
+        else {
+            continue;
+        };
+        let Some(entry) = semantic_index
+            .entry_records()
+            .keys()
+            .find(|entry| entry.public_id() == reference.public_id())
+        else {
+            continue;
+        };
+        let Some((_, module)) = project
+            .view()
+            .modules()
+            .find(|(_, module)| module.module_id() == owner.module())
+        else {
+            continue;
+        };
+        let Ok(expression) = module.resolve_expr(owner) else {
+            continue;
+        };
+        let HirExprKind::EntityReference(reference) = expression.kind() else {
+            continue;
+        };
+        let Some(HirIdRef::Absolute(reference)) = reference.as_resolved() else {
+            continue;
+        };
+        let Some(last_ordinal) = reference.segment_count().checked_sub(1) else {
+            continue;
+        };
+        let Ok(last_ordinal) = u32::try_from(last_ordinal) else {
+            continue;
+        };
+        let Some(first) = final_hir_source_span(
+            module,
+            HirSourceQuery::Expr {
+                owner,
+                role: HirExprSourceRole::EntityReference(HirIdRefSourcePart::SuffixSegment {
+                    ordinal: 0,
+                }),
+            },
+        ) else {
+            continue;
+        };
+        let Some(last) = final_hir_source_span(
+            module,
+            HirSourceQuery::Expr {
+                owner,
+                role: HirExprSourceRole::EntityReference(HirIdRefSourcePart::SuffixSegment {
+                    ordinal: last_ordinal,
+                }),
+            },
+        ) else {
+            continue;
+        };
+        if first.source() != last.source() {
+            continue;
+        }
+        let Some(source) = sources.get(first.source()) else {
+            continue;
+        };
+        let Ok(source) = source
+            .document()
+            .span(SourceRange::new(first.range().start(), last.range().end()))
+        else {
+            continue;
+        };
+        references.push(AcceptedEntryReference {
+            entry: entry.clone(),
+            source,
+        });
+    }
+    references
+}
+
+fn final_call_references(
+    project: &HirProject,
+    analysis: &FinalSemanticAnalysis,
+    sources: &AcceptedSourceDocuments,
+) -> Vec<AcceptedCallableReference> {
+    let mut references = Vec::new();
+    for (owner, call) in analysis.calls() {
+        let CallTargetFact::Selected { selected, .. } = call.target() else {
+            continue;
+        };
+        let SignatureOrigin::Project { declaration, .. } = selected.origin() else {
+            continue;
+        };
+        let Some((_, module)) = project
+            .view()
+            .modules()
+            .find(|(_, module)| module.module_id() == owner.module())
+        else {
+            continue;
+        };
+        let identity = module.provenance().source_identity();
+        if sources.get(identity).is_none() {
+            continue;
+        }
+        let Some(source) = final_hir_source_span(
+            module,
+            HirSourceQuery::Expr {
+                owner,
+                role: HirExprSourceRole::CallCallee,
+            },
+        ) else {
+            continue;
+        };
+        references.push(AcceptedCallableReference {
+            declaration: declaration.clone(),
+            source,
+        });
+    }
+    references
+}
+
 fn import_callable_references(
-    hir: &HirProject,
+    project: &HirProject,
     symbols: &ProjectSymbolTable,
     sources: &AcceptedSourceDocuments,
 ) -> Vec<AcceptedCallableReference> {
     let mut references = Vec::new();
-    for (module, hir_module) in hir.modules() {
-        let Some(identity) = hir.source(module) else {
+    for (module_path, module) in project.view().modules() {
+        let identity = module.provenance().source_identity();
+        if sources.get(identity).is_none() {
             continue;
-        };
-        let Some(source) = sources.get(identity) else {
-            continue;
-        };
-        for import in hir_module.uses() {
-            match import.tree().kind() {
-                UseTreeKind::Path { path, .. } => {
-                    let Some(range) = path.segment_ranges().last().copied() else {
-                        continue;
-                    };
-                    let Ok(reference) = SymbolPath::try_from(path.path()) else {
-                        continue;
-                    };
-                    push_import_reference(
-                        &mut references,
-                        symbols,
-                        module,
-                        source,
-                        &reference,
-                        range,
-                    );
+        }
+        for owner in module.source_ordered_items() {
+            let Ok(item) = module.resolve_item(*owner) else {
+                continue;
+            };
+            let HirItemKind::Use(import) = item.kind() else {
+                continue;
+            };
+            for (ordinal, binding) in import.bindings().iter().enumerate() {
+                if binding.kind() != HirUseBindingKind::Item {
+                    continue;
                 }
-                UseTreeKind::Group {
-                    module: prefix,
-                    names,
-                } => {
-                    for name in names {
-                        let Ok(path) = ProjectSymbolPath::from_str(&format!(
-                            "{}.{}",
-                            prefix.path(),
-                            name.name()
-                        )) else {
-                            continue;
-                        };
-                        let Ok(reference) = SymbolPath::try_from(&path) else {
-                            continue;
-                        };
-                        push_import_reference(
-                            &mut references,
-                            symbols,
-                            module,
-                            source,
-                            &reference,
-                            name.name_range(),
-                        );
-                    }
-                }
-                UseTreeKind::Glob { .. } => {}
+                let Some(path) = binding.path().as_resolved() else {
+                    continue;
+                };
+                let Ok(ordinal) = u32::try_from(ordinal) else {
+                    continue;
+                };
+                let Some(source) = final_hir_source_span(
+                    module,
+                    HirSourceQuery::Item {
+                        owner: *owner,
+                        role: HirItemSourceRole::Use(HirUseSourceRole::Binding {
+                            ordinal,
+                            part: HirUseBindingSourcePart::TerminalReference,
+                        }),
+                    },
+                ) else {
+                    continue;
+                };
+                let Ok(ProjectValueLookup::Present(callable)) =
+                    symbols.resolve_hir_value_target(module_path, path, source.clone())
+                else {
+                    continue;
+                };
+                references.push(AcceptedCallableReference {
+                    declaration: callable.declaration().clone(),
+                    source,
+                });
             }
         }
     }
     references
 }
 
-fn push_import_reference(
-    references: &mut Vec<AcceptedCallableReference>,
-    symbols: &ProjectSymbolTable,
-    module: &CanonicalModulePath,
-    source: &AcceptedSourceDocument,
-    reference: &SymbolPath,
-    range: arcweft_lang_syntax::ast::common::TextRange,
-) {
-    let Ok(span) = source
-        .document()
-        .span(SourceRange::new(range.start(), range.end()))
-    else {
-        return;
-    };
-    let Ok(callable) = symbols.resolve_callable(module, reference, &span) else {
-        return;
-    };
-    references.push(AcceptedCallableReference {
-        declaration: callable.declaration().clone(),
-        source: span,
-    });
+fn final_hir_source_span(module: &HirModule, query: HirSourceQuery) -> Option<SourceSpan> {
+    let lookup = module
+        .source_site(module.provenance().source_identity(), query)
+        .ok()?;
+    match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(span)) => Some(span.clone()),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+        | HirSourcePresence::AbsentOptional => None,
+    }
 }
 
 impl AcceptedSourceDocuments {
@@ -1091,8 +1123,8 @@ impl AcceptedSourceDocuments {
         &self.symbol_revision
     }
 
-    pub(crate) const fn all_source_revision(&self) -> SourceSetRevision {
-        self.all_source_revision
+    pub(crate) const fn character_source_revision(&self) -> Option<SourceSetRevision> {
+        self.character_source_revision
     }
 
     pub(crate) fn get(&self, identity: &SourceDocumentIdentity) -> Option<&AcceptedSourceDocument> {

@@ -23,7 +23,7 @@ pub(crate) fn mutated_project(
     let sources = AcceptedSourceDocuments {
         world: current.sources.world.clone(),
         symbol_revision: current.sources.symbol_revision,
-        all_source_revision: current.sources.all_source_revision,
+        character_source_revision: current.sources.character_source_revision,
         by_identity: current
             .sources
             .by_identity
@@ -50,9 +50,7 @@ pub(crate) fn mutated_project(
         }
     }
     Arc::new(AcceptedProjectSnapshot {
-        hir: Arc::clone(&current.hir),
-        typecheck: Arc::clone(&current.typecheck),
-        semantic_index: Arc::clone(&current.semantic_index),
+        tooling: Arc::clone(&current.tooling),
         callable_references: Arc::clone(&current.callable_references),
         entry_references: Arc::clone(&current.entry_references),
         sources,

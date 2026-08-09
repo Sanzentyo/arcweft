@@ -5,8 +5,11 @@ use super::schema::{
     AwbcFrameLayoutId, AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcLineTaskGroupId,
     AwbcPatternId, AwbcProgram, AwbcRegisterId, AwbcResumePointId, AwbcRuntimeType, AwbcScopeId,
     AwbcSignatureId, AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId,
-    AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcTaskPlanId, AwbcTrapCode, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantIdentity,
 };
+use crate::entry::RuntimeNominalTypeId;
+use crate::pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity};
+use crate::task::NeedId;
 use crate::value::{
     RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeInt, RuntimeIterator,
     RuntimeSeq, RuntimeUInt, RuntimeValue,
@@ -120,7 +123,7 @@ pub enum FiberSuspensionReason {
         destination: AwbcRegisterId,
     },
     Await {
-        task: RuntimeValue,
+        target: FiberAwaitTarget,
         binding: Option<AwbcPatternId>,
     },
     AwaitMany(FiberAwaitManyState),
@@ -130,6 +133,18 @@ pub enum FiberSuspensionReason {
         destination: Option<AwbcRegisterId>,
     },
     BudgetYield,
+}
+
+/// Exact await-handle authority retained by a suspended fiber.
+///
+/// Task handles keep the existing explicit task lifecycle. Need handles carry
+/// only their typed identity; their Ready/Err payload is supplied through the
+/// in-memory `RuntimeNeedState` step boundary rather than a runtime-value or
+/// bytecode compatibility surrogate.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+pub enum FiberAwaitTarget {
+    Task(RuntimeValue),
+    Need(NeedId),
 }
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
@@ -1349,8 +1364,8 @@ fn validate_suspension(
                 });
             }
         }
-        FiberSuspensionReason::Await { task, binding } => {
-            validate_await_suspension(program, task, *binding)?;
+        FiberSuspensionReason::Await { target, binding } => {
+            validate_await_suspension(program, target, *binding)?;
         }
         FiberSuspensionReason::AwaitMany(await_many) => {
             validate_await_many_suspension(program, await_many)?;
@@ -1369,20 +1384,29 @@ fn validate_suspension(
 
 fn validate_await_suspension(
     program: &AwbcProgram,
-    task: &RuntimeValue,
+    target: &FiberAwaitTarget,
     binding: Option<AwbcPatternId>,
 ) -> Result<(), FiberStateError> {
     if binding.is_some_and(|binding| program.patterns.get(binding.index()).is_none()) {
         return Err(FiberStateError::InvalidFrame);
     }
-    if !matches!(task, RuntimeValue::String(_)) {
-        return Err(FiberStateError::InvalidRuntimeValue {
-            path: "suspension.await.task".to_owned(),
-            reason: format!(
-                "expected task handle, received {}",
-                runtime_value_type_label(task)
-            ),
-        });
+    match target {
+        FiberAwaitTarget::Task(task) if !matches!(task, RuntimeValue::String(_)) => {
+            return Err(FiberStateError::InvalidRuntimeValue {
+                path: "suspension.await.target".to_owned(),
+                reason: format!(
+                    "expected task handle, received {}",
+                    runtime_value_type_label(task)
+                ),
+            });
+        }
+        FiberAwaitTarget::Need(need) if need.0.is_empty() => {
+            return Err(FiberStateError::InvalidRuntimeValue {
+                path: "suspension.await.target".to_owned(),
+                reason: "Need identity must not be empty".to_owned(),
+            });
+        }
+        FiberAwaitTarget::Task(_) | FiberAwaitTarget::Need(_) => {}
     }
     Ok(())
 }
@@ -1666,7 +1690,7 @@ impl FiberFrame {
     }
 }
 
-fn runtime_value_matches_type(
+pub(crate) fn runtime_value_matches_type(
     program: &AwbcProgram,
     value: &RuntimeValue,
     ty: AwbcTypeId,
@@ -1715,24 +1739,66 @@ fn runtime_value_matches_type(
                     runtime_value_matches_type(program, &value.value, field.ty, depth + 1)
                 })
         }
-        (RuntimeValue::Variant { name, payload, .. }, AwbcRuntimeType::Variant { cases, .. }) => {
-            cases.iter().any(|case| {
-                program
-                    .strings
-                    .get(case.name.index())
-                    .is_some_and(|case_name| {
-                        case_name == name
-                            && match (case.payload, payload.as_deref()) {
-                                (None, None) => true,
-                                (Some(ty), Some(value)) => {
-                                    runtime_value_matches_type(program, value, ty, depth + 1)
-                                }
-                                _ => false,
-                            }
+        (
+            RuntimeValue::Variant {
+                owner: actual_owner,
+                ordinal,
+                name,
+                payload,
+            },
+            AwbcRuntimeType::Variant { owner, cases },
+        ) => {
+            runtime_variant_identity(program, owner).as_ref() == Some(actual_owner)
+                && usize::try_from(*ordinal)
+                    .ok()
+                    .and_then(|ordinal| cases.get(ordinal))
+                    .is_some_and(|case| {
+                        program
+                            .strings
+                            .get(case.name.index())
+                            .is_some_and(|case_name| {
+                                case_name == name
+                                    && match (case.payload, payload.as_deref()) {
+                                        (None, None) => true,
+                                        (Some(ty), Some(value)) => runtime_value_matches_type(
+                                            program,
+                                            value,
+                                            ty,
+                                            depth + 1,
+                                        ),
+                                        _ => false,
+                                    }
+                            })
                     })
-            })
+        }
+        (value, AwbcRuntimeType::Choice(alternatives)) => alternatives
+            .iter()
+            .any(|alternative| runtime_value_matches_type(program, value, *alternative, depth + 1)),
+        (RuntimeValue::NominalRecord(record), AwbcRuntimeType::Nominal { public_id, .. }) => {
+            program
+                .strings
+                .get(public_id.index())
+                .is_some_and(|expected| record.type_id().as_str() == expected)
         }
         _ => false,
+    }
+}
+
+pub(crate) fn runtime_variant_identity(
+    program: &AwbcProgram,
+    owner: &AwbcVariantIdentity,
+) -> Option<RuntimeVariantIdentity> {
+    match owner {
+        AwbcVariantIdentity::Nominal {
+            public_id,
+            semantic_identity,
+        } => Some(RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new(program.strings.get(public_id.index())?.clone())
+                .ok()?,
+            semantic_identity: RuntimeSemanticTypeId::from_bytes(*semantic_identity),
+        }),
+        AwbcVariantIdentity::Option => Some(RuntimeVariantIdentity::Option),
+        AwbcVariantIdentity::Result => Some(RuntimeVariantIdentity::Result),
     }
 }
 
@@ -1798,9 +1864,9 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
 mod tests {
     use super::*;
     use crate::awbc::schema::{
-        AwbcBlock, AwbcEntry, AwbcEntryKind, AwbcFrameLayout, AwbcFrameSlot, AwbcFunction,
-        AwbcFunctionFlags, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcStringId,
-        AwbcTableRange, AwbcTerminator,
+        AwbcBlock, AwbcEntry, AwbcEntryKind, AwbcFlowBinding, AwbcFrameLayout, AwbcFrameSlot,
+        AwbcFunction, AwbcFunctionFlags, AwbcFunctionKind, AwbcSafePointKind, AwbcSignature,
+        AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
 
     fn entry_arguments_program() -> AwbcProgram {
@@ -1842,6 +1908,14 @@ mod tests {
             blocks: AwbcTableRange::new(0, 1),
             entry_block: Default::default(),
             flags: AwbcFunctionFlags::default(),
+        });
+        program.flow_bindings.push(AwbcFlowBinding {
+            flow: crate::plan::FlowRuntimeId::from_checked_declaration_digest(
+                [0x34; 32],
+                "flow.main",
+            )
+            .expect("test checked Flow identity"),
+            function: Default::default(),
         });
         program.blocks.push(AwbcBlock {
             owner: Default::default(),

@@ -44,10 +44,19 @@ ExpressionStatement. This applies to LetElse, DeferBlock, On, UnsafeLifetime,
 statement If/IfLet branches, loops, and statement Match block arms.
 
 `HirThreadExpr` and `HirThreadBody` solely own Thread name, mode, body scope,
-and ordered Flow items. A retained Thread statement is only the typed
-execution-context reference `HirStmtKind::Thread { thread: ExprId }`; the
-referenced expression is same-module and owns its body scope. A second
-statement-owned Thread body is deleted.
+and ordered Flow items. Parser-owned `SyntaxKind::ThreadStatement`, its typed
+statement marker/accessor, and its dedicated production are deleted. Authored
+Thread in statement position has one source-to-HIR authority:
+
+```text
+ExpressionStatement -> ThreadExpression -> ExprId -> HirExprKind::Thread
+```
+
+The surrounding statement therefore uses ordinary
+`HirStmtKind::Expression { expression: ExprId }`; the same-module Thread
+expression owns its body scope. The unproduced dedicated
+`HirStmtKind::Thread` and every consumer branch for it are deleted. A second
+statement-owned Thread body is forbidden.
 
 ## Callable scopes and Match arms
 
@@ -74,12 +83,24 @@ lexical scope.
 
 This does not make Match ownerless. The source-backed Match `ExprId` or
 `StmtId` remains the semantic and transaction owner of the scrutinee and every
-arm, while the scrutinee is evaluated in the inherited outer lexical scope.
-Each arm boundary owns only its pattern bindings, guard, and selected value or
-body. If a later lowering stage must materialize a HIR scrutinee temporary, the
-dedicated exact-zero `MatchScrutinee` role belongs to that Match ID; an ordinary
-runtime-local value used to evaluate the retained scrutinee once does not by
-itself require a fabricated HIR node or a Match-level Block scope.
+arm. Name lookup for the scrutinee uses the inherited outer lexical scope, but
+that does not assign a retained scrutinee value to the outer scope's lifetime.
+The Match ID owns the once-evaluation extent through arm selection until the
+Match evaluation exits; each arm boundary owns only its pattern bindings,
+guard, and selected value or body. Current Flow AWBC lowering materializes a
+codegen-local scrutinee register at the containing frame depth and does not yet
+emit an exact Flow Match-join `Drop`/`Clear`, while structured Flow evaluation
+releases its helper-local value when selection returns. Expression AWBC Match
+instead exits its synthetic control function through `Return` or `Trap`; it
+requires frame-exit release evidence rather than the same join-time fix. Those
+runtime-lifetime obligations are tracked by the `MatchScrutinee` branch of the
+independently throwable DesugaredTemporary production-recipe request. If final
+HIR materializes the
+extent, the dedicated exact-zero `MatchScrutinee` role belongs to the Match ID
+and must define its typed payload, consumer, and drop point; otherwise the
+codegen-local recipe must still release at every Flow exit and prove release at
+every expression control-function frame exit. Neither result
+requires or permits a fabricated HIR node or Match-level Block scope.
 
 Thread context uses the accepted nested-Flow body owner instead: each braced
 statement Match arm has one Block scope which is also that arm's

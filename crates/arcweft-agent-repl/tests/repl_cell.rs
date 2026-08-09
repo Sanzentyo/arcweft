@@ -11,7 +11,7 @@ use arcweft_agent_repl::{
 use arcweft_agent_runner::config::{AgentControllerRunConfig, AgentRunnerConfig};
 use arcweft_agent_runner::session::{AgentSession, NoopRagService};
 use arcweft_debug_model::sink::NullDebugEventSink;
-use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
+use arcweft_lang_sema::project_index::ProgramHash;
 
 #[test]
 fn repl_cell_command_input_is_not_committed() {
@@ -73,9 +73,13 @@ fn repl_item_cell_compiles_through_a_synthetic_controller_entry() {
 }
 
 fn test_repl(program_hash: &str) -> ReplSession {
-    let project = ProjectSemanticIndex::new(ProgramHash::new(program_hash));
     ReplSession::new(
-        ReplBaseSnapshot::from_project("test", project),
+        ReplBaseSnapshot::new(
+            "test",
+            &ProgramHash::new(program_hash),
+            std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
+        ),
         ReplSessionOptions::default(),
     )
 }

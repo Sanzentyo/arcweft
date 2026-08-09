@@ -235,20 +235,34 @@ impl Engine {
             }
             RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields, pure_backend),
             RuntimeExpr::Variant {
-                path,
+                owner,
+                ordinal,
                 name,
                 payload,
-            } => Ok(RuntimeValue::Variant {
-                path: path.clone(),
-                name: name.clone(),
-                payload: payload
-                    .as_ref()
-                    .map(|expr| {
-                        self.evaluate_expr_with_backend(expr, pure_backend)
-                            .map(Box::new)
-                    })
-                    .transpose()?,
-            }),
+            } => {
+                if !owner.accepts_variant_case(*ordinal, name) {
+                    return Err(RuntimeEvalError::PatternMismatch(format!(
+                        "variant owner {owner:?} case {ordinal} `{name}`"
+                    )));
+                }
+                let owner = owner.variant_identity().ok_or_else(|| {
+                    RuntimeEvalError::PatternMismatch(format!(
+                        "non-variant checked owner {owner:?}"
+                    ))
+                })?;
+                Ok(RuntimeValue::Variant {
+                    owner,
+                    ordinal: *ordinal,
+                    name: name.clone(),
+                    payload: payload
+                        .as_ref()
+                        .map(|expr| {
+                            self.evaluate_expr_with_backend(expr, pure_backend)
+                                .map(Box::new)
+                        })
+                        .transpose()?,
+                })
+            }
             RuntimeExpr::Field { target, field } => {
                 self.evaluate_field_expr(target, field, pure_backend)
             }
@@ -976,14 +990,13 @@ impl Engine {
         expr: &RuntimeExpr,
     ) -> Result<FlowRuntimeId, RuntimeEvalError> {
         match self.evaluate_expr(expr)? {
-            RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => {
-                FlowRuntimeId::from_runtime_target_value(&target).map_err(|error| {
-                    RuntimeEvalError::InvalidEntityTarget {
-                        target,
-                        reason: error.to_string(),
-                    }
-                })
-            }
+            RuntimeValue::EntityRef(target) | RuntimeValue::String(target) => self
+                .plan
+                .resolve_flow_target_value(&target)
+                .map_err(|error| RuntimeEvalError::InvalidEntityTarget {
+                    target,
+                    reason: error.to_string(),
+                }),
             value => Err(RuntimeEvalError::ExpectedEntityRef(runtime_value_label(
                 &value,
             ))),

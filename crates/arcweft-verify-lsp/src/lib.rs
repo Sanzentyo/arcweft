@@ -18,8 +18,8 @@ use arcweft_source::{
     SourceDocument, SourceDocumentId, SourceRange, SourceRevision, SourceSpan, SourceSpanError,
 };
 use arcweft_verify::{
-    Severity as VerifySeverity, ToolAction, ToolActionKind, ToolActionSourceEdit,
-    VerificationDiagnostic, VerificationReport,
+    Severity as VerifySeverity, SourceSpan as VerifySourceSpan, ToolAction, ToolActionKind,
+    ToolActionSourceEdit, VerificationDiagnostic, VerificationReport,
 };
 use lsp_types::{
     CodeAction, CodeActionKind, CompletionItem, CompletionItemKind, Diagnostic, DiagnosticSeverity,
@@ -205,10 +205,14 @@ impl AdapterManifestRequirement {
 }
 
 /// Converts a verifier report into LSP diagnostics for a document.
-pub fn diagnostics_from_report(report: &VerificationReport) -> Vec<Diagnostic> {
+pub fn diagnostics_from_report(
+    report: &VerificationReport,
+    document: &SourceDocument,
+) -> Vec<Diagnostic> {
     report
         .diagnostics
         .iter()
+        .filter(|diagnostic| diagnostic_belongs_to_document(diagnostic, document))
         .map(diagnostic_from_verify)
         .collect()
 }
@@ -216,11 +220,13 @@ pub fn diagnostics_from_report(report: &VerificationReport) -> Vec<Diagnostic> {
 /// Converts a verifier report into LSP diagnostics using source-aware positions.
 pub fn diagnostics_from_report_with_mapper(
     report: &VerificationReport,
+    document: &SourceDocument,
     mapper: &impl LspPositionMapper,
 ) -> Vec<Diagnostic> {
     report
         .diagnostics
         .iter()
+        .filter(|diagnostic| diagnostic_belongs_to_document(diagnostic, document))
         .map(|diagnostic| diagnostic_from_verify_with_mapper(diagnostic, mapper))
         .collect()
 }
@@ -537,10 +543,15 @@ pub fn adapter_manifest_hover(context: &ArcweftLspContext<'_>, name: &str) -> Op
 }
 
 /// Converts verifier tool actions into LSP code actions.
-pub fn code_actions_from_report(uri: &Uri, report: &VerificationReport) -> Vec<CodeAction> {
+pub fn code_actions_from_report(
+    uri: &Uri,
+    document: &SourceDocument,
+    report: &VerificationReport,
+) -> Vec<CodeAction> {
     report
         .diagnostics
         .iter()
+        .filter(|diagnostic| diagnostic_belongs_to_document(diagnostic, document))
         .flat_map(|diagnostic| {
             diagnostic
                 .actions
@@ -556,20 +567,33 @@ pub fn code_actions_from_report(uri: &Uri, report: &VerificationReport) -> Vec<C
 /// Converts verifier tool actions into LSP code actions using source-aware diagnostics.
 pub fn code_actions_from_report_with_mapper(
     uri: &Uri,
+    document: &SourceDocument,
     report: &VerificationReport,
     mapper: &impl LspPositionMapper,
 ) -> Vec<CodeAction> {
     report
         .diagnostics
         .iter()
+        .filter(|diagnostic| diagnostic_belongs_to_document(diagnostic, document))
         .flat_map(|diagnostic| {
-            diagnostic.actions.iter().map(|action| {
+            diagnostic.actions.iter().filter_map(|action| {
                 if let Some(source_edit) = action.source_edit() {
-                    verifier_edit_code_action(uri, diagnostic, action, source_edit, mapper)
+                    verifier_edit_code_action(
+                        uri,
+                        document,
+                        diagnostic,
+                        action,
+                        source_edit,
+                        mapper,
+                    )
+                    .ok()
                 } else {
-                    verifier_command_code_action(uri, diagnostic, action, |diagnostic| {
-                        diagnostic_from_verify_with_mapper(diagnostic, mapper)
-                    })
+                    Some(verifier_command_code_action(
+                        uri,
+                        diagnostic,
+                        action,
+                        |diagnostic| diagnostic_from_verify_with_mapper(diagnostic, mapper),
+                    ))
                 }
             })
         })
@@ -578,23 +602,25 @@ pub fn code_actions_from_report_with_mapper(
 
 fn verifier_edit_code_action(
     uri: &Uri,
+    document: &SourceDocument,
     diagnostic: &VerificationDiagnostic,
     action: &ToolAction,
     source_edit: &ToolActionSourceEdit,
     mapper: &impl LspPositionMapper,
-) -> CodeAction {
-    CodeAction {
+) -> Result<CodeAction, RevisionBoundWorkspaceEditError> {
+    Ok(CodeAction {
         title: action.label.clone(),
         kind: Some(verifier_code_action_kind(action.kind)),
         diagnostics: Some(vec![diagnostic_from_verify_with_mapper(diagnostic, mapper)]),
         edit: Some(workspace_edit_from_tool_action_edit(
             uri,
+            document,
             source_edit,
             mapper,
-        )),
+        )?),
         command: None,
         ..CodeAction::default()
-    }
+    })
 }
 
 fn verifier_command_code_action(
@@ -748,15 +774,20 @@ pub fn workspace_edit_from_revision_bound_edit(
 /// Converts one verifier-owned source edit into an LSP workspace edit.
 pub fn workspace_edit_from_tool_action_edit(
     uri: &Uri,
+    current: &SourceDocument,
     edit: &ToolActionSourceEdit,
     mapper: &impl LspPositionMapper,
-) -> WorkspaceEdit {
+) -> Result<WorkspaceEdit, RevisionBoundWorkspaceEditError> {
     let span = edit.span();
+    validate_verify_span(span, current)?;
     let text_edit = TextEdit::new(
         mapper.range_from_byte_span(span.start, span.end),
         edit.replacement().to_owned(),
     );
-    WorkspaceEdit::new(HashMap::from([(uri.clone(), vec![text_edit])]))
+    Ok(WorkspaceEdit::new(HashMap::from([(
+        uri.clone(),
+        vec![text_edit],
+    )])))
 }
 
 fn diagnostic_from_verify_with_mapper(
@@ -764,9 +795,12 @@ fn diagnostic_from_verify_with_mapper(
     mapper: &impl LspPositionMapper,
 ) -> Diagnostic {
     Diagnostic {
-        range: diagnostic.source.map_or_else(default_range, |span| {
-            mapper.range_from_byte_span(span.start, span.end)
-        }),
+        range: diagnostic
+            .source
+            .as_ref()
+            .map_or_else(default_range, |span| {
+                mapper.range_from_byte_span(span.start, span.end)
+            }),
         severity: Some(match diagnostic.severity {
             VerifySeverity::Info => DiagnosticSeverity::INFORMATION,
             VerifySeverity::Warning => DiagnosticSeverity::WARNING,
@@ -777,6 +811,35 @@ fn diagnostic_from_verify_with_mapper(
         message: diagnostic.message.clone(),
         ..Diagnostic::default()
     }
+}
+
+fn diagnostic_belongs_to_document(
+    diagnostic: &VerificationDiagnostic,
+    document: &SourceDocument,
+) -> bool {
+    diagnostic
+        .source
+        .as_ref()
+        .is_some_and(|span| &span.source == document.identity() && span.validate_for(document))
+}
+
+fn validate_verify_span(
+    span: &VerifySourceSpan,
+    current: &SourceDocument,
+) -> Result<(), RevisionBoundWorkspaceEditError> {
+    if span.source.id() != current.identity().id() {
+        return Err(RevisionBoundWorkspaceEditError::WrongDocument {
+            expected: current.identity().id().clone(),
+            actual: span.source.id().clone(),
+        });
+    }
+    if span.source.revision() != current.identity().revision() {
+        return Err(RevisionBoundWorkspaceEditError::WrongRevision {
+            expected: current.identity().revision(),
+            actual: span.source.revision(),
+        });
+    }
+    Ok(())
 }
 
 fn diagnostic_from_verify(diagnostic: &VerificationDiagnostic) -> Diagnostic {
@@ -1058,22 +1121,43 @@ mod tests {
         }
     }
 
+    fn verifier_document(uri: &Uri) -> SourceDocument {
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(uri.to_string()).expect("source id"),
+            arcweft_source::SourceName::path(uri.to_string()),
+            "01234567890123456789012345678901",
+        )
+        .expect("verifier source document")
+    }
+
+    fn verifier_span(document: &SourceDocument, start: usize, end: usize) -> VerifySourceSpan {
+        VerifySourceSpan {
+            source: document.identity().clone(),
+            start,
+            end,
+        }
+    }
+
     #[test]
     fn converts_report_diagnostic() {
+        let uri = "file:///game/routes/opening.arcw"
+            .parse::<Uri>()
+            .expect("uri");
+        let document = verifier_document(&uri);
         let report = VerificationReport {
             policy: VerificationPolicy::default(),
             diagnostics: vec![VerificationDiagnostic {
                 id: "d1".to_owned(),
                 severity: VerifySeverity::Error,
                 message: "missing proof".to_owned(),
-                source: None,
+                source: Some(verifier_span(&document, 3, 8)),
                 obligation: Some("obligation.0001".to_owned()),
                 related_ids: Vec::new(),
                 actions: Vec::new(),
             }],
             ..VerificationReport::default()
         };
-        let diagnostics = diagnostics_from_report(&report);
+        let diagnostics = diagnostics_from_report(&report, &document);
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].severity, Some(DiagnosticSeverity::ERROR));
     }
@@ -1083,13 +1167,14 @@ mod tests {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()
             .expect("uri");
+        let document = verifier_document(&uri);
         let report = VerificationReport {
             policy: VerificationPolicy::default(),
             diagnostics: vec![VerificationDiagnostic {
                 id: "d1".to_owned(),
                 severity: VerifySeverity::Warning,
                 message: "missing proof".to_owned(),
-                source: Some(VerifySourceSpan { start: 3, end: 8 }),
+                source: Some(verifier_span(&document, 3, 8)),
                 obligation: Some("obligation.0001".to_owned()),
                 related_ids: Vec::new(),
                 actions: vec![ToolAction {
@@ -1097,7 +1182,7 @@ mod tests {
                     label: "Generate proof stub".to_owned(),
                     kind: ToolActionKind::GenerateProofStub,
                     source_edit: Some(arcweft_verify::ToolActionSourceEdit {
-                        span: VerifySourceSpan { start: 10, end: 15 },
+                        span: verifier_span(&document, 10, 15),
                         replacement: "proof {}".to_owned(),
                         applicability: ToolActionApplicability::HasPlaceholders,
                     }),
@@ -1107,7 +1192,7 @@ mod tests {
             ..VerificationReport::default()
         };
 
-        let actions = code_actions_from_report_with_mapper(&uri, &report, &TestMapper);
+        let actions = code_actions_from_report_with_mapper(&uri, &document, &report, &TestMapper);
 
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].kind, Some(CodeActionKind::QUICKFIX));
@@ -1124,13 +1209,14 @@ mod tests {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()
             .expect("uri");
+        let document = verifier_document(&uri);
         let report = VerificationReport {
             policy: VerificationPolicy::default(),
             diagnostics: vec![VerificationDiagnostic {
                 id: "d1".to_owned(),
                 severity: VerifySeverity::Warning,
                 message: "missing proof".to_owned(),
-                source: None,
+                source: Some(verifier_span(&document, 3, 8)),
                 obligation: Some("obligation.0001".to_owned()),
                 related_ids: Vec::new(),
                 actions: vec![ToolAction {
@@ -1138,7 +1224,7 @@ mod tests {
                     label: "Generate proof stub".to_owned(),
                     kind: ToolActionKind::GenerateProofStub,
                     source_edit: Some(arcweft_verify::ToolActionSourceEdit {
-                        span: VerifySourceSpan { start: 21, end: 21 },
+                        span: verifier_span(&document, 21, 21),
                         replacement: "\n\nproof obligation_0001 {\n    check _\n}\n".to_owned(),
                         applicability: ToolActionApplicability::HasPlaceholders,
                     }),
@@ -1148,7 +1234,7 @@ mod tests {
             ..VerificationReport::default()
         };
 
-        let actions = code_actions_from_report_with_mapper(&uri, &report, &TestMapper);
+        let actions = code_actions_from_report_with_mapper(&uri, &document, &report, &TestMapper);
 
         let edit = actions[0].edit.as_ref().expect("workspace edit");
         let text_edit = &edit.changes.as_ref().expect("changes")[&uri][0];
@@ -1162,13 +1248,14 @@ mod tests {
         let uri = "file:///game/routes/opening.arcw"
             .parse::<Uri>()
             .expect("uri");
+        let document = verifier_document(&uri);
         let report = VerificationReport {
             policy: VerificationPolicy::default(),
             diagnostics: vec![VerificationDiagnostic {
                 id: "d1".to_owned(),
                 severity: VerifySeverity::Warning,
                 message: "inspect obligation".to_owned(),
-                source: None,
+                source: Some(verifier_span(&document, 3, 8)),
                 obligation: Some("obligation.0001".to_owned()),
                 related_ids: Vec::new(),
                 actions: vec![ToolAction {
@@ -1185,7 +1272,7 @@ mod tests {
             ..VerificationReport::default()
         };
 
-        let actions = code_actions_from_report(&uri, &report);
+        let actions = code_actions_from_report(&uri, &document, &report);
 
         assert_eq!(actions.len(), 1);
         assert_eq!(actions[0].kind, Some(CodeActionKind::REFACTOR));

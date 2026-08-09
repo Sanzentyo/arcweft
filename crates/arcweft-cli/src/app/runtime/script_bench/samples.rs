@@ -1,5 +1,4 @@
 use super::super::bench::RuntimeBenchTrace;
-use super::super::expectations::parse_goto_flow_in_text;
 use crate::output::{
     ScriptBenchDeterministicSummary, ScriptBenchElapsedSummary, ScriptBenchSectionRunSummary,
 };
@@ -7,7 +6,7 @@ use arcweft_runtime_host::{
     NativeSchedulerStats, NativeTaskClassCounts, NativeTaskStats, RuntimeExecutorMathStatsSummary,
     RuntimeExecutorStats,
 };
-use arcweft_test::BenchSection;
+use arcweft_test::{BenchSection, ScriptCommand};
 
 #[derive(Default)]
 pub(in crate::app) struct RuntimeBenchSamples {
@@ -501,7 +500,17 @@ fn median_task_class_field(
 }
 
 pub(in crate::app) fn bench_goto_flow(section: &BenchSection) -> Option<String> {
-    parse_goto_flow_in_text(&section.text)
+    section.body.iter().find_map(command_goto_flow)
+}
+
+fn command_goto_flow(command: &ScriptCommand) -> Option<String> {
+    match command {
+        ScriptCommand::Goto { target } => Some(target.clone()),
+        ScriptCommand::Scope { body, .. } => body.iter().find_map(command_goto_flow),
+        ScriptCommand::Expectation { .. }
+        | ScriptCommand::Pure { .. }
+        | ScriptCommand::Other { .. } => None,
+    }
 }
 
 fn median_u128(values: &mut [u128]) -> u128 {
@@ -597,33 +606,9 @@ pub(in crate::app) fn validate_bench_section(
         diagnostics.push(format!("unknown bench section `{}`", section.name));
         return ScriptBenchSectionRunSummary::new(&section.name, "unknown", diagnostics);
     }
-    if let Some(reason) = unsupported_headless_bench_reason(&section.text) {
-        diagnostics.push(reason);
-        return ScriptBenchSectionRunSummary::new(&section.name, "unsupported", diagnostics);
-    }
     ScriptBenchSectionRunSummary::new(&section.name, "validated", diagnostics)
 }
 
 fn is_known_bench_section(name: &str) -> bool {
     matches!(name, "setup" | "measure" | "assert" | "report")
-}
-
-fn unsupported_headless_bench_reason(text: &str) -> Option<String> {
-    const UNSUPPORTED_MARKERS: &[&str] = &[
-        "render_audio_offline",
-        "capture.image",
-        "snapshot.image",
-        "screenshot",
-        "audio.",
-        "voice.",
-        "bgm.",
-        "render.",
-    ];
-    let lowered = text.to_lowercase();
-    UNSUPPORTED_MARKERS
-        .iter()
-        .find(|marker| lowered.contains(**marker))
-        .map(|marker| {
-            format!("headless bench validation does not execute adapter-only operation `{marker}`")
-        })
 }

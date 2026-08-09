@@ -144,6 +144,9 @@ impl AttachedThreadFlowItem {
 
     /// Returns the one existing statement-family owner for statement-backed
     /// Thread/Flow items. Dialogue application remains expression-owned.
+    /// # Panics
+    ///
+    /// Panics if a validated statement-backed item is no longer a statement.
     pub fn statement(&self) -> Option<StatementNode> {
         match self {
             Self::DialogueApplication(_) => None,
@@ -157,6 +160,9 @@ impl AttachedThreadFlowItem {
 
     /// Returns the exact attached expression owner for the sole
     /// expression-backed Thread/Flow item family.
+    /// # Panics
+    ///
+    /// Panics if a validated Dialogue application is no longer an expression.
     pub fn dialogue_application(&self) -> Option<AttachedExpressionNode> {
         match self {
             Self::DialogueApplication(expression) => Some(
@@ -180,9 +186,9 @@ pub struct AttachedFlowStatementBody {
 impl AttachedFlowStatementBody {
     pub(super) fn from_block(
         syntax: AstNode<FlowBodyKind>,
-        block: AstNode<BlockKind>,
+        block: &AstNode<BlockKind>,
     ) -> Result<Self, SyntaxAccessError> {
-        let (open, items, close) = attach_body_children(&block)?;
+        let AttachedBodyChildren { open, items, close } = attach_body_children(block)?;
         Ok(Self {
             syntax,
             open,
@@ -270,7 +276,7 @@ pub struct AttachedNestedThreadFlowBody {
 
 impl AttachedNestedThreadFlowBody {
     fn from_block(body: AstNode<BlockKind>) -> Result<Self, SyntaxAccessError> {
-        let (open, items, close) = attach_body_children(&body)?;
+        let AttachedBodyChildren { open, items, close } = attach_body_children(&body)?;
         Ok(Self {
             body,
             open,
@@ -319,7 +325,7 @@ impl AttachedThreadExpressionBody {
         owner: AstNode<ThreadExpressionKind>,
         body: AstNode<BlockKind>,
     ) -> Result<Self, SyntaxAccessError> {
-        let (open, items, close) = attach_body_children(&body)?;
+        let AttachedBodyChildren { open, items, close } = attach_body_children(&body)?;
         Ok(Self {
             owner,
             body,
@@ -411,16 +417,15 @@ pub(super) fn required_nested_thread_flow_body<K: super::node::AstKind>(
     }
 }
 
+struct AttachedBodyChildren {
+    open: AstNode<OpenBraceKind>,
+    items: Box<[AttachedThreadFlowItem]>,
+    close: AstNode<CloseBraceKind>,
+}
+
 fn attach_body_children(
     body: &AstNode<BlockKind>,
-) -> Result<
-    (
-        AstNode<OpenBraceKind>,
-        Box<[AttachedThreadFlowItem]>,
-        AstNode<CloseBraceKind>,
-    ),
-    SyntaxAccessError,
-> {
+) -> Result<AttachedBodyChildren, SyntaxAccessError> {
     if body.syntax().children().iter().any(|child| {
         matches!(
             child.role().class(),
@@ -441,7 +446,7 @@ fn attach_body_children(
         .collect::<Result<Vec<_>, _>>()?
         .into_boxed_slice();
     let close = body.required_exact_child::<CloseBraceKind>(SyntaxRole::CloseDelimiter)?;
-    Ok((open, items, close))
+    Ok(AttachedBodyChildren { open, items, close })
 }
 
 fn syntax_has_recovery(syntax: &SyntaxNodeHandle) -> bool {

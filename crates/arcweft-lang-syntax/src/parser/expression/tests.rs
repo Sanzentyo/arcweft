@@ -5,7 +5,8 @@ use crate::expressions::{
     SyntaxRecordField,
 };
 use crate::grammar::budget::GrammarBudget;
-use crate::grammar::event::SyntaxEvent;
+use crate::grammar::event::{PendingStartProjection, SyntaxEvent};
+use crate::incremental::SyntaxLimit;
 use crate::parser::lexer::DocumentLexer;
 
 fn expression_events(source: &str) -> Vec<SyntaxEvent> {
@@ -13,7 +14,7 @@ fn expression_events(source: &str) -> Vec<SyntaxEvent> {
     let mut events = Vec::new();
     let mut budget = GrammarBudget::default();
     {
-        let mut parser = ShadowDocumentParser::new(source, &tokens, &mut events, &mut budget);
+        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
         emit_expression(&mut parser, tokens.len(), SyntaxRole::Element(0));
         assert!(parser.is_at_end(), "{source}");
     }
@@ -26,7 +27,7 @@ fn projection(events: &[SyntaxEvent], kind: SyntaxKind) -> &PendingExpressionPro
         .find_map(|event| match event {
             SyntaxEvent::StartNode {
                 kind: actual,
-                expression_projection: Some(projection),
+                projection: PendingStartProjection::Expression(projection),
                 ..
             } if *actual == kind => Some(projection),
             _ => None,
@@ -156,6 +157,57 @@ fn parenthesized_call_projection_retains_argument_forms_and_termination() {
 }
 
 #[test]
+fn empty_call_after_rejected_statement_owner_does_not_fabricate_a_callee_range() {
+    let source = "callee()";
+    let tokens = DocumentLexer::new(source).lex();
+    let mut events = Vec::new();
+    let mut budget = GrammarBudget::with_test_global_count(
+        SyntaxLimit::Statements,
+        SyntaxLimit::Statements.maximum(),
+    );
+    let accepted = budget.start(SyntaxKind::ProofCallStatement, SyntaxRole::Statement(0));
+    assert!(!accepted);
+
+    {
+        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
+        emit_expression(&mut parser, tokens.len(), SyntaxRole::Callee);
+        assert!(parser.is_at_end());
+    }
+
+    assert_eq!(budget.failure(), Some(SyntaxLimit::Statements));
+    assert!(events.is_empty());
+}
+
+#[test]
+fn leading_turbofish_does_not_fabricate_a_missing_callee_call() {
+    let leading = expression_events("::<T>(value)");
+    assert!(!leading.iter().any(|event| matches!(
+        event,
+        SyntaxEvent::StartNode {
+            kind: SyntaxKind::CallExpression,
+            ..
+        }
+    )));
+
+    let grouped = expression_events("(value)");
+    assert!(grouped.iter().any(|event| matches!(
+        event,
+        SyntaxEvent::StartNode {
+            kind: SyntaxKind::DelimitedGroup,
+            transparent_expression_group: true,
+            ..
+        }
+    )));
+    assert!(!grouped.iter().any(|event| matches!(
+        event,
+        SyntaxEvent::StartNode {
+            kind: SyntaxKind::CallExpression,
+            ..
+        }
+    )));
+}
+
+#[test]
 fn associated_call_projection_uses_the_same_attached_type_transaction() {
     for (source, explicit) in [
         ("String.with_capacity(8)", false),
@@ -173,6 +225,7 @@ fn associated_call_projection_uses_the_same_attached_type_transaction() {
             (
                 crate::expressions::SyntaxCallCalleeProjection::UnresolvedDot {
                     member: Ok(member),
+                    ..
                 },
                 false,
             )
@@ -208,13 +261,135 @@ fn associated_call_projection_uses_the_same_attached_type_transaction() {
                     event,
                     SyntaxEvent::StartNode {
                         role: SyntaxRole::Type,
-                        type_projection: Some(type_projection),
+                        projection: PendingStartProjection::Type(type_projection),
                         ..
                     } if type_projection.path().steps().is_empty()
                 ))
                 .count(),
             1,
             "{source}"
+        );
+    }
+}
+
+#[test]
+fn qualified_value_path_call_is_not_reclassified_as_an_associated_type_call() {
+    let events = expression_events("pkg::service::invoke(x)");
+    let pending = projection(&events, SyntaxKind::CallExpression);
+    let ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(call)) =
+        pending.projection()
+    else {
+        panic!("qualified ordinary Call projection");
+    };
+    assert!(matches!(
+        call.callee(),
+        crate::expressions::SyntaxCallCalleeProjection::Ordinary
+    ));
+    assert!(
+        pending
+            .components()
+            .iter()
+            .any(|component| component.role() == ExpressionComponentRole::CallCallee)
+    );
+    assert!(!pending.components().iter().any(|component| matches!(
+        component.role(),
+        ExpressionComponentRole::CallAssociatedReceiver
+            | ExpressionComponentRole::CallAssociatedSeparator
+            | ExpressionComponentRole::CallAssociatedMember
+    )));
+}
+
+#[test]
+fn associated_call_recovery_starts_only_after_an_authored_separator() {
+    use crate::expressions::{
+        SyntaxAssociatedCallSyntax, SyntaxAssociatedReceiver, SyntaxAssociatedSeparator,
+        SyntaxCallCalleeProjection,
+    };
+
+    let cases = ["Bad<>::member(x)", "Vec<I32>. (8)", "Vec<I32>.9bad(8)"];
+    let calls = cases.map(|source| {
+        let events = expression_events(source);
+        let pending = projection(&events, SyntaxKind::CallExpression).clone();
+        assert!(
+            pending.validates_components(SourceRange::new(0, source.len())),
+            "{source}: {:?}",
+            pending.components()
+        );
+        let ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(call)) =
+            pending.projection()
+        else {
+            panic!("associated recovery Call projection: {source}");
+        };
+        (source, pending.clone(), call.clone())
+    });
+
+    assert!(matches!(
+        calls[0].2.callee(),
+        SyntaxCallCalleeProjection::Associated {
+            receiver: SyntaxAssociatedReceiver::Present,
+            separator: SyntaxAssociatedSeparator::Present(
+                SyntaxAssociatedCallSyntax::ExplicitDoubleColon,
+            ),
+            member: Ok(member),
+        } if member.as_str() == "member"
+    ));
+
+    assert!(matches!(
+        calls[1].2.callee(),
+        SyntaxCallCalleeProjection::Associated {
+            receiver: SyntaxAssociatedReceiver::Present,
+            separator: SyntaxAssociatedSeparator::Present(SyntaxAssociatedCallSyntax::DotFallback,),
+            member: Err(crate::name::SyntaxNameIssue::Missing),
+        }
+    ));
+
+    assert!(matches!(
+        calls[2].2.callee(),
+        SyntaxCallCalleeProjection::Associated {
+            receiver: SyntaxAssociatedReceiver::Present,
+            separator: SyntaxAssociatedSeparator::Present(SyntaxAssociatedCallSyntax::DotFallback,),
+            member: Err(crate::name::SyntaxNameIssue::InvalidStart { .. }),
+        }
+    ));
+
+    for (source, pending, _) in calls {
+        for role in [
+            ExpressionComponentRole::CallAssociatedReceiver,
+            ExpressionComponentRole::CallAssociatedSeparator,
+            ExpressionComponentRole::CallAssociatedMember,
+        ] {
+            assert!(
+                pending
+                    .components()
+                    .iter()
+                    .any(|component| component.role() == role),
+                "{source}: missing {role:?}"
+            );
+        }
+    }
+
+    for source in [
+        "::member(x)",
+        "Vec<I32> with_capacity(8)",
+        "Vec<I32>..with_capacity(8)",
+    ] {
+        let events = expression_events(source);
+        assert!(
+            !events.iter().any(|event| {
+                let SyntaxEvent::StartNode {
+                    projection: PendingStartProjection::Expression(projection),
+                    ..
+                } = event
+                else {
+                    return false;
+                };
+                matches!(
+                    projection.projection(),
+                    ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(call))
+                        if matches!(call.callee(), SyntaxCallCalleeProjection::Associated { .. })
+                )
+            }),
+            "{source} must not be reclassified as an associated Call"
         );
     }
 }
@@ -829,7 +1004,7 @@ fn pratt_start_insertion_preserves_each_child_leaf_projection() {
                 event,
                 SyntaxEvent::StartNode {
                     kind: SyntaxKind::LiteralExpression,
-                    expression_projection: Some(_),
+                    projection: PendingStartProjection::Expression(_),
                     ..
                 }
             ))
@@ -845,7 +1020,7 @@ fn selected_postfix_try_slot_recovers_a_missing_operator_at_operand_end() {
     let mut events = Vec::new();
     let mut budget = GrammarBudget::default();
     {
-        let mut parser = ShadowDocumentParser::new(source, &tokens, &mut events, &mut budget);
+        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
 
         let operand = parse_prefix(&mut parser, tokens.len(), SyntaxRole::Element(0));
         assert!(parser.is_at_end());

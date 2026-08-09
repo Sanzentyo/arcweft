@@ -253,7 +253,7 @@ pub(super) fn agent_capture_resource(
     frames: &AgentImageFrameStore,
 ) -> Result<AgentResource, ExitCode> {
     let result = agent_capture_image(report, request, frames)?;
-    Ok(report.image_resource(&result.image, &result.bytes))
+    Ok(report.image_resource(&result.image, agent_binary_resource_body(&result.bytes)))
 }
 
 pub(super) fn agent_capture_image(

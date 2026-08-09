@@ -5,12 +5,49 @@
 //! used here so construction proves child liveness without retaining syntax or
 //! reopening source text.
 
+use std::sync::Arc;
+
 use thiserror::Error;
 
-use crate::callable_source::HirEffectName;
 use crate::expr::{HirBorrowKind, HirPoisonState, HirRecoveryIssue};
 use crate::identity::{HirModuleId, ScopeId, TypeId};
 use crate::leaf::{HirName, HirPath, HirTypeRegion, HirTypeRegionIssue};
+
+/// Validated semantic spelling of one declared function-type effect.
+///
+/// This payload belongs to the function-type owner. Project callable source
+/// coordinates are retained independently by the final HIR source index.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct HirEffectName(Arc<str>);
+
+/// Invalid semantic effect spelling in a function type.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum HirEffectNameError {
+    #[error("HIR effect name cannot be empty")]
+    Empty,
+    #[error("HIR effect name contains a control character at byte {byte}")]
+    Control { byte: usize },
+}
+
+impl HirEffectName {
+    pub fn try_new(value: impl Into<Arc<str>>) -> Result<Self, HirEffectNameError> {
+        let value = value.into();
+        if value.is_empty() {
+            return Err(HirEffectNameError::Empty);
+        }
+        if let Some((byte, _)) = value
+            .char_indices()
+            .find(|(_, character)| character.is_control())
+        {
+            return Err(HirEffectNameError::Control { byte });
+        }
+        Ok(Self(value))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
 
 /// Transaction-owned typed lookup required to construct one type record.
 ///
@@ -95,11 +132,11 @@ impl HirType {
     }
 
     /// Returns the semantic recovery state retained with this type node.
-    pub(crate) const fn state(&self) -> &HirPoisonState {
+    pub const fn state(&self) -> &HirPoisonState {
         &self.state
     }
 
-    pub(crate) const fn is_poisoned(&self) -> bool {
+    pub const fn is_poisoned(&self) -> bool {
         self.state.is_poisoned()
     }
 }
@@ -131,6 +168,40 @@ impl HirTypeKind {
     /// Returns whether this is the canonical zero-element tuple (`Unit`).
     pub const fn is_unit(&self) -> bool {
         matches!(self, Self::Tuple(elements) if elements.is_empty())
+    }
+
+    /// Returns the same-arena type nodes owned directly by this payload.
+    ///
+    /// Nominal resolution uses this structural ownership to identify authored
+    /// type roots. Contextual children such as the `Flow` in `Ref<Flow>` are
+    /// arena nodes with source identity, but they are deliberately not
+    /// standalone runtime types.
+    pub fn direct_type_children(&self) -> Vec<TypeId> {
+        match self {
+            Self::Tuple(elements) | Self::Choice(elements) => elements.to_vec(),
+            Self::Function(function) => function
+                .parameters()
+                .iter()
+                .copied()
+                .chain(std::iter::once(function.return_type()))
+                .collect(),
+            Self::Generic(generic) => generic.arguments().to_vec(),
+            Self::TraitBound(bound) => bound
+                .arguments()
+                .iter()
+                .copied()
+                .chain(
+                    bound
+                        .associated()
+                        .iter()
+                        .map(HirAssociatedTypeBinding::value),
+                )
+                .collect(),
+            Self::Projection(projection) => vec![projection.subject()],
+            Self::Reference(reference) => vec![reference.referent()],
+            Self::Slice(item) => vec![*item],
+            Self::Never | Self::ConstInt(_) | Self::Path(_) | Self::Recovery(_) => Vec::new(),
+        }
     }
 
     fn validate<R: HirTypeResolver + ?Sized>(

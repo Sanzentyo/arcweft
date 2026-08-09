@@ -10,26 +10,31 @@ and converted them into runtime assertions. That path supplied a default
 message, had no typed guard identity, and bypassed the retained typed
 `assert.check` / `assert.debug` statement authority.
 
-Both the evaluated-effect and static-control dispatch branches are removed,
+Both the evaluated-effect and static-control dispatch branches were removed,
 together with the private `runtime_assertion` helper and the old success
-integration test. Closed ordinary calls using those names now remain generic
-host calls; a runtime-valued ordinary call remains subject to the existing
-generic typed-boundary error. Neither name can construct
-`RuntimeEffectExpr::Assert` or `LineEffectRequest::Assert` through ordinary-call
-lowering. A direct effect-lowering unit test records that observable boundary
-without a removed-syntax diagnostic or source gate.
+integration test. The later Proof public switch also deletes the semantic
+`BuiltinCallableId::Assert` / `BuiltinCallableId::DebugAssert` registrations,
+so those spellings receive no built-in ordinary-call candidate. An explicitly
+declared callable with the same ordinary name still follows normal project
+name resolution; there is no implicit host fallback or assertion meaning.
 
-The line-plan assertion item, `ensure`, and the typed
-`assert.check` / `assert.debug` statement path are separate retained constructs
-and are unchanged.
+The later switch also deletes `LineTaskGroup::assertions` and
+`LineAssertionRequest`. The sole language runtime-assertion route is now the
+typed `assert.check` / `assert.debug` statement, its checker-owned semantic
+admission, the accepted runtime assertion site/inventory, and canonical AWBC
+lowering. `assert.prove` remains verification-only and cannot acquire a runtime
+mode or guard. `ensure` is an unrelated ordinary language callable.
 
-## Deferred atomic boundary
+## Completed atomic successor boundary
 
-Mandatory guards on core `RuntimeAssertion`, typed assertion sites and
-inventories, and the AWBC assertion codec remain one later atomic switch. They
-must consume the final typed `StmtId`/`ExprId` and callable context. This cut
-does not invent a zero, optional, random, source-derived, or message-derived
-guard merely to keep the deleted ordinary-call path compiling.
+The subsequent Proof public-switch working copy implements the formerly
+deferred boundary with mandatory typed guards, session-only assertion sites
+and inventories, the canonical AWBC assertion payload, and persisted artifact
+fingerprints. It consumes final typed `StmtId` / `ExprId` and callable context;
+it does not derive identity from a source string, range, message, zero value,
+or random seed. Exact validation evidence is recorded in
+[Proof-concurrency v6.1.1 runtime assertion closure](2026-08-06-proof-concurrency-v6-1-1-runtime-assertion-closure.md)
+and the base-package matrix ledger.
 
 ## Validation
 

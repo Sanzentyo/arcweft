@@ -2,7 +2,7 @@
 
 use std::{collections::HashSet, sync::Arc};
 
-use arcweft_lang_hir::symbol::CallableDeclarationId;
+use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallableDeclarationOwner};
 use arcweft_source::SourceSpan;
 
 use crate::{
@@ -14,11 +14,11 @@ use crate::{
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableDocumentationError,
     CallableGroupIndex, CallableLimits, CallableName, CallableParameterIndex, CallableSchemaError,
-    CallableSourceError, CapacityMethodId, CollectionMethodId, DialogueCallableId, DomainMethodId,
-    EnumVariantSignatureId, FxCallableSignatureId, IntegerMethodId, LanguageDocumentationFamily,
-    OptionConstructorKind, PresentationCallableId, PresentationHandleMethodId, PromotionCallableId,
-    ReductionConstructorKind, ResultConstructorKind, RustItemPath, RustProvenanceError,
-    RustProvenanceField, StageMethodId, TraitCallableId,
+    CallableSourceError, CapacityMethodId, CollectionMethodId, DetachedCallableDeclarationId,
+    DomainMethodId, EnumVariantSignatureId, FxCallableSignatureId, IntegerMethodId,
+    LanguageDocumentationFamily, OptionConstructorKind, PresentationCallableId,
+    PresentationHandleMethodId, PromotionCallableId, ReductionConstructorKind,
+    ResultConstructorKind, RustItemPath, RustProvenanceError, RustProvenanceField, StageMethodId,
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,7 +40,7 @@ pub struct CallableParameterDocumentation {
 pub enum DocumentationProvenance {
     Missing,
     ProjectSource {
-        declaration: CallableDeclarationId,
+        declaration: CallableDeclarationKey,
     },
     AdapterTooling {
         package: AdapterPackageId,
@@ -79,7 +79,7 @@ pub struct RustCallableProvenance {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CallableSource {
-    declaration: Option<CallableDeclarationId>,
+    declaration: Option<CallableDeclarationKey>,
     signature: Option<SourceSpan>,
     name: Option<SourceSpan>,
     result: Option<SourceSpan>,
@@ -238,7 +238,7 @@ impl CallableParameterSource {
 
 impl CallableSource {
     pub fn try_new(
-        declaration: Option<CallableDeclarationId>,
+        declaration: Option<CallableDeclarationKey>,
         signature: Option<SourceSpan>,
         name: Option<SourceSpan>,
         result: Option<SourceSpan>,
@@ -272,7 +272,7 @@ impl CallableSource {
             parameters: parameters.into(),
         })
     }
-    pub const fn declaration(&self) -> Option<&CallableDeclarationId> {
+    pub const fn declaration(&self) -> Option<&CallableDeclarationKey> {
         self.declaration.as_ref()
     }
     pub const fn signature(&self) -> Option<&SourceSpan> {
@@ -395,8 +395,10 @@ pub struct CallableSignatureSchema {
 pub enum CallableEffectSchema {
     Fixed(EffectRow),
     Project {
-        declaration: CallableDeclarationId,
-        declared: EffectRow,
+        declaration: CallableDeclarationKey,
+    },
+    Detached {
+        declaration: DetachedCallableDeclarationId,
     },
 }
 
@@ -476,17 +478,44 @@ pub enum CallableValidator {
     Builtin(BuiltinCallableId),
     Agent(AgentIntrinsicSignatureId),
     Presentation(PresentationCallableId),
-    Dialogue(DialogueCallableId),
     Collection(CollectionMethodId),
     PresentationHandle(PresentationHandleMethodId),
     Integer(IntegerMethodId),
     Domain(DomainMethodId),
-    Trait(TraitCallableId),
+    Method(CallableMethodRole),
     Capacity(CapacityMethodId),
     Stage(StageMethodId),
     Drop,
     Promotion(PromotionCallableId),
-    Speaker,
+}
+
+/// Pre-check behavior of one structurally identified method declaration.
+///
+/// This role deliberately carries no declaration, witness, source, or effect
+/// identity. Those remain owned by the structural key and checked catalog.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CallableMethodRole {
+    TraitRequirement,
+    TraitImplementation,
+    Inherent,
+}
+
+impl CallableMethodRole {
+    pub(crate) const fn required_owner(self) -> CallableDeclarationOwner {
+        match self {
+            Self::TraitRequirement => CallableDeclarationOwner::TraitRequirement,
+            Self::TraitImplementation => CallableDeclarationOwner::TraitImplementation,
+            Self::Inherent => CallableDeclarationOwner::InherentMethod,
+        }
+    }
+
+    pub const fn is_dispatch_contract(self) -> bool {
+        matches!(self, Self::TraitRequirement)
+    }
+
+    pub const fn is_runtime_callable(self) -> bool {
+        !self.is_dispatch_contract()
+    }
 }
 
 impl CallableSignatureSchema {
@@ -792,21 +821,28 @@ impl CallableEffectSchema {
     pub fn fixed(row: EffectRow) -> Self {
         Self::Fixed(row)
     }
-    pub fn project(declaration: CallableDeclarationId, declared: EffectRow) -> Self {
-        Self::Project {
-            declaration,
-            declared,
+    pub fn project(declaration: CallableDeclarationKey) -> Self {
+        Self::Project { declaration }
+    }
+    pub fn detached(declaration: DetachedCallableDeclarationId) -> Self {
+        Self::Detached { declaration }
+    }
+    pub const fn fixed_row(&self) -> Option<&EffectRow> {
+        match self {
+            Self::Fixed(row) => Some(row),
+            Self::Project { .. } | Self::Detached { .. } => None,
         }
     }
-    pub const fn declared(&self) -> &EffectRow {
+    pub const fn project_declaration(&self) -> Option<&CallableDeclarationKey> {
         match self {
-            Self::Fixed(row) | Self::Project { declared: row, .. } => row,
+            Self::Project { declaration } => Some(declaration),
+            Self::Fixed(_) | Self::Detached { .. } => None,
         }
     }
-    pub const fn project_declaration(&self) -> Option<&CallableDeclarationId> {
+    pub const fn detached_declaration(&self) -> Option<&DetachedCallableDeclarationId> {
         match self {
-            Self::Project { declaration, .. } => Some(declaration),
-            Self::Fixed(_) => None,
+            Self::Detached { declaration } => Some(declaration),
+            Self::Fixed(_) | Self::Project { .. } => None,
         }
     }
 }
@@ -1037,4 +1073,4 @@ impl CallableArgumentPolicy {
 
 mod families;
 
-pub(super) use families::{dialogue_schema, presentation_schema};
+pub(super) use families::presentation_schema;

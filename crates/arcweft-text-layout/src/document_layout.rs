@@ -2,10 +2,8 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextRun, RichTextRange, RichTextVerticalLatinMode,
-    RichTextWritingMode,
-};
+use arcweft_render_text::{ResolvedTextDocument, ResolvedTextRun};
+use arcweft_text_model::{RichTextRange, RichTextVerticalLatinMode, RichTextWritingMode};
 
 use crate::{
     GlyphOrientation, GlyphVerticalForm, JlreqStrictness, LayoutPoint, LayoutRect, LayoutSize,

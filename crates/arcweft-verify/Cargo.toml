@@ -7,8 +7,6 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-core = { workspace = true }
-arcweft-compiler = { workspace = true }
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-sema = { workspace = true }
 arcweft-lang-syntax = { workspace = true }

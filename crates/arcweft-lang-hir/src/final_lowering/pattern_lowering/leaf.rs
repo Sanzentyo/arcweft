@@ -6,7 +6,7 @@ use arcweft_lang_syntax::patterns::{
 
 use crate::identity::HirLimit;
 use crate::leaf::{HirPath, HirPathIssue, HirPathRoot};
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure};
 use crate::pattern::{HirPatternRecordPath, HirPatternRecordPathIssue};
 
 use super::super::path_projection::{TypedPathProjection, TypedPathSegment, project_typed_path};

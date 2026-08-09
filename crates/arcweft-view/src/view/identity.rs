@@ -1,6 +1,6 @@
 //! Stable semantic identities for authored and public Views.
 
-use arcweft_id::{IdError, PublicId};
+use arcweft_id::{DeclarationName, IdError, PublicId};
 use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
@@ -48,6 +48,25 @@ impl ViewId {
         } else {
             Err(ViewIdError::WrongFamily { actual: public_id })
         }
+    }
+
+    /// Constructs the public identity of a bare authored View declaration in
+    /// its canonical module. The crate root contributes no segment; child
+    /// modules remain part of the published identity without requiring a
+    /// compiler-local prefix convention.
+    pub fn try_from_module_name<'a>(
+        module: impl IntoIterator<Item = &'a str>,
+        name: &DeclarationName,
+    ) -> Result<Self, ViewIdError> {
+        let mut value = String::from("view");
+        for segment in module {
+            let segment = PublicId::try_new(segment.to_owned())?;
+            value.push('.');
+            value.push_str(segment.as_str());
+        }
+        value.push('.');
+        value.push_str(name.as_str());
+        Self::try_new(value)
     }
 
     /// Constructs a semantic identity for an engine-owned reserved View.
@@ -259,7 +278,7 @@ mod tests {
     use super::{
         AcceptedViewProgramRevision, ViewId, ViewIdError, ViewIdentityError, ViewProgramId,
     };
-    use arcweft_id::PublicId;
+    use arcweft_id::{DeclarationName, PublicId};
 
     #[test]
     fn stable_view_identities_serialize_as_validated_public_id_strings() {
@@ -316,6 +335,24 @@ mod tests {
         assert!(ViewId::try_new("std.view.dialogue").is_err());
         assert!(ViewId::try_new_engine_owned("view.dialogue").is_err());
         assert!(ViewId::try_new("view.").is_err());
+    }
+
+    #[test]
+    fn authored_module_identity_is_owned_by_the_view_id_boundary() {
+        let name = DeclarationName::try_new("Dialogue").unwrap();
+        assert_eq!(
+            ViewId::try_from_module_name(std::iter::empty(), &name)
+                .unwrap()
+                .as_str(),
+            "view.Dialogue"
+        );
+        assert_eq!(
+            ViewId::try_from_module_name(["ui", "mobile"], &name)
+                .unwrap()
+                .as_str(),
+            "view.ui.mobile.Dialogue"
+        );
+        assert!(ViewId::try_from_module_name([""], &name).is_err());
     }
 
     #[test]

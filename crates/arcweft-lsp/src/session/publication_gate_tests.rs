@@ -2,11 +2,12 @@ use std::sync::Arc;
 
 use lsp_server::Notification;
 use lsp_types::{
-    DidChangeConfigurationParams, DidChangeWatchedFilesParams, DidOpenTextDocumentParams,
-    DidSaveTextDocumentParams, TextDocumentIdentifier, TextDocumentItem,
+    DidChangeConfigurationParams, DidChangeTextDocumentParams, DidChangeWatchedFilesParams,
+    DidOpenTextDocumentParams, DidSaveTextDocumentParams, TextDocumentContentChangeEvent,
+    TextDocumentIdentifier, TextDocumentItem, VersionedTextDocumentIdentifier,
     notification::{
-        DidChangeConfiguration, DidChangeWatchedFiles, DidOpenTextDocument, DidSaveTextDocument,
-        Notification as LspNotification,
+        DidChangeConfiguration, DidChangeTextDocument, DidChangeWatchedFiles, DidOpenTextDocument,
+        DidSaveTextDocument, Notification as LspNotification,
     },
 };
 
@@ -14,7 +15,7 @@ use super::{ArcweftLspSession, tests::TestProject, tests::file_uri};
 use crate::{
     config::LspConfig,
     profiles::{
-        AcceptedBuildWorkSnapshot, accepted_build_work_snapshot_for_test,
+        AcceptedBuildWorkSnapshot, LspProfileDiagnosticKind, accepted_build_work_snapshot_for_test,
         state::AcceptedProfileEnvironment,
     },
     requests::{RequestRegistry, with_test_request_registry},
@@ -79,7 +80,12 @@ fn ah32_023a_and_028_each_event_publishes_one_complete_generation_per_shared_sta
         assert_no_full_build(before_second_open);
         let after_second_open = accepted(&session, &main_uri);
         assert_eq!(after_second_open.generation().get(), 2);
-        assert!(Arc::ptr_eq(initial.world(), after_second_open.world()));
+        assert!(Arc::ptr_eq(
+            initial.executable().expect("initial executable"),
+            after_second_open
+                .executable()
+                .expect("unchanged executable")
+        ));
         assert!(Arc::ptr_eq(initial.project(), after_second_open.project()));
         assert_overlay(&after_second_open, &main_uri, 7);
         assert_overlay(&after_second_open, &helpers_uri, 9);
@@ -177,7 +183,10 @@ fn ah32_063_failed_watch_build_preserves_profile_metadata_accepted_arc_and_cache
             .expect("failed build retains the accepted environment");
         assert!(Arc::ptr_eq(profile_before.state(), profile_after.state()));
         assert!(Arc::ptr_eq(&accepted_before, &accepted_after));
-        assert!(Arc::ptr_eq(accepted_before.world(), accepted_after.world()));
+        assert!(Arc::ptr_eq(
+            accepted_before.executable().expect("baseline executable"),
+            accepted_after.executable().expect("retained executable")
+        ));
         assert!(Arc::ptr_eq(
             accepted_before.project(),
             accepted_after.project()
@@ -202,6 +211,71 @@ fn ah32_063_failed_watch_build_preserves_profile_metadata_accepted_arc_and_cache
             profile_before.entry_selections()
         );
         assert!(!profile_after.diagnostics().is_empty());
+    });
+}
+
+#[test]
+fn recovered_module_is_excluded_from_executable_caches() {
+    let project = publication_project("lsp-recovered-tooling-publication");
+    let main_uri = file_uri(&project.path("src/main.arcw"));
+    let mut session = ArcweftLspSession::new(
+        &LspConfig::new(RuntimeHostRunnerKind::Native).with_profile_id("agent"),
+    );
+
+    with_test_request_registry(|requests| {
+        notify(&mut session, requests, open(main_uri.clone(), 17, MAIN));
+        let clean = accepted(&session, &main_uri);
+        clean.seed_signature_cache_for_test(0);
+        assert_eq!(clean.signature_cache_snapshot_for_test().entries, 1);
+
+        notify(
+            &mut session,
+            requests,
+            change(
+                main_uri.clone(),
+                18,
+                "entry agent @entry.agent.main { controller = missing }\n",
+            ),
+        );
+
+        let recovered = accepted(&session, &main_uri);
+        assert!(!Arc::ptr_eq(&clean, &recovered));
+        assert_eq!(recovered.generation().get(), clean.generation().get() + 1);
+        assert!(recovered.executable().is_none());
+        assert_eq!(recovered.signature_cache_snapshot_for_test().entries, 0);
+        assert_eq!(clean.signature_cache_snapshot_for_test().entries, 0);
+
+        let snapshot = session
+            .documents
+            .get(&main_uri)
+            .expect("changed document remains open");
+        let accepted_source = recovered
+            .project()
+            .sources()
+            .by_uri(&main_uri)
+            .expect("recovered source is accepted");
+        assert!(Arc::ptr_eq(
+            snapshot.source_document(),
+            accepted_source.document()
+        ));
+        assert!(
+            recovered
+                .project()
+                .hir_for_open_document(&main_uri, snapshot.source_document())
+                .is_some()
+        );
+        assert!(
+            session
+                .profile_for_uri(&main_uri)
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| {
+                    diagnostic.kind() == LspProfileDiagnosticKind::ProjectCompile
+                        && diagnostic
+                            .message()
+                            .contains("project compilation failed during ")
+                })
+        );
     });
 }
 
@@ -245,6 +319,20 @@ fn open(uri: lsp_types::Uri, version: i32, text: &str) -> Notification {
                 version,
                 text: text.to_owned(),
             },
+        },
+    )
+}
+
+fn change(uri: lsp_types::Uri, version: i32, text: &str) -> Notification {
+    Notification::new(
+        DidChangeTextDocument::METHOD.to_owned(),
+        DidChangeTextDocumentParams {
+            text_document: VersionedTextDocumentIdentifier { uri, version },
+            content_changes: vec![TextDocumentContentChangeEvent {
+                range: None,
+                range_length: None,
+                text: text.to_owned(),
+            }],
         },
     )
 }

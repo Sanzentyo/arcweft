@@ -1,7 +1,5 @@
 //! Exact-role child access over snapshot-bound attached syntax.
 
-use std::sync::Arc;
-
 use super::family::{
     AstNodeFamily, BodyFamily, BodyNode, DelimiterFamily, DelimiterNode, ExprNode,
     ExpressionFamily, FamilyNode, FamilySpec, NameFamily, NameNode, PatternFamily, PatternNode,
@@ -23,32 +21,12 @@ use super::node::{
     RichTextArgumentTokenKind, RichTextArgumentValueKind, RichTextConditionPayloadKind,
     RichTextDialogueCallPayloadKind, RichTextEndTagKind, RichTextFxCallPayloadKind,
     RichTextInvalidArgumentKind, RichTextNamedArgumentKind, RichTextPositionalArgumentKind,
-    RichTextTagKind, RichTextTagNameKind, SelectStatementKind, SourceFileKind, SourceItemKind,
-    TypeArgumentKind, UnsafeLifetimeStatementKind, VisibilityKind, WaitStatementKind,
-    WholeBindingPatternKind, YieldStatementKind,
+    RichTextTagKind, RichTextTagNameKind, SelectStatementKind, SourceItemKind, TypeArgumentKind,
+    UnsafeLifetimeStatementKind, VisibilityKind, WaitStatementKind, WholeBindingPatternKind,
+    YieldStatementKind,
 };
-use super::{SyntaxAccessError, SyntaxLookupError, SyntaxNodeHandle, SyntaxSnapshotData};
+use super::{SyntaxAccessError, SyntaxNodeHandle};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
-
-/// Whole-source reader bound to one accepted immutable snapshot.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct TypedSyntaxTree {
-    root: AstNode<SourceFileKind>,
-}
-
-impl TypedSyntaxTree {
-    pub const fn root(&self) -> &AstNode<SourceFileKind> {
-        &self.root
-    }
-}
-
-impl SyntaxSnapshotData {
-    pub(crate) fn typed_tree(self: &Arc<Self>) -> Result<TypedSyntaxTree, SyntaxLookupError> {
-        Ok(TypedSyntaxTree {
-            root: self.root_handle().cast()?,
-        })
-    }
-}
 
 impl SyntaxNodeHandle {
     pub(crate) fn optional_unique_child(
@@ -1171,7 +1149,7 @@ impl AstNode<FunctionTypeKind> {
 
 #[cfg(test)]
 mod tests {
-    use super::{DeclarationBodyNode, TypedSyntaxTree};
+    use super::DeclarationBodyNode;
     use crate::attachment::family::{
         AttributeNode, BodyNode, DeclarationPartNode, DelimiterNode, PathNode,
     };
@@ -1184,10 +1162,9 @@ mod tests {
             _part: Option<DeclarationPartNode>,
             _delimiter: Option<DelimiterNode>,
             _path: Option<PathNode>,
-            _tree: Option<TypedSyntaxTree>,
             _body_union: Option<DeclarationBodyNode>,
         ) {
         }
-        consume(None, None, None, None, None, None, None);
+        consume(None, None, None, None, None, None);
     }
 }

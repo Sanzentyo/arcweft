@@ -118,7 +118,7 @@ impl AttachedChoicePlanBody {
             .syntax()
             .ordered_children(SyntaxRoleClass::ChoicePlanItem)?
             .into_iter()
-            .map(AttachedChoicePlanItem::from_syntax)
+            .map(|syntax| AttachedChoicePlanItem::from_syntax(&syntax))
             .collect::<Result<Vec<_>, _>>()?
             .into_boxed_slice();
         let recovery = syntax
@@ -138,19 +138,21 @@ impl AttachedChoicePlanBody {
 pub enum AttachedChoicePlanItem {
     Assignment(AttachedChoicePlanAssignment),
     Timeout(AttachedChoicePlanTimeout),
-    Cancel(AttachedChoicePlanCancel),
+    Cancel(Box<AttachedChoicePlanCancel>),
     OnSelect(AttachedChoicePlanOnSelect),
     Recovered(AstNode<ErrorNodeKind>),
 }
 
 impl AttachedChoicePlanItem {
-    fn from_syntax(syntax: SyntaxNodeHandle) -> Result<Self, SyntaxAccessError> {
+    fn from_syntax(syntax: &SyntaxNodeHandle) -> Result<Self, SyntaxAccessError> {
         match syntax.kind() {
             SyntaxKind::ChoicePlanAssignment => {
                 Ok(Self::Assignment(attach_assignment(syntax.cast()?)?))
             }
             SyntaxKind::ChoicePlanTimeout => Ok(Self::Timeout(attach_timeout(syntax.cast()?)?)),
-            SyntaxKind::ChoicePlanCancel => Ok(Self::Cancel(attach_cancel(syntax.cast()?)?)),
+            SyntaxKind::ChoicePlanCancel => {
+                Ok(Self::Cancel(Box::new(attach_cancel(syntax.cast()?)?)))
+            }
             SyntaxKind::ChoicePlanOnSelect => Ok(Self::OnSelect(attach_on_select(syntax.cast()?)?)),
             SyntaxKind::ErrorNode => Ok(Self::Recovered(syntax.cast()?)),
             _ => Err(SyntaxAccessError::InvalidChoiceShape { id: syntax.id() }),

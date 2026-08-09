@@ -183,7 +183,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         .and_then(|()| entrypoints.validate_awbc(product_awbc.program()))
         .map_err(|error| compact_decode_error(&error))?;
     let adapters = required_adapter_requirements(&view, external_sections)?;
-    let _content = required_content_catalog(&view, external_sections)?;
+    let content = required_content_catalog(&view, external_sections)?;
     let assets = optional_asset_catalog(&view, external_sections)?.unwrap_or_default();
     let display = required_display_catalog(&view, external_sections)?;
     let source_map = optional_source_map(&view, external_sections)?.ok_or_else(|| {
@@ -223,7 +223,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
             },
         },
         product_awbc: Some(product_awbc),
-        display: display.display,
+        dialogue_content: content.dialogue_content,
         fx_definitions,
         adapter_manifests: adapters.adapter_manifests,
         virtual_files: assets.virtual_files,
@@ -757,21 +757,20 @@ mod tests {
         CompactContentCatalogSection, CompactDisplayCatalogSection, SourceMapSection,
     };
     use crate::{
-        ArcweftBundle, BundleCodecError, BundleFormat, BundleManifest, BundleRuntimeSummary,
+        ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleCodecError, BundleFormat,
+        BundleManifest, BundleRuntimeSummary,
     };
     use arcweft_core::awbc::schema::{
         AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-        AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-        AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-        AwbcStringId, AwbcTableRange, AwbcTerminator,
+        AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+        AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
+        AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
     use arcweft_core::bytecode::BytecodeProgram;
-    use arcweft_dialogue::DialogueProfileRevision;
+    use arcweft_core::effect::RuntimeArtifactFingerprint;
     use arcweft_presentation::fx::{FxDefinition, FxGraph, FxId, FxNode};
-    use arcweft_render_text::LineDisplayCatalog;
-    use arcweft_resource_model::registry::ResourceTypeRegistry;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_text_model::DialogueContentCatalog;
     use std::path::Path;
 
     #[test]
@@ -856,6 +855,13 @@ mod tests {
                 .and_then(|value| value.as_str()),
             Some(ProductExecutablePayload::AwbcV1.wire_name())
         );
+        assert_eq!(
+            manifest.pointer("/manifest/runtime/artifact_fingerprint"),
+            Some(
+                &serde_json::to_value(test_runtime_artifact_fingerprint())
+                    .expect("runtime artifact fingerprint is JSON")
+            )
+        );
 
         let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
             .expect("canonical product manifest decodes");
@@ -939,6 +945,73 @@ mod tests {
             error,
             BundleCodecError::UnsupportedProductExecutablePayload { actual }
                 if actual == "structured_json_v0"
+        ));
+    }
+
+    #[test]
+    fn awfb_product_rejects_schema_five_after_runtime_artifact_cut() {
+        let bundle = empty_bundle();
+        let mut manifest = product_manifest_json(&bundle);
+        manifest["schema_version"] = serde_json::json!(5);
+        let (bytes, payload) = awfb_with_external_bytecode_and_manifest(&bundle, &manifest);
+
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("schema five product is rejected after the fingerprint cut");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::UnsupportedSchema {
+                actual: 5,
+                expected: ARCWEFT_BUNDLE_SCHEMA_VERSION,
+            }
+        ));
+    }
+
+    #[test]
+    fn awfb_product_rejects_missing_runtime_artifact_fingerprint() {
+        let bundle = empty_bundle();
+        let mut manifest = product_manifest_json(&bundle);
+        manifest["manifest"]["runtime"]
+            .as_object_mut()
+            .expect("runtime summary is an object")
+            .remove("artifact_fingerprint");
+        let (bytes, payload) = awfb_with_external_bytecode_and_manifest(&bundle, &manifest);
+
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("missing runtime artifact fingerprint is rejected");
+
+        assert!(matches!(error, BundleCodecError::DecodeAwfb { .. }));
+    }
+
+    #[test]
+    fn awfb_product_rejects_wrong_width_runtime_artifact_fingerprint() {
+        let bundle = empty_bundle();
+        let mut manifest = product_manifest_json(&bundle);
+        manifest["manifest"]["runtime"]["artifact_fingerprint"] =
+            serde_json::to_value(vec![0x6a_u8; 31]).expect("short fingerprint is JSON");
+        let (bytes, payload) = awfb_with_external_bytecode_and_manifest(&bundle, &manifest);
+
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("wrong-width runtime artifact fingerprint is rejected");
+
+        assert!(matches!(error, BundleCodecError::DecodeAwfb { .. }));
+    }
+
+    #[test]
+    fn awfb_product_rejects_zero_runtime_artifact_fingerprint() {
+        let bundle = empty_bundle();
+        let mut manifest = product_manifest_json(&bundle);
+        manifest["manifest"]["runtime"]["artifact_fingerprint"] =
+            serde_json::to_value([0_u8; 32]).expect("zero fingerprint is JSON");
+        let (bytes, payload) = awfb_with_external_bytecode_and_manifest(&bundle, &manifest);
+
+        let error = ArcweftBundle::from_awfb_slice_with_external_sections(&bytes, &[payload])
+            .expect_err("zero runtime artifact fingerprint is rejected");
+
+        assert!(matches!(
+            error,
+            BundleCodecError::DecodeAwfb { message }
+                if message.contains("runtime artifact fingerprint must not be all zero")
         ));
     }
 
@@ -1115,6 +1188,7 @@ mod tests {
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: test_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
                     flows: 1,
                     bytecode_instructions: 0,
@@ -1125,7 +1199,7 @@ mod tests {
             },
             source_map("main.arcw", "flow main { return \"ok\" }"),
             BytecodeProgram::default(),
-            LineDisplayCatalog::new(test_dialogue_revision()),
+            DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(minimal_awbc_program())
@@ -1141,23 +1215,9 @@ mod tests {
         SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
-    fn test_dialogue_revision() -> DialogueProfileRevision {
-        let source = SourceDocument::try_new(
-            SourceDocumentId::try_new("bundle-product-test-revision").expect("source ID"),
-            SourceName::Memory,
-            "test manifest",
-        )
-        .expect("source document");
-        let sources = SourceSetRevision::try_for_identities([source.identity()])
-            .expect("test source revision");
-        DialogueProfileRevision::from_admitted_parts(
-            source.identity().clone(),
-            sources,
-            sources,
-            ViewProgramId::try_new("view_program.bundle-product-test").expect("View program ID"),
-            AcceptedViewProgramRevision::try_from_bytes([0x7c; 32]).expect("View program revision"),
-            ResourceTypeRegistry::empty().digest(),
-        )
+    fn test_runtime_artifact_fingerprint() -> RuntimeArtifactFingerprint {
+        RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+            .expect("non-zero runtime artifact fingerprint")
     }
 
     fn minimal_awbc_program() -> AwbcProgram {
@@ -1180,6 +1240,14 @@ mod tests {
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
                 flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            }],
+            flow_bindings: vec![AwbcFlowBinding {
+                flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                    [0xa5; 32],
+                    "flow.main",
+                )
+                .expect("test checked Flow identity"),
+                function: AwbcFunctionId(0),
             }],
             blocks: vec![AwbcBlock {
                 owner: AwbcFunctionId(0),

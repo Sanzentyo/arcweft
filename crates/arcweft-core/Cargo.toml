@@ -19,6 +19,15 @@ serde = { workspace = true, features = ["derive", "rc"] }
 serde_json.workspace = true
 thiserror.workspace = true
 
+[dev-dependencies]
+arcweft-data = { workspace = true }
+arcweft-codec-binary = { workspace = true }
+arcweft-codec-cbor = { workspace = true }
+arcweft-codec-json = { workspace = true }
+arcweft-codec-msgpack = { workspace = true }
+arcweft-serde-bridge = { workspace = true }
+trybuild.workspace = true
+
 [lib]
 path = "src/lib.rs"
 

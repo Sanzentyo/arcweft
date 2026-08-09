@@ -174,18 +174,16 @@ impl AttachedFunctionDeclaration {
                 self.contracts
                     .iter()
                     .find(|clause| clause.is_ensures() && !clause.has_recovery())
-                    .map_or_else(
-                        || {
-                            self.authored_return
-                                .as_ref()
-                                .filter(|authored| !authored.has_recovery())
-                                .map_or_else(
-                                    || self.parameter_end_source_span(),
-                                    AttachedCallableReturn::end_source_span,
-                                )
-                        },
-                        AttachedCallableContractClause::condition_start_source_span,
-                    )
+                    .and_then(AttachedCallableContractClause::condition_start_source_span)
+                    .unwrap_or_else(|| {
+                        self.authored_return
+                            .as_ref()
+                            .filter(|authored| !authored.has_recovery())
+                            .map_or_else(
+                                || self.parameter_end_source_span(),
+                                AttachedCallableReturn::end_source_span,
+                            )
+                    })
             })
     }
 }

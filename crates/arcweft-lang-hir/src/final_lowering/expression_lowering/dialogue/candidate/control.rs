@@ -1,4 +1,4 @@
-//! Candidate-only Closure, IfLet, and Match lowering.
+//! Candidate-only `Closure`, `IfLet`, and `Match` lowering.
 
 use arcweft_lang_syntax::attachment::{AttachedCandidateExpressionChild, AttachedCandidateNode};
 use arcweft_lang_syntax::expressions::{
@@ -10,7 +10,7 @@ use crate::expr::{
     HirMatchArm, HirMatchExpr, HirMatchRecoveryIssue, HirPoisonState, HirRecoveryIssue,
 };
 use crate::identity::{ExprId, LocalId, ScopeId, SyntheticKey, SyntheticOwner};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::{HirExprSourceRole, HirMatchArmSourcePart, HirSourceSite};
 
@@ -57,12 +57,11 @@ impl StagedHirModuleTransaction<'_> {
                 .ty()
                 .map(|ty| self.lower_candidate_type(ty, closure_scope, cursor))
                 .transpose()?;
-            if let Some(ty) = ty {
-                if let HirPoisonState::Poisoned(issue) =
+            if let Some(ty) = ty
+                && let HirPoisonState::Poisoned(issue) =
                     self.arenas.types().resolve_staged(&self.slots, ty)?.state()
-                {
-                    recovery.get_or_insert_with(|| issue.clone());
-                }
+            {
+                recovery.get_or_insert_with(|| issue.clone());
             }
             parameters.push(
                 HirClosureParameter::try_new(lowered.owner, ty, closure_scope)
@@ -75,15 +74,14 @@ impl StagedHirModuleTransaction<'_> {
             .result_type()
             .map(|ty| self.lower_candidate_type(ty, closure_scope, cursor))
             .transpose()?;
-        if let Some(result_type) = result_type {
-            if let HirPoisonState::Poisoned(issue) = self
+        if let Some(result_type) = result_type
+            && let HirPoisonState::Poisoned(issue) = self
                 .arenas
                 .types()
                 .resolve_staged(&self.slots, result_type)?
                 .state()
-            {
-                recovery.get_or_insert_with(|| issue.clone());
-            }
+        {
+            recovery.get_or_insert_with(|| issue.clone());
         }
         self.close_scope_members(closure_scope, locals.into_boxed_slice())?;
 
@@ -178,18 +176,17 @@ impl StagedHirModuleTransaction<'_> {
             HirExprSourceRole::ThenBranch,
             &mut recovery,
         )?;
-        let else_branch = match attached.else_branch() {
-            Some(else_branch) => self.lower_candidate_control_operand(
+        let else_branch = if let Some(else_branch) = attached.else_branch() {
+            self.lower_candidate_control_operand(
                 else_branch,
                 outer_scope,
                 cursor,
                 HirExprSourceRole::ElseBranch,
                 &mut recovery,
-            )?,
-            None => {
-                recovery.get_or_insert(HirRecoveryIssue::MissingRequiredTail);
-                self.lower_missing_candidate_tail(outer_scope, cursor, attached.else_source_span())?
-            }
+            )?
+        } else {
+            recovery.get_or_insert(HirRecoveryIssue::MissingRequiredTail);
+            self.lower_missing_candidate_tail(outer_scope, cursor, attached.else_source_span())?
         };
         self.close_scope_members(binding_scope, lowered_pattern.locals)?;
         Ok((
@@ -205,6 +202,10 @@ impl StagedHirModuleTransaction<'_> {
         ))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "candidate Match lowering is one transaction over its scrutinee and complete ordered arm scope/binding/guard/body matrix"
+    )]
     pub(super) fn lower_candidate_match(
         &mut self,
         expression: ExprId,

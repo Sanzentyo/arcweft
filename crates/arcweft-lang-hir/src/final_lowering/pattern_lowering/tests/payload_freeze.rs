@@ -1,7 +1,7 @@
 use super::*;
 
 use crate::expr::{HirPoisonState, HirRecoveryIssue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::pattern::{
     HirGenericPatternIssue, HirPatternError, HirPatternKind, HirPatternRecoveryIssue,
     HirPatternSequenceRestIssue,
@@ -72,6 +72,7 @@ fn assert_same_family_payload_substitution_rejected(
 fn pattern_freeze_rejects_every_same_family_payload_substitution_atomically() {
     for (document_id, source, substitute) in [
         ("binding-payload", "alpha", "beta"),
+        ("binding-root-identity", "same", "same"),
         ("mutable-binding-payload", "mut alpha", "mut beta"),
         ("literal-payload", "42", "43"),
         ("entity-reference-payload", "@flow.alpha", "@flow.beta"),
@@ -83,6 +84,29 @@ fn pattern_freeze_rejects_every_same_family_payload_substitution_atomically() {
     ] {
         assert_same_family_payload_substitution_rejected(document_id, source, substitute);
     }
+}
+
+#[test]
+fn zero_width_recovery_retains_exact_pattern_root_identity() {
+    let parsed = parsed_source("zero-width-pattern-root", &["_ |", "_ |"]);
+    let roots = attached_patterns(&parsed);
+    let first_missing = attached_pattern_child(&roots[0], PatternNodeStep::Element(1));
+    let second_missing = attached_pattern_child(&roots[1], PatternNodeStep::Element(1));
+
+    let first_range = first_missing.whole_source_span().range();
+    let second_range = second_missing.whole_source_span().range();
+    assert_eq!(first_range.start(), first_range.end());
+    assert_eq!(second_range.start(), second_range.end());
+    assert_eq!(first_missing.root().expect("first Pattern root"), roots[0]);
+    assert_eq!(
+        second_missing.root().expect("second Pattern root"),
+        roots[1]
+    );
+    assert_ne!(first_missing.root().expect("first Pattern root"), roots[1]);
+    assert_ne!(
+        second_missing.root().expect("second Pattern root"),
+        roots[0]
+    );
 }
 
 #[test]

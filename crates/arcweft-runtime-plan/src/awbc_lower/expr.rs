@@ -39,6 +39,12 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
         clippy::too_many_lines,
         reason = "This mirrors the RuntimeExpr enum one arm at a time until expression lowering is split by expression family."
     )]
+    /// Lowers one admitted runtime expression into the current AWBC frame.
+    ///
+    /// # Panics
+    ///
+    /// Panics only when an already-admitted runtime method-call identity cannot
+    /// be reconstructed as the typed core callable identity it originated from.
     pub fn lower(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
         match expr {
             RuntimeExpr::Value(value) => {
@@ -150,16 +156,25 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                     });
                 dst
             }
-            RuntimeExpr::Variant { name, payload, .. } => {
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+            RuntimeExpr::Variant {
+                owner,
+                ordinal,
+                name,
+                payload,
+            } => {
+                assert!(
+                    owner.accepts_variant_case(*ordinal, name),
+                    "checked runtime variant case must match its typed owner and ordinal"
+                );
+                let ty = crate::awbc_lower::pattern::intern_runtime_type(self.inventory, owner);
+                let dst = self.frame.temp(ty);
                 let payload = payload.as_deref().map(|payload| self.lower(payload));
-                let ty = self.inventory.dynamic_ty();
                 let case_name = self.inventory.intern_string(name);
                 self.inventory
                     .push_instruction(AwbcInstruction::MakeVariant {
                         dst,
                         ty,
-                        case: stable_case(name),
+                        case: *ordinal,
                         case_name,
                         payload,
                     });
@@ -289,7 +304,10 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 for arg in args {
                     let _ = self.lower(arg);
                 }
-                let target = RuntimeCallTarget::Named(method.clone());
+                let target = RuntimeCallTarget::callable(
+                    arcweft_core::plan::RuntimeCallableId::try_new(method.clone())
+                        .expect("RuntimeExpr method call carries an admitted callable identity"),
+                );
                 self.lower_call(&target, &[]).tap(|_| {
                     self.inventory.diagnostic(AwbcLowerDiagnostic::warning(
                         self.path.clone(),
@@ -515,7 +533,7 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
         let public_id = self.inventory.intern_string(label);
         self.inventory.program.intrinsics.push(AwbcIntrinsic {
             public_id,
-            registry_code: stable_case(label),
+            registry_code: 0,
             signature,
             revision: 1,
         });
@@ -1175,10 +1193,4 @@ fn binary_op(op: RuntimeBinaryOp) -> AwbcBinaryOp {
         RuntimeBinaryOp::And => AwbcBinaryOp::And,
         RuntimeBinaryOp::Or => AwbcBinaryOp::Or,
     }
-}
-
-fn stable_case(value: &str) -> u32 {
-    value.bytes().fold(2_166_136_261_u32, |acc, byte| {
-        acc.wrapping_mul(16_777_619) ^ u32::from(byte)
-    })
 }

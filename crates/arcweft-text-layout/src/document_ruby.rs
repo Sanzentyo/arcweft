@@ -2,9 +2,9 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextRuby, RichTextInlineDirection, RichTextRange,
-    RichTextRubyPosition, RichTextWritingMode,
+use arcweft_render_text::{ResolvedTextDocument, ResolvedTextRuby};
+use arcweft_text_model::{
+    Milli, RichTextInlineDirection, RichTextRange, RichTextRubyPosition, RichTextWritingMode,
 };
 
 use crate::{
@@ -533,15 +533,15 @@ fn ruby_metrics(annotation: &ResolvedTextRuby) -> RubyMetrics {
     }
 }
 
-fn positive_milli(value: Option<arcweft_render_text::Milli>) -> Option<f32> {
+fn positive_milli(value: Option<Milli>) -> Option<f32> {
     value
-        .map(arcweft_render_text::Milli::as_f32)
+        .map(Milli::as_f32)
         .filter(|value| value.is_finite() && *value > 0.0)
 }
 
-fn nonnegative_milli(value: Option<arcweft_render_text::Milli>) -> Option<f32> {
+fn nonnegative_milli(value: Option<Milli>) -> Option<f32> {
     value
-        .map(arcweft_render_text::Milli::as_f32)
+        .map(Milli::as_f32)
         .filter(|value| value.is_finite() && *value >= 0.0)
 }
 

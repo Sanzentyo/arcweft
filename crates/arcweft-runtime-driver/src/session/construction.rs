@@ -5,11 +5,11 @@ use super::{
     AwbcProgram, BTreeMap, BundleEntryStart, BundleEntryStartError, BundleFormat,
     BundleImageObject, BundleKind, BundlePresentationSnapshot, BundleSession,
     BundleSessionArtifactIdentity, BundleSessionError, BundleSessionOptions, BundleView,
-    BundleViewRuntime, BundleViewRuntimeError, EntryRuntimeId, FxDefinitions, GenerationBuildError,
-    GenerationId, GenerationRuntimeImage, GenerationRuntimeTable, LineDisplayCatalog,
-    PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget, RootCommandHostCallCatalog,
-    RuntimeTaskRegistry, SessionEnvironmentState, SwapSession, SystemPaletteSet,
-    ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
+    BundleViewRuntime, BundleViewRuntimeError, DialogueContentCatalog, EntryRuntimeId,
+    FxDefinitions, GenerationBuildError, GenerationId, GenerationRuntimeImage,
+    GenerationRuntimeTable, PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget,
+    RootCommandHostCallCatalog, RuntimeTaskRegistry, SessionEnvironmentState, SwapSession,
+    SystemPaletteSet, ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
     ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
     ViewRuntimeTextControl, ViewVirtualizationRuntime,
 };
@@ -20,7 +20,7 @@ pub(super) struct SessionRuntime {
     pub(super) program: AwbcProgram,
     pub(super) entry: AwbcEntryId,
     pub(super) executor: ArcweftRuntimeExecutor,
-    pub(super) display: LineDisplayCatalog,
+    pub(super) dialogue_content: DialogueContentCatalog,
     pub(super) image_objects: Vec<BundleImageObject>,
     pub(super) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(super) action_buttons: Vec<ViewRuntimeActionButton>,
@@ -36,7 +36,7 @@ pub(super) struct SessionRuntime {
 
 #[derive(Clone, Debug)]
 struct SessionRuntimeResources {
-    display: LineDisplayCatalog,
+    dialogue_content: DialogueContentCatalog,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
@@ -101,7 +101,7 @@ impl BundleSession {
         let generation = Arc::new(initial_generation(bundle)?);
         let runtime = build_session_runtime(bundle, &options)?;
         let executor = runtime.executor.clone();
-        let display = runtime.display.clone();
+        let dialogue_content = runtime.dialogue_content.clone();
         let image_objects = runtime.image_objects.clone();
         let text_inputs = runtime.text_inputs.clone();
         let action_buttons = runtime.action_buttons.clone();
@@ -125,7 +125,7 @@ impl BundleSession {
                 generation.clone(),
                 runtime,
             )),
-            display,
+            dialogue_content,
             image_objects,
             text_inputs,
             action_buttons,
@@ -214,7 +214,7 @@ impl SessionRuntime {
             program,
             entry,
             executor,
-            display: resources.display,
+            dialogue_content: resources.dialogue_content,
             image_objects: resources.image_objects,
             text_inputs: resources.text_inputs,
             action_buttons: resources.action_buttons,
@@ -247,7 +247,7 @@ impl SessionRuntime {
             self.program.clone(),
             entry,
             SessionRuntimeResources {
-                display: self.display.clone(),
+                dialogue_content: self.dialogue_content.clone(),
                 image_objects: self.image_objects.clone(),
                 text_inputs: self.text_inputs.clone(),
                 action_buttons: self.action_buttons.clone(),
@@ -330,13 +330,12 @@ fn build_session_runtime_with_executor(
         arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
     )
     .map_err(BundleViewRuntimeError::from)?;
-    let mut view_runtime = BundleViewRuntime::try_new(view_product, bundle.view_text.clone())?;
-    view_runtime.accept_dialogue_view_definitions(&bundle.display)?;
+    let view_runtime = BundleViewRuntime::try_new(view_product, bundle.view_text.clone())?;
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();
     let resources = SessionRuntimeResources {
-        display: bundle.display.clone(),
+        dialogue_content: bundle.dialogue_content.clone(),
         image_objects: bundle.image_objects.clone(),
         text_inputs,
         action_buttons,

@@ -48,10 +48,7 @@ use arcweft_debug_model::{
 use arcweft_debug_sqlite::store::DebugStore;
 use arcweft_id::PublicId as SemaPublicId;
 use arcweft_lang_sema::{
-    project_index::{
-        AgentActionSignature, EntitySymbol, ProgramHash, ProjectCallableSymbol,
-        ProjectSemanticIndex, QualifiedName, SemanticHash, project_semantic_index_from_hir,
-    },
+    project_index::{EntitySymbol, ProjectCallableSymbol, ProjectSemanticIndex, SemanticHash},
     types::{EntityKind, EntityType, TypeKind},
 };
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};

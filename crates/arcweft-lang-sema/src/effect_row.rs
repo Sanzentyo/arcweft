@@ -27,7 +27,7 @@ pub struct EffectRow {
 
 /// Exact substitutions produced when a polymorphic callable is instantiated.
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
-pub struct EffectSubstitution(BTreeMap<EffectVar, EffectSet>);
+pub struct EffectSubstitution(BTreeMap<EffectVar, EffectRow>);
 
 /// Closed or bounded effect-row evidence for one callable.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -73,12 +73,33 @@ pub enum EffectRowError {
     #[error("effect variable e{variable} is unbound")]
     UnboundVariable { variable: u32 },
     #[error(
-        "effect variable e{variable} was already bound to {existing}, cannot rebind it to {requested}"
+        "effect variable e{variable} was already bound to {existing:?}, cannot rebind it to {requested:?}"
     )]
     ConflictingBinding {
         variable: u32,
-        existing: EffectSet,
-        requested: EffectSet,
+        existing: EffectRow,
+        requested: EffectRow,
+    },
+    #[error("effect variable e{variable} participates in a cyclic row substitution")]
+    CyclicBinding { variable: u32 },
+}
+
+/// Failure while checking that one actual effect row is admitted by another.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum EffectSubsetError {
+    #[error("an unknown effect row cannot participate in subset checking")]
+    UnknownRow,
+    #[error("the permitted closed row is missing effects {missing:?}")]
+    MissingEffects { missing: EffectSet },
+    #[error("actual effect tail e{variable} is unresolved against a closed permitted row")]
+    UnresolvedActualTail { variable: u32 },
+    #[error("effect-row substitution is cyclic at e{variable}")]
+    CyclicSubstitution { variable: u32 },
+    #[error("effect variable e{variable} has incompatible row bindings")]
+    ConflictingBinding {
+        variable: u32,
+        existing: EffectRow,
+        requested: EffectRow,
     },
 }
 
@@ -152,15 +173,112 @@ impl EffectRow {
     }
 
     pub fn resolve(&self, substitutions: &EffectSubstitution) -> Result<EffectSet, EffectRowError> {
-        match self.tail {
-            EffectRowTail::Closed => Ok(self.concrete.clone()),
-            EffectRowTail::Variable(tail) => substitutions
-                .get(tail)
-                .map(|tail_effects| self.concrete.union(tail_effects))
-                .ok_or(EffectRowError::UnboundVariable {
-                    variable: tail.index(),
-                }),
-            EffectRowTail::Unknown => Err(EffectRowError::UnknownRow),
+        let resolved = self.resolve_partial(substitutions)?;
+        match resolved.tail {
+            EffectRowTail::Closed => Ok(resolved.concrete),
+            EffectRowTail::Variable(tail) => Err(EffectRowError::UnboundVariable {
+                variable: tail.index(),
+            }),
+            EffectRowTail::Unknown => unreachable!("partial resolution rejects unknown rows"),
+        }
+    }
+
+    /// Checks the complete actual row against the permitted row and extends
+    /// the supplied typed substitution without discarding an existing tail.
+    pub fn check_subset(
+        actual: &EffectRow,
+        permitted: &EffectRow,
+        substitution: &mut EffectSubstitution,
+    ) -> Result<(), EffectSubsetError> {
+        let actual = actual
+            .resolve_partial(substitution)
+            .map_err(EffectSubsetError::from_row_error)?;
+        let permitted = permitted
+            .resolve_partial(substitution)
+            .map_err(EffectSubsetError::from_row_error)?;
+        let residual = actual.concrete.difference(&permitted.concrete);
+        match permitted.tail {
+            EffectRowTail::Closed => {
+                if !residual.is_empty() {
+                    return Err(EffectSubsetError::MissingEffects { missing: residual });
+                }
+                match actual.tail {
+                    EffectRowTail::Closed => Ok(()),
+                    EffectRowTail::Variable(variable) => {
+                        Err(EffectSubsetError::UnresolvedActualTail {
+                            variable: variable.index(),
+                        })
+                    }
+                    EffectRowTail::Unknown => {
+                        unreachable!("partial resolution rejects unknown rows")
+                    }
+                }
+            }
+            EffectRowTail::Variable(permitted_tail) => {
+                let requested = match actual.tail {
+                    EffectRowTail::Closed => EffectRow::closed(residual),
+                    EffectRowTail::Variable(actual_tail) if actual_tail == permitted_tail => {
+                        if residual.is_empty() {
+                            return Ok(());
+                        }
+                        EffectRow::closed(residual)
+                    }
+                    EffectRowTail::Variable(actual_tail) => EffectRow::open(residual, actual_tail),
+                    EffectRowTail::Unknown => {
+                        unreachable!("partial resolution rejects unknown rows")
+                    }
+                };
+                substitution
+                    .bind_row(permitted_tail, &requested)
+                    .map_err(EffectSubsetError::from_row_error)
+            }
+            EffectRowTail::Unknown => unreachable!("partial resolution rejects unknown rows"),
+        }
+    }
+
+    fn resolve_partial(
+        &self,
+        substitutions: &EffectSubstitution,
+    ) -> Result<EffectRow, EffectRowError> {
+        let mut concrete = self.concrete.clone();
+        let mut tail = self.tail;
+        let mut visited = std::collections::BTreeSet::new();
+        loop {
+            match tail {
+                EffectRowTail::Closed => return Ok(EffectRow::closed(concrete)),
+                EffectRowTail::Unknown => return Err(EffectRowError::UnknownRow),
+                EffectRowTail::Variable(variable) => {
+                    let Some(bound) = substitutions.0.get(&variable) else {
+                        return Ok(EffectRow::open(concrete, variable));
+                    };
+                    if !visited.insert(variable) {
+                        return Err(EffectRowError::CyclicBinding {
+                            variable: variable.index(),
+                        });
+                    }
+                    concrete.union_with(&bound.concrete);
+                    tail = bound.tail;
+                }
+            }
+        }
+    }
+}
+
+impl EffectSubsetError {
+    fn from_row_error(error: EffectRowError) -> Self {
+        match error {
+            EffectRowError::UnknownRow => Self::UnknownRow,
+            EffectRowError::UnboundVariable { variable } => Self::UnresolvedActualTail { variable },
+            EffectRowError::ConflictingBinding {
+                variable,
+                existing,
+                requested,
+            } => Self::ConflictingBinding {
+                variable,
+                existing,
+                requested,
+            },
+            EffectRowError::CyclicBinding { variable } => Self::CyclicSubstitution { variable },
         }
     }
 }
@@ -329,27 +447,45 @@ impl EffectSubstitution {
         variable: EffectVar,
         effects: EffectSet,
     ) -> Result<(), EffectRowError> {
-        match self.0.get(&variable) {
-            Some(existing) if existing != &effects => Err(EffectRowError::ConflictingBinding {
-                variable: variable.index(),
-                existing: existing.clone(),
-                requested: effects,
-            }),
-            Some(_) => Ok(()),
-            None => {
-                self.0.insert(variable, effects);
-                Ok(())
-            }
-        }
+        self.bind_row(variable, &EffectRow::closed(effects))
     }
 
     pub(crate) fn close_fresh_inferred_tail(&mut self, variable: EffectVar) {
-        let previous = self.0.insert(variable, EffectSet::new());
+        let previous = self.0.insert(variable, EffectRow::closed(EffectSet::new()));
         debug_assert!(previous.is_none(), "fresh effect-row tail was reused");
     }
 
-    pub fn get(&self, variable: EffectVar) -> Option<&EffectSet> {
+    pub fn get(&self, variable: EffectVar) -> Option<&EffectRow> {
         self.0.get(&variable)
+    }
+
+    fn bind_row(
+        &mut self,
+        variable: EffectVar,
+        requested: &EffectRow,
+    ) -> Result<(), EffectRowError> {
+        let requested = requested.resolve_partial(self)?;
+        if requested.tail == EffectRowTail::Variable(variable) {
+            if requested.concrete.is_empty() {
+                return Ok(());
+            }
+            return Err(EffectRowError::CyclicBinding {
+                variable: variable.index(),
+            });
+        }
+        if let Some(existing) = self.0.get(&variable) {
+            let existing = existing.resolve_partial(self)?;
+            if existing == requested {
+                return Ok(());
+            }
+            return Err(EffectRowError::ConflictingBinding {
+                variable: variable.index(),
+                existing,
+                requested,
+            });
+        }
+        self.0.insert(variable, requested);
+        Ok(())
     }
 }
 
@@ -431,6 +567,143 @@ mod tests {
                 .expect("bound row resolves")
                 .to_labels(),
             vec!["fs.read", "log.write"]
+        );
+    }
+
+    #[test]
+    fn closed_subset_reports_every_sorted_residual_effect() {
+        let actual = EffectRow::closed(
+            EffectSet::from_labels(["net.open", "control.suspend", "log.write"])
+                .expect("valid actual row"),
+        );
+        let permitted =
+            EffectRow::closed(EffectSet::from_labels(["log.write"]).expect("valid permitted row"));
+
+        assert_eq!(
+            EffectRow::check_subset(&actual, &permitted, &mut EffectSubstitution::new()),
+            Err(EffectSubsetError::MissingEffects {
+                missing: EffectSet::from_labels(["control.suspend", "net.open"])
+                    .expect("valid missing row"),
+            })
+        );
+    }
+
+    #[test]
+    fn open_permitted_tail_absorbs_the_complete_residual_row() {
+        let permitted_tail = EffectVar::from_index(4);
+        let actual = EffectRow::closed(
+            EffectSet::from_labels(["control.suspend", "fs.read", "log.write"])
+                .expect("valid actual row"),
+        );
+        let permitted = EffectRow::open(
+            EffectSet::from_labels(["log.write"]).expect("valid permitted head"),
+            permitted_tail,
+        );
+        let mut substitution = EffectSubstitution::new();
+
+        EffectRow::check_subset(&actual, &permitted, &mut substitution)
+            .expect("open tail accepts residual effects");
+
+        assert_eq!(
+            substitution.get(permitted_tail),
+            Some(&EffectRow::closed(
+                EffectSet::from_labels(["control.suspend", "fs.read"]).expect("valid residual row")
+            ))
+        );
+    }
+
+    #[test]
+    fn open_permitted_tail_retains_an_unresolved_actual_tail() {
+        let actual_tail = EffectVar::from_index(2);
+        let permitted_tail = EffectVar::from_index(3);
+        let actual = EffectRow::open(
+            EffectSet::from_labels(["fs.read", "log.write"]).expect("valid actual head"),
+            actual_tail,
+        );
+        let permitted = EffectRow::open(
+            EffectSet::from_labels(["log.write"]).expect("valid permitted head"),
+            permitted_tail,
+        );
+        let mut substitution = EffectSubstitution::new();
+
+        EffectRow::check_subset(&actual, &permitted, &mut substitution)
+            .expect("permitted tail retains actual tail");
+
+        assert_eq!(
+            substitution.get(permitted_tail),
+            Some(&EffectRow::open(
+                EffectSet::from_labels(["fs.read"]).expect("valid residual head"),
+                actual_tail
+            ))
+        );
+    }
+
+    #[test]
+    fn prebound_open_tail_is_constrained_without_overwrite() {
+        let residual_tail = EffectVar::from_index(8);
+        let permitted_tail = EffectVar::from_index(9);
+        let mut substitution = EffectSubstitution::new();
+        substitution
+            .bind_row(
+                permitted_tail,
+                &EffectRow::open(
+                    EffectSet::from_labels(["fs.read"]).expect("valid existing head"),
+                    residual_tail,
+                ),
+            )
+            .expect("fresh permitted tail binds");
+        let actual = EffectRow::closed(
+            EffectSet::from_labels(["fs.read", "log.write"]).expect("valid actual row"),
+        );
+        let permitted = EffectRow::open(EffectSet::new(), permitted_tail);
+
+        EffectRow::check_subset(&actual, &permitted, &mut substitution)
+            .expect("residual tail receives only the remaining effect");
+
+        assert_eq!(
+            substitution.get(permitted_tail),
+            Some(&EffectRow::open(
+                EffectSet::from_labels(["fs.read"]).expect("valid retained head"),
+                residual_tail
+            ))
+        );
+        assert_eq!(
+            substitution.get(residual_tail),
+            Some(&EffectRow::closed(
+                EffectSet::from_labels(["log.write"]).expect("valid residual binding")
+            ))
+        );
+    }
+
+    #[test]
+    fn unresolved_actual_tail_fails_against_a_closed_row() {
+        let actual_tail = EffectVar::from_index(12);
+        let actual = EffectRow::open(EffectSet::new(), actual_tail);
+        let permitted = EffectRow::closed(EffectSet::new());
+
+        assert_eq!(
+            EffectRow::check_subset(&actual, &permitted, &mut EffectSubstitution::new()),
+            Err(EffectSubsetError::UnresolvedActualTail { variable: 12 })
+        );
+    }
+
+    #[test]
+    fn unknown_rows_fail_closed_during_subset_checking() {
+        assert_eq!(
+            EffectRow::check_subset(
+                &EffectRow::unknown(),
+                &EffectRow::closed(EffectSet::new()),
+                &mut EffectSubstitution::new()
+            ),
+            Err(EffectSubsetError::UnknownRow)
+        );
+        assert_eq!(
+            EffectRow::check_subset(
+                &EffectRow::closed(EffectSet::new()),
+                &EffectRow::unknown(),
+                &mut EffectSubstitution::new()
+            ),
+            Err(EffectSubsetError::UnknownRow)
         );
     }
 

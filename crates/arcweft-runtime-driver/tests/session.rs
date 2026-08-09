@@ -20,7 +20,10 @@ use arcweft_bundle::resource_codec::{
     ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewThemeResource,
     ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
 };
-use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
+use arcweft_bundle::{
+    ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleVirtualFile,
+    BundleVirtualFileSpace,
+};
 use arcweft_core::awbc::schema::{
     AwbcEntry, AwbcEntryId, AwbcEntryKind, AwbcEntryTarget, AwbcProgram, AwbcRoute, AwbcStringId,
 };
@@ -39,13 +42,7 @@ use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeExpr, RuntimePayload, RuntimeValue};
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
-use arcweft_id::PublicId;
-use arcweft_interaction_model::{
-    id::Identifier,
-    input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
-    payload::InteractionPayload,
-};
+use arcweft_id::{PublicId, TextKey};
 use arcweft_presentation::appearance::{
     ColorScheme, ContrastPreference, PresentationEnvironmentField, PresentationEnvironmentFieldSet,
     PresentationEnvironmentOverrides, PresentationEnvironmentValue, PresentationEnvironmentValues,
@@ -59,13 +56,8 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextControlValue, TextControlWriteBack, TextInputSessionId, TextRange,
     TextRevision,
 };
-use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
-use arcweft_runtime_driver::dialogue::{
-    BundlePresentationTransition, DialogueAdvanceRejection, DialogueEntryState,
-    DialogueStageAdvanceKind,
-};
+use arcweft_runtime_driver::dialogue::DialogueEntryState;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::{
@@ -73,23 +65,29 @@ use arcweft_runtime_driver::session::{
     BundleSession, BundleSessionError, BundleSessionOptions, BundleStepInput,
     BundleVirtualListMountError,
 };
-use arcweft_runtime_driver::session_save::{BundleSessionPendingBlocker, BundleSessionSaveError};
-use arcweft_runtime_driver::swap::SwapCompatibility;
+use arcweft_runtime_driver::session_save::BundleSessionSaveError;
+use arcweft_runtime_driver::swap::{GenerationId, ProgramGeneration, SwapCompatibility};
 use arcweft_runtime_driver::view_runtime::{
     BundleViewAxisSeedError, BundleViewAxisSeedUpdate, BundleViewAxisSeedUpdateOutcome,
     BundleViewTextValue,
 };
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::{
+    DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
+};
+use arcweft_view::ViewProgramId;
 use arcweft_view::program::{ViewStableKey, ViewVirtualAxis};
 use arcweft_view::virtualization::{ViewVirtualItem, ViewVirtualScrollTarget};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use arcweft_view::{
     ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedSource, ViewId, ViewValueProgram,
     ViewValueProgramId,
 };
 
-mod dialogue_restore;
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
+}
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
@@ -113,35 +111,31 @@ fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
 }
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    test_dialogue_revision_with_view_byte(0x5a)
-}
-
-fn test_dialogue_revision_with_view_byte(view_byte: u8) -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-driver-session-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
+fn dialogue_content(
+    line: &str,
+    source_label: &str,
+    nodes: Vec<RichTextNode>,
+) -> DialogueContentCatalog {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new(source_label).expect("source ID"),
+        SourceName::path(source_label),
+        "",
     )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-driver-session-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([view_byte; 32])
-            .expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
+    .expect("source document");
+    DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
+        line_id(line),
+        TextKey::try_new(line.replace("line.", "text.")).expect("text key"),
+        RichTextDocument::new(nodes),
+        Vec::new(),
+        ProductSourceRef::try_for_identity(source.identity()).expect("product source ref"),
+    )])
+    .expect("final dialogue content catalog")
 }
 
 fn dialogue_text(presentation: &BundlePresentationSnapshot) -> Option<&str> {
     latest_dialogue(presentation)
         .and_then(DialogueEntryState::current_stage)
-        .map(arcweft_render_text::LineDisplayStage::text)
+        .map(arcweft_text_model::LineDisplayStage::text)
 }
 
 fn latest_dialogue(presentation: &BundlePresentationSnapshot) -> Option<&DialogueEntryState> {
@@ -151,68 +145,12 @@ fn latest_dialogue(presentation: &BundlePresentationSnapshot) -> Option<&Dialogu
         .map(|(_, entry)| entry)
 }
 
-fn queue_current_dialogue_advance(session: &mut BundleSession) {
-    let target = session
-        .presentation()
-        .dialogue
-        .latest_active()
-        .and_then(|(dialogue_view, _)| dialogue_view.advance_target())
-        .expect("dialogue is waiting for advance");
-    session.queue_dialogue_advance(target);
-}
-
 fn fixture_bundle() -> ArcweftBundle {
     fixture_bundle_with("WebGPU dialogue", false, false)
 }
 
-fn paged_fixture_bundle() -> ArcweftBundle {
-    let mut bundle = fixture_bundle_with("unused", false, false);
-    let line = line_id("line.opening");
-    bundle.display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![LineDisplaySpec {
-            line,
-            callee: "alice".to_owned(),
-            speaker_label: None,
-            text_key: None,
-            view: arcweft_bundle::standard_view::dialogue_view_id(),
-            profile_style: None,
-            dialogue_revision: test_dialogue_revision(),
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![
-                RichTextNode::Text {
-                    text: "A".to_owned(),
-                },
-                RichTextNode::Control {
-                    control: arcweft_render_text::RichTextControl::Page,
-                },
-                RichTextNode::Text {
-                    text: "B".to_owned(),
-                },
-                RichTextNode::Control {
-                    control: arcweft_render_text::RichTextControl::LineWait,
-                },
-                RichTextNode::Text {
-                    text: "C".to_owned(),
-                },
-                RichTextNode::Control {
-                    control: arcweft_render_text::RichTextControl::Page,
-                },
-            ]),
-        }],
-    )
-    .expect("test display catalog is revision-consistent");
-    bundle
-}
-
 fn paged_inventory_fixture_bundle() -> ArcweftBundle {
-    paged_fixture_bundle()
+    fixture_await_replacement_bundle()
         .with_view_resources(
             Some(ViewProgramResource {
                 program_id: ViewProgramId::try_new("view.program.inventory").unwrap(),
@@ -281,9 +219,9 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
     )
     .unwrap()
     .with_entries(vec![main_cli_entry()]);
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
+    let dialogue_content = DialogueContentCatalog::new();
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let product_awbc = AwbcLowerer::new(&plan, &display, "view-runtime.arcw")
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "view-runtime.arcw")
         .lower()
         .unwrap()
         .program;
@@ -296,6 +234,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -306,7 +245,7 @@ fn executable_view_fixture_bundle() -> ArcweftBundle {
         },
         source_map("view-runtime.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan),
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc);
@@ -548,62 +487,6 @@ fn fixture_bundle_with(
     fixture_bundle_from_parts(display_text, extra_flow, changed_main_code, true)
 }
 
-fn fixture_bundle_with_dialogue_owner(owner: &ViewId, display_text: &str) -> ArcweftBundle {
-    let mut bundle = fixture_bundle_with(display_text, false, false);
-    bundle.display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![LineDisplaySpec {
-            line: line_id("line.opening"),
-            callee: "alice".to_owned(),
-            speaker_label: None,
-            text_key: None,
-            view: owner.clone(),
-            profile_style: None,
-            dialogue_revision: test_dialogue_revision(),
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![RichTextNode::Text {
-                text: display_text.to_owned(),
-            }]),
-        }],
-    )
-    .expect("test display catalog is revision-consistent");
-    bundle
-        .with_view_resources(
-            Some(ViewProgramResource {
-                program_id: ViewProgramId::try_new("view.program.dialogue-owner-swap")
-                    .expect("program ID"),
-                definitions: ["view.DialogueOld", "view.DialogueNew"]
-                    .into_iter()
-                    .map(|view| ViewDefinitionResource {
-                        public_id: ViewDefinitionRef::new(
-                            ViewId::try_new(view).expect("definition ID"),
-                        ),
-                        body: ViewInstructionSpan::new(0, 0),
-                        styles: Vec::new(),
-                        parameters: vec![ViewParameterResource {
-                            ordinal: 0,
-                            name: "dialogue".to_owned(),
-                            role: arcweft_bundle::resource_codec::view::ViewParameterRole::Dialogue,
-                            value_type: None,
-                            value_slot: None,
-                            default_program: None,
-                        }],
-                        state_schema_hash: 1,
-                    })
-                    .collect(),
-                ..ViewProgramResource::default()
-            }),
-            None,
-        )
-        .expect("dialogue owner View resources merge")
-}
-
 fn fixture_bundle_from_parts(
     display_text: &str,
     extra_flow: bool,
@@ -655,29 +538,13 @@ fn fixture_bundle_from_parts(
         .expect("runtime plan is valid")
         .with_entries(entries);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![LineDisplaySpec {
-            line,
-            callee: "alice".to_owned(),
-            speaker_label: None,
-            text_key: None,
-            view: arcweft_bundle::standard_view::dialogue_view_id(),
-            profile_style: None,
-            dialogue_revision: test_dialogue_revision(),
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![RichTextNode::Text {
-                text: display_text.to_owned(),
-            }]),
+    let dialogue_content = dialogue_content(
+        "line.opening",
+        "web-demo.arcw",
+        vec![RichTextNode::Text {
+            text: display_text.to_owned(),
         }],
-    )
-    .expect("test display catalog is revision-consistent");
+    );
     let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -687,6 +554,7 @@ fn fixture_bundle_from_parts(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -697,11 +565,11 @@ fn fixture_bundle_from_parts(
         },
         source_map("web-demo.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan.clone()),
-        display.clone(),
+        dialogue_content.clone(),
     )
     .expect("standard dialogue source joins source map");
     if include_product_awbc {
-        let product_awbc = AwbcLowerer::new(&plan, &display, "web-demo.arcw")
+        let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "web-demo.arcw")
             .lower()
             .expect("product AWBC lowers")
             .program;
@@ -743,8 +611,8 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         .expect("runtime plan is valid")
         .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
-    let product_awbc = AwbcLowerer::new(&plan, &display, "await-demo.arcw")
+    let dialogue_content = DialogueContentCatalog::new();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "await-demo.arcw")
         .lower()
         .expect("product AWBC lowers")
         .program;
@@ -757,6 +625,7 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -767,7 +636,7 @@ fn fixture_await_bundle(extra_flow: bool) -> ArcweftBundle {
         },
         source_map("await-demo.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan),
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
@@ -800,7 +669,7 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
     .expect("runtime plan is valid")
     .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
+    let dialogue_content = DialogueContentCatalog::new();
     let bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
@@ -810,6 +679,7 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -820,97 +690,10 @@ fn fixture_action_receive_bundle() -> ArcweftBundle {
         },
         source_map("action-receive.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan.clone()),
-        display.clone(),
+        dialogue_content.clone(),
     )
     .expect("standard dialogue source joins source map");
-    let product_awbc = AwbcLowerer::new(&plan, &display, "action-receive.arcw")
-        .lower()
-        .expect("product AWBC lowers")
-        .program;
-    bundle.with_product_awbc(product_awbc)
-}
-
-fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
-    let line = line_id("line.action_intro");
-    let plan = RuntimePlan::new(
-        vec![RuntimeFlow {
-            id: flow_id("flow.main"),
-            ops: vec![
-                FlowOp::Dialogue {
-                    line: line.clone(),
-                    task_group: 0,
-                },
-                FlowOp::HostCall {
-                    binding: Some(RuntimePattern::Ident("event".to_owned())),
-                    target: RuntimeHostCallTarget::new(
-                        "view.action.await",
-                        "view.action",
-                        "await",
-                        [RuntimeExpr::EntityRef("action.feedback.submit".to_owned())],
-                        RuntimeHostCallMode::Suspend,
-                        true,
-                    ),
-                },
-                FlowOp::ReturnExpr(RuntimeExpr::Field {
-                    target: Box::new(RuntimeExpr::Local("event".to_owned())),
-                    field: "value".to_owned(),
-                }),
-            ],
-        }],
-        vec![LineTaskGroup::default()],
-    )
-    .expect("runtime plan is valid")
-    .with_entries(vec![main_cli_entry()]);
-    let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![LineDisplaySpec {
-            line,
-            callee: "concierge".to_owned(),
-            speaker_label: None,
-            text_key: None,
-            view: arcweft_view::ViewId::try_new_engine_owned(
-                arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
-            )
-            .unwrap(),
-            profile_style: None,
-            dialogue_revision: test_dialogue_revision(),
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![RichTextNode::Text {
-                text: "Submit the form.".to_owned(),
-            }]),
-        }],
-    )
-    .expect("test display catalog is revision-consistent");
-    let bundle = ArcweftBundle::try_new(
-        BundleManifest {
-            profile_id: None,
-            profile_kind: None,
-            entry: Some("entry.main".to_owned()),
-            adapter: None,
-            adapter_manifest_ids: Vec::new(),
-            required_host_calls: Vec::new(),
-            runtime: BundleRuntimeSummary {
-                entry_flow: Some("flow.main".to_owned()),
-                flows: stats.flows,
-                bytecode_instructions: stats.instructions,
-                line_task_groups: stats.line_task_groups,
-                stream_plans: 0,
-                source_plans: 0,
-            },
-        },
-        source_map("action-receive-after-dialogue.arcw", ""),
-        BytecodeProgram::from_runtime_plan(plan.clone()),
-        display.clone(),
-    )
-    .expect("standard dialogue source joins source map");
-    let product_awbc = AwbcLowerer::new(&plan, &display, "action-receive-after-dialogue.arcw")
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "action-receive.arcw")
         .lower()
         .expect("product AWBC lowers")
         .program;
@@ -919,35 +702,6 @@ fn fixture_action_receive_after_dialogue_bundle() -> ArcweftBundle {
 
 fn fixture_action_receive_bundle_with_submit_input() -> ArcweftBundle {
     fixture_action_receive_bundle().with_view_input(ViewInputResource {
-        options: vec![ViewInputOptions {
-            public_id: "input.feedback".to_owned(),
-            view: Some("view.FeedbackForm".to_owned()),
-            containing_scroll_region: None,
-            kind: ViewInputKind::TextField,
-            value_text_source: "text.value.input.feedback".to_owned(),
-            placeholder_text_source: None,
-            purpose: ViewInputPurpose::Text,
-            autocorrect: TextAssistPolicy::PlatformDefault,
-            spellcheck: TextAssistPolicy::PlatformDefault,
-            capitalization: TextCapitalization::None,
-            enter_key: EnterKeyHint::Send,
-            multiline: false,
-            selection_policy: ViewTextSelectionPolicy::Enabled,
-            shortcut_policy: ViewTextShortcutPolicy::Enabled,
-            tab_policy: ViewTextTabPolicy::FocusNavigation,
-            vertical_navigation_policy: ViewTextVerticalNavigationPolicy::LogicalLine,
-            secure_policy: ViewSecureInputPolicy::Plain,
-            composition_on_blur: CompositionOnBlurPolicy::Commit,
-            submit_handler: Some("action.feedback.submit".to_owned()),
-            change_handler: Some("input.feedback".to_owned()),
-            adapter_requirements: Vec::new(),
-        }],
-        adapter_requirements: Vec::new(),
-    })
-}
-
-fn fixture_action_receive_after_dialogue_bundle_with_submit_input() -> ArcweftBundle {
-    fixture_action_receive_after_dialogue_bundle().with_view_input(ViewInputResource {
         options: vec![ViewInputOptions {
             public_id: "input.feedback".to_owned(),
             view: Some("view.FeedbackForm".to_owned()),
@@ -986,8 +740,8 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
     .expect("runtime plan is valid")
     .with_entries(vec![main_cli_entry()]);
     let stats = BytecodeProgram::from_runtime_plan(plan.clone()).stats();
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
-    let product_awbc = AwbcLowerer::new(&plan, &display, "await-replacement.arcw")
+    let dialogue_content = DialogueContentCatalog::new();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "await-replacement.arcw")
         .lower()
         .expect("product AWBC lowers")
         .program;
@@ -1000,6 +754,7 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -1010,10 +765,18 @@ fn fixture_await_replacement_bundle() -> ArcweftBundle {
         },
         source_map("await-replacement.arcw", ""),
         BytecodeProgram::from_runtime_plan(plan),
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
+}
+
+fn returning_content_bundle(content: &[u8]) -> ArcweftBundle {
+    fixture_await_replacement_bundle().with_virtual_files([BundleVirtualFile {
+        space: BundleVirtualFileSpace::Asset,
+        path: "content.bin".to_owned(),
+        bytes: content.to_vec(),
+    }])
 }
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {
@@ -1377,143 +1140,15 @@ fn session_requires_explicit_clock_and_exposes_presentation() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(dialogue_text(&first.presentation), Some("WebGPU dialogue"));
-
-    queue_current_dialogue_advance(&mut session);
-    let choice_step = session.step_with_clock(
-        RuntimeClockStep::from_millis(2, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert_eq!(choice_step.presentation.choices.len(), 1);
-
-    let action = Action::new(
-        ActionTarget::Runtime,
-        PublicId::try_new("action.choice.select").expect("action id"),
-    )
-    .with_payload("choice.opening.next");
-    session
-        .queue_semantic_action(&action)
-        .expect("choice action is accepted");
-    let selected = session.step_with_clock(
-        RuntimeClockStep::from_millis(3, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert!(!selected.finished);
-    assert!(selected.presentation.choices.is_empty());
-
-    let second = session.step_with_clock(
-        RuntimeClockStep::from_millis(4, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert!(second.finished);
-    assert!(second.presentation.choices.is_empty());
-}
-
-#[test]
-fn dialogue_advance_consumes_page_and_line_wait_stages_before_runtime_line() {
-    let bundle = paged_fixture_bundle();
-    let mut session =
-        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
-    let first = session.step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    let first_target = first
-        .presentation
-        .dialogue
-        .latest_active()
-        .and_then(|(dialogue_view, _)| dialogue_view.advance_target())
-        .expect("advance target");
-    assert_eq!(dialogue_text(&first.presentation), Some("A"));
-
-    session.queue_dialogue_advance(first_target);
-    let second = session.step_with_clock(
-        RuntimeClockStep::from_millis(2, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert_eq!(dialogue_text(&second.presentation), Some("B"));
-    assert!(second.presentation.choices.is_empty());
-    assert!(matches!(
-        second.presentation_transitions.as_slice(),
-        [BundlePresentationTransition::StageAdvanced {
-            advance: DialogueStageAdvanceKind::NextPage,
-            ..
-        }]
-    ));
-
-    let save = session
-        .export_session_save_bytes()
-        .expect("page-stage session save exports");
-    let mut restored =
-        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session restarts");
-    restored
-        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
-        .expect("page-stage session save restores");
-    assert_eq!(dialogue_text(restored.presentation()), Some("B"));
-    session = restored;
-
-    session.queue_dialogue_advance(first_target);
-    let stale = session.step_with_clock(
-        RuntimeClockStep::from_millis(3, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert_eq!(dialogue_text(&stale.presentation), Some("B"));
-    assert!(matches!(
-        stale.presentation_transitions.as_slice(),
-        [BundlePresentationTransition::DialogueAdvanceRejected {
-            reason: DialogueAdvanceRejection::StaleRevision,
-            ..
-        }]
-    ));
-
-    queue_current_dialogue_advance(&mut session);
-    let third = session.step_with_clock(
-        RuntimeClockStep::from_millis(4, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert_eq!(dialogue_text(&third.presentation), Some("BC"));
-    assert!(third.presentation.choices.is_empty());
-    assert!(matches!(
-        third.presentation_transitions.as_slice(),
-        [BundlePresentationTransition::StageAdvanced {
-            advance: DialogueStageAdvanceKind::ContinuePage,
-            ..
-        }]
-    ));
-
-    let final_target = session
-        .presentation()
-        .dialogue
-        .latest_active()
-        .and_then(|(dialogue_view, _)| dialogue_view.advance_target())
-        .expect("final stage is actionable");
-    session.queue_dialogue_advance(final_target);
-    session.queue_dialogue_advance(final_target);
-    let choice = session.step_with_clock(
-        RuntimeClockStep::from_millis(5, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert_eq!(dialogue_text(&choice.presentation), Some("BC"));
+    assert_eq!(dialogue_text(&first.presentation), None);
     assert!(
-        !choice
-            .presentation
-            .dialogue
-            .latest_active()
-            .map(|(_, entry)| entry)
-            .expect("retained dialogue")
-            .is_waiting_for_advance()
+        first
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.contains("context is unavailable")),
+        "session without the final CharacterDialogue producer must fail closed: {first:#?}"
     );
-    assert_eq!(choice.presentation.choices.len(), 1);
-    assert!(matches!(
-        choice.presentation_transitions.as_slice(),
-        [
-            BundlePresentationTransition::RuntimeLineAdvanceQueued { .. },
-            BundlePresentationTransition::DialogueAdvanceRejected {
-                reason: DialogueAdvanceRejection::StaleRevision,
-                ..
-            }
-        ]
-    ));
+    assert!(first.presentation.choices.is_empty());
 }
 
 #[test]
@@ -1577,7 +1212,7 @@ fn session_save_restores_complete_per_mount_virtual_range_state() {
         .snapshot_session()
         .expect("snapshot before hot swap");
     assert!(matches!(
-        restored.hot_swap_bundle(&paged_fixture_bundle()),
+        restored.hot_swap_bundle(&fixture_await_replacement_bundle()),
         Err(BundleHotSwapError::ViewVirtualization { .. })
     ));
     assert_eq!(
@@ -1982,102 +1617,7 @@ fn session_executes_mount_scoped_view_branch_and_restores_it() {
 }
 
 #[test]
-fn raw_dialogue_events_cannot_bypass_the_presentation_stage_target() {
-    let bundle = paged_fixture_bundle();
-    let mut session =
-        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
-    let first = session.step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    let line = first
-        .presentation
-        .dialogue
-        .latest_active()
-        .map(|(_, entry)| entry)
-        .expect("dialogue")
-        .frame()
-        .line
-        .public_label()
-        .as_str()
-        .to_owned();
-    let raw_event = |target: &str, name: &str| {
-        RoutedInputEvent::new(
-            InputEpoch::default(),
-            InputSequence::default(),
-            InteractionTarget::new(target).expect("test target"),
-            InputEventKind::Custom {
-                name: Identifier::new(name).expect("test input name"),
-            },
-        )
-        .with_payload(InteractionPayload::Text(line.clone()))
-    };
-
-    let rejected = session.step_with_clock(
-        RuntimeClockStep::from_millis(2, 16).expect("clock"),
-        BundleStepInput {
-            input_events: vec![
-                raw_event("dialogue-widget", "dialogue.advance"),
-                raw_event("runtime", "advance"),
-            ],
-            ..BundleStepInput::default()
-        },
-    );
-
-    assert_eq!(dialogue_text(&rejected.presentation), Some("A"));
-    assert!(
-        rejected
-            .presentation
-            .dialogue
-            .latest_active()
-            .map(|(_, entry)| entry)
-            .expect("dialogue remains active")
-            .is_waiting_for_advance()
-    );
-    assert_eq!(rejected.presentation_transitions.len(), 2);
-    assert!(rejected.presentation_transitions.iter().all(|transition| {
-        matches!(
-            transition,
-            BundlePresentationTransition::DialogueAdvanceRejected {
-                target: None,
-                reason: DialogueAdvanceRejection::UntargetedRuntimeInput,
-            }
-        )
-    }));
-}
-
-#[test]
-fn malformed_dialogue_frame_restore_is_rejected_without_mutating_the_session() {
-    let bundle = paged_fixture_bundle();
-    let mut session =
-        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
-    session.step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    let before = session.snapshot_session().expect("live snapshot exports");
-    let mut value = serde_json::to_value(&before).expect("snapshot encodes as JSON value");
-    let controls = value
-        .pointer_mut("/presentation/dialogue/presentations/0/entries/0/frame/display_map/controls")
-        .and_then(serde_json::Value::as_array_mut)
-        .expect("dialogue controls are present");
-    controls[1]["text_offset"] = serde_json::json!(0);
-    let invalid = serde_json::from_value(value).expect("structurally typed snapshot decodes");
-
-    let error = session
-        .restore_session_snapshot(invalid)
-        .expect_err("regressing dialogue marker is rejected");
-    assert!(matches!(error, BundleSessionSaveError::Presentation { .. }));
-    assert_eq!(
-        session
-            .snapshot_session()
-            .expect("live session remains valid"),
-        before
-    );
-}
-
-#[test]
-fn session_save_binds_the_exact_dialogue_profile_revision() {
+fn session_save_binds_the_exact_dialogue_content_digest() {
     let bundle = fixture_bundle();
     let session =
         BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
@@ -2086,14 +1626,16 @@ fn session_save_binds_the_exact_dialogue_profile_revision() {
         .snapshot_session()
         .expect("session snapshot exports");
 
+    let generation = ProgramGeneration::from_bundle(GenerationId(0), &bundle)
+        .expect("bundle generation fingerprints final dialogue content");
     assert_eq!(
-        &snapshot.generation.dialogue_revision,
-        bundle.display.dialogue_revision()
+        snapshot.generation.dialogue_content,
+        generation.dialogue_content
     );
 }
 
 #[test]
-fn dialogue_profile_revision_mismatch_is_rejected_without_mutating_the_session() {
+fn dialogue_content_mismatch_is_rejected_without_mutating_the_session() {
     let bundle = fixture_bundle();
     let mut session =
         BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
@@ -2101,53 +1643,16 @@ fn dialogue_profile_revision_mismatch_is_rejected_without_mutating_the_session()
         .snapshot_session()
         .expect("session snapshot exports");
     let mut tampered = before.clone();
-    tampered.generation.dialogue_revision = test_dialogue_revision_with_view_byte(0xa5);
+    tampered.generation.dialogue_content = BundleDigest::of(b"other-dialogue-content");
 
     let error = session
         .restore_session_snapshot(tampered)
-        .expect_err("a save from another admitted dialogue profile is rejected");
+        .expect_err("a save from another dialogue content generation is rejected");
 
     assert!(matches!(
         error,
         BundleSessionSaveError::GenerationMismatch {
-            field: "dialogue_revision",
-            ..
-        }
-    ));
-    assert_eq!(
-        session
-            .snapshot_session()
-            .expect("live session remains valid"),
-        before
-    );
-}
-
-#[test]
-fn presentation_dialogue_revision_mismatch_is_rejected_atomically() {
-    let bundle = paged_fixture_bundle();
-    let mut session =
-        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
-    session.step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    let before = session.snapshot_session().expect("live snapshot exports");
-    let mut value = serde_json::to_value(&before).expect("snapshot encodes as JSON value");
-    *value
-        .pointer_mut("/presentation/dialogue/presentations/0/entries/0/frame/dialogue_revision")
-        .expect("dialogue frame revision is present") =
-        serde_json::to_value(test_dialogue_revision_with_view_byte(0xa5))
-            .expect("revision encodes as JSON value");
-    let tampered = serde_json::from_value(value).expect("typed snapshot decodes");
-
-    let error = session
-        .restore_session_snapshot(tampered)
-        .expect_err("a frame from another admitted dialogue profile is rejected");
-
-    assert!(matches!(
-        error,
-        BundleSessionSaveError::GenerationMismatch {
-            field: "presentation.dialogue_revision",
+            field: "dialogue_content",
             ..
         }
     ));
@@ -2291,49 +1796,6 @@ fn session_receive_action_host_call_resumes_with_event_value() {
 }
 
 #[test]
-fn session_receive_action_reached_by_dialogue_advance_uses_same_step_action() {
-    let bundle = fixture_action_receive_after_dialogue_bundle();
-    let mut session =
-        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
-    let dialogue = session.step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert_eq!(
-        dialogue_text(&dialogue.presentation),
-        Some("Submit the form.")
-    );
-
-    queue_current_dialogue_advance(&mut session);
-    let action = Action::new(
-        ActionTarget::Runtime,
-        PublicId::try_new("action.feedback.submit").expect("action id"),
-    )
-    .with_payload("Ada");
-    session
-        .queue_semantic_action(&action)
-        .expect("generic semantic action is accepted");
-    let reached_receive = session.step_with_clock(
-        RuntimeClockStep::from_millis(2, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert!(!reached_receive.finished);
-
-    let resumed = session.step_with_clock(
-        RuntimeClockStep::from_millis(3, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-
-    assert!(resumed.finished);
-    assert!(resumed.flow_events.iter().any(|event| {
-        matches!(
-            event,
-            FlowEvent::Return { value } if value == "Ada"
-        )
-    }));
-}
-
-#[test]
 fn session_text_control_submit_handler_resumes_receive_action() {
     let bundle = fixture_action_receive_bundle_with_submit_input();
     let submit_session = bundle
@@ -2377,59 +1839,6 @@ fn session_text_control_submit_handler_resumes_receive_action() {
 }
 
 #[test]
-fn session_receive_action_reached_by_dialogue_advance_uses_same_step_text_submit() {
-    let bundle = fixture_action_receive_after_dialogue_bundle_with_submit_input();
-    let submit_session = bundle
-        .view_input
-        .as_ref()
-        .expect("fixture has input resource")
-        .options[0]
-        .runtime_text_session();
-    let mut session =
-        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
-    let dialogue = session.step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert_eq!(
-        dialogue_text(&dialogue.presentation),
-        Some("Submit the form.")
-    );
-
-    let submit = TextControlWriteBack::submit(
-        PresentationInteractionTarget::new(
-            PublicId::try_new("input.feedback").expect("valid target"),
-        ),
-        TextInputSessionId(submit_session),
-        TextControlValue::plain("Ada"),
-        TextRange::new(TextByteOffset(3), TextByteOffset(3)),
-        TextRevision(1),
-    );
-    queue_current_dialogue_advance(&mut session);
-    session
-        .queue_text_control_write_back(&submit)
-        .expect("submit writeback is accepted");
-    let reached_receive = session.step_with_clock(
-        RuntimeClockStep::from_millis(2, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert!(!reached_receive.finished);
-
-    let resumed = session.step_with_clock(
-        RuntimeClockStep::from_millis(3, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-
-    assert!(resumed.finished);
-    assert!(resumed.flow_events.iter().any(|event| {
-        matches!(
-            event,
-            FlowEvent::Return { value } if value == "Ada"
-        )
-    }));
-}
-
-#[test]
 fn session_rejects_unverified_bytecode_before_construction() {
     let mut bundle = structured_vm_fixture_bundle();
     bundle.bytecode.program.abi_version = BYTECODE_ABI_VERSION + 1;
@@ -2458,7 +1867,7 @@ fn session_rejects_missing_exact_entry_selection_before_construction() {
 }
 
 #[test]
-fn hot_swap_content_only_updates_future_presentation_without_rebuilding_code() {
+fn hot_swap_dialogue_content_change_requires_presentation_reset() {
     let old_bundle = fixture_bundle_with("Old text", false, false);
     let new_bundle = fixture_bundle_with("New text", false, false);
     let mut session =
@@ -2467,57 +1876,26 @@ fn hot_swap_content_only_updates_future_presentation_without_rebuilding_code() {
 
     let report = session
         .hot_swap_bundle(&new_bundle)
-        .expect("content-only swap applies");
+        .expect("dialogue content swap applies at a quiescent boundary");
 
-    assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
+    assert_eq!(report.compatibility, SwapCompatibility::CodeCompatible);
     assert_ne!(session.active_generation().id, old_generation);
     let step = session.step_with_clock(
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(dialogue_text(&step.presentation), Some("New text"));
-}
-
-#[test]
-fn save_blocks_while_a_transient_dialogue_view_owner_is_active() {
-    let old_owner = ViewId::try_new("view.DialogueOld").expect("old View ID");
-    let new_owner = ViewId::try_new("view.DialogueNew").expect("new View ID");
-    let old_bundle = fixture_bundle_with_dialogue_owner(&old_owner, "Old text");
-    let new_bundle = fixture_bundle_with_dialogue_owner(&new_owner, "New text");
-    let mut session =
-        BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
-    let initial = session.step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert_eq!(dialogue_text(&initial.presentation), Some("Old text"));
-
-    let report = session
-        .hot_swap_bundle(&new_bundle)
-        .expect("content-only swap keeps the active old dialogue occurrence");
-    assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
-    assert_eq!(
-        session.snapshot_session(),
-        Err(BundleSessionSaveError::NonQuiescent {
-            blockers: vec![BundleSessionPendingBlocker::TransientDialogueViewOwners {
-                views: vec![old_owner.clone()],
-            },],
-        })
-    );
-    assert_eq!(
-        session.export_session_save_bytes(),
-        Err(BundleSessionSaveError::NonQuiescent {
-            blockers: vec![BundleSessionPendingBlocker::TransientDialogueViewOwners {
-                views: vec![old_owner],
-            },],
-        })
+    assert_eq!(dialogue_text(&step.presentation), None);
+    assert!(
+        step.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.contains("context is unavailable"))
     );
 }
 
 #[test]
 fn generation_pin_retains_old_bundle_generation_until_handle_drops() {
-    let old_bundle = fixture_bundle_with("Old text", false, false);
-    let new_bundle = fixture_bundle_with("New text", false, false);
+    let old_bundle = returning_content_bundle(b"old-content");
+    let new_bundle = returning_content_bundle(b"new-content");
     let mut session =
         BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
     let old_generation = session.active_generation().id;
@@ -2537,22 +1915,8 @@ fn generation_pin_retains_old_bundle_generation_until_handle_drops() {
 
     assert_eq!(session.retired_generation_count(), 1);
 
-    let _dialogue = session.step_with_clock(
-        RuntimeClockStep::from_millis(1, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    queue_current_dialogue_advance(&mut session);
-    let _choice = session.step_with_clock(
-        RuntimeClockStep::from_millis(2, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    session.queue_choice_selection("choice.opening.next");
-    let _selected = session.step_with_clock(
-        RuntimeClockStep::from_millis(3, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
     let finished = session.step_with_clock(
-        RuntimeClockStep::from_millis(4, 16).expect("clock"),
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
 
@@ -2562,8 +1926,8 @@ fn generation_pin_retains_old_bundle_generation_until_handle_drops() {
 
 #[test]
 fn active_fiber_pin_retains_old_generation_until_fiber_finishes() {
-    let old_bundle = fixture_bundle_with("Old text", false, false);
-    let new_bundle = fixture_bundle_with("New text", false, false);
+    let old_bundle = returning_content_bundle(b"old-content");
+    let new_bundle = returning_content_bundle(b"new-content");
     let mut session =
         BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
     let old_generation = session.active_generation().id;
@@ -2576,35 +1940,10 @@ fn active_fiber_pin_retains_old_generation_until_fiber_finishes() {
     assert_ne!(session.active_generation().id, old_generation);
     assert_eq!(session.retired_generation_count(), 1);
 
-    let blocked = session.step_with_clock(
+    let finished = session.step_with_clock(
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert!(!blocked.finished);
-    assert_eq!(session.retired_generation_count(), 1);
-
-    queue_current_dialogue_advance(&mut session);
-    let choice = session.step_with_clock(
-        RuntimeClockStep::from_millis(2, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    assert!(!choice.finished);
-    assert_eq!(session.retired_generation_count(), 1);
-
-    session.queue_choice_selection("choice.opening.next");
-    let mut finished = session.step_with_clock(
-        RuntimeClockStep::from_millis(3, 16).expect("clock"),
-        BundleStepInput::default(),
-    );
-    for tick in 3..=5 {
-        if finished.finished {
-            break;
-        }
-        finished = session.step_with_clock(
-            RuntimeClockStep::from_millis(tick + 1, 16).expect("clock"),
-            BundleStepInput::default(),
-        );
-    }
 
     assert!(finished.finished);
     assert_eq!(session.retired_generation_count(), 0);
@@ -2667,7 +2006,12 @@ fn hot_swap_code_compatible_bundle_replaces_runtime_at_quiescent_boundary() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(dialogue_text(&step.presentation), Some("WebGPU dialogue"));
+    assert_eq!(dialogue_text(&step.presentation), None);
+    assert!(
+        step.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.contains("context is unavailable"))
+    );
 }
 
 #[test]
@@ -3137,7 +2481,7 @@ fn hot_swap_patch_bytes_applies_manifest_only_target() {
 }
 
 #[test]
-fn hot_swap_patch_bytes_materializes_target_and_applies_content_only_swap() {
+fn hot_swap_patch_bytes_materializes_dialogue_content_with_presentation_reset() {
     let old_bundle = fixture_bundle_with("Old text", false, false);
     let new_bundle = fixture_bundle_with("New text", false, false);
     let old_bytes = awfb_bytes(&old_bundle);
@@ -3153,7 +2497,7 @@ fn hot_swap_patch_bytes_materializes_target_and_applies_content_only_swap() {
         .hot_swap_patch_bytes(&old_bytes, &patch_bytes)
         .expect("patch applies");
 
-    assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
+    assert_eq!(report.compatibility, SwapCompatibility::CodeCompatible);
     assert_eq!(
         session.active_container_content_root(),
         Some(new_view.content_root())
@@ -3162,7 +2506,12 @@ fn hot_swap_patch_bytes_materializes_target_and_applies_content_only_swap() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(dialogue_text(&step.presentation), Some("New text"));
+    assert_eq!(dialogue_text(&step.presentation), None);
+    assert!(
+        step.diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.contains("context is unavailable"))
+    );
 }
 
 #[test]

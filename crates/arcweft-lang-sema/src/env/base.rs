@@ -4,6 +4,7 @@ use super::{
     enums::{EnumVariantPayload, normalize_enum_variant_payload},
     nominal::{AcceptedNominalCatalog, AcceptedNominalOrigin, standard_exact_record},
 };
+use crate::callable::{CallableName, CallablePath};
 use crate::dialogue_view::{
     DIALOGUE_ACTION_TYPE, DIALOGUE_CONTENT_TYPE, DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE,
     DIALOGUE_STAGE_TYPE, DialogueViewModelRegistry, DialogueViewProjection,
@@ -15,23 +16,6 @@ use arcweft_data::DataFormat;
 use arcweft_lang_syntax::types::FnParamKind;
 use std::collections::{HashMap, HashSet};
 use thiserror::Error;
-
-/// Agent debug path family used to type `state(...)` and `observation(...)`
-/// probes from a project semantic index.
-#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
-pub enum DebugPathKind {
-    State,
-    Observation,
-}
-
-/// Missing-field policy for an environment-owned record constructor.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum NominalRecordLiteralPolicy {
-    /// Every declared field must be authored in the literal.
-    Complete,
-    /// Omitted fields use the nominal record's declared runtime defaults.
-    DefaultMissing,
-}
 
 /// Function or method signature tracked by the semantic environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -78,26 +62,54 @@ pub enum FunctionParamSelectorSegment {
     VariantPayload(String),
 }
 
-/// Method signature tracked by the lightweight semantic environment.
+/// Typed standard-environment free-callable input retained until accepted-world publication.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct MethodSignature {
+pub(crate) struct StandardEnvironmentFunction {
+    pub(crate) path: CallablePath,
+    pub(crate) signature: FunctionSignature,
+    pub(crate) effects: Vec<EffectCapability>,
+}
+
+/// Typed standard-environment method input retained until accepted-world publication.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct StandardEnvironmentMethod {
+    pub(crate) receiver: TypeKind,
+    pub(crate) member: CallableName,
     pub(crate) signature: FunctionSignature,
 }
 
-/// Agent-visible semantic action attached to one project entity.
+/// One source-ordered case owned by a closed base-environment enum schema.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AgentActionEnvSignature {
-    action: String,
-    params: Vec<AgentActionEnvParam>,
-    return_type: TypeKind,
+pub(crate) struct EnvironmentEnumVariant {
+    name: String,
+    payload: EnumVariantPayload,
 }
 
-/// Named payload parameter for an Agent action visible to the checker.
+impl EnvironmentEnumVariant {
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) const fn payload(&self) -> &EnumVariantPayload {
+        &self.payload
+    }
+}
+
+/// Sole ordered owner for one closed enum supplied by the base environment.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AgentActionEnvParam {
-    name: String,
-    ty: TypeKind,
-    has_default: bool,
+pub(crate) struct EnvironmentEnumSchema {
+    owner: EnvironmentBindingId,
+    variants: Vec<EnvironmentEnumVariant>,
+}
+
+impl EnvironmentEnumSchema {
+    pub(crate) const fn owner(&self) -> &EnvironmentBindingId {
+        &self.owner
+    }
+
+    pub(crate) fn variants(&self) -> &[EnvironmentEnumVariant] {
+        &self.variants
+    }
 }
 
 /// Small, explicit environment used to validate that HIR can feed type checking.
@@ -105,20 +117,12 @@ pub struct AgentActionEnvParam {
 pub struct TypeCheckEnv {
     pub(crate) nominal_catalog: AcceptedNominalCatalog,
     pub(crate) symbols: HashMap<String, TypeKind>,
-    function_namespaces: HashSet<String>,
-    pub(crate) enum_variants: HashMap<TypeKind, HashSet<String>>,
-    pub(crate) enum_variant_payloads: HashMap<TypeKind, HashMap<String, EnumVariantPayload>>,
-    pub(crate) functions: HashMap<String, TypeKind>,
-    pub(crate) function_signatures: HashMap<String, FunctionSignature>,
-    pub(crate) function_effects: HashMap<String, Vec<EffectCapability>>,
-    pub(crate) methods: HashMap<(TypeKind, String), MethodSignature>,
-    pub(crate) indexes: HashMap<TypeKind, TypeKind>,
-    pub(crate) agent_actions: HashMap<String, Vec<AgentActionEnvSignature>>,
-    pub(crate) debug_paths: HashMap<(DebugPathKind, String), TypeKind>,
+    closed_enums: HashMap<TypeKind, EnvironmentEnumSchema>,
+    pub(crate) standard_functions: Vec<StandardEnvironmentFunction>,
+    pub(crate) standard_methods: Vec<StandardEnvironmentMethod>,
     pub(crate) capabilities: HashSet<EffectCapability>,
     pub(crate) available_effects: Option<HashSet<EffectCapability>>,
     pub(crate) nominal_records: HashMap<String, HashMap<String, TypeKind>>,
-    nominal_record_literal_policies: HashMap<String, NominalRecordLiteralPolicy>,
     pub(crate) dialogue_view_models: DialogueViewModelRegistry,
 }
 
@@ -127,6 +131,27 @@ pub struct TypeCheckEnv {
 pub enum TypeCheckEnvBuildError {
     #[error("character nominal inventories are owned by CharacterRegistrar: {nominal:?}")]
     ReservedCharacterNominal { nominal: CharacterNominalType },
+    #[error(
+        "base-environment enum owner {owner} is already assigned to {existing:?}, not {requested:?}"
+    )]
+    ConflictingEnumOwner {
+        owner: EnvironmentBindingId,
+        existing: Box<TypeKind>,
+        requested: Box<TypeKind>,
+    },
+    #[error(
+        "base-environment enum type {ty:?} is already assigned to owner {existing}, not {requested}"
+    )]
+    ConflictingEnumTypeOwner {
+        ty: Box<TypeKind>,
+        existing: EnvironmentBindingId,
+        requested: EnvironmentBindingId,
+    },
+    #[error("base-environment enum owner {owner} contains duplicate case {variant}")]
+    DuplicateEnumVariant {
+        owner: EnvironmentBindingId,
+        variant: String,
+    },
 }
 
 impl FunctionSignature {
@@ -178,22 +203,6 @@ impl FunctionSignature {
     /// Return type produced by the callable.
     pub const fn return_type(&self) -> &TypeKind {
         &self.return_type
-    }
-
-    /// Returns the canonical semantic signature label used in diagnostics.
-    pub(crate) fn source_label(&self) -> String {
-        let params = self
-            .params()
-            .iter()
-            .map(|param| {
-                param.name().map_or_else(
-                    || param.ty().source_label(),
-                    |name| format!("{name}: {}", param.ty().source_label()),
-                )
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        format!("fn({params}) -> {}", self.return_type().source_label())
     }
 
     /// Return type produced after every declared parameter group has been
@@ -261,15 +270,6 @@ impl FunctionSignature {
                 invocation_effects,
             )
         })
-    }
-
-    pub(crate) fn with_body_effects(mut self, effects: &EffectRow) -> Self {
-        self.return_type = curried_return_type_with_body_effects(
-            self.return_type,
-            self.remaining_call_groups,
-            effects,
-        );
-        self
     }
 }
 
@@ -403,65 +403,6 @@ impl FunctionParamHigherOrderBinding {
     }
 }
 
-impl AgentActionEnvSignature {
-    /// Creates a semantic action signature for one project entity.
-    pub fn new(
-        action: impl Into<String>,
-        params: impl IntoIterator<Item = AgentActionEnvParam>,
-        return_type: TypeKind,
-    ) -> Self {
-        Self {
-            action: action.into(),
-            params: params
-                .into_iter()
-                .map(normalize_agent_action_param)
-                .collect(),
-            return_type: normalize_type_kind(return_type),
-        }
-    }
-
-    /// Canonical action name such as `advance` or `dialogue.skip`.
-    pub fn action(&self) -> &str {
-        &self.action
-    }
-
-    /// Named payload parameters accepted by the action contract.
-    pub fn params(&self) -> &[AgentActionEnvParam] {
-        &self.params
-    }
-
-    /// Type returned by this action.
-    pub const fn return_type(&self) -> &TypeKind {
-        &self.return_type
-    }
-}
-
-impl AgentActionEnvParam {
-    /// Creates a checker-visible Agent action payload parameter.
-    pub fn new(name: impl Into<String>, ty: TypeKind, has_default: bool) -> Self {
-        Self {
-            name: name.into(),
-            ty: normalize_type_kind(ty),
-            has_default,
-        }
-    }
-
-    /// Source-visible payload key.
-    pub fn name(&self) -> &str {
-        &self.name
-    }
-
-    /// Expected payload value type.
-    pub const fn ty(&self) -> &TypeKind {
-        &self.ty
-    }
-
-    /// Whether this payload key can be omitted.
-    pub const fn has_default(&self) -> bool {
-        self.has_default
-    }
-}
-
 impl TypeCheckEnv {
     /// Creates the core source environment with always-available runtime callables.
     pub fn new() -> Self {
@@ -480,23 +421,16 @@ impl TypeCheckEnv {
             .with_standard_presentation_nominals()
             .with_standard_dialogue_view_types()
             .with_standard_presentation_lifetimes()
-            .with_function("fmt", TypeKind::DisplayText)
-            .with_function_signature(
-                "SpeakerPreset.new",
-                FunctionSignature::new(
-                    TypeKind::SpeakerPreset(crate::types::EntityKind::Character),
-                    [FunctionParam::required(
-                        "character",
-                        TypeKind::entity_ref(crate::types::EntityKind::Character),
-                    )],
-                ),
+            .with_standard_function(
+                ["fmt"],
+                FunctionSignature::return_only(TypeKind::DisplayText),
             )
-            .with_function_namespace("data", TypeKind::Named("DataNamespace".to_owned()))
-            .with_function_namespace("content", TypeKind::Named("ContentNamespace".to_owned()))
+            .with_symbol("data", TypeKind::Named("DataNamespace".to_owned()))
+            .with_symbol("content", TypeKind::Named("ContentNamespace".to_owned()))
             .with_data_format_builtins()
             .with_content_functions()
-            .with_function_signature(
-                "view",
+            .with_standard_function(
+                ["view"],
                 FunctionSignature::new(
                     TypeKind::presentation_handle("View"),
                     [
@@ -511,8 +445,8 @@ impl TypeCheckEnv {
                     ],
                 ),
             )
-            .with_function_signature(
-                "data.encode",
+            .with_standard_function(
+                ["data", "encode"],
                 FunctionSignature::new(
                     TypeKind::Bytes,
                     [
@@ -521,8 +455,8 @@ impl TypeCheckEnv {
                     ],
                 ),
             )
-            .with_function_signature(
-                "data.decode",
+            .with_standard_function(
+                ["data", "decode"],
                 FunctionSignature::new(
                     TypeKind::AgentValue,
                     [
@@ -532,8 +466,8 @@ impl TypeCheckEnv {
                     ],
                 ),
             )
-            .with_function_signature(
-                "data.shape",
+            .with_standard_function(
+                ["data", "shape"],
                 FunctionSignature::new(
                     TypeKind::DataShape,
                     [FunctionParam::required(
@@ -569,7 +503,7 @@ impl TypeCheckEnv {
                 .expect("standard presentation atoms have distinct paths")
         });
 
-        environment.with_standard_defaulted_nominal_record(
+        environment.with_standard_nominal_record(
             "Transform2D",
             [
                 (
@@ -595,6 +529,8 @@ impl TypeCheckEnv {
     #[must_use]
     fn with_standard_presentation_lifetimes(self) -> Self {
         self.try_with_enum_variants(
+            EnvironmentBindingId::try_new("PresentationLifetime")
+                .expect("presentation lifetime owner identity is valid"),
             TypeKind::Named("PresentationLifetime".to_owned()),
             [
                 "frame",
@@ -618,73 +554,79 @@ impl TypeCheckEnv {
     #[must_use]
     fn with_standard_runtime_callables(self) -> Self {
         let unit_callables = [
-            "log.trace",
-            "log.debug",
-            "log.info",
-            "log.warn",
-            "log.error",
-            "drop",
-            "drop_optional",
-            "on_drop",
-            "signal.set",
-            "metric.set",
-            "event.emit",
-            "adapter.events",
-            "scene.show",
-            "scene.clear",
-            "progress.set",
-            "meter.show",
-            "text.show",
-            "text.flush",
-            "voice.stop",
-            "cues.stop",
-            "ensure",
-            "assert",
-            "debug_assert",
+            standard_callable_path(["log", "trace"]),
+            standard_callable_path(["log", "debug"]),
+            standard_callable_path(["log", "info"]),
+            standard_callable_path(["log", "warn"]),
+            standard_callable_path(["log", "error"]),
+            standard_callable_path(["drop"]),
+            standard_callable_path(["drop_optional"]),
+            standard_callable_path(["on_drop"]),
+            standard_callable_path(["signal", "set"]),
+            standard_callable_path(["metric", "set"]),
+            standard_callable_path(["event", "emit"]),
+            standard_callable_path(["adapter", "events"]),
+            standard_callable_path(["scene", "show"]),
+            standard_callable_path(["scene", "clear"]),
+            standard_callable_path(["progress", "set"]),
+            standard_callable_path(["meter", "show"]),
+            standard_callable_path(["text", "show"]),
+            standard_callable_path(["text", "flush"]),
+            standard_callable_path(["voice", "stop"]),
+            standard_callable_path(["cues", "stop"]),
+            standard_callable_path(["ensure"]),
         ];
-        let env = unit_callables.into_iter().fold(self, |env, name| {
-            env.with_function_signature(name, FunctionSignature::return_only(TypeKind::Unit))
+        let env = unit_callables.into_iter().fold(self, |env, path| {
+            env.with_typed_standard_function(
+                path,
+                FunctionSignature::return_only(TypeKind::Unit),
+                std::iter::empty::<EffectCapability>(),
+            )
         });
         [
-            ("panic", TypeKind::Never),
-            ("fail", TypeKind::Never),
-            ("bail", TypeKind::Never),
+            (standard_callable_path(["panic"]), TypeKind::Never),
+            (standard_callable_path(["fail"]), TypeKind::Never),
+            (standard_callable_path(["bail"]), TypeKind::Never),
             (
-                "load_bg",
+                standard_callable_path(["load_bg"]),
                 TypeKind::Need {
                     ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
                     error: Box::new(TypeKind::Named("ArcError".to_owned())),
                 },
             ),
             (
-                "asset.image",
+                standard_callable_path(["asset", "image"]),
                 TypeKind::Need {
                     ready: Box::new(TypeKind::Named("ImageHandle".to_owned())),
                     error: Box::new(TypeKind::Named("AssetError".to_owned())),
                 },
             ),
             (
-                "voice.load",
+                standard_callable_path(["voice", "load"]),
                 TypeKind::Need {
                     ready: Box::new(TypeKind::Named("VoiceHandle".to_owned())),
                     error: Box::new(TypeKind::Named("VoiceError".to_owned())),
                 },
             ),
-            ("len", TypeKind::I64),
+            (standard_callable_path(["len"]), TypeKind::I64),
         ]
         .into_iter()
-        .fold(env, |env, (name, result)| {
-            env.with_function_signature(name, FunctionSignature::return_only(result))
+        .fold(env, |env, (path, result)| {
+            env.with_typed_standard_function(
+                path,
+                FunctionSignature::return_only(result),
+                std::iter::empty::<EffectCapability>(),
+            )
         })
-        .with_method(
+        .with_standard_method(
             TypeKind::Named("VoiceHandle".to_owned()),
             "stop",
-            TypeKind::Unit,
+            FunctionSignature::return_only(TypeKind::Unit),
         )
-        .with_method(
+        .with_standard_method(
             TypeKind::Named("DialogueText".to_owned()),
             "flush",
-            TypeKind::Unit,
+            FunctionSignature::return_only(TypeKind::Unit),
         )
     }
 
@@ -714,7 +656,9 @@ impl TypeCheckEnv {
             STANDARD_DIALOGUE_VIEW_TYPE,
             [
                 (
-                    DialogueViewProjection::Speaker.field().to_owned(),
+                    DialogueViewProjection::CharacterDisplayName
+                        .field()
+                        .to_owned(),
                     TypeKind::String,
                 ),
                 (
@@ -749,25 +693,7 @@ impl TypeCheckEnv {
         name: impl Into<String>,
         fields: impl IntoIterator<Item = (String, TypeKind)>,
     ) -> Self {
-        self.insert_standard_nominal_record(
-            name.into(),
-            fields,
-            NominalRecordLiteralPolicy::Complete,
-        );
-        self
-    }
-
-    #[must_use]
-    fn with_standard_defaulted_nominal_record(
-        mut self,
-        name: impl Into<String>,
-        fields: impl IntoIterator<Item = (String, TypeKind)>,
-    ) -> Self {
-        self.insert_standard_nominal_record(
-            name.into(),
-            fields,
-            NominalRecordLiteralPolicy::DefaultMissing,
-        );
+        self.insert_standard_nominal_record(name.into(), fields);
         self
     }
 
@@ -775,7 +701,6 @@ impl TypeCheckEnv {
         &mut self,
         name: String,
         fields: impl IntoIterator<Item = (String, TypeKind)>,
-        literal_policy: NominalRecordLiteralPolicy,
     ) {
         let accepted = standard_exact_record(
             &name,
@@ -791,26 +716,17 @@ impl TypeCheckEnv {
             )
             .expect("nominal record paths are unique in one semantic environment");
         self.nominal_records.insert(
-            name.clone(),
+            name,
             fields
                 .into_iter()
                 .map(|(name, ty)| (name, normalize_type_kind(ty)))
                 .collect(),
         );
-        self.nominal_record_literal_policies
-            .insert(name, literal_policy);
     }
 
     /// Standard and adapter-provided nominal records visible to source files.
     pub fn nominal_records(&self) -> &HashMap<String, HashMap<String, TypeKind>> {
         &self.nominal_records
-    }
-
-    pub(crate) fn nominal_record_literal_policy(&self, name: &str) -> NominalRecordLiteralPolicy {
-        self.nominal_record_literal_policies
-            .get(name)
-            .copied()
-            .unwrap_or(NominalRecordLiteralPolicy::Complete)
     }
 
     /// Registers the semantic-role inventory used by dialogue View parameters.
@@ -828,16 +744,16 @@ impl TypeCheckEnv {
     #[must_use]
     fn with_content_functions(self) -> Self {
         let content_ref = TypeKind::entity_ref(crate::types::EntityKind::Content);
-        self.with_function_signature(
-            "content.prefetch",
+        self.with_standard_function_effects(
+            ["content", "prefetch"],
             FunctionSignature::new(
                 TypeKind::Unit,
                 [FunctionParam::required("unit", content_ref.clone())],
             ),
+            ["content.load"],
         )
-        .with_function_effects("content.prefetch", ["content.load"])
-        .with_function_signature(
-            "content.ensure",
+        .with_standard_function_effects(
+            ["content", "ensure"],
             FunctionSignature::new(
                 TypeKind::Need {
                     ready: Box::new(TypeKind::Unit),
@@ -845,39 +761,35 @@ impl TypeCheckEnv {
                 },
                 [FunctionParam::required("unit", content_ref.clone())],
             ),
+            ["content.load"],
         )
-        .with_function_effects("content.ensure", ["content.load"])
-        .with_function_signature(
-            "content.release",
+        .with_standard_function_effects(
+            ["content", "release"],
             FunctionSignature::new(
                 TypeKind::Unit,
                 [FunctionParam::required("unit", content_ref)],
             ),
+            ["content.release"],
         )
-        .with_function_effects("content.release", ["content.release"])
     }
 
     /// Registers qualified values and expected-type shorthand from the owning
     /// data-format inventory.
     #[must_use]
     fn with_data_format_builtins(self) -> Self {
-        let env = self
-            .try_with_enum_variants(
-                TypeKind::DataFormat,
-                DataFormat::ALL.map(DataFormat::variant_name),
-            )
-            .expect("data-format inventory is not character nominal");
-        DataFormat::ALL.into_iter().fold(env, |env, format| {
-            env.with_symbol(
-                format!("DataFormat.{}", format.variant_name()),
-                TypeKind::DataFormat,
-            )
-        })
+        self.try_with_enum_variants(
+            EnvironmentBindingId::try_new("DataFormat")
+                .expect("data-format owner identity is valid"),
+            TypeKind::DataFormat,
+            DataFormat::ALL.map(DataFormat::variant_name),
+        )
+        .expect("data-format inventory is not character nominal")
     }
 
     /// Registers the unit variants available for an enum-like type.
     pub fn try_with_enum_variants(
         mut self,
+        owner: EnvironmentBindingId,
         ty: TypeKind,
         variants: impl IntoIterator<Item = impl Into<String>>,
     ) -> Result<Self, TypeCheckEnvBuildError> {
@@ -887,32 +799,37 @@ impl TypeCheckEnv {
                 nominal: nominal.clone(),
             });
         }
-        self.insert_enum_variants(&ty, variants);
+        self.insert_enum_variants(owner, &ty, variants)?;
         Ok(self)
     }
 
     pub(crate) fn insert_enum_variants(
         &mut self,
+        owner: EnvironmentBindingId,
         ty: &TypeKind,
         variants: impl IntoIterator<Item = impl Into<String>>,
-    ) {
-        self.enum_variants
-            .entry(ty.clone())
-            .or_default()
-            .extend(variants.into_iter().map(|variant| {
-                let variant = variant.into();
-                self.enum_variant_payloads
-                    .entry(ty.clone())
-                    .or_default()
-                    .entry(variant.clone())
-                    .or_insert(EnumVariantPayload::Unit);
-                variant
-            }));
+    ) -> Result<(), TypeCheckEnvBuildError> {
+        let schema = self.ensure_closed_enum(owner, ty)?;
+        for variant in variants {
+            let name = variant.into();
+            if schema.variants.iter().any(|variant| variant.name == name) {
+                return Err(TypeCheckEnvBuildError::DuplicateEnumVariant {
+                    owner: schema.owner.clone(),
+                    variant: name,
+                });
+            }
+            schema.variants.push(EnvironmentEnumVariant {
+                name,
+                payload: EnumVariantPayload::Unit,
+            });
+        }
+        Ok(())
     }
 
     /// Registers one enum-like variant with its payload contract.
     pub fn try_with_enum_variant_payload(
         mut self,
+        owner: EnvironmentBindingId,
         ty: TypeKind,
         variant: impl Into<String>,
         payload: EnumVariantPayload,
@@ -924,15 +841,57 @@ impl TypeCheckEnv {
             });
         }
         let variant = variant.into();
-        self.enum_variants
-            .entry(ty.clone())
-            .or_default()
-            .insert(variant.clone());
-        self.enum_variant_payloads
-            .entry(ty)
-            .or_default()
-            .insert(variant, normalize_enum_variant_payload(payload));
+        let schema = self.ensure_closed_enum(owner, &ty)?;
+        let payload = normalize_enum_variant_payload(payload);
+        if schema
+            .variants
+            .iter()
+            .any(|existing| existing.name == variant)
+        {
+            return Err(TypeCheckEnvBuildError::DuplicateEnumVariant {
+                owner: schema.owner.clone(),
+                variant,
+            });
+        }
+        schema.variants.push(EnvironmentEnumVariant {
+            name: variant,
+            payload,
+        });
         Ok(self)
+    }
+
+    fn ensure_closed_enum(
+        &mut self,
+        owner: EnvironmentBindingId,
+        ty: &TypeKind,
+    ) -> Result<&mut EnvironmentEnumSchema, TypeCheckEnvBuildError> {
+        if let Some((existing, _)) = self
+            .closed_enums
+            .iter()
+            .find(|(_, schema)| schema.owner == owner)
+            && existing != ty
+        {
+            return Err(TypeCheckEnvBuildError::ConflictingEnumOwner {
+                owner,
+                existing: Box::new(existing.clone()),
+                requested: Box::new(ty.clone()),
+            });
+        }
+        let schema = self
+            .closed_enums
+            .entry(ty.clone())
+            .or_insert_with(|| EnvironmentEnumSchema {
+                owner: owner.clone(),
+                variants: Vec::new(),
+            });
+        if schema.owner != owner {
+            return Err(TypeCheckEnvBuildError::ConflictingEnumTypeOwner {
+                ty: Box::new(ty.clone()),
+                existing: schema.owner.clone(),
+                requested: owner,
+            });
+        }
+        Ok(schema)
     }
 
     /// Looks up one exact source-visible base-environment binding identity.
@@ -944,11 +903,14 @@ impl TypeCheckEnv {
     /// deterministic order for tooling surfaces such as LSP completion.
     pub fn enum_variant_sets(&self) -> Vec<(TypeKind, Vec<String>)> {
         let mut sets = self
-            .enum_variants
+            .closed_enums
             .iter()
-            .map(|(ty, variants)| {
-                let mut variants = variants.iter().cloned().collect::<Vec<_>>();
-                variants.sort();
+            .map(|(ty, schema)| {
+                let variants = schema
+                    .variants()
+                    .iter()
+                    .map(|variant| variant.name().to_owned())
+                    .collect::<Vec<_>>();
                 (ty.source_label(), format!("{ty:?}"), ty.clone(), variants)
             })
             .collect::<Vec<_>>();
@@ -966,116 +928,74 @@ impl TypeCheckEnv {
     }
 
     #[must_use]
-    fn with_function_namespace(mut self, name: impl Into<String>, ty: TypeKind) -> Self {
-        let name = name.into();
-        self.symbols.insert(name.clone(), normalize_type_kind(ty));
-        self.function_namespaces.insert(name);
-        self
-    }
-
-    /// Registers a free function return type.
-    #[must_use]
-    pub fn with_function(mut self, name: impl Into<String>, return_type: TypeKind) -> Self {
-        self.functions
-            .insert(name.into(), normalize_type_kind(return_type));
-        self
-    }
-
-    /// Registers a free function with full argument signature.
-    #[must_use]
-    pub fn with_function_signature(
-        mut self,
-        name: impl Into<String>,
+    fn with_standard_function<const N: usize>(
+        self,
+        path: [&str; N],
         signature: FunctionSignature,
     ) -> Self {
-        let name = name.into();
-        let signature = normalize_function_signature(signature);
-        self.functions
-            .insert(name.clone(), signature.return_type().clone());
-        self.function_signatures.insert(name, signature);
-        self
+        self.with_standard_function_effects(path, signature, std::iter::empty::<EffectCapability>())
     }
 
-    /// Registers effects required by one free function.
     #[must_use]
-    pub fn with_function_effects<I, E>(mut self, name: impl Into<String>, effects: I) -> Self
+    fn with_standard_function_effects<const N: usize, I, E>(
+        self,
+        path: [&str; N],
+        signature: FunctionSignature,
+        effects: I,
+    ) -> Self
     where
         I: IntoIterator<Item = E>,
         E: Into<EffectCapability>,
     {
-        self.function_effects
-            .insert(name.into(), effects.into_iter().map(Into::into).collect());
-        self
+        self.with_typed_standard_function(standard_callable_path(path), signature, effects)
     }
 
-    /// Registers a method return type for a receiver type.
     #[must_use]
-    pub fn with_method(
+    fn with_typed_standard_function<I, E>(
         mut self,
-        receiver: TypeKind,
-        method: impl Into<String>,
-        return_type: TypeKind,
-    ) -> Self {
-        let receiver = normalize_type_kind(receiver);
-        let return_type = normalize_type_kind(return_type);
-        self.methods.insert(
-            (receiver, method.into()),
-            MethodSignature {
-                signature: FunctionSignature::return_only(return_type),
-            },
+        path: CallablePath,
+        signature: FunctionSignature,
+        effects: I,
+    ) -> Self
+    where
+        I: IntoIterator<Item = E>,
+        E: Into<EffectCapability>,
+    {
+        assert!(
+            self.standard_functions
+                .iter()
+                .all(|function| function.path != path),
+            "standard callable paths are unique"
         );
+        self.standard_functions.push(StandardEnvironmentFunction {
+            path,
+            signature: normalize_function_signature(signature),
+            effects: effects.into_iter().map(Into::into).collect(),
+        });
         self
     }
 
-    /// Registers a method with full argument signature for a receiver type.
     #[must_use]
-    pub fn with_method_signature(
+    fn with_standard_method(
         mut self,
         receiver: TypeKind,
-        method: impl Into<String>,
+        member: &str,
         signature: FunctionSignature,
     ) -> Self {
         let receiver = normalize_type_kind(receiver);
-        let signature = normalize_function_signature(signature);
-        self.methods
-            .insert((receiver, method.into()), MethodSignature { signature });
-        self
-    }
-
-    /// Registers index result type for a collection-like type.
-    #[must_use]
-    pub fn with_index(mut self, target: TypeKind, return_type: TypeKind) -> Self {
-        self.indexes.insert(
-            normalize_type_kind(target),
-            normalize_type_kind(return_type),
+        let member = CallableName::try_new(member)
+            .expect("standard method members are valid typed callable names");
+        assert!(
+            self.standard_methods
+                .iter()
+                .all(|method| { method.receiver != receiver || method.member != member }),
+            "standard method keys are unique"
         );
-        self
-    }
-
-    /// Registers one semantic Agent action exported by a project entity.
-    #[must_use]
-    pub fn with_agent_action(
-        mut self,
-        target: impl Into<String>,
-        action: AgentActionEnvSignature,
-    ) -> Self {
-        self.agent_actions
-            .entry(target.into())
-            .or_default()
-            .push(normalize_agent_action(action));
-        self
-    }
-
-    /// Registers one typed Agent Debug Bus path.
-    #[must_use]
-    pub fn with_debug_path(
-        mut self,
-        kind: DebugPathKind,
-        path: impl Into<String>,
-        value_type: TypeKind,
-    ) -> Self {
-        self.debug_paths
-            .insert((kind, path.into()), normalize_type_kind(value_type));
+        self.standard_methods.push(StandardEnvironmentMethod {
+            receiver,
+            member,
+            signature: normalize_function_signature(signature),
+        });
         self
     }
 
@@ -1112,69 +1032,25 @@ impl TypeCheckEnv {
         self
     }
 
-    pub(crate) fn symbol_type(&self, name: &str) -> Option<&TypeKind> {
-        self.symbols.get(name)
+    pub(crate) fn closed_enum(&self, ty: &TypeKind) -> Option<&EnvironmentEnumSchema> {
+        self.closed_enums.get(ty)
     }
 
-    pub(crate) fn is_function_namespace(&self, name: &str) -> bool {
-        self.function_namespaces.contains(name)
-    }
-
-    pub(crate) fn enum_has_variant(&self, ty: &TypeKind, variant: &str) -> bool {
-        self.enum_variants
-            .get(ty)
-            .is_some_and(|variants| variants.contains(variant))
-    }
-
-    pub(crate) fn enum_variant_payload(
+    pub(crate) fn closed_enum_by_owner(
         &self,
-        ty: &TypeKind,
-        variant: &str,
-    ) -> Option<&EnumVariantPayload> {
-        self.enum_variant_payloads
-            .get(ty)
-            .and_then(|variants| variants.get(variant))
+        owner: &str,
+    ) -> Option<(&TypeKind, &EnvironmentEnumSchema)> {
+        self.closed_enums
+            .iter()
+            .find(|(_, schema)| schema.owner().as_str() == owner)
     }
 
-    pub(crate) fn function_type(&self, name: &str) -> Option<&TypeKind> {
-        self.functions.get(name)
+    pub(crate) fn standard_functions(&self) -> &[StandardEnvironmentFunction] {
+        &self.standard_functions
     }
 
-    pub(crate) fn function_signature(&self, name: &str) -> Option<&FunctionSignature> {
-        self.function_signatures.get(name)
-    }
-
-    /// Returns effects required by a function supplied by the environment.
-    pub fn function_effects(&self, name: &str) -> Option<&[EffectCapability]> {
-        self.function_effects.get(name).map(Vec::as_slice)
-    }
-
-    pub(crate) fn method_type(&self, receiver: &TypeKind, method: &str) -> Option<&TypeKind> {
-        self.methods
-            .get(&(receiver.clone(), method.to_owned()))
-            .map(|method| method.signature.return_type())
-    }
-
-    pub(crate) fn method_signature(
-        &self,
-        receiver: &TypeKind,
-        method: &str,
-    ) -> Option<&FunctionSignature> {
-        self.methods
-            .get(&(receiver.clone(), method.to_owned()))
-            .map(|method| &method.signature)
-    }
-
-    pub(crate) fn index_type(&self, target: &TypeKind) -> Option<&TypeKind> {
-        self.indexes.get(target)
-    }
-
-    pub(crate) fn agent_actions(&self, target: &str) -> Option<&[AgentActionEnvSignature]> {
-        self.agent_actions.get(target).map(Vec::as_slice)
-    }
-
-    pub(crate) fn debug_path_type(&self, kind: DebugPathKind, path: &str) -> Option<&TypeKind> {
-        self.debug_paths.get(&(kind, path.to_owned()))
+    pub(crate) fn standard_methods(&self) -> &[StandardEnvironmentMethod] {
+        &self.standard_methods
     }
 
     /// Returns whether the environment grants a named effect or state capability.
@@ -1239,19 +1115,17 @@ fn root_higher_order_bindings(
     }
 }
 
-fn normalize_agent_action(mut action: AgentActionEnvSignature) -> AgentActionEnvSignature {
-    action.params = action
-        .params
-        .into_iter()
-        .map(normalize_agent_action_param)
-        .collect();
-    action.return_type = normalize_type_kind(action.return_type);
-    action
-}
-
-fn normalize_agent_action_param(mut param: AgentActionEnvParam) -> AgentActionEnvParam {
-    param.ty = normalize_type_kind(param.ty);
-    param
+fn standard_callable_path<const N: usize>(segments: [&str; N]) -> CallablePath {
+    CallablePath::try_new(
+        segments
+            .into_iter()
+            .map(|segment| {
+                CallableName::try_new(segment)
+                    .expect("standard callable path segments are valid typed names")
+            })
+            .collect::<Vec<_>>(),
+    )
+    .expect("standard callable paths are non-empty and within production limits")
 }
 
 pub(super) fn normalize_type_kind(ty: TypeKind) -> TypeKind {

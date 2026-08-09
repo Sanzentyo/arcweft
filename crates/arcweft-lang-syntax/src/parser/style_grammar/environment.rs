@@ -1,19 +1,20 @@
 //! Native Style environment condition and nested-body grammar.
 
 use super::{
-    PendingStyleBodyProjection, PendingStyleEnvironmentClause, PendingStyleEnvironmentComparison,
-    PendingStyleEnvironmentCondition, PendingStyleEnvironmentConditionRecovery,
-    PendingStyleEnvironmentField, PendingStyleEnvironmentProjection, PendingStyleName,
-    PendingStylePunctuation, PendingSyntaxDiagnostic, ShadowDocumentParser, SourceRange,
-    StyleEnvironmentComparison, StyleEnvironmentConditionIssue, StyleEnvironmentField,
-    StyleSyntaxName, SyntaxEvent, SyntaxKind, SyntaxRole, bump_trivia_before, bump_until,
-    emit_close_delimiter, emit_expression, emit_missing_delimiter, emit_missing_name,
-    emit_open_delimiter, emit_style_members, emit_style_name, environment_clause_end, expected,
-    find_matching_close, find_top_level_boundary, next_nontrivia, pending_name_range,
+    DocumentParser, PendingStyleBodyProjection, PendingStyleEnvironmentClause,
+    PendingStyleEnvironmentComparison, PendingStyleEnvironmentCondition,
+    PendingStyleEnvironmentConditionRecovery, PendingStyleEnvironmentField,
+    PendingStyleEnvironmentProjection, PendingStyleName, PendingStylePunctuation,
+    PendingSyntaxDiagnostic, SourceRange, StyleEnvironmentComparison,
+    StyleEnvironmentConditionIssue, StyleEnvironmentField, StyleSyntaxName, SyntaxEvent,
+    SyntaxKind, SyntaxRole, bump_trivia_before, bump_until, emit_close_delimiter, emit_expression,
+    emit_missing_delimiter, emit_missing_name, emit_open_delimiter, emit_style_members,
+    emit_style_name, environment_clause_end, expected, find_matching_close,
+    find_top_level_boundary, next_nontrivia, pending_name_range,
 };
 
 pub(super) fn emit_environment_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     enclosing_close: usize,
     source_ordinal: u32,
 ) -> PendingStyleEnvironmentProjection {
@@ -73,7 +74,7 @@ pub(super) fn emit_environment_block(
 }
 
 fn emit_environment_condition(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     enclosing_close: usize,
 ) -> PendingStyleEnvironmentCondition {
     parser.start(SyntaxKind::StyleEnvironmentCondition, SyntaxRole::Condition);
@@ -97,10 +98,11 @@ fn emit_environment_condition(
 
     let end = if matches!(open, PendingStylePunctuation::Authored(_)) {
         find_matching_close(parser, parser.cursor(), "(").unwrap_or_else(|| {
-            find_top_level_boundary(parser, parser.cursor(), &["{"]).min(enclosing_close)
+            find_top_level_boundary(parser, parser.cursor(), enclosing_close, &["{"])
         })
     } else {
-        find_top_level_boundary(parser, parser.cursor(), &[",", ")", "{"]).max(parser.cursor())
+        find_top_level_boundary(parser, parser.cursor(), enclosing_close, &[",", ")", "{"])
+            .max(parser.cursor())
     }
     .min(enclosing_close);
 
@@ -139,7 +141,7 @@ fn emit_environment_condition(
 }
 
 fn emit_environment_clause_list(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
 ) -> (
     Vec<PendingStyleEnvironmentClause>,
@@ -179,7 +181,7 @@ fn emit_environment_clause_list(
 }
 
 fn emit_empty_environment_clause(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     recoveries: &mut Vec<PendingStyleEnvironmentConditionRecovery>,
 ) {
@@ -196,7 +198,7 @@ fn emit_empty_environment_clause(
 }
 
 fn emit_environment_clause_separator(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     recoveries: &mut Vec<PendingStyleEnvironmentConditionRecovery>,
 ) {
@@ -218,7 +220,7 @@ fn emit_environment_clause_separator(
 }
 
 fn emit_environment_condition_recovery(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     recoveries: &mut Vec<PendingStyleEnvironmentConditionRecovery>,
     issue: StyleEnvironmentConditionIssue,
     source: SourceRange,
@@ -260,7 +262,7 @@ fn emit_environment_condition_recovery(
 }
 
 fn emit_environment_clause(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     source_ordinal: u16,
 ) -> PendingStyleEnvironmentClause {
@@ -314,7 +316,7 @@ fn emit_environment_clause(
 }
 
 fn emit_environment_comparison(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
 ) -> PendingStyleEnvironmentComparison {
     let Some(token) = parser.current().filter(|_| parser.cursor() < end) else {
@@ -341,7 +343,7 @@ fn emit_environment_comparison(
 }
 
 fn emit_missing_environment_comparison(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
 ) -> PendingStyleEnvironmentComparison {
     let at = parser.current_offset();
     emit_missing_delimiter(
@@ -360,7 +362,7 @@ fn emit_missing_environment_comparison(
 }
 
 fn emit_environment_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     enclosing_close: usize,
 ) -> PendingStyleBodyProjection {
     parser.start(SyntaxKind::StyleBody, SyntaxRole::Body);

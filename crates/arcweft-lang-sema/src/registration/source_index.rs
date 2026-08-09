@@ -22,9 +22,6 @@ use arcweft_source::{
     SourceSetRevision, SourceSetRevisionError, SourceSpan,
 };
 
-#[cfg(test)]
-mod tests;
-
 /// Inclusive production bounds for character definition indexing and queries.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CharacterDefinitionLimits {
@@ -277,81 +274,6 @@ impl CharacterDefinitionIndex {
         looks.iter().chain(parts).chain(variants)
     }
 
-    #[cfg(test)]
-    pub(crate) fn without_owned_document_for_test(
-        &self,
-        identity: &SourceDocumentIdentity,
-    ) -> Self {
-        let mut index = self.clone();
-        index.documents.remove(identity.id());
-        index
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_declaration_source_count_for_test(
-        &self,
-        descriptor: &CharacterSymbolDescriptor,
-        count: usize,
-    ) -> Self {
-        let mut index = self.clone();
-        let set = index
-            .declarations
-            .get_mut(descriptor)
-            .expect("test descriptor belongs to the accepted index");
-        let source = set
-            .sources
-            .first()
-            .expect("an accepted declaration set is non-empty")
-            .clone();
-        set.sources = std::iter::repeat_n(source, count).collect();
-        index
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_member_candidates_for_test(
-        &self,
-        candidates: impl IntoIterator<Item = CharacterSymbolDescriptor>,
-    ) -> Self {
-        let mut index = self.clone();
-        index.members = CharacterMemberSpellingIndex::default();
-        for candidate in candidates {
-            match &candidate {
-                CharacterSymbolDescriptor::Owner { .. } => {
-                    panic!("an owner is not a member candidate")
-                }
-                CharacterSymbolDescriptor::Look { look, .. } => index
-                    .members
-                    .looks
-                    .entry(look.clone())
-                    .or_default()
-                    .push(candidate),
-                CharacterSymbolDescriptor::Part { part, .. } => index
-                    .members
-                    .parts
-                    .entry(part.clone())
-                    .or_default()
-                    .push(candidate),
-                CharacterSymbolDescriptor::Variant { variant, .. } => index
-                    .members
-                    .variants
-                    .entry(variant.clone())
-                    .or_default()
-                    .push(candidate),
-            }
-        }
-        for members in index
-            .members
-            .looks
-            .values_mut()
-            .chain(index.members.parts.values_mut())
-            .chain(index.members.variants.values_mut())
-        {
-            members.sort();
-            members.dedup();
-        }
-        index
-    }
-
     pub(crate) fn try_build(
         facts: &ProjectRegistrationFacts,
         symbols: &ProjectSymbolTable,
@@ -364,16 +286,6 @@ impl CharacterDefinitionIndex {
             CharacterDefinitionLimits::PRODUCTION,
         )
         .build()
-    }
-
-    #[cfg(test)]
-    pub(super) fn try_build_with_limits(
-        facts: &ProjectRegistrationFacts,
-        symbols: &ProjectSymbolTable,
-        environment: &RegisteredTypeCheckEnv,
-        limits: CharacterDefinitionLimits,
-    ) -> Result<Self, CharacterDefinitionIndexBuildReport> {
-        IndexBuilder::new(facts, symbols, environment, limits).build()
     }
 }
 

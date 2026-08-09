@@ -1,9 +1,4 @@
-//! Shared token cursor and event sink for the staged document grammar.
-
-#![allow(
-    dead_code,
-    reason = "the shadow document parser remains private until the atomic syntax switch"
-)]
+//! Shared token cursor and event sink for the accepted document grammar.
 
 use std::sync::Arc;
 
@@ -22,8 +17,10 @@ use crate::grammar::declaration_projection::{
     PendingCharacterDeclarationProjection, PendingLayerDeclarationProjection,
 };
 use crate::grammar::entry_projection::PendingEntryDeclarationProjection;
+#[cfg(test)]
+use crate::grammar::event::PendingSyntaxDiagnostic;
 use crate::grammar::event::{
-    PendingPatternProjection, PendingSyntaxDiagnostic, PendingTypeProjection, SyntaxEvent,
+    PendingPatternProjection, PendingStartProjection, PendingTypeProjection, SyntaxEvent,
 };
 use crate::grammar::flow_projection::PendingFlowDeclarationProjection;
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
@@ -34,7 +31,7 @@ use crate::grammar::source_projection::{
 };
 use crate::grammar::style_projection::PendingStyleDeclarationProjection;
 use crate::grammar::test_projection::PendingTestKindProjection;
-use crate::grammar::view_projection::PendingViewExportProjection;
+use crate::grammar::view_projection::{PendingViewExportProjection, PendingViewFragmentProjection};
 use crate::incremental::SyntaxLimit;
 use crate::patterns::{AuthoredPattern, PatternNodePath};
 use crate::types::{AuthoredTypeRef, TypeRefNodePath};
@@ -56,10 +53,6 @@ impl CandidateTokenInterval {
     pub(super) const fn end(self) -> usize {
         self.end
     }
-
-    pub(super) const fn is_empty(self) -> bool {
-        self.start == self.end
-    }
 }
 
 /// Exact parser position before one bounded candidate attempt.
@@ -79,10 +72,12 @@ pub(super) struct StagedParserEvents {
 }
 
 impl StagedParserEvents {
+    #[cfg(test)]
     pub(super) fn events(&self) -> &[SyntaxEvent] {
         &self.events
     }
 
+    #[cfg(test)]
     pub(super) fn diagnostics(&self) -> impl Iterator<Item = &PendingSyntaxDiagnostic> {
         self.events.iter().filter_map(|event| match event {
             SyntaxEvent::Diagnostic(diagnostic) => Some(diagnostic),
@@ -93,23 +88,18 @@ impl StagedParserEvents {
     pub(super) fn has_recovery(&self) -> bool {
         self.events.iter().any(|event| match event {
             SyntaxEvent::StartNode {
-                kind,
-                expression_projection,
-                assertion_projection,
-                keyword_statement_projection,
-                ..
+                kind, projection, ..
             } => {
                 kind.is_missing_node()
                     || kind.is_error_node()
-                    || expression_projection
-                        .as_ref()
-                        .is_some_and(PendingExpressionProjection::has_recovery)
-                    || assertion_projection
-                        .as_ref()
-                        .is_some_and(|projection| projection.has_recovery())
-                    || keyword_statement_projection
-                        .as_ref()
-                        .is_some_and(PendingKeywordStatementProjection::has_recovery)
+                    || match projection {
+                        PendingStartProjection::Expression(projection) => projection.has_recovery(),
+                        PendingStartProjection::Assertion(projection) => projection.has_recovery(),
+                        PendingStartProjection::KeywordStatement(projection) => {
+                            projection.has_recovery()
+                        }
+                        _ => false,
+                    }
             }
             SyntaxEvent::MissingToken { .. } | SyntaxEvent::Diagnostic(_) => true,
             SyntaxEvent::Token { .. } | SyntaxEvent::FinishNode => false,
@@ -130,44 +120,8 @@ impl StagedParserEvents {
                     kind,
                     role,
                     transparent_expression_group,
-                    expression_projection,
-                    assertion_projection,
-                    keyword_statement_projection,
-                    type_projection,
-                    pattern_projection,
-                    path_projection,
-                    use_projection,
-                    visibility_projection,
-                    attribute_projection,
-                    declaration_header_projection,
-                    character_projection,
-                    test_kind_projection,
-                    layer_projection,
-                    entry_projection,
-                    style_projection,
-                    source_declaration_projection,
-                    method_receiver_projection,
-                    contract_clause_projection,
-                    flow_declaration_projection,
-                    view_export_projection,
+                    projection,
                 } => {
-                    assert!(
-                        use_projection.is_none()
-                            && visibility_projection.is_none()
-                            && attribute_projection.is_none()
-                            && declaration_header_projection.is_none()
-                            && character_projection.is_none()
-                            && test_kind_projection.is_none()
-                            && layer_projection.is_none()
-                            && entry_projection.is_none()
-                            && style_projection.is_none()
-                            && source_declaration_projection.is_none()
-                            && method_receiver_projection.is_none()
-                            && contract_clause_projection.is_none()
-                            && flow_declaration_projection.is_none()
-                            && view_export_projection.is_none(),
-                        "postfix candidate grammar cannot retain item-owned projections"
-                    );
                     let navigation_role = if kind.is_expression() {
                         open.iter()
                             .rposition(|owner| owner.identity.is_some())
@@ -183,14 +137,7 @@ impl StagedParserEvents {
                     };
                     let parent = open.iter().rev().find_map(|owner| owner.identity);
                     let identity = if kind.identity_class() == IdentityClass::IdentityBearing {
-                        let semantic = candidate_semantic(
-                            expression_projection,
-                            assertion_projection,
-                            keyword_statement_projection,
-                            type_projection,
-                            pattern_projection,
-                            path_projection,
-                        );
+                        let semantic = candidate_semantic(projection);
                         let index = CandidateNodeIndex::try_new(nodes.len())
                             .expect("candidate node count remains grammar-bounded");
                         nodes.push(CandidateNodeDraft {
@@ -273,43 +220,45 @@ struct CandidateNodeDraft {
     semantic: PendingCandidateSemantic,
 }
 
-fn candidate_semantic(
-    expression: Option<PendingExpressionProjection>,
-    assertion: Option<PendingAssertionProjection>,
-    keyword_statement: Option<PendingKeywordStatementProjection>,
-    type_ref: Option<PendingTypeProjection>,
-    pattern: Option<PendingPatternProjection>,
-    path: Option<PendingPathProjection>,
-) -> PendingCandidateSemantic {
-    let semantic_count = usize::from(expression.is_some())
-        + usize::from(assertion.is_some())
-        + usize::from(keyword_statement.is_some())
-        + usize::from(type_ref.is_some())
-        + usize::from(pattern.is_some())
-        + usize::from(path.is_some());
-    assert!(
-        semantic_count <= 1,
-        "one candidate node cannot own multiple semantic projections"
-    );
-    if let Some(projection) = expression {
-        PendingCandidateSemantic::Expression(projection)
-    } else if let Some(projection) = assertion {
-        PendingCandidateSemantic::Assertion(projection)
-    } else if let Some(projection) = keyword_statement {
-        PendingCandidateSemantic::KeywordStatement(projection)
-    } else if let Some(projection) = type_ref {
-        PendingCandidateSemantic::Type(projection)
-    } else if let Some(projection) = pattern {
-        PendingCandidateSemantic::Pattern(projection)
-    } else if let Some(projection) = path {
-        PendingCandidateSemantic::Path(projection)
-    } else {
-        PendingCandidateSemantic::KindOnly
+fn candidate_semantic(projection: PendingStartProjection) -> PendingCandidateSemantic {
+    match projection {
+        PendingStartProjection::None => PendingCandidateSemantic::KindOnly,
+        PendingStartProjection::Expression(projection) => {
+            PendingCandidateSemantic::Expression(*projection)
+        }
+        PendingStartProjection::Assertion(projection) => {
+            PendingCandidateSemantic::Assertion(projection)
+        }
+        PendingStartProjection::KeywordStatement(projection) => {
+            PendingCandidateSemantic::KeywordStatement(*projection)
+        }
+        PendingStartProjection::Type(projection) => PendingCandidateSemantic::Type(*projection),
+        PendingStartProjection::Pattern(projection) => {
+            PendingCandidateSemantic::Pattern(*projection)
+        }
+        PendingStartProjection::Path(projection) => PendingCandidateSemantic::Path(*projection),
+        PendingStartProjection::Use(_)
+        | PendingStartProjection::Visibility(_)
+        | PendingStartProjection::Attribute(_)
+        | PendingStartProjection::DeclarationHeader(_)
+        | PendingStartProjection::Character(_)
+        | PendingStartProjection::TestKind(_)
+        | PendingStartProjection::Layer(_)
+        | PendingStartProjection::Entry(_)
+        | PendingStartProjection::Style(_)
+        | PendingStartProjection::SourceDeclaration(_)
+        | PendingStartProjection::MethodReceiver(_)
+        | PendingStartProjection::ContractClause(_)
+        | PendingStartProjection::FlowDeclaration(_)
+        | PendingStartProjection::ViewExport(_)
+        | PendingStartProjection::ViewFragment(_) => {
+            panic!("postfix candidate grammar cannot retain item-owned projections")
+        }
     }
 }
 
 /// Shared cursor and event sink for every private shadow grammar parser.
-pub(super) struct ShadowDocumentParser<'source, 'events> {
+pub(super) struct DocumentParser<'source, 'events> {
     source: &'source str,
     tokens: &'source [LexToken],
     cursor: usize,
@@ -318,7 +267,7 @@ pub(super) struct ShadowDocumentParser<'source, 'events> {
     budget: &'events mut GrammarBudget,
 }
 
-impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
+impl<'source, 'events> DocumentParser<'source, 'events> {
     pub(super) fn new(
         source: &'source str,
         tokens: &'source [LexToken],
@@ -435,27 +384,40 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         Some(position)
     }
 
-    pub(super) fn set_path_projection(
+    fn select_start_projection(
         &mut self,
         position: Option<usize>,
-        projection: PendingPathProjection,
+        projection: PendingStartProjection,
+        marker: &'static str,
     ) {
         let Some(position) = position else {
             return;
         };
         let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::Path,
-            path_projection,
+            kind,
+            projection: selected,
             ..
         }) = self.events.get_mut(position)
         else {
-            panic!("path projection marker must point to a Path start event");
+            panic!("{marker} must point to a node start event");
         };
         assert!(
-            path_projection.is_none(),
-            "Path event receives one final semantic owner"
+            projection.accepts_kind(*kind),
+            "{marker} must agree with its exact syntax kind"
         );
-        *path_projection = Some(projection);
+        selected.select(projection);
+    }
+
+    pub(super) fn set_path_projection(
+        &mut self,
+        position: Option<usize>,
+        projection: PendingPathProjection,
+    ) {
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Path(Box::new(projection)),
+            "path projection marker",
+        );
     }
 
     pub(super) fn set_view_export_projection(
@@ -463,22 +425,23 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingViewExportProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::ViewExportDeclaration,
-            view_export_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("View export projection marker must point to a View export start event");
-        };
-        assert!(
-            view_export_projection.is_none(),
-            "View export event receives one parser-selected structural projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::ViewExport(Box::new(projection)),
+            "View export projection marker",
         );
-        *view_export_projection = Some(projection);
+    }
+
+    pub(super) fn set_view_fragment_projection(
+        &mut self,
+        position: Option<usize>,
+        projection: PendingViewFragmentProjection,
+    ) {
+        self.select_start_projection(
+            position,
+            PendingStartProjection::ViewFragment(Box::new(projection)),
+            "View fragment projection marker",
+        );
     }
 
     pub(super) fn set_method_receiver_projection(
@@ -486,22 +449,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingMethodReceiverProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::Parameter,
-            method_receiver_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("method receiver projection marker must point to a Parameter start event");
-        };
-        assert!(
-            method_receiver_projection.is_none(),
-            "Parameter receives one parser-selected method receiver projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::MethodReceiver(Box::new(projection)),
+            "method receiver projection marker",
         );
-        *method_receiver_projection = Some(projection);
     }
 
     pub(super) fn set_assertion_projection(
@@ -509,22 +461,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingAssertionProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::AssertionStatement,
-            assertion_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("assertion projection marker must point to an AssertionStatement start event");
-        };
-        assert!(
-            assertion_projection.is_none(),
-            "AssertionStatement receives one parser-selected mode projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Assertion(projection),
+            "assertion projection marker",
         );
-        *assertion_projection = Some(projection);
     }
 
     pub(super) fn set_keyword_statement_projection(
@@ -532,26 +473,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingKeywordStatementProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind,
-            keyword_statement_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("keyword statement projection marker must point to a start event");
-        };
-        assert!(
-            projection.accepts_kind(*kind),
-            "keyword statement projection must match its statement family"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::KeywordStatement(Box::new(projection)),
+            "keyword statement projection marker",
         );
-        assert!(
-            keyword_statement_projection.is_none(),
-            "keyword statement event receives one parser-selected projection"
-        );
-        *keyword_statement_projection = Some(projection);
     }
 
     pub(super) fn set_character_projection(
@@ -559,22 +485,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingCharacterDeclarationProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::CharacterDeclarationItem,
-            character_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Character projection marker must point to a Character item start event");
-        };
-        assert!(
-            character_projection.is_none(),
-            "Character event receives one parser-selected semantic projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Character(Box::new(projection)),
+            "Character projection marker",
         );
-        *character_projection = Some(projection);
     }
 
     pub(super) fn set_test_kind_projection(
@@ -582,22 +497,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingTestKindProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::TestItem,
-            test_kind_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Test kind projection marker must point to a Test item start event");
-        };
-        assert!(
-            test_kind_projection.is_none(),
-            "Test item receives one parser-selected adapter-kind projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::TestKind(Box::new(projection)),
+            "Test kind projection marker",
         );
-        *test_kind_projection = Some(projection);
     }
 
     pub(super) fn set_layer_projection(
@@ -605,22 +509,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingLayerDeclarationProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::LayerDeclarationItem,
-            layer_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Layer projection marker must point to a Layer item start event");
-        };
-        assert!(
-            layer_projection.is_none(),
-            "Layer event receives one parser-selected semantic projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Layer(Box::new(projection)),
+            "Layer projection marker",
         );
-        *layer_projection = Some(projection);
     }
 
     pub(super) fn set_entry_projection(
@@ -628,22 +521,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingEntryDeclarationProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::EntryDeclarationItem,
-            entry_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Entry projection marker must point to an Entry item start event");
-        };
-        assert!(
-            entry_projection.is_none(),
-            "Entry event receives one parser-selected semantic projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Entry(Box::new(projection)),
+            "Entry projection marker",
         );
-        *entry_projection = Some(projection);
     }
 
     pub(super) fn set_style_projection(
@@ -651,22 +533,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingStyleDeclarationProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::StyleItem,
-            style_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Style projection marker must point to a Style item start event");
-        };
-        assert!(
-            style_projection.is_none(),
-            "Style event receives one parser-selected semantic projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Style(Box::new(projection)),
+            "Style projection marker",
         );
-        *style_projection = Some(projection);
     }
 
     pub(super) fn set_source_declaration_projection(
@@ -674,22 +545,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingSourceDeclarationProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::SourceItem,
-            source_declaration_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Source projection marker must point to a Source item start event");
-        };
-        assert!(
-            source_declaration_projection.is_none(),
-            "Source item receives one parser-selected semantic projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::SourceDeclaration(Box::new(projection)),
+            "Source projection marker",
         );
-        *source_declaration_projection = Some(projection);
     }
 
     pub(super) fn set_flow_contract_clause_projection(
@@ -697,26 +557,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingFlowContractClauseProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind,
-            contract_clause_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Flow contract projection marker must point to a clause start event");
-        };
-        assert!(
-            kind.is_contract_clause() && projection.accepts_kind(*kind),
-            "Flow contract projection must match its exact clause kind"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::ContractClause(Box::new(projection)),
+            "Flow contract projection marker",
         );
-        assert!(
-            contract_clause_projection.is_none(),
-            "Flow contract clause receives one parser-selected source projection"
-        );
-        *contract_clause_projection = Some(projection);
     }
 
     pub(super) fn set_flow_declaration_projection(
@@ -724,22 +569,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingFlowDeclarationProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::FlowItem,
-            flow_declaration_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Flow projection marker must point to a Flow item start event");
-        };
-        assert!(
-            flow_declaration_projection.is_none(),
-            "Flow item receives one parser-selected declaration projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::FlowDeclaration(Box::new(projection)),
+            "Flow projection marker",
         );
-        *flow_declaration_projection = Some(projection);
     }
 
     pub(super) fn expression_projection_at(
@@ -747,13 +581,13 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: usize,
     ) -> Option<&PendingExpressionProjection> {
         let SyntaxEvent::StartNode {
-            expression_projection,
+            projection: PendingStartProjection::Expression(projection),
             ..
         } = self.events.get(position)?
         else {
             return None;
         };
-        expression_projection.as_ref()
+        Some(projection)
     }
 
     /// Returns the outermost completed expression projection with this exact
@@ -769,13 +603,13 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
             .enumerate()
             .find_map(|(position, event)| {
                 let SyntaxEvent::StartNode {
-                    expression_projection: Some(projection),
+                    projection: PendingStartProjection::Expression(projection),
                     ..
                 } = event
                 else {
                     return None;
                 };
-                (self.completed_range(position) == Some(range)).then_some(projection)
+                (self.completed_range(position) == Some(range)).then_some(projection.as_ref())
             })
     }
 
@@ -784,24 +618,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: crate::grammar::declaration_projection::PendingDeclarationHeaderProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::DeclarationHeader | SyntaxKind::ProofItem,
-            declaration_header_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!(
-                "declaration-header projection marker must point to a declaration or ProofItem start event"
-            );
-        };
-        assert!(
-            declaration_header_projection.is_none(),
-            "declaration header receives one parser-selected semantic projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::DeclarationHeader(Box::new(projection)),
+            "declaration-header projection marker",
         );
-        *declaration_header_projection = Some(projection);
     }
 
     pub(super) fn set_attribute_projection(
@@ -809,22 +630,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingOuterAttributeProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::OuterAttribute,
-            attribute_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("attribute projection marker must point to an OuterAttribute start event");
-        };
-        assert!(
-            attribute_projection.is_none(),
-            "OuterAttribute event receives one parser-selected semantic projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Attribute(Box::new(projection)),
+            "attribute projection marker",
         );
-        *attribute_projection = Some(projection);
     }
 
     pub(super) fn set_expression_projection(
@@ -832,26 +642,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingExpressionProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind,
-            expression_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("expression projection marker must point to a node start event");
-        };
-        assert!(
-            projection.accepts_kind(*kind),
-            "expression projection must agree with its exact syntax kind"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Expression(Box::new(projection)),
+            "expression projection marker",
         );
-        assert!(
-            expression_projection.is_none(),
-            "expression event receives one parser-selected semantic projection"
-        );
-        *expression_projection = Some(projection);
     }
 
     pub(super) fn set_use_projection(
@@ -859,22 +654,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingUseProjection,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::UseDeclaration,
-            use_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("use projection marker must point to a UseDeclaration start event");
-        };
-        assert!(
-            use_projection.is_none(),
-            "UseDeclaration event receives one final import-tree owner"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Use(Box::new(projection)),
+            "use projection marker",
         );
-        *use_projection = Some(projection);
     }
 
     pub(super) fn set_visibility_projection(
@@ -882,22 +666,11 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         position: Option<usize>,
         projection: PendingVisibilityKind,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            kind: SyntaxKind::Visibility,
-            visibility_projection,
-            ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("visibility projection marker must point to a Visibility start event");
-        };
-        assert!(
-            visibility_projection.is_none(),
-            "Visibility event receives one parser-owned semantic projection"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Visibility(projection),
+            "visibility projection marker",
         );
-        *visibility_projection = Some(projection);
     }
 
     pub(super) fn start_type(
@@ -933,20 +706,13 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
         authored: Arc<AuthoredPattern>,
         path: PatternNodePath,
     ) {
-        let Some(position) = position else {
-            return;
-        };
-        let Some(SyntaxEvent::StartNode {
-            pattern_projection, ..
-        }) = self.events.get_mut(position)
-        else {
-            panic!("Pattern marker must point to a Pattern node start event");
-        };
-        assert!(
-            pattern_projection.is_none(),
-            "Pattern event receives one final semantic owner"
+        self.select_start_projection(
+            position,
+            PendingStartProjection::Pattern(Box::new(PendingPatternProjection::new(
+                tree, authored, path,
+            ))),
+            "Pattern marker",
         );
-        *pattern_projection = Some(PendingPatternProjection::new(tree, authored, path));
     }
 
     pub(super) fn event_position(&self) -> usize {
@@ -1042,20 +808,6 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
                 .bump()
                 .expect("validated candidate interval remains inside the token list");
         }
-    }
-
-    /// Publishes diagnostics already charged by a retained candidate without
-    /// charging the shared grammar budget a second time.
-    pub(super) fn append_precharged_diagnostics<'diagnostic>(
-        &mut self,
-        diagnostics: impl IntoIterator<Item = &'diagnostic PendingSyntaxDiagnostic>,
-    ) {
-        self.events.extend(
-            diagnostics
-                .into_iter()
-                .cloned()
-                .map(SyntaxEvent::Diagnostic),
-        );
     }
 
     pub(super) fn started_kind_since(&self, position: usize, kind: SyntaxKind) -> bool {
@@ -1190,6 +942,14 @@ impl<'source, 'events> ShadowDocumentParser<'source, 'events> {
 
     pub(super) fn bump_trivia(&mut self) {
         while self.current_kind().is_some_and(is_trivia_kind) {
+            self.bump();
+        }
+    }
+
+    /// Consumes trivia owned by one bounded grammar transaction without
+    /// crossing the transaction's exclusive token boundary.
+    pub(super) fn bump_trivia_before(&mut self, end: usize) {
+        while self.cursor < end && self.current_kind().is_some_and(is_trivia_kind) {
             self.bump();
         }
     }
@@ -1342,7 +1102,7 @@ mod tests {
         let tokens = DocumentLexer::new(source).lex();
         let mut events = Vec::new();
         let mut budget = GrammarBudget::default();
-        let mut parser = ShadowDocumentParser::new(source, &tokens, &mut events, &mut budget);
+        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
         let interval = parser
             .candidate_interval(tokens.len())
             .expect("whole token interval");
@@ -1371,7 +1131,7 @@ mod tests {
         let tokens = DocumentLexer::new(source).lex();
         let mut events = Vec::new();
         let mut budget = GrammarBudget::default();
-        let mut parser = ShadowDocumentParser::new(source, &tokens, &mut events, &mut budget);
+        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
         let interval = parser
             .candidate_interval(tokens.len())
             .expect("whole token interval");
@@ -1414,7 +1174,7 @@ mod tests {
         let tokens = DocumentLexer::new(source).lex();
         let mut events = Vec::new();
         let mut budget = GrammarBudget::default();
-        let mut parser = ShadowDocumentParser::new(source, &tokens, &mut events, &mut budget);
+        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
         let interval = parser
             .candidate_interval(tokens.len())
             .expect("whole token interval");
@@ -1458,7 +1218,7 @@ mod tests {
         let tokens = DocumentLexer::new(source).lex();
         let mut events = Vec::new();
         let mut budget = GrammarBudget::default();
-        let mut parser = ShadowDocumentParser::new(source, &tokens, &mut events, &mut budget);
+        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
         let interval = parser
             .candidate_interval(tokens.len())
             .expect("empty token interval");

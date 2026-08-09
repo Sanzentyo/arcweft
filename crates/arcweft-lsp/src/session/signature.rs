@@ -10,7 +10,6 @@ use lsp_server::{ErrorCode, Message, RequestId, Response};
 use lsp_types::SignatureHelpParams;
 
 use crate::{
-    documents::rebind_overlay,
     profiles::state::{AcceptedProfileEnvironment, ProfileEnvironmentLifecycle},
     requests::{
         RequestGateState, RequestRegistry, SignatureRequestBinding,
@@ -58,6 +57,13 @@ impl ArcweftLspSession {
             .as_ref()
             .cloned()
             .ok_or(SignatureAcquireError::NoAcceptedEnvironment)?;
+        let executable = accepted
+            .executable()
+            .cloned()
+            .ok_or(SignatureAcquireError::ExecutableUnavailable)?;
+        let world = accepted
+            .registered_world_arc()
+            .ok_or(SignatureAcquireError::ExecutableUnavailable)?;
         let mapped_profile = self
             .profile_keys_by_uri
             .get(&uri)
@@ -110,21 +116,14 @@ impl ArcweftLspSession {
                 actual: overlay.logical_identity().clone(),
             });
         }
-        let rebound = rebind_overlay(&snapshot, accepted_source).map_err(|_| {
-            SignatureAcquireError::DocumentNotAccepted {
-                uri: uri.clone(),
-                expected: accepted_identity.clone(),
-                actual: snapshot.source_document().identity().clone(),
-            }
-        })?;
-        if rebound.identity() != &accepted_identity {
+        if snapshot.source_document().identity() != &accepted_identity {
             return Err(SignatureAcquireError::DocumentNotAccepted {
                 uri,
                 expected: accepted_identity,
-                actual: rebound.identity().clone(),
+                actual: snapshot.source_document().identity().clone(),
             });
         }
-        if rebound.text() != accepted_document.text() {
+        if snapshot.text() != accepted_document.text() {
             return Err(SignatureAcquireError::SourceDigestCollision {
                 source: accepted_identity,
             });
@@ -141,6 +140,14 @@ impl ArcweftLspSession {
                 source: accepted_identity.clone(),
             }
         })?;
+        let accepted_parsed = project.parsed_source(&module).ok_or_else(|| {
+            SignatureAcquireError::MissingHirModule {
+                module: module.clone(),
+            }
+        })?;
+        if !snapshot.parsed_source().is_same_snapshot(accepted_parsed) {
+            return Err(SignatureAcquireError::HirIdentityMismatch { module });
+        }
         project.hir(&module).map_err(|error| match error {
             crate::profiles::accepted_project::AcceptedHirLookupError::MissingModule { key } => {
                 SignatureAcquireError::MissingHirModule { module: key }
@@ -148,9 +155,6 @@ impl ArcweftLspSession {
             crate::profiles::accepted_project::AcceptedHirLookupError::SourceIdentityMismatch {
                 key,
                 ..
-            }
-            | crate::profiles::accepted_project::AcceptedHirLookupError::MissingSourceDocument {
-                key,
             }
             | crate::profiles::accepted_project::AcceptedHirLookupError::SourceDocumentMismatch {
                 key,
@@ -160,12 +164,14 @@ impl ArcweftLspSession {
 
         let lease = AcceptedDocumentHirLease::new(
             Arc::clone(&accepted),
+            executable,
             Arc::clone(&accepted_document),
             module.clone(),
         );
         let stamp = SignatureRequestStamp::new(
             Arc::clone(&profile_state),
             Arc::clone(&accepted),
+            world,
             accepted_document,
             uri.clone(),
             snapshot.source_document().identity().clone(),
@@ -273,6 +279,7 @@ impl ArcweftLspSession {
             lease.world(),
             lease.document(),
             lease.hir()?,
+            lease.final_analysis(),
             byte_offset,
             SignatureQueryControl::new(
                 prepared.control().cancellation_flag(),
@@ -495,7 +502,12 @@ impl ArcweftLspSession {
                 actual: pending.actual().clone(),
             });
         }
-        let world = current.world();
+        if current.executable().is_none() {
+            return Err(SignatureRequestStale::AcceptedReplaced);
+        }
+        let Some(world) = current.registered_world_arc() else {
+            return Err(SignatureRequestStale::AcceptedReplaced);
+        };
         if world.symbols().world() != stamp.world_id() {
             return Err(SignatureRequestStale::WorldIdentityChanged {
                 expected: stamp.world_id().clone(),
@@ -527,7 +539,7 @@ impl ArcweftLspSession {
                 actual: environment.environment_digest(),
             });
         }
-        if !Arc::ptr_eq(world, stamp.world()) {
+        if !Arc::ptr_eq(&world, stamp.world()) {
             return Err(SignatureRequestStale::WorldArcChanged);
         }
 
@@ -552,18 +564,22 @@ impl ArcweftLspSession {
                 actual: None,
             });
         };
-        let rebound = rebind_overlay(snapshot, accepted_source).map_err(|_| {
-            SignatureRequestStale::DocumentChanged {
-                expected: stamp.protocol_document().clone(),
-                actual: snapshot.source_document().identity().clone(),
-            }
-        })?;
-        if rebound.identity() != stamp.accepted_document_identity()
-            || rebound.text() != stamp.accepted_document().text()
+        if snapshot.source_document().identity() != stamp.accepted_document_identity()
+            || snapshot.text() != stamp.accepted_document().text()
         {
             return Err(SignatureRequestStale::DocumentChanged {
                 expected: stamp.accepted_document_identity().clone(),
-                actual: rebound.identity().clone(),
+                actual: snapshot.source_document().identity().clone(),
+            });
+        }
+        if !Arc::ptr_eq(project.hir_project(), stamp.hir_project()) {
+            return Err(SignatureRequestStale::HirChanged {
+                module: stamp.module().clone(),
+            });
+        }
+        if project.hir(stamp.module()).is_err() {
+            return Err(SignatureRequestStale::HirChanged {
+                module: stamp.module().clone(),
             });
         }
         let current_document = accepted_source.document();
@@ -581,14 +597,15 @@ impl ArcweftLspSession {
                 actual: Some(current_document.identity().clone()),
             });
         }
-        if !Arc::ptr_eq(project.hir_project(), stamp.hir_project()) {
+        let Some(current_parsed) = project.parsed_source(stamp.module()) else {
             return Err(SignatureRequestStale::HirChanged {
                 module: stamp.module().clone(),
             });
-        }
-        if project.hir(stamp.module()).is_err() {
-            return Err(SignatureRequestStale::HirChanged {
-                module: stamp.module().clone(),
+        };
+        if !snapshot.parsed_source().is_same_snapshot(current_parsed) {
+            return Err(SignatureRequestStale::DocumentChanged {
+                expected: stamp.accepted_document_identity().clone(),
+                actual: snapshot.source_document().identity().clone(),
             });
         }
         if !Arc::ptr_eq(project, stamp.project()) {

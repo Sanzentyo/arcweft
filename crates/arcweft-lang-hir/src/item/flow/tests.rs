@@ -83,6 +83,10 @@ fn flow_identity_retains_exact_four_states_without_fabricating_an_id() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one contract matrix verifies all nine typed variants and their single source order"
+)]
 fn flow_contracts_preserve_all_nine_variants_in_one_source_ordered_slice() {
     let module = module(1, 1);
     let owner = typed_id::<ItemId>(module, 1);

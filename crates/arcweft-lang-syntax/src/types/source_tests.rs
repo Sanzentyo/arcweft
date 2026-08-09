@@ -1,5 +1,5 @@
 use super::*;
-use crate::types::parse_type_ref;
+use crate::types::parse_attached_type_for_test;
 
 fn path(steps: &[TypeRefNodeStep]) -> TypeRefNodePath {
     TypeRefNodePath(steps.into())
@@ -46,7 +46,7 @@ fn lexeme(
 #[test]
 fn qualified_constructor_records_exact_terminal_segment() {
     let source = "crate.model.Wrapper<other.Value>";
-    let authored = parse_type_ref(source).expect("qualified generic type parses");
+    let authored = parse_attached_type_for_test(source).expect("qualified generic type parses");
 
     assert_eq!(head(&authored, &[]), TextRange::new(0, 19));
     assert_eq!(terminal(&authored, &[]), TextRange::new(12, 19));
@@ -67,7 +67,7 @@ fn qualified_constructor_records_exact_terminal_segment() {
 #[test]
 fn repeated_function_type_nodes_keep_distinct_exact_ranges() {
     let source = "Missing -> Missing";
-    let authored = parse_type_ref(source).expect("function type parses");
+    let authored = parse_attached_type_for_test(source).expect("function type parses");
 
     assert_eq!(whole(&authored, &[]), TextRange::new(0, source.len()));
     assert!(authored.root_source().head().is_none());
@@ -88,7 +88,7 @@ fn repeated_function_type_nodes_keep_distinct_exact_ranges() {
 #[test]
 fn nested_reference_slice_generic_tuple_maps_every_structural_node() {
     let source = "  &[Option<(Missing, Missing)>]  ";
-    let authored = parse_type_ref(source).expect("nested type parses");
+    let authored = parse_attached_type_for_test(source).expect("nested type parses");
     let first_missing = source.find("Missing").expect("first spelling");
     let second_missing = source
         .rfind("Missing")
@@ -145,7 +145,7 @@ fn nested_reference_slice_generic_tuple_maps_every_structural_node() {
 #[test]
 fn trait_arguments_and_associated_values_keep_independent_paths() {
     let source = "Iterator<Missing, Item = Missing>";
-    let authored = parse_type_ref(source).expect("trait bound parses");
+    let authored = parse_attached_type_for_test(source).expect("trait bound parses");
     let first_missing = source.find("Missing").expect("first spelling");
     let second_missing = source.rfind("Missing").expect("second spelling");
 
@@ -163,7 +163,7 @@ fn trait_arguments_and_associated_values_keep_independent_paths() {
 #[test]
 fn multiline_and_utf8_paths_are_byte_exact() {
     let source = "Result<\n  Missing,\n  名前.Type\n>";
-    let authored = parse_type_ref(source).expect("multiline generic parses");
+    let authored = parse_attached_type_for_test(source).expect("multiline generic parses");
     let utf8_start = source.find("名前.Type").expect("utf8 path");
 
     assert_eq!(
@@ -183,7 +183,7 @@ fn multiline_and_utf8_paths_are_byte_exact() {
 #[test]
 fn qualified_turbofish_and_nested_generic_lexemes_are_exact() {
     let source = "pkg::types::Vec::<I32, Option<T>,>";
-    let authored = parse_type_ref(source).expect("qualified turbofish type parses");
+    let authored = parse_attached_type_for_test(source).expect("qualified turbofish type parses");
 
     assert_eq!(
         lexeme(
@@ -255,7 +255,7 @@ fn qualified_turbofish_and_nested_generic_lexemes_are_exact() {
 
 #[test]
 fn type_source_map_maps_nodes_and_lexemes_together() {
-    let authored = parse_type_ref("Vec<Option<T>>").expect("nested generic parses");
+    let authored = parse_attached_type_for_test("Vec<Option<T>>").expect("nested generic parses");
     let mapped = authored
         .source()
         .try_map(|range| Ok::<_, ()>((range.start() + 11, range.end() + 11)))
@@ -304,7 +304,7 @@ fn type_source_map_maps_nodes_and_lexemes_together() {
 
 #[test]
 fn type_source_map_rejects_missing_duplicate_and_out_of_order_lexemes() {
-    let authored = parse_type_ref("Vec<T>").expect("generic parses");
+    let authored = parse_attached_type_for_test("Vec<T>").expect("generic parses");
     let root = TypeRefNodePath::root();
 
     let mut missing = authored.source.lexemes.to_vec();
@@ -357,7 +357,7 @@ fn type_source_map_rejects_missing_duplicate_and_out_of_order_lexemes() {
 
 #[test]
 fn source_map_constructor_rejects_missing_extra_and_duplicate_paths() {
-    let authored = parse_type_ref("Vec<Missing>").expect("generic parses");
+    let authored = parse_attached_type_for_test("Vec<Missing>").expect("generic parses");
     let mut missing = authored.source.nodes.to_vec();
     let missing_path = path(&[TypeRefNodeStep::GenericArgument(0)]);
     missing.retain(|(candidate, _)| candidate != &missing_path);
@@ -403,7 +403,7 @@ fn source_map_constructor_rejects_missing_extra_and_duplicate_paths() {
 #[test]
 fn source_map_constructor_rejects_heads_and_children_outside_their_owner() {
     const TEST_ID: &str = "SRC-MAP-MISMATCH";
-    let authored = parse_type_ref("Vec<Missing>").expect("generic parses");
+    let authored = parse_attached_type_for_test("Vec<Missing>").expect("generic parses");
 
     let mut head_outside = authored.source.nodes.to_vec();
     let root = head_outside
@@ -455,7 +455,7 @@ fn type_ref_exact_generic_argument_limit() {
         "Many<{}>",
         std::iter::repeat_n("T", 256).collect::<Vec<_>>().join(",")
     );
-    let authored = parse_type_ref(&exact_arguments).expect("limit is inclusive");
+    let authored = parse_attached_type_for_test(&exact_arguments).expect("limit is inclusive");
     assert_eq!(authored.source().nodes().len(), 257);
 }
 
@@ -466,7 +466,7 @@ fn type_ref_one_over_generic_argument_limit() {
         std::iter::repeat_n("T", 257).collect::<Vec<_>>().join(",")
     );
     assert_eq!(
-        parse_type_ref(&too_many_arguments)
+        parse_attached_type_for_test(&too_many_arguments)
             .expect_err("257 arguments exceed the limit")
             .to_string(),
         "type constructor exceeds the 256 argument limit"
@@ -481,7 +481,7 @@ fn type_ref_exact_type_node_limit() {
             .collect::<Vec<_>>()
             .join(",")
     );
-    let authored = parse_type_ref(&exact_nodes).expect("limit is inclusive");
+    let authored = parse_attached_type_for_test(&exact_nodes).expect("limit is inclusive");
     assert_eq!(authored.source().nodes().len(), 4_096);
 }
 
@@ -494,7 +494,7 @@ fn type_ref_one_over_type_node_limit() {
             .join(",")
     );
     assert_eq!(
-        parse_type_ref(&too_many_nodes)
+        parse_attached_type_for_test(&too_many_nodes)
             .expect_err("4097 nodes exceed the limit")
             .to_string(),
         "type exceeds the 4096 node limit"

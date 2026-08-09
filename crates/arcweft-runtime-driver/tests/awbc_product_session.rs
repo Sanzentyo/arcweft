@@ -8,18 +8,21 @@ use arcweft_core::{
         schema::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-            AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
-            AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType,
-            AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId,
-            AwbcTableRange, AwbcTerminator, AwbcTypeId,
+            AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole,
+            AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram,
+            AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId,
+            AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTypeId,
         },
     },
     bytecode::BytecodeProgram,
+    effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile, RuntimeEffectExpr},
     entry::{EntryBindingIdentity, RuntimeEntryRoles},
-    plan::EntryRuntimeId,
+    plan::{
+        EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
+        RuntimeEntryTarget, RuntimeFlow, RuntimePlan,
+    },
     value::{RuntimeBinding, RuntimeExpr, RuntimeFunctionValue, RuntimeValue},
 };
-use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_interaction_model::input::{
     InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent,
 };
@@ -27,8 +30,6 @@ use arcweft_presentation::fx::{
     FiniteF32, FxAbiHash, FxDefinition, FxDiagnosticCode, FxGraph, FxGraphChildPath, FxId,
     FxInstanceId, FxParameter, FxRuntimeType, FxRuntimeValue,
 };
-use arcweft_render_text::LineDisplayCatalog;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::{
     clock::RuntimeClockStep,
     presentation_handles::{
@@ -43,27 +44,13 @@ use arcweft_runtime_driver::{
     },
     swap::GenerationId,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-driver-awbc-product-session-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-driver-awbc-product-session-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
 }
 
 #[test]
@@ -79,6 +66,46 @@ fn awbc_product_bundle_session_from_awfb_requires_and_uses_product_awbc() {
         "unexpected diagnostics: {:?}",
         step.diagnostics
     );
+}
+
+#[test]
+fn bundle_session_omits_successful_runtime_assertion() {
+    let bundle = assertion_product_bundle(true);
+    let mut session = BundleSession::new(&bundle, BundleSessionOptions::default())
+        .expect("assertion session starts");
+
+    let step = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+
+    assert!(step.assertion_failures.is_empty());
+    assert!(step.line_effects.is_empty());
+    assert!(step.diagnostics.is_empty());
+}
+
+#[test]
+fn bundle_session_returns_failed_runtime_assertion_as_typed_core_data() {
+    let bundle = assertion_product_bundle(false);
+    let mut session = BundleSession::new(&bundle, BundleSessionOptions::default())
+        .expect("assertion session starts");
+
+    let step = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+
+    let [failure] = step.assertion_failures.as_slice() else {
+        panic!("false assertion must produce exactly one typed failure");
+    };
+    assert_eq!(
+        failure.assertion().guard(),
+        RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard")
+    );
+    assert_eq!(failure.assertion().condition(), "false");
+    assert_eq!(failure.assertion().message(), "must be ready");
+    assert_eq!(step.line_effects.len(), 1);
+    assert!(step.diagnostics.is_empty());
 }
 
 #[test]
@@ -115,6 +142,85 @@ fn awbc_product_bundle_session_save_bytes_round_trip_restore() {
         .export_session_save_bytes()
         .expect("restored session save exports");
     assert_eq!(save, restored_save);
+}
+
+#[test]
+fn awbc_product_session_save_preserves_exact_same_label_flow_identity() {
+    let first = FlowRuntimeId::from_checked_declaration_digest([0x81; 32], "flow.main")
+        .expect("first checked Flow identity");
+    let second = FlowRuntimeId::from_checked_declaration_digest([0x82; 32], "flow.main")
+        .expect("second checked Flow identity");
+    let mut program = minimal_awbc_program("entry.main");
+    program.flow_bindings[0].flow = first.clone();
+    let mut second_function = program.functions[0].clone();
+    second_function.blocks = AwbcTableRange::new(2, 1);
+    second_function.entry_block = AwbcBlockId(2);
+    program.functions.push(second_function);
+    let mut second_block = program.blocks[0].clone();
+    second_block.owner = AwbcFunctionId(2);
+    program.blocks.push(second_block);
+    program.flow_bindings.push(AwbcFlowBinding {
+        flow: second.clone(),
+        function: AwbcFunctionId(2),
+    });
+    let bytes = product_bundle_with_label("entry.main", "same-label-save.arcw")
+        .with_product_awbc(program)
+        .to_format_bytes(BundleFormat::Awfb)
+        .expect("same-label product AWFB encodes");
+    let session = product_session_from_bytes(&bytes);
+    let before = session
+        .snapshot_session()
+        .expect("session snapshot exports");
+    assert_eq!(
+        before.executor.state.live_flow_bindings,
+        vec![AwbcFlowBinding {
+            flow: first.clone(),
+            function: AwbcFunctionId(0),
+        }]
+    );
+
+    let save = session
+        .export_session_save_bytes()
+        .expect("same-label session save exports");
+    let mut restored = product_session_from_bytes(&bytes);
+    restored
+        .import_session_save_bytes(&save, &arcweft_save::SaveDecodeOptions::default())
+        .expect("same-label session save imports");
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("restored snapshot exports")
+            .executor
+            .state
+            .live_flow_bindings,
+        before.executor.state.live_flow_bindings
+    );
+    assert_eq!(
+        restored
+            .export_session_save_bytes()
+            .expect("restored save exports"),
+        save
+    );
+
+    let before_rejection = restored
+        .snapshot_session()
+        .expect("pre-rejection snapshot exports");
+    let mut substituted = before_rejection.clone();
+    substituted.executor.state.live_flow_bindings[0].flow = second;
+    let error = restored
+        .restore_session_snapshot(substituted)
+        .expect_err("same-label semantic Flow substitution must be rejected");
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::Fiber { ref message }
+            if message.contains("no longer owns AWBC function 0")
+    ));
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("rejected restore leaves session unchanged"),
+        before_rejection
+    );
 }
 
 #[test]
@@ -691,6 +797,64 @@ fn product_awfb_bytes(entry: &str) -> Vec<u8> {
     product_awfb_bytes_with_label(entry, "awbc-session.arcw")
 }
 
+fn assertion_product_bundle(condition: bool) -> ArcweftBundle {
+    let flow = FlowRuntimeId::from_runtime_target_value("flow.assertion")
+        .expect("fixture flow ID is valid");
+    let plan = RuntimePlan::new(
+        vec![RuntimeFlow {
+            id: flow.clone(),
+            ops: vec![
+                FlowOp::EvaluatedEffect(RuntimeEffectExpr::Assert {
+                    guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard"),
+                    condition: RuntimeExpr::Value(RuntimeValue::Bool(condition)),
+                    message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+                    profile: RuntimeAssertionProfile::Always,
+                }),
+                FlowOp::Return("done".to_owned()),
+            ],
+        }],
+        Vec::new(),
+    )
+    .expect("assertion runtime plan is valid")
+    .with_entries(vec![RuntimeEntrySpec {
+        id: EntryRuntimeId::from_source_entity_body("entry.main")
+            .expect("fixture entry ID is valid"),
+        kind: RuntimeEntryKind::Cli,
+        binding: EntryBindingIdentity::from_bytes([1; 32]),
+        target: RuntimeEntryTarget::Flow(flow),
+        roles: RuntimeEntryRoles::None,
+    }]);
+    let dialogue_content = DialogueContentCatalog::new();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "assertion-session.arcw")
+        .lower()
+        .expect("assertion AWBC lowers")
+        .program;
+    ArcweftBundle::try_new(
+        BundleManifest {
+            profile_id: None,
+            profile_kind: None,
+            entry: Some("entry.main".to_owned()),
+            adapter: None,
+            adapter_manifest_ids: Vec::new(),
+            required_host_calls: Vec::new(),
+            runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
+                entry_flow: Some("flow.assertion".to_owned()),
+                flows: 1,
+                bytecode_instructions: 2,
+                line_task_groups: 0,
+                stream_plans: 0,
+                source_plans: 0,
+            },
+        },
+        source_map("assertion-session.arcw", ""),
+        BytecodeProgram::from_runtime_plan(plan),
+        dialogue_content,
+    )
+    .expect("assertion bundle is valid")
+    .with_product_awbc(product_awbc)
+}
+
 fn product_awfb_bytes_with_label(entry: &str, source_label: &str) -> Vec<u8> {
     product_bundle_with_label(entry, source_label)
         .to_format_bytes(BundleFormat::Awfb)
@@ -715,6 +879,7 @@ fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: None,
                 flows: 0,
                 bytecode_instructions: 0,
@@ -725,7 +890,7 @@ fn product_bundle_with_label(entry: &str, source_label: &str) -> ArcweftBundle {
         },
         source_map(source_label, ""),
         BytecodeProgram::default(),
-        LineDisplayCatalog::new(test_dialogue_revision()),
+        DialogueContentCatalog::new(),
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(minimal_awbc_program(entry))
@@ -868,6 +1033,11 @@ fn minimal_awbc_program(entry: &str) -> AwbcProgram {
                 flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
             },
         ],
+        flow_bindings: vec![AwbcFlowBinding {
+            flow: FlowRuntimeId::from_checked_declaration_digest([0x71; 32], "flow.main")
+                .expect("test checked Flow identity"),
+            function: AwbcFunctionId(0),
+        }],
         blocks: vec![
             AwbcBlock {
                 owner: AwbcFunctionId(0),

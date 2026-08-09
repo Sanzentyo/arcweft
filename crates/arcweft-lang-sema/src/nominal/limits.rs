@@ -1,6 +1,6 @@
 //! Bounded nominal-resolution and aggregation budgets.
 
-/// Per-reference budget that can be crossed while resolving an authored type.
+/// Per-reference budget that can be crossed while resolving a final-HIR type graph.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum NominalResolutionLimitKind {
     TypeNodesPerReference,

@@ -30,7 +30,6 @@ fn assert_function_body_scope(
     function: &HirFunctionItem,
 ) -> ScopeId {
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -126,9 +125,7 @@ fn assert_function_freeze_rejects(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     tamper(&mut transaction, owner);
     assert!(
@@ -165,6 +162,7 @@ fn replace_function_parameter_groups(
                 function.where_predicates().into(),
                 function.requires().into(),
                 function.ensures().into(),
+                function.effect_clauses().into(),
                 function.return_type(),
             ),
             function.body().clone(),
@@ -183,6 +181,7 @@ fn replace_function_parameter_groups(
         signature.2,
         signature.3,
         signature.4,
+        signature.5,
     )
     .unwrap();
     let scopes = HirContractScopes::try_new(scopes.0, scopes.1, scopes.2).unwrap();
@@ -203,15 +202,68 @@ fn replace_function_parameter_groups(
         .unwrap();
 }
 
+#[test]
+fn function_item_owns_its_ordered_effect_expression_inventory() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-effect-inventory",
+        "fn bounded() effects { fs.read, debug.record } {}\n",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let (_, item, function) = function(&module, 0);
+    let [clause] = function.effect_clauses() else {
+        panic!("one authored Function effect clause")
+    };
+    assert_eq!(item.kind().effect_expression_roots(), clause.operands());
+}
+
+#[test]
+fn function_body_retains_a_closure_with_an_expected_effect_row() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-closure-effect-bound",
+        r"
+fn retain_callback() -> Unit
+effects { }
+{
+    let later: (Unit) -> Unit effects { agent.observe } = |_unit: Unit| -> Unit { () }
+    ()
+}
+",
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "unexpected syntax diagnostics: {:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let (_, item, function) = function(&module, 0);
+    assert!(
+        !item.is_poisoned(),
+        "unexpected item state: {:?}; diagnostics: {:#?}",
+        item.state(),
+        module.diagnostics()
+    );
+    let HirFunctionBody::Block { statements, .. } = function.body() else {
+        panic!("Function closure fixture must retain its body")
+    };
+    assert_eq!(statements.len(), 1);
+}
+
 fn lower_function_output(
     database: &mut HirDatabase,
     parsed: &ParsedSource,
     key: &HirModuleKey,
 ) -> crate::database::HirLowerOutput {
     let mut transaction = stage(database, parsed, key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(parsed).unwrap();
     transaction.finish(database).unwrap()
 }
 
@@ -430,7 +482,6 @@ fn function_retains_parameter_defaults_and_rest_kind_with_exact_source_owners() 
         parsed.diagnostics()
     );
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -493,7 +544,6 @@ fn function_rest_shape_recovery_retains_typed_parameters_and_defaults() {
         source,
     );
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -536,6 +586,10 @@ fn function_rest_shape_recovery_retains_typed_parameters_and_defaults() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Function freeze test asserts the closed parameter kind/default tamper matrix"
+)]
 fn function_freeze_rejects_parameter_kind_and_default_cardinality_tampering() {
     assert_function_freeze_rejects(
         "parameter-kind",
@@ -1076,6 +1130,10 @@ fn function_omitted_return_freeze_rejects_foreign_synthetic_return_inventory() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the incremental Function test asserts the full block/missing transition and retirement matrix"
+)]
 fn incremental_function_missing_block_missing_retires_old_body_and_readmits_fresh_error() {
     let name = SourceName::path("proof/function-body-incremental.arcw");
     let document_id = "arcweft-test://proof/function-body-incremental";
@@ -1216,7 +1274,8 @@ fn incremental_function_missing_block_missing_retires_old_body_and_readmits_fres
 }
 
 #[test]
-fn incremental_function_contract_cardinality_change_retires_the_changed_item_graph() {
+fn incremental_function_contract_cardinality_change_retires_the_item_graph_but_preserves_source_children()
+ {
     let name = SourceName::path("proof/function-contract-incremental.arcw");
     let document_id = "arcweft-test://proof/function-contract-incremental";
     let initial_source = concat!(
@@ -1253,7 +1312,7 @@ fn incremental_function_contract_cardinality_change_retires_the_changed_item_gra
     else {
         panic!("initial Function block")
     };
-    let [_, removed_requires] = first_function.requires() else {
+    let [retained_requires, removed_requires] = first_function.requires() else {
         panic!("two exact preconditions")
     };
     let initial_requires = expression_ids_in_scope(&first, requires_scope);
@@ -1285,6 +1344,17 @@ fn incremental_function_contract_cardinality_change_retires_the_changed_item_gra
     assert_ne!(second_owner, owner);
     assert_eq!(second_item.state(), &HirItemPoisonState::Clean);
     assert_eq!(second_function.requires().len(), 1);
+    assert_ne!(second_function.callable_scope(), callable_scope);
+    assert_ne!(second_function.requires_scope(), requires_scope);
+    assert_ne!(second_function.ensures_scope(), ensures_scope);
+    let HirFunctionBody::Block {
+        scope: second_body_scope,
+        ..
+    } = second_function.body()
+    else {
+        panic!("revised Function block")
+    };
+    assert_eq!(*second_body_scope, *body_scope);
     assert_eq!(output.invalidations().changed_items(), [second_owner]);
     assert_eq!(output.invalidations().retired_items(), [owner]);
 
@@ -1292,14 +1362,21 @@ fn incremental_function_contract_cardinality_change_retires_the_changed_item_gra
     assert_retired(second, callable_scope);
     assert_retired(second, requires_scope);
     assert_retired(second, ensures_scope);
-    assert_retired(second, *body_scope);
-    for retired in initial_requires
-        .iter()
-        .chain(&initial_ensures)
-        .chain(&initial_body)
-    {
-        assert_retired(second, *retired);
-    }
+
+    let [second_requires] = second_function.requires() else {
+        panic!("one retained precondition")
+    };
+    assert_eq!(second_requires, retained_requires);
+    let revised_requires = expression_ids_in_scope(second, second_function.requires_scope());
+    assert_eq!(revised_requires, initial_requires[..revised_requires.len()]);
+    assert_eq!(
+        expression_ids_in_scope(second, second_function.ensures_scope()),
+        initial_ensures
+    );
+    assert_eq!(
+        expression_ids_in_scope(second, *second_body_scope),
+        initial_body
+    );
     assert_retired(second, *removed_requires);
     assert!(first.slots().resolve(*removed_requires).is_ok());
 }

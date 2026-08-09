@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::lexer::{LexToken, LiteralLexemePart, typed_entity_reference, typed_literal};
 use super::shadow_recovery::{find_matching_close, first_significant, token_text};
 use super::type_ref::EmittedTypeProjection;
@@ -25,7 +25,7 @@ use crate::patterns::{
 };
 
 pub(super) fn significant_range(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> SourceRange {
@@ -42,7 +42,7 @@ pub(super) fn significant_range(
     }
 }
 
-pub(super) fn empty_range(parser: &ShadowDocumentParser<'_, '_>) -> SourceRange {
+pub(super) fn empty_range(parser: &DocumentParser<'_, '_>) -> SourceRange {
     let at = parser.current_offset();
     SourceRange::new(at, at)
 }
@@ -67,7 +67,7 @@ pub(super) struct PatternProjectionTransaction {
 }
 
 impl PatternProjectionTransaction {
-    pub(super) fn new(parser: &ShadowDocumentParser<'_, '_>) -> Self {
+    pub(super) fn new(parser: &DocumentParser<'_, '_>) -> Self {
         Self {
             tree: u64::try_from(parser.event_position())
                 .expect("grammar event limits fit Pattern projection identity"),
@@ -80,7 +80,7 @@ impl PatternProjectionTransaction {
 
     pub(super) fn start_node(
         &mut self,
-        parser: &mut ShadowDocumentParser<'_, '_>,
+        parser: &mut DocumentParser<'_, '_>,
         kind: SyntaxKind,
         role: SyntaxRole,
         path: &PatternNodePath,
@@ -116,7 +116,7 @@ impl PatternProjectionTransaction {
         ));
     }
 
-    pub(super) fn finish(self, parser: &mut ShadowDocumentParser<'_, '_>, root: PatternSyntaxNode) {
+    pub(super) fn finish(self, parser: &mut DocumentParser<'_, '_>, root: PatternSyntaxNode) {
         let authored = Arc::new(
             AuthoredPattern::try_new(root, self.nodes, self.components, self.type_children)
                 .expect("Pattern grammar constructs one validated semantic source owner"),
@@ -128,7 +128,7 @@ impl PatternProjectionTransaction {
 }
 
 pub(super) fn binding_syntax(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> (PatternBindingSyntax, Vec<PatternRecoveryIssue>) {
@@ -171,7 +171,7 @@ pub(super) fn binding_syntax(
 }
 
 pub(super) fn name_syntax(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     index: Option<usize>,
 ) -> PatternNameSyntax {
     let Some(token) = index.and_then(|index| parser.token_at(index)) else {
@@ -184,7 +184,7 @@ pub(super) fn name_syntax(
 }
 
 pub(super) fn project_literal(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
     token: LexToken,
@@ -211,7 +211,7 @@ pub(super) fn project_literal(
 }
 
 pub(super) fn project_id_ref(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
     token: LexToken,
@@ -236,7 +236,7 @@ pub(super) fn project_id_ref(
 }
 
 pub(super) fn project_variant_head(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
     start: usize,
@@ -329,7 +329,7 @@ pub(super) fn project_variant_head(
 }
 
 pub(super) fn project_record_path(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
     start: usize,
@@ -345,7 +345,7 @@ pub(super) fn project_record_path(
 }
 
 pub(super) fn stage_variant_payload(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
     end: usize,
@@ -386,7 +386,7 @@ pub(super) fn stage_variant_payload(
 }
 
 pub(super) fn stage_sequence_rest(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
     start: usize,
@@ -432,7 +432,7 @@ pub(super) fn stage_sequence_rest(
 }
 
 pub(super) fn stage_record_rest(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
     field: u32,
@@ -485,14 +485,11 @@ pub(super) fn stage_record_rest(
     (PatternRecordFieldSyntax::Rest(None), None)
 }
 
-fn source_at<'source>(
-    parser: &ShadowDocumentParser<'source, '_>,
-    range: SourceRange,
-) -> &'source str {
+fn source_at<'source>(parser: &DocumentParser<'source, '_>, range: SourceRange) -> &'source str {
     &parser.source()[range.as_range()]
 }
 
-fn insertion_at_token_boundary(parser: &ShadowDocumentParser<'_, '_>, index: usize) -> SourceRange {
+fn insertion_at_token_boundary(parser: &DocumentParser<'_, '_>, index: usize) -> SourceRange {
     let at = parser
         .offset_at_token_boundary(index)
         .unwrap_or_else(|| parser.current_offset());
@@ -548,10 +545,7 @@ impl TokenPathParts {
     }
 }
 
-fn token_path_parts(
-    parser: &ShadowDocumentParser<'_, '_>,
-    significant: &[usize],
-) -> TokenPathParts {
+fn token_path_parts(parser: &DocumentParser<'_, '_>, significant: &[usize]) -> TokenPathParts {
     let mut cursor = 0_usize;
     let mut root = Some(PatternPathRoot::ImplicitCrate);
     let mut root_range = None;
@@ -638,7 +632,7 @@ fn token_path_parts(
 }
 
 fn push_path_segment(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     indices: &[usize],
     segments: &mut Vec<TokenPathSegment>,
     issue: &mut Option<PatternPathIssue>,
@@ -739,11 +733,7 @@ fn name_issue(name: &PatternNameSyntax) -> Option<SyntaxNameIssue> {
     }
 }
 
-fn significant_indices(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> Vec<usize> {
+fn significant_indices(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Vec<usize> {
     (start..end)
         .filter(|index| {
             parser.token_at(*index).is_some_and(|token| {
@@ -759,7 +749,7 @@ fn significant_indices(
         .collect()
 }
 
-fn is_name_token(parser: &ShadowDocumentParser<'_, '_>, index: usize) -> bool {
+fn is_name_token(parser: &DocumentParser<'_, '_>, index: usize) -> bool {
     parser.token_at(index).is_some_and(|token| {
         matches!(
             token.kind(),
@@ -768,6 +758,6 @@ fn is_name_token(parser: &ShadowDocumentParser<'_, '_>, index: usize) -> bool {
     })
 }
 
-fn path_separator(parser: &ShadowDocumentParser<'_, '_>, index: usize) -> bool {
+fn path_separator(parser: &DocumentParser<'_, '_>, index: usize) -> bool {
     matches!(token_text(parser, index), Some("." | "::"))
 }

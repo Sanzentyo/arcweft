@@ -5,36 +5,24 @@
 //! this crate instead of reaching into parser internals.
 
 mod arena;
-mod cache_facts;
-mod database;
-mod diagnostic;
-mod dialogue_application;
-mod dialogue_identity;
-pub mod entry;
-mod expr;
+pub mod database;
+pub mod diagnostic;
+pub mod dialogue_application;
+pub mod expr;
 mod final_lowering;
-mod final_project;
 pub mod fx;
 pub mod identity;
-mod item;
-mod leaf;
-pub mod lower;
-mod lower_choice;
-mod lower_context;
-mod lower_dialogue;
-mod lower_flow;
-mod lower_ids;
-pub mod model;
-mod module;
-mod pattern;
+pub mod item;
+pub mod leaf;
+pub mod lowering;
+pub mod module;
+pub mod pattern;
+#[path = "final_project.rs"]
 pub mod project;
-mod scope;
-mod slot;
-mod source_index;
-mod stmt;
-pub mod style;
+pub mod proof_return;
+pub mod scope;
+pub mod slot;
+pub mod source_index;
+pub mod stmt;
 pub mod symbol;
-mod type_ref;
-pub mod view_part;
-
-pub mod callable_source;
+pub mod type_ref;

@@ -1,11 +1,416 @@
 use super::*;
 
+fn absolute_entity_reference(value: &str) -> HirIdRef {
+    HirIdRef::absolute(
+        HirEntityReference::try_new(value.into()).expect("valid absolute entity reference"),
+    )
+}
+
+#[test]
+fn flow_uses_one_structural_symbol_without_entering_the_value_namespace() {
+    let (document, project) = project("flow opening {}\n");
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(std::slice::from_ref(&document), "flow-structural-symbol"),
+    )
+    .expect("Flow structural symbol links")
+    .into_table();
+    let symbol = table
+        .callable_symbols()
+        .find(|symbol| symbol.owner() == CallableDeclarationOwner::Flow)
+        .expect("Flow has one structural callable record owner");
+    let CallableDeclarationKey::Flow(flow) = symbol.declaration() else {
+        panic!("Flow symbol must retain the structural Flow key")
+    };
+    assert_eq!(flow.public_id().as_str(), "flow.opening");
+    assert_eq!(flow.publication(), FlowPublicationKind::ModuleScoped);
+    assert_eq!(
+        table.flow_symbol_for_item(symbol.source_item()),
+        Some(symbol)
+    );
+
+    let root = CanonicalModulePath::crate_root();
+    let source = document
+        .span(SourceRange::new(0, "flow opening".len()))
+        .expect("reference source");
+    let reference = absolute_entity_reference("flow.opening");
+    assert!(matches!(
+        table.resolve_entity_reference(&root, &reference, source.clone()),
+        Ok(ResolvedProjectSymbol::StructuralCallable(resolved))
+            if resolved.declaration() == symbol.declaration()
+    ));
+    assert!(matches!(
+        table.resolve_value_target(&root, &symbol_path("flow.opening"), source.clone()),
+        Ok(ProjectValueLookup::Absent)
+    ));
+    assert!(matches!(
+        table.resolve_callable(&root, &symbol_path("flow.opening"), &source),
+        Err(ProjectSymbolResolutionError::NotCallable {
+            actual: ProjectSymbolTargetId::StructuralCallable(_),
+            ..
+        })
+    ));
+}
+
+#[test]
+fn authored_absolute_parameterized_flow_resolves_through_its_structural_symbol() {
+    let source = concat!(
+        "struct GameState { score: i32 }\n",
+        "flow @flow.opening opening(current: GameState) {}\n",
+    );
+    let (document, project) = project(source);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(std::slice::from_ref(&document), "parameterized-flow-symbol"),
+    )
+    .expect("parameterized authored Flow structural symbol links")
+    .into_table();
+    let symbol = table
+        .callable_symbols()
+        .find(|symbol| symbol.owner() == CallableDeclarationOwner::Flow)
+        .expect("parameterized authored Flow has one structural symbol");
+    let CallableDeclarationKey::Flow(flow) = symbol.declaration() else {
+        panic!("Flow symbol must retain the structural Flow key")
+    };
+    assert_eq!(flow.public_id().as_str(), "flow.opening");
+    assert_eq!(flow.publication(), FlowPublicationKind::AuthoredAbsolute);
+
+    let source = document
+        .span(SourceRange::new(
+            source.find("@flow.opening").expect("Flow ID") + 1,
+            source.find("@flow.opening").expect("Flow ID") + "@flow.opening".len(),
+        ))
+        .expect("entity-reference source");
+    let reference = absolute_entity_reference("flow.opening");
+    assert!(matches!(
+        table.resolve_entity_reference(
+            &CanonicalModulePath::crate_root(),
+            &reference,
+            source,
+        ),
+        Ok(ResolvedProjectSymbol::StructuralCallable(resolved))
+            if resolved.declaration() == symbol.declaration()
+    ));
+}
+
+#[test]
+fn name_derived_flow_identity_remains_module_preserving() {
+    let (documents, project) = project_modules(&[
+        ("", "fn root() -> Unit { () }\n"),
+        ("left", "flow opening {}\n"),
+        ("right", "flow opening {}\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "module-preserving-flow"),
+    )
+    .expect("same name-derived Flow identity remains legal in distinct modules")
+    .into_table();
+    let flows = table
+        .callable_symbols()
+        .filter_map(|symbol| match symbol.declaration() {
+            CallableDeclarationKey::Flow(flow) => Some((symbol, flow)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(flows.len(), 2);
+    assert_eq!(flows[0].1.public_id().as_str(), "flow.opening");
+    assert_eq!(flows[1].1.public_id().as_str(), "flow.opening");
+    assert_ne!(flows[0].1.module(), flows[1].1.module());
+
+    let reference = absolute_entity_reference("flow.opening");
+    for (index, module_name) in [(1, "left"), (2, "right")] {
+        let module = module_path(module_name);
+        let source = documents[index]
+            .span(SourceRange::new(0, "flow opening".len()))
+            .expect("reference source");
+        let resolved = table.resolve_entity_reference(&module, &reference, source);
+        assert!(
+            matches!(
+                &resolved,
+                Ok(ResolvedProjectSymbol::StructuralCallable(symbol))
+                    if symbol.declaration().module() == &module
+            ),
+            "module-scoped Flow resolution failed: {resolved:#?}"
+        );
+    }
+}
+
+#[test]
+fn duplicate_authored_absolute_flow_id_is_rejected_project_wide() {
+    let (documents, project) = project_modules(&[
+        ("", "fn root() -> Unit { () }\n"),
+        ("left", "flow @flow.shared {}\n"),
+        ("right", "flow @flow.shared {}\n"),
+    ]);
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "duplicate-absolute-flow"),
+    )
+    .expect_err("authored absolute Flow IDs are project-global");
+    assert!(matches!(
+        report.diagnostics(),
+        [ProjectSymbolLinkError::DuplicatePublicId { public_id, .. }]
+            if public_id.as_str() == "flow.shared"
+    ));
+}
+
+#[test]
+fn one_symbol_table_registers_all_callable_kinds_and_character() {
+    let source = concat!(
+        "fn work() -> Unit { () }\n",
+        "predicate is_ready() = true\n",
+        "proof readiness() = ()\n",
+    );
+    let (document, project) = project(source);
+    let character = external_seed(
+        &document,
+        "character.akane",
+        [
+            (binding_path(["character", "akane"]), false),
+            (binding_path(["akane"]), false),
+        ],
+    );
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &declarations(&document, vec![character], "all-callable-families"),
+    )
+    .expect("one typed symbol table")
+    .into_table();
+
+    let callables = table
+        .callable_symbols()
+        .map(|symbol| {
+            (
+                symbol.declaration().name().to_owned(),
+                symbol.owner(),
+                symbol.source_snapshot(),
+                symbol.source_item(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(callables.len(), 3);
+    assert_eq!(
+        callables
+            .iter()
+            .map(|(name, owner, _, _)| (name.as_str(), *owner))
+            .collect::<Vec<_>>(),
+        [
+            ("work", CallableDeclarationOwner::Function),
+            ("is_ready", CallableDeclarationOwner::Predicate),
+            ("readiness", CallableDeclarationOwner::Proof),
+        ]
+    );
+
+    let root = CanonicalModulePath::crate_root();
+    let module = project.module(&root).expect("root project module").module();
+    for (_, _, snapshot, item) in &callables {
+        assert_eq!(*snapshot, module.snapshot_id());
+        assert!(module.resolve_item(*item).is_ok());
+    }
+
+    let external = table
+        .external_symbols()
+        .next()
+        .expect("Character external declaration");
+    assert_eq!(table.external_symbols().count(), 1);
+    assert_eq!(external.canonical_path().to_string(), "character.akane");
+    let expected = ProjectSymbolTargetId::External(external.declaration());
+    let bindings = scope_rows(&table, &root);
+    assert!(bindings.contains(&(
+        vec!["character".to_owned(), "akane".to_owned()],
+        expected.clone(),
+    )));
+    assert!(bindings.contains(&(vec!["akane".to_owned()], expected)));
+}
+
+#[test]
+fn ordinary_callable_duplicate_names_are_reported_together() {
+    let source = concat!(
+        "fn repeated() -> Unit { () }\n",
+        "predicate repeated() = true\n",
+        "proof repeated() = ()\n",
+    );
+    let (document, project) = project(source);
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &declarations(&document, Vec::new(), "ordinary-duplicate-families"),
+    )
+    .expect_err("ordinary callable names do not form overload sets");
+
+    let [
+        ProjectSymbolLinkError::DuplicateDeclaration {
+            module,
+            name,
+            sites,
+        },
+    ] = report.diagnostics()
+    else {
+        panic!(
+            "one grouped duplicate-name diagnostic must own every source site: {:?}",
+            report.diagnostics()
+        )
+    };
+    assert_eq!(module, &CanonicalModulePath::crate_root());
+    assert_eq!(name, "repeated");
+    assert_eq!(sites.len(), 3);
+    assert!(
+        sites
+            .windows(2)
+            .all(|pair| pair[0].range() < pair[1].range())
+    );
+    assert!(
+        sites.iter().all(|site| {
+            &document.text()[site.range().start()..site.range().end()] == "repeated"
+        })
+    );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one session-identity matrix proves snapshot binding across project republication"
+)]
+fn proof_artifact_id_is_session_only_and_snapshot_bound() {
+    fn publish_project(
+        database: &mut HirDatabase,
+        parsed: &ParsedSource,
+        package: &CallablePackageId,
+        path: &CanonicalModulePath,
+        profile: &str,
+    ) -> HirProject {
+        let key = HirModuleKey::new(
+            package.clone(),
+            path.clone(),
+            parsed.document().identity().id().clone(),
+        );
+        let world = ProjectSymbolWorldId::try_new(
+            package.clone(),
+            parsed.document().identity().id().clone(),
+            profile,
+        )
+        .expect("symbol world");
+        let revision = ProjectSymbolRevision::try_for_documents([parsed.document().identity()])
+            .expect("symbol revision");
+        let transaction = database
+            .stage_proof_return_project(
+                [LoweringRequest::try_new(key, parsed).expect("lowering request")],
+                world,
+                revision,
+                [parsed.document().identity()],
+                crate::lowering::HirLoweringControl::new(),
+            )
+            .expect("staged HIR project");
+        let facts = HirProofReturnSemanticFactSet::try_new(
+            Arc::clone(transaction.generation()),
+            transaction.headers().cloned(),
+            [],
+        )
+        .expect("fixture has no authored Proof returns");
+        let mut outputs = transaction
+            .publish_with_semantic_facts(database, facts)
+            .expect("published HIR project");
+        let hir = outputs.pop().expect("one fixture module").into_module();
+        assert!(outputs.is_empty());
+        let module =
+            HirProjectModule::try_new(database, package, path, parsed.document().identity(), hir)
+                .expect("root module binding");
+        HirProject::try_new(database, package.clone(), [module]).expect("HIR project")
+    }
+
+    fn registered_artifact(
+        project: &HirProject,
+        document: &SourceDocument,
+        profile: &str,
+    ) -> (CallableDeclarationKey, ProofArtifactId) {
+        let table =
+            ProjectSymbolTable::link(project.view(), &declarations(document, Vec::new(), profile))
+                .expect("proof symbol publication")
+                .into_table();
+        let symbol = table
+            .callable_symbols()
+            .find(|symbol| symbol.owner() == CallableDeclarationOwner::Proof)
+            .expect("registered Proof");
+        let declaration = symbol.declaration().clone();
+        let CallableDeclarationKey::Existing(id) = &declaration else {
+            panic!("authored top-level Proof uses the existing declaration key")
+        };
+        let artifact = table
+            .proof_artifact(project.view(), id)
+            .expect("snapshot-bound Proof artifact");
+        (declaration, artifact)
+    }
+
+    let profile = "proof-artifact-snapshot-bound";
+    let source_name = SourceName::path("src/proof-artifact.arcw");
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://project-symbol-tests/proof-artifact")
+                .expect("document id"),
+            source_name.clone(),
+            "proof stable() = ()\n",
+        )
+        .expect("source document"),
+    );
+    let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+    let initial = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(source_name),
+            Arc::clone(&document),
+            ParseOptions::default(),
+        )
+        .expect("initial attached source");
+    let package = CallablePackageId::try_new(PACKAGE).expect("package");
+    let path = CanonicalModulePath::crate_root();
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let first_project = publish_project(&mut database, &initial, &package, &path, profile);
+    let (first_declaration, first) = registered_artifact(&first_project, &document, profile);
+
+    let body_start = document.text().rfind("()").expect("Proof body");
+    let changed_source = syntax
+        .reparse(
+            &initial,
+            &[SourceEdit::new(
+                document
+                    .span(SourceRange::new(body_start, body_start + 2))
+                    .expect("Proof body span"),
+                "{ let value: Unit = (); value }",
+            )],
+            ParseOptions::default(),
+        )
+        .expect("changed attached source");
+    let changed_project = publish_project(&mut database, &changed_source, &package, &path, profile);
+    let (changed_declaration, changed) =
+        registered_artifact(&changed_project, changed_source.document(), profile);
+
+    assert_eq!(first_declaration, changed_declaration);
+    assert_eq!(first.declaration(), changed.declaration());
+    assert_ne!(first.snapshot(), changed.snapshot());
+    assert_eq!(
+        first.item(),
+        changed.item(),
+        "a body-only reparse preserves the source-backed Proof item identity",
+    );
+    assert_ne!(first, changed);
+    assert_eq!(first.item().module(), first.snapshot().module());
+    assert_eq!(changed.item().module(), changed.snapshot().module());
+
+    let (foreign_document, foreign_project) = project("proof stable() = ()\n");
+    let (foreign_declaration, foreign) = registered_artifact(
+        &foreign_project,
+        &foreign_document,
+        "proof-artifact-foreign-session",
+    );
+    assert_eq!(first_declaration, foreign_declaration);
+    assert_ne!(first, foreign, "Proof artifacts never cross HIR sessions");
+}
+
 #[test]
 fn ordinary_projection_matches_callable_golden() {
     let (document, project) =
         project("pub fn alpha() -> Unit { () }\n#[fx]\nfn beta(value: i32) -> i32 { value }\n");
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &declarations(&document, Vec::new(), "ordinary-golden"),
     )
     .expect("ordinary link")
@@ -37,6 +442,34 @@ fn ordinary_projection_matches_callable_golden() {
 }
 
 #[test]
+fn final_hir_symbol_projection_preserves_the_resolved_family() {
+    let source = concat!(
+        "pub fn work() -> Unit { () }\n",
+        "pub struct Record { value: i32 }\n",
+    );
+    let (document, project) = project(source);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &declarations(&document, Vec::new(), "final-hir-symbol-family"),
+    )
+    .expect("symbol families link")
+    .into_table();
+    let root = CanonicalModulePath::crate_root();
+    let site = document
+        .span(SourceRange::new(0, source.len()))
+        .expect("reference site");
+
+    assert!(matches!(
+        table.resolve_hir_symbol_target(&root, &type_path("work"), site.clone()),
+        Ok(ResolvedProjectSymbol::Callable(_))
+    ));
+    assert!(matches!(
+        table.resolve_hir_symbol_target(&root, &type_path("Record"), site),
+        Ok(ResolvedProjectSymbol::Nominal(_))
+    ));
+}
+
+#[test]
 fn nominal_records_publish_once_and_resolve_through_every_import_form() {
     let root_source = concat!(
         "use crate.models.Record\n",
@@ -60,7 +493,7 @@ fn nominal_records_publish_once_and_resolve_through_every_import_form() {
         ("facade", "pub use crate.models.Alias\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-import-publication"),
     )
     .expect("nominals and imports publish atomically")
@@ -72,7 +505,7 @@ fn nominal_records_publish_once_and_resolve_through_every_import_form() {
         .expect("reference source");
     let resolve_nominal = |module: &CanonicalModulePath, spelling: &str| {
         let ProjectTypeTarget::Nominal(declaration) = table
-            .resolve_type_target(module, &type_path(spelling), reference_source.clone())
+            .resolve_hir_type_target(module, &type_path(spelling), reference_source.clone())
             .expect("nominal type target")
         else {
             panic!("`{spelling}` must resolve to a project nominal")
@@ -110,7 +543,14 @@ fn nominal_records_publish_once_and_resolve_through_every_import_form() {
 
     assert_eq!(table.nominal_symbols().count(), 3);
     assert_eq!(table.nominal(local_record.id()), Some(local_record));
-    assert_nominal_source_records(model_source, &documents[1], local_record, choice, alias);
+    assert_nominal_source_records(
+        &project,
+        model_source,
+        &documents[1],
+        local_record,
+        choice,
+        alias,
+    );
     assert_visible_nominal_bindings(&table, &root, local_record, choice, alias);
     let visible = table.visible_type_bindings(&root).collect::<Vec<_>>();
     let record_binding = visible
@@ -135,7 +575,7 @@ fn nominal_records_publish_once_and_resolve_through_every_import_form() {
 fn reserved_type_names_and_cross_family_duplicates_block_publication() {
     let (document, reserved_project) = project("struct Ref {\n    value: i32,\n}\n");
     let report = ProjectSymbolTable::link(
-        &reserved_project,
+        reserved_project.view(),
         &declarations(&document, Vec::new(), "reserved-type-name"),
     )
     .expect_err("reserved built-in type names cannot be shadowed");
@@ -152,7 +592,7 @@ fn reserved_type_names_and_cross_family_duplicates_block_publication() {
         "struct Widget {\n    value: i32,\n}\n",
     ));
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &declarations(&document, Vec::new(), "cross-family-duplicate"),
     )
     .expect_err("callable and nominal cannot publish the same direct name");
@@ -180,7 +620,7 @@ fn type_lookup_reports_wrong_kind_inaccessible_and_ambiguous_candidates() {
         ("b", "pub enum ProjectRecord {\n    Right,\n}\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "typed-type-lookup-errors"),
     )
     .expect("ordinary same-spelling ambiguity remains a lookup result")
@@ -191,14 +631,14 @@ fn type_lookup_reports_wrong_kind_inaccessible_and_ambiguous_candidates() {
         .expect("reference source");
 
     assert!(matches!(
-        table.resolve_type_target(&root, &type_path("work"), source.clone()),
+        table.resolve_hir_type_target(&root, &type_path("work"), source.clone()),
         Err(ProjectTypeLookupError::WrongKind { actual, .. })
             if matches!(actual.target(), ProjectSymbolTargetId::Callable(_))
                 && actual.declaration().is_some()
                 && !actual.binding_sites().is_empty()
     ));
     assert!(matches!(
-        table.resolve_type_target(
+        table.resolve_hir_type_target(
             &root,
             &type_path("crate.a.Hidden"),
             source.clone(),
@@ -209,7 +649,7 @@ fn type_lookup_reports_wrong_kind_inaccessible_and_ambiguous_candidates() {
                 && candidates[0].declaration().is_some()
     ));
     assert!(matches!(
-        table.resolve_type_target(&root, &type_path("Both"), source),
+        table.resolve_hir_type_target(&root, &type_path("Both"), source),
         Err(ProjectTypeLookupError::Ambiguous { candidates, .. })
             if candidates.len() == 2
                 && candidates.windows(2).all(|pair| pair[0].target() < pair[1].target())
@@ -233,7 +673,7 @@ fn value_lookup_selects_callable_before_same_spelling_type() {
         ("types", "pub struct Item {\n    value: i32,\n}\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "value-type-namespace-collision"),
     )
     .expect("cross-namespace collision remains a lookup decision")
@@ -245,7 +685,21 @@ fn value_lookup_selects_callable_before_same_spelling_type() {
         .expect("reference source");
 
     assert!(matches!(
-        table.resolve_value_target(&CanonicalModulePath::crate_root(), &reference, source),
+        table.resolve_value_target(
+            &CanonicalModulePath::crate_root(),
+            &reference,
+            source.clone(),
+        ),
+        Ok(ProjectValueLookup::Present(callable))
+            if callable.declaration().name() == "Item"
+                && callable.declaration().module() == &module_path("values")
+    ));
+    assert!(matches!(
+        table.resolve_hir_value_target(
+            &CanonicalModulePath::crate_root(),
+            &type_path("Shared"),
+            source,
+        ),
         Ok(ProjectValueLookup::Present(callable))
             if callable.declaration().name() == "Item"
                 && callable.declaration().module() == &module_path("values")
@@ -258,19 +712,18 @@ fn value_lookup_retains_inaccessible_callable_before_same_spelling_type() {
         ("", "fn main() -> Unit { () }\n"),
         (
             "values",
-            "fn Item() -> Unit { () }\npub use crate.types.Item\n",
+            "pub use crate.types.Item\nfn Item() -> Unit { () }\n",
         ),
         ("types", "pub struct Item {\n    value: i32,\n}\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "inaccessible-value-type-collision"),
     )
     .expect("cross-namespace collision remains a lookup decision")
     .into_table();
     let root = CanonicalModulePath::crate_root();
-    let reference = SymbolPath::try_from(type_path("crate.values.Item").path())
-        .expect("qualified project reference");
+    let reference = symbol_path("crate.values.Item");
     let source = documents[0]
         .span(SourceRange::new(0, 3))
         .expect("reference source");
@@ -299,7 +752,7 @@ fn value_lookup_retains_ambiguous_and_inaccessible_callable_failures() {
         ("right", "pub fn run() -> Unit { () }\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "typed-value-lookup-errors"),
     )
     .expect("value ambiguity remains a lookup result")
@@ -310,8 +763,7 @@ fn value_lookup_retains_ambiguous_and_inaccessible_callable_failures() {
         .expect("reference source");
     let ambiguous = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), "selected")
         .expect("ambiguous reference");
-    let inaccessible = SymbolPath::try_from(type_path("crate.left.hidden").path())
-        .expect("qualified private reference");
+    let inaccessible = symbol_path("crate.left.hidden");
 
     assert!(matches!(
         table.resolve_value_target(&root, &ambiguous, source.clone()),
@@ -336,7 +788,7 @@ fn value_lookup_reports_nominal_and_unknown_paths_as_absent() {
         ("types", "pub struct Item {\n    value: i32,\n}\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "absent-value-lookup"),
     )
     .expect("ordinary project")
@@ -345,8 +797,7 @@ fn value_lookup_reports_nominal_and_unknown_paths_as_absent() {
     let source = documents[0]
         .span(SourceRange::new(0, 2))
         .expect("reference source");
-    let nominal =
-        SymbolPath::try_from(type_path("crate.types.Item").path()).expect("nominal reference");
+    let nominal = symbol_path("crate.types.Item");
     let unknown = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), "Missing")
         .expect("unknown reference");
 
@@ -364,7 +815,7 @@ fn value_lookup_reports_nominal_and_unknown_paths_as_absent() {
 fn table_retains_source_identity_for_every_module() {
     let (documents, project) = project_modules(&[("", ""), ("empty", "")]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "module-source-identities"),
     )
     .expect("empty modules link")
@@ -381,7 +832,7 @@ fn ordinary_projection_unchanged_by_character_externals() {
     let (document, project) =
         project("pub fn alpha() -> Unit { () }\nfn beta(value: i32) -> i32 { value }\n");
     let empty = declarations(&document, Vec::new(), "ordinary-empty");
-    let ordinary = ProjectSymbolTable::link(&project, &empty).expect("ordinary table");
+    let ordinary = ProjectSymbolTable::link(project.view(), &empty).expect("ordinary table");
     let owner = "character.akane";
     let with_character = declarations(
         &document,
@@ -395,7 +846,8 @@ fn ordinary_projection_unchanged_by_character_externals() {
         )],
         "ordinary-character",
     );
-    let extended = ProjectSymbolTable::link(&project, &with_character).expect("extended table");
+    let extended =
+        ProjectSymbolTable::link(project.view(), &with_character).expect("extended table");
 
     assert_eq!(
         ordinary
@@ -422,7 +874,7 @@ fn external_seed_assignment_is_sorted_and_opaque() {
         ],
         "sorted-seeds",
     );
-    let link = ProjectSymbolTable::link(&project, &declarations).expect("linked externals");
+    let link = ProjectSymbolTable::link(project.view(), &declarations).expect("linked externals");
 
     assert_eq!(
         declarations
@@ -453,7 +905,7 @@ fn callable_filter_rejects_external() {
         )],
         "not-callable",
     );
-    let table = ProjectSymbolTable::link(&project, &declarations)
+    let table = ProjectSymbolTable::link(project.view(), &declarations)
         .expect("linked table")
         .into_table();
     let reference =
@@ -474,16 +926,25 @@ fn callable_filter_rejects_external() {
 fn missing_import_is_a_typed_link_diagnostic() {
     let (document, project) = project("use crate.missing.symbol\nfn main() -> Unit { () }\n");
     let declarations = declarations(&document, Vec::new(), "missing-import");
-    let report = ProjectSymbolTable::link(&project, &declarations)
+    let report = ProjectSymbolTable::link(project.view(), &declarations)
         .expect_err("unknown imports are rejected during atomic publication");
 
-    assert!(matches!(
-        report.diagnostics(),
-        [ProjectSymbolLinkError::UnknownImport { module, import, source }]
-            if module == &CanonicalModulePath::crate_root()
-                && import.to_string() == "crate.missing.symbol"
-                && source.range() == SourceRange::new(0, 24)
-    ));
+    let [
+        ProjectSymbolLinkError::UnknownImport {
+            module,
+            import,
+            source,
+        },
+    ] = report.diagnostics()
+    else {
+        panic!(
+            "one typed unknown-import diagnostic: {:#?}",
+            report.diagnostics()
+        )
+    };
+    assert_eq!(module, &CanonicalModulePath::crate_root());
+    assert_eq!(import.to_string(), "crate.missing.symbol");
+    assert_eq!(source.range(), SourceRange::new(0, 25));
     assert_eq!(
         report.diagnostics()[0].code().as_str(),
         "aw.project.symbol.unknown_import"
@@ -508,7 +969,7 @@ fn generated_character_spellings_do_not_consume_alias_limit() {
         })
         .collect();
     let declarations = declarations(&document, seeds, "generated-bindings");
-    let link = ProjectSymbolTable::link(&project, &declarations)
+    let link = ProjectSymbolTable::link(project.view(), &declarations)
         .expect("generated mandatory spellings are not authored aliases");
     assert_eq!(link.table().external_symbols().count(), 512);
 }

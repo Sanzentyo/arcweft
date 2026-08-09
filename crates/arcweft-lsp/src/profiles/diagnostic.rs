@@ -1,5 +1,6 @@
+use arcweft_compiler::project::ProjectCompileDiagnostic;
 use arcweft_source::SourceSpan;
-use std::fmt;
+use std::{fmt, sync::Arc};
 use thiserror::Error;
 
 /// One profile metadata diagnostic with exact source provenance when available.
@@ -10,6 +11,7 @@ pub struct LspProfileDiagnostic {
     profile_id: Option<String>,
     resource: Option<String>,
     source: Option<SourceSpan>,
+    project_compile_diagnostics: Arc<[ProjectCompileDiagnostic]>,
 }
 
 /// Stable profile diagnostic categories.
@@ -72,6 +74,7 @@ impl LspProfileDiagnostic {
             profile_id: None,
             resource: None,
             source: None,
+            project_compile_diagnostics: Arc::from([]),
         }
     }
 
@@ -93,6 +96,17 @@ impl LspProfileDiagnostic {
     #[must_use]
     pub fn with_source(mut self, source: SourceSpan) -> Self {
         self.source = Some(source);
+        self
+    }
+
+    /// Retains the compiler-owned, source-backed rejection evidence without
+    /// flattening it into a profile-level string.
+    #[must_use]
+    pub(crate) fn with_project_compile_diagnostics(
+        mut self,
+        diagnostics: impl IntoIterator<Item = ProjectCompileDiagnostic>,
+    ) -> Self {
+        self.project_compile_diagnostics = diagnostics.into_iter().collect::<Vec<_>>().into();
         self
     }
 
@@ -119,6 +133,11 @@ impl LspProfileDiagnostic {
     /// Exact revision-bound launch token associated with this diagnostic.
     pub const fn source(&self) -> Option<&SourceSpan> {
         self.source.as_ref()
+    }
+
+    /// Exact compiler diagnostics retained for document-specific projection.
+    pub(crate) fn project_compile_diagnostics(&self) -> &[ProjectCompileDiagnostic] {
+        &self.project_compile_diagnostics
     }
 }
 
@@ -173,8 +192,12 @@ fn environment_diagnostic(
                 error.to_string(),
             )
         }
-        error @ super::environment::RegisterProfileEnvironmentError::Compile { .. } => {
-            LspProfileDiagnostic::new(LspProfileDiagnosticKind::ProjectCompile, error.to_string())
+        super::environment::RegisterProfileEnvironmentError::Compile { details, source } => {
+            LspProfileDiagnostic::new(
+                LspProfileDiagnosticKind::ProjectCompile,
+                format!("project compilation was rejected: {details}"),
+            )
+            .with_project_compile_diagnostics(source.diagnostics().iter().cloned())
         }
         error => LspProfileDiagnostic::new(
             LspProfileDiagnosticKind::CharacterCatalog,

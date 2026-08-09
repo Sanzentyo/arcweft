@@ -2,7 +2,7 @@
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_outer_prefixes;
 use super::expression::{emit_entity_reference, emit_expression, emit_named_plan_block};
 use super::lexer::LexToken;
@@ -31,7 +31,7 @@ pub(super) fn emit_declaration(
     } else {
         "bench"
     };
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     let test_owner = if kind == SyntaxKind::TestItem {
         parser.start_projected_owner(kind, role)
     } else {
@@ -65,7 +65,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_plan_id(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &'static str) {
+fn emit_plan_id(parser: &mut DocumentParser<'_, '_>, keyword: &'static str) {
     if parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
         let _ = emit_entity_reference(parser, SyntaxRole::Reference(0));
         return;
@@ -89,7 +89,7 @@ fn emit_plan_id(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &'static str
     )));
 }
 
-fn emit_test_kind(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingTestKindProjection {
+fn emit_test_kind(parser: &mut DocumentParser<'_, '_>) -> PendingTestKindProjection {
     if matches!(
         parser.current_kind(),
         Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
@@ -143,11 +143,11 @@ fn emit_test_kind(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingTestKindP
     }
 }
 
-fn recover_trailing_header(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn recover_trailing_header(parser: &mut DocumentParser<'_, '_>) {
     if parser.at("{") {
         return;
     }
-    let open = find_top_level_boundary(parser, parser.cursor(), &["{"]);
+    let open = find_top_level_boundary(parser, parser.cursor(), token_count(parser), &["{"]);
     if open == token_count(parser) {
         return;
     }
@@ -165,7 +165,7 @@ fn recover_trailing_header(parser: &mut ShadowDocumentParser<'_, '_>) {
     bump_until(parser, open);
 }
 
-fn emit_plan_body(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &'static str) {
+fn emit_plan_body(parser: &mut DocumentParser<'_, '_>, keyword: &'static str) {
     if !parser.at("{") {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -214,7 +214,7 @@ fn emit_plan_body(parser: &mut ShadowDocumentParser<'_, '_>, keyword: &'static s
     parser.finish();
 }
 
-fn emit_plan_statements(parser: &mut ShadowDocumentParser<'_, '_>, close: usize) {
+fn emit_plan_statements(parser: &mut DocumentParser<'_, '_>, close: usize) {
     let mut ordinal = 0_u32;
     while parser.cursor() < close {
         parser.bump_trivia();
@@ -241,7 +241,7 @@ fn emit_plan_statements(parser: &mut ShadowDocumentParser<'_, '_>, close: usize)
     }
 }
 
-fn emit_plan_statement(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn emit_plan_statement(parser: &mut DocumentParser<'_, '_>, end: usize, ordinal: u32) {
     let child_end = if end > parser.cursor()
         && parser
             .token_at(end - 1)
@@ -252,7 +252,7 @@ fn emit_plan_statement(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, or
         end
     };
     if matches!(parser.current_text(), Some("setup" | "measure" | "report"))
-        && find_top_level_boundary(parser, parser.cursor(), &["{"]) < child_end
+        && find_top_level_boundary(parser, parser.cursor(), child_end, &["{"]) < child_end
     {
         parser.start(
             SyntaxKind::ExpressionStatement,
@@ -288,7 +288,7 @@ fn missing_body_code(keyword: &str) -> &'static str {
     }
 }
 
-fn token_range(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
+fn token_range(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
     let start_offset = parser
         .token_at(start)
         .map_or_else(|| parser.current_offset(), |token| token.range().start());

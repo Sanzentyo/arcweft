@@ -449,7 +449,8 @@ impl Engine {
             }
             FlowOp::EvaluatedEffect(effect) => {
                 match self.evaluate_effect_expr(&effect, pure_backend) {
-                    Ok(effect) => self.emit_line_effect(effect, output, pure_backend),
+                    Ok(Some(effect)) => self.emit_line_effect(effect, output, pure_backend),
+                    Ok(None) => {}
                     Err(error) => {
                         self.fail_eval(error, output);
                         return;

@@ -17,10 +17,9 @@ use arcweft_presentation::fx::{
 use arcweft_presentation::hit::HitRect;
 use arcweft_presentation::input::InteractionTarget;
 use arcweft_render_text::{
-    LineDisplayFrame, ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource,
-    ResolvedTextStyle, RichTextInlineDirection, RichTextPresentation, RichTextRange,
-    RichTextWritingMode, TextColor, TextDocumentRevision, TextFontFamily, TextSlant,
-    TextStyleCascade, TextWeight,
+    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle, TextColor,
+    TextDocumentRevision, TextFontFamily, TextSlant, TextStyleCascade, TextWeight,
+    resolve_document, resolve_document_with_source, resolve_stage_document,
 };
 use arcweft_render_wgpu::geometry::{
     FramePlanError, PreparedDialogueViewState, PreparedFrame, PreparedRichTextStageRequest,
@@ -37,6 +36,10 @@ use arcweft_runtime_driver::{
     presentation_handles::PresentationHandleId,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
+use arcweft_text_model::{
+    LineDisplayFrame, LineDisplayStage, RichTextInlineDirection, RichTextPresentation,
+    RichTextRange, RichTextWritingMode,
+};
 use arcweft_view::geometry::ViewGeometryConsumer;
 use std::collections::BTreeMap;
 
@@ -472,8 +475,8 @@ fn push_text_value(
             })
         }
         BundleViewTextValue::Localized { document, .. } => {
-            let document = document
-                .resolve_document_with_source(&cascade, ResolvedTextRunSource::Localized)?;
+            let document =
+                resolve_document_with_source(document, &cascade, ResolvedTextRunSource::Localized)?;
             let source_origin = document.source_origin();
             let text = shared.push_prepared_text_document(frame, &document, request)?;
             Ok(PushedTextValue {
@@ -483,7 +486,7 @@ fn push_text_value(
             })
         }
         BundleViewTextValue::RichTextDocument { document } => {
-            let document = document.resolve_document(&cascade)?;
+            let document = resolve_document(document, &cascade)?;
             let source_origin = document.source_origin();
             let text = shared.push_prepared_text_document(frame, &document, request)?;
             Ok(PushedTextValue {
@@ -492,7 +495,7 @@ fn push_text_value(
                 reveal_complete: None,
             })
         }
-        BundleViewTextValue::DialogueSpeaker {
+        BundleViewTextValue::DialogueCharacterDisplayName {
             label,
             frame: display,
         } => {
@@ -547,7 +550,7 @@ fn push_display_frame(
         ))?;
     let Some(dialogue) = context.dialogue else {
         let cascade = TextStyleCascade::new(style);
-        let document = display.resolve_stage_document(stage, &cascade)?;
+        let document = resolve_stage_document(display, stage, &cascade)?;
         let source_origin = document.source_origin();
         let text = shared.push_prepared_text_document(frame, &document, request)?;
         return Ok(PushedTextValue {
@@ -647,7 +650,7 @@ fn dialogue_surface_bounds(
 fn visible_text(value: &BundleViewTextValue) -> Result<&str, FramePlanError> {
     match value {
         BundleViewTextValue::Plain { value } => Ok(value),
-        BundleViewTextValue::DialogueSpeaker { label, .. } => Ok(label),
+        BundleViewTextValue::DialogueCharacterDisplayName { label, .. } => Ok(label),
         BundleViewTextValue::Localized { document, .. }
         | BundleViewTextValue::RichTextDocument { document } => Ok(document.resolved_text()),
         BundleViewTextValue::DisplayFrame { frame, stage_index } => {
@@ -660,7 +663,7 @@ fn visible_text(value: &BundleViewTextValue) -> Result<&str, FramePlanError> {
             })?;
             frame
                 .stage(index)
-                .map(arcweft_render_text::LineDisplayStage::text)
+                .map(LineDisplayStage::text)
                 .ok_or(FramePlanError::ResolveText(
                     arcweft_render_text::TextResolveError::InvalidDisplayStage { index },
                 ))

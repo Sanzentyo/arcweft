@@ -35,7 +35,8 @@ impl<B: RuntimeCallBackend> VmHost for ProductVmHost<'_, B> {
             .strings
             .get(record.public_id.index())
             .ok_or(VmError::MissingString(record.public_id))?;
-        let target = RuntimeCallTarget::from_label(name.clone());
+        let target = RuntimeCallTarget::try_from_label(name.clone())
+            .map_err(|error| VmError::Runtime(error.to_string()))?;
         Ok(Some(crate::engine::evaluate_runtime_call(
             &target,
             args,

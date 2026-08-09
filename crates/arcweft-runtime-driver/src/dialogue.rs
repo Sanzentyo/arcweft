@@ -5,7 +5,7 @@ mod store;
 use crate::presentation_handles::PresentationHandleId;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_presentation::fx::{FxApplication, FxInstanceId};
-use arcweft_render_text::{LineDisplayFrame, LineDisplayStage};
+use arcweft_text_model::{LineDisplayFrame, LineDisplayStage};
 use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 

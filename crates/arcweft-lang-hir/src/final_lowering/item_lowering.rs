@@ -7,13 +7,14 @@ use arcweft_lang_syntax::attachment::source_file::{
 use arcweft_lang_syntax::attachment::{
     AstNode, AttachedAttributeValue, AttachedGenericParameter, AttachedItemPrefix,
     AttachedOuterAttribute, AttachedRequiredName, AttachedWhereClause, TypedItemNode,
-    TypedSyntaxTree,
 };
 use arcweft_lang_syntax::expressions::{
     SyntaxCallArgumentListTerminator, SyntaxCallArgumentProjection, SyntaxRequiredTokenState,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
+use arcweft_lang_syntax::incremental::ParsedSource;
 
+use crate::arena::ArenaReservation;
 use crate::diagnostic::{HirRecoveryDiagnostic, HirRecoveryPrimary};
 use crate::expr::{
     HirCallArgument, HirCallChildPoison, HirCallExpr, HirCallValue, HirRequiredTokenState,
@@ -27,7 +28,7 @@ use crate::item::{
     HirWherePredicate,
 };
 use crate::leaf::{HirName, HirPathIssue, HirPathValue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirLoweringCheckpoint};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::HirSourceSite;
 
@@ -56,6 +57,16 @@ struct LoweredItemProjection {
     members: Option<HirDeclarationMemberArena>,
 }
 
+/// One source-backed Proof item whose accepted scope/signature prefix is
+/// frozen while body statements, expressions, and tail remain unallocated
+/// until semantic return facts arrive.
+pub(super) struct PendingProofDeclaration {
+    reservation: ArenaReservation<crate::identity::ItemId>,
+    root_scope: ScopeId,
+    node: TypedItemNode,
+    item_site: HirSourceSite,
+}
+
 impl<T> ItemProjection<T> {
     const fn resolved(value: T) -> Self {
         Self { value, issue: None }
@@ -73,23 +84,27 @@ impl StagedHirModuleTransaction<'_> {
     /// Lowers source-file module/import headers without publishing a second
     /// production reader. Ordinary item families remain a hard private-slice
     /// boundary until their final typed lowerers join this transaction.
-    pub(crate) fn lower_attached_source_file_items(
+    pub(crate) fn lower_parsed_source_items(
         &mut self,
-        tree: &TypedSyntaxTree,
+        source: &ParsedSource,
     ) -> Result<ScopeId, HirLowerFailure> {
-        let result = self.lower_attached_source_file_items_inner(tree);
+        let result = self.lower_parsed_source_items_inner(source);
         if result.is_err() {
             self.slots.poison();
         }
         result
     }
 
-    fn lower_attached_source_file_items_inner(
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the source-order transaction validates and publishes one complete module item inventory"
+    )]
+    fn lower_parsed_source_items_inner(
         &mut self,
-        tree: &TypedSyntaxTree,
+        source: &ParsedSource,
     ) -> Result<ScopeId, HirLowerFailure> {
         let expected = self.request.source().snapshot_id();
-        let supplied = tree.root().snapshot_id();
+        let supplied = source.snapshot_id();
         if expected.lineage().database() != supplied.lineage().database() {
             return Err(HirLowerFailure::WrongSyntaxDatabase {
                 expected: expected.lineage().database(),
@@ -108,7 +123,8 @@ impl StagedHirModuleTransaction<'_> {
                 supplied: supplied.clone(),
             });
         }
-        let root_span = tree.root().source_span();
+        let root = source.root_syntax();
+        let root_span = root.source_span();
         if root_span.source() != self.request.source().document().identity() {
             return Err(HirLowerFailure::SourceIdentityMismatch {
                 expected: self.request.source().document().identity().clone(),
@@ -116,7 +132,7 @@ impl StagedHirModuleTransaction<'_> {
             });
         }
 
-        let entries = tree
+        let entries = source
             .entries()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let item_count = entries
@@ -124,6 +140,8 @@ impl StagedHirModuleTransaction<'_> {
             .filter(|entry| !matches!(entry, SourceFileEntryNode::Attribute(_)))
             .count();
         preflight_source_file_inventory(item_count)?;
+        self.control
+            .checkpoint(HirLoweringCheckpoint::BeforeRootScopeReservation)?;
 
         let root_scope = {
             let module = self.snapshot_id().module();
@@ -139,7 +157,7 @@ impl StagedHirModuleTransaction<'_> {
             let (slots, arenas) = self.storage_mut();
             arenas.scopes().allocate_source(
                 slots,
-                tree.root().id(),
+                root.id(),
                 HirSourceSite::Span(root_span),
                 scope,
             )?
@@ -159,6 +177,22 @@ impl StagedHirModuleTransaction<'_> {
                     .reserve_source(slots, item_node.id(), item_site.clone())?
             };
             let owner = reservation.id();
+            self.control
+                .checkpoint(HirLoweringCheckpoint::ItemReserved)?;
+
+            if let TypedItemNode::Proof(node) = &item_node
+                && let Some(header) =
+                    self.stage_authored_proof_return_header(owner, root_scope, node)?
+            {
+                self.stage_proof_return_header(header);
+                self.pending_proofs.push(PendingProofDeclaration {
+                    reservation,
+                    root_scope,
+                    node: item_node,
+                    item_site,
+                });
+                continue;
+            }
 
             let lowered = match &item_node {
                 TypedItemNode::Module(node) => {
@@ -267,26 +301,86 @@ impl StagedHirModuleTransaction<'_> {
                 },
             };
 
-            let is_recovery = lowered.item.is_poisoned();
-            if let Some(members) = lowered.members {
-                self.stage_declaration_members(owner, &lowered.item, members)?;
-            }
-            let item = {
-                let (slots, arenas) = self.storage_mut();
-                arenas.items().finalize(slots, reservation, lowered.item)?
-            };
-            self.stage_source_ordered_item(item);
-            if is_recovery {
-                let owner = SyntheticOwner::Item(item);
-                self.stage_recovery_diagnostic(HirRecoveryDiagnostic::new(
-                    owner,
-                    HirRecoveryPrimary::owner_whole(owner),
-                    item_site,
-                ));
-            }
+            self.finalize_source_item(reservation, &item_node, item_site, lowered)?;
         }
 
         Ok(root_scope)
+    }
+
+    pub(super) fn resume_pending_proof_declarations(&mut self) -> Result<(), HirLowerFailure> {
+        let pending = core::mem::take(&mut self.pending_proofs);
+        for pending in pending {
+            let TypedItemNode::Proof(node) = &pending.node else {
+                return Err(HirInvariantFailure::InvalidArenaCommit.into());
+            };
+            let owner = pending.reservation.id();
+            let lowered = self.lower_proof_declaration(owner, pending.root_scope, node)?;
+            self.finalize_source_item(
+                pending.reservation,
+                &pending.node,
+                pending.item_site,
+                lowered,
+            )?;
+        }
+        Ok(())
+    }
+
+    fn finalize_source_item(
+        &mut self,
+        reservation: ArenaReservation<crate::identity::ItemId>,
+        item_node: &TypedItemNode,
+        item_site: HirSourceSite,
+        lowered: LoweredItemProjection,
+    ) -> Result<(), HirLowerFailure> {
+        let owner = reservation.id();
+        let is_recovery = lowered.item.is_poisoned();
+        self.source_components.stage_attached_declaration(
+            self.request.source(),
+            owner,
+            item_node,
+            lowered.item.kind(),
+        )?;
+        self.source_components.stage_attached_entry(
+            self.request.source(),
+            owner,
+            item_node,
+            lowered.item.kind(),
+        )?;
+        self.source_components.stage_attached_callable(
+            self.request.source(),
+            owner,
+            item_node,
+            lowered.item.kind(),
+        )?;
+        self.source_components.stage_attached_use(
+            self.request.source(),
+            owner,
+            item_node,
+            lowered.item.kind(),
+        )?;
+        self.source_components.stage_attached_view(
+            self.request.source(),
+            owner,
+            item_node,
+            lowered.item.kind(),
+        )?;
+        if let Some(members) = lowered.members {
+            self.stage_declaration_members(owner, &lowered.item, members)?;
+        }
+        let item = {
+            let (slots, arenas) = self.storage_mut();
+            arenas.items().finalize(slots, reservation, lowered.item)?
+        };
+        self.stage_source_ordered_item(item);
+        if is_recovery {
+            let owner = SyntheticOwner::Item(item);
+            self.stage_recovery_diagnostic(HirRecoveryDiagnostic::new(
+                owner,
+                HirRecoveryPrimary::owner_whole(owner),
+                item_site,
+            ));
+        }
+        Ok(())
     }
 
     fn lower_module_declaration(
@@ -359,7 +453,10 @@ impl StagedHirModuleTransaction<'_> {
         attached: &AttachedItemPrefix,
         scope: ScopeId,
     ) -> Result<ItemProjection<HirItemPrefix>, HirLowerFailure> {
-        let visibility = match attached.visibility().map(|visibility| visibility.kind()) {
+        let visibility = match attached
+            .visibility()
+            .map(arcweft_lang_syntax::attachment::source_file::AttachedVisibility::kind)
+        {
             None => ItemProjection::resolved(None),
             Some(AttachedVisibilityKind::Public) => {
                 ItemProjection::resolved(Some(HirVisibility::Public))
@@ -520,7 +617,7 @@ impl StagedHirModuleTransaction<'_> {
         let mut recovery = false;
         let predicates = clauses
             .iter()
-            .flat_map(|clause| clause.predicates())
+            .flat_map(AttachedWhereClause::predicates)
             .map(|predicate| {
                 recovery |= predicate.has_recovery();
                 let subject = self.lower_attached_type(predicate.subject(), scope)?;

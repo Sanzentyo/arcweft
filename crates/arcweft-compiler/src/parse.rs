@@ -1,19 +1,4 @@
-use arcweft_lang_syntax::ast::items::TypedSyntaxTree;
-use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity, lint_id_policy};
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
-use arcweft_lang_syntax::source::ParsedSource;
-use arcweft_source::SourceDocument;
-use std::sync::Arc;
-
-/// Parses an accepted source document without replacing its revision-bound identity.
-pub(crate) fn parse_source_document(document: Arc<SourceDocument>) -> ParsedSource {
-    parse_document_with_source(document, ParseOptions::default())
-}
-
-/// Runs syntax-level source lints on a typed syntax tree.
-pub fn lint_source_tree(tree: &TypedSyntaxTree) -> Vec<SyntaxLint> {
-    lint_id_policy(tree)
-}
+use arcweft_lang_syntax::lint::{SyntaxLint, SyntaxLintSeverity};
 
 /// Counts source lints that should be reported as warnings.
 pub fn count_warning_lints(lints: &[SyntaxLint]) -> usize {

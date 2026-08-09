@@ -15,7 +15,7 @@ use crate::expr::{
     HirThreadMode,
 };
 use crate::identity::{ExprId, HirLimit, ItemId, LocalId, ScopeId};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::HirSourceSite;
 
@@ -118,8 +118,7 @@ impl StagedHirModuleTransaction<'_> {
             SyntaxThreadMode::Attached => HirThreadMode::Attached,
             SyntaxThreadMode::Detached => HirThreadMode::Detached,
         };
-        let expression = HirThreadExpr::try_new(name, mode, lowered.body)
-            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let expression = HirThreadExpr::new(name, mode, lowered.body);
         Ok((expression, name_recovery.or(lowered.recovery)))
     }
 
@@ -133,7 +132,7 @@ impl StagedHirModuleTransaction<'_> {
             AttachedRequiredThreadExpressionBody::Present(body) => {
                 let scope = self.allocate_thread_body_scope(
                     body.syntax().id(),
-                    body.syntax().source_span(),
+                    &body.syntax().source_span(),
                     HirScopeKind::Block,
                     HirScopeOwner::Expr(owner),
                     parent_scope,
@@ -161,7 +160,7 @@ impl StagedHirModuleTransaction<'_> {
                 }
                 let scope = self.allocate_thread_body_scope(
                     missing.id(),
-                    missing.source_span(),
+                    &missing.source_span(),
                     HirScopeKind::Block,
                     HirScopeOwner::Expr(owner),
                     parent_scope,
@@ -220,7 +219,7 @@ impl StagedHirModuleTransaction<'_> {
         };
         let scope = self.allocate_thread_body_scope(
             syntax,
-            source,
+            &source,
             HirScopeKind::Block,
             scope_owner,
             parent_scope,
@@ -234,6 +233,10 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "the prepared body is a single-use transaction capability consumed by finalization"
+    )]
     pub(super) fn finish_attached_nested_thread_body(
         &mut self,
         prepared: PreparedNestedThreadBody<'_>,
@@ -322,12 +325,12 @@ impl StagedHirModuleTransaction<'_> {
     fn allocate_thread_body_scope(
         &mut self,
         syntax: SyntaxNodeId,
-        source: SourceSpan,
+        source: &SourceSpan,
         kind: HirScopeKind,
         owner: HirScopeOwner,
         parent: ScopeId,
     ) -> Result<ScopeId, HirLowerFailure> {
-        let source = HirSourceSite::from_attached_span(self.request.source().document(), &source)
+        let source = HirSourceSite::from_attached_span(self.request.source().document(), source)
             .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
         let reservation = self
             .arenas

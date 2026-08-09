@@ -1,8 +1,8 @@
 use super::{AwbcProductStepExecutor, ProductStepError};
 use crate::awbc::fiber::FiberTrap;
-use crate::awbc::schema::{AwbcFunctionId, AwbcTrapCode};
+use crate::awbc::schema::AwbcTrapCode;
 use crate::effect::LineEffectRequest;
-use crate::plan::{FlowEvent, FlowRuntimeId};
+use crate::plan::FlowEvent;
 use crate::step::RuntimeStepOutput;
 use crate::value::RuntimeValue;
 
@@ -50,46 +50,27 @@ impl AwbcProductStepExecutor {
     }
 
     fn goto_effect_target(&mut self, target: &str, output: &mut RuntimeStepOutput) {
-        let Ok(target_id) = FlowRuntimeId::from_runtime_target_value(target) else {
-            self.fiber.mark_trapped(FiberTrap {
-                code: AwbcTrapCode::MissingDynamicTarget,
-                message: Some(format!("invalid goto target {target}")),
-                source_map: None,
-            });
-            return;
+        let (target_id, function) = match self.program.resolve_flow_target_value(target) {
+            Ok(target) => target,
+            Err(error) => {
+                self.fiber.mark_trapped(FiberTrap {
+                    code: AwbcTrapCode::MissingDynamicTarget,
+                    message: Some(error.to_string()),
+                    source_map: None,
+                });
+                return;
+            }
         };
+        let target_id = target_id.clone();
         output.flow_events.push(FlowEvent::Goto {
             target: target_id.clone(),
         });
-        let Some(function) = self.function_for_public_id(target) else {
-            self.fiber.mark_trapped(FiberTrap {
-                code: AwbcTrapCode::MissingDynamicTarget,
-                message: Some(format!("missing goto target {target_id}")),
-                source_map: None,
-            });
-            return;
-        };
         if let Err(error) = self
             .fiber
             .replace_active_function(&self.program, function, &[])
         {
             self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
         }
-    }
-
-    fn function_for_public_id(&self, target: &str) -> Option<AwbcFunctionId> {
-        self.program
-            .functions
-            .iter()
-            .enumerate()
-            .find_map(|(index, function)| {
-                function
-                    .public_id
-                    .and_then(|id| self.program.strings.get(id.index()))
-                    .filter(|public_id| public_id.as_str() == target)
-                    .and_then(|_| u32::try_from(index).ok())
-                    .map(AwbcFunctionId)
-            })
     }
 }
 

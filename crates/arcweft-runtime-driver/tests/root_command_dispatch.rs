@@ -10,7 +10,7 @@ use arcweft_core::entry::{
     RuntimeNominalTypeId, RuntimeStatefulEntryRoles, RuntimeTypeSchema, RuntimeValueDigest,
     TypeLayoutHash,
 };
-use arcweft_core::pattern::RuntimePattern;
+use arcweft_core::pattern::{RuntimePattern, RuntimeSemanticTypeId, RuntimeVariantIdentity};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeFlow, RuntimeHostCallTarget, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
@@ -23,9 +23,6 @@ use arcweft_core::step::{
 use arcweft_core::value::{
     RuntimeExpr, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue,
 };
-use arcweft_dialogue::DialogueProfileRevision;
-use arcweft_render_text::LineDisplayCatalog;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{
     BundleEntryStart, BundleHotSwapError, BundleSession, BundleSessionError, BundleSessionOptions,
@@ -36,32 +33,17 @@ use arcweft_runtime_driver::session::{
 };
 use arcweft_runtime_driver::session_save::{BundleSessionPendingBlocker, BundleSessionSaveError};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
 
 const ENTRY: &str = "entry.root_commands";
 const FLOW: &str = "flow.root_commands";
 const CONSTRUCTOR: &str = "command.save";
 const TARGET: &str = "save.slot.primary";
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-driver-root-command-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-driver-root-command-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
 }
 
 fn entry_id() -> EntryRuntimeId {
@@ -81,10 +63,10 @@ fn target_id() -> RuntimeCommandTargetId {
 }
 
 fn command_value(payload: RuntimeValue) -> RuntimeValue {
-    RuntimeValue::Variant {
-        path: Some("Command".to_owned()),
-        name: "Command".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Record(vec![
+    nominal_variant(
+        "Command",
+        "Command",
+        Some(RuntimeValue::Record(vec![
             RuntimeFieldValue {
                 name: "constructor".to_owned(),
                 value: RuntimeValue::EntityRef(CONSTRUCTOR.to_owned()),
@@ -97,8 +79,8 @@ fn command_value(payload: RuntimeValue) -> RuntimeValue {
                 name: "payload".to_owned(),
                 value: payload,
             },
-        ]))),
-    }
+        ])),
+    )
 }
 
 fn reducer_ok_with_command() -> RuntimeValue {
@@ -106,26 +88,22 @@ fn reducer_ok_with_command() -> RuntimeValue {
 }
 
 fn reducer_ok_with_commands(payloads: impl IntoIterator<Item = RuntimeValue>) -> RuntimeValue {
-    RuntimeValue::Variant {
-        path: Some("Result".to_owned()),
-        name: "Ok".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Variant {
-            path: Some("Reduction".to_owned()),
-            name: "Reduction".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Record(vec![
-                RuntimeFieldValue {
-                    name: "state".to_owned(),
-                    value: RuntimeValue::i64(2),
-                },
-                RuntimeFieldValue {
-                    name: "commands".to_owned(),
-                    value: RuntimeValue::Seq(RuntimeSeq::values(
-                        payloads.into_iter().map(command_value).collect(),
-                    )),
-                },
-            ]))),
-        })),
-    }
+    RuntimeValue::result_ok(nominal_variant(
+        "Reduction",
+        "Reduction",
+        Some(RuntimeValue::Record(vec![
+            RuntimeFieldValue {
+                name: "state".to_owned(),
+                value: RuntimeValue::i64(2),
+            },
+            RuntimeFieldValue {
+                name: "commands".to_owned(),
+                value: RuntimeValue::Seq(RuntimeSeq::values(
+                    payloads.into_iter().map(command_value).collect(),
+                )),
+            },
+        ])),
+    ))
 }
 
 fn command_bundle(include_flow_host_call: bool) -> ArcweftBundle {
@@ -137,23 +115,31 @@ fn command_bundle(include_flow_host_call: bool) -> ArcweftBundle {
 }
 
 fn reducer_rejection() -> RuntimeValue {
+    RuntimeValue::result_err(nominal_variant(
+        "ReducerError",
+        "ReducerError",
+        Some(RuntimeValue::Record(vec![
+            RuntimeFieldValue {
+                name: "code".to_owned(),
+                value: RuntimeValue::String("not_allowed".to_owned()),
+            },
+            RuntimeFieldValue {
+                name: "message".to_owned(),
+                value: RuntimeValue::String("transition rejected".to_owned()),
+            },
+        ])),
+    ))
+}
+
+fn nominal_variant(owner: &str, name: &str, payload: Option<RuntimeValue>) -> RuntimeValue {
     RuntimeValue::Variant {
-        path: Some("Result".to_owned()),
-        name: "Err".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Variant {
-            path: Some("ReducerError".to_owned()),
-            name: "ReducerError".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Record(vec![
-                RuntimeFieldValue {
-                    name: "code".to_owned(),
-                    value: RuntimeValue::String("not_allowed".to_owned()),
-                },
-                RuntimeFieldValue {
-                    name: "message".to_owned(),
-                    value: RuntimeValue::String("transition rejected".to_owned()),
-                },
-            ]))),
-        })),
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new(owner).expect("nominal variant owner"),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([0x52; 32]),
+        },
+        ordinal: 0,
+        name: name.to_owned(),
+        payload: payload.map(Box::new),
     }
 }
 
@@ -326,8 +312,8 @@ fn command_bundle_with_root(
         vec![contract.flow_executable()],
     );
     plan.verify().expect("stateful plan verifies");
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
-    let product_awbc = AwbcLowerer::new(&plan, &display, "root-commands.arcw")
+    let dialogue_content = DialogueContentCatalog::new();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "root-commands.arcw")
         .lower()
         .expect("AWBC lowers")
         .program;
@@ -341,6 +327,7 @@ fn command_bundle_with_root(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some(FLOW.to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -351,7 +338,7 @@ fn command_bundle_with_root(
         },
         source_map(),
         BytecodeProgram::from_runtime_plan(plan),
-        display,
+        dialogue_content,
     )
     .expect("stateful bundle source map accepts the generated standard Style source")
     .with_product_awbc(product_awbc)
@@ -376,8 +363,8 @@ fn non_stateful_bundle() -> (ArcweftBundle, EntryRuntimeId) {
         roles: RuntimeEntryRoles::None,
     }]);
     plan.verify().expect("non-stateful plan verifies");
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
-    let product_awbc = AwbcLowerer::new(&plan, &display, "non-stateful.arcw")
+    let dialogue_content = DialogueContentCatalog::new();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "non-stateful.arcw")
         .lower()
         .expect("AWBC lowers")
         .program;
@@ -391,6 +378,7 @@ fn non_stateful_bundle() -> (ArcweftBundle, EntryRuntimeId) {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.non_stateful".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -401,7 +389,7 @@ fn non_stateful_bundle() -> (ArcweftBundle, EntryRuntimeId) {
         },
         source_map(),
         BytecodeProgram::from_runtime_plan(plan),
-        display,
+        dialogue_content,
     )
     .expect("non-stateful bundle source map accepts the generated standard Style source")
     .with_product_awbc(product_awbc);
@@ -891,6 +879,19 @@ fn rep_007_recorded_external_outcome_is_injected_without_dispatch() {
     assert_eq!(report.transitions_verified, 2);
     assert_eq!(report.external_outcomes_injected, 1);
     assert_eq!(report.suppressed_host_requests, 2);
+
+    let mut duplicate = trace;
+    duplicate
+        .external_outcomes
+        .push(duplicate.external_outcomes[0].clone());
+    assert!(matches!(
+        BundleSession::replay_root_trace(
+            &bundle,
+            replay_options(RootCommandHostResultRoute::RootEventPayload),
+            &duplicate,
+        ),
+        Err(RootReplayError::DuplicateExternalOutcome { .. })
+    ));
 }
 
 #[test]

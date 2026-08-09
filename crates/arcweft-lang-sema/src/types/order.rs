@@ -190,9 +190,7 @@ impl TypeKind {
                     .stable_ordering(right_subject)
                     .then_with(|| left_trait.cmp(right_trait))
                     .then_with(|| left_assoc.cmp(right_assoc)),
-                (Self::Speaker(left), Self::Speaker(right))
-                | (Self::SpeakerPreset(left), Self::SpeakerPreset(right))
-                | (Self::CharacterPatch(left), Self::CharacterPatch(right)) => {
+                (Self::CharacterPatch(left), Self::CharacterPatch(right)) => {
                     entity_kind_ordering(left, right)
                 }
                 (Self::CharacterNominal(left), Self::CharacterNominal(right)) => left.cmp(right),
@@ -398,8 +396,6 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::OpenNominal(_) => 65,
         TypeKind::Error(_) => 66,
         TypeKind::Projection { .. } => 67,
-        TypeKind::Speaker(_) => 68,
-        TypeKind::SpeakerPreset(_) => 69,
         TypeKind::CharacterPatch(_) => 70,
         TypeKind::FocusPatch => 71,
         TypeKind::CharacterNominal(_) => 72,

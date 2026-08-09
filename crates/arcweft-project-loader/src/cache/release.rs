@@ -799,16 +799,13 @@ mod tests {
     };
     use arcweft_core::awbc::schema::{
         AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-        AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-        AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-        AwbcStringId, AwbcTableRange, AwbcTerminator,
+        AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+        AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
+        AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
     };
     use arcweft_core::bytecode::BytecodeProgram;
-    use arcweft_dialogue::DialogueProfileRevision;
-    use arcweft_render_text::LineDisplayCatalog;
-    use arcweft_resource_model::registry::ResourceTypeRegistry;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_text_model::DialogueContentCatalog;
     use std::{
         io::{Read, Write},
         net::{Shutdown, TcpListener},
@@ -816,24 +813,9 @@ mod tests {
         time::{SystemTime, UNIX_EPOCH},
     };
 
-    fn dialogue_revision() -> DialogueProfileRevision {
-        let manifest = SourceDocument::try_new(
-            SourceDocumentId::try_new("project-loader-release-test").expect("document ID"),
-            SourceName::Memory,
-            "test manifest",
-        )
-        .expect("test document");
-        let sources =
-            SourceSetRevision::try_for_identities([manifest.identity()]).expect("source revision");
-        DialogueProfileRevision::from_admitted_parts(
-            manifest.identity().clone(),
-            sources,
-            sources,
-            ViewProgramId::try_new("view_program.project-loader-release-test")
-                .expect("View program ID"),
-            AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-            ResourceTypeRegistry::empty().digest(),
-        )
+    fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+            .expect("fixture runtime artifact fingerprint is non-zero")
     }
 
     #[test]
@@ -1442,6 +1424,7 @@ mod tests {
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
                     flows: 1,
                     bytecode_instructions: 0,
@@ -1452,7 +1435,7 @@ mod tests {
             },
             source_map("main.arcw", "flow main { return \"ok\" }"),
             BytecodeProgram::default(),
-            LineDisplayCatalog::new(dialogue_revision()),
+            DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(minimal_awbc_program())
@@ -1488,6 +1471,14 @@ mod tests {
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
                 flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            }],
+            flow_bindings: vec![AwbcFlowBinding {
+                flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                    [0x32; 32],
+                    "flow.main",
+                )
+                .expect("test checked Flow identity"),
+                function: AwbcFunctionId(0),
             }],
             blocks: vec![AwbcBlock {
                 owner: AwbcFunctionId(0),

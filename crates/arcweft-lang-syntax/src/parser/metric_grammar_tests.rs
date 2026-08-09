@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuild, GrammarBuildError, UnattachedGrammarEntry};
 use crate::grammar::kinds::{MetricKindSyntaxValue, SyntaxKind, SyntaxRole};
 use crate::incremental::SyntaxLimit;
@@ -17,7 +17,7 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+    parse_document(&document(source), crate::parser::ParseOptions::default())
         .expect("Metric grammar builds")
 }
 
@@ -144,7 +144,7 @@ fn metric_missing_kind_type_and_body_have_zero_width_recovery() {
 #[test]
 fn metric_declaration_member_limit_counts_recovery_entries_transactionally() {
     let exact = metric_with_unknown_entries(SyntaxLimit::DeclarationMembers.maximum());
-    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&exact), crate::parser::ParseOptions::default())
         .expect("exact Metric declaration-member limit builds");
     assert_eq!(
         count_kind(&built, SyntaxKind::ErrorDeclarationMember),
@@ -153,13 +153,13 @@ fn metric_declaration_member_limit_counts_recovery_entries_transactionally() {
 
     let one_over = metric_with_unknown_entries(SyntaxLimit::DeclarationMembers.maximum() + 1);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::DeclarationMembers
         ))
     ));
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("metric counter Retry: u64 {}\n"),
             crate::parser::ParseOptions::default()
         )
@@ -170,19 +170,17 @@ fn metric_declaration_member_limit_counts_recovery_entries_transactionally() {
 #[test]
 fn metric_labels_also_consume_the_shared_declaration_member_budget() {
     let exact = metric_with_units_and_labels(959, 64);
-    assert!(
-        parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default()).is_ok()
-    );
+    assert!(parse_document(&document(&exact), crate::parser::ParseOptions::default()).is_ok());
 
     let one_over = metric_with_units_and_labels(960, 64);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::DeclarationMembers
         ))
     ));
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("metric gauge Retry: f32 { labels { ready: bool } }\n"),
             crate::parser::ParseOptions::default()
         )

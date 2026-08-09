@@ -25,6 +25,10 @@ impl HirExprKind {
         clippy::too_many_lines,
         reason = "the closed thirty-six-family expression source-role matrix is exhaustive"
     )]
+    #[allow(
+        clippy::match_same_arms,
+        reason = "the exhaustive role matrix keeps independently named expression families visible at the typed boundary"
+    )]
     pub(crate) fn validate_source_role(
         &self,
         owner: ExprId,
@@ -402,7 +406,10 @@ fn validate_literal_role(
             matches!(literal, HirLiteral::String(_) | HirLiteral::Integer(_))
         }
         HirExprSourceRole::LiteralSuffix => {
-            matches!(literal, HirLiteral::Integer(_) | HirLiteral::Float(_))
+            matches!(
+                literal,
+                HirLiteral::Character(_) | HirLiteral::Integer(_) | HirLiteral::Float(_)
+            )
         }
         HirExprSourceRole::LiteralUnit => {
             matches!(literal, HirLiteral::UnitNumber(_) | HirLiteral::Duration(_))
@@ -733,14 +740,6 @@ fn validate_dialogue_application_role(
                 HirDialogueNodeKind::Interpolation(_) => matches!(
                     part,
                     HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::Interpolation
-                ),
-                HirDialogueNodeKind::Control(_) => matches!(
-                    part,
-                    HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::Control
-                ),
-                HirDialogueNodeKind::Mark(_) => matches!(
-                    part,
-                    HirDialogueNodeSourcePart::Whole | HirDialogueNodeSourcePart::Mark
                 ),
                 HirDialogueNodeKind::LineBreak(_) => matches!(
                     part,

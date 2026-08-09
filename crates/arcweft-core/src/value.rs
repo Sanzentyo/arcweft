@@ -1,7 +1,9 @@
 use crate::awbc::schema::AwbcFunctionId;
-use crate::entry::{RuntimeSchemaError, RuntimeValueDigest};
+use crate::entry::{
+    RuntimeCallableId, RuntimeIdentityError, RuntimeSchemaError, RuntimeValueDigest,
+};
 use crate::math::{DenseMatrixF32, DenseMatrixF64, DenseTensorF32, DenseTensorF64};
-use crate::pattern::RuntimePattern;
+use crate::pattern::{RuntimeCheckedType, RuntimePattern, RuntimeVariantIdentity};
 use crate::plan::{
     RuntimeIteratorEvidence, RuntimePureHelperId, RuntimePureInputType, RuntimePureOutputType,
     RuntimeReceiverMode, RuntimeTraitMethodId,
@@ -26,7 +28,6 @@ pub use nominal_record::{RuntimeNominalRecordError, RuntimeNominalRecordValue};
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
-use option_value::{runtime_option_none, runtime_option_some};
 pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
 pub use sequence_constructors::{
     runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
@@ -152,7 +153,8 @@ pub enum RuntimeValue {
     NominalRecord(RuntimeNominalRecordValue),
     Function(RuntimeFunctionValue),
     Variant {
-        path: Option<String>,
+        owner: RuntimeVariantIdentity,
+        ordinal: u32,
         name: String,
         payload: Option<Box<RuntimeValue>>,
     },
@@ -162,34 +164,36 @@ pub enum RuntimeValue {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeCallTarget {
     Intrinsic(RuntimeIntrinsic),
-    Named(String),
+    Callable(RuntimeCallableId),
 }
 
 impl RuntimeCallTarget {
-    pub fn from_label(label: impl Into<String>) -> Self {
+    pub fn try_from_label(label: impl Into<String>) -> Result<Self, RuntimeIdentityError> {
         let label = label.into();
-        RuntimeIntrinsic::from_label(&label).map_or(Self::Named(label), Self::Intrinsic)
+        RuntimeIntrinsic::from_label(&label)
+            .map(Self::Intrinsic)
+            .map_or_else(|| RuntimeCallableId::try_new(label).map(Self::Callable), Ok)
     }
 
     pub const fn intrinsic(intrinsic: RuntimeIntrinsic) -> Self {
         Self::Intrinsic(intrinsic)
     }
 
-    pub fn named(label: impl Into<String>) -> Self {
-        Self::Named(label.into())
+    pub const fn callable(callable: RuntimeCallableId) -> Self {
+        Self::Callable(callable)
     }
 
     pub const fn as_intrinsic(&self) -> Option<RuntimeIntrinsic> {
         match self {
             Self::Intrinsic(intrinsic) => Some(*intrinsic),
-            Self::Named(_) => None,
+            Self::Callable(_) => None,
         }
     }
 
     pub fn as_label(&self) -> &str {
         match self {
             Self::Intrinsic(intrinsic) => intrinsic.as_label(),
-            Self::Named(label) => label,
+            Self::Callable(callable) => callable.as_str(),
         }
     }
 }
@@ -500,6 +504,26 @@ impl RuntimeIntrinsic {
 }
 
 impl RuntimeValue {
+    /// Materializes the canonical runtime representation of `Result::Ok`.
+    pub fn result_ok(value: RuntimeValue) -> Self {
+        Self::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 0,
+            name: "Ok".to_owned(),
+            payload: Some(Box::new(value)),
+        }
+    }
+
+    /// Materializes the canonical runtime representation of `Result::Err`.
+    pub fn result_err(error: RuntimeValue) -> Self {
+        Self::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 1,
+            name: "Err".to_owned(),
+            payload: Some(Box::new(error)),
+        }
+    }
+
     /// Returns this value as a nominal record without accepting anonymous
     /// structural records.
     #[must_use]
@@ -855,7 +879,8 @@ pub enum RuntimeExpr {
     },
     Record(Vec<RuntimeFieldExpr>),
     Variant {
-        path: Option<String>,
+        owner: RuntimeCheckedType,
+        ordinal: u32,
         name: String,
         payload: Option<Box<RuntimeExpr>>,
     },
@@ -1951,7 +1976,7 @@ pub fn evaluate_core_iter_next_intrinsic(
     };
     let item = iterator
         .next()
-        .map_or_else(runtime_option_none, runtime_option_some);
+        .map_or_else(RuntimeValue::option_none, RuntimeValue::option_some);
     Ok(RuntimeValue::Tuple(vec![
         RuntimeValue::Iterator(iterator),
         item,

@@ -3,7 +3,6 @@
 use crate::{
     effect_row::EffectRow,
     effects::EffectSet,
-    env::EnumVariantPayload,
     types::{EntityKind, MapKind, TypeKind},
 };
 use arcweft_character::id::CharacterId;
@@ -18,11 +17,10 @@ use crate::callable::PromotionCallableId;
 use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
     CallableSchemaError, CapabilityCallableId, CapacityMethodId, CollectionMethodId,
-    DialogueCallableId, DialogueCalleeIdentity, DomainMethodId, DropCallableId,
-    EnumVariantSignatureId, FloatWidth, FxCallableSignatureId, IntegerMethodId, MathCallableId,
-    OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy,
-    PresentationCallableId, PresentationHandleMethodId, ReductionConstructorKind,
-    ResolvedCharacterOwner, ResultConstructorKind, SpeakerCallableId, StageMethodId,
+    DomainMethodId, DropCallableId, FloatWidth, FxCallableSignatureId, IntegerMethodId,
+    MathCallableId, OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS,
+    PresentationArgumentValuePolicy, PresentationCallableId, PresentationHandleMethodId,
+    ReductionConstructorKind, ResolvedCharacterOwner, ResultConstructorKind, StageMethodId,
     StdFloatCallableId, StdFloatOperation, VectorDimensions,
 };
 
@@ -36,7 +34,7 @@ impl BuiltinCallableId {
             Self::Panic | Self::Fail | Self::Bail => {
                 variadic_unchecked(TypeKind::Never, validator, &[])
             }
-            Self::Ensure | Self::Assert | Self::DebugAssert => schema(
+            Self::Ensure => schema(
                 vec![
                     parameter(
                         0,
@@ -181,38 +179,6 @@ impl ReductionConstructorKind {
                 Some(state.clone())
             }
         }
-    }
-}
-
-impl EnumVariantSignatureId {
-    pub(crate) fn signature_schema(
-        &self,
-        payload: &EnumVariantPayload,
-        expected: TypeKind,
-    ) -> CallableSignatureSchema {
-        let parameters = match payload {
-            EnumVariantPayload::Unit | EnumVariantPayload::Record(_) => Vec::new(),
-            EnumVariantPayload::Tuple(items) => items
-                .iter()
-                .enumerate()
-                .map(|(index, ty)| {
-                    parameter(
-                        index,
-                        None,
-                        CallableParameterType::Exact(ty.clone()),
-                        CallableParameterPassing::PositionalOnly,
-                        CallableParameterPresence::Required,
-                    )
-                })
-                .collect(),
-        };
-        schema(
-            parameters,
-            expected,
-            &[],
-            closed(),
-            CallableValidator::EnumConstructor(self.clone()),
-        )
     }
 }
 
@@ -381,16 +347,6 @@ impl DomainMethodId {
             Self::Context | Self::WithContext => {
                 variadic_unchecked(context_result(receiver), validator, &[])
             }
-            Self::CharacterFace { .. } => variadic_unchecked(
-                TypeKind::CharacterPatch(EntityKind::Character),
-                validator,
-                &[],
-            ),
-            Self::CharacterSay { .. } => variadic_unchecked(
-                TypeKind::SpeakerPreset(EntityKind::Character),
-                validator,
-                &[],
-            ),
         }
     }
 }
@@ -465,20 +421,6 @@ impl PromotionCallableId {
             Self::Assume => TypeKind::Unit,
         };
         variadic_unchecked(result, CallableValidator::Promotion(self), &[])
-    }
-}
-
-impl SpeakerCallableId {
-    #[allow(
-        clippy::unused_self,
-        reason = "schema construction remains discoverable on every resolved callable identity"
-    )]
-    pub(crate) fn signature_schema(&self) -> CallableSignatureSchema {
-        variadic_unchecked(
-            TypeKind::SpeakerPreset(EntityKind::Character),
-            CallableValidator::Speaker,
-            &[],
-        )
     }
 }
 
@@ -931,62 +873,6 @@ pub(in crate::callable) fn presentation_schema(
         }
     };
     Ok(schema(parameters, result, &[], policy, validator))
-}
-
-#[allow(
-    clippy::unnecessary_wraps,
-    reason = "all callable families share a fallible schema construction boundary"
-)]
-pub(in crate::callable) fn dialogue_schema(
-    id: DialogueCallableId,
-    callee: &DialogueCalleeIdentity,
-) -> Result<CallableSignatureSchema, CallableSchemaError> {
-    let character = match callee {
-        DialogueCalleeIdentity::Speaker { character }
-        | DialogueCalleeIdentity::SpeakerPreset { character } => Some(character),
-        DialogueCalleeIdentity::Content { .. } => None,
-    };
-    let look = character.map_or(CallableParameterType::Unchecked, |character| {
-        CallableParameterType::Exact(TypeKind::character_look(character.clone()))
-    });
-    let parameters = vec![
-        optional_named(0, "id", TypeKind::entity_ref(EntityKind::DialogueLine)),
-        optional_named(1, "text_key", TypeKind::entity_ref(EntityKind::Text)),
-        optional_named_unchecked(2, "voice"),
-        parameter(
-            3,
-            Some("look"),
-            look,
-            CallableParameterPassing::NamedOnly,
-            CallableParameterPresence::Optional,
-        ),
-        optional_named_unchecked(4, "stage"),
-        optional_named_unchecked(5, "portrait"),
-        optional_named_unchecked(6, "focus"),
-        optional_named_unchecked(7, "cleanup"),
-        optional_named(8, "view", TypeKind::entity_ref(EntityKind::View)),
-        optional_named(9, "source_locale", TypeKind::String),
-        optional_named_unchecked(10, "hooks"),
-        optional_named_unchecked(11, "style"),
-        optional_named_unchecked(12, "rich_text"),
-        parameter(
-            13,
-            Some("line_args"),
-            CallableParameterType::Unchecked,
-            CallableParameterPassing::RestNamed,
-            CallableParameterPresence::Optional,
-        ),
-    ];
-    Ok(schema(
-        parameters,
-        TypeKind::Unit,
-        &[],
-        CallableArgumentPolicy::new(
-            UnknownNamedArgumentPolicy::OpenChecked,
-            SpreadArgumentPolicy::Reject,
-        ),
-        CallableValidator::Dialogue(id),
-    ))
 }
 
 fn presentation_result(id: PresentationCallableId) -> TypeKind {

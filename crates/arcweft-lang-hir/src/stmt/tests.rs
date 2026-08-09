@@ -344,18 +344,6 @@ fn ordered_statement_bodies_arms_conditions_and_locals_are_not_reordered() {
         arms[1].body(),
         &HirStmtMatchArmBody::Expression(second_expr)
     );
-
-    let thread = HirStmt::try_new(
-        owner_scope,
-        HirStmtKind::Thread {
-            thread: second_expr,
-        },
-    )
-    .expect("typed thread expression reference");
-    let HirStmtKind::Thread { thread } = thread.kind() else {
-        panic!("thread payload");
-    };
-    assert_eq!(*thread, second_expr);
 }
 
 #[test]
@@ -581,45 +569,44 @@ fn statement_variant_ordinal(kind: &HirStmtKind) -> u8 {
         HirStmtKind::Return { .. } => 9,
         HirStmtKind::Out { .. } => 10,
         HirStmtKind::Goto { .. } => 11,
-        HirStmtKind::Thread { .. } => 12,
-        HirStmtKind::DeferBlock { .. } => 13,
-        HirStmtKind::Defer { .. } => 14,
-        HirStmtKind::Yield { .. } => 15,
-        HirStmtKind::Signal { .. } => 16,
-        HirStmtKind::LifetimeSet { .. } => 17,
-        HirStmtKind::Wait { .. } => 18,
-        HirStmtKind::On { .. } => 19,
-        HirStmtKind::UnsafeLifetime { .. } => 20,
-        HirStmtKind::Choice { .. } => 21,
-        HirStmtKind::If(_) => 22,
-        HirStmtKind::IfLet(_) => 23,
-        HirStmtKind::Match(_) => 24,
-        HirStmtKind::Loop(_) => 25,
-        HirStmtKind::While(_) => 26,
-        HirStmtKind::WhileLet(_) => 27,
-        HirStmtKind::For(_) => 28,
-        HirStmtKind::Close { .. } => 29,
-        HirStmtKind::Select(_) => 30,
-        HirStmtKind::SourceLocale(_) => 31,
-        HirStmtKind::Scope(_) => 32,
-        HirStmtKind::Include(_) => 33,
-        HirStmtKind::AwaitWith(_) => 34,
-        HirStmtKind::Break { .. } => 35,
-        HirStmtKind::Continue { .. } => 36,
-        HirStmtKind::Expression { .. } => 37,
-        HirStmtKind::ProofCall { .. } => 38,
-        HirStmtKind::Error => 39,
+        HirStmtKind::DeferBlock { .. } => 12,
+        HirStmtKind::Defer { .. } => 13,
+        HirStmtKind::Yield { .. } => 14,
+        HirStmtKind::Signal { .. } => 15,
+        HirStmtKind::LifetimeSet { .. } => 16,
+        HirStmtKind::Wait { .. } => 17,
+        HirStmtKind::On { .. } => 18,
+        HirStmtKind::UnsafeLifetime { .. } => 19,
+        HirStmtKind::Choice { .. } => 20,
+        HirStmtKind::If(_) => 21,
+        HirStmtKind::IfLet(_) => 22,
+        HirStmtKind::Match(_) => 23,
+        HirStmtKind::Loop(_) => 24,
+        HirStmtKind::While(_) => 25,
+        HirStmtKind::WhileLet(_) => 26,
+        HirStmtKind::For(_) => 27,
+        HirStmtKind::Close { .. } => 28,
+        HirStmtKind::Select(_) => 29,
+        HirStmtKind::SourceLocale(_) => 30,
+        HirStmtKind::Scope(_) => 31,
+        HirStmtKind::Include(_) => 32,
+        HirStmtKind::AwaitWith(_) => 33,
+        HirStmtKind::Break { .. } => 34,
+        HirStmtKind::Continue { .. } => 35,
+        HirStmtKind::Expression { .. } => 36,
+        HirStmtKind::ProofCall { .. } => 37,
+        HirStmtKind::Error => 38,
     }
 }
 
 #[test]
 fn statement_inventory_is_the_closed_typed_contract() {
-    assert_eq!(statement_variant_ordinal(&HirStmtKind::Error), 39);
+    assert_eq!(statement_variant_ordinal(&HirStmtKind::Error), 38);
     assert_eq!(
         statement_variant_ordinal(&HirStmtKind::Continue {
             label: Some(name("outer")),
         }),
-        36
+        35
     );
 }
 

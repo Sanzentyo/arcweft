@@ -2,7 +2,7 @@ use arcweft_agent_repl::{
     ReplBaseSnapshot, ReplCellFilter, ReplGenerationId, ReplResetOptions, ReplSession,
     ReplSessionOptions,
 };
-use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
+use arcweft_lang_sema::project_index::ProgramHash;
 
 #[test]
 fn repl_transaction_reset_returns_empty_overlay() {
@@ -16,9 +16,11 @@ fn repl_transaction_reset_returns_empty_overlay() {
 #[test]
 fn repl_transaction_base_change_advances_generation() {
     let mut repl = test_repl("test.program.old");
-    let outcome = repl.replace_base_snapshot(ReplBaseSnapshot::from_project(
+    let outcome = repl.replace_base_snapshot(ReplBaseSnapshot::new(
         "new",
-        ProjectSemanticIndex::new(ProgramHash::new("test.program.new")),
+        &ProgramHash::new("test.program.new"),
+        std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+        [],
     ));
     assert_eq!(outcome.evidence.active_generation, ReplGenerationId::new(1));
     assert_eq!(outcome.evidence.base_program_hash, "test.program.new");
@@ -26,9 +28,11 @@ fn repl_transaction_base_change_advances_generation() {
 
 fn test_repl(program_hash: &str) -> ReplSession {
     ReplSession::new(
-        ReplBaseSnapshot::from_project(
+        ReplBaseSnapshot::new(
             "test",
-            ProjectSemanticIndex::new(ProgramHash::new(program_hash)),
+            &ProgramHash::new(program_hash),
+            std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
         ),
         ReplSessionOptions::default(),
     )

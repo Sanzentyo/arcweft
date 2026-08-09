@@ -51,7 +51,8 @@ impl HirModuleId {
         Self { database, slot }
     }
 
-    pub(crate) const fn database(self) -> HirDatabaseId {
+    /// Returns the HIR database qualifying this module identity.
+    pub const fn database(self) -> HirDatabaseId {
         self.database
     }
 
@@ -73,6 +74,11 @@ impl HirRevision {
             .checked_add(1)
             .and_then(NonZeroU32::new)
             .map(Self)
+    }
+
+    /// Returns the monotonic non-zero revision value.
+    pub const fn get(self) -> u32 {
+        self.0.get()
     }
 
     #[cfg(test)]
@@ -892,9 +898,8 @@ impl HirLimit {
             Self::PathSegments | Self::RegistrySegments => 256,
             Self::DecimalExponentAbs => 1_000_000,
             Self::CallArguments | Self::CallTypeArguments => 128,
-            Self::AssertionConditions => 64,
+            Self::AssertionConditions | Self::StyleNestingDepth => 64,
             Self::RichTextCallArguments => 32,
-            Self::StyleNestingDepth => 64,
         }
     }
 }

@@ -1,5 +1,8 @@
-use arcweft_core::task::{HostTaskRequest, TaskSpec};
-use arcweft_core::value::RuntimePayload;
+use arcweft_core::{
+    pattern::RuntimeVariantIdentity,
+    task::{HostTaskRequest, TaskSpec},
+    value::RuntimePayload,
+};
 use arcweft_desktop_contract::{
     CursorIcon, DesktopError, DesktopRequest, DesktopResponse, OwnedCursorRequest,
     OwnedWindowRequest, PhysicalPosition, PhysicalRect, PhysicalSize, WindowMode, WindowTarget,
@@ -109,48 +112,61 @@ fn decode_typed_owned_request(
 
 fn window_mode(value: HostCallVariantArg<'_>) -> Result<WindowMode, String> {
     expect_unit_variant(DESKTOP_WINDOW_MODE_TYPE, value)?;
-    match value.name {
-        "Normal" => Ok(WindowMode::Normal),
-        "Minimized" => Ok(WindowMode::Minimized),
-        "Maximized" => Ok(WindowMode::Maximized),
-        "BorderlessFullscreen" => Ok(WindowMode::BorderlessFullscreen),
-        "Fullscreen" => Ok(WindowMode::Fullscreen),
-        other => Err(format!("unknown owned window mode `{other}`")),
+    match (value.ordinal, value.name) {
+        (0, "Normal") => Ok(WindowMode::Normal),
+        (1, "Minimized") => Ok(WindowMode::Minimized),
+        (2, "Maximized") => Ok(WindowMode::Maximized),
+        (3, "BorderlessFullscreen") => Ok(WindowMode::BorderlessFullscreen),
+        (4, "Fullscreen") => Ok(WindowMode::Fullscreen),
+        (ordinal, name) => Err(format!(
+            "unknown owned window mode case #{ordinal} `{name}`"
+        )),
     }
 }
 
 fn cursor_icon(value: HostCallVariantArg<'_>) -> Result<CursorIcon, String> {
     expect_unit_variant(DESKTOP_CURSOR_ICON_TYPE, value)?;
-    match value.name {
-        "Default" => Ok(CursorIcon::Default),
-        "Pointer" => Ok(CursorIcon::Pointer),
-        "Text" => Ok(CursorIcon::Text),
-        "Crosshair" => Ok(CursorIcon::Crosshair),
-        "Move" => Ok(CursorIcon::Move),
-        "NotAllowed" => Ok(CursorIcon::NotAllowed),
-        "Wait" => Ok(CursorIcon::Wait),
-        "Progress" => Ok(CursorIcon::Progress),
-        "Help" => Ok(CursorIcon::Help),
-        "ZoomIn" => Ok(CursorIcon::ZoomIn),
-        "ZoomOut" => Ok(CursorIcon::ZoomOut),
-        "Grab" => Ok(CursorIcon::Grab),
-        "Grabbing" => Ok(CursorIcon::Grabbing),
-        "ResizeHorizontal" => Ok(CursorIcon::ResizeHorizontal),
-        "ResizeVertical" => Ok(CursorIcon::ResizeVertical),
-        "ResizeDiagonalNorthEastSouthWest" => Ok(CursorIcon::ResizeDiagonalNorthEastSouthWest),
-        "ResizeDiagonalNorthWestSouthEast" => Ok(CursorIcon::ResizeDiagonalNorthWestSouthEast),
-        "Hidden" => Ok(CursorIcon::Hidden),
-        other => Err(format!("unknown owned cursor icon `{other}`")),
+    match (value.ordinal, value.name) {
+        (0, "Default") => Ok(CursorIcon::Default),
+        (1, "Pointer") => Ok(CursorIcon::Pointer),
+        (2, "Text") => Ok(CursorIcon::Text),
+        (3, "Crosshair") => Ok(CursorIcon::Crosshair),
+        (4, "Move") => Ok(CursorIcon::Move),
+        (5, "NotAllowed") => Ok(CursorIcon::NotAllowed),
+        (6, "Wait") => Ok(CursorIcon::Wait),
+        (7, "Progress") => Ok(CursorIcon::Progress),
+        (8, "Help") => Ok(CursorIcon::Help),
+        (9, "ZoomIn") => Ok(CursorIcon::ZoomIn),
+        (10, "ZoomOut") => Ok(CursorIcon::ZoomOut),
+        (11, "Grab") => Ok(CursorIcon::Grab),
+        (12, "Grabbing") => Ok(CursorIcon::Grabbing),
+        (13, "ResizeHorizontal") => Ok(CursorIcon::ResizeHorizontal),
+        (14, "ResizeVertical") => Ok(CursorIcon::ResizeVertical),
+        (15, "ResizeDiagonalNorthEastSouthWest") => {
+            Ok(CursorIcon::ResizeDiagonalNorthEastSouthWest)
+        }
+        (16, "ResizeDiagonalNorthWestSouthEast") => {
+            Ok(CursorIcon::ResizeDiagonalNorthWestSouthEast)
+        }
+        (17, "Hidden") => Ok(CursorIcon::Hidden),
+        (ordinal, name) => Err(format!(
+            "unknown owned cursor icon case #{ordinal} `{name}`"
+        )),
     }
 }
 
 fn expect_unit_variant(expected_type: &str, value: HostCallVariantArg<'_>) -> Result<(), String> {
-    if let Some(path) = value.path
-        && path != expected_type
-    {
+    let RuntimeVariantIdentity::Nominal { nominal, .. } = value.owner else {
         return Err(format!(
-            "host-call variant `{}` belongs to `{path}`, expected `{expected_type}`",
+            "host-call variant `{}` is not owned by nominal `{expected_type}`",
             value.name
+        ));
+    };
+    if nominal.as_str() != expected_type {
+        return Err(format!(
+            "host-call variant `{}` belongs to `{}`, expected `{expected_type}`",
+            value.name,
+            nominal.as_str()
         ));
     }
     if value.payload.is_some() {
@@ -230,7 +246,11 @@ mod tests {
         let request = decode_request(&task(
             "desktop.window.owned",
             "set_mode",
-            [variant_arg(None, "BorderlessFullscreen")],
+            [variant_arg(
+                DESKTOP_WINDOW_MODE_TYPE,
+                3,
+                "BorderlessFullscreen",
+            )],
         ))
         .expect("variant mode decodes");
 
@@ -267,9 +287,16 @@ mod tests {
         assert!(error.contains("has no typed decoder"));
     }
 
-    fn variant_arg(path: Option<&str>, name: &str) -> RuntimePayload {
+    fn variant_arg(owner: &str, ordinal: u32, name: &str) -> RuntimePayload {
         RuntimePayload(RuntimeValue::Variant {
-            path: path.map(str::to_owned),
+            owner: RuntimeVariantIdentity::Nominal {
+                nominal: arcweft_core::entry::RuntimeNominalTypeId::try_new(owner)
+                    .expect("test nominal identity"),
+                semantic_identity: arcweft_core::pattern::RuntimeSemanticTypeId::from_bytes(
+                    [7; 32],
+                ),
+            },
+            ordinal,
             name: name.to_owned(),
             payload: None,
         })

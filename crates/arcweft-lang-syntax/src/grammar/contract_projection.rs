@@ -100,10 +100,10 @@ impl PendingFlowContractClauseProjection {
             }
             previous_end = mode.end();
         }
-        if let Some(no_effect) = self.no_effect_keyword {
-            if !token_belongs_to(owner, no_effect) || no_effect.start() < previous_end {
-                return false;
-            }
+        if let Some(no_effect) = self.no_effect_keyword
+            && (!token_belongs_to(owner, no_effect) || no_effect.start() < previous_end)
+        {
+            return false;
         }
         true
     }

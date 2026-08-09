@@ -1,0 +1,1104 @@
+//! Item roles and checked callable-catalog publication.
+
+use super::{
+    Analyzer, Arc, BTreeMap, CallPoison, CallTargetFacts, CallTargetFactsInput, CallableAccess,
+    CallableCandidateId, CallableEffectContract, CallableEffectSchema, CallableLookupKey,
+    CallableMethodRole, CheckedCallTarget, CheckedCallableCatalog,
+    CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder, CheckedCallableExecution,
+    CheckedCallableId, CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution,
+    CheckedItem, CheckedItemRole, CheckedSuspensionRole, CheckedValueResolution, EffectRow,
+    EffectSet, EffectSubsetError, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
+    HirCallCallee, HirCallableSourceOwner, HirExprKind, HirFlowContractClause,
+    HirFlowContractSourcePart, HirFlowSourceRole, HirFunctionBody, HirImplMember, HirItem,
+    HirItemKind, HirItemSourceRole, HirModule, HirPathSegment, HirPredicateBody, HirProofBody,
+    HirSourceQuery, HirStmtKind, HirTraitMember, ItemId, LocalId, PendingCallAnalysis,
+    ProjectSymbolTable, STANDARD_TRAIT_CATALOG_VERSION, ScopeId, SourceSpan, StagedCallableBody,
+    StagedCheckedCallables, TypeId, TypeKind,
+    callable_effect_graph::CallableEffectGraph,
+    calls::{callable_schema_type_with_effects, final_call_effects, final_callable_effects},
+    statements::{
+        checked_effect_expression, closure_effect_rows, execution_effects,
+        function_effect_contract, scope_executes_within, scope_span, source_span,
+    },
+};
+
+fn callable_label(module: &HirModule, owner: ItemId) -> Result<String, FinalSemanticAnalysisError> {
+    let item = module
+        .resolve_item(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    match item.kind() {
+        HirItemKind::Flow(flow) => match flow.identity().public_id() {
+            Some(arcweft_lang_hir::leaf::HirIdRef::Absolute(reference)) => {
+                Ok(reference.as_str().to_owned())
+            }
+            _ => flow
+                .identity()
+                .name()
+                .map(|name| name.as_str().to_owned())
+                .ok_or(FinalSemanticAnalysisError::RecoveredOwner),
+        },
+        HirItemKind::Function(function) => function
+            .name()
+            .resolved()
+            .map(|name| name.as_str().to_owned())
+            .ok_or(FinalSemanticAnalysisError::RecoveredOwner),
+        HirItemKind::Predicate(predicate) => predicate
+            .name()
+            .resolved()
+            .map(|name| name.as_str().to_owned())
+            .ok_or(FinalSemanticAnalysisError::RecoveredOwner),
+        HirItemKind::Proof(proof) => proof
+            .name()
+            .resolved()
+            .map(|name| name.as_str().to_owned())
+            .ok_or(FinalSemanticAnalysisError::RecoveredOwner),
+        _ => Err(FinalSemanticAnalysisError::InvalidCallableOwner),
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "effect trace construction joins the accepted module, scope, staged calls, symbols, modules, and missing effect without a side table"
+)]
+fn effect_trace_notes(
+    module: &HirModule,
+    owner: ItemId,
+    scope: ScopeId,
+    input: &FinalSemanticAnalysisInput,
+    pending_calls: &BTreeMap<ExprId, PendingCallAnalysis>,
+    symbols: &ProjectSymbolTable,
+    modules: &BTreeMap<super::HirModuleId, &HirModule>,
+    missing: &EffectSet,
+) -> Result<Vec<String>, FinalSemanticAnalysisError> {
+    let callable = callable_label(module, owner)?;
+    let mut notes = Vec::new();
+    for effect in missing {
+        notes.push(format!("effect trace for `{effect}`:"));
+        let mut direct_perform = false;
+        let trace = function_value_effect_trace(
+            module,
+            scope,
+            input,
+            pending_calls,
+            symbols,
+            modules,
+            effect,
+        )?;
+        for (owner, checked) in &input.expressions {
+            if owner.module() != module.module_id() {
+                continue;
+            }
+            let expression = module
+                .resolve_expr(*owner)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let within_body = scope_executes_within(module, expression.scope(), scope)?;
+            match expression.kind() {
+                HirExprKind::Await(_) if within_body && checked.effects().contains(effect) => {
+                    notes.push(format!("`{callable}` performs `{effect}` via await"));
+                    direct_perform = true;
+                }
+                HirExprKind::Call(call) => {
+                    let Some(label) = call_label(module, call) else {
+                        continue;
+                    };
+                    if trace.function_value_calls.contains(owner) {
+                        notes.push(format!("function value call `{label}`"));
+                        direct_perform = true;
+                    }
+                    if trace.returned_calls.contains(owner) {
+                        notes.push(format!("returned function value from `{label}`"));
+                    }
+                    if within_body
+                        && checked.effects().contains(effect)
+                        && pending_calls
+                            .get(owner)
+                            .is_some_and(|pending| pending.function_value_type.is_none())
+                    {
+                        notes.push(format!("call `{label}`"));
+                        direct_perform = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+        for callback in &trace.callback_closures {
+            let callback_module = modules
+                .get(&callback.module())
+                .copied()
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+            let callback_expression = callback_module
+                .resolve_expr(*callback)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let HirExprKind::Closure(callback) = callback_expression.kind() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            for (candidate, checked) in &input.expressions {
+                if candidate.module() != callback_module.module_id()
+                    || !checked.effects().contains(effect)
+                {
+                    continue;
+                }
+                let expression = callback_module
+                    .resolve_expr(*candidate)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                if !scope_executes_within(callback_module, expression.scope(), callback.scope())? {
+                    continue;
+                }
+                let HirExprKind::Call(call) = expression.kind() else {
+                    continue;
+                };
+                let Some(label) = call_label(callback_module, call) else {
+                    continue;
+                };
+                notes.push(format!("call `{label}`"));
+                direct_perform = true;
+            }
+        }
+        for returned in &trace.returned_closures {
+            let returned_module = modules
+                .get(&returned.module())
+                .copied()
+                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+            let returned_expression = returned_module
+                .resolve_expr(*returned)
+                .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+            let HirExprKind::Closure(returned_closure) = returned_expression.kind() else {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            };
+            let closure_performs = input.expressions.iter().any(|(candidate, checked)| {
+                candidate.module() == returned_module.module_id()
+                    && checked.effects().contains(effect)
+                    && returned_module
+                        .resolve_expr(*candidate)
+                        .is_ok_and(|expression| {
+                            scope_executes_within(
+                                returned_module,
+                                expression.scope(),
+                                returned_closure.scope(),
+                            )
+                            .unwrap_or(false)
+                        })
+            });
+            if !closure_performs {
+                continue;
+            }
+            for (_, capture) in returned_module
+                .captures()
+                .filter(|(_, capture)| capture.closure() == *returned)
+            {
+                let local = returned_module
+                    .resolve_local(capture.local())
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                notes.push(format!(
+                    "higher-order argument `{}` captured by returned closure",
+                    local.name().as_str()
+                ));
+            }
+        }
+        if !direct_perform && !notes.iter().any(|note| note == &format!("call `{effect}`")) {
+            notes.push(format!("`{callable}` performs `{effect}`"));
+        }
+    }
+    notes.dedup();
+    Ok(notes)
+}
+
+#[derive(Default)]
+struct FunctionValueEffectTrace {
+    function_value_calls: std::collections::BTreeSet<ExprId>,
+    returned_calls: std::collections::BTreeSet<ExprId>,
+    callback_closures: std::collections::BTreeSet<ExprId>,
+    returned_closures: std::collections::BTreeSet<ExprId>,
+}
+
+fn function_value_effect_trace(
+    module: &HirModule,
+    scope: ScopeId,
+    input: &FinalSemanticAnalysisInput,
+    pending_calls: &BTreeMap<ExprId, PendingCallAnalysis>,
+    symbols: &ProjectSymbolTable,
+    modules: &BTreeMap<super::HirModuleId, &HirModule>,
+    effect: &super::EffectId,
+) -> Result<FunctionValueEffectTrace, FinalSemanticAnalysisError> {
+    let mut trace = FunctionValueEffectTrace::default();
+    for (owner, checked) in &input.expressions {
+        if owner.module() != module.module_id() || !checked.effects().contains(effect) {
+            continue;
+        }
+        let expression = module
+            .resolve_expr(*owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirExprKind::Call(call) = expression.kind() else {
+            continue;
+        };
+        if !(scope_executes_within(module, expression.scope(), scope)?
+            && pending_calls
+                .get(owner)
+                .is_some_and(|pending| pending.function_value_type.is_some()))
+        {
+            continue;
+        }
+        trace.function_value_calls.insert(*owner);
+        let Some(origin) = function_value_origin_call(module, call, input)? else {
+            continue;
+        };
+        let Some(pending) = pending_calls.get(&origin) else {
+            continue;
+        };
+        trace.returned_calls.insert(origin);
+        for argument in &pending.arguments {
+            for slot in argument.slots() {
+                let Some(argument) = slot.expression() else {
+                    continue;
+                };
+                let argument_expression = module
+                    .resolve_expr(argument)
+                    .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+                if matches!(argument_expression.kind(), HirExprKind::Closure(_)) {
+                    trace.callback_closures.insert(argument);
+                }
+            }
+        }
+        let CallableCandidateId::Project(declaration) = pending.selected.id() else {
+            continue;
+        };
+        let Some(symbol) = symbols.callable(declaration) else {
+            return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+        };
+        let target_module = modules
+            .get(&symbol.source_item().module())
+            .copied()
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        let target = target_module
+            .resolve_item(symbol.source_item())
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let HirItemKind::Function(function) = target.kind() else {
+            continue;
+        };
+        let HirFunctionBody::Block { tail, .. } = function.body() else {
+            continue;
+        };
+        if let Some(returned) = returned_closure_expression(target_module, *tail)? {
+            trace.returned_closures.insert(returned);
+        }
+    }
+    Ok(trace)
+}
+
+fn function_value_origin_call(
+    module: &HirModule,
+    call: &arcweft_lang_hir::expr::HirCallExpr,
+    input: &FinalSemanticAnalysisInput,
+) -> Result<Option<ExprId>, FinalSemanticAnalysisError> {
+    let Some(mut expression) = call.callee().value_expression() else {
+        return Ok(None);
+    };
+    let mut visited = std::collections::BTreeSet::<LocalId>::new();
+    loop {
+        let record = module
+            .resolve_expr(expression)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if matches!(record.kind(), HirExprKind::Call(_)) {
+            return Ok(Some(expression));
+        }
+        let Some((_, checked)) = input
+            .expressions
+            .iter()
+            .find(|(owner, _)| *owner == expression)
+        else {
+            return Ok(None);
+        };
+        let CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) =
+            checked.resolution()
+        else {
+            return Ok(None);
+        };
+        if !visited.insert(*local) {
+            return Ok(None);
+        }
+        let Some(initializer) = binding_initializer_for_local(module, *local) else {
+            return Ok(None);
+        };
+        expression = initializer;
+    }
+}
+
+fn binding_initializer_for_local(module: &HirModule, local: LocalId) -> Option<ExprId> {
+    module
+        .statements()
+        .find_map(|(_, statement)| match statement.kind() {
+            HirStmtKind::Let {
+                initializer,
+                locals,
+                ..
+            }
+            | HirStmtKind::LetElse {
+                initializer,
+                locals,
+                ..
+            } if locals.contains(&local) => Some(*initializer),
+            HirStmtKind::LetChoice {
+                choice: initializer,
+                locals,
+                ..
+            }
+            | HirStmtKind::LetScope {
+                scope_expr: initializer,
+                locals,
+                ..
+            }
+            | HirStmtKind::LetLoop {
+                loop_expr: initializer,
+                locals,
+                ..
+            }
+            | HirStmtKind::LetAwait {
+                await_expr: initializer,
+                locals,
+                ..
+            }
+            | HirStmtKind::LetActionReceive {
+                action: initializer,
+                locals,
+                ..
+            } if locals.contains(&local) => Some(*initializer),
+            _ => None,
+        })
+}
+
+fn returned_closure_expression(
+    module: &HirModule,
+    mut owner: ExprId,
+) -> Result<Option<ExprId>, FinalSemanticAnalysisError> {
+    loop {
+        let expression = module
+            .resolve_expr(owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        match expression.kind() {
+            HirExprKind::Closure(_) => return Ok(Some(owner)),
+            HirExprKind::Block(block) => owner = block.tail(),
+            _ => return Ok(None),
+        }
+    }
+}
+
+fn call_label(module: &HirModule, call: &arcweft_lang_hir::expr::HirCallExpr) -> Option<String> {
+    match call.callee() {
+        HirCallCallee::Value { value } => expression_label(module, *value),
+        HirCallCallee::UnresolvedDot {
+            value_receiver,
+            member,
+            ..
+        } => {
+            let mut label = expression_label(module, *value_receiver)?;
+            label.push('.');
+            label.push_str(member.resolved()?.as_str());
+            Some(label)
+        }
+        HirCallCallee::Associated { member, .. } => Some(member.resolved()?.as_str().to_owned()),
+    }
+}
+
+fn expression_label(module: &HirModule, owner: ExprId) -> Option<String> {
+    let expression = module.resolve_expr(owner).ok()?;
+    match expression.kind() {
+        HirExprKind::Path(path) => {
+            let path = path.as_resolved()?;
+            Some(
+                path.segments()
+                    .iter()
+                    .map(|segment| match segment {
+                        HirPathSegment::Identifier(name) => name.as_str(),
+                        HirPathSegment::ProjectSymbol(name) => name.as_str(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("."),
+            )
+        }
+        HirExprKind::Select(select) => {
+            let target = module.resolve_expr(select.target()).ok()?;
+            let HirExprKind::Path(path) = target.kind() else {
+                return None;
+            };
+            let mut label = path
+                .as_resolved()?
+                .segments()
+                .iter()
+                .map(|segment| match segment {
+                    HirPathSegment::Identifier(name) => name.as_str(),
+                    HirPathSegment::ProjectSymbol(name) => name.as_str(),
+                })
+                .collect::<Vec<_>>()
+                .join(".");
+            let arcweft_lang_hir::expr::HirSelectedMember::Name(member) = select.member() else {
+                return None;
+            };
+            label.push('.');
+            label.push_str(member.as_str());
+            Some(label)
+        }
+        _ => None,
+    }
+}
+
+impl Analyzer<'_, '_, '_> {
+    pub(super) fn analyze_items(
+        &self,
+        input: &mut FinalSemanticAnalysisInput,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        for module in self.modules.values().copied() {
+            for (owner, item) in module.items() {
+                if item.is_poisoned() {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                }
+                let role = item_role(module, owner, item, &self.types)?;
+                let effects = match item.kind() {
+                    HirItemKind::Flow(flow) => flow
+                        .contracts()
+                        .iter()
+                        .filter_map(|clause| clause.admitted_effect_operands())
+                        .flatten()
+                        .map(|owner| {
+                            let checked = self
+                                .facts
+                                .expressions()
+                                .get(owner)
+                                .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+                            match checked.resolution() {
+                                CheckedExpressionResolution::Effect(effect) => Ok(effect.clone()),
+                                _ => Err(FinalSemanticAnalysisError::WrongPayloadFamily),
+                            }
+                        })
+                        .collect::<Result<EffectSet, _>>()?,
+                    _ => EffectSet::new(),
+                };
+                input.push_item(owner, CheckedItem::new(effects, role));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn stage_checked_callables(
+        &self,
+    ) -> Result<StagedCheckedCallables, FinalSemanticAnalysisError> {
+        self.control.check()?;
+        let accepted = Arc::clone(self.catalogs.world.environment().callable_catalog_arc());
+        let mut builder = CheckedCallableCatalogBuilder::for_registered(
+            Arc::clone(&accepted),
+            self.symbols.world().clone(),
+            *self.symbols.revision(),
+            STANDARD_TRAIT_CATALOG_VERSION,
+        )
+        .map_err(checked_catalog_error)?;
+        let mut bodies = Vec::new();
+        let mut effect_expressions = Vec::new();
+        for module in self.modules.values().copied() {
+            effect_expressions.extend(module_effect_expression_facts(module)?);
+        }
+
+        for record in builder
+            .registered_records()
+            .map_err(checked_catalog_error)?
+        {
+            self.control.check()?;
+            let execution = fixed_record_execution(&record);
+            let id = match record.schema().effects() {
+                CallableEffectSchema::Fixed(_) => builder
+                    .insert_fixed_shell(Arc::clone(&record), execution)
+                    .map_err(checked_catalog_error)?,
+                CallableEffectSchema::Project { declaration }
+                    if matches!(
+                        record.id(),
+                        CallableCandidateId::Project(candidate) if candidate == declaration
+                    ) =>
+                {
+                    let symbol = self
+                        .symbols
+                        .callable(declaration)
+                        .ok_or(FinalSemanticAnalysisError::InvalidCallableOwner)?;
+                    let module = self.module(symbol.source_item().module())?;
+                    if symbol.source_snapshot() != module.snapshot_id() {
+                        return Err(FinalSemanticAnalysisError::CatalogGenerationMismatch);
+                    }
+                    match source_callable_shell(module, symbol, &self.types)? {
+                        SourceCallableShell::Body {
+                            scope,
+                            execution,
+                            contract,
+                        } => {
+                            let body_source = scope_span(module, scope)?;
+                            let id = builder
+                                .insert_body_shell(
+                                    Arc::clone(&record),
+                                    execution,
+                                    *contract,
+                                    &body_source,
+                                )
+                                .map_err(checked_catalog_error)?;
+                            bodies.push(StagedCallableBody {
+                                id: id.clone(),
+                                module: module.module_id(),
+                                item: symbol.source_item(),
+                                scope,
+                                owner: symbol.declaration().owner(),
+                            });
+                            id
+                        }
+                        SourceCallableShell::BodylessTraitRequirement { name } => {
+                            let contract = CallableEffectContract::omitted_bodyless_trait(name);
+                            builder
+                                .insert_bodyless_trait_shell(
+                                    Arc::clone(&record),
+                                    CheckedCallableExecution::DispatchContract,
+                                    contract,
+                                )
+                                .map_err(checked_catalog_error)?
+                        }
+                    }
+                }
+                CallableEffectSchema::Project { .. } | CallableEffectSchema::Detached { .. } => {
+                    return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+                }
+            };
+
+            if let CallableLookupKey::Method(key) = record.key()
+                && record.method_role().is_some()
+                && !matches!(record.access(), CallableAccess::TraitImplementation)
+            {
+                builder
+                    .stage_method_candidate(key, id)
+                    .map_err(checked_catalog_error)?;
+            }
+        }
+
+        builder.begin_inference().map_err(checked_catalog_error)?;
+        Ok(StagedCheckedCallables {
+            builder,
+            bodies,
+            effect_expressions,
+            accepted,
+        })
+    }
+
+    pub(super) fn finish_checked_callables(
+        &self,
+        mut staged: StagedCheckedCallables,
+        input: &FinalSemanticAnalysisInput,
+    ) -> Result<Arc<CheckedCallableCatalog>, FinalSemanticAnalysisError> {
+        let mut rows = BTreeMap::<CheckedCallableId, EffectSet>::new();
+        for body in &staged.bodies {
+            self.control.check()?;
+            let module = self.module(body.module)?;
+            rows.insert(
+                body.id.clone(),
+                execution_effects(module, body.scope, input)?,
+            );
+        }
+        let graph = CallableEffectGraph::build(
+            &staged.bodies,
+            self.facts.pending_calls(),
+            &self.modules,
+            self.control,
+        )?;
+        graph.reject_recursive_contracts(self.control)?;
+        graph.close_effect_rows(&mut rows, self.control)?;
+
+        for body in &staged.bodies {
+            self.control.check()?;
+            let row = rows
+                .get(&body.id)
+                .cloned()
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            staged
+                .builder
+                .assign_inferred_row(&body.id, EffectRow::closed(row))
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            let module = self.module(body.module)?;
+            for (id, closure_scope, mut row) in
+                closure_effect_rows(module, body.scope, &body.id, input)?
+            {
+                row = EffectRow::closed(graph.close_scope_effects(
+                    module,
+                    closure_scope,
+                    row.concrete(),
+                    &rows,
+                    self.control,
+                )?);
+                staged
+                    .builder
+                    .insert_closure_row(id, row)
+                    .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            }
+        }
+        staged
+            .builder
+            .begin_validation()
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        for body in &staged.bodies {
+            self.control.check()?;
+            let contract = staged
+                .builder
+                .pending_by_id(&body.id)
+                .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?
+                .body_contract()
+                .cloned()
+                .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+            match staged.builder.validate_body_contract(&body.id) {
+                Ok(()) => {}
+                Err(CheckedCallableCatalogBuildError::EffectSubset(
+                    EffectSubsetError::MissingEffects { missing },
+                )) => {
+                    let module = self.module(body.module)?;
+                    return Err(FinalSemanticAnalysisError::EffectUpperBoundExceeded {
+                        owner: body.item,
+                        callable: callable_label(module, body.item)?,
+                        trace_notes: effect_trace_notes(
+                            module,
+                            body.item,
+                            body.scope,
+                            input,
+                            self.facts.pending_calls(),
+                            self.symbols,
+                            &self.modules,
+                            &missing,
+                        )?
+                        .into_boxed_slice(),
+                        missing,
+                        contract_source: contract.source().anchor().clone(),
+                    });
+                }
+                Err(_) => return Err(FinalSemanticAnalysisError::CheckedCallableCatalog),
+            }
+        }
+        let checked = staged
+            .builder
+            .finish()
+            .map_err(|_| FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        checked
+            .validate_registered_authority(
+                &staged.accepted,
+                self.symbols.world(),
+                *self.symbols.revision(),
+            )
+            .map_err(|_| FinalSemanticAnalysisError::CatalogGenerationMismatch)?;
+        Ok(checked)
+    }
+
+    /// Validates authored Flow effect upper bounds after call facts have been
+    /// finalized. Flows are structural execution owners rather than ordinary
+    /// callable symbols, so they deliberately do not enter the checked
+    /// callable catalog. Their bodies nevertheless consume the same final
+    /// expression effects and typed effect identities as ordinary functions.
+    pub(super) fn validate_flow_effect_bounds(
+        &self,
+        input: &FinalSemanticAnalysisInput,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        for module in self.modules.values().copied() {
+            for (owner, item) in module.items() {
+                self.control.check()?;
+                let HirItemKind::Flow(flow) = item.kind() else {
+                    continue;
+                };
+                let Some(contract_source) = flow
+                    .contracts()
+                    .iter()
+                    .enumerate()
+                    .find_map(|(ordinal, clause)| {
+                        matches!(clause, HirFlowContractClause::Effects(_)).then_some(ordinal)
+                    })
+                    .map(|ordinal| {
+                        let ordinal = u16::try_from(ordinal)
+                            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+                        source_span(
+                            module,
+                            HirSourceQuery::Item {
+                                owner,
+                                role: HirItemSourceRole::Flow(HirFlowSourceRole::ContractClause {
+                                    ordinal,
+                                    part: HirFlowContractSourcePart::Whole,
+                                }),
+                            },
+                        )
+                    })
+                    .transpose()?
+                else {
+                    // An omitted Flow effects clause means body inference,
+                    // exactly like an omitted ordinary-function clause.
+                    continue;
+                };
+                let permitted = input
+                    .items
+                    .iter()
+                    .find_map(|(candidate, checked)| {
+                        (*candidate == owner).then_some(checked.effects())
+                    })
+                    .ok_or(FinalSemanticAnalysisError::MissingFact {
+                        family: super::SemanticFactFamily::Item,
+                    })?;
+                let actual = execution_effects(module, flow.body_scope(), input)?;
+                let missing = actual.difference(permitted);
+                if missing.is_empty() {
+                    continue;
+                }
+                return Err(FinalSemanticAnalysisError::EffectUpperBoundExceeded {
+                    owner,
+                    callable: callable_label(module, owner)?,
+                    trace_notes: effect_trace_notes(
+                        module,
+                        owner,
+                        flow.body_scope(),
+                        input,
+                        self.facts.pending_calls(),
+                        self.symbols,
+                        &self.modules,
+                        &missing,
+                    )?
+                    .into_boxed_slice(),
+                    missing,
+                    contract_source,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(super) fn freeze_checked_callables(
+        &self,
+        input: &FinalSemanticAnalysisInput,
+    ) -> Result<Arc<CheckedCallableCatalog>, FinalSemanticAnalysisError> {
+        self.finish_checked_callables(self.stage_checked_callables()?, input)
+    }
+
+    pub(super) fn finalize_call_facts(
+        &mut self,
+        checked_callables: &CheckedCallableCatalog,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let pending = self
+            .facts
+            .pending_calls()
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for call in pending {
+            self.control.check()?;
+            let effects =
+                final_call_effects(&call.selected, call.current_group, checked_callables)?;
+            let mut checked = CheckedCallTarget::selected(
+                &call.selected,
+                &call.considered,
+                call.arguments.clone(),
+                call.result.clone(),
+                effects.clone(),
+                call.current_group,
+                CallPoison::Clean,
+            );
+            if let Some(function_value_type) = &call.function_value_type {
+                checked = checked.with_function_value_type(function_value_type.clone());
+            }
+            let facts = CallTargetFacts::try_new(
+                CallTargetFactsInput {
+                    expression: call.expression,
+                    enclosing_callable: call.enclosing_callable,
+                    callee: Some(call.callee),
+                    checked,
+                    diagnostics: Vec::new(),
+                    accounting: call.accounting,
+                },
+                &self.catalogs.callable_limits,
+            )
+            .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
+                owner: call.expression,
+            })?;
+            self.facts.set_call_fact(call.expression, facts);
+            if let Some(callee) = call.callee_expression {
+                let previous = self.facts.expressions().get(&callee).cloned().ok_or(
+                    FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner: callee },
+                )?;
+                let effects = final_callable_effects(&call.selected, checked_callables)?;
+                let ty = callable_schema_type_with_effects(call.selected.schema(), &effects)
+                    .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: callee })?;
+                self.facts.set_expression(
+                    callee,
+                    CheckedExpression::new(
+                        ty,
+                        previous.type_selection(),
+                        previous.effects().clone(),
+                        previous.resolution().clone(),
+                    ),
+                );
+            }
+            let previous = self
+                .facts
+                .expressions()
+                .get(&call.expression)
+                .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                    owner: call.expression,
+                })?
+                .clone();
+            self.facts.set_expression(
+                call.expression,
+                CheckedExpression::new(
+                    previous.ty().clone(),
+                    previous.type_selection(),
+                    effects.concrete().clone(),
+                    CheckedExpressionResolution::Call,
+                ),
+            );
+        }
+        Ok(())
+    }
+}
+
+pub(super) enum SourceCallableShell {
+    Body {
+        scope: ScopeId,
+        execution: CheckedCallableExecution,
+        contract: Box<CallableEffectContract>,
+    },
+    BodylessTraitRequirement {
+        name: SourceSpan,
+    },
+}
+
+pub(super) fn checked_catalog_error<E>(_: E) -> FinalSemanticAnalysisError {
+    FinalSemanticAnalysisError::CheckedCallableCatalog
+}
+
+fn fixed_record_execution(record: &crate::callable::CallableRecord) -> CheckedCallableExecution {
+    if record
+        .method_role()
+        .is_some_and(CallableMethodRole::is_dispatch_contract)
+    {
+        CheckedCallableExecution::DispatchContract
+    } else {
+        CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame)
+    }
+}
+
+fn module_effect_expression_facts(
+    module: &HirModule,
+) -> Result<Vec<(ExprId, CheckedExpression)>, FinalSemanticAnalysisError> {
+    let mut facts = Vec::new();
+    for (_, item) in module.items() {
+        for effect in item.kind().effect_expression_roots() {
+            facts.extend(checked_effect_expression(module, effect)?.1);
+        }
+    }
+    Ok(facts)
+}
+
+fn source_callable_shell(
+    module: &HirModule,
+    symbol: &arcweft_lang_hir::symbol::CallableSymbol,
+    types: &BTreeMap<TypeId, TypeKind>,
+) -> Result<SourceCallableShell, FinalSemanticAnalysisError> {
+    let item = module
+        .resolve_item(symbol.source_item())
+        .map_err(|_| FinalSemanticAnalysisError::InvalidCallableOwner)?;
+    let inferred_body = |scope, execution| {
+        let anchor = scope_span(module, scope)?;
+        let contract =
+            CallableEffectContract::body_inference(anchor, EffectSet::new(), Box::new([]))
+                .map_err(checked_catalog_error)?;
+        Ok(SourceCallableShell::Body {
+            scope,
+            execution,
+            contract: Box::new(contract),
+        })
+    };
+    match (symbol.source_owner(), item.kind()) {
+        (HirCallableSourceOwner::Item, HirItemKind::Flow(flow)) => inferred_body(
+            flow.body_scope(),
+            CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame),
+        ),
+        (HirCallableSourceOwner::Item, HirItemKind::Function(function)) => {
+            let CheckedItemRole::Function { execution, .. } =
+                item_role(module, symbol.source_item(), item, types)?
+            else {
+                return Err(FinalSemanticAnalysisError::InvalidFunctionExecution {
+                    owner: symbol.source_item(),
+                });
+            };
+            match function.body() {
+                HirFunctionBody::Block { scope, .. } => function_effect_contract(
+                    module,
+                    symbol.source_item(),
+                    function,
+                    *scope,
+                    CheckedCallableExecution::Runtime(execution),
+                ),
+                HirFunctionBody::Error(_) => Err(FinalSemanticAnalysisError::RecoveredOwner),
+            }
+        }
+        (HirCallableSourceOwner::Item, HirItemKind::Predicate(predicate)) => {
+            match predicate.body() {
+                HirPredicateBody::Expression { scope, .. }
+                | HirPredicateBody::Block { scope, .. } => inferred_body(
+                    *scope,
+                    CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame),
+                ),
+                HirPredicateBody::Error { .. } => Err(FinalSemanticAnalysisError::RecoveredOwner),
+            }
+        }
+        (HirCallableSourceOwner::Item, HirItemKind::Proof(proof)) => match proof.body() {
+            HirProofBody::Expression { scope, .. } | HirProofBody::Block { scope, .. } => {
+                inferred_body(
+                    *scope,
+                    CheckedCallableExecution::Runtime(CheckedFunctionExecution::DirectFrame),
+                )
+            }
+            HirProofBody::Error { .. } => Err(FinalSemanticAnalysisError::RecoveredOwner),
+        },
+        (HirCallableSourceOwner::TraitFunction { member }, HirItemKind::Trait(trait_item)) => {
+            let Some(HirTraitMember::Function(function)) =
+                trait_item.members().get(usize::from(member))
+            else {
+                return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+            };
+            if function.body().is_some() {
+                return Err(FinalSemanticAnalysisError::UnsupportedCallableBody {
+                    owner: symbol.source_item(),
+                });
+            }
+            Ok(SourceCallableShell::BodylessTraitRequirement {
+                name: symbol.name_span().clone(),
+            })
+        }
+        (HirCallableSourceOwner::ImplFunction { member }, HirItemKind::Impl(impl_item)) => {
+            let Some(HirImplMember::Function(function)) =
+                impl_item.members().get(usize::from(member))
+            else {
+                return Err(FinalSemanticAnalysisError::InvalidCallableOwner);
+            };
+            let Some(HirFunctionBody::Block { scope, .. }) = function.body() else {
+                return Err(FinalSemanticAnalysisError::UnsupportedCallableBody {
+                    owner: symbol.source_item(),
+                });
+            };
+            let (yield_count, _) =
+                function_body_roles(module, function.body().expect("checked above"))?;
+            let execution = checked_function_execution(
+                symbol.source_item(),
+                function.return_type(),
+                types,
+                yield_count,
+            )?;
+            inferred_body(*scope, CheckedCallableExecution::Runtime(execution))
+        }
+        _ => Err(FinalSemanticAnalysisError::InvalidCallableOwner),
+    }
+}
+
+fn item_role(
+    module: &HirModule,
+    owner: ItemId,
+    item: &HirItem,
+    types: &BTreeMap<TypeId, TypeKind>,
+) -> Result<CheckedItemRole, FinalSemanticAnalysisError> {
+    Ok(match item.kind() {
+        HirItemKind::Module(_) => CheckedItemRole::Module,
+        HirItemKind::Use(_) => CheckedItemRole::Use,
+        HirItemKind::Flow(flow) => CheckedItemRole::Flow {
+            identity: flow.identity().clone(),
+        },
+        HirItemKind::Function(function) => {
+            let (yield_count, suspension) = function_body_roles(module, function.body())?;
+            let execution =
+                checked_function_execution(owner, function.return_type(), types, yield_count)?;
+            CheckedItemRole::Function {
+                execution,
+                suspension: if suspension {
+                    CheckedSuspensionRole::MaySuspend
+                } else {
+                    CheckedSuspensionRole::NonSuspending
+                },
+            }
+        }
+        HirItemKind::Predicate(_) => CheckedItemRole::Predicate,
+        HirItemKind::Proof(_) => CheckedItemRole::Proof,
+        HirItemKind::Trait(_) => CheckedItemRole::Trait,
+        HirItemKind::Impl(_) => CheckedItemRole::Impl,
+        HirItemKind::Enum(_) => CheckedItemRole::Enum,
+        HirItemKind::Struct(_) => CheckedItemRole::Struct,
+        HirItemKind::TypeAlias(_) => CheckedItemRole::TypeAlias,
+        HirItemKind::Resource(_) => CheckedItemRole::Resource,
+        HirItemKind::Character(_) => CheckedItemRole::Character,
+        HirItemKind::View(_) => CheckedItemRole::View,
+        HirItemKind::Action(_) => CheckedItemRole::Action,
+        HirItemKind::Activity(_) => CheckedItemRole::Activity,
+        HirItemKind::Signal(_) => CheckedItemRole::Signal,
+        HirItemKind::Metric(_) => CheckedItemRole::Metric,
+        HirItemKind::Layer(_) => CheckedItemRole::Layer,
+        HirItemKind::Entry(_) => CheckedItemRole::Entry,
+        HirItemKind::ExternCapability(_) => CheckedItemRole::ExternCapability,
+        HirItemKind::Test(_) => CheckedItemRole::Test,
+        HirItemKind::Bench(_) => CheckedItemRole::Bench,
+        HirItemKind::Source(_) => CheckedItemRole::Source,
+        HirItemKind::Style(_) => CheckedItemRole::Style,
+        HirItemKind::Error(_) => return Err(FinalSemanticAnalysisError::RecoveredOwner),
+    })
+}
+
+pub(super) fn function_body_roles(
+    module: &HirModule,
+    body: &HirFunctionBody,
+) -> Result<(u32, bool), FinalSemanticAnalysisError> {
+    let root = match body {
+        HirFunctionBody::Block { scope, .. } => *scope,
+        HirFunctionBody::Error(_) => return Err(FinalSemanticAnalysisError::RecoveredOwner),
+    };
+    let mut yields = 0_u32;
+    let mut suspension = false;
+    for (_, statement) in module.statements() {
+        if !scope_executes_within(module, statement.scope(), root)? {
+            continue;
+        }
+        match statement.kind() {
+            HirStmtKind::Yield { .. } => {
+                yields = yields
+                    .checked_add(1)
+                    .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
+                suspension = true;
+            }
+            HirStmtKind::Wait { .. } | HirStmtKind::AwaitWith(_) | HirStmtKind::LetAwait { .. } => {
+                suspension = true;
+            }
+            _ => {}
+        }
+    }
+    if !suspension {
+        for (_, expression) in module.expressions() {
+            if matches!(expression.kind(), HirExprKind::Await(_))
+                && scope_executes_within(module, expression.scope(), root)?
+            {
+                suspension = true;
+                break;
+            }
+        }
+    }
+    Ok((yields, suspension))
+}
+
+fn checked_function_execution(
+    owner: ItemId,
+    return_type: Option<TypeId>,
+    types: &BTreeMap<TypeId, TypeKind>,
+    yield_count: u32,
+) -> Result<CheckedFunctionExecution, FinalSemanticAnalysisError> {
+    if yield_count == 0 {
+        return Ok(CheckedFunctionExecution::DirectFrame);
+    }
+    let return_type = return_type
+        .and_then(|id| types.get(&id))
+        .ok_or(FinalSemanticAnalysisError::InvalidFunctionExecution { owner })?;
+    let TypeKind::Stream { item, error } = return_type else {
+        return Err(FinalSemanticAnalysisError::InvalidFunctionExecution { owner });
+    };
+    Ok(CheckedFunctionExecution::StreamFactory {
+        item: (**item).clone(),
+        error: (**error).clone(),
+        own_scope_yields: yield_count,
+    })
+}

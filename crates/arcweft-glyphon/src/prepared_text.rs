@@ -9,11 +9,12 @@ use arcweft_presentation::{
     },
     input::InteractionTarget,
 };
-use arcweft_render_text::{RichTextRange, TextColor};
+use arcweft_render_text::TextColor;
 use arcweft_text_layout::{
     GlyphOrientation, LayoutPoint, LayoutRect, LayoutSize, TextLayout, TextLayoutGlyph,
     TextLayoutRubyGlyph,
 };
+use arcweft_text_model::RichTextRange;
 use glyphon::{
     Affine2, CacheKey, Color, GlyphArea, GlyphInstance, GlyphSource, GlyphTransform, Point, Rect,
     TextBounds, TextCluster, Vector,
@@ -748,8 +749,9 @@ fn ranges_overlap(left: RichTextRange, right: RichTextRange) -> bool {
 #[cfg(test)]
 mod tests {
     use arcweft_presentation::fx::{FiniteF32, Opacity, ResolvedFxMask};
-    use arcweft_render_text::{RichTextRange, TextColor};
+    use arcweft_render_text::TextColor;
     use arcweft_text_layout::{GlyphOrientation, LayoutPoint, LayoutRect, LayoutSize};
+    use arcweft_text_model::RichTextRange;
     use glyphon::{
         CacheKey, Color, GlyphTransform, Point, Vector, Weight,
         cosmic_text::{CacheKeyFlags, fontdb},

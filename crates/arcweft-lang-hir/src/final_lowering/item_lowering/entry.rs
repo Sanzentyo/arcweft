@@ -19,7 +19,7 @@ use crate::item::{
     HirRoutePathValue,
 };
 use crate::leaf::{HirLiteral, HirPathValue, HirStringLiteral};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 
 use super::super::{
     StagedHirModuleTransaction, id_ref_projection, literal_projection, name_projection,

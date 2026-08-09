@@ -89,9 +89,7 @@ fn lower_output(
     key: &HirModuleKey,
 ) -> crate::database::HirLowerOutput {
     let mut transaction = stage(database, parsed, key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(parsed).unwrap();
     transaction.finish(database).unwrap()
 }
 
@@ -117,9 +115,7 @@ fn assert_metric_freeze_rejects(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     tamper(&mut transaction, owner);
     assert!(
@@ -153,6 +149,10 @@ fn revise_type_scope(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical Metric test asserts one closed kind/member/expression/source matrix"
+)]
 fn canonical_metric_freezes_closed_kinds_typed_members_and_expression_owners() {
     let source = concat!(
         "pub metric gauge frame_time: f32 {\n",
@@ -416,6 +416,10 @@ fn missing_metric_components_remain_typed_without_fabricated_members_or_values()
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Metric freeze test exhausts closed kind and member projection tampering"
+)]
 fn metric_freeze_rejects_kind_and_member_projection_tampering() {
     let source = concat!(
         "metric gauge frame_time: f32 {\n",
@@ -539,6 +543,10 @@ fn metric_freeze_rejects_kind_and_member_projection_tampering() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the incremental Metric test asserts one complete owner reconciliation and retirement matrix"
+)]
 fn incremental_metric_preserves_reconciled_owners_and_retires_replaced_children() {
     let name = SourceName::path("proof/metric-incremental.arcw");
     let document_id = "arcweft-test://proof/metric-incremental";

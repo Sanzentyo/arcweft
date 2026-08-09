@@ -13,7 +13,7 @@ use crate::expr::{
 };
 use crate::identity::{ExprId, ScopeId};
 use crate::leaf::HirNameInvariantError;
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::CaptureAccess;
 use crate::source_index::{HirExprSourceRole, HirRecordFieldSourcePart};
 
@@ -36,7 +36,9 @@ impl StagedHirModuleTransaction<'_> {
         cursor: &mut CandidateCursor,
         fields: &[SyntaxRecordField],
     ) -> Result<(HirRecordExpr, Option<HirRecoveryIssue>), HirLowerFailure> {
-        let mut paths = node.children().filter_map(|child| child.path_projection());
+        let mut paths = node
+            .children()
+            .filter_map(AttachedCandidateNode::path_projection);
         let path = paths
             .next()
             .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
@@ -61,6 +63,10 @@ impl StagedHirModuleTransaction<'_> {
         Ok((HirRecordLiteralExpr::new(fields), recovery))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "candidate record lowering consumes the closed typed field schema and its source-ordered value/recovery inventory"
+    )]
     fn lower_candidate_record_fields(
         &mut self,
         node: AttachedCandidateNode<'_>,

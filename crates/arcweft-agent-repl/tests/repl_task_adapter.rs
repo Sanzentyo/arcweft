@@ -7,7 +7,7 @@ use arcweft_agent_repl::command::{
     ReplCommandStatus, RuntimeTaskReplCommandHost, StepCommand, parse_repl_command,
 };
 use arcweft_agent_repl::{ReplBaseSnapshot, ReplSession, ReplSessionOptions};
-use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
+use arcweft_lang_sema::project_index::ProgramHash;
 use arcweft_runtime_driver::task::{
     RuntimeTaskCancelOutcome, RuntimeTaskCancelTarget, RuntimeTaskListOptions, RuntimeTaskOwner,
     RuntimeTaskRecord, RuntimeTaskStatus,
@@ -15,9 +15,11 @@ use arcweft_runtime_driver::task::{
 
 fn test_session() -> ReplSession {
     ReplSession::new(
-        ReplBaseSnapshot::from_project(
+        ReplBaseSnapshot::new(
             "runtime-task.base",
-            ProjectSemanticIndex::new(ProgramHash::new("hash.runtime-task.base")),
+            &ProgramHash::new("hash.runtime-task.base"),
+            std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
         ),
         ReplSessionOptions::default(),
     )

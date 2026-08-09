@@ -3,9 +3,10 @@ use arcweft_audio_core::graph::{
 };
 use arcweft_bundle::container::{BundleSectionKind, BundleView, ReadBudget};
 use arcweft_bundle::resource_codec::{
-    CompactAssetCatalogSection, CompactAudioGraphSection, CompactDisplayCatalogSection, FieldId,
-    ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
-    SectionCodecBudget, SectionCodecError, SourceMapSection, product_catalog::ProductCatalogBudget,
+    CompactAssetCatalogSection, CompactAudioGraphSection, CompactContentCatalogSection,
+    CompactDisplayCatalogSection, FieldId, ProductResourceEnvelope, ProductSectionCodecKind,
+    ResourceField, ResourceWireType, SectionCodecBudget, SectionCodecError, SourceMapSection,
+    product_catalog::ProductCatalogBudget,
 };
 use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleImageAnimation, BundleImageAsset, BundleImageDimensions,
@@ -15,41 +16,33 @@ use arcweft_bundle::{
 };
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
-    AwbcTableRange, AwbcTerminator,
+    AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_dialogue::DialogueProfileRevision;
+use arcweft_core::effect::RuntimeArtifactFingerprint;
 use arcweft_interaction_model::audio::{AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli};
-use arcweft_render_text::LineDisplayCatalog;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let source = SourceDocument::try_new(
-        SourceDocumentId::try_new("bundle-product-catalog-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([source.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        source.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.bundle-product-catalog-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
-}
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
 
 #[test]
 fn product_catalog_compact_codecs_round_trip_current_bundle_resources() {
     let bundle = fixture_bundle();
+
+    let content = CompactContentCatalogSection::from_bundle(&bundle);
+    let content_bytes = content
+        .encode_canonical_section()
+        .expect("content catalog encodes");
+    assert_eq!(
+        content_bytes[..8],
+        ProductSectionCodecKind::ContentCatalog.magic()
+    );
+    assert_eq!(
+        CompactContentCatalogSection::decode_canonical_section(&content_bytes)
+            .expect("content catalog decodes"),
+        content
+    );
 
     let asset = CompactAssetCatalogSection::from_bundle(&bundle);
     let asset_bytes = asset
@@ -286,6 +279,8 @@ fn fixture_bundle() -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+                    .expect("non-zero runtime artifact fingerprint"),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: 1,
                 bytecode_instructions: 0,
@@ -296,7 +291,7 @@ fn fixture_bundle() -> ArcweftBundle {
         },
         source_map("main.arcw", "flow main { return \"ok\" }"),
         BytecodeProgram::default(),
-        LineDisplayCatalog::new(test_dialogue_revision()),
+        DialogueContentCatalog::new(),
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(minimal_awbc_program())
@@ -400,6 +395,14 @@ fn minimal_awbc_program() -> AwbcProgram {
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        }],
+        flow_bindings: vec![AwbcFlowBinding {
+            flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                [0xa3; 32],
+                "flow.main",
+            )
+            .expect("test checked Flow identity"),
+            function: AwbcFunctionId(0),
         }],
         blocks: vec![AwbcBlock {
             owner: AwbcFunctionId(0),

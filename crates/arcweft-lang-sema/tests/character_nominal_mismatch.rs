@@ -2,11 +2,11 @@ use arcweft_character::id::{CharacterId, CharacterPartId};
 use arcweft_lang_sema::{
     effect_row::EffectRow,
     types::{
-        ArrayLength, CharacterNominalFamily, EntityKind, EntityType, IteratorStateKind, MapKind,
-        TypeKind, TypeMismatchPathSegment, TypeMismatchReason,
+        ArrayLength, CharacterNominalFamily, EntityKind, EntityType, IteratorStateKind,
+        LifetimeScopeKind, MapKind, TypeKind, TypeMismatchPathSegment, TypeMismatchReason,
     },
 };
-use arcweft_lang_syntax::{expr::LifetimeScopeKind, reference::BorrowKind};
+use arcweft_lang_syntax::reference::BorrowKind;
 
 fn look(owner: &str) -> TypeKind {
     TypeKind::character_look(CharacterId::try_new(owner).expect("character id"))

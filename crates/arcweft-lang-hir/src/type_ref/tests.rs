@@ -6,7 +6,6 @@ use super::{
     HirProjectionType, HirReferenceType, HirTraitBoundType, HirType, HirTypeEffectRow,
     HirTypeError, HirTypeInvariantError, HirTypeKind, HirTypeResolver,
 };
-use crate::callable_source::HirEffectName;
 use crate::expr::{HirBorrowKind, HirPoisonState, HirRecoveryIssue};
 use crate::identity::{
     HirDatabaseId, HirModuleId, HirTypedId, RawHirId, ScopeId, SyntheticKey, SyntheticOwner,
@@ -16,6 +15,7 @@ use crate::leaf::{
     HirElidedRegion, HirName, HirPath, HirPathRoot, HirPathSegment, HirRegionName, HirTypeRegion,
     HirTypeRegionIssue,
 };
+use crate::type_ref::HirEffectName;
 
 #[derive(Default)]
 struct TestResolver {

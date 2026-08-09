@@ -2,11 +2,11 @@
 
 use arcweft_glyphon::{GlyphonTextEngine, PreparedTextItem, TextInteractionPlan, TextPaintPlan};
 use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
-    RichTextPresentation, RichTextRange, TextColor, TextDocumentRevision, TextFontFamily,
-    TextSlant, TextWeight,
+    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle, TextColor,
+    TextDocumentRevision, TextFontFamily, TextSlant, TextWeight,
 };
 use arcweft_text_layout::{LayoutRect, TextLayoutRequest, layout_document};
+use arcweft_text_model::{RichTextPresentation, RichTextRange};
 
 use super::{FramePlanError, PreparedTextDocumentRequest, RenderViewport};
 

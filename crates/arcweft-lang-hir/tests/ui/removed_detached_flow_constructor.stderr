@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_syntax::ast::flow`
+ --> tests/ui/removed_detached_flow_constructor.rs:1:31
+  |
+1 | use arcweft_lang_syntax::ast::flow::Flow;
+  |                               ^^^^ could not find `flow` in `ast`

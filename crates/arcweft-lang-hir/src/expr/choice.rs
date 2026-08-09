@@ -44,6 +44,158 @@ impl HirChoiceExpr {
         self.plan.as_ref()
     }
 
+    /// Returns every Choice-owned required expression slot in canonical
+    /// semantic preorder. Authored and recovered values occupy the same slot;
+    /// an invalid assignment key retains an explicit unretained slot so later
+    /// recovery identities cannot shift.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the iterative visitor is one closed preorder over the complete Choice payload family"
+    )]
+    pub(crate) fn required_expression_slots(&self) -> Vec<HirChoiceRequiredExpressionSlot> {
+        let mut slots = Vec::new();
+        let mut work = Vec::new();
+        if let Some(plan) = self.plan() {
+            work.push(HirChoiceRequiredExpressionWork::Plan(plan));
+        }
+        work.push(HirChoiceRequiredExpressionWork::Body(self.body()));
+
+        while let Some(next) = work.pop() {
+            match next {
+                HirChoiceRequiredExpressionWork::Slot(slot) => slots.push(slot),
+                HirChoiceRequiredExpressionWork::Body(body) => {
+                    work.extend(
+                        body.items()
+                            .iter()
+                            .rev()
+                            .map(HirChoiceRequiredExpressionWork::Item),
+                    );
+                }
+                HirChoiceRequiredExpressionWork::Item(item) => match item {
+                    HirChoiceItem::Let(_) | HirChoiceItem::Error => {}
+                    HirChoiceItem::If(expression) => {
+                        if let Some(body) = expression.else_body() {
+                            work.push(HirChoiceRequiredExpressionWork::Body(body));
+                        }
+                        for branch in expression.branches().iter().rev() {
+                            work.push(HirChoiceRequiredExpressionWork::Body(branch.body()));
+                            work.push(HirChoiceRequiredExpressionWork::retained(
+                                branch.condition(),
+                            ));
+                        }
+                    }
+                    HirChoiceItem::For(expression) => {
+                        work.push(HirChoiceRequiredExpressionWork::Body(expression.body()));
+                        work.push(HirChoiceRequiredExpressionWork::retained(
+                            expression.source(),
+                        ));
+                    }
+                    HirChoiceItem::Match(expression) => {
+                        for arm in expression.arms().iter().rev() {
+                            work.push(HirChoiceRequiredExpressionWork::Body(arm.body()));
+                        }
+                        work.push(HirChoiceRequiredExpressionWork::retained(
+                            expression.scrutinee(),
+                        ));
+                    }
+                    HirChoiceItem::Option(expression) => {
+                        work.push(HirChoiceRequiredExpressionWork::OptionBody(
+                            expression.body(),
+                        ));
+                        work.push(HirChoiceRequiredExpressionWork::retained(expression.id()));
+                    }
+                    HirChoiceItem::OptionFor(expression) => {
+                        work.push(HirChoiceRequiredExpressionWork::OptionBody(
+                            expression.body(),
+                        ));
+                        work.push(HirChoiceRequiredExpressionWork::retained(
+                            expression.source(),
+                        ));
+                    }
+                    HirChoiceItem::CompactArm(expression) => {
+                        if let HirChoiceCompactAction::Out(value) = expression.action() {
+                            work.push(HirChoiceRequiredExpressionWork::retained(*value));
+                        }
+                        if let Some(condition) = expression.condition() {
+                            work.push(HirChoiceRequiredExpressionWork::retained(condition));
+                        }
+                        work.push(HirChoiceRequiredExpressionWork::retained(
+                            expression.label(),
+                        ));
+                    }
+                },
+                HirChoiceRequiredExpressionWork::OptionBody(body) => {
+                    for field in body.fields().iter().rev() {
+                        match field {
+                            HirChoiceOptionField::Label { value, .. }
+                            | HirChoiceOptionField::Id(value)
+                            | HirChoiceOptionField::Value(value)
+                            | HirChoiceOptionField::Visible(value)
+                            | HirChoiceOptionField::Enabled(value)
+                            | HirChoiceOptionField::Order(value)
+                            | HirChoiceOptionField::Hotkey(value) => {
+                                work.push(HirChoiceRequiredExpressionWork::retained(*value));
+                            }
+                            HirChoiceOptionField::View(view) => {
+                                for entry in view.entries().iter().rev() {
+                                    work.push(HirChoiceRequiredExpressionWork::retained(
+                                        entry.value(),
+                                    ));
+                                    work.push(HirChoiceRequiredExpressionWork::retained(
+                                        entry.key(),
+                                    ));
+                                }
+                            }
+                            HirChoiceOptionField::Select(_)
+                            | HirChoiceOptionField::Let(_)
+                            | HirChoiceOptionField::Error => {}
+                        }
+                    }
+                }
+                HirChoiceRequiredExpressionWork::Plan(plan) => {
+                    work.extend(
+                        plan.items()
+                            .iter()
+                            .rev()
+                            .map(HirChoiceRequiredExpressionWork::PlanItem),
+                    );
+                }
+                HirChoiceRequiredExpressionWork::PlanItem(item) => match item {
+                    HirChoicePlanItem::Assignment { value, .. } => {
+                        work.push(HirChoiceRequiredExpressionWork::retained(*value));
+                    }
+                    HirChoicePlanItem::Timeout { duration, .. } => {
+                        work.push(HirChoiceRequiredExpressionWork::retained(*duration));
+                    }
+                    HirChoicePlanItem::Cancel { trigger, .. } => {
+                        work.push(HirChoiceRequiredExpressionWork::Trigger(trigger));
+                    }
+                    HirChoicePlanItem::OnSelect { .. }
+                    | HirChoicePlanItem::Error(HirChoicePlanError::RecoveredSyntax) => {}
+                    HirChoicePlanItem::Error(HirChoicePlanError::InvalidAssignmentKey) => {
+                        work.push(HirChoiceRequiredExpressionWork::Slot(
+                            HirChoiceRequiredExpressionSlot::UnretainedInvalidAssignmentValue,
+                        ));
+                    }
+                },
+                HirChoiceRequiredExpressionWork::Trigger(trigger) => match trigger {
+                    HirTriggerPattern::Signal { target, .. }
+                    | HirTriggerPattern::Timeout(target) => {
+                        work.push(HirChoiceRequiredExpressionWork::retained(*target));
+                    }
+                    HirTriggerPattern::Input(_)
+                    | HirTriggerPattern::Event(_)
+                    | HirTriggerPattern::Mark(_)
+                    | HirTriggerPattern::Select(_)
+                    | HirTriggerPattern::Task(_)
+                    | HirTriggerPattern::Scope(_)
+                    | HirTriggerPattern::Expr(_) => {}
+                },
+            }
+        }
+        slots
+    }
+
     pub(super) fn validate_module(
         &self,
         expected: HirModuleId,
@@ -65,6 +217,28 @@ impl HirChoiceExpr {
         self.body
             .thread_body_for_scope(scope)
             .or_else(|| self.plan.as_ref()?.thread_body_for_scope(scope))
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum HirChoiceRequiredExpressionSlot {
+    Retained(ExprId),
+    UnretainedInvalidAssignmentValue,
+}
+
+enum HirChoiceRequiredExpressionWork<'choice> {
+    Slot(HirChoiceRequiredExpressionSlot),
+    Body(&'choice HirChoiceBody),
+    Item(&'choice HirChoiceItem),
+    OptionBody(&'choice HirChoiceOptionBody),
+    Plan(&'choice HirChoicePlan),
+    PlanItem(&'choice HirChoicePlanItem),
+    Trigger(&'choice HirTriggerPattern),
+}
+
+impl HirChoiceRequiredExpressionWork<'_> {
+    const fn retained(expression: ExprId) -> Self {
+        Self::Slot(HirChoiceRequiredExpressionSlot::Retained(expression))
     }
 }
 
@@ -731,7 +905,13 @@ pub enum HirChoicePlanItem {
         body: HirThreadBody,
     },
     /// A recovered plan row with no executable semantic child.
-    Error,
+    Error(HirChoicePlanError),
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum HirChoicePlanError {
+    RecoveredSyntax,
+    InvalidAssignmentKey,
 }
 
 impl HirChoicePlanItem {
@@ -765,12 +945,12 @@ impl HirChoicePlanItem {
                 validate_locals(expected, locals)?;
                 validate_thread_body(expected, body)
             }
-            Self::Error => Ok(()),
+            Self::Error(_) => Ok(()),
         }
     }
 
     const fn has_recovery(&self) -> bool {
-        matches!(self, Self::Error)
+        matches!(self, Self::Error(_))
     }
 
     fn thread_body_for_scope(&self, scope: ScopeId) -> Option<&HirThreadBody> {

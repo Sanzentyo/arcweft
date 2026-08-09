@@ -514,7 +514,7 @@ impl<'a> AwbcFlowLowerer<'a> {
                     .map(|binding| lower_pattern(self.inventory, frame, binding));
                 body.suspend(self.inventory, AwbcSafePointKind::Await, |resume| {
                     AwbcTerminator::Await {
-                        task: task_handle,
+                        handle: task_handle,
                         binding,
                         resume,
                     }
@@ -718,7 +718,6 @@ impl<'a> AwbcFlowLowerer<'a> {
                 self.push_intrinsic_call("flow.continue", Vec::new());
             }
             FlowOp::Goto(target) => {
-                let target_name = flow_public_id(target);
                 if let Some(function) = self.inventory.flow_function(target) {
                     self.close_active_scopes_for_terminator(frame);
                     body.terminate(
@@ -730,7 +729,23 @@ impl<'a> AwbcFlowLowerer<'a> {
                         AwbcSafePointKind::CallableBoundary,
                     );
                 } else {
-                    self.push_intrinsic_call(&format!("goto.static:{target_name}"), Vec::new());
+                    let target = target.canonical_label();
+                    self.inventory.diagnostic(AwbcLowerDiagnostic::error(
+                        path,
+                        format!("static goto targets missing accepted Flow `{target}`"),
+                    ));
+                    let message = self.inventory.intern_string(&format!(
+                        "static goto targets missing accepted Flow `{target}`"
+                    ));
+                    self.close_active_scopes_for_terminator(frame);
+                    body.terminate(
+                        self.inventory,
+                        AwbcTerminator::Trap {
+                            code: AwbcTrapCode::MissingDynamicTarget,
+                            message: Some(message),
+                        },
+                        AwbcSafePointKind::CallableBoundary,
+                    );
                 }
             }
             FlowOp::GotoExpr(expr) => {

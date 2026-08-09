@@ -34,6 +34,10 @@ enum PortDirection {
     Output,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one Activity projection validates ports, locals, scopes, retained members, source order, and recovery together"
+)]
 pub(super) fn payload_matches(
     owner: ItemId,
     attached: &AttachedActivityDeclaration,
@@ -252,10 +256,11 @@ fn ports_match(
         let Some(retained) = retained.get(*member_position) else {
             return false;
         };
-        let retained_port = match (direction, retained.kind()) {
-            (PortDirection::Input, HirDeclarationMemberKind::ActivityInput(port))
-            | (PortDirection::Output, HirDeclarationMemberKind::ActivityOutput(port)) => port,
-            _ => return false,
+        let ((PortDirection::Input, HirDeclarationMemberKind::ActivityInput(retained_port))
+        | (PortDirection::Output, HirDeclarationMemberKind::ActivityOutput(retained_port))) =
+            (direction, retained.kind())
+        else {
+            return false;
         };
         if retained.id() != expected_id
             || !activity_port_matches(
@@ -278,6 +283,10 @@ fn ports_match(
     true
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the port validator compares one exact attached/retained member with its scope, locals, generations, and arenas"
+)]
 fn activity_port_matches(
     attached: &AttachedActivityPort,
     retained: &HirActivityPortMember,

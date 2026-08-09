@@ -29,8 +29,31 @@ impl EntityReferenceLexemeComponent {
         self.range
     }
 
-    fn spelling<'source>(self, spelling: &'source str) -> &'source str {
+    fn spelling(self, spelling: &str) -> &str {
         spelling.get(self.local_start..self.local_end).unwrap_or("")
+    }
+}
+
+/// Typed qualification of an empty entity-reference marker.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(in crate::parser) enum EntityReferenceEmptyMarker {
+    Unqualified,
+    Family(SyntaxName),
+}
+
+impl EntityReferenceEmptyMarker {
+    pub(in crate::parser) fn matches_family(&self, family: &str) -> bool {
+        match self {
+            Self::Unqualified => true,
+            Self::Family(authored) => authored.as_str() == family,
+        }
+    }
+
+    pub(in crate::parser) fn into_family(self) -> Option<SyntaxName> {
+        match self {
+            Self::Unqualified => None,
+            Self::Family(family) => Some(family),
+        }
     }
 }
 
@@ -38,7 +61,7 @@ impl EntityReferenceLexemeComponent {
 pub(in crate::parser) struct EntityReferenceLexemeProjection {
     syntax: SyntaxIdRefSyntax,
     components: Vec<SyntaxIdRefComponent>,
-    empty_marker_family: Option<Option<SyntaxName>>,
+    empty_marker_family: Option<EntityReferenceEmptyMarker>,
     unclosed_delimited_absolute: bool,
 }
 
@@ -51,7 +74,9 @@ impl EntityReferenceLexemeProjection {
         &self.components
     }
 
-    pub(in crate::parser) const fn empty_marker_family(&self) -> Option<&Option<SyntaxName>> {
+    pub(in crate::parser) const fn empty_marker_family(
+        &self,
+    ) -> Option<&EntityReferenceEmptyMarker> {
         self.empty_marker_family.as_ref()
     }
 
@@ -139,8 +164,8 @@ pub(in crate::parser) fn typed_entity_reference(
         match family_component {
             Some(family) => SyntaxName::try_new(family.spelling(spelling))
                 .ok()
-                .map(Some),
-            None => Some(None),
+                .map(EntityReferenceEmptyMarker::Family),
+            None => Some(EntityReferenceEmptyMarker::Unqualified),
         }
     } else {
         None

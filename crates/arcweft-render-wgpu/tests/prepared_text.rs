@@ -7,8 +7,8 @@ use arcweft_presentation::{
     hit::HitRect,
 };
 use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
-    RichTextPresentation, RichTextRange, TextColor, TextDocumentRevision, TextFontFamily,
+    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle, TextColor,
+    TextDocumentRevision, TextFontFamily,
 };
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, PreparedFrame, PreparedTextDocumentRequest,
@@ -26,6 +26,7 @@ use arcweft_render_wgpu::view_scene::{
     ViewTextPrimitive,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
+use arcweft_text_model::{RichTextPresentation, RichTextRange};
 
 const TEST_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");
 

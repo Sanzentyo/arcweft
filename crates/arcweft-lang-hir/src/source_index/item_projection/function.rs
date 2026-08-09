@@ -84,6 +84,7 @@ pub(super) fn payload_matches(
         attached.contracts(),
         function.requires(),
         function.ensures(),
+        function.effect_clauses(),
         function.requires_scope(),
         function.ensures_scope(),
         slots,

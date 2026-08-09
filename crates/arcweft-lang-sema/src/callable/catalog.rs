@@ -6,17 +6,19 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_lang_hir::symbol::CallableDeclarationId;
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_hir::symbol::{
+    CallableDeclarationKey, CallableDeclarationOwner, TraitDeclarationId,
+};
+use arcweft_lang_syntax::ast::{common::Visibility, module_path::CanonicalModulePath};
 use arcweft_source::SourceDocumentIdentity;
 
 use super::digest::CanonicalEncoder;
 use super::{
     CallableAuthorityRank, CallableCandidateId, CallableCatalogError, CallableDocumentation,
-    CallableLimits, CallableLookupKey, CallableProviderId, CallableSignatureSchema, CallableSource,
-    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
-    EnvironmentCallablePublicationDigest, ProjectCallablePath, ProjectNameBinding,
-    RustCallableProvenance, SignatureOrigin,
+    CallableFamily, CallableLimits, CallableLookupKey, CallableMethodRole, CallableProviderId,
+    CallableSignatureSchema, CallableSource, CallableValidator, EnvironmentCallableId,
+    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
+    ProjectCallablePath, ProjectNameBinding, RustCallableProvenance, SignatureOrigin,
 };
 use crate::registration::AcceptedNominalWorldStamp;
 
@@ -45,6 +47,7 @@ pub struct CallableRecord {
     key: CallableLookupKey,
     authority: CallableAuthorityRank,
     provider: CallableProviderId,
+    access: CallableAccess,
     schema: Arc<CallableSignatureSchema>,
     documentation: CallableDocumentation,
     source: Option<CallableSource>,
@@ -53,13 +56,36 @@ pub struct CallableRecord {
     declaration_order: EnvironmentDeclarationOrdinal,
 }
 
+/// Declaration-level access classification retained by the accepted record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CallableAccess {
+    Direct {
+        declaration_visibility: Option<Visibility>,
+    },
+    TraitRequirement {
+        trait_declaration: TraitDeclarationId,
+        trait_visibility: Option<Visibility>,
+    },
+    TraitImplementation,
+    InherentMethod {
+        owner_module: CanonicalModulePath,
+    },
+    /// Structural executable owner retained for effect/signature authority but
+    /// never published as an ordinary callable path.
+    Structural,
+    Environment,
+    Standard,
+    Detached,
+}
+
 impl CallableRecord {
     #[allow(clippy::too_many_arguments)]
-    pub fn try_new(
+    pub(crate) fn try_new(
         id: CallableCandidateId,
         key: CallableLookupKey,
         authority: CallableAuthorityRank,
         provider: CallableProviderId,
+        access: CallableAccess,
         schema: Arc<CallableSignatureSchema>,
         documentation: CallableDocumentation,
         source: Option<CallableSource>,
@@ -74,11 +100,17 @@ impl CallableRecord {
                 {
                     return Err(CallableCatalogError::AuthorityProviderMismatch);
                 }
-                let CallableLookupKey::Free(path) = &key else {
-                    return Err(CallableCatalogError::IdKeyMismatch);
-                };
-                if path.leaf().as_str() != declaration.name() {
-                    return Err(CallableCatalogError::IdKeyMismatch);
+                if declaration.owner().is_method() {
+                    if !matches!(key, CallableLookupKey::Method(_)) {
+                        return Err(CallableCatalogError::IdKeyMismatch);
+                    }
+                } else {
+                    let CallableLookupKey::Free(path) = &key else {
+                        return Err(CallableCatalogError::IdKeyMismatch);
+                    };
+                    if path.leaf().as_str() != declaration.name() {
+                        return Err(CallableCatalogError::IdKeyMismatch);
+                    }
                 }
                 if source.as_ref().and_then(CallableSource::declaration) != Some(declaration) {
                     return Err(CallableCatalogError::MissingProjectSource);
@@ -89,6 +121,7 @@ impl CallableRecord {
                 if publication_digest.is_some() {
                     return Err(CallableCatalogError::UnexpectedProjectPublicationDigest);
                 }
+                validate_project_access(declaration, &access)?;
             }
             CallableCandidateId::Environment(environment) => {
                 if environment.key() != &key
@@ -109,15 +142,38 @@ impl CallableRecord {
                 if publication_digest.is_none() {
                     return Err(CallableCatalogError::MissingEnvironmentPublicationDigest);
                 }
+                if !matches!(access, CallableAccess::Environment) {
+                    return Err(CallableCatalogError::IdKeyMismatch);
+                }
+            }
+            CallableCandidateId::Standard(_) => {
+                if authority != CallableAuthorityRank::Standard
+                    || !matches!(access, CallableAccess::Standard)
+                    || source.is_some()
+                    || publication_digest.is_some()
+                {
+                    return Err(CallableCatalogError::IdKeyMismatch);
+                }
+            }
+            CallableCandidateId::Detached(_) => {
+                if !matches!(access, CallableAccess::Detached)
+                    || source.is_none()
+                    || rust.is_some()
+                    || publication_digest.is_some()
+                {
+                    return Err(CallableCatalogError::IdKeyMismatch);
+                }
             }
             _ => return Err(CallableCatalogError::IdKeyMismatch),
         }
+        validate_method_role(&id, &key, &schema)?;
         validate_schema_evidence(&schema, &documentation, source.as_ref())?;
         Ok(Self {
             id,
             key,
             authority,
             provider,
+            access,
             schema,
             documentation,
             source,
@@ -139,6 +195,9 @@ impl CallableRecord {
     pub const fn provider(&self) -> &CallableProviderId {
         &self.provider
     }
+    pub const fn access(&self) -> &CallableAccess {
+        &self.access
+    }
     pub fn schema(&self) -> &CallableSignatureSchema {
         &self.schema
     }
@@ -157,6 +216,132 @@ impl CallableRecord {
     pub const fn declaration_order(&self) -> EnvironmentDeclarationOrdinal {
         self.declaration_order
     }
+    pub fn method_role(&self) -> Option<CallableMethodRole> {
+        match self.schema().validator() {
+            CallableValidator::Method(role) => Some(*role),
+            _ => None,
+        }
+    }
+    pub fn family(&self) -> CallableFamily {
+        match self.schema().validator() {
+            CallableValidator::Method(_) => CallableFamily::TraitMethod,
+            _ => self.id().intrinsic_family(),
+        }
+    }
+}
+
+fn validate_project_access(
+    declaration: &CallableDeclarationKey,
+    access: &CallableAccess,
+) -> Result<(), CallableCatalogError> {
+    let valid = match (declaration, access) {
+        (
+            CallableDeclarationKey::TraitRequirement(requirement),
+            CallableAccess::TraitRequirement {
+                trait_declaration, ..
+            },
+        ) => requirement.trait_declaration() == trait_declaration,
+        (CallableDeclarationKey::ImplMethod(method), CallableAccess::TraitImplementation) => {
+            method.kind().owner() == CallableDeclarationOwner::TraitImplementation
+        }
+        (
+            CallableDeclarationKey::ImplMethod(method),
+            CallableAccess::InherentMethod { owner_module },
+        ) => {
+            method.kind().owner() == CallableDeclarationOwner::InherentMethod
+                && method.implementation().module() == owner_module
+        }
+        (CallableDeclarationKey::Flow(_), CallableAccess::Structural)
+        | (CallableDeclarationKey::Existing(_), CallableAccess::Direct { .. }) => true,
+        _ => false,
+    };
+    if valid {
+        Ok(())
+    } else {
+        Err(CallableCatalogError::IdKeyMismatch)
+    }
+}
+
+fn validate_method_role(
+    candidate: &CallableCandidateId,
+    key: &CallableLookupKey,
+    schema: &CallableSignatureSchema,
+) -> Result<(), CallableCatalogError> {
+    let structural_owner = match candidate {
+        CallableCandidateId::Project(declaration) => Some(declaration.owner()),
+        CallableCandidateId::Detached(declaration) => Some(declaration.owner()),
+        CallableCandidateId::Standard(declaration) => Some(declaration.owner()),
+        _ => None,
+    };
+    match schema.validator() {
+        CallableValidator::Method(role) => {
+            if !matches!(key, CallableLookupKey::Method(_)) {
+                return Err(CallableCatalogError::MethodValidatorLookupMismatch {
+                    role: *role,
+                    key: Box::new(key.clone()),
+                });
+            }
+            let candidate_valid = match candidate {
+                CallableCandidateId::Environment(environment) => {
+                    environment.kind() == EnvironmentCallableKind::Method
+                        && environment.key() == key
+                }
+                CallableCandidateId::Project(_)
+                | CallableCandidateId::Detached(_)
+                | CallableCandidateId::Standard(_) => {
+                    structural_owner == Some(role.required_owner())
+                }
+                _ => false,
+            };
+            if !candidate_valid {
+                return Err(CallableCatalogError::MethodValidatorCandidateMismatch {
+                    role: *role,
+                    candidate: Box::new(candidate.clone()),
+                });
+            }
+            let effect_valid = match candidate {
+                CallableCandidateId::Project(declaration) => matches!(
+                    schema.effects(),
+                    super::CallableEffectSchema::Project { declaration: effect }
+                        if effect == declaration
+                ),
+                CallableCandidateId::Detached(declaration) => matches!(
+                    schema.effects(),
+                    super::CallableEffectSchema::Detached { declaration: effect }
+                        if effect == declaration
+                ),
+                CallableCandidateId::Environment(_) | CallableCandidateId::Standard(_) => {
+                    matches!(schema.effects(), super::CallableEffectSchema::Fixed(_))
+                }
+                _ => false,
+            };
+            if !effect_valid {
+                return Err(
+                    CallableCatalogError::MethodValidatorEffectAuthorityMismatch {
+                        role: *role,
+                        candidate: Box::new(candidate.clone()),
+                    },
+                );
+            }
+        }
+        _ if structural_owner.is_some_and(CallableDeclarationOwner::is_method) => {
+            return Err(CallableCatalogError::MethodValidatorCandidateMismatch {
+                role: match structural_owner.expect("method owner was checked") {
+                    CallableDeclarationOwner::TraitRequirement => {
+                        CallableMethodRole::TraitRequirement
+                    }
+                    CallableDeclarationOwner::TraitImplementation => {
+                        CallableMethodRole::TraitImplementation
+                    }
+                    CallableDeclarationOwner::InherentMethod => CallableMethodRole::Inherent,
+                    _ => unreachable!("method owner predicate is exhaustive"),
+                },
+                candidate: Box::new(candidate.clone()),
+            });
+        }
+        _ => {}
+    }
+    Ok(())
 }
 
 fn validate_schema_evidence(
@@ -367,13 +552,13 @@ fn environment_overload(id: &CallableCandidateId) -> Option<super::CallableOverl
 pub struct RegisteredProjectModuleCallables {
     module: CanonicalModulePath,
     source: SourceDocumentIdentity,
-    declarations: Arc<[CallableDeclarationId]>,
+    declarations: Arc<[CallableDeclarationKey]>,
 }
 impl RegisteredProjectModuleCallables {
     pub(crate) fn new(
         module: CanonicalModulePath,
         source: SourceDocumentIdentity,
-        declarations: Vec<CallableDeclarationId>,
+        declarations: Vec<CallableDeclarationKey>,
     ) -> Self {
         Self {
             module,
@@ -387,7 +572,7 @@ impl RegisteredProjectModuleCallables {
     pub const fn source(&self) -> &SourceDocumentIdentity {
         &self.source
     }
-    pub fn declarations(&self) -> &[CallableDeclarationId] {
+    pub fn declarations(&self) -> &[CallableDeclarationKey] {
         &self.declarations
     }
 }
@@ -395,13 +580,13 @@ impl RegisteredProjectModuleCallables {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectCallableCatalog {
     modules: Arc<[RegisteredProjectModuleCallables]>,
-    by_declaration: HashMap<CallableDeclarationId, Arc<CallableRecord>>,
+    by_declaration: HashMap<CallableDeclarationKey, Arc<CallableRecord>>,
     bindings: HashMap<ProjectCallablePath, ProjectNameBinding>,
 }
 impl ProjectCallableCatalog {
     pub(crate) fn new(
         modules: Vec<RegisteredProjectModuleCallables>,
-        by_declaration: HashMap<CallableDeclarationId, Arc<CallableRecord>>,
+        by_declaration: HashMap<CallableDeclarationKey, Arc<CallableRecord>>,
         bindings: HashMap<ProjectCallablePath, ProjectNameBinding>,
     ) -> Self {
         Self {
@@ -413,7 +598,7 @@ impl ProjectCallableCatalog {
     pub fn modules(&self) -> &[RegisteredProjectModuleCallables] {
         &self.modules
     }
-    pub fn record(&self, id: &CallableDeclarationId) -> Option<&Arc<CallableRecord>> {
+    pub fn record(&self, id: &CallableDeclarationKey) -> Option<&Arc<CallableRecord>> {
         self.by_declaration.get(id)
     }
     pub fn binding(&self, key: &ProjectCallablePath) -> Option<&ProjectNameBinding> {
@@ -563,8 +748,15 @@ impl RegisteredCallableCatalog {
     pub fn project_binding(&self, key: &ProjectCallablePath) -> Option<&ProjectNameBinding> {
         self.project.binding(key)
     }
-    pub fn project_record(&self, id: &CallableDeclarationId) -> Option<&Arc<CallableRecord>> {
+    pub fn project_record(&self, id: &CallableDeclarationKey) -> Option<&Arc<CallableRecord>> {
         self.project.record(id)
+    }
+    pub fn record(&self, id: &CallableCandidateId) -> Option<&Arc<CallableRecord>> {
+        match id {
+            CallableCandidateId::Project(id) => self.project.record(id),
+            CallableCandidateId::Environment(id) => self.environment.record(id),
+            _ => None,
+        }
     }
     pub fn free(&self, path: &super::CallablePath) -> Option<&NonEmptyCallableSet> {
         self.environment.free(path)
@@ -574,6 +766,19 @@ impl RegisteredCallableCatalog {
     }
     pub fn environment_record(&self, id: &EnvironmentCallableId) -> Option<&Arc<CallableRecord>> {
         self.environment.record(id)
+    }
+
+    /// Returns the exact accepted record allocations in canonical identity
+    /// order for the private checked-catalog construction transaction.
+    pub(crate) fn records_in_identity_order(&self) -> Vec<&Arc<CallableRecord>> {
+        let mut records = self
+            .project
+            .by_declaration
+            .values()
+            .chain(self.environment.by_id.values())
+            .collect::<Vec<_>>();
+        records.sort_by_cached_key(|record| record_identity_bytes(record));
+        records
     }
 
     pub(crate) fn validated_free(
@@ -598,76 +803,6 @@ impl RegisteredCallableCatalog {
         self.environment
             .validate_set(&CallableLookupKey::Method(key.clone()), set)?;
         Ok(Some(set))
-    }
-
-    #[cfg(test)]
-    pub(crate) fn with_corrupt_free_set_for_test(
-        &self,
-        source_path: &super::CallablePath,
-        alternate_path: Option<&super::CallablePath>,
-        reason: super::CorruptCallableCatalogReason,
-    ) -> Self {
-        use super::CorruptCallableCatalogReason;
-
-        let mut corrupted = self.clone();
-        let source = corrupted
-            .environment
-            .free
-            .get(source_path)
-            .cloned()
-            .expect("corrupt fixture source path must exist");
-        let mut entries = source.entries.to_vec();
-        let lookup_path = match reason {
-            CorruptCallableCatalogReason::KeyMismatch => alternate_path
-                .cloned()
-                .expect("key-mismatch fixture requires an alternate lookup path"),
-            _ => source_path.clone(),
-        };
-
-        match reason {
-            CorruptCallableCatalogReason::EmptySet => entries.clear(),
-            CorruptCallableCatalogReason::KeyMismatch => {}
-            CorruptCallableCatalogReason::DuplicateId => {
-                entries.push(entries[0].clone());
-            }
-            CorruptCallableCatalogReason::WrongAuthority => {
-                let primary = Arc::make_mut(&mut entries[0].primary);
-                primary.authority = CallableAuthorityRank::Project;
-            }
-            CorruptCallableCatalogReason::MissingRecord => {
-                let CallableCandidateId::Environment(id) = entries[0].primary.id() else {
-                    panic!("environment fixture must own an environment ID")
-                };
-                corrupted.environment.by_id.remove(id);
-            }
-            CorruptCallableCatalogReason::InvalidEquivalent => {
-                let alternate_path = alternate_path
-                    .expect("invalid-equivalent fixture requires another accepted record");
-                let alternate = corrupted
-                    .environment
-                    .free
-                    .get(alternate_path)
-                    .expect("invalid-equivalent alternate path must exist")
-                    .first()
-                    .primary()
-                    .clone();
-                entries[0].equivalent_sources = vec![equivalent_source(&alternate)].into();
-            }
-            CorruptCallableCatalogReason::Unsorted => {
-                assert!(
-                    entries.len() > 1,
-                    "unsorted fixture requires at least two accepted entries"
-                );
-                entries.reverse();
-            }
-        }
-        corrupted.environment.free.insert(
-            lookup_path,
-            NonEmptyCallableSet {
-                entries: entries.into(),
-            },
-        );
-        corrupted
     }
 }
 
@@ -709,30 +844,6 @@ fn equivalent_matches(
         && accepted.source() == equivalent.source()
         && accepted.rust() == equivalent.rust()
         && origin_matches
-}
-
-#[cfg(test)]
-fn equivalent_source(record: &CallableRecord) -> EquivalentCallableSource {
-    let CallableCandidateId::Environment(id) = record.id() else {
-        panic!("environment fixture must own an environment ID")
-    };
-    let origin = match id.owner() {
-        EnvironmentCallableOwner::Standard(owner) => SignatureOrigin::Standard {
-            owner: *owner,
-            id: id.clone(),
-        },
-        EnvironmentCallableOwner::Adapter(package) => SignatureOrigin::Adapter {
-            package: package.clone(),
-            id: id.clone(),
-        },
-    };
-    EquivalentCallableSource::new(
-        record.id().clone(),
-        origin,
-        record.documentation().clone(),
-        record.source().cloned(),
-        record.rust().cloned(),
-    )
 }
 
 fn registered_catalog_digest(

@@ -162,36 +162,12 @@ impl<R> GenerationRuntimeTable<R> {
 mod tests {
     use super::*;
     use arcweft_bundle::container::BundleDigest;
-    use arcweft_dialogue::DialogueProfileRevision;
-    use arcweft_resource_model::registry::ResourceTypeRegistry;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
-
-    fn dialogue_revision() -> DialogueProfileRevision {
-        let manifest = SourceDocument::try_new(
-            SourceDocumentId::try_new("generation-runtime-test").expect("document ID"),
-            SourceName::Memory,
-            "test manifest",
-        )
-        .expect("test document");
-        let sources = SourceSetRevision::try_for_identities([manifest.identity()])
-            .expect("test source revision");
-        DialogueProfileRevision::from_admitted_parts(
-            manifest.identity().clone(),
-            sources,
-            sources,
-            ViewProgramId::try_new("view_program.generation-runtime-test")
-                .expect("View program ID"),
-            AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-            ResourceTypeRegistry::empty().digest(),
-        )
-    }
 
     fn generation(id: u64) -> Arc<ProgramGeneration> {
         Arc::new(ProgramGeneration::empty(
             GenerationId(id),
             BundleDigest::of(&id.to_le_bytes()),
-            dialogue_revision(),
+            BundleDigest::of(&id.to_le_bytes()),
         ))
     }
 

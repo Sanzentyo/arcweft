@@ -5,6 +5,9 @@ use arcweft_lang_syntax::attachment::TypedItemNode;
 use crate::identity::ExprId;
 use crate::item::{HirBenchItem, HirTestItem, HirTestKind};
 use crate::leaf::{HirEntityReference, HirIdRef, HirIdRefValue};
+use crate::source_index::{
+    HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite, HirTestBenchSourceRole,
+};
 use crate::stmt::{HirStmt, HirStmtKind, HirStmtPoisonState};
 
 fn test_item(
@@ -122,7 +125,6 @@ fn clean_test_and_bench_retain_typed_id_kind_statement_scope_and_goto() {
     );
 
     let plan_id_syntax = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -160,6 +162,23 @@ fn clean_test_and_bench_retain_typed_id_kind_statement_scope_and_goto() {
     ));
     assert_first_test_scope_and_goto(&module);
     assert_bench_scope(&module);
+    for (ordinal, attached) in parsed.items().unwrap().iter().enumerate() {
+        let owner = module.source_ordered_items()[ordinal];
+        let lookup = module
+            .source_site(
+                parsed.document().identity(),
+                HirSourceQuery::Item {
+                    owner,
+                    role: HirItemSourceRole::TestBench(HirTestBenchSourceRole::Whole),
+                },
+            )
+            .expect("Test/Bench whole source role");
+        assert!(matches!(
+            lookup.presence(),
+            HirSourcePresence::Present(HirSourceSite::Span(actual))
+                if actual == &attached.source_span()
+        ));
+    }
     for syntax in plan_id_syntax {
         assert_eq!(module.slots().prepared_source_owner::<ExprId>(syntax), None);
     }
@@ -238,9 +257,7 @@ fn assert_test_freeze_rejects(case: &str, tamper: impl FnOnce(&HirTestItem) -> H
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     let (slots, arenas) = transaction.storage_mut();
     let original = arenas.items().resolve_staged(slots, owner).unwrap().clone();
@@ -307,9 +324,7 @@ fn test_freeze_rejects_goto_target_substitution() {
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     let (first_statement, second_statement) = {
         let (slots, arenas) = transaction.storage_mut();

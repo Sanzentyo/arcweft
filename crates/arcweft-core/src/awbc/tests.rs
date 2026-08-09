@@ -1,11 +1,21 @@
 use super::codec::{AwbcCodecError, AwbcDecodeBudget};
 use super::fiber::{
-    FiberResumeTarget, FiberScope, FiberScopeCleanup, FiberState, FiberStatus, FiberSuspension,
-    FiberSuspensionReason, FiberTrap,
+    FiberAwaitTarget, FiberResumeTarget, FiberScope, FiberScopeCleanup, FiberState, FiberStatus,
+    FiberSuspension, FiberSuspensionReason, FiberTrap,
 };
 use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
+use crate::effect::RuntimeAssertionGuardId;
+use crate::entry::{FlowContractHash, RuntimeFlowExecutable};
+use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
 use crate::value::{RuntimeFunctionValue, RuntimeValue};
+
+fn test_flow_binding(label: &str, function: u32) -> AwbcFlowBinding {
+    AwbcFlowBinding {
+        flow: FlowRuntimeId::canonical(label).expect("test Flow ID is valid"),
+        function: AwbcFunctionId(function),
+    }
+}
 
 fn minimal_program() -> AwbcProgram {
     AwbcProgram {
@@ -35,6 +45,7 @@ fn minimal_program() -> AwbcProgram {
             safe_point: AwbcSafePointKind::FlowEntry,
             source_map: None,
         }],
+        flow_bindings: vec![test_flow_binding("main", 0)],
         entries: vec![AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
@@ -235,6 +246,7 @@ fn expression_apply_program(
             instructions
         },
         resume_points,
+        flow_bindings: vec![test_flow_binding("main", 0)],
         entries: vec![AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
@@ -264,6 +276,149 @@ fn canonical_codec_is_deterministic_and_round_trips() {
 }
 
 #[test]
+fn canonical_codec_round_trips_checked_flow_identity_and_public_label() {
+    let mut program = minimal_program();
+    let flow = FlowRuntimeId::from_checked_declaration_digest([0xa5; 32], "flow.opening")
+        .expect("accepted Flow public label");
+    program.flow_bindings[0].flow = flow.clone();
+    program.flow_executables.push(AwbcFlowExecutable {
+        metadata: RuntimeFlowExecutable {
+            flow: flow.clone(),
+            contract: FlowContractHash::from_bytes([0x5a; 32]),
+            parameters: Vec::new(),
+            controller: None,
+        },
+        function: AwbcFunctionId(0),
+    });
+
+    let encoded = program.encode_canonical().expect("encode checked Flow ID");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode checked Flow ID");
+
+    assert_eq!(decoded.flow_executables[0].metadata.flow, flow);
+    assert_eq!(
+        decoded.flow_executables[0]
+            .metadata
+            .flow
+            .public_label()
+            .as_str(),
+        "flow.opening"
+    );
+    assert_eq!(decoded, program);
+}
+
+#[test]
+fn canonical_flow_bindings_preserve_same_label_declarations_and_reject_ambiguous_targets() {
+    let mut program = minimal_program();
+    let first = FlowRuntimeId::from_checked_declaration_digest([0x11; 32], "flow.opening")
+        .expect("first checked Flow identity");
+    let second = FlowRuntimeId::from_checked_declaration_digest([0x22; 32], "flow.opening")
+        .expect("second checked Flow identity");
+    program.flow_bindings[0].flow = first.clone();
+    let mut second_function = program.functions[0].clone();
+    second_function.blocks = AwbcTableRange::new(1, 1);
+    second_function.entry_block = AwbcBlockId(1);
+    program.functions.push(second_function);
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Return { value: None },
+        safe_point: AwbcSafePointKind::FlowEntry,
+        source_map: None,
+    });
+    program.flow_bindings.push(AwbcFlowBinding {
+        flow: second.clone(),
+        function: AwbcFunctionId(1),
+    });
+
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("same public label remains a valid typed Flow inventory");
+    let encoded = program
+        .encode_canonical()
+        .expect("encode typed Flow bindings");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode typed Flow bindings");
+    assert_eq!(decoded.flow_function(&first), Some(AwbcFunctionId(0)));
+    assert_eq!(decoded.flow_function(&second), Some(AwbcFunctionId(1)));
+    assert_eq!(decoded.flow_identity(AwbcFunctionId(0)), Some(&first));
+    assert_eq!(decoded.flow_identity(AwbcFunctionId(1)), Some(&second));
+    assert!(matches!(
+        decoded.resolve_flow_target_value("flow.opening"),
+        Err(RuntimeFlowTargetError::Ambiguous { matches: 2, .. })
+    ));
+    assert!(matches!(
+        decoded.resolve_flow_target_value("flow.missing"),
+        Err(RuntimeFlowTargetError::Missing { .. })
+    ));
+    assert!(matches!(
+        decoded.resolve_flow_target_value(&first.canonical_label()),
+        Err(RuntimeFlowTargetError::Invalid(_))
+    ));
+
+    program.flow_bindings.pop();
+    program.functions.pop();
+    program.blocks.pop();
+    assert_eq!(
+        program
+            .resolve_flow_target_value("flow.opening")
+            .map(|(flow, function)| (flow.clone(), function)),
+        Ok((first, AwbcFunctionId(0)))
+    );
+}
+
+#[test]
+fn canonical_awbc_assertion_payload_round_trips_as_typed_identity() {
+    let mut program = minimal_program();
+    let guard =
+        RuntimeAssertionGuardId::try_from_bytes([0xa7; 16]).expect("non-zero assertion guard");
+    program.strings = vec![
+        "always".to_owned(),
+        "inventory >= 0".to_owned(),
+        "inventory must stay non-negative".to_owned(),
+        "main".to_owned(),
+    ];
+    program.entries[0].public_id = AwbcStringId(3);
+    program.constants = vec![
+        AwbcConstant::Bytes(guard.as_bytes().to_vec()),
+        AwbcConstant::String(AwbcStringId(1)),
+        AwbcConstant::String(AwbcStringId(2)),
+        AwbcConstant::String(AwbcStringId(0)),
+    ];
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Assert,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: None,
+        static_args: vec![
+            AwbcConstantId(0),
+            AwbcConstantId(1),
+            AwbcConstantId(2),
+            AwbcConstantId(3),
+        ],
+        resources: Vec::new(),
+    });
+
+    let encoded = program.encode_canonical().expect("encode assertion AWBC");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode assertion AWBC");
+    decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("verify decoded assertion AWBC");
+    assert_eq!(decoded, program);
+
+    let decoded_guard = match &decoded.constants[0] {
+        AwbcConstant::Bytes(bytes) => RuntimeAssertionGuardId::try_from_bytes(
+            bytes.as_slice().try_into().expect("fixed 16-byte guard"),
+        )
+        .expect("decoded guard remains non-zero"),
+        other => panic!("assertion guard changed constant kind: {other:?}"),
+    };
+    assert_eq!(decoded_guard, guard);
+    assert_eq!(decoded.effect_plans[0].kind, AwbcEffectKind::Assert);
+}
+
+#[test]
 fn canonical_codec_round_trips_typed_audio_payload_table() {
     let mut program = minimal_program();
     program.audio_commands.push(AwbcAudioCommand::StopAll {
@@ -277,6 +432,121 @@ fn canonical_codec_round_trips_typed_audio_payload_table() {
         .expect("decode AWBC audio payload");
 
     assert_eq!(decoded, program);
+}
+
+#[test]
+fn canonical_codec_round_trips_choice_and_nominal_runtime_types() {
+    let mut program = minimal_program();
+    let nominal_name = AwbcStringId(
+        u32::try_from(program.strings.len()).expect("test string table fits AWBC index"),
+    );
+    program.strings.push("state.game.State".to_owned());
+    let string_type = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::String);
+    let nominal_type = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::Nominal {
+        public_id: nominal_name,
+        semantic_identity: [17; 32],
+    });
+    program
+        .runtime_types
+        .push(AwbcRuntimeType::Choice(vec![string_type, nominal_type]));
+
+    let encoded = program
+        .encode_canonical()
+        .expect("encode typed runtime type table");
+    assert_eq!(
+        u16::from_le_bytes([encoded[8], encoded[9]]),
+        AWBC_CODEC_VERSION
+    );
+    assert_eq!(AWBC_CODEC_VERSION, 10);
+    let mut stale_v7 = encoded.clone();
+    stale_v7[8..10].copy_from_slice(&7_u16.to_le_bytes());
+    assert_eq!(
+        AwbcProgram::decode_canonical(&stale_v7, AwbcDecodeBudget::default())
+            .expect_err("v7 reader identity must not accept v8 runtime-type payloads"),
+        AwbcCodecError::UnsupportedCodecVersion {
+            actual: 7,
+            expected: AWBC_CODEC_VERSION,
+        }
+    );
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode typed runtime type table");
+    decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("verify typed runtime type table");
+
+    assert_eq!(decoded, program);
+}
+
+#[test]
+fn verifier_rejects_non_canonical_builtin_variant_schema() {
+    let mut program = minimal_program();
+    program
+        .strings
+        .extend(["None".to_owned(), "Some".to_owned()]);
+    program.runtime_types.push(AwbcRuntimeType::Unit);
+    program.runtime_types.push(AwbcRuntimeType::Variant {
+        owner: AwbcVariantIdentity::Option,
+        cases: vec![
+            AwbcVariantCase {
+                name: AwbcStringId(1),
+                payload: None,
+            },
+            AwbcVariantCase {
+                name: AwbcStringId(2),
+                payload: Some(AwbcTypeId(0)),
+            },
+        ],
+    });
+    program.canonicalize_string_table();
+
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("non-canonical Option schema must reject");
+    assert!(
+        matches!(
+            &error,
+            AwbcVerifyError::InvalidInvariant { message, .. }
+                if message == "builtin variant owner has a non-canonical case schema"
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn verifier_rejects_variant_constant_with_obsolete_nominal_type() {
+    let mut program = minimal_program();
+    program
+        .strings
+        .extend(["state.Widget".to_owned(), "Ready".to_owned()]);
+    program.runtime_types.push(AwbcRuntimeType::Nominal {
+        public_id: AwbcStringId(1),
+        semantic_identity: [23; 32],
+    });
+    program.constants.push(AwbcConstant::Variant {
+        ty: AwbcTypeId(0),
+        case: 0,
+        case_name: AwbcStringId(2),
+        payload: None,
+    });
+    program.canonicalize_string_table();
+
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("variant constant cannot reference a nominal type");
+    assert!(
+        matches!(
+            &error,
+            AwbcVerifyError::InvalidInvariant { message, .. }
+                if message == "variant constant references a non-variant type"
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -308,6 +578,10 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         });
 
     let checkpoint = fiber.checkpoint();
+    let encoded_checkpoint =
+        serde_json::to_string(&checkpoint).expect("fiber checkpoint serializes");
+    let decoded_checkpoint = serde_json::from_str(&encoded_checkpoint)
+        .expect("fiber checkpoint deserializes without session identity");
     let encoded = serde_json::to_string(&fiber).expect("fiber state serializes");
     let decoded: FiberState = serde_json::from_str(&encoded).expect("fiber state deserializes");
     assert_eq!(decoded, fiber);
@@ -322,7 +596,7 @@ fn fiber_checkpoint_and_serde_preserve_cleanup_stacks() {
         .expect("active frame")
         .scopes
         .clear();
-    fiber.restore(checkpoint);
+    fiber.restore(decoded_checkpoint);
 
     let frame = fiber.active_frame().expect("active frame restored");
     assert_eq!(frame.root_cleanups[0].key, "handle.root");
@@ -401,10 +675,16 @@ fn verifier_rejects_effect_static_argument_shape_that_product_mapping_cannot_rea
         resources: Vec::new(),
     });
 
-    assert!(matches!(
-        program.verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default()),
-        Err(AwbcVerifyError::MalformedEffectPayload { effect: 0, .. })
-    ));
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("zero assert guard must be rejected");
+    assert!(
+        matches!(
+            error,
+            AwbcVerifyError::MalformedEffectPayload { effect: 0, .. }
+        ),
+        "{error:?}"
+    );
 }
 
 #[test]
@@ -441,23 +721,69 @@ fn verifier_rejects_unknown_assert_profile_instead_of_defaulting_it() {
         "profile.message".to_owned(),
         "sometimes".to_owned(),
     ]);
-    program.constants.extend([
+    program.constants = vec![
+        AwbcConstant::Bytes(vec![7; 16]),
         AwbcConstant::String(AwbcStringId(1)),
         AwbcConstant::String(AwbcStringId(2)),
         AwbcConstant::String(AwbcStringId(3)),
-    ]);
+    ];
     program.effect_plans.push(AwbcEffectPlan {
         kind: AwbcEffectKind::Assert,
         signature: AwbcSignatureId(0),
         capability: None,
         audio: None,
-        static_args: vec![AwbcConstantId(0), AwbcConstantId(1), AwbcConstantId(2)],
+        static_args: vec![
+            AwbcConstantId(0),
+            AwbcConstantId(1),
+            AwbcConstantId(2),
+            AwbcConstantId(3),
+        ],
         resources: Vec::new(),
     });
 
     let error = program
         .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
         .expect_err("unknown assert profile must be rejected");
+    assert!(
+        matches!(
+            error,
+            AwbcVerifyError::MalformedEffectPayload { effect: 0, .. }
+        ),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn verifier_rejects_zero_assert_guard() {
+    let mut program = minimal_program();
+    program.strings.extend([
+        "profile.condition".to_owned(),
+        "profile.message".to_owned(),
+        "sometimes".to_owned(),
+    ]);
+    program.constants = vec![
+        AwbcConstant::Bytes(vec![0; 16]),
+        AwbcConstant::String(AwbcStringId(1)),
+        AwbcConstant::String(AwbcStringId(2)),
+        AwbcConstant::String(AwbcStringId(3)),
+    ];
+    program.effect_plans.push(AwbcEffectPlan {
+        kind: AwbcEffectKind::Assert,
+        signature: AwbcSignatureId(0),
+        capability: None,
+        audio: None,
+        static_args: vec![
+            AwbcConstantId(0),
+            AwbcConstantId(1),
+            AwbcConstantId(2),
+            AwbcConstantId(3),
+        ],
+        resources: Vec::new(),
+    });
+
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("zero assert guard must be rejected");
     assert!(
         matches!(
             error,
@@ -617,6 +943,7 @@ fn closure_instructions_capture_and_apply_awbc_function_value() {
                 args: Vec::new(),
             },
         ],
+        flow_bindings: vec![test_flow_binding("main", 0)],
         entries: vec![AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
@@ -753,7 +1080,7 @@ fn expression_apply_surfaces_await_from_the_dynamic_callee() {
         vec![
             (
                 AwbcTerminator::Await {
-                    task: AwbcRegisterId(0),
+                    handle: AwbcRegisterId(0),
                     binding: None,
                     resume: AwbcResumePointId(0),
                 },
@@ -793,7 +1120,7 @@ fn expression_apply_surfaces_await_from_the_dynamic_callee() {
     assert!(matches!(
         output.exit,
         super::vm::VmExit::Suspended(FiberSuspensionReason::Await {
-            task: RuntimeValue::String(ref task),
+            target: FiberAwaitTarget::Task(RuntimeValue::String(ref task)),
             binding: None,
         }) if task == "task.dynamic"
     ));

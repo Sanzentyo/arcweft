@@ -2,7 +2,7 @@ use arcweft_character::id::CharacterId;
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_lsp::{
     features::{character_metadata::character_hover_markdown, completion::completions},
-    profiles::LspProfileResolver,
+    profiles::{LspProfileResolver, LspProfileTestHarness},
 };
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use std::{
@@ -45,7 +45,10 @@ compression = "none"
     project.write_manifest("akane");
     project.write_manifest("aoi");
 
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("game".to_owned()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("game".to_owned()),
+    ));
     let build = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
         .expect("profile construction");

@@ -11,7 +11,7 @@ pub enum AttachedSourceBoundedArgument {
     Present {
         syntax: AstNode<CallArgumentKind>,
         ordinal: u16,
-        value: AttachedSourceExpression,
+        value: Box<AttachedSourceExpression>,
         duplicate: bool,
     },
 }
@@ -88,8 +88,8 @@ pub enum AttachedSourceBackpressurePolicy {
     Latest(AttachedSourceExpression),
     Bounded {
         expression: AttachedSourceExpression,
-        capacity: AttachedSourceBoundedArgument,
-        overflow: AttachedSourceOverflowPolicy,
+        capacity: Box<AttachedSourceBoundedArgument>,
+        overflow: Box<AttachedSourceOverflowPolicy>,
         unexpected_arguments: bool,
         recovered_call: bool,
     },

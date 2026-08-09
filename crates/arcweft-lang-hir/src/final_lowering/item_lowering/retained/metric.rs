@@ -17,13 +17,17 @@ use crate::item::{
     HirMetricLabelMember, HirMetricUnitMember, HirMetricUnitValue,
 };
 use crate::leaf::{HirLiteral, HirStringLiteral};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 
 use super::super::super::{StagedHirModuleTransaction, require_limit};
 use super::super::{LoweredItemProjection, item_state, project_required_name};
 use super::{project_retained_header, retained_header_issue};
 
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Metric lowering atomically projects its closed member and expression inventory"
+    )]
     pub(in crate::final_lowering::item_lowering) fn lower_metric_declaration(
         &mut self,
         owner: ItemId,

@@ -32,22 +32,32 @@ use crate::view::{
     AgentScrollOverflow, AgentScrollOverscrollPolicy, AgentScrollRegionParts,
     AgentScrollRegionRole, AgentScrollViewportPart, AgentViewTree,
 };
-use arcweft_core::plan::RuntimeLineId;
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_character::id::CharacterId;
+use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::TextKey;
 use arcweft_layout::{
     CaptureComposition, CaptureCropBounds, CaptureMaskMetadata, CaptureMetadata,
     CaptureRendererKind, CaptureScope, ContentRect, LayoutCoordinateSpace, LayoutPoint, LayoutRect,
     LayoutSize, ScalePolicy,
 };
-use arcweft_render_text::{
-    LineDisplayFrame, RichTextAssignOp, RichTextCascadeLayer, RichTextObjectProxyDeclaration,
-    RichTextParam, RichTextPresentation, RichTextRange, RichTextSettingSource,
-    RichTextStyleContribution, RichTextTextSource,
+use arcweft_text_model::{
+    CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,
+    RichTextAssignOp, RichTextCascadeLayer, RichTextDisplayMap, RichTextNode,
+    RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation, RichTextRange,
+    RichTextSettingSource, RichTextStyleContribution, RichTextTextProxyField,
+    RichTextTextProxyFieldKind, RichTextTextProxyFieldSchema, RichTextTextProxyScalar,
+    RichTextTextProxySchema, RichTextTextRun, RichTextTextSource,
 };
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_view::ViewId;
 use std::collections::BTreeMap;
+
+fn test_binary_resource_body(data: &str) -> AgentBinaryResourceBody {
+    AgentBinaryResourceBody {
+        encoding: AgentBinaryEncoding::Base64,
+        data: data.to_owned(),
+    }
+}
 
 fn test_capture_refs() -> AgentObjectCaptureRefs {
     AgentObjectCaptureRefs {
@@ -104,13 +114,27 @@ fn line_id(value: &str) -> RuntimeLineId {
 fn test_line_display_frame() -> LineDisplayFrame {
     LineDisplayFrame {
         line: line_id("say.test.001"),
-        callee: "alice".to_owned(),
-        speaker_label: None,
+        character: DialoguePresentationCharacter {
+            id: CharacterId::try_new("character.alice").expect("character identity"),
+            display_name: "Alice".to_owned(),
+        },
+        text_key: TextKey::try_new("text.test.001").expect("text key"),
+        effective: CharacterDialoguePresentationConfig {
+            view: ViewId::try_new("view.dialogue.test").expect("View identity"),
+            voice: None,
+            look: None,
+            stage: None,
+            portrait: None,
+            focus: None,
+            cleanup: None,
+            source_locale: None,
+            hooks: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            custom: BTreeMap::new(),
+            config_digest: RuntimeValueDigest::ZERO,
+        },
         text: "Hello".to_owned(),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
         base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: vec![RichTextStyleContribution {
             path: "rich_text.ruby.size".to_owned(),
             layer: RichTextCascadeLayer::EngineDefaults,
@@ -123,31 +147,38 @@ fn test_line_display_frame() -> LineDisplayFrame {
             active: true,
             shadowed_by: None,
         }],
-        nodes: Vec::new(),
-        display_map: arcweft_render_text::RichTextDisplayMap::default(),
+        nodes: vec![RichTextNode::Text {
+            text: "Hello".to_owned(),
+        }],
+        display_map: RichTextDisplayMap {
+            text_runs: vec![RichTextTextRun {
+                range: RichTextRange::new(0, 5),
+                source: RichTextTextSource::Text,
+                node_index: 0,
+                styles: Vec::new(),
+                presentation: RichTextPresentation::default(),
+            }],
+            ..RichTextDisplayMap::default()
+        },
         host_events: Vec::new(),
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
     }
 }
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let source = SourceDocument::try_new(
-        SourceDocumentId::try_new("agent-protocol-test-revision").expect("source ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("source document");
-    let sources =
-        SourceSetRevision::try_for_identities([source.identity()]).expect("source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        source.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.agent-protocol-test").expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x4d; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
+#[test]
+fn observed_rich_text_round_trips_only_the_final_typed_frame_wire() {
+    let content = AgentObservedObjectContent::RichText {
+        frame: Box::new(test_line_display_frame()),
+    };
+    let encoded = serde_json::to_value(&content).expect("typed rich-text content serializes");
+    let decoded = serde_json::from_value::<AgentObservedObjectContent>(encoded.clone())
+        .expect("typed rich-text content deserializes");
+    assert_eq!(decoded, content);
+
+    let mut removed_flat_field = encoded;
+    removed_flat_field["frame"]["speaker_label"] = "Alice".into();
+    assert!(serde_json::from_value::<AgentObservedObjectContent>(removed_flat_field).is_err());
 }
 
 fn test_raw_mask_image_resource() -> AgentImageResource {
@@ -468,6 +499,8 @@ fn test_rich_text_ref(bbox: &AgentBBox) -> AgentRichTextElementRef {
             proxy_id: None,
             proxy_type: None,
             proxy_declaration: None,
+            proxy_schema: None,
+            proxy_fields: Vec::new(),
             proxy_role: None,
             proxy_layer: None,
             depth: None,
@@ -683,7 +716,11 @@ fn observation_report_serializes_stable_snake_case_enums() {
 }
 
 #[test]
-fn hit_region_serializes_proxy_params_when_present() {
+fn hit_region_serializes_typed_proxy_schema_and_fields() {
+    let declaration = RichTextObjectProxyDeclaration {
+        struct_name: "KeywordHit".to_owned(),
+        attribute: "text_proxy".to_owned(),
+    };
     let region = AgentHitRegion {
         kind: AgentHitRegionKind::TextObjectProxy,
         bbox: AgentBBox {
@@ -696,19 +733,29 @@ fn hit_region_serializes_proxy_params_when_present() {
         range: RichTextRange::new(0, 3),
         proxy_id: Some("hotspot".to_owned()),
         proxy_type: Some("KeywordHit".to_owned()),
-        proxy_declaration: Some(RichTextObjectProxyDeclaration {
-            struct_name: "KeywordHit".to_owned(),
-            attribute: "text_proxy".to_owned(),
+        proxy_declaration: Some(declaration.clone()),
+        proxy_schema: Some(RichTextTextProxySchema {
+            id: "KeywordHit".to_owned(),
+            declaration,
+            fields: vec![RichTextTextProxyFieldSchema {
+                id: 0,
+                name: "channel".to_owned(),
+                kind: RichTextTextProxyFieldKind::Text,
+                optional: false,
+                default: None,
+            }],
         }),
+        proxy_fields: vec![RichTextTextProxyField {
+            id: 0,
+            name: "channel".to_owned(),
+            value: RichTextTextProxyScalar::Text {
+                value: "choice".to_owned(),
+            },
+        }],
         proxy_role: Some("keyword".to_owned()),
         proxy_layer: None,
         depth: Some(4000),
-        proxy_params: BTreeMap::from([(
-            "channel".to_owned(),
-            RichTextParam::Selector {
-                value: "choice".to_owned(),
-            },
-        )]),
+        proxy_params: BTreeMap::new(),
     };
 
     let json = serde_json::to_value(&region).expect("hit region serializes");
@@ -716,7 +763,10 @@ fn hit_region_serializes_proxy_params_when_present() {
     assert_eq!(json["kind"], "text_object_proxy");
     assert_eq!(json["proxy_declaration"]["struct_name"], "KeywordHit");
     assert_eq!(json["proxy_declaration"]["attribute"], "text_proxy");
-    assert_eq!(json["proxy_params"]["channel"]["value"], "choice");
+    assert_eq!(json["proxy_schema"]["fields"][0]["name"], "channel");
+    assert_eq!(json["proxy_fields"][0]["name"], "channel");
+    assert_eq!(json["proxy_fields"][0]["value"]["value"], "choice");
+    assert!(json.get("proxy_params").is_none());
 }
 
 #[test]
@@ -762,6 +812,8 @@ fn hit_test_hit_serializes_capture_refs() {
                 struct_name: "KeywordHit".to_owned(),
                 attribute: "text_proxy".to_owned(),
             }),
+            proxy_schema: None,
+            proxy_fields: Vec::new(),
             proxy_role: Some("keyword".to_owned()),
             proxy_layer: Some("view".to_owned()),
             depth: Some(4000),
@@ -811,7 +863,7 @@ fn image_resource_metadata_preserves_observed_object_ref() {
         image_ref: None,
     });
 
-    let resource = report.image_resource(&image, &[255; 48]);
+    let resource = report.image_resource(&image, test_binary_resource_body("////"));
 
     assert_eq!(
         resource
@@ -985,7 +1037,9 @@ fn test_observed_image_content() -> AgentObservedImageContent {
             layer: Some("hud.hit".to_owned()),
             depth: Some(2600),
             declaration: None,
+            schema: None,
             hit_test: true,
+            fields: Vec::new(),
             params: BTreeMap::from([(
                 "param.channel".to_owned(),
                 RichTextParam::Text {
@@ -1009,7 +1063,7 @@ fn image_resource_metadata_preserves_capture_diagnostics() {
         message: "native rich-text missing_shader: ghost_glow".to_owned(),
     }];
 
-    let resource = report.image_resource(&image, &[255; 48]);
+    let resource = report.image_resource(&image, test_binary_resource_body("////"));
     let metadata = resource.image.expect("image metadata is attached");
 
     assert_eq!(metadata.diagnostics, image.diagnostics);
@@ -1071,7 +1125,7 @@ fn capture_metadata_serializes_selected_object_image_resource() {
         },
     ));
 
-    let resource = report.image_resource(&image, &[255; 48]);
+    let resource = report.image_resource(&image, test_binary_resource_body("////"));
     let json = serde_json::to_value(&resource).expect("resource serializes");
 
     assert_eq!(
@@ -1134,6 +1188,10 @@ fn capture_metadata_serializes_selected_layer_capture_ref() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one closed MCP observation-resource projection matrix is easier to audit together"
+)]
 fn observation_report_builds_mcp_style_resources() {
     let report = test_mcp_observation_report();
 
@@ -1145,8 +1203,11 @@ fn observation_report_builds_mcp_style_resources() {
         .presentation_tree_resource()
         .expect("presentation tree serializes");
     let overlay = report.overlay_svg_resource().expect("overlay exists");
-    let image = report.image_resource(&report.images[0], b"\x89PNG\r\n\x1a\n");
-    let raw_image = report.image_resource(&test_raw_mask_image_resource(), &[255; 48]);
+    let image = report.image_resource(&report.images[0], test_binary_resource_body("iVBORw0KGgo="));
+    let raw_image = report.image_resource(
+        &test_raw_mask_image_resource(),
+        test_binary_resource_body("////"),
+    );
     let signals = report.signals_resource().expect("signals serialize");
 
     assert_eq!(latest.uri, "arcweft://session/cli/observation/latest.json");

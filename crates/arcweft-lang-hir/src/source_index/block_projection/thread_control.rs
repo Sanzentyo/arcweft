@@ -40,7 +40,7 @@ use crate::scope::{HirLocalKind, HirPatternBindingPolicy, HirScopeKind, HirScope
 use crate::slot::{HirOrigin, SlotSnapshot};
 use crate::source_index::control_projection::canonical_pattern_locals;
 use crate::source_index::pattern_projection::{BindingLocalValidation, binding_locals_match};
-use crate::source_index::{HirExprSourceRole, HirSourceSite};
+use crate::source_index::{HirExprSourceRole, HirSourceSite, HirStmtRecoveryOperandSlot};
 use crate::stmt::{
     HirAwaitPropagation, HirAwaitWithBranchKind, HirContextualStmtBody, HirForStmt, HirLoopStmt,
     HirSelectBindingLocal, HirSelectBranchHead, HirSelectStmt, HirStatementContext,
@@ -54,7 +54,11 @@ struct ThreadBodyGraphEvidence {
 
 /// Re-derives a top-level Flow/Thread no-tail body from its accepted attached
 /// children. Nested bodies use the same private graph validator below.
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::option_option,
+    clippy::too_many_arguments,
+    reason = "the root Thread validator returns mismatch, clean body, or one exact typed body issue"
+)]
 pub(in crate::source_index) fn root_thread_body_graph_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -228,8 +232,7 @@ fn while_evidence(
         statement.condition(),
         attached.condition(),
         outer_scope,
-        0,
-        HirExprSourceRole::Condition,
+        |insertion| HirStmtRecoveryOperandSlot::WhileCondition { insertion },
     )?;
     let mut generations = BTreeMap::new();
     let body = nested_body_evidence(
@@ -251,7 +254,10 @@ fn while_evidence(
         &[statement.body().scope()],
     )?;
     exact_statement_scope_inventory(slots, arenas, owner, &[statement.body().scope()])?;
-    let expected_synthetics = missing_operand_key(attached.condition(), 0, statement.condition())
+    let expected_synthetics =
+        missing_operand_key(attached.condition(), statement.condition(), |insertion| {
+            HirStmtRecoveryOperandSlot::WhileCondition { insertion }
+        })
         .into_iter()
         .collect::<Vec<_>>();
     exact_statement_synthetic_expressions(slots, arenas, owner, &expected_synthetics)?;
@@ -284,8 +290,7 @@ fn while_let_evidence(
         statement.scrutinee(),
         attached.scrutinee(),
         outer_scope,
-        0,
-        HirExprSourceRole::Scrutinee,
+        |insertion| HirStmtRecoveryOperandSlot::WhileLetScrutinee { insertion },
     )?;
     let mut generations = BTreeMap::new();
     let pattern_poisoned = pattern_binding_matches(
@@ -307,8 +312,7 @@ fn while_let_evidence(
             guard,
             attached,
             body_scope,
-            1,
-            HirExprSourceRole::Guard,
+            |insertion| HirStmtRecoveryOperandSlot::WhileLetGuard { insertion },
         )?,
         _ => return None,
     };
@@ -326,11 +330,15 @@ fn while_let_evidence(
     exact_owned_child_scopes(slots, arenas, outer_scope, owner, &[body_scope])?;
     exact_statement_scope_inventory(slots, arenas, owner, &[body_scope])?;
     let mut expected_synthetics =
-        missing_operand_key(attached.scrutinee(), 0, statement.scrutinee())
-            .into_iter()
-            .collect::<Vec<_>>();
+        missing_operand_key(attached.scrutinee(), statement.scrutinee(), |insertion| {
+            HirStmtRecoveryOperandSlot::WhileLetScrutinee { insertion }
+        })
+        .into_iter()
+        .collect::<Vec<_>>();
     if let (Some(attached), Some(guard)) = (attached.guard(), statement.guard())
-        && let Some(expected) = missing_operand_key(attached, 1, guard)
+        && let Some(expected) = missing_operand_key(attached, guard, |insertion| {
+            HirStmtRecoveryOperandSlot::WhileLetGuard { insertion }
+        })
     {
         expected_synthetics.push(expected);
     }
@@ -361,8 +369,7 @@ fn for_evidence(
         statement.source(),
         attached.source(),
         outer_scope,
-        0,
-        HirExprSourceRole::Scrutinee,
+        |insertion| HirStmtRecoveryOperandSlot::ForSource { insertion },
     )?;
     let iterator_poisoned = for_synthetic_matches(
         parsed,
@@ -422,7 +429,11 @@ fn for_evidence(
         (SyntheticRole::ForIterator, 0, statement.iterator()),
         (SyntheticRole::ForNextValue, 0, statement.next_value()),
     ];
-    if let Some(expected) = missing_operand_key(attached.source(), 0, statement.source()) {
+    if let Some(expected) =
+        missing_operand_key(attached.source(), statement.source(), |insertion| {
+            HirStmtRecoveryOperandSlot::ForSource { insertion }
+        })
+    {
         expected_synthetics.push(expected);
     }
     exact_statement_synthetic_expressions(slots, arenas, owner, &expected_synthetics)?;
@@ -512,7 +523,12 @@ fn select_evidence(
                 ..
             },
         ) = (attached_branch, branch.head())
-            && let Some(expected) = missing_operand_key(source, ordinal, *semantic_source)
+            && let Some(expected) = missing_operand_key(source, *semantic_source, |insertion| {
+                HirStmtRecoveryOperandSlot::SelectBranchSource {
+                    insertion,
+                    branch: ordinal,
+                }
+            })
         {
             expected_synthetics.push(expected);
         }
@@ -528,7 +544,11 @@ fn select_evidence(
     Some(empty_statement(recovery))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::option_option,
+    clippy::too_many_arguments,
+    reason = "the Select branch validator returns mismatch, clean branch, or one exact typed branch issue"
+)]
 fn select_branch_evidence(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -571,8 +591,10 @@ fn select_branch_evidence(
                 *semantic_source,
                 source,
                 select_scope,
-                ordinal,
-                HirExprSourceRole::Operand,
+                |insertion| HirStmtRecoveryOperandSlot::SelectBranchSource {
+                    insertion,
+                    branch: ordinal,
+                },
             )?;
             (
                 prefix,
@@ -661,8 +683,7 @@ fn await_with_evidence(
         statement.operand(),
         attached.operand(),
         outer_scope,
-        0,
-        HirExprSourceRole::Operand,
+        |insertion| HirStmtRecoveryOperandSlot::AwaitWithOperand { insertion },
     )?;
     let propagation_matches = matches!(
         (attached.propagation(), statement.propagation()),
@@ -687,7 +708,10 @@ fn await_with_evidence(
         .collect::<Vec<_>>();
     exact_owned_child_scopes(slots, arenas, outer_scope, owner, &expected_branch_scopes)?;
     exact_statement_scope_inventory(slots, arenas, owner, &expected_branch_scopes)?;
-    let expected_synthetics = missing_operand_key(attached.operand(), 0, statement.operand())
+    let expected_synthetics =
+        missing_operand_key(attached.operand(), statement.operand(), |insertion| {
+            HirStmtRecoveryOperandSlot::AwaitWithOperand { insertion }
+        })
         .into_iter()
         .collect::<Vec<_>>();
     exact_statement_synthetic_expressions(slots, arenas, owner, &expected_synthetics)?;
@@ -744,7 +768,11 @@ fn await_with_evidence(
     Some(empty_statement(recovery))
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::option_option,
+    clippy::too_many_arguments,
+    reason = "the Await branch validator returns mismatch, clean branch, or one exact typed branch issue"
+)]
 fn await_branch_evidence(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -870,6 +898,32 @@ fn nested_body_evidence(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+pub(super) fn nested_match_arm_body_is_poisoned(
+    parsed: &ParsedSource,
+    slots: &SlotSnapshot,
+    arenas: &BlockValidationArenas<'_>,
+    owner: StmtId,
+    parent_scope: ScopeId,
+    semantic: &HirContextualStmtBody,
+    attached: &AttachedRequiredNestedThreadFlowBody,
+    prefix_locals: &[LocalId],
+    generations: &mut BTreeMap<HirName, LocalGeneration>,
+) -> Option<bool> {
+    nested_body_evidence(
+        parsed,
+        slots,
+        arenas,
+        owner,
+        parent_scope,
+        semantic,
+        attached,
+        prefix_locals,
+        generations,
+    )
+    .map(|evidence| evidence.recovery.is_some())
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn thread_body_graph_evidence(
     parsed: &ParsedSource,
@@ -986,7 +1040,6 @@ fn thread_flow_item_evidence(
         HirStmtKind::Choice { .. }
         | HirStmtKind::If(_)
         | HirStmtKind::IfLet(_)
-        | HirStmtKind::Match(_)
         | HirStmtKind::SourceLocale(_)
         | HirStmtKind::Scope(_)
         | HirStmtKind::Include(_)
@@ -1010,7 +1063,6 @@ fn thread_flow_item_evidence(
             HirStmtKind::Choice { .. }
                 | HirStmtKind::If(_)
                 | HirStmtKind::IfLet(_)
-                | HirStmtKind::Match(_)
                 | HirStmtKind::SourceLocale(_)
                 | HirStmtKind::Scope(_)
                 | HirStmtKind::Include(_)
@@ -1159,8 +1211,7 @@ fn required_expression_matches(
     owner: ExprId,
     attached: &RequiredStatementExpressionNode,
     scope: ScopeId,
-    ordinal: u32,
-    role: HirExprSourceRole,
+    missing_slot: impl FnOnce(usize) -> HirStmtRecoveryOperandSlot,
 ) -> Option<bool> {
     match attached {
         RequiredStatementExpressionNode::Expression(attached) => {
@@ -1181,9 +1232,7 @@ fn required_expression_matches(
             statement,
             owner,
             scope,
-            missing.range().start(),
-            ordinal,
-            role,
+            missing_slot(missing.range().start()),
         )
         .then_some(true),
     }
@@ -1408,14 +1457,14 @@ fn exact_statement_scope_inventory(
 
 fn missing_operand_key(
     attached: &RequiredStatementExpressionNode,
-    ordinal: u32,
     owner: ExprId,
+    missing_slot: impl FnOnce(usize) -> HirStmtRecoveryOperandSlot,
 ) -> Option<(SyntheticRole, u32, ExprId)> {
-    matches!(attached, RequiredStatementExpressionNode::Missing(_)).then_some((
-        SyntheticRole::RecoveryOperand,
-        ordinal,
-        owner,
-    ))
+    let RequiredStatementExpressionNode::Missing(missing) = attached else {
+        return None;
+    };
+    let slot = missing_slot(missing.range().start());
+    Some((SyntheticRole::RecoveryOperand, slot.ordinal()?, owner))
 }
 
 fn exact_statement_synthetic_expressions(
@@ -1460,12 +1509,21 @@ const fn thread_child(role: HirThreadStmtChildRole) -> HirStmtRecoveryIssue {
     HirStmtRecoveryIssue::Thread(HirThreadStmtRecoveryIssue::RecoveredChild { role })
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the projection consumes one closed Thread issue before mapping it to its statement-owner role"
+)]
 fn nested_body_recovery(
     recovery: Option<HirThreadIssue>,
     role: HirThreadStmtBodyRole,
 ) -> Option<HirStmtRecoveryIssue> {
     match recovery {
-        None => None,
+        None
+        | Some(
+            HirThreadIssue::InvalidName
+            | HirThreadIssue::DetachedBorrowedCapture { .. }
+            | HirThreadIssue::DetachedEphemeralRegistryAccess,
+        ) => None,
         Some(HirThreadIssue::MissingBody) => Some(HirStmtRecoveryIssue::Thread(
             HirThreadStmtRecoveryIssue::MissingBody { role },
         )),
@@ -1477,11 +1535,6 @@ fn nested_body_recovery(
                 role: HirStmtChildRole::BodyStatement { ordinal },
             })
         }
-        Some(
-            HirThreadIssue::InvalidName
-            | HirThreadIssue::DetachedBorrowedCapture { .. }
-            | HirThreadIssue::DetachedEphemeralRegistryAccess,
-        ) => None,
     }
 }
 
@@ -1507,13 +1560,22 @@ fn await_branch_body_recovery(
     )
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the projection consumes one closed Thread issue before assigning its branch-specific statement role"
+)]
 fn branch_body_recovery(
     recovery: Option<HirThreadIssue>,
     body_role: HirThreadStmtBodyRole,
     child_role: impl FnOnce(u32) -> HirThreadStmtChildRole,
 ) -> Option<HirStmtRecoveryIssue> {
     match recovery {
-        None => None,
+        None
+        | Some(
+            HirThreadIssue::InvalidName
+            | HirThreadIssue::DetachedBorrowedCapture { .. }
+            | HirThreadIssue::DetachedEphemeralRegistryAccess,
+        ) => None,
         Some(HirThreadIssue::MissingBody) => Some(HirStmtRecoveryIssue::Thread(
             HirThreadStmtRecoveryIssue::MissingBody { role: body_role },
         )),
@@ -1523,10 +1585,5 @@ fn branch_body_recovery(
         Some(HirThreadIssue::RecoveredBodyChild { ordinal }) => {
             Some(thread_child(child_role(ordinal)))
         }
-        Some(
-            HirThreadIssue::InvalidName
-            | HirThreadIssue::DetachedBorrowedCapture { .. }
-            | HirThreadIssue::DetachedEphemeralRegistryAccess,
-        ) => None,
     }
 }

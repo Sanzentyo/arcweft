@@ -3,10 +3,12 @@ use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{
     BundleLaunchKind, BundleManifest, BundleRuntimeSummary, BundleVirtualFileSpace,
 };
+use arcweft_core::awbc::product_step::AwbcProductStepBuildError;
 use arcweft_core::awbc::schema::{
-    AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
+    AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryId, AwbcEntryKind,
+    AwbcEntryTarget, AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction,
+    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcResumePoint,
+    AwbcResumePointId, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
     AwbcTableRange, AwbcTerminator, AwbcTrapCode,
 };
 use arcweft_core::bytecode::{
@@ -18,35 +20,26 @@ use arcweft_core::entry::{
     RuntimeNominalRole, RuntimeNominalTypeId, RuntimeStatefulEntryRoles, RuntimeTypeSchema,
     TypeLayoutHash as CoreTypeLayoutHash,
 };
+use arcweft_core::executor::{
+    ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
+};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget,
 };
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_core::step::{RuntimeStepInput, RuntimeStepOptions, RuntimeStepStopReason};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    test_dialogue_revision_with_view_byte(0x5a)
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
 }
 
-fn test_dialogue_revision_with_view_byte(view_byte: u8) -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-driver-swap-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-driver-swap-test").expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([view_byte; 32])
-            .expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
+fn test_dialogue_content() -> BundleDigest {
+    test_dialogue_content_with_byte(0x5a)
+}
+
+fn test_dialogue_content_with_byte(byte: u8) -> BundleDigest {
+    BundleDigest::from_bytes([byte; 32])
 }
 
 fn digest(value: &[u8]) -> BundleDigest {
@@ -116,7 +109,7 @@ fn generation(id: u64, code: &'static [u8], content: &'static [u8]) -> Arc<Progr
     Arc::new(ProgramGeneration {
         id: GenerationId(id),
         content_root: digest(content),
-        dialogue_revision: test_dialogue_revision(),
+        dialogue_content: test_dialogue_content(),
         bytecode_abi: BYTECODE_ABI_VERSION,
         code_slots: BTreeMap::from([(
             CodeSlotId("main".to_owned()),
@@ -155,10 +148,10 @@ fn content_only_swap_does_not_require_quiescence_semantically() {
 }
 
 #[test]
-fn dialogue_profile_revision_change_requires_presentation_reset_boundary() {
+fn dialogue_content_change_requires_presentation_reset_boundary() {
     let active = generation(1, b"code", b"content");
     let mut next = (*generation(2, b"code", b"content")).clone();
-    next.dialogue_revision = test_dialogue_revision_with_view_byte(0x6b);
+    next.dialogue_content = test_dialogue_content_with_byte(0x6b);
 
     let compatibility = classify_swap(&active, &next);
 
@@ -272,7 +265,7 @@ fn hot_007_verified_executable_generation_populates_the_selected_root_layout() {
         &bytecode,
         digest(b"content"),
         digest(b"adapter"),
-        test_dialogue_revision(),
+        test_dialogue_content(),
     )
     .expect("verified executable generation");
 
@@ -548,6 +541,188 @@ fn generation_from_bundle_uses_product_awbc_function_identity() {
 }
 
 #[test]
+fn product_awbc_code_slots_keep_same_label_flow_declarations_distinct() {
+    let first = FlowRuntimeId::from_checked_declaration_digest([0x31; 32], "flow.main")
+        .expect("first checked Flow identity");
+    let second = FlowRuntimeId::from_checked_declaration_digest([0x32; 32], "flow.main")
+        .expect("second checked Flow identity");
+    let mut program = test_awbc_program("revision-a");
+    program.flow_bindings[0].flow = first.clone();
+    let mut second_function = program.functions[0].clone();
+    second_function.blocks = AwbcTableRange::new(1, 1);
+    second_function.entry_block = AwbcBlockId(1);
+    program.functions.push(second_function);
+    let mut second_block = program.blocks[0].clone();
+    second_block.owner = AwbcFunctionId(1);
+    program.blocks.push(second_block);
+    program.flow_bindings.push(AwbcFlowBinding {
+        flow: second.clone(),
+        function: AwbcFunctionId(1),
+    });
+
+    let generation = ProgramGeneration::from_bundle(
+        GenerationId(1),
+        &test_bundle(BytecodeProgram::default(), b"asset").with_product_awbc(program),
+    )
+    .expect("same-label checked Flow identities remain valid product AWBC");
+
+    assert!(generation.code_slots.contains_key(&CodeSlotId(format!(
+        "awbc:flow:{}",
+        first.canonical_label()
+    ))));
+    assert!(generation.code_slots.contains_key(&CodeSlotId(format!(
+        "awbc:flow:{}",
+        second.canonical_label()
+    ))));
+    assert_eq!(
+        generation
+            .code_slots
+            .keys()
+            .filter(|slot| slot.0.starts_with("awbc:flow:"))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn same_label_flow_body_change_preserves_the_other_canonical_code_slot() {
+    let (active_program, first, second) = same_label_flow_program(AwbcTrapCode::ExplicitPanic);
+    let (next_program, next_first, next_second) =
+        same_label_flow_program(AwbcTrapCode::InternalInvariant);
+    assert_eq!(next_first, first);
+    assert_eq!(next_second, second);
+
+    let active = ProgramGeneration::from_bundle(
+        GenerationId(1),
+        &test_bundle(BytecodeProgram::default(), b"asset").with_product_awbc(active_program),
+    )
+    .expect("active same-label Flow generation");
+    let next = ProgramGeneration::from_bundle(
+        GenerationId(2),
+        &test_bundle(BytecodeProgram::default(), b"asset").with_product_awbc(next_program),
+    )
+    .expect("next same-label Flow generation");
+    let first_slot = CodeSlotId(format!("awbc:flow:{}", first.canonical_label()));
+    let second_slot = CodeSlotId(format!("awbc:flow:{}", second.canonical_label()));
+
+    assert_eq!(
+        active.code_slots.get(&first_slot),
+        next.code_slots.get(&first_slot),
+        "changing Flow B must leave Flow A's complete canonical slot unchanged"
+    );
+    let active_second = active
+        .code_slots
+        .get(&second_slot)
+        .expect("active Flow B canonical slot");
+    let next_second = next
+        .code_slots
+        .get(&second_slot)
+        .expect("next Flow B canonical slot");
+    assert_eq!(active_second.signature, next_second.signature);
+    assert_ne!(active_second.code_digest, next_second.code_digest);
+
+    let changed_flow_slots = active
+        .code_slots
+        .iter()
+        .filter_map(|(slot, active_code)| {
+            (slot.0.starts_with("awbc:flow:")
+                && next
+                    .code_slots
+                    .get(slot)
+                    .is_some_and(|next_code| next_code.code_digest != active_code.code_digest))
+            .then_some(slot.clone())
+        })
+        .collect::<BTreeSet<_>>();
+    assert_eq!(changed_flow_slots, BTreeSet::from([second_slot]));
+    assert_eq!(
+        classify_swap(&active, &next),
+        SwapCompatibility::CodeCompatible
+    );
+}
+
+#[test]
+fn live_same_label_flow_binding_exchange_preserves_generation_and_state_on_rejection() {
+    let (active_program, first, second) = live_same_label_flow_program();
+    let active_generation = Arc::new(
+        ProgramGeneration::from_bundle(
+            GenerationId(1),
+            &test_bundle(BytecodeProgram::default(), b"asset")
+                .with_product_awbc(active_program.clone()),
+        )
+        .expect("active live same-label Flow generation"),
+    );
+    let session = SwapSession::new(Arc::clone(&active_generation));
+    let old_generation = Arc::clone(session.active());
+    let mut executor =
+        ArcweftRuntimeExecutor::from_awbc_product(active_program.clone(), AwbcEntryId(0))
+            .expect("live same-label Flow executor");
+
+    let step = RuntimeExecutor::step(
+        &mut executor,
+        RuntimeStepInput::default(),
+        RuntimeStepOptions::default(),
+    );
+    assert_eq!(step.stop_reason, RuntimeStepStopReason::OneOp);
+    let old_state = executor.snapshot().expect("live Flow executor snapshot");
+    let ArcweftRuntimeExecutorSnapshot::AwbcProduct(product_state) = &old_state;
+    assert_eq!(
+        product_state.live_flow_bindings,
+        vec![
+            AwbcFlowBinding {
+                flow: first.clone(),
+                function: AwbcFunctionId(0),
+            },
+            AwbcFlowBinding {
+                flow: second.clone(),
+                function: AwbcFunctionId(1),
+            },
+        ],
+        "the suspended caller and active callee must both retain exact Flow bindings"
+    );
+
+    let mut replacement_program = active_program.clone();
+    replacement_program.flow_bindings[0].function = AwbcFunctionId(1);
+    replacement_program.flow_bindings[1].function = AwbcFunctionId(0);
+    let next_generation = Arc::new(
+        ProgramGeneration::from_bundle(
+            GenerationId(2),
+            &test_bundle(BytecodeProgram::default(), b"asset")
+                .with_product_awbc(replacement_program.clone()),
+        )
+        .expect("function-exchanged same-label Flow generation remains structurally valid"),
+    );
+    assert_eq!(
+        classify_swap(session.active(), &next_generation),
+        SwapCompatibility::CodeCompatible,
+        "matching public labels and interfaces make the code shape compatible before live-state validation"
+    );
+
+    let error = executor
+        .replace_product_awbc_program(replacement_program)
+        .expect_err("live exact Flow bindings must reject a function exchange");
+    assert!(matches!(
+        error,
+        AwbcProductStepBuildError::RestoreSnapshot { ref message }
+            if message.contains("no longer owns AWBC function 0")
+    ));
+    assert_eq!(
+        executor
+            .snapshot()
+            .expect("snapshot after rejected replacement"),
+        old_state
+    );
+    assert_eq!(
+        executor.product_awbc_program(),
+        Some(&active_program),
+        "failed replacement must not publish the exchanged program"
+    );
+    assert!(Arc::ptr_eq(session.active(), &old_generation));
+    assert_eq!(session.active_generation_id(), GenerationId(1));
+    assert_eq!(session.phase(), SwapPhase::Idle);
+    assert!(session.retired().is_empty());
+}
+
+#[test]
 fn generation_from_bundle_rejects_unverified_bytecode() {
     let mut bytecode = test_bytecode(Vec::new());
     bytecode.abi_version = BYTECODE_ABI_VERSION + 1;
@@ -572,6 +747,7 @@ fn test_bundle(bytecode: BytecodeProgram, asset_bytes: &[u8]) -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: bytecode
                     .entries
                     .first()
@@ -588,7 +764,7 @@ fn test_bundle(bytecode: BytecodeProgram, asset_bytes: &[u8]) -> ArcweftBundle {
         },
         source_map("test.arcw", "flow main { return \"ok\" }"),
         bytecode,
-        LineDisplayCatalog::new(test_dialogue_revision()),
+        DialogueContentCatalog::new(),
     )
     .expect("test bundle source map accepts the generated standard Style source")
     .with_virtual_files([BundleVirtualFile {
@@ -634,6 +810,11 @@ fn test_awbc_program(revision: &str) -> AwbcProgram {
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
         }],
+        flow_bindings: vec![AwbcFlowBinding {
+            flow: FlowRuntimeId::from_checked_declaration_digest([0x30; 32], "flow.main")
+                .expect("test checked Flow identity"),
+            function: AwbcFunctionId(0),
+        }],
         blocks: vec![AwbcBlock {
             owner: AwbcFunctionId(0),
             instructions: AwbcTableRange::new(0, 0),
@@ -655,6 +836,84 @@ fn test_awbc_program(revision: &str) -> AwbcProgram {
         }],
         ..AwbcProgram::default()
     }
+}
+
+fn same_label_flow_program(
+    second_trap: AwbcTrapCode,
+) -> (AwbcProgram, FlowRuntimeId, FlowRuntimeId) {
+    let first = FlowRuntimeId::from_checked_declaration_digest([0x31; 32], "flow.main")
+        .expect("first checked Flow identity");
+    let second = FlowRuntimeId::from_checked_declaration_digest([0x32; 32], "flow.main")
+        .expect("second checked Flow identity");
+    let mut program = test_awbc_program("same-label-flow");
+    program.flow_bindings[0].flow = first.clone();
+    program.blocks[0].terminator = AwbcTerminator::Trap {
+        code: AwbcTrapCode::ExplicitPanic,
+        message: None,
+    };
+
+    let mut second_function = program.functions[0].clone();
+    second_function.blocks = AwbcTableRange::new(1, 1);
+    second_function.entry_block = AwbcBlockId(1);
+    program.functions.push(second_function);
+    program.blocks.push(AwbcBlock {
+        owner: AwbcFunctionId(1),
+        instructions: AwbcTableRange::new(0, 0),
+        terminator: AwbcTerminator::Trap {
+            code: second_trap,
+            message: None,
+        },
+        safe_point: AwbcSafePointKind::FlowEntry,
+        source_map: None,
+    });
+    program.flow_bindings.push(AwbcFlowBinding {
+        flow: second.clone(),
+        function: AwbcFunctionId(1),
+    });
+    (program, first, second)
+}
+
+fn live_same_label_flow_program() -> (AwbcProgram, FlowRuntimeId, FlowRuntimeId) {
+    let (mut program, first, second) = same_label_flow_program(AwbcTrapCode::InternalInvariant);
+    program.functions[0].blocks = AwbcTableRange::new(0, 2);
+    program.functions[0].entry_block = AwbcBlockId(0);
+    program.functions[1].blocks = AwbcTableRange::new(2, 1);
+    program.functions[1].entry_block = AwbcBlockId(2);
+    program.resume_points = vec![AwbcResumePoint {
+        function: AwbcFunctionId(0),
+        block: AwbcBlockId(1),
+        frame_layout: AwbcFrameLayoutId(0),
+        kind: AwbcSafePointKind::CallableBoundary,
+    }];
+    program.blocks = vec![
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::CallFunction {
+                function: AwbcFunctionId(1),
+                args: Vec::new(),
+                dst: None,
+                resume: AwbcResumePointId(0),
+            },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(0),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::CallableBoundary,
+            source_map: None,
+        },
+        AwbcBlock {
+            owner: AwbcFunctionId(1),
+            instructions: AwbcTableRange::new(0, 0),
+            terminator: AwbcTerminator::Return { value: None },
+            safe_point: AwbcSafePointKind::FlowEntry,
+            source_map: None,
+        },
+    ];
+    (program, first, second)
 }
 
 fn test_bytecode(instructions: Vec<BytecodeInstruction>) -> BytecodeProgram {

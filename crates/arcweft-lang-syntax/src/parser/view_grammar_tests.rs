@@ -1,6 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -14,7 +14,7 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+    parse_document(&document(source), crate::parser::ParseOptions::default())
         .expect("View grammar builds")
 }
 
@@ -45,11 +45,11 @@ fn source_range(source: &str, fragment: &str) -> SourceRange {
 #[test]
 fn canonical_view_owns_fixed_signature_exports_fragment_and_typed_values() {
     let source = concat!(
-        "pub view MainDialogue(model: DialogueView) {\n",
+        "pub view MainDialogue(dialogue: DialogueView) {\n",
         "    export part panel as dialogue_panel\n",
         "    Panel {\n",
-        "        Text(model.character.display_name)\n",
-        "        RichText(model.content)\n",
+        "        Text(dialogue.character.display_name)\n",
+        "        RichText(dialogue.content)\n",
         "        Style { opacity = 0.5 }\n",
         "    }.part(panel)\n",
         "}\n",
@@ -192,11 +192,13 @@ fn malformed_export_retains_typed_export_recovery_children() {
     assert!(
         entries(&built, SyntaxKind::ViewExportDeclaration)[0]
             .view_export_projection()
-            .is_some_and(|projection| projection.has_recovery())
+            .is_some_and(
+                super::super::grammar::view_projection::PendingViewExportProjection::has_recovery
+            )
     );
     for code in [
         "syntax.view.export_missing_part",
-        "syntax.view.export_missing_as",
+        "view::export_part_missing_as",
         "syntax.view.export_missing_public",
     ] {
         assert!(

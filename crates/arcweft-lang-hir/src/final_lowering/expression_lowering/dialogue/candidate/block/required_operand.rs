@@ -4,7 +4,7 @@ use arcweft_lang_syntax::attachment::AttachedCandidateStatement;
 use arcweft_lang_syntax::grammar::SyntaxKind;
 
 use crate::final_lowering::StagedHirModuleTransaction;
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::HirExprSourceRole;
 use crate::stmt::{HirSelectStmt, HirStmtChildRole, HirStmtKind, HirStmtRecoveryIssue};
 

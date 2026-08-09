@@ -2,10 +2,10 @@
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_visibility;
 use super::lexer::LexToken;
-use super::path::emit_path;
+use super::path::{PathSeparatorGrammar, emit_path, path_component};
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter, expected,
     find_matching_close, first_significant, token_count, token_text, trimmed_end,
@@ -14,8 +14,8 @@ use crate::grammar::budget::GrammarBudget;
 use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::grammar::source_projection::{
-    PendingPathProjection, PendingPathRoot, PendingPathSegmentKind, PendingUseAlias,
-    PendingUseGroupMember, PendingUseProjection, PendingUseTreeKind,
+    PendingPathProjection, PendingPathRoot, PendingUseAlias, PendingUseGroupMember,
+    PendingUseProjection, PendingUseTreeKind,
 };
 
 pub(super) fn emit_declaration(
@@ -30,7 +30,7 @@ pub(super) fn emit_declaration(
         kind,
         SyntaxKind::ModuleDeclaration | SyntaxKind::UseDeclaration
     ));
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     let use_owner = if kind == SyntaxKind::UseDeclaration {
         parser.start_projected_owner(kind, role)
     } else {
@@ -48,7 +48,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_module(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_module(parser: &mut DocumentParser<'_, '_>) {
     if parser.at("pub") {
         let start = parser.current_offset();
         emit_visibility(parser);
@@ -68,6 +68,7 @@ fn emit_module(parser: &mut ShadowDocumentParser<'_, '_>) {
         parser,
         end,
         SyntaxRole::Target,
+        PathSeparatorGrammar::DottedOrQualified,
         "syntax.module.missing_path",
         "module declaration requires a module path",
     );
@@ -79,7 +80,7 @@ fn emit_module(parser: &mut ShadowDocumentParser<'_, '_>) {
     );
 }
 
-fn emit_use(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingUseProjection {
+fn emit_use(parser: &mut DocumentParser<'_, '_>) -> PendingUseProjection {
     emit_visibility(parser);
     parser.bump_trivia();
     if parser.at("use") {
@@ -105,7 +106,7 @@ fn emit_use(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingUseProjection {
 }
 
 fn emit_grouped_use(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     open: usize,
     end: usize,
 ) -> PendingUseProjection {
@@ -114,6 +115,7 @@ fn emit_grouped_use(
         parser,
         path_end,
         SyntaxRole::Target,
+        PathSeparatorGrammar::ExternalProjectSymbols,
         "syntax.use.missing_tree",
         "grouped use declaration requires a module path",
     );
@@ -185,7 +187,7 @@ fn emit_grouped_use(
 }
 
 fn emit_group_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     name_ordinal: &mut u32,
     alias_ordinal: &mut u16,
@@ -212,7 +214,12 @@ fn emit_group_member(
         };
     };
     bump_until(parser, name);
-    if !is_path_segment(parser, name) {
+    let Some(component) = path_component(
+        parser,
+        name,
+        significant_end,
+        PathSeparatorGrammar::ExternalProjectSymbols,
+    ) else {
         let start = parser.current_offset();
         let recovery = *recovery_ordinal;
         *recovery_ordinal = recovery
@@ -230,20 +237,15 @@ fn emit_group_member(
             source: SourceRange::new(source_start, parser.current_offset()),
             recovery_ordinal: recovery,
         };
-    }
+    };
 
     let member_name = *name_ordinal;
-    let member_name_kind = match parser.current_kind() {
-        Some(SyntaxKind::IdentifierToken) => PendingPathSegmentKind::Identifier,
-        Some(SyntaxKind::KeywordToken) => PendingPathSegmentKind::Keyword,
-        Some(SyntaxKind::LifetimeToken) => PendingPathSegmentKind::Lifetime,
-        _ => unreachable!("group member path token was validated above"),
-    };
+    let member_name_kind = component.kind();
     *name_ordinal = member_name
         .checked_add(1)
         .expect("grouped-use member budget bounds name ordinals");
     parser.start(SyntaxKind::NameReference, SyntaxRole::Element(member_name));
-    parser.bump();
+    bump_until(parser, component.end());
     parser.finish();
     parser.bump_trivia();
     let member_alias = parser.at("as").then(|| {
@@ -281,10 +283,7 @@ fn emit_group_member(
     }
 }
 
-fn emit_path_or_glob_use(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-) -> PendingUseProjection {
+fn emit_path_or_glob_use(parser: &mut DocumentParser<'_, '_>, end: usize) -> PendingUseProjection {
     let alias = top_level_token(parser, parser.cursor(), end, "as");
     let path_or_glob_end = alias.unwrap_or(end);
     let star = last_significant(parser, parser.cursor(), path_or_glob_end)
@@ -296,6 +295,7 @@ fn emit_path_or_glob_use(
         parser,
         path_end,
         SyntaxRole::Target,
+        PathSeparatorGrammar::ExternalProjectSymbols,
         "syntax.use.missing_tree",
         "use declaration requires an import path",
     );
@@ -318,7 +318,7 @@ fn emit_path_or_glob_use(
 }
 
 fn emit_alias(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     name_role: SyntaxRole,
 ) -> PendingUseAlias {
@@ -350,9 +350,10 @@ fn emit_alias(
 }
 
 fn emit_required_path(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
+    separators: PathSeparatorGrammar,
     diagnostic: &'static str,
     message: &'static str,
 ) {
@@ -361,20 +362,15 @@ fn emit_required_path(
         return;
     };
     bump_until(parser, first);
-    if is_path_segment(parser, first) {
-        emit_path(
-            parser,
-            end,
-            role,
-            super::path::PathSeparatorGrammar::DottedOrQualified,
-        );
+    if path_component(parser, first, end, separators).is_some() {
+        emit_path(parser, end, role, separators);
     } else {
         emit_missing_path(parser, role, diagnostic, message);
     }
 }
 
 fn emit_missing_path(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
     diagnostic: &'static str,
     message: &'static str,
@@ -400,7 +396,7 @@ fn emit_missing_path(
 }
 
 fn emit_unexpected_tail(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     diagnostic: &'static str,
     message: &'static str,
@@ -409,7 +405,7 @@ fn emit_unexpected_tail(
 }
 
 fn emit_recovery_tail(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     recovery_ordinal: u32,
     diagnostic: &'static str,
@@ -435,7 +431,7 @@ fn emit_recovery_tail(
 }
 
 fn top_level_token(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
     spelling: &str,
@@ -456,7 +452,7 @@ fn top_level_token(
 }
 
 fn preceding_separator(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     before: usize,
 ) -> Option<usize> {
@@ -465,11 +461,7 @@ fn preceding_separator(
         .find(|index| token_text(parser, *index).is_some_and(|text| matches!(text, "." | "::")))
 }
 
-fn last_significant(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> Option<usize> {
+fn last_significant(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Option<usize> {
     (start..end).rev().find(|index| {
         parser.token_at(*index).is_some_and(|token| {
             !matches!(
@@ -480,14 +472,5 @@ fn last_significant(
                     | SyntaxKind::DocCommentToken
             )
         })
-    })
-}
-
-fn is_path_segment(parser: &ShadowDocumentParser<'_, '_>, index: usize) -> bool {
-    parser.token_at(index).is_some_and(|token| {
-        matches!(
-            token.kind(),
-            SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken | SyntaxKind::LifetimeToken
-        )
     })
 }

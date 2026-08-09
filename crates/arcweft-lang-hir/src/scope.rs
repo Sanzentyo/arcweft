@@ -24,14 +24,18 @@ pub enum HirScopeKind {
     Proof,
     Block,
     MatchArm,
-    Loop,
     Conditional,
     Closure,
     ContractRequires,
     ContractEnsures,
 }
 
-/// Typed semantic owner of one scope.
+/// Typed semantic owner of one lexical scope.
+///
+/// This relation is intentionally not unique in the owner-to-scope direction.
+/// A Match expression or statement, for example, owns one distinct lexical
+/// scope per arm. Consumers that need a particular scope must retain or follow
+/// its `ScopeId`; they must not build a single-value `owner -> scope` index.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirScopeOwner {
     Module(HirModuleId),
@@ -145,7 +149,6 @@ impl HirScope {
             HirScopeKind::MatchArm | HirScopeKind::Conditional => {
                 matches!(self.owner, HirScopeOwner::Expr(_) | HirScopeOwner::Stmt(_))
             }
-            HirScopeKind::Loop => matches!(self.owner, HirScopeOwner::Stmt(_)),
             HirScopeKind::Closure => matches!(self.owner, HirScopeOwner::Expr(_)),
         }
     }

@@ -30,6 +30,11 @@ use super::{
     where_predicates_match,
 };
 
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "one Predicate projection validates the complete item, callable, contract, source, and arena ownership schema"
+)]
 pub(super) fn payload_matches(
     source_index: &HirSourceIndex,
     owner: ItemId,
@@ -102,6 +107,7 @@ pub(super) fn payload_matches(
         attached.contracts(),
         predicate.requires(),
         predicate.ensures(),
+        &[],
         predicate.requires_scope(),
         predicate.ensures_scope(),
         slots,
@@ -216,10 +222,15 @@ fn predicate_bool_return_matches(
             payload.kind(),
             HirTypeKind::Path(path)
                 if path.root() == HirPathRoot::ImplicitCrate
-                    && matches!(path.segments(), [HirPathSegment::Identifier(name)] if name.as_str() == "Bool")
+                    && matches!(path.segments(), [HirPathSegment::Identifier(name)] if name.as_str() == "bool")
         )
 }
 
+#[allow(
+    clippy::option_option,
+    clippy::too_many_lines,
+    reason = "the body validator returns a deliberate tri-state while proving the complete Predicate body and recovery graph"
+)]
 fn predicate_body_matches(
     owner: ItemId,
     attached: &AttachedPredicateDeclaration,

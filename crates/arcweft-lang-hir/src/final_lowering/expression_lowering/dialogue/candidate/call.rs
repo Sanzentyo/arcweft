@@ -6,7 +6,7 @@ use arcweft_lang_syntax::attachment::{
     AttachedCandidateExpressionChild, AttachedCandidateNode, AttachedCandidateTypeRoot,
 };
 use arcweft_lang_syntax::expressions::{
-    ExpressionComponentRole, ExpressionProjection, SyntaxAssociatedCallSyntax,
+    ExpressionComponentRole, ExpressionProjection, SyntaxAssociatedReceiver,
     SyntaxCallArgumentListTerminator, SyntaxCallArgumentPart, SyntaxCallArgumentProjection,
     SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeApplicationSpelling,
     SyntaxCallTypeApplicationTerminator, SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole,
@@ -15,16 +15,17 @@ use arcweft_lang_syntax::expressions::{
 use arcweft_lang_syntax::name::SyntaxNameIssue;
 
 use crate::expr::{
-    HirAssociatedCallSyntax, HirAssociatedReceiver, HirCallArgument, HirCallArgumentListTerminator,
-    HirCallArgumentOrdinal, HirCallBuildError, HirCallCallee, HirCallChildPoison,
-    HirCallChildStates, HirCallExpr, HirCallTypeApplication, HirCallTypeApplicationSpelling,
-    HirCallTypeApplicationTerminator, HirCallTypeArgument, HirCallTypeArgumentOrdinal,
-    HirCallValue, HirPoisonState, HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState,
+    HirAssociatedReceiver, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
+    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
+    HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
+    HirCallTypeArgument, HirCallTypeArgumentOrdinal, HirCallValue, HirPoisonState,
+    HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState,
 };
 use crate::identity::{ExprId, ScopeId, TypeId};
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure};
 use crate::source_index::expression_component_role;
 
+use super::super::super::lower_associated_separator;
 use super::CandidateCursor;
 use crate::final_lowering::StagedHirModuleTransaction;
 use crate::final_lowering::name_projection::{name, recovered_name, require_attempted_name_limit};
@@ -43,6 +44,10 @@ struct LoweredCandidateCallType {
 }
 
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "candidate Call lowering consumes the complete typed callee, type-child, argument, and recovery schema exactly once"
+    )]
     pub(super) fn lower_candidate_call(
         &mut self,
         node: AttachedCandidateNode<'_>,
@@ -114,7 +119,7 @@ impl StagedHirModuleTransaction<'_> {
                 }
                 (HirCallCallee::value(child.expression), child.state)
             }
-            SyntaxCallCalleeProjection::UnresolvedDot { member } => {
+            SyntaxCallCalleeProjection::UnresolvedDot { separator, member } => {
                 let value = self.lower_required_candidate_call_child(
                     expression_projection,
                     &mut children,
@@ -135,30 +140,30 @@ impl StagedHirModuleTransaction<'_> {
                     HirCallCallee::unresolved_dot(
                         value.expression,
                         candidate_associated_receiver(nominal),
+                        lower_associated_separator(*separator),
                         recovered_name(member)?,
                     ),
                     value.state,
                 )
             }
-            SyntaxCallCalleeProjection::Associated { syntax, member } => {
-                let receiver = self.lower_required_candidate_call_type(
-                    &mut types,
-                    SyntaxCallTypeChildRole::AssociatedReceiver,
-                    scope,
-                    cursor,
-                )?;
+            SyntaxCallCalleeProjection::Associated {
+                receiver,
+                separator,
+                member,
+            } => {
+                let SyntaxAssociatedReceiver::Present = receiver;
+                let receiver =
+                    candidate_associated_receiver(self.lower_required_candidate_call_type(
+                        &mut types,
+                        SyntaxCallTypeChildRole::AssociatedReceiver,
+                        scope,
+                        cursor,
+                    )?);
                 (
                     HirCallCallee::associated(
-                        candidate_associated_receiver(receiver),
+                        receiver,
+                        lower_associated_separator(*separator),
                         recovered_name(member)?,
-                        match syntax {
-                            SyntaxAssociatedCallSyntax::DotFallback => {
-                                HirAssociatedCallSyntax::DotFallback
-                            }
-                            SyntaxAssociatedCallSyntax::ExplicitDoubleColon => {
-                                HirAssociatedCallSyntax::ExplicitDoubleColon
-                            }
-                        },
                     ),
                     HirCallChildPoison::Clean,
                 )
@@ -349,9 +354,9 @@ impl StagedHirModuleTransaction<'_> {
     }
 }
 
-fn candidate_call_children<'a>(
-    node: AttachedCandidateNode<'a>,
-) -> Result<BTreeMap<ExpressionComponentRole, AttachedCandidateExpressionChild<'a>>, HirLowerFailure>
+fn candidate_call_children(
+    node: AttachedCandidateNode<'_>,
+) -> Result<BTreeMap<ExpressionComponentRole, AttachedCandidateExpressionChild<'_>>, HirLowerFailure>
 {
     let mut children = BTreeMap::new();
     for child in node.semantic_expression_children() {
@@ -362,9 +367,9 @@ fn candidate_call_children<'a>(
     Ok(children)
 }
 
-fn candidate_call_types<'a>(
-    node: AttachedCandidateNode<'a>,
-) -> Result<BTreeMap<SyntaxCallTypeChildRole, AttachedCandidateTypeRoot<'a>>, HirLowerFailure> {
+fn candidate_call_types(
+    node: AttachedCandidateNode<'_>,
+) -> Result<BTreeMap<SyntaxCallTypeChildRole, AttachedCandidateTypeRoot<'_>>, HirLowerFailure> {
     let mut types = BTreeMap::new();
     for root in node.direct_semantic_type_roots() {
         if types.insert(root.role(), root).is_some() {
@@ -446,7 +451,7 @@ fn build_candidate_call(
         HirCallBuildError::LimitExceeded { limit, observed } => HirLowerFailure::Limit(
             HirLimitError::with_maximum(limit, observed, limit.maximum()),
         ),
-        HirCallBuildError::ChildStateShapeMismatch | HirCallBuildError::ChildIdentityMismatch => {
+        HirCallBuildError::ChildStateShapeMismatch => {
             HirInvariantFailure::InvalidArenaCommit.into()
         }
     })?;

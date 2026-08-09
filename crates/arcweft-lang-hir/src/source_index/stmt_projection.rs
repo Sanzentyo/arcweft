@@ -18,6 +18,10 @@ use crate::stmt::{HirStmt, HirStmtKind, HirStmtPoisonState};
 impl StagedHirSourceIndex {
     /// Projects the sole statement-owned edit component from exact attached
     /// syntax. A recovered statement never fabricates an edit anchor.
+    #[allow(
+        clippy::result_large_err,
+        reason = "statement staging failures retain the complete typed owner, source component, and syntax evidence"
+    )]
     pub(crate) fn stage_attached_stmt(
         &mut self,
         parsed: &ParsedSource,
@@ -131,7 +135,9 @@ impl HirStmtKind {
             {
                 Ok(())
             }
-            _ => Err(HirSourceQueryError::StmtRoleNotApplicable { owner, role }),
+            HirStmtSourceRole::UnsafeAuditInsertion => {
+                Err(HirSourceQueryError::StmtRoleNotApplicable { owner, role })
+            }
         }
     }
 }

@@ -1,7 +1,8 @@
 use crate::project::{CompiledProject, ProjectCompileCacheStatus};
+use arcweft_lang_sema::assertion::AssertionBuildProfile;
 use arcweft_project::{
-    artifact::{ArtifactKey, ArtifactKeyInput},
-    fingerprint::{BuildDigest, ProjectFingerprint, ProjectFingerprintInput},
+    artifact::{ArtifactKey, ArtifactKeyInput, RuntimePlanArtifactKey},
+    fingerprint::{BuildDigest, NamedDigest, ProjectFingerprint, ProjectFingerprintInput},
     incremental::{
         BuildSnapshot, CacheRecordStatus, InvalidationReason, ModuleBuildFingerprint, QueryKind,
         QuerySnapshot,
@@ -20,7 +21,7 @@ pub struct BuildSnapshotRequest {
     pub selected_entries: Vec<String>,
 }
 
-/// Builds a conservative snapshot for the current linked-HIR semantic pass.
+/// Builds a conservative snapshot for the accepted module-preserving project.
 pub fn snapshot_compiled_project(
     sources: &ProjectSources,
     compiled: &CompiledProject,
@@ -95,6 +96,60 @@ pub fn snapshot_compiled_project(
     )
 }
 
+/// Derives the only runtime-plan artifact identity from the accepted build
+/// snapshot and the exact semantic generation that produced the plan.
+///
+/// This intentionally does not inspect the filesystem. A watcher may already
+/// have observed a newer revision by the time compilation finishes; binding
+/// runtime diagnostics to that revision would create a key for bytes that were
+/// never compiled.
+pub fn runtime_plan_artifact_key(
+    snapshot: &BuildSnapshot,
+    compiled: &CompiledProject,
+) -> RuntimePlanArtifactKey {
+    runtime_plan_artifact_key_for_profile(snapshot, compiled.assertion_build_profile())
+}
+
+fn runtime_plan_artifact_key_for_profile(
+    snapshot: &BuildSnapshot,
+    assertion_profile: AssertionBuildProfile,
+) -> RuntimePlanArtifactKey {
+    let project = snapshot.project();
+    let mut option_bytes = Vec::new();
+    put_component(&mut option_bytes, b"arcweft-runtime-plan-options-v1");
+    put_component(&mut option_bytes, assertion_profile.as_str().as_bytes());
+    for entry in snapshot.selected_entries() {
+        put_component(&mut option_bytes, entry.as_bytes());
+    }
+    let input = ArtifactKeyInput {
+        compiler_build_id: project.compiler_build_id().to_owned(),
+        query: QueryKind::RuntimePlan,
+        artifact_kind: QueryKind::RuntimePlan.artifact_kind(),
+        target_triple: project.target_triple().to_owned(),
+        target_features: project.target_features().to_vec(),
+        profile: project.profile().to_owned(),
+        package: project.package().to_owned(),
+        logical_item: "runtime-plan".to_owned(),
+        source_digest: project.digest(),
+        dependency_interface_digests: snapshot
+            .modules()
+            .iter()
+            .map(|module| NamedDigest::new(module.module(), module.interface_digest()))
+            .collect(),
+        dependency_body_digests: snapshot
+            .modules()
+            .iter()
+            .map(|module| NamedDigest::new(module.module(), module.body_digest()))
+            .collect(),
+        adapter_environment_digest: project.adapter_environment_digest(),
+        launch_profile_digest: project.launch_profile_digest(),
+        declared_environment_digest: project.declared_environment_digest(),
+        format_options_digest: BuildDigest::of(&option_bytes),
+    };
+    RuntimePlanArtifactKey::try_derive(&input)
+        .expect("canonical runtime-plan input fixes query, artifact kind, and logical item")
+}
+
 fn project_fingerprint(
     sources: &ProjectSources,
     request: &BuildSnapshotRequest,
@@ -102,8 +157,8 @@ fn project_fingerprint(
 ) -> ProjectFingerprint {
     let mut source_bytes = Vec::new();
     for module in sources.modules() {
-        source_bytes.extend_from_slice(module.module().to_string().as_bytes());
-        source_bytes.extend_from_slice(module.source_revision().as_bytes());
+        put_component(&mut source_bytes, module.module().to_string().as_bytes());
+        put_component(&mut source_bytes, module.source_revision().as_bytes());
     }
     ProjectFingerprint::new(ProjectFingerprintInput {
         package: sources.package().id.as_str().to_owned(),
@@ -112,7 +167,7 @@ fn project_fingerprint(
         target_features: request.target_features.clone(),
         profile: request.profile.clone(),
         source_root_digest: BuildDigest::of(&source_bytes),
-        manifest_digest: BuildDigest::of(sources.manifest_path().to_string_lossy().as_bytes()),
+        manifest_digest: BuildDigest::from(sources.manifest_document().identity().revision()),
         // This existing field is also the source for
         // `CompilerObjectKey::environment_digest`. Once registration has
         // succeeded it carries the digest of the complete accepted semantic
@@ -121,6 +176,12 @@ fn project_fingerprint(
         launch_profile_digest: BuildDigest::ZERO,
         declared_environment_digest: BuildDigest::ZERO,
     })
+}
+
+fn put_component(bytes: &mut Vec<u8>, component: &[u8]) {
+    let length = u64::try_from(component.len()).expect("artifact identity component fits u64");
+    bytes.extend_from_slice(&length.to_le_bytes());
+    bytes.extend_from_slice(component);
 }
 
 const fn cache_status(status: ProjectCompileCacheStatus) -> CacheRecordStatus {
@@ -137,9 +198,15 @@ const fn cache_status(status: ProjectCompileCacheStatus) -> CacheRecordStatus {
 
 #[cfg(test)]
 mod tests {
-    use super::cache_status;
+    use super::{cache_status, runtime_plan_artifact_key_for_profile};
     use crate::project::ProjectCompileCacheStatus;
-    use arcweft_project::incremental::{CacheRecordStatus, InvalidationReason};
+    use arcweft_lang_sema::assertion::AssertionBuildProfile;
+    use arcweft_project::{
+        fingerprint::{BuildDigest, ProjectFingerprint, ProjectFingerprintInput},
+        incremental::{
+            BuildSnapshot, CacheRecordStatus, InvalidationReason, ModuleBuildFingerprint,
+        },
+    };
 
     #[test]
     fn persistent_query_snapshot_status_records_rebuild_reason() {
@@ -155,5 +222,58 @@ mod tests {
                 reason: InvalidationReason::OptionsChanged,
             }
         );
+    }
+
+    #[test]
+    fn runtime_plan_key_is_bound_to_profile_entries_and_accepted_source_snapshot() {
+        let accepted = snapshot("source-a", ["game.main"]);
+        let same = snapshot("source-a", ["game.main"]);
+        let other_source = snapshot("source-b", ["game.main"]);
+        let other_entry = snapshot("source-a", ["game.other"]);
+
+        let debug = runtime_plan_artifact_key_for_profile(&accepted, AssertionBuildProfile::Debug);
+        assert_eq!(
+            debug,
+            runtime_plan_artifact_key_for_profile(&same, AssertionBuildProfile::Debug)
+        );
+        assert_ne!(
+            debug,
+            runtime_plan_artifact_key_for_profile(&accepted, AssertionBuildProfile::Release)
+        );
+        assert_ne!(
+            debug,
+            runtime_plan_artifact_key_for_profile(&other_source, AssertionBuildProfile::Debug)
+        );
+        assert_ne!(
+            debug,
+            runtime_plan_artifact_key_for_profile(&other_entry, AssertionBuildProfile::Debug)
+        );
+    }
+
+    fn snapshot(source: &str, entries: [&str; 1]) -> BuildSnapshot {
+        let source_digest = BuildDigest::of(source.as_bytes());
+        BuildSnapshot::new(
+            "build",
+            ProjectFingerprint::new(ProjectFingerprintInput {
+                package: "story".to_owned(),
+                compiler_build_id: "compiler".to_owned(),
+                target_triple: "native".to_owned(),
+                target_features: vec!["base".to_owned()],
+                profile: "dev".to_owned(),
+                source_root_digest: source_digest,
+                manifest_digest: BuildDigest::of(b"manifest"),
+                adapter_environment_digest: BuildDigest::of(b"adapter"),
+                launch_profile_digest: BuildDigest::of(b"launch"),
+                declared_environment_digest: BuildDigest::of(b"environment"),
+            }),
+            entries,
+            [ModuleBuildFingerprint::new(
+                "crate",
+                source_digest,
+                BuildDigest::of(format!("{source}:interface").as_bytes()),
+                BuildDigest::of(format!("{source}:body").as_bytes()),
+            )],
+            [],
+        )
     }
 }

@@ -17,7 +17,6 @@ use arcweft_core::engine::FlowFiberStatus;
 pub use arcweft_core::entry::ActiveEntrySnapshotV1;
 use arcweft_core::executor::ArcweftRuntimeExecutorSnapshotError;
 pub use arcweft_core::root::RootStateSnapshotV1;
-use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_presentation::fx::FxDiagnostic;
 use arcweft_view::{ViewId, virtualization::ViewVirtualizationSnapshot};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -25,7 +24,7 @@ use std::collections::BTreeSet;
 use thiserror::Error;
 
 pub const BUNDLE_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.bundle_session";
-pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
+pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BundleSessionSnapshot {
@@ -45,7 +44,7 @@ pub struct BundleSessionSnapshot {
 pub struct BundleSessionGenerationSnapshot {
     pub active_generation: GenerationId,
     pub artifact: BundleSessionArtifactIdentity,
-    pub dialogue_revision: DialogueProfileRevision,
+    pub dialogue_content: BundleDigest,
     pub bytecode_abi: u32,
     pub adapter_requirements: BundleDigest,
 }

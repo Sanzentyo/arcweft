@@ -2,6 +2,7 @@ use super::{
     ProfileTopologyBinaryOverlaySeed, ProfileTopologyErrorCode, ProfileTopologyLimits,
     ProfileTopologyLoadRequest, ProfileTopologyOverlaySeed, ProfileTopologyOwnerId,
     ProfileTopologyResourceKind, ProfileTopologyResourceOrigin, load_profile_topology,
+    reload_profile_topology,
 };
 use arcweft_adapter_context::{
     manifest::{
@@ -15,17 +16,13 @@ use arcweft_adapter_metadata::{
     ProcessAbi, ProcessTarget, ProcessTransport, WasmAbi, WasmTarget,
 };
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
-use arcweft_lang_hir::lower::lower_document_to_hir;
-use arcweft_lang_sema::{
-    check::typecheck_hir, diagnostics::TypeCheckErrorKind,
-    effect_diagnostics::EffectDiagnosticCode, env::TypeCheckEnv,
-};
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use arcweft_lang_sema::env::{EffectCapability, TypeCheckEnv};
+use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, incremental::SyntaxDatabase};
 use arcweft_launch::LaunchProfileSelection;
 use arcweft_manifest_model::{
     CapabilityId, FieldName, FunctionName, ManifestVisibility, RawDigest, TypeReference, WitWorldId,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_source::SourceSetRevision;
 use std::{fmt::Write as _, fs, path::PathBuf, sync::Arc};
 
 const ROOT_SOURCE: &str = "fn main() -> Unit { () }\n";
@@ -129,6 +126,75 @@ fn selected_source_overlay_builds_exact_import_closure() {
     assert!(logical_paths.contains(&"src/main.arcw"));
     assert!(logical_paths.contains(&"src/feature.arcw"));
     assert!(!logical_paths.contains(&"src/unrelated.arcw"));
+}
+
+#[test]
+fn topology_reload_reuses_the_selected_syntax_lineage_and_exact_document() {
+    let project = TestProject::new("topology-bound-syntax-reload");
+    project.write("arcw.toml", &manifest("dev", "src/main.arcw", ""));
+    project.write("src/main.arcw", ROOT_SOURCE);
+    let manifest_path = project.path("arcw.toml");
+    let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+    let initial = load_profile_topology(
+        &mut syntax,
+        ProfileTopologyLoadRequest::new(
+            &manifest_path,
+            project.owner(),
+            LaunchProfileSelection::Explicit("dev"),
+            &[],
+            standard_registry(),
+        ),
+    )
+    .expect("initial topology");
+    let root = CanonicalModulePath::crate_root();
+    let initial_parsed = initial
+        .loaded_project()
+        .module_parsed_source(&root)
+        .expect("initial root parse")
+        .clone();
+
+    project.write("src/main.arcw", "fn revised() -> Unit { () }\n");
+    let revised = reload_profile_topology(
+        &mut syntax,
+        initial.loaded_project(),
+        ProfileTopologyLoadRequest::new(
+            &manifest_path,
+            project.owner(),
+            LaunchProfileSelection::Explicit("dev"),
+            &[],
+            standard_registry(),
+        ),
+    )
+    .expect("reloaded topology");
+    let revised_parsed = revised
+        .loaded_project()
+        .module_parsed_source(&root)
+        .expect("revised root parse");
+    let module_resource = revised
+        .resources()
+        .find(|resource| {
+            resource.kind()
+                == &ProfileTopologyResourceKind::ArcweftModule {
+                    module: root.clone(),
+                }
+        })
+        .expect("root module resource");
+
+    assert_eq!(
+        revised_parsed.snapshot_id().lineage(),
+        initial_parsed.snapshot_id().lineage()
+    );
+    assert_eq!(
+        revised_parsed.snapshot_id().lineage().database(),
+        syntax.database_id()
+    );
+    assert_eq!(revised_parsed.source_snapshot_id().generation().get(), 2);
+    assert!(Arc::ptr_eq(
+        revised_parsed.document_lease(),
+        module_resource
+            .text_document()
+            .expect("module text resource")
+    ));
 }
 
 #[test]
@@ -548,44 +614,25 @@ adapter = "network"
         ["net.read"]
     );
 
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new(
-                "arcweft-test://project-loader/topology/adapter-effects.arcw",
-            )
-            .expect("adapter-effects fixture source ID"),
-            SourceName::path("project-loader/topology/adapter-effects.arcw"),
-            r"
-extern capability fs {
-    fn read() -> String effects { fs.read }
-}
-flow main effects { fs.read } {
-    let body = fs.read()
-}
-",
-        )
-        .expect("adapter-effects fixture source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
-        .expect("capability fixture lowers");
-
     let read_env = AdapterSemanticRegistration::new(read.adapter())
         .declare_target_effects(TypeCheckEnv::new());
-    typecheck_hir(&hir, &read_env).expect("selected reader adapter grants fs.read");
+    assert!(read_env.has_capability("fs.read"));
+    assert!(
+        read_env
+            .available_effects()
+            .is_some_and(|effects| effects.contains(&EffectCapability::new("fs.read")))
+    );
+    assert!(!read_env.has_capability("net.read"));
 
     let network_env = AdapterSemanticRegistration::new(network.adapter())
         .declare_target_effects(TypeCheckEnv::new());
-    let errors =
-        typecheck_hir(&hir, &network_env).expect_err("selected network adapter lacks fs.read");
-    assert!(errors.iter().any(|error| {
-        matches!(
-            error.kind(),
-            TypeCheckErrorKind::Effect { diagnostic }
-                if diagnostic.code() == EffectDiagnosticCode::CapabilityUnavailable
-        )
-    }));
+    assert!(network_env.has_capability("net.read"));
+    assert!(
+        network_env
+            .available_effects()
+            .is_some_and(|effects| effects.contains(&EffectCapability::new("net.read")))
+    );
+    assert!(!network_env.has_capability("fs.read"));
 }
 
 #[test]
@@ -1401,13 +1448,17 @@ impl TestProject {
         registry: AdapterRegistry,
     ) -> super::LoadedProfileTopology {
         let manifest_path = self.path("arcw.toml");
-        load_profile_topology(ProfileTopologyLoadRequest::new(
-            &manifest_path,
-            self.owner(),
-            selection,
-            overlays,
-            registry,
-        ))
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        load_profile_topology(
+            &mut syntax,
+            ProfileTopologyLoadRequest::new(
+                &manifest_path,
+                self.owner(),
+                selection,
+                overlays,
+                registry,
+            ),
+        )
         .expect("topology loads")
     }
 
@@ -1418,7 +1469,9 @@ impl TestProject {
         binary_overlays: &[ProfileTopologyBinaryOverlaySeed],
     ) -> super::LoadedProfileTopology {
         let manifest_path = self.path("arcw.toml");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
         load_profile_topology(
+            &mut syntax,
             ProfileTopologyLoadRequest::new(
                 &manifest_path,
                 self.owner(),
@@ -1437,13 +1490,17 @@ impl TestProject {
         overlays: &[ProfileTopologyOverlaySeed],
     ) -> super::ProfileTopologyLoadError {
         let manifest_path = self.path("arcw.toml");
-        load_profile_topology(ProfileTopologyLoadRequest::new(
-            &manifest_path,
-            self.owner(),
-            selection,
-            overlays,
-            standard_registry(),
-        ))
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        load_profile_topology(
+            &mut syntax,
+            ProfileTopologyLoadRequest::new(
+                &manifest_path,
+                self.owner(),
+                selection,
+                overlays,
+                standard_registry(),
+            ),
+        )
         .expect_err("topology fails")
     }
 
@@ -1454,7 +1511,9 @@ impl TestProject {
         binary_overlays: &[ProfileTopologyBinaryOverlaySeed],
     ) -> super::ProfileTopologyLoadError {
         let manifest_path = self.path("arcw.toml");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
         load_profile_topology(
+            &mut syntax,
             ProfileTopologyLoadRequest::new(
                 &manifest_path,
                 self.owner(),

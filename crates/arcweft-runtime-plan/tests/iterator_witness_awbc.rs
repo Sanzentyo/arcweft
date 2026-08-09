@@ -16,31 +16,8 @@ use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
 use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeFieldValue, RuntimeValue};
-use arcweft_dialogue::DialogueProfileRevision;
-use arcweft_render_text::LineDisplayCatalog;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-plan-iterator-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-plan-iterator-test").expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
-}
+use arcweft_text_model::DialogueContentCatalog;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
@@ -139,7 +116,7 @@ fn identity_witness_for_executes_on_awbc_product_vm() {
 fn lower_plan(plan: &RuntimePlan) -> arcweft_core::awbc::schema::AwbcProgram {
     AwbcLowerer::new(
         plan,
-        &LineDisplayCatalog::new(test_dialogue_revision()),
+        &DialogueContentCatalog::new(),
         "iterator_witness.arcw",
     )
     .lower()
@@ -205,14 +182,24 @@ fn counter_next_body() -> RuntimeExpr {
                     rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
                 }),
                 body: Box::new(RuntimeExpr::Variant {
-                    path: None,
+                    owner: arcweft_core::pattern::RuntimeCheckedType::Option(Box::new(
+                        arcweft_core::pattern::RuntimeCheckedType::Signed(
+                            arcweft_core::value::RuntimeSignedIntWidth::I64,
+                        ),
+                    )),
+                    ordinal: 0,
                     name: "Some".to_owned(),
                     payload: Some(Box::new(RuntimeExpr::Local("value".to_owned()))),
                 }),
             }),
         }),
         else_expr: Box::new(RuntimeExpr::Variant {
-            path: None,
+            owner: arcweft_core::pattern::RuntimeCheckedType::Option(Box::new(
+                arcweft_core::pattern::RuntimeCheckedType::Signed(
+                    arcweft_core::value::RuntimeSignedIntWidth::I64,
+                ),
+            )),
+            ordinal: 1,
             name: "None".to_owned(),
             payload: None,
         }),

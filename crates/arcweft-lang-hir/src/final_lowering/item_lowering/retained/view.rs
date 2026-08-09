@@ -14,7 +14,7 @@ use crate::item::{
     HirViewExportMember,
 };
 use crate::leaf::{HirPathIssue, HirPathRecovery, HirPathRoot, HirPathValue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::HirPatternBindingPolicy;
 
 use super::super::super::path_projection::{TypedPathProjection, project_attached_path};
@@ -23,6 +23,10 @@ use super::super::{LoweredItemProjection, item_state};
 use super::{project_retained_header, retained_header_issue};
 
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "View lowering atomically projects its parameter, export, scope, and member inventory"
+    )]
     pub(in crate::final_lowering::item_lowering) fn lower_view_declaration(
         &mut self,
         owner: ItemId,

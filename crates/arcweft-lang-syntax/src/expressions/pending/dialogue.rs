@@ -4,9 +4,9 @@ use std::collections::HashSet;
 
 use super::super::{
     ExpressionComponentRole, SyntaxDialogueApplicationForm, SyntaxDialogueApplicationProjection,
-    SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection, SyntaxDialogueNodeSourcePart,
-    SyntaxRichTextArgumentProjection, SyntaxRichTextArgumentSourcePart,
-    SyntaxRichTextTagSourcePart,
+    SyntaxDialogueContent, SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection,
+    SyntaxDialogueNodeSourcePart, SyntaxRichTextArgumentProjection,
+    SyntaxRichTextArgumentSourcePart, SyntaxRichTextTagProjection, SyntaxRichTextTagSourcePart,
 };
 use super::PendingExpressionComponent;
 
@@ -45,11 +45,25 @@ pub(super) fn components_validate(
             });
     };
 
-    let mut expected = outer_count;
+    let Some(expected) = validate_dialogue_nodes(content, roles, outer_count) else {
+        return false;
+    };
+    let Some(expected) = validate_rich_text_tags(content, roles, expected) else {
+        return false;
+    };
+    components.len() == expected
+        && components.iter().all(|component| {
+            dialogue_component_is_expected(application, content, &outer, component.role())
+        })
+}
+
+fn validate_dialogue_nodes(
+    content: &SyntaxDialogueContent,
+    roles: &HashSet<ExpressionComponentRole>,
+    mut expected: usize,
+) -> Option<usize> {
     for (ordinal, node) in content.nodes().iter().enumerate() {
-        let Ok(ordinal) = u32::try_from(ordinal) else {
-            return false;
-        };
+        let ordinal = u32::try_from(ordinal).ok()?;
         let parts = dialogue_node_source_parts(node);
         if !parts.iter().all(|part| {
             roles.contains(&ExpressionComponentRole::DialogueNode {
@@ -57,33 +71,35 @@ pub(super) fn components_validate(
                 part: *part,
             })
         }) {
-            return false;
+            return None;
         }
         match node {
             SyntaxDialogueNodeProjection::AuthoredStartTag { tag }
             | SyntaxDialogueNodeProjection::InferredStartTag { tag }
                 if content.tags().get(*tag as usize).is_none() =>
             {
-                return false;
+                return None;
             }
             SyntaxDialogueNodeProjection::AuthoredEndTag(end)
             | SyntaxDialogueNodeProjection::InferredEndTag(end)
                 if end.identity().is_none() && !end.has_recovery() =>
             {
-                return false;
+                return None;
             }
             _ => {}
         }
-        expected = match expected.checked_add(parts.len()) {
-            Some(expected) => expected,
-            None => return false,
-        };
+        expected = expected.checked_add(parts.len())?;
     }
+    Some(expected)
+}
 
+fn validate_rich_text_tags(
+    content: &SyntaxDialogueContent,
+    roles: &HashSet<ExpressionComponentRole>,
+    mut expected: usize,
+) -> Option<usize> {
     for (tag, projection) in content.tags().iter().enumerate() {
-        let Ok(tag) = u32::try_from(tag) else {
-            return false;
-        };
+        let tag = u32::try_from(tag).ok()?;
         let inferred = content.nodes().iter().any(|node| {
             matches!(node, SyntaxDialogueNodeProjection::InferredStartTag { tag: node_tag } if *node_tag == tag)
         });
@@ -105,7 +121,7 @@ pub(super) fn components_validate(
                         | SyntaxDialogueNodeProjection::InferredEndTag(_)
                 )
             }) {
-                return false;
+                return None;
             }
             tag_parts.push(SyntaxRichTextTagSourcePart::EndTag);
         }
@@ -113,36 +129,44 @@ pub(super) fn components_validate(
             .iter()
             .all(|part| roles.contains(&ExpressionComponentRole::RichTextTag { tag, part: *part }))
         {
-            return false;
+            return None;
         }
-        expected = match expected.checked_add(tag_parts.len()) {
-            Some(expected) => expected,
-            None => return false,
-        };
-
-        for (argument, value) in projection.arguments().iter().enumerate() {
-            let Ok(argument) = u16::try_from(argument) else {
-                return false;
-            };
-            let parts = rich_text_argument_source_parts(value);
-            if !parts.iter().all(|part| {
-                roles.contains(&ExpressionComponentRole::RichTextArgument {
-                    tag,
-                    argument,
-                    part: *part,
-                })
-            }) {
-                return false;
-            }
-            expected = match expected.checked_add(parts.len()) {
-                Some(expected) => expected,
-                None => return false,
-            };
-        }
+        expected = expected.checked_add(tag_parts.len())?;
+        expected = validate_tag_arguments(tag, projection, roles, expected)?;
     }
+    Some(expected)
+}
 
-    components.len() == expected
-        && components.iter().all(|component| match component.role() {
+fn validate_tag_arguments(
+    tag: u32,
+    projection: &SyntaxRichTextTagProjection,
+    roles: &HashSet<ExpressionComponentRole>,
+    mut expected: usize,
+) -> Option<usize> {
+    for (argument, value) in projection.arguments().iter().enumerate() {
+        let argument = u16::try_from(argument).ok()?;
+        let parts = rich_text_argument_source_parts(value);
+        if !parts.iter().all(|part| {
+            roles.contains(&ExpressionComponentRole::RichTextArgument {
+                tag,
+                argument,
+                part: *part,
+            })
+        }) {
+            return None;
+        }
+        expected = expected.checked_add(parts.len())?;
+    }
+    Some(expected)
+}
+
+fn dialogue_component_is_expected(
+    application: &SyntaxDialogueApplicationProjection,
+    content: &SyntaxDialogueContent,
+    outer: &[Option<ExpressionComponentRole>; 5],
+    role: ExpressionComponentRole,
+) -> bool {
+    match role {
             role if outer.iter().flatten().any(|outer| *outer == role) => true,
             ExpressionComponentRole::Plan => application.has_plan(),
             ExpressionComponentRole::DialogueNode { ordinal, part } => content
@@ -177,7 +201,7 @@ pub(super) fn components_validate(
                 .and_then(|projection| projection.arguments().get(argument as usize))
                 .is_some_and(|argument| rich_text_argument_source_parts(argument).contains(&part)),
             _ => false,
-        })
+        }
 }
 
 fn dialogue_node_source_parts(
@@ -208,14 +232,6 @@ fn dialogue_node_source_parts(
         SyntaxDialogueNodeProjection::Interpolation(_) => &[
             SyntaxDialogueNodeSourcePart::Whole,
             SyntaxDialogueNodeSourcePart::Interpolation,
-        ],
-        SyntaxDialogueNodeProjection::Control(_) => &[
-            SyntaxDialogueNodeSourcePart::Whole,
-            SyntaxDialogueNodeSourcePart::Control,
-        ],
-        SyntaxDialogueNodeProjection::Mark(_) => &[
-            SyntaxDialogueNodeSourcePart::Whole,
-            SyntaxDialogueNodeSourcePart::Mark,
         ],
         SyntaxDialogueNodeProjection::LineBreak(_) => &[
             SyntaxDialogueNodeSourcePart::Whole,

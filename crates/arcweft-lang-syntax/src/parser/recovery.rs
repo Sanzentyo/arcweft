@@ -5,7 +5,6 @@ use arcweft_source::{
 use thiserror::Error;
 
 use crate::ast::common::TextRange;
-use crate::expr::{ExprParseError, ExprParseErrorKind};
 
 /// Closed discriminator for diagnostics emitted by the repository-owned parser.
 ///
@@ -50,20 +49,6 @@ pub enum ParseErrorKind {
     EntryIdFamily,
     /// An entry declaration head contains trailing syntax.
     EntryTrailingHead,
-    /// An entry role appears more than once.
-    EntryDuplicateRole,
-    /// An entry kind does not allow a declared role.
-    EntryIncompatibleRole,
-    /// A stateful entry declares more than one initial target.
-    EntryDuplicateGoto,
-    /// An entry kind does not allow an initial target.
-    EntryIncompatibleGoto,
-    /// An entry kind does not allow route declarations.
-    EntryIncompatibleRoute,
-    /// An entry omits a role required by its kind.
-    EntryMissingRole,
-    /// A stateful entry omits its initial target.
-    EntryMissingGoto,
     /// An entry role binding is malformed.
     EntryRoleBinding,
     /// An entry role binding omits its value.
@@ -139,7 +124,7 @@ pub enum ParseErrorKind {
 }
 
 impl ParseErrorKind {
-    pub(crate) const ALL: [Self; 54] = [
+    pub(crate) const ALL: [Self; 47] = [
         Self::Generic,
         Self::ExpressionPrefixDepthLimit,
         Self::AssertionUnknownMode,
@@ -151,13 +136,6 @@ impl ParseErrorKind {
         Self::EntryMissingId,
         Self::EntryIdFamily,
         Self::EntryTrailingHead,
-        Self::EntryDuplicateRole,
-        Self::EntryIncompatibleRole,
-        Self::EntryDuplicateGoto,
-        Self::EntryIncompatibleGoto,
-        Self::EntryIncompatibleRoute,
-        Self::EntryMissingRole,
-        Self::EntryMissingGoto,
         Self::EntryRoleBinding,
         Self::EntryRoleValue,
         Self::EntryRolePath,
@@ -211,13 +189,6 @@ impl ParseErrorKind {
             Self::EntryMissingId => "syntax.entry.missing_id",
             Self::EntryIdFamily => "syntax.entry.id_family",
             Self::EntryTrailingHead => "syntax.entry.trailing_head",
-            Self::EntryDuplicateRole => "syntax.entry.duplicate_role",
-            Self::EntryIncompatibleRole => "syntax.entry.incompatible_role",
-            Self::EntryDuplicateGoto => "syntax.entry.duplicate_goto",
-            Self::EntryIncompatibleGoto => "syntax.entry.incompatible_goto",
-            Self::EntryIncompatibleRoute => "syntax.entry.incompatible_route",
-            Self::EntryMissingRole => "syntax.entry.missing_role",
-            Self::EntryMissingGoto => "syntax.entry.missing_goto",
             Self::EntryRoleBinding => "syntax.entry.role_binding",
             Self::EntryRoleValue => "syntax.entry.role_value",
             Self::EntryRolePath => "syntax.entry.role_path",
@@ -286,13 +257,6 @@ impl ParseErrorKind {
             Self::EntryMissingId => "Missing entry public ID",
             Self::EntryIdFamily => "Invalid entry public ID family",
             Self::EntryTrailingHead => "Trailing syntax in entry declaration head",
-            Self::EntryDuplicateRole => "Duplicate entry role",
-            Self::EntryIncompatibleRole => "Entry role is incompatible with its kind",
-            Self::EntryDuplicateGoto => "Duplicate entry initial target",
-            Self::EntryIncompatibleGoto => "Entry initial target is incompatible with its kind",
-            Self::EntryIncompatibleRoute => "Entry route is incompatible with its kind",
-            Self::EntryMissingRole => "Missing required entry role",
-            Self::EntryMissingGoto => "Missing entry initial target",
             Self::EntryRoleBinding => "Malformed entry role binding",
             Self::EntryRoleValue => "Missing entry role value",
             Self::EntryRolePath => "Invalid entry role symbol path",
@@ -333,17 +297,9 @@ impl ParseErrorKind {
             Self::ViewPartInvalidLocalName => "Invalid View part modifier name",
         }
     }
-
-    pub(crate) fn from_expression(error: &ExprParseError) -> Self {
-        if error.contains_kind(ExprParseErrorKind::PrefixDepthLimit) {
-            Self::ExpressionPrefixDepthLimit
-        } else {
-            Self::Generic
-        }
-    }
 }
 
-const _: [(); ParseErrorKind::ALL.len()] = [(); 54];
+const _: [(); ParseErrorKind::ALL.len()] = [(); 47];
 
 /// Syntax-level parse error with expected tokens and recovery suggestions.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -381,38 +337,7 @@ pub struct RecoveryEdit {
 }
 
 impl ParseError {
-    pub(crate) fn from_expression(error: &ExprParseError, expected: Vec<String>) -> Self {
-        let mut parsed = Self::new_with_kind(
-            ParseErrorKind::from_expression(error),
-            error.range(),
-            expected,
-            None,
-            error.to_string(),
-            Vec::new(),
-        );
-        for related in error.related_ranges() {
-            parsed = parsed.with_related(*related, Some("related expression syntax".to_owned()));
-        }
-        parsed
-    }
-
-    pub(crate) fn new(
-        range: TextRange,
-        expected: Vec<String>,
-        found: Option<String>,
-        message: String,
-        recovery: Vec<RecoverySuggestion>,
-    ) -> Self {
-        Self::new_with_kind(
-            ParseErrorKind::Generic,
-            range,
-            expected,
-            found,
-            message,
-            recovery,
-        )
-    }
-
+    #[cfg(test)]
     pub(crate) fn new_with_kind(
         kind: ParseErrorKind,
         range: TextRange,
@@ -432,30 +357,10 @@ impl ParseError {
         }
     }
 
-    pub(crate) fn rebased(mut self, base_offset: usize) -> Self {
-        self.range = TextRange::new(
-            self.range.start() + base_offset,
-            self.range.end() + base_offset,
-        );
-        self
-    }
-
     /// Repository-owned parser diagnostic discriminator.
     #[must_use]
     pub const fn kind(&self) -> ParseErrorKind {
         self.kind
-    }
-
-    pub(crate) fn with_related(
-        mut self,
-        range: TextRange,
-        message: impl Into<Option<String>>,
-    ) -> Self {
-        self.related.push(ParseRelatedRange {
-            range,
-            message: message.into(),
-        });
-        self
     }
 
     /// Stable diagnostic code used by compiler and tooling integrations.
@@ -623,7 +528,7 @@ mod tests {
 
     use super::{ParseError, ParseErrorKind, RecoveryEdit, RecoverySuggestion, TextRange};
 
-    const EXPECTED_PARSE_ERROR_KINDS: [(ParseErrorKind, &str, &str); 54] = [
+    const EXPECTED_PARSE_ERROR_KINDS: [(ParseErrorKind, &str, &str); 47] = [
         (ParseErrorKind::Generic, "syntax.parse", "Parse error"),
         (
             ParseErrorKind::ExpressionPrefixDepthLimit,
@@ -674,41 +579,6 @@ mod tests {
             ParseErrorKind::EntryTrailingHead,
             "syntax.entry.trailing_head",
             "Trailing syntax in entry declaration head",
-        ),
-        (
-            ParseErrorKind::EntryDuplicateRole,
-            "syntax.entry.duplicate_role",
-            "Duplicate entry role",
-        ),
-        (
-            ParseErrorKind::EntryIncompatibleRole,
-            "syntax.entry.incompatible_role",
-            "Entry role is incompatible with its kind",
-        ),
-        (
-            ParseErrorKind::EntryDuplicateGoto,
-            "syntax.entry.duplicate_goto",
-            "Duplicate entry initial target",
-        ),
-        (
-            ParseErrorKind::EntryIncompatibleGoto,
-            "syntax.entry.incompatible_goto",
-            "Entry initial target is incompatible with its kind",
-        ),
-        (
-            ParseErrorKind::EntryIncompatibleRoute,
-            "syntax.entry.incompatible_route",
-            "Entry route is incompatible with its kind",
-        ),
-        (
-            ParseErrorKind::EntryMissingRole,
-            "syntax.entry.missing_role",
-            "Missing required entry role",
-        ),
-        (
-            ParseErrorKind::EntryMissingGoto,
-            "syntax.entry.missing_goto",
-            "Missing entry initial target",
         ),
         (
             ParseErrorKind::EntryRoleBinding,
@@ -896,7 +766,7 @@ mod tests {
     fn parse_error_kind_inventory_is_complete_unique_and_stable() {
         let expected = EXPECTED_PARSE_ERROR_KINDS;
         assert_eq!(ParseErrorKind::ALL, expected.map(|entry| entry.0));
-        assert_eq!(ParseErrorKind::ALL.len(), 54);
+        assert_eq!(ParseErrorKind::ALL.len(), 47);
         assert_eq!(
             ParseErrorKind::ALL
                 .iter()
@@ -946,7 +816,8 @@ mod tests {
             source,
         )
         .expect("valid source document");
-        let error = ParseError::new(
+        let error = ParseError::new_with_kind(
+            ParseErrorKind::Generic,
             TextRange::new(6, 9),
             vec!["value".to_owned()],
             Some("bad".to_owned()),
@@ -1000,14 +871,5 @@ mod tests {
             diagnostic.suggestions()[0].edits()[0].replacement(),
             "value"
         );
-
-        let rebased = error.clone().rebased(10);
-        assert_eq!(rebased.kind(), ParseErrorKind::Generic);
-        assert_eq!(rebased.code(), "syntax.parse");
-        assert_eq!(rebased.range(), &TextRange::new(16, 19));
-        assert_eq!(rebased.expected(), &["value"]);
-        assert_eq!(rebased.found(), Some("bad"));
-        assert_eq!(rebased.message(), "expected a value");
-        assert_eq!(rebased.recovery(), error.recovery());
     }
 }

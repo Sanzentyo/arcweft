@@ -33,20 +33,20 @@ use arcweft_lang_syntax::attachment::{
     AttachedExpressionNode, SyntaxNodeId,
 };
 use arcweft_lang_syntax::expressions::{
-    ExpressionComponentRole, ExpressionProjection, SyntaxCallArgumentPart,
-    SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeArgumentProjection,
-    SyntaxCallTypeChildRole, SyntaxDialogueApplicationForm, SyntaxDialogueContentProjection,
-    SyntaxExpressionSlot, SyntaxPlaceholderKind, SyntaxPostfixBracketProjection,
-    SyntaxSelectedMember,
+    ExpressionComponentRole, ExpressionProjection, SyntaxAssociatedReceiver,
+    SyntaxCallArgumentPart, SyntaxCallCalleeProjection, SyntaxCallProjection,
+    SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxDialogueApplicationForm,
+    SyntaxDialogueContentProjection, SyntaxExpressionSlot, SyntaxPlaceholderKind,
+    SyntaxPostfixBracketProjection, SyntaxSelectedMember,
 };
 use arcweft_lang_syntax::incremental::ParsedSource;
 
+use super::ExpressionManifestRows;
 use super::call::call_projection_matches;
 use super::leaf::{
     lifetime_projection_matches, numeric_sequence_matches, short_variant_projection_matches,
 };
 use super::projection::poison_state_matches;
-use super::source_index_has_expression_owner;
 use crate::arena::ArenaSnapshot;
 use crate::dialogue_application::HirPostfixBracketCandidates;
 use crate::expr::{
@@ -96,8 +96,13 @@ struct CandidateExpectedDescendants {
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one candidate expression pass validates the complete attached-to-HIR identity and source projection"
+)]
 pub(super) fn validate_candidate_expressions(
     index: &HirSourceIndex,
+    expression_rows: &ExpressionManifestRows<'_>,
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
     expressions: &ArenaSnapshot<HirExpr, ExprId>,
@@ -144,7 +149,7 @@ pub(super) fn validate_candidate_expressions(
         };
         let root_site = outer_root_site(parsed, &attached)?;
         let mut index_cursor = CandidateValidationCursor::new(
-            index,
+            expression_rows,
             parsed,
             slots,
             expressions,
@@ -170,7 +175,7 @@ pub(super) fn validate_candidate_expressions(
             return None;
         }
         let mut dialogue_cursor = CandidateValidationCursor::new(
-            index,
+            expression_rows,
             parsed,
             slots,
             expressions,
@@ -195,11 +200,29 @@ pub(super) fn validate_candidate_expressions(
         if actual_dialogue != *dialogue_root {
             return None;
         }
+        let dialogue_payload = expressions.resolve_prepared(slots, actual_dialogue).ok()?;
+        let HirExprKind::DialogueContentApplication(application) = dialogue_payload.kind() else {
+            return None;
+        };
+        if !super::candidate_dialogue_manifest_matches(
+            index,
+            parsed,
+            actual_dialogue,
+            &attached,
+            dialogue_graph,
+            application,
+        ) {
+            return None;
+        }
     }
     candidate_descendant_slots_match(slots, scopes, &expected)?;
     Some(expected.expressions)
 }
 
+#[allow(
+    clippy::option_option,
+    reason = "the lookup returns a deliberate tri-state: absent candidate, missing expression, or one attached expression"
+)]
 fn candidate_attached_expression(
     parsed: &ParsedSource,
     syntax: SyntaxNodeId,
@@ -218,6 +241,7 @@ fn candidate_attached_expression(
     }
 }
 
+#[cfg(test)]
 pub(in crate::source_index) fn candidate_expression_slots_match(
     slots: &SlotSnapshot,
     expected: &BTreeSet<ExprId>,
@@ -287,17 +311,8 @@ const fn is_candidate_role(role: SyntheticRole) -> bool {
     )
 }
 
-fn source_index_has_typed_owner(index: &HirSourceIndex, owner: SyntheticOwner) -> bool {
-    index.syntax_owners.contains_key(&owner)
-        || index
-            .requirements
-            .keys()
-            .any(|query| query.owner() == owner)
-        || index.components.keys().any(|query| query.owner() == owner)
-}
-
 struct CandidateValidationCursor<'a> {
-    index: &'a HirSourceIndex,
+    expression_rows: &'a ExpressionManifestRows<'a>,
     parsed: &'a ParsedSource,
     slots: &'a SlotSnapshot,
     expressions: &'a ArenaSnapshot<HirExpr, ExprId>,
@@ -320,9 +335,13 @@ struct CandidateValidationCursor<'a> {
 }
 
 impl<'a> CandidateValidationCursor<'a> {
+    fn source_index_has_typed_owner(&self, owner: SyntheticOwner) -> bool {
+        self.expression_rows.has_typed_owner(owner)
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn new(
-        index: &'a HirSourceIndex,
+        expression_rows: &'a ExpressionManifestRows<'a>,
         parsed: &'a ParsedSource,
         slots: &'a SlotSnapshot,
         expressions: &'a ArenaSnapshot<HirExpr, ExprId>,
@@ -338,7 +357,7 @@ impl<'a> CandidateValidationCursor<'a> {
         expected: &'a mut CandidateExpectedDescendants,
     ) -> Self {
         Self {
-            index,
+            expression_rows,
             parsed,
             slots,
             expressions,
@@ -375,10 +394,15 @@ impl<'a> CandidateValidationCursor<'a> {
             .ok()??;
         let metadata = self.slots.resolve_prepared(id).ok()?;
         let payload = self.expressions.resolve_prepared(self.slots, id).ok()?;
+        let admits_dialogue_source_manifest =
+            self.role == SyntheticRole::DialogueContentCandidateExpression && ordinal == 0;
         if metadata.origin() != &HirOrigin::Synthetic(key)
             || metadata.source_site() != source_site
             || payload.scope() != scope
-            || source_index_has_expression_owner(self.index, id)
+            || (self
+                .expression_rows
+                .has_typed_owner(SyntheticOwner::Expr(id))
+                && !admits_dialogue_source_manifest)
             || !self.expected.expressions.insert(id)
         {
             return None;
@@ -1189,7 +1213,7 @@ impl<'a> CandidateValidationCursor<'a> {
                         };
                         if value.missing
                             || *value_receiver != value.id
-                            || nominal_receiver.type_id() != nominal.id
+                            || nominal_receiver.type_id() != Some(nominal.id)
                             || matches!(
                                 nominal_receiver,
                                 HirAssociatedReceiver::InvalidPresent { .. }
@@ -1199,7 +1223,10 @@ impl<'a> CandidateValidationCursor<'a> {
                         }
                         child_poison(value.poisoned)
                     }
-                    SyntaxCallCalleeProjection::Associated { .. } => {
+                    SyntaxCallCalleeProjection::Associated {
+                        receiver: SyntaxAssociatedReceiver::Present,
+                        ..
+                    } => {
                         let receiver = self.validate_call_type(
                             &mut types,
                             SyntaxCallTypeChildRole::AssociatedReceiver,
@@ -1212,7 +1239,7 @@ impl<'a> CandidateValidationCursor<'a> {
                         else {
                             return None;
                         };
-                        if actual_receiver.type_id() != receiver.id
+                        if actual_receiver.type_id() != Some(receiver.id)
                             || matches!(
                                 actual_receiver,
                                 HirAssociatedReceiver::InvalidPresent { .. }

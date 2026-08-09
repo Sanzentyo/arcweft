@@ -580,27 +580,43 @@ mod tests {
         ] {
             let surface = scan_dialogue_surface(source, 0, source.len()).expect(source);
             assert_eq!(surface.range(), TextRange::new(0, source.len()), "{source}");
-            match (surface.kind(), expected) {
-                (ScannedDialogueSurfaceKind::Escape { value: '[', .. }, "escape") => {}
-                (ScannedDialogueSurfaceKind::Ruby(ruby), "ruby")
-                    if matches!(
+            match expected {
+                "escape" => assert!(matches!(
+                    surface.kind(),
+                    ScannedDialogueSurfaceKind::Escape { value: '[', .. }
+                )),
+                "ruby" => {
+                    let ScannedDialogueSurfaceKind::Ruby(ruby) = surface.kind() else {
+                        panic!("unexpected surface for {source}");
+                    };
+                    assert!(matches!(
                         ruby.form,
                         ScannedRubyForm::Natural
                             | ScannedRubyForm::AsciiExplicit
                             | ScannedRubyForm::AsciiCompact
-                    ) && !ruby.base().value().is_empty()
-                        && ruby.ruby().value() == "ruby"
-                        || ruby.ruby().value() == "かんじ" => {}
-                (ScannedDialogueSurfaceKind::Interpolation { form, .. }, "interpolation")
-                    if matches!(
+                    ));
+                    assert!(!ruby.base().value().is_empty());
+                    assert!(matches!(ruby.ruby().value(), "ruby" | "かんじ"));
+                }
+                "interpolation" => assert!(matches!(
+                    surface.kind(),
+                    ScannedDialogueSurfaceKind::Interpolation {
+                        form: ScannedInterpolationForm::HashBracket
+                            | ScannedInterpolationForm::DollarParen,
+                        ..
+                    }
+                )),
+                "raw" => {
+                    let ScannedDialogueSurfaceKind::Raw { form, body, .. } = surface.kind() else {
+                        panic!("unexpected surface for {source}");
+                    };
+                    assert!(matches!(
                         form,
-                        ScannedInterpolationForm::HashBracket
-                            | ScannedInterpolationForm::DollarParen
-                    ) => {}
-                (ScannedDialogueSurfaceKind::Raw { form, body, .. }, "raw")
-                    if matches!(form, ScannedRawForm::Paired | ScannedRawForm::Inline)
-                        && body.value() == "a[b]c" => {}
-                _ => panic!("unexpected surface for {source}"),
+                        ScannedRawForm::Paired | ScannedRawForm::Inline
+                    ));
+                    assert_eq!(body.value(), "a[b]c");
+                }
+                _ => panic!("unexpected expected surface `{expected}`"),
             }
         }
     }

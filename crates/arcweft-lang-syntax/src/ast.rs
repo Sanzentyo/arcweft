@@ -1,14 +1,4 @@
-pub mod choice;
 pub mod common;
-pub mod dialogue;
-pub mod flow;
-pub mod ids;
-pub mod items;
 pub mod line_plan;
 pub mod module_path;
-pub mod pattern;
-pub mod proof;
-pub mod source;
-pub mod style;
 pub mod symbol_path;
-pub mod view;

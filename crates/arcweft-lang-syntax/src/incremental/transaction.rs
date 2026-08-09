@@ -15,9 +15,13 @@ use crate::grammar::event::SyntaxEvent;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::incremental::shape::{GrammarShapeError, GrammarShapeNode};
 use crate::parser::ParseOptions;
-use crate::parser::parse_shadow_document;
+use crate::parser::parse_document;
+#[cfg(test)]
+use crate::parser::parse_document_with_global_count;
 use crate::parser::unbound_fragment::{AttachedFragment, FragmentKind, FragmentTree};
 
+#[cfg(test)]
+use super::SyntaxLimit;
 use super::bound::ParsedSourceData;
 use super::{ParseFailure, SyntaxInvariantFailure, reconcile};
 
@@ -79,6 +83,13 @@ pub(super) enum TransactionFault {
     None,
     #[cfg(test)]
     MissingAttachment,
+    #[cfg(test)]
+    MalformedEvents,
+    #[cfg(test)]
+    GlobalCount {
+        limit: SyntaxLimit,
+        already_charged: usize,
+    },
 }
 
 impl SyntaxTransactionState {
@@ -89,8 +100,7 @@ impl SyntaxTransactionState {
         options: ParseOptions,
         fault: TransactionFault,
     ) -> Result<StagedInitial, ParseFailure> {
-        let build = parse_shadow_document(document, options)
-            .map_err(|error| map_grammar_build_failure(&error))?;
+        let build = parse_for_transaction(document, options, fault)?;
         let staged = self.stage_fresh_attachment(source, document, build, fault)?;
         let current = Arc::new(
             ParsedSourceData::try_new(staged.syntax, &staged.build)
@@ -195,8 +205,7 @@ impl SyntaxLineageState {
         {
             return Err(SyntaxInvariantFailure::AllocatorRegression.into());
         }
-        let build = parse_shadow_document(document, options)
-            .map_err(|error| map_grammar_build_failure(&error))?;
+        let build = parse_for_transaction(document, options, fault)?;
         let shape = GrammarShapeNode::from_build(&build).map_err(map_grammar_shape_failure)?;
         let mut allocator = self.allocator.clone();
         let mut identities =
@@ -284,6 +293,35 @@ fn map_grammar_build_failure(error: &GrammarBuildError) -> ParseFailure {
     }
 }
 
+fn parse_for_transaction(
+    document: &SourceDocument,
+    options: ParseOptions,
+    fault: TransactionFault,
+) -> Result<GrammarBuild, ParseFailure> {
+    #[cfg(test)]
+    let build = match fault {
+        TransactionFault::GlobalCount {
+            limit,
+            already_charged,
+        } => parse_document_with_global_count(document, options, limit, already_charged),
+        _ => parse_document(document, options),
+    }
+    .map_err(|error| map_grammar_build_failure(&error))?;
+    #[cfg(not(test))]
+    let build =
+        parse_document(document, options).map_err(|error| map_grammar_build_failure(&error))?;
+    #[cfg(not(test))]
+    let _ = fault;
+
+    #[cfg(test)]
+    if fault == TransactionFault::MalformedEvents {
+        let mut events = build.events().to_vec();
+        assert_eq!(events.pop(), Some(SyntaxEvent::FinishNode));
+        return build_grammar(document, &events).map_err(|error| map_grammar_build_failure(&error));
+    }
+    Ok(build)
+}
+
 fn project_fragment_tree(
     document: &SourceDocument,
     target: SourceRange,
@@ -368,6 +406,8 @@ fn apply_fault(
                 identities.remove_path(entry.path());
             }
         }
+        #[cfg(test)]
+        TransactionFault::MalformedEvents | TransactionFault::GlobalCount { .. } => {}
     }
     #[cfg(not(test))]
     let _ = (build, identities);

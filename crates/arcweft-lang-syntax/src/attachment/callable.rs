@@ -5,28 +5,104 @@ mod function;
 pub use self::function::{AttachedFunctionBody, AttachedFunctionDeclaration};
 
 use crate::assertion::AssertionMode;
+use crate::ast::common::TextRange;
+use crate::expressions::{
+    ExpressionComponentRole, ExpressionProjection, SyntaxCallArgumentListTerminator,
+    SyntaxCallArgumentPart, SyntaxCallArgumentProjection, SyntaxRequiredTokenState,
+};
 use crate::grammar::callable_projection::{
     MethodReceiverSyntaxKind, PendingMethodReceiverProjection,
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
+use crate::literal::SyntaxLiteralValue;
 use crate::patterns::{PatternComponentRole, PatternSyntaxFamily};
 
 use super::declaration::{AttachedDeclarationIdentity, attach_declaration_identity};
 use super::family::{ExpressionFamily, NameFamily, PatternFamily, TypeFamily};
+use super::item_prefix::is_verify_trusted_attribute;
 use super::node::{
-    AssertionStatementKind, AstNode, CloseParenKind, ColonKind, EnsuresClauseKind, EqualsKind,
-    ErrorNodeKind, ExpressionBodyKind, FixedParameterGroupKind, FunctionBodyKind, FunctionItemKind,
-    MissingBodyKind, OpenParenKind, ParameterKind, PredicateBlockKind, PredicateBodyKind,
-    PredicateItemKind, ProofBlockKind, ProofBodyKind, ProofItemKind, RequiresClauseKind,
-    RestParameterMarkerKind, ReturnTypeKind, ThinArrowKind,
+    AssertionStatementKind, AstNode, CloseBraceKind, CloseParenKind, ColonKind, EffectsClauseKind,
+    EnsuresClauseKind, EqualsKind, ErrorNodeKind, ExpressionBodyKind, FixedParameterGroupKind,
+    FunctionBodyKind, FunctionItemKind, MissingBodyKind, OpenBraceKind, OpenParenKind,
+    ParameterKind, PredicateBlockKind, PredicateBodyKind, PredicateItemKind, ProofBlockKind,
+    ProofBodyKind, ProofItemKind, RequiresClauseKind, RestParameterMarkerKind, ReturnTypeKind,
+    ThinArrowKind,
 };
 use super::nominal::{optional_generics, required_name, where_clauses};
+use super::source_file::AttachedDelimiterState;
 use super::{
-    AttachedDeclarationPublicId, AttachedExpressionNode, AttachedGenericParameterGroup,
-    AttachedItemPrefix, AttachedPatternNode, AttachedRequiredName, AttachedRequiredPunctuation,
-    AttachedTypeFamily, AttachedTypeRefNode, AttachedWhereClause, DeclarationBodyNode, NameNode,
-    SyntaxAccessError, TypedItemNode,
+    AttachedAttributeValue, AttachedDeclarationPublicId, AttachedExpressionNode,
+    AttachedGenericParameterGroup, AttachedItemPrefix, AttachedOuterAttribute,
+    AttachedOuterAttributeForm, AttachedPatternNode, AttachedRequiredName,
+    AttachedRequiredPunctuation, AttachedTypeFamily, AttachedTypeRefNode, AttachedWhereClause,
+    DeclarationBodyNode, NameNode, SyntaxAccessError, TypedItemNode,
 };
+
+/// Decoded, non-blank trusted-proof justification retained exactly as authored.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TrustReasonSyntax(Box<str>);
+
+impl TrustReasonSyntax {
+    /// Admits one lexer-decoded reason when Unicode trimming leaves content.
+    pub fn try_new(decoded: impl Into<Box<str>>) -> Result<Self, TrustReasonSyntaxError> {
+        let decoded = decoded.into();
+        if decoded.trim().is_empty() {
+            return Err(TrustReasonSyntaxError::Empty);
+        }
+        Ok(Self(decoded))
+    }
+
+    /// Returns the exact decoded reason bytes without trimming or normalization.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Invalid decoded trusted-proof reason.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TrustReasonSyntaxError {
+    /// The decoded string was empty or Unicode whitespace only.
+    Empty,
+}
+
+/// Final typed trust classification owned by one attached Proof declaration.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProofTrustSyntax {
+    /// Ordinary Proof whose body must be verified.
+    Verified,
+    /// Proof admitted directly by an authored trust attribute.
+    Trusted {
+        /// Exact decoded non-blank justification.
+        reason: TrustReasonSyntax,
+        /// Exact source extent of the consumed trust attribute.
+        attribute_range: TextRange,
+    },
+}
+
+impl ProofTrustSyntax {
+    /// Whether this Proof is admitted directly instead of through verification.
+    pub const fn is_directly_trusted(&self) -> bool {
+        matches!(self, Self::Trusted { .. })
+    }
+
+    /// Returns the authored trust reason for a directly trusted Proof.
+    pub const fn reason(&self) -> Option<&TrustReasonSyntax> {
+        match self {
+            Self::Verified => None,
+            Self::Trusted { reason, .. } => Some(reason),
+        }
+    }
+
+    /// Returns the exact trust-attribute range for a directly trusted Proof.
+    pub const fn attribute_range(&self) -> Option<TextRange> {
+        match self {
+            Self::Verified => None,
+            Self::Trusted {
+                attribute_range, ..
+            } => Some(*attribute_range),
+        }
+    }
+}
 
 /// One fixed Predicate parameter and its exact pattern/type children.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -259,8 +335,8 @@ impl AttachedMethodReceiver {
 /// One source-ordered method parameter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedMethodParameter {
-    Receiver(AttachedMethodReceiver),
-    Typed(AttachedCallableParameter),
+    Receiver(Box<AttachedMethodReceiver>),
+    Typed(Box<AttachedCallableParameter>),
 }
 
 impl AttachedMethodParameter {
@@ -397,28 +473,44 @@ pub enum AttachedCallableContractClause {
         family_ordinal: u16,
         condition: AttachedExpressionNode,
     },
+    Effects {
+        syntax: AstNode<EffectsClauseKind>,
+        source_ordinal: u16,
+        family_ordinal: u16,
+        open: Option<AstNode<OpenBraceKind>>,
+        operands: Box<[AttachedExpressionNode]>,
+        close: Option<AstNode<CloseBraceKind>>,
+    },
 }
 
 impl AttachedCallableContractClause {
     pub const fn source_ordinal(&self) -> u16 {
         match self {
-            Self::Requires { source_ordinal, .. } | Self::Ensures { source_ordinal, .. } => {
-                *source_ordinal
-            }
+            Self::Requires { source_ordinal, .. }
+            | Self::Ensures { source_ordinal, .. }
+            | Self::Effects { source_ordinal, .. } => *source_ordinal,
         }
     }
 
     pub const fn family_ordinal(&self) -> u16 {
         match self {
-            Self::Requires { family_ordinal, .. } | Self::Ensures { family_ordinal, .. } => {
-                *family_ordinal
-            }
+            Self::Requires { family_ordinal, .. }
+            | Self::Ensures { family_ordinal, .. }
+            | Self::Effects { family_ordinal, .. } => *family_ordinal,
         }
     }
 
-    pub const fn condition(&self) -> &AttachedExpressionNode {
+    pub const fn condition(&self) -> Option<&AttachedExpressionNode> {
         match self {
-            Self::Requires { condition, .. } | Self::Ensures { condition, .. } => condition,
+            Self::Requires { condition, .. } | Self::Ensures { condition, .. } => Some(condition),
+            Self::Effects { .. } => None,
+        }
+    }
+
+    pub const fn effects(&self) -> Option<&[AttachedExpressionNode]> {
+        match self {
+            Self::Effects { operands, .. } => Some(operands),
+            Self::Requires { .. } | Self::Ensures { .. } => None,
         }
     }
 
@@ -428,6 +520,10 @@ impl AttachedCallableContractClause {
 
     pub const fn is_ensures(&self) -> bool {
         matches!(self, Self::Ensures { .. })
+    }
+
+    pub const fn is_effects(&self) -> bool {
+        matches!(self, Self::Effects { .. })
     }
 
     pub const fn is_out_of_order(&self) -> bool {
@@ -444,7 +540,30 @@ impl AttachedCallableContractClause {
         match self {
             Self::Requires { syntax, .. } => syntax.source_span(),
             Self::Ensures { syntax, .. } => syntax.source_span(),
+            Self::Effects { syntax, .. } => syntax.source_span(),
         }
+    }
+
+    /// Exact authored contract keyword, retained from the attached token.
+    ///
+    /// This projection never searches source text. The contract node grammar
+    /// owns one leading keyword token, so downstream source manifests can
+    /// distinguish an authored empty `effects {}` clause from omission.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the already-validated attached contract has lost its required
+    /// keyword token.
+    pub fn keyword_source_span(&self) -> arcweft_source::SourceSpan {
+        let syntax = match self {
+            Self::Requires { syntax, .. } => syntax.syntax(),
+            Self::Ensures { syntax, .. } => syntax.syntax(),
+            Self::Effects { syntax, .. } => syntax.syntax(),
+        };
+        let projection = syntax
+            .contract_clause_projection()
+            .expect("attached callable contract retains its parser projection");
+        syntax.source_span_for_range(projection.clause_keyword())
     }
 
     /// Zero-width anchor at the authored contract keyword.
@@ -452,20 +571,39 @@ impl AttachedCallableContractClause {
         let syntax = match self {
             Self::Requires { syntax, .. } => syntax.syntax(),
             Self::Ensures { syntax, .. } => syntax.syntax(),
+            Self::Effects { syntax, .. } => syntax.syntax(),
         };
         let start = syntax.range().start();
         syntax.source_span_for_range(arcweft_source::SourceRange::new(start, start))
     }
 
     /// Zero-width anchor at the start of the authored condition.
-    pub fn condition_start_source_span(&self) -> arcweft_source::SourceSpan {
-        let syntax = self.condition().syntax().syntax();
+    pub fn condition_start_source_span(&self) -> Option<arcweft_source::SourceSpan> {
+        let syntax = self.condition()?.syntax().syntax();
         let start = syntax.range().start();
-        syntax.source_span_for_range(arcweft_source::SourceRange::new(start, start))
+        Some(syntax.source_span_for_range(arcweft_source::SourceRange::new(start, start)))
     }
 
     pub fn has_recovery(&self) -> bool {
-        self.is_out_of_order() || self.condition().projection().has_recovery()
+        self.is_out_of_order()
+            || match self {
+                Self::Requires { condition, .. } | Self::Ensures { condition, .. } => {
+                    condition.projection().has_recovery()
+                }
+                Self::Effects {
+                    open,
+                    operands,
+                    close,
+                    ..
+                } => {
+                    open.is_none()
+                        || close.is_none()
+                        || close.as_ref().is_some_and(|close| close.range().is_empty())
+                        || operands
+                            .iter()
+                            .any(|operand| operand.projection().has_recovery())
+                }
+            }
     }
 }
 
@@ -491,7 +629,7 @@ impl AttachedPredicateReturnRecovery {
 pub enum AttachedPredicateBody {
     Expression {
         syntax: AstNode<PredicateBodyKind>,
-        expression: AttachedExpressionNode,
+        expression: Box<AttachedExpressionNode>,
     },
     Block {
         syntax: AstNode<PredicateBodyKind>,
@@ -630,10 +768,8 @@ impl AttachedPredicateDeclaration {
                 self.contracts
                     .iter()
                     .find(|clause| clause.is_ensures() && !clause.has_recovery())
-                    .map_or_else(
-                        || self.parameter_group.end_source_span(),
-                        AttachedCallableContractClause::condition_start_source_span,
-                    )
+                    .and_then(AttachedCallableContractClause::condition_start_source_span)
+                    .unwrap_or_else(|| self.parameter_group.end_source_span())
             })
     }
 }
@@ -729,7 +865,7 @@ impl AstNode<ReturnTypeKind> {
 pub enum AttachedProofBody {
     Expression {
         syntax: AstNode<ProofBodyKind>,
-        expression: AttachedExpressionNode,
+        expression: Box<AttachedExpressionNode>,
     },
     Block {
         syntax: AstNode<ProofBodyKind>,
@@ -767,6 +903,9 @@ impl AttachedProofBody {
 pub struct AttachedProofDeclaration {
     syntax: AstNode<ProofItemKind>,
     prefix: AttachedItemPrefix,
+    trust: Option<ProofTrustSyntax>,
+    trust_attribute_source: Option<arcweft_source::SourceSpan>,
+    trust_reason_source: Option<arcweft_source::SourceSpan>,
     identity: AttachedDeclarationIdentity,
     name: AttachedRequiredName,
     generics: Option<AttachedGenericParameterGroup>,
@@ -785,6 +924,27 @@ impl AttachedProofDeclaration {
 
     pub const fn prefix(&self) -> &AttachedItemPrefix {
         &self.prefix
+    }
+
+    /// Final trust projection. `None` is explicit malformed-metadata recovery;
+    /// it must never be interpreted as ordinary verification.
+    pub const fn trust(&self) -> Option<&ProofTrustSyntax> {
+        self.trust.as_ref()
+    }
+
+    /// Whether explicit malformed trust metadata poisoned this declaration.
+    pub const fn has_trust_recovery(&self) -> bool {
+        self.trust.is_none()
+    }
+
+    /// Exact accepted trust-attribute span, absent for verified or recovered metadata.
+    pub const fn trust_attribute_source_span(&self) -> Option<&arcweft_source::SourceSpan> {
+        self.trust_attribute_source.as_ref()
+    }
+
+    /// Exact accepted reason-expression span, absent for verified or recovered metadata.
+    pub const fn trust_reason_source_span(&self) -> Option<&arcweft_source::SourceSpan> {
+        self.trust_reason_source.as_ref()
     }
 
     pub const fn identity(&self) -> &AttachedDeclarationIdentity {
@@ -864,18 +1024,16 @@ impl AttachedProofDeclaration {
                 self.contracts
                     .iter()
                     .find(|clause| clause.is_ensures() && !clause.has_recovery())
-                    .map_or_else(
-                        || {
-                            self.authored_return
-                                .as_ref()
-                                .filter(|authored| !authored.has_recovery())
-                                .map_or_else(
-                                    || self.parameter_group.end_source_span(),
-                                    AttachedCallableReturn::end_source_span,
-                                )
-                        },
-                        AttachedCallableContractClause::condition_start_source_span,
-                    )
+                    .and_then(AttachedCallableContractClause::condition_start_source_span)
+                    .unwrap_or_else(|| {
+                        self.authored_return
+                            .as_ref()
+                            .filter(|authored| !authored.has_recovery())
+                            .map_or_else(
+                                || self.parameter_group.end_source_span(),
+                                AttachedCallableReturn::end_source_span,
+                            )
+                    })
             })
     }
 
@@ -889,6 +1047,9 @@ impl AstNode<ProofItemKind> {
     /// Binds the complete Proof declaration without a detached reader.
     pub fn semantics(&self) -> Result<AttachedProofDeclaration, SyntaxAccessError> {
         let item = TypedItemNode::Proof(self.clone());
+        let mut prefix = item.attached_prefix_including_proof_trust()?;
+        let trust = attach_proof_trust(&prefix);
+        prefix.remove_proof_trust_attributes();
         let pending = self
             .syntax()
             .declaration_header_projection()
@@ -909,7 +1070,10 @@ impl AstNode<ProofItemKind> {
             attach_proof_body(self.required_exact_child::<ProofBodyKind>(SyntaxRole::Body)?)?;
         Ok(AttachedProofDeclaration {
             syntax: self.clone(),
-            prefix: item.attached_prefix()?,
+            prefix,
+            trust: trust.trust,
+            trust_attribute_source: trust.attribute_source,
+            trust_reason_source: trust.reason_source,
             identity,
             name: required_name(&item.syntax(), false)?,
             generics: optional_generics(&item.syntax())?,
@@ -922,6 +1086,104 @@ impl AstNode<ProofItemKind> {
                 .ordered_exact_children::<ErrorNodeKind>(SyntaxRoleClass::Recovery)?
                 .into_boxed_slice(),
         })
+    }
+}
+
+struct AttachedProofTrust {
+    trust: Option<ProofTrustSyntax>,
+    attribute_source: Option<arcweft_source::SourceSpan>,
+    reason_source: Option<arcweft_source::SourceSpan>,
+}
+
+fn attach_proof_trust(prefix: &AttachedItemPrefix) -> AttachedProofTrust {
+    let attributes = prefix
+        .attributes()
+        .iter()
+        .filter(|attribute| is_verify_trusted_attribute(attribute))
+        .collect::<Vec<_>>();
+    let [] = attributes.as_slice() else {
+        return attach_authored_proof_trust(&attributes);
+    };
+    AttachedProofTrust {
+        trust: Some(ProofTrustSyntax::Verified),
+        attribute_source: None,
+        reason_source: None,
+    }
+}
+
+fn attach_authored_proof_trust(attributes: &[&AttachedOuterAttribute]) -> AttachedProofTrust {
+    let [attribute] = attributes else {
+        return AttachedProofTrust {
+            trust: None,
+            attribute_source: None,
+            reason_source: None,
+        };
+    };
+    let attribute_source = attribute.syntax().source_span();
+    let recovery = || AttachedProofTrust {
+        trust: None,
+        attribute_source: None,
+        reason_source: None,
+    };
+    if attribute.issue().is_some()
+        || attribute.recovery().is_some()
+        || matches!(attribute.close_state(), AttachedDelimiterState::Missing(_))
+    {
+        return recovery();
+    }
+    let AttachedOuterAttributeForm::Parenthesized {
+        arguments,
+        terminator: SyntaxCallArgumentListTerminator::Closed,
+    } = attribute.form()
+    else {
+        return recovery();
+    };
+    let [argument] = arguments.as_ref() else {
+        return recovery();
+    };
+    let SyntaxCallArgumentProjection::Named {
+        name: Ok(name),
+        equals: SyntaxRequiredTokenState::Present,
+        ..
+    } = argument.projection()
+    else {
+        return recovery();
+    };
+    if name.as_str() != "reason" {
+        return recovery();
+    }
+    let AttachedAttributeValue::Authored(expression) = argument.value() else {
+        return recovery();
+    };
+    let ExpressionProjection::Literal(literal) = expression.projection() else {
+        return recovery();
+    };
+    let SyntaxLiteralValue::String { value, .. } = literal.value() else {
+        return recovery();
+    };
+    let Ok(reason) = TrustReasonSyntax::try_new(value.clone()) else {
+        return recovery();
+    };
+    let SyntaxRole::Argument(argument_ordinal) = argument.syntax().role() else {
+        return recovery();
+    };
+    let Some(reason_source) = attribute
+        .component(ExpressionComponentRole::CallArgument {
+            argument: argument_ordinal,
+            part: SyntaxCallArgumentPart::Value,
+        })
+        .cloned()
+    else {
+        return recovery();
+    };
+    let range = attribute.syntax().range();
+    AttachedProofTrust {
+        trust: Some(ProofTrustSyntax::Trusted {
+            reason,
+            attribute_range: TextRange::new(range.start(), range.end()),
+        }),
+        attribute_source: Some(attribute_source),
+        reason_source: Some(reason_source),
     }
 }
 
@@ -1063,32 +1325,33 @@ fn attach_method_parameter_group(
             *next_parameter_ordinal = next_parameter_ordinal
                 .checked_add(1)
                 .ok_or(SyntaxAccessError::InvalidItemProjection { id: syntax.id() })?;
-            match parameter.syntax().method_receiver_projection().cloned() {
-                Some(receiver) => attach_method_receiver(
+            if let Some(receiver) = parameter.syntax().method_receiver_projection() {
+                attach_method_receiver(
                     parameter,
                     source_ordinal,
                     group_ordinal,
                     parameter_ordinal,
                     receiver,
                 )
-                .map(AttachedMethodParameter::Receiver),
-                None => {
-                    if parameter
-                        .optional_family_child::<TypeFamily>(SyntaxRole::ParameterType)?
-                        .is_none()
-                    {
-                        return Err(SyntaxAccessError::MissingMethodReceiverProjection {
-                            id: parameter.id(),
-                        });
-                    }
-                    attach_callable_parameter(
-                        parameter,
-                        source_ordinal,
-                        group_ordinal,
-                        parameter_ordinal,
-                    )
-                    .map(AttachedMethodParameter::Typed)
+                .map(Box::new)
+                .map(AttachedMethodParameter::Receiver)
+            } else {
+                if parameter
+                    .optional_family_child::<TypeFamily>(SyntaxRole::ParameterType)?
+                    .is_none()
+                {
+                    return Err(SyntaxAccessError::MissingMethodReceiverProjection {
+                        id: parameter.id(),
+                    });
                 }
+                attach_callable_parameter(
+                    parameter,
+                    source_ordinal,
+                    group_ordinal,
+                    parameter_ordinal,
+                )
+                .map(Box::new)
+                .map(AttachedMethodParameter::Typed)
             }
         })
         .collect::<Result<Vec<_>, _>>()?
@@ -1150,7 +1413,7 @@ fn attach_method_receiver(
     source_ordinal: u16,
     group_ordinal: u16,
     parameter_ordinal: u16,
-    projection: PendingMethodReceiverProjection,
+    projection: &PendingMethodReceiverProjection,
 ) -> Result<AttachedMethodReceiver, SyntaxAccessError> {
     let invalid = || SyntaxAccessError::InvalidMethodReceiverProjection { id: parameter.id() };
     if parameter
@@ -1176,7 +1439,7 @@ fn attach_method_receiver(
         .component(PatternComponentRole::Name)
         .ok_or_else(invalid)?;
     let pattern_mut = pattern.component(PatternComponentRole::MutKeyword);
-    let expected_family = match &projection {
+    let expected_family = match projection {
         PendingMethodReceiverProjection::Owned {
             mut_keyword: Some(expected),
             ..
@@ -1265,26 +1528,23 @@ fn attach_contracts(
     let mut source_ordinal = 0_u16;
     let mut requires_ordinal = 0_u16;
     let mut ensures_ordinal = 0_u16;
+    let mut effects_ordinal = 0_u16;
     let mut saw_ensures = false;
     let mut contracts = Vec::new();
     for child in item.syntax().children().into_iter().filter(|child| {
         matches!(
             child.kind(),
-            SyntaxKind::RequiresClause | SyntaxKind::EnsuresClause
+            SyntaxKind::RequiresClause | SyntaxKind::EnsuresClause | SyntaxKind::EffectsClause
         )
     }) {
-        let condition = child
-            .optional_unique_child(SyntaxRole::ContractOperand(0))?
-            .ok_or(SyntaxAccessError::InvalidItemProjection { id: child.id() })?;
-        let condition =
-            super::family::FamilyNode::<ExpressionFamily>::new(condition)?.semantic()?;
+        if role_ordinal(child.id(), child.role(), SyntaxRoleClass::ContractClause)?
+            != source_ordinal
+        {
+            return Err(SyntaxAccessError::InvalidItemProjection { id: child.id() });
+        }
         let contract = match child.kind() {
             SyntaxKind::RequiresClause => {
-                if role_ordinal(child.id(), child.role(), SyntaxRoleClass::ContractClause)?
-                    != source_ordinal
-                {
-                    return Err(SyntaxAccessError::InvalidItemProjection { id: child.id() });
-                }
+                let condition = attached_scalar_contract_condition(&child)?;
                 let family_ordinal = requires_ordinal;
                 AttachedCallableContractClause::Requires {
                     syntax: child.cast()?,
@@ -1295,12 +1555,8 @@ fn attach_contracts(
                 }
             }
             SyntaxKind::EnsuresClause => {
+                let condition = attached_scalar_contract_condition(&child)?;
                 saw_ensures = true;
-                if role_ordinal(child.id(), child.role(), SyntaxRoleClass::ContractClause)?
-                    != source_ordinal
-                {
-                    return Err(SyntaxAccessError::InvalidItemProjection { id: child.id() });
-                }
                 let family_ordinal = ensures_ordinal;
                 AttachedCallableContractClause::Ensures {
                     syntax: child.cast()?,
@@ -1309,7 +1565,36 @@ fn attach_contracts(
                     condition,
                 }
             }
-            _ => unreachable!("contract filter admits only requires and ensures"),
+            SyntaxKind::EffectsClause => {
+                let operands = child
+                    .ordered_children(SyntaxRoleClass::ContractOperand)?
+                    .into_iter()
+                    .map(|operand| {
+                        super::family::FamilyNode::<ExpressionFamily>::new(operand)?.semantic()
+                    })
+                    .collect::<Result<Vec<_>, SyntaxAccessError>>()?
+                    .into_boxed_slice();
+                let open = child
+                    .optional_unique_child(SyntaxRole::OpenDelimiter)?
+                    .map(|open| open.cast())
+                    .transpose()?;
+                let close = child
+                    .optional_unique_child(SyntaxRole::CloseDelimiter)?
+                    .map(|close| close.cast())
+                    .transpose()?;
+                if open.is_some() != close.is_some() {
+                    return Err(SyntaxAccessError::InvalidItemProjection { id: child.id() });
+                }
+                AttachedCallableContractClause::Effects {
+                    syntax: child.cast()?,
+                    source_ordinal,
+                    family_ordinal: effects_ordinal,
+                    open,
+                    operands,
+                    close,
+                }
+            }
+            _ => unreachable!("contract filter admits requires, ensures, and effects"),
         };
         match child.kind() {
             SyntaxKind::RequiresClause => {
@@ -1322,7 +1607,12 @@ fn attach_contracts(
                     .checked_add(1)
                     .ok_or(SyntaxAccessError::InvalidItemProjection { id: item.id() })?;
             }
-            _ => unreachable!("contract filter admits only requires and ensures"),
+            SyntaxKind::EffectsClause => {
+                effects_ordinal = effects_ordinal
+                    .checked_add(1)
+                    .ok_or(SyntaxAccessError::InvalidItemProjection { id: item.id() })?;
+            }
+            _ => unreachable!("contract filter admits requires, ensures, and effects"),
         }
         contracts.push(contract);
         source_ordinal = source_ordinal
@@ -1330,6 +1620,15 @@ fn attach_contracts(
             .ok_or(SyntaxAccessError::InvalidItemProjection { id: item.id() })?;
     }
     Ok(contracts.into_boxed_slice())
+}
+
+fn attached_scalar_contract_condition(
+    clause: &super::SyntaxNodeHandle,
+) -> Result<AttachedExpressionNode, SyntaxAccessError> {
+    let condition = clause
+        .optional_unique_child(SyntaxRole::ContractOperand(0))?
+        .ok_or(SyntaxAccessError::InvalidItemProjection { id: clause.id() })?;
+    super::family::FamilyNode::<ExpressionFamily>::new(condition)?.semantic()
 }
 
 fn role_ordinal(
@@ -1355,7 +1654,7 @@ fn attach_predicate_body(
             let body = body.cast::<ExpressionBodyKind>()?;
             Ok(AttachedPredicateBody::Expression {
                 syntax,
-                expression: body.expression()?.semantic()?,
+                expression: Box::new(body.expression()?.semantic()?),
             })
         }
         DeclarationBodyNode::Body(body) if body.kind() == SyntaxKind::PredicateBlock => {
@@ -1379,7 +1678,7 @@ fn attach_proof_body(
             let body = body.cast::<ExpressionBodyKind>()?;
             Ok(AttachedProofBody::Expression {
                 syntax,
-                expression: body.expression()?.semantic()?,
+                expression: Box::new(body.expression()?.semantic()?),
             })
         }
         DeclarationBodyNode::Body(body) if body.kind() == SyntaxKind::ProofBlock => {

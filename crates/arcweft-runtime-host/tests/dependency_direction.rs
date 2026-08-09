@@ -45,6 +45,7 @@ struct NormalDependencyGraph {
     names: BTreeMap<String, String>,
     package_ids: BTreeMap<String, String>,
     edges: BTreeMap<String, Vec<String>>,
+    all_edges: BTreeMap<String, Vec<String>>,
 }
 
 impl NormalDependencyGraph {
@@ -64,30 +65,45 @@ impl NormalDependencyGraph {
             .filter(|package| workspace_members.contains(&package.id))
             .map(|package| (package.name.clone(), package.id.clone()))
             .collect();
-        let edges = metadata
-            .resolve
-            .nodes
-            .into_iter()
-            .map(|node| {
-                let dependencies = node
-                    .deps
-                    .into_iter()
-                    .filter(|dependency| {
-                        dependency.dep_kinds.iter().any(|kind| kind.kind.is_none())
-                    })
-                    .map(|dependency| dependency.pkg)
-                    .collect();
-                (node.id, dependencies)
-            })
-            .collect();
+        let mut edges = BTreeMap::new();
+        let mut all_edges = BTreeMap::new();
+        for node in metadata.resolve.nodes {
+            let normal = node
+                .deps
+                .iter()
+                .filter(|dependency| dependency.dep_kinds.iter().any(|kind| kind.kind.is_none()))
+                .map(|dependency| dependency.pkg.clone())
+                .collect();
+            let all = node
+                .deps
+                .into_iter()
+                .map(|dependency| dependency.pkg)
+                .collect();
+            edges.insert(node.id.clone(), normal);
+            all_edges.insert(node.id, all);
+        }
         Self {
             names,
             package_ids,
             edges,
+            all_edges,
         }
     }
 
     fn path(&self, from: &str, to: &str) -> Option<Vec<&str>> {
+        self.path_in(&self.edges, from, to)
+    }
+
+    fn all_path(&self, from: &str, to: &str) -> Option<Vec<&str>> {
+        self.path_in(&self.all_edges, from, to)
+    }
+
+    fn path_in<'a>(
+        &'a self,
+        edges: &'a BTreeMap<String, Vec<String>>,
+        from: &str,
+        to: &str,
+    ) -> Option<Vec<&'a str>> {
         let start = self
             .package_ids
             .get(from)
@@ -109,7 +125,7 @@ impl NormalDependencyGraph {
                 path.reverse();
                 return Some(path.into_iter().map(|id| self.names[id].as_str()).collect());
             }
-            for dependency in self.edges.get(current).into_iter().flatten() {
+            for dependency in edges.get(current).into_iter().flatten() {
                 if visited.insert(dependency) {
                     predecessor.insert(dependency, current);
                     frontier.push_back(dependency);
@@ -120,8 +136,7 @@ impl NormalDependencyGraph {
     }
 }
 
-#[test]
-fn runtime_host_and_adapter_context_keep_language_pipeline_dependencies_out() {
+fn workspace_dependency_graph() -> NormalDependencyGraph {
     let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../..")
         .canonicalize()
@@ -137,10 +152,14 @@ fn runtime_host_and_adapter_context_keep_language_pipeline_dependencies_out() {
         "cargo metadata failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
-    let graph = NormalDependencyGraph::from_metadata(
+    NormalDependencyGraph::from_metadata(
         serde_json::from_slice(&output.stdout).expect("typed cargo metadata JSON"),
-    );
+    )
+}
 
+#[test]
+fn runtime_host_normal_graph_excludes_hir_and_runtime_plan() {
+    let graph = workspace_dependency_graph();
     for forbidden in [
         "arcweft-lang-syntax",
         "arcweft-lang-hir",
@@ -156,6 +175,11 @@ fn runtime_host_and_adapter_context_keep_language_pipeline_dependencies_out() {
                 .join(" -> ")
         );
     }
+}
+
+#[test]
+fn adapter_context_normal_graph_excludes_compiler_layers() {
+    let graph = workspace_dependency_graph();
     for forbidden in [
         "arcweft-lang-syntax",
         "arcweft-lang-hir",
@@ -166,6 +190,29 @@ fn runtime_host_and_adapter_context_keep_language_pipeline_dependencies_out() {
             "adapter context has a forbidden normal dependency path: {}",
             graph
                 .path("arcweft-adapter-context", forbidden)
+                .unwrap()
+                .join(" -> ")
+        );
+    }
+}
+
+#[test]
+fn core_dependency_graph_excludes_compiler_layers() {
+    let graph = workspace_dependency_graph();
+    for forbidden in [
+        "arcweft-lang-syntax",
+        "arcweft-lang-hir",
+        "arcweft-lang-sema",
+        "arcweft-runtime-plan",
+        "arcweft-compiler",
+        "arcweft-cli",
+        "arcweft-lsp",
+    ] {
+        assert!(
+            graph.all_path("arcweft-core", forbidden).is_none(),
+            "core has a forbidden compiler-layer dependency path across normal/dev/target edges: {}",
+            graph
+                .all_path("arcweft-core", forbidden)
                 .unwrap()
                 .join(" -> ")
         );

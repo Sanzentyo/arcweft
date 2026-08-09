@@ -3,7 +3,7 @@
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_retained_declaration_header;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
@@ -22,7 +22,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::SignalDeclarationItem, role);
     emit_retained_declaration_header(
         &mut parser,
@@ -33,7 +33,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_observable_type(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_observable_type(parser: &mut DocumentParser<'_, '_>) {
     emit_required_punctuation(
         parser,
         SyntaxKind::ColonNode,
@@ -63,12 +63,12 @@ fn emit_observable_type(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn statement_end(parser: &ShadowDocumentParser<'_, '_>) -> usize {
+fn statement_end(parser: &DocumentParser<'_, '_>) -> usize {
     find_statement_terminator(parser, parser.cursor(), token_count(parser))
         .map_or_else(|| token_count(parser), |(end, _)| end)
 }
 
-fn emit_logical_end_and_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_logical_end_and_recovery(parser: &mut DocumentParser<'_, '_>) {
     parser.bump_trivia();
     if parser.at(";") {
         parser.bump();

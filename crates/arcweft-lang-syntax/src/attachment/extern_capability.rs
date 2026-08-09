@@ -323,7 +323,7 @@ fn attach_body(
                 .map(|(ordinal, syntax)| {
                     let source_ordinal = u16::try_from(ordinal)
                         .map_err(|_| SyntaxAccessError::InvalidItemProjection { id: owner.id() })?;
-                    attach_member(syntax, source_ordinal)
+                    attach_member(&syntax, source_ordinal)
                 })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice();
@@ -338,7 +338,7 @@ fn attach_body(
 }
 
 fn attach_member(
-    syntax: SyntaxNodeHandle,
+    syntax: &SyntaxNodeHandle,
     source_ordinal: u16,
 ) -> Result<AttachedCapabilityMember, SyntaxAccessError> {
     if syntax.role() != SyntaxRole::Element(u32::from(source_ordinal)) {

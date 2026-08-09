@@ -38,7 +38,6 @@ use arcweft_presentation::{
     input::{InteractionTarget, PointerId, ViewportPoint},
     text_input::{TextInput, TextInputSerial},
 };
-use arcweft_render_text::LineDisplayCatalog;
 use arcweft_render_wgpu::geometry::{
     ChoiceScroll, InteractionVisualState, RenderFocusAutoScrollPolicy, RenderImage,
     RenderImageFrame, RenderPreferences, RenderScene, RenderScrollAxis,
@@ -49,10 +48,16 @@ use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleSession, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
 use std::collections::BTreeMap;
 
 mod support;
 use support::prepare;
+
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
+}
 
 #[test]
 fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
@@ -330,7 +335,7 @@ entry cli @entry.opening {
         FxDefinitions::try_new(compiled.fx_definitions.iter().cloned()).expect("Fx inventory");
     bundle_from_runtime_plan(
         &compiled.plan,
-        compiled.display,
+        compiled.dialogue_content,
         SOURCE,
         "web-rich-text-fx.arcw",
         "entry.opening",
@@ -822,7 +827,7 @@ entry cli @entry.scoped_disposed { goto @flow.scoped_disposed }
     let compiled = compile_source(SOURCE).expect("authored fixture compiles");
     bundle_from_runtime_plan(
         &compiled.plan,
-        compiled.display,
+        compiled.dialogue_content,
         SOURCE,
         "web-authored-image-handle.arcw",
         "entry.manual_live",
@@ -877,7 +882,7 @@ entry cli @entry.view_scoped_disposed { goto @flow.view_scoped_disposed }
     let compiled = compile_source(SOURCE).expect("authored View fixture compiles");
     bundle_from_runtime_plan(
         &compiled.plan,
-        compiled.display,
+        compiled.dialogue_content,
         SOURCE,
         "web-authored-view-controls.arcw",
         "entry.view_manual_live",
@@ -890,14 +895,14 @@ entry cli @entry.view_scoped_disposed { goto @flow.view_scoped_disposed }
 
 fn bundle_from_runtime_plan(
     plan: &RuntimePlan,
-    display: LineDisplayCatalog,
+    dialogue_content: DialogueContentCatalog,
     source: &str,
     source_label: &str,
     manifest_entry: &str,
 ) -> ArcweftBundle {
     let bytecode = BytecodeProgram::from_runtime_plan(plan.clone());
     let stats = bytecode.stats();
-    let product_awbc = AwbcLowerer::new(plan, &display, source_label)
+    let product_awbc = AwbcLowerer::new(plan, &dialogue_content, source_label)
         .lower()
         .expect("authored fixture lowers to product AWBC")
         .program;
@@ -910,6 +915,7 @@ fn bundle_from_runtime_plan(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: None,
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -920,7 +926,7 @@ fn bundle_from_runtime_plan(
         },
         source_map(source_label, source),
         bytecode,
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
@@ -928,7 +934,7 @@ fn bundle_from_runtime_plan(
 
 fn source_map(label: &str, text: &str) -> SourceMapSection {
     let document = SourceDocument::try_new(
-        SourceDocumentId::try_new(label).expect("source ID"),
+        SourceDocumentId::try_new("arcweft-source://src/main.arcw").expect("source ID"),
         SourceName::path(label),
         text,
     )

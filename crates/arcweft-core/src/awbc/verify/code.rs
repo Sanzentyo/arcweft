@@ -490,11 +490,6 @@ fn apply_instruction(
                         }
                     }
                 }
-                Some(AwbcRuntimeType::Dynamic) => {
-                    if let Some(register) = payload {
-                        read_register(verifier, function, block, *register, state)?;
-                    }
-                }
                 _ => return invalid_type(&at, "variant type"),
             }
             let dst_ty = register_type(verifier, function, block, *dst)?;
@@ -989,6 +984,12 @@ fn apply_terminator(
             args,
         } => {
             check_index(program.functions.len(), target.0, "functions", &at)?;
+            if program.flow_identity(*target).is_none() {
+                return Err(AwbcVerifyError::InvalidInvariant {
+                    at,
+                    message: "static goto target has no exact semantic Flow binding".to_owned(),
+                });
+            }
             verify_call_args(
                 verifier,
                 function,
@@ -1071,12 +1072,12 @@ fn apply_terminator(
             ));
         }
         AwbcTerminator::Await {
-            task,
+            handle,
             binding,
             resume,
         } => {
-            let task_ty = read_register(verifier, function, block, *task, state)?;
-            if !is_await_handle(program.runtime_types.get(task_ty.index())) {
+            let handle_ty = read_register(verifier, function, block, *handle, state)?;
+            if !is_await_handle(program.runtime_types.get(handle_ty.index())) {
                 return invalid_type(&at, "task or need handle");
             }
             let mut next = state.clone();
@@ -1527,32 +1528,54 @@ fn validate_pattern(
             if let Some(expected) = ty {
                 require_compatible(program, *expected, value_ty, "record pattern")?;
             }
-            if let Some(AwbcRuntimeType::Record {
-                fields: type_fields,
-                ..
-            }) = program.runtime_types.get(value_ty.index())
-            {
-                for field in fields {
-                    let Some(field_ty) = type_fields.get(field.field as usize) else {
-                        return Err(AwbcVerifyError::IndexOutOfBounds {
-                            table: "record fields",
-                            index: field.field,
-                            at: "record pattern".to_owned(),
-                        });
-                    };
-                    validate_pattern(
-                        verifier,
-                        function,
-                        block,
-                        field.pattern,
-                        field_ty.ty,
-                        mode,
-                        state,
-                        depth + 1,
-                    )?;
+            let record_ty = ty.unwrap_or(value_ty);
+            match program.runtime_types.get(record_ty.index()) {
+                Some(AwbcRuntimeType::Record {
+                    fields: type_fields,
+                    ..
+                }) => {
+                    for field in fields {
+                        let Some(field_ty) = type_fields.get(field.field as usize) else {
+                            return Err(AwbcVerifyError::IndexOutOfBounds {
+                                table: "record fields",
+                                index: field.field,
+                                at: "record pattern".to_owned(),
+                            });
+                        };
+                        validate_pattern(
+                            verifier,
+                            function,
+                            block,
+                            field.pattern,
+                            field_ty.ty,
+                            mode,
+                            state,
+                            depth + 1,
+                        )?;
+                    }
                 }
-            } else if !is_dynamic(program.runtime_types.get(value_ty.index())) {
-                return invalid_type("record pattern", "record scrutinee");
+                Some(AwbcRuntimeType::Nominal { .. }) => {
+                    let field_ty =
+                        dynamic_type(program).ok_or_else(|| AwbcVerifyError::InvalidInvariant {
+                            at: "record pattern".to_owned(),
+                            message: "nominal record fields require the dynamic leaf type"
+                                .to_owned(),
+                        })?;
+                    for field in fields {
+                        validate_pattern(
+                            verifier,
+                            function,
+                            block,
+                            field.pattern,
+                            field_ty,
+                            mode,
+                            state,
+                            depth + 1,
+                        )?;
+                    }
+                }
+                Some(AwbcRuntimeType::Dynamic) if ty.is_none() => {}
+                _ => return invalid_type("record pattern", "typed record scrutinee"),
             }
         }
         AwbcPattern::Sequence { items, rest } => {
@@ -1598,42 +1621,39 @@ fn validate_pattern(
             payload,
         } => {
             check_string(program, *case_name, "variant pattern")?;
-            if let Some(expected) = ty {
-                require_compatible(program, *expected, value_ty, "variant pattern")?;
-            }
-            if let Some(AwbcRuntimeType::Variant { cases, .. }) =
-                program.runtime_types.get(value_ty.index())
-            {
-                let Some(case_layout) = cases.get(*case as usize) else {
-                    return Err(AwbcVerifyError::IndexOutOfBounds {
-                        table: "variant cases",
-                        index: *case,
-                        at: "variant pattern".to_owned(),
-                    });
-                };
-                if case_layout.name != *case_name {
-                    return invalid_type("variant pattern", "variant case name");
-                }
-                match (case_layout.payload, payload) {
-                    (Some(payload_ty), Some(pattern)) => validate_pattern(
-                        verifier,
-                        function,
-                        block,
-                        *pattern,
-                        payload_ty,
-                        mode,
-                        state,
-                        depth + 1,
-                    )?,
-                    (None, None) => {}
-                    _ => {
-                        return Err(AwbcVerifyError::ResultShapeMismatch {
-                            at: "variant pattern payload".to_owned(),
+            require_compatible(program, *ty, value_ty, "variant pattern")?;
+            match program.runtime_types.get(ty.index()) {
+                Some(AwbcRuntimeType::Variant { cases, .. }) => {
+                    let Some(case_layout) = cases.get(*case as usize) else {
+                        return Err(AwbcVerifyError::IndexOutOfBounds {
+                            table: "variant cases",
+                            index: *case,
+                            at: "variant pattern".to_owned(),
                         });
+                    };
+                    if case_layout.name != *case_name {
+                        return invalid_type("variant pattern", "variant case name");
+                    }
+                    match (case_layout.payload, payload) {
+                        (Some(payload_ty), Some(pattern)) => validate_pattern(
+                            verifier,
+                            function,
+                            block,
+                            *pattern,
+                            payload_ty,
+                            mode,
+                            state,
+                            depth + 1,
+                        )?,
+                        (None, None) => {}
+                        _ => {
+                            return Err(AwbcVerifyError::ResultShapeMismatch {
+                                at: "variant pattern payload".to_owned(),
+                            });
+                        }
                     }
                 }
-            } else if !is_dynamic(program.runtime_types.get(value_ty.index())) {
-                return invalid_type("variant pattern", "variant scrutinee");
+                _ => return invalid_type("variant pattern", "typed variant scrutinee"),
             }
         }
         AwbcPattern::Whole { target, inner } => {

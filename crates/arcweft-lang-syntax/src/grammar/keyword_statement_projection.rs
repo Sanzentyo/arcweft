@@ -42,7 +42,7 @@ pub enum SyntaxAwaitBranchKind {
     Denied,
 }
 
-/// Parser-selected semantic head of one AwaitWith branch.
+/// Parser-selected semantic head of one `AwaitWith` branch.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct PendingAwaitBranchProjection {
     kind: Option<SyntaxAwaitBranchKind>,

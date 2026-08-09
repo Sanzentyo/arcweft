@@ -4,11 +4,13 @@ use super::{
 };
 use crate::cache::{record::CacheRecord, store::FilesystemCacheStore};
 use arcweft_core::awbc::schema::{
-    AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
-    AwbcTableRange, AwbcTerminator,
+    AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
+    AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding, AwbcFrameLayout,
+    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId, AwbcTableRange,
+    AwbcTerminator,
 };
+use arcweft_core::effect::RuntimeAssertionGuardId;
 use arcweft_project::{
     artifact::{ArtifactKey, ArtifactKeyInput, ArtifactKind},
     fingerprint::{BuildDigest, NamedDigest},
@@ -155,22 +157,21 @@ fn parsed_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
         source_digest: key.source_digest,
         source_span: span(),
         stats: SyntaxStatsObject {
-            bytes: 4,
-            lines: 1,
-            cst_lex_passes: 1,
-            punctuation_scans: 0,
-            punctuation_scan_bytes: 0,
-            line_owned_bytes: 0,
-            block_owned_bytes: 0,
-            raw_owned_bytes: 0,
-            wiki_scan_performed: 0,
-            dialogue_rescue_expr_parse_attempts: 0,
-            numeric_seq_summaries: 0,
+            accepted_source_bytes: 4,
+            lexer_tokens: 1,
+            grammar_events: 1,
+            top_level_items: 1,
+            statements: 0,
+            expressions: 0,
+            type_nodes: 0,
+            pattern_nodes: 0,
+            identity_bearing_nodes: 1,
+            diagnostic_identities: 0,
         },
         diagnostics: StableDiagnosticSummaryObject::empty(),
         stage_inputs: key.stage_inputs(),
         evidence: ParsedSyntaxEvidenceObject {
-            root_kind: "source_file".to_owned(),
+            root_kind: 0,
             cst_shape_digest: digest("cst"),
             line_index_digest: digest("line-index"),
             cst_node_count: 1,
@@ -179,7 +180,6 @@ fn parsed_payload(key: &CompilerObjectKey) -> CompilerObjectPayload {
             typed_attribute_count: 0,
             typed_use_count: 0,
             typed_item_count: 1,
-            wiki_link_count: 0,
         },
     })
 }
@@ -363,8 +363,21 @@ fn feature_set_digest_for(features: &[String]) -> BuildDigest {
 }
 
 fn minimal_awbc_bytes() -> Vec<u8> {
+    let guard =
+        RuntimeAssertionGuardId::try_from_bytes([0xa7; 16]).expect("non-zero assertion guard");
     let program = AwbcProgram {
-        strings: vec!["main".to_owned()],
+        strings: vec![
+            "always".to_owned(),
+            "inventory >= 0".to_owned(),
+            "inventory must stay non-negative".to_owned(),
+            "main".to_owned(),
+        ],
+        constants: vec![
+            AwbcConstant::Bytes(guard.as_bytes().to_vec()),
+            AwbcConstant::String(AwbcStringId(1)),
+            AwbcConstant::String(AwbcStringId(2)),
+            AwbcConstant::String(AwbcStringId(0)),
+        ],
         signatures: vec![AwbcSignature {
             params: Vec::new(),
             result: None,
@@ -375,13 +388,21 @@ fn minimal_awbc_bytes() -> Vec<u8> {
             max_scope_depth: 0,
         }],
         functions: vec![AwbcFunction {
-            public_id: Some(AwbcStringId(0)),
+            public_id: Some(AwbcStringId(3)),
             kind: AwbcFunctionKind::Flow,
             signature: AwbcSignatureId(0),
             frame_layout: AwbcFrameLayoutId(0),
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        }],
+        flow_bindings: vec![AwbcFlowBinding {
+            flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                [0x33; 32],
+                "flow.main",
+            )
+            .expect("test checked Flow identity"),
+            function: AwbcFunctionId(0),
         }],
         blocks: vec![AwbcBlock {
             owner: AwbcFunctionId(0),
@@ -394,11 +415,24 @@ fn minimal_awbc_bytes() -> Vec<u8> {
             runtime_id: arcweft_core::plan::EntryRuntimeId::from_source_entity_body("entry.main")
                 .expect("test entry ID is valid"),
             binding: arcweft_core::entry::EntryBindingIdentity::from_bytes([1; 32]),
-            public_id: AwbcStringId(0),
+            public_id: AwbcStringId(3),
             kind: AwbcEntryKind::Cli,
             signature: AwbcSignatureId(0),
             target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
             roles: arcweft_core::entry::RuntimeEntryRoles::None,
+        }],
+        effect_plans: vec![AwbcEffectPlan {
+            kind: AwbcEffectKind::Assert,
+            signature: AwbcSignatureId(0),
+            capability: None,
+            audio: None,
+            static_args: vec![
+                AwbcConstantId(0),
+                AwbcConstantId(1),
+                AwbcConstantId(2),
+                AwbcConstantId(3),
+            ],
+            resources: Vec::new(),
         }],
         ..AwbcProgram::default()
     };
@@ -725,14 +759,33 @@ fn persistent_query_verified_bytecode_unit_is_actual_hit() {
         .expect("persistent actual bytecode writes");
 
     let outcome = store.read_persistent_query(&request);
-    assert!(outcome.is_hit());
+    assert!(outcome.is_hit(), "{outcome:#?}");
     assert_eq!(outcome.cache_record_status(), CacheRecordStatus::Hit);
-    assert!(matches!(
-        outcome,
-        PersistentQueryReadOutcome::Hit(hit)
-            if matches!(&hit.payload, PersistentQueryHitPayload::BytecodeUnit(payload)
-                if payload.reuse_policy == BytecodeUnitReusePolicy::VerifiedReusable)
-    ));
+    let PersistentQueryReadOutcome::Hit(hit) = outcome else {
+        panic!("verified bytecode cache read must hit");
+    };
+    let PersistentQueryHitPayload::BytecodeUnit(payload) = hit.payload else {
+        panic!("verified bytecode cache read must retain its bytecode payload");
+    };
+    assert_eq!(
+        payload.reuse_policy,
+        BytecodeUnitReusePolicy::VerifiedReusable
+    );
+    let program = AwbcProgram::decode_canonical(
+        &payload.canonical_awbc_bytes,
+        arcweft_core::awbc::codec::AwbcDecodeBudget::default(),
+    )
+    .expect("cache hit retains canonical AWBC");
+    let AwbcConstant::Bytes(bytes) = &program.constants[0] else {
+        panic!("cached assertion guard must retain its byte-array payload");
+    };
+    assert_eq!(
+        RuntimeAssertionGuardId::try_from_bytes(
+            bytes.as_slice().try_into().expect("fixed 16-byte guard")
+        )
+        .expect("cached assertion guard remains non-zero"),
+        RuntimeAssertionGuardId::try_from_bytes([0xa7; 16]).expect("fixture guard")
+    );
 }
 
 #[test]

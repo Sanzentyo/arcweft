@@ -2,20 +2,13 @@
 
 use std::sync::Arc;
 
-use arcweft_lang_hir::lower::lower_document_to_hir;
-use arcweft_lang_sema::{
-    character_definition::{
-        CharacterDefinitionIntegrityError, CharacterDefinitionQueryResult,
-        CharacterDefinitionRequestBudget, CharacterDefinitionResourceError,
-        CharacterDefinitionStale, CharacterDefinitionWorkKind, CharacterReferenceInput,
-        CharacterReferenceInventory, CharacterReferenceInventoryError,
-        collect_character_references, query_character_definition,
-    },
-    check::analyze_registered_project_types,
-};
-use arcweft_lang_syntax::{
-    ast::module_path::CanonicalModulePath,
-    parser::{ParseOptions, parse_document_with_source},
+use arcweft_compiler::project::CompiledProject;
+use arcweft_lang_hir::module::HirModule;
+use arcweft_lang_sema::character_definition::{
+    CharacterDefinitionIntegrityError, CharacterDefinitionQueryResult,
+    CharacterDefinitionRequestBudget, CharacterDefinitionResourceError, CharacterDefinitionStale,
+    CharacterDefinitionWorkKind, CharacterReferenceInput, CharacterReferenceInventory,
+    CharacterReferenceInventoryError, collect_character_references, query_character_definition,
 };
 use arcweft_source::{SourceDocument, SourceDocumentIdentity};
 use arcweft_verify_lsp::LspPositionMapper;
@@ -23,7 +16,7 @@ use lsp_types::{GotoDefinitionResponse, LocationLink};
 use thiserror::Error;
 
 use crate::{
-    documents::{DocumentSnapshot, DocumentStore, rebind_overlay},
+    documents::{DocumentSnapshot, DocumentStore},
     positions::CheckedPositionError,
     profiles::{
         LspProfile,
@@ -182,11 +175,17 @@ impl From<CharacterReferenceInventoryError> for CharacterDefinitionRequestError 
                     CharacterDefinitionStale::SymbolRevision { expected, actual },
                 ))
             }
-            CharacterReferenceInventoryError::DocumentMismatch { expected, actual } => {
-                Self::stale(AcceptedCharacterDefinitionStale::Core(
-                    CharacterDefinitionStale::Document { expected, actual },
-                ))
+            CharacterReferenceInventoryError::ProjectModuleMismatch { module } => {
+                Self::Integrity(CharacterDefinitionIntegrityError::AcceptedModuleInvariant {
+                    module,
+                })
             }
+            CharacterReferenceInventoryError::SemanticGenerationMismatch => Self::Integrity(
+                CharacterDefinitionIntegrityError::AcceptedSemanticGenerationInvariant,
+            ),
+            CharacterReferenceInventoryError::SemanticOwnerMismatch { owner } => Self::Integrity(
+                CharacterDefinitionIntegrityError::AcceptedExpressionInvariant { owner },
+            ),
             CharacterReferenceInventoryError::Limit {
                 kind,
                 observed,
@@ -229,8 +228,8 @@ pub(crate) fn character_definition_with_budget(
     let definition_key = CharacterDefinitionCacheKey::new(
         context.reference_key.clone(),
         context
-            .accepted
-            .world()
+            .executable
+            .registered_world()
             .character_definition_index()
             .source_revision(),
         cursor,
@@ -243,9 +242,9 @@ pub(crate) fn character_definition_with_budget(
     } else {
         let checkpoint = budget.checkpoint();
         let result = query_character_definition(
-            context.accepted.world(),
+            context.executable.registered_world(),
             &inventory,
-            context.rebound.identity(),
+            context.document.identity(),
             cursor,
             budget,
         );
@@ -275,8 +274,9 @@ pub(crate) fn character_definition_with_budget(
 
 struct CharacterRequestContext {
     accepted: Arc<AcceptedProfileEnvironment>,
-    rebound: Arc<SourceDocument>,
-    module: CanonicalModulePath,
+    executable: Arc<CompiledProject>,
+    document: Arc<SourceDocument>,
+    hir: Arc<HirModule>,
     reference_key: CharacterReferenceCacheKey,
 }
 
@@ -288,32 +288,25 @@ fn prepare_character_request(
     let Some(accepted) = profile.accepted_environment() else {
         return Ok(None);
     };
+    let Some(executable) = accepted.executable().cloned() else {
+        return Ok(None);
+    };
     budget.charge(CharacterDefinitionWorkKind::IdentityCheck)?;
     let Some(accepted_origin) = accepted.project().sources().by_uri(document.uri()) else {
         return Ok(None);
     };
     budget.charge(CharacterDefinitionWorkKind::SourceAdaptation)?;
-    let Ok(rebound) = rebind_overlay(document, accepted_origin) else {
-        return Err(CharacterDefinitionRequestError::admitted_stale(
-            budget,
-            AcceptedCharacterDefinitionStale::Profile {
-                expected: accepted.profile().clone(),
-                actual: profile
-                    .accepted_environment()
-                    .map(|environment| environment.profile().clone()),
-            },
-        ));
-    };
     budget.charge(CharacterDefinitionWorkKind::IdentityCheck)?;
-    if rebound.identity() != accepted_origin.document().identity() {
+    if !Arc::ptr_eq(document.source_document(), accepted_origin.document()) {
         return Err(CharacterDefinitionRequestError::admitted_stale(
             budget,
             AcceptedCharacterDefinitionStale::Core(CharacterDefinitionStale::Document {
                 expected: accepted_origin.document().identity().clone(),
-                actual: rebound.identity().clone(),
+                actual: document.source_document().identity().clone(),
             }),
         ));
     }
+    let exact_document = Arc::clone(document.source_document());
 
     budget.charge(CharacterDefinitionWorkKind::SourceAdaptation)?;
     let project = accepted.project();
@@ -322,20 +315,29 @@ fn prepare_character_request(
         return Ok(None);
     };
     let module = module_key.module().clone();
+    let hir = Arc::clone(project.hir(&module_key).map_err(|_| {
+        CharacterDefinitionRequestError::admitted_integrity(
+            budget,
+            CharacterDefinitionIntegrityError::AcceptedModuleInvariant {
+                module: module.clone(),
+            },
+        )
+    })?);
     let reference_key = CharacterReferenceCacheKey::new(
         accepted.profile().clone(),
         accepted.generation(),
-        accepted.world().symbols().world().clone(),
-        *accepted.world().symbols().revision(),
-        rebound.identity().clone(),
+        executable.registered_world().symbols().world().clone(),
+        *executable.registered_world().symbols().revision(),
+        exact_document.identity().clone(),
         module.clone(),
-        None,
+        hir.provenance().source_snapshot().clone(),
         document.version(),
     );
     Ok(Some(CharacterRequestContext {
         accepted,
-        rebound,
-        module,
+        executable,
+        document: exact_document,
+        hir,
         reference_key,
     }))
 }
@@ -351,23 +353,20 @@ fn character_reference_inventory(
         return Ok(Some(inventory));
     }
     let checkpoint = budget.checkpoint();
-    budget.charge(CharacterDefinitionWorkKind::ParserFact)?;
-    let parsed = parse_document_with_source(Arc::clone(&context.rebound), ParseOptions::default());
-    budget.charge(CharacterDefinitionWorkKind::ParserFact)?;
-    let Ok(hir) = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree()) else {
-        return Ok(None);
-    };
-    budget.charge(CharacterDefinitionWorkKind::ParserFact)?;
-    let report = analyze_registered_project_types(&hir, context.accepted.world());
+    let project = context.accepted.project();
     let inventory = collect_character_references(
-        context.accepted.world(),
+        context.executable.registered_world(),
         CharacterReferenceInput::new(
-            &context.rebound,
-            &context.module,
-            parsed.typed_tree(),
-            &report,
-            parsed.errors(),
-            None,
+            project.hir_project().executable_view().map_err(|_| {
+                CharacterDefinitionRequestError::admitted_integrity(
+                    budget,
+                    CharacterDefinitionIntegrityError::AcceptedModuleInvariant {
+                        module: context.hir.key().path().clone(),
+                    },
+                )
+            })?,
+            context.hir.as_ref(),
+            context.executable.final_analysis().as_ref(),
         ),
         budget,
     )
@@ -459,22 +458,12 @@ fn adapt_definition(
         budget.charge(CharacterDefinitionWorkKind::IdentityCheck)?;
         if let Some(open) = documents.get(&target_uri) {
             budget.charge(CharacterDefinitionWorkKind::IdentityCheck)?;
-            let Ok(rebound) = rebind_overlay(open, target) else {
+            if open.source_document().identity() != target.document().identity() {
                 return Err(CharacterDefinitionRequestError::admitted_stale(
                     budget,
                     AcceptedCharacterDefinitionStale::TargetDocument {
                         expected: target.document().identity().clone(),
                         actual: open.source_document().identity().clone(),
-                    },
-                ));
-            };
-            budget.charge(CharacterDefinitionWorkKind::IdentityCheck)?;
-            if rebound.identity() != target.document().identity() {
-                return Err(CharacterDefinitionRequestError::admitted_stale(
-                    budget,
-                    AcceptedCharacterDefinitionStale::TargetDocument {
-                        expected: target.document().identity().clone(),
-                        actual: rebound.identity().clone(),
                     },
                 ));
             }
@@ -585,7 +574,7 @@ fn final_request_check(
         .project()
         .sources()
         .by_uri(document.uri())
-        .is_none_or(|source| source.document().identity() != context.rebound.identity())
+        .is_none_or(|source| !Arc::ptr_eq(source.document(), &context.document))
     {
         return Err(CharacterDefinitionRequestError::admitted_stale(
             budget,

@@ -4,24 +4,47 @@ use super::*;
 fn group_imports_consume_terminal_import_budget() {
     let maximum = usize::try_from(super::super::ProjectSymbolLimits::PRODUCTION.imports())
         .expect("import limit fits usize");
+    let per_declaration = crate::identity::HirLimit::DeclarationMembers.maximum();
     let exact_source = grouped_missing_import(maximum);
     let (documents, exact_project) = project_modules(&[
         ("", exact_source.as_str()),
-        ("origin", "pub fn target() -> Unit { () }\n"),
+        ("origin", "pub predicate target() = true\n"),
     ]);
-    ProjectSymbolTable::link(
-        &exact_project,
+    let exact = ProjectSymbolTable::link(
+        exact_project.view(),
         &empty_declarations(&documents, "imports-exact"),
     )
     .expect("exact terminal import limit is accepted");
+    let maximum_work = u64::try_from(maximum).expect("import limit fits work accounting");
+    assert_eq!(
+        exact.work_charged(),
+        2 + maximum_work * 2,
+        "one transaction admission, one target declaration, and every terminal import on both fixed-point passes are charged exactly once",
+    );
+    let exact = exact.into_table();
+    let binding = exact
+        .scopes
+        .get(&CanonicalModulePath::crate_root())
+        .and_then(|scope| scope.get("target"))
+        .and_then(|bindings| bindings.first())
+        .expect("exact-limit target binding");
+    assert_eq!(binding.sites.len(), maximum.div_ceil(per_declaration) + 1);
+    assert_eq!(binding.reference_sites.len(), maximum);
+    assert!(binding.sites.windows(2).all(|pair| pair[0] < pair[1]));
+    assert!(
+        binding
+            .reference_sites
+            .windows(2)
+            .all(|pair| pair[0] < pair[1])
+    );
 
     let one_over_source = grouped_missing_import(maximum + 1);
     let (documents, project) = project_modules(&[
         ("", one_over_source.as_str()),
-        ("origin", "pub fn target() -> Unit { () }\n"),
+        ("origin", "pub predicate target() = true\n"),
     ]);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "imports-one-over"),
     )
     .expect_err("one-over terminal import limit is rejected");
@@ -30,6 +53,11 @@ fn group_imports_consume_terminal_import_budget() {
         super::super::ProjectSymbolLimitKind::Imports,
         u64::try_from(maximum + 1).expect("observed imports fit u64"),
         super::super::ProjectSymbolLimits::PRODUCTION.imports(),
+    );
+    assert_eq!(
+        report.work_charged(),
+        2,
+        "one-over import inventory is rejected after transaction and target-declaration accounting but before any fixed-point import work",
     );
 }
 
@@ -79,7 +107,7 @@ fn same_target_imports_coalesce() {
         ("b", "pub use crate.a.target\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "same-target-imports"),
     )
     .expect("same-target imports link")
@@ -119,6 +147,69 @@ fn same_target_imports_coalesce() {
 }
 
 #[test]
+fn reference_only_growth_reopens_the_fixed_point_for_an_earlier_consumer() {
+    // Canonical module order is intentional. The direct target reaches
+    // `z_facade` first, while the second same-site group member advances one
+    // module per pass through the later modules. On the decisive pass,
+    // `a_consumer` has already run and the only new evidence is the second
+    // terminal-reference span in `z_facade`; that reference-only growth must
+    // therefore keep the fixed point open for one more consumer pass.
+    let (documents, project) = project_modules(&[
+        ("", ""),
+        ("a_consumer", "use crate.z_facade.target\n"),
+        (
+            "z_facade",
+            "pub use crate.zz_origin.{target, alias as target}\n",
+        ),
+        (
+            "zz_origin",
+            concat!(
+                "pub use crate.zzz_middle.alias\n",
+                "pub predicate target() = true\n",
+            ),
+        ),
+        ("zzz_middle", "pub use crate.zzzz_leaf.target as alias\n"),
+        ("zzzz_leaf", "pub use crate.zz_origin.target\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "reference-only-transitive-fixed-point"),
+    )
+    .expect("anchored adverse-order re-export chain converges")
+    .into_table();
+    let consumer = module_path("a_consumer");
+    let binding = table
+        .scopes
+        .get(&consumer)
+        .and_then(|scope| scope.get("target"))
+        .and_then(|bindings| bindings.first())
+        .expect("consumer receives the transitive target binding");
+
+    assert_eq!(binding.reference_sites.len(), 6);
+    assert!(
+        binding
+            .reference_sites
+            .windows(2)
+            .all(|pair| pair[0] < pair[1]),
+        "the complete transitive terminal-reference closure is canonical",
+    );
+    assert_eq!(
+        documents
+            .iter()
+            .map(|document| {
+                binding
+                    .reference_sites
+                    .iter()
+                    .filter(|site| site.source() == document.identity())
+                    .count()
+            })
+            .collect::<Vec<_>>(),
+        [0, 1, 2, 1, 1, 1],
+        "the earlier consumer receives both same-site facade references and every upstream reference exactly once",
+    );
+}
+
+#[test]
 fn different_targets_are_deterministically_ambiguous() {
     let (documents, project) = project_modules(&[
         (
@@ -129,7 +220,7 @@ fn different_targets_are_deterministically_ambiguous() {
         ("b", "pub fn target() -> Unit { () }\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "different-targets"),
     )
     .expect("ordinary ambiguity remains a resolution outcome")
@@ -165,7 +256,7 @@ fn visibility_and_reexport_parity() {
         ("b", "pub use crate.a.visible as exported\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "visibility-reexport"),
     )
     .expect("public import and re-export link")
@@ -191,7 +282,7 @@ fn visibility_and_reexport_parity() {
         ("a", "fn hidden() -> Unit { () }\n"),
     ]);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "inaccessible-import"),
     )
     .expect_err("private cross-module import is inaccessible");
@@ -202,19 +293,311 @@ fn visibility_and_reexport_parity() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one visibility matrix proves direct, aliased, qualified, and inaccessible resolution parity"
+)]
+fn visibility_import_alias_and_qualification_are_uniform() {
+    let origin = concat!(
+        "pub fn public_function() -> Unit { () }\n",
+        "pub predicate public_predicate() = true\n",
+        "pub proof public_proof() = ()\n",
+        "pub(crate) fn crate_function() -> Unit { () }\n",
+        "pub(crate) predicate crate_predicate() = true\n",
+        "pub(crate) proof crate_proof() = ()\n",
+        "fn private_function() -> Unit { () }\n",
+        "predicate private_predicate() = true\n",
+        "proof private_proof() = ()\n",
+    );
+    let owner = concat!(
+        "pub(super) fn super_function() -> Unit { () }\n",
+        "pub(super) predicate super_predicate() = true\n",
+        "pub(super) proof super_proof() = ()\n",
+    );
+    let consumer = concat!(
+        "use crate.origin.public_function as direct_function\n",
+        "use crate.origin.{public_predicate as grouped_predicate}\n",
+        "use crate.facade.*\n",
+        "use crate.origin.crate_function\n",
+        "use crate.origin.crate_predicate\n",
+        "use crate.origin.crate_proof\n",
+    );
+    let child = concat!(
+        "use super.super_function\n",
+        "use super.super_predicate\n",
+        "use super.super_proof\n",
+    );
+    let (documents, project) = project_modules(&[
+        ("", ""),
+        ("origin", origin),
+        ("facade", "pub use crate.origin.*\n"),
+        ("consumer", consumer),
+        ("owner", owner),
+        ("owner.child", child),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "all-callable-import-parity"),
+    )
+    .expect("all callable families share one visibility/import authority")
+    .into_table();
+    let source = documents[0]
+        .span(SourceRange::new(0, 0))
+        .expect("root reference span");
+    let resolve = |module: &str, spelling: &str| {
+        table
+            .resolve_callable(&module_path(module), &symbol_path(spelling), &source)
+            .unwrap_or_else(|error| {
+                panic!("{module}:{spelling} must resolve through the shared table: {error:?}")
+            })
+    };
+
+    let routes = [
+        (
+            "origin",
+            "public_function",
+            "consumer",
+            "direct_function",
+            CallableDeclarationOwner::Function,
+        ),
+        (
+            "origin",
+            "public_predicate",
+            "consumer",
+            "grouped_predicate",
+            CallableDeclarationOwner::Predicate,
+        ),
+        (
+            "origin",
+            "public_proof",
+            "consumer",
+            "public_proof",
+            CallableDeclarationOwner::Proof,
+        ),
+        (
+            "origin",
+            "crate_function",
+            "consumer",
+            "crate_function",
+            CallableDeclarationOwner::Function,
+        ),
+        (
+            "origin",
+            "crate_predicate",
+            "consumer",
+            "crate_predicate",
+            CallableDeclarationOwner::Predicate,
+        ),
+        (
+            "origin",
+            "crate_proof",
+            "consumer",
+            "crate_proof",
+            CallableDeclarationOwner::Proof,
+        ),
+        (
+            "owner",
+            "super_function",
+            "owner.child",
+            "super_function",
+            CallableDeclarationOwner::Function,
+        ),
+        (
+            "owner",
+            "super_predicate",
+            "owner.child",
+            "super_predicate",
+            CallableDeclarationOwner::Predicate,
+        ),
+        (
+            "owner",
+            "super_proof",
+            "owner.child",
+            "super_proof",
+            CallableDeclarationOwner::Proof,
+        ),
+        (
+            "origin",
+            "private_function",
+            "origin",
+            "private_function",
+            CallableDeclarationOwner::Function,
+        ),
+        (
+            "origin",
+            "private_predicate",
+            "origin",
+            "private_predicate",
+            CallableDeclarationOwner::Predicate,
+        ),
+        (
+            "origin",
+            "private_proof",
+            "origin",
+            "private_proof",
+            CallableDeclarationOwner::Proof,
+        ),
+    ];
+    for (origin_module, origin_name, route_module, route_name, owner) in routes {
+        let original = resolve(origin_module, origin_name);
+        let resolved_route = resolve(route_module, route_name);
+        assert_eq!(original.owner(), owner);
+        assert_eq!(resolved_route.owner(), owner);
+        assert_eq!(resolved_route.declaration(), original.declaration());
+        assert_eq!(resolved_route.source_snapshot(), original.source_snapshot());
+        assert_eq!(resolved_route.source_item(), original.source_item());
+    }
+    assert_eq!(
+        resolve("consumer", "crate.origin.public_function").declaration(),
+        resolve("origin", "public_function").declaration(),
+        "qualified lookup preserves the same Function identity",
+    );
+
+    let (documents, project) = project_modules(&[
+        ("", ""),
+        (
+            "origin",
+            concat!(
+                "fn hidden_function() -> Unit { () }\n",
+                "predicate hidden_predicate() = true\n",
+                "proof hidden_proof() = ()\n",
+            ),
+        ),
+        (
+            "consumer",
+            concat!(
+                "use crate.origin.hidden_function\n",
+                "use crate.origin.hidden_predicate\n",
+                "use crate.origin.hidden_proof\n",
+            ),
+        ),
+    ]);
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "all-callable-inaccessible"),
+    )
+    .expect_err("private callable imports reject one atomic publication");
+    assert_eq!(report.diagnostics().len(), 3);
+    assert!(
+        report.diagnostics().iter().all(|diagnostic| matches!(
+            diagnostic,
+            ProjectSymbolLinkError::InaccessibleImport { source, .. }
+                if source.source() == documents[2].identity()
+        )),
+        "every inaccessible import diagnostic belongs to the exact consumer revision"
+    );
+
+    let (documents, project) = project_modules(&[
+        ("", ""),
+        (
+            "origin",
+            concat!(
+                "pub(crate) fn crate_function() -> Unit { () }\n",
+                "pub(crate) predicate crate_predicate() = true\n",
+                "pub(crate) proof crate_proof() = ()\n",
+            ),
+        ),
+        (
+            "facade",
+            concat!(
+                "pub use crate.origin.crate_function\n",
+                "pub use crate.origin.crate_predicate\n",
+                "pub use crate.origin.crate_proof\n",
+            ),
+        ),
+    ]);
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "all-callable-escalation"),
+    )
+    .expect_err("public re-export cannot widen crate visibility");
+    assert_eq!(report.diagnostics().len(), 3);
+    assert!(
+        report.diagnostics().iter().all(|diagnostic| matches!(
+            diagnostic,
+            ProjectSymbolLinkError::VisibilityEscalation { source, .. }
+                if source.source() == documents[2].identity()
+        )),
+        "every escalation diagnostic belongs to the exact facade revision"
+    );
+
+    let (documents, project) = project_modules(&[
+        (
+            "",
+            concat!(
+                "use crate.function.same as ambiguous\n",
+                "use crate.predicate.same as ambiguous\n",
+                "use crate.proof.same as ambiguous\n",
+            ),
+        ),
+        ("function", "pub fn same() -> Unit { () }\n"),
+        ("predicate", "pub predicate same() = true\n"),
+        ("proof", "pub proof same() = ()\n"),
+    ]);
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "all-callable-ambiguity"),
+    )
+    .expect("ordinary ambiguity is a typed resolution outcome")
+    .into_table();
+    let source = documents[0]
+        .span(SourceRange::new(0, 3))
+        .expect("ambiguity reference span");
+    let error = table
+        .resolve_callable(
+            &CanonicalModulePath::crate_root(),
+            &symbol_path("ambiguous"),
+            &source,
+        )
+        .expect_err("three imported callable families are ambiguous");
+    let ProjectSymbolResolutionError::Ambiguous {
+        source: reference_source,
+        candidates,
+        ..
+    } = error
+    else {
+        panic!("shared lookup must retain a typed ambiguity: {error:?}")
+    };
+    assert_eq!(reference_source.source(), documents[0].identity());
+    assert_eq!(candidates.len(), 3);
+    assert!(candidates.windows(2).all(|pair| pair[0] < pair[1]));
+    let mut owners = candidates
+        .iter()
+        .map(|candidate| match candidate {
+            ProjectSymbolTargetId::Callable(id) => table
+                .callable(id)
+                .expect("ambiguity candidate remains in the sole symbol table")
+                .owner(),
+            other => panic!("ordinary callable ambiguity cannot contain {other:?}"),
+        })
+        .collect::<Vec<_>>();
+    owners.sort_unstable();
+    assert_eq!(
+        owners,
+        [
+            CallableDeclarationOwner::Function,
+            CallableDeclarationOwner::Predicate,
+            CallableDeclarationOwner::Proof,
+        ]
+    );
+}
+
+#[test]
 fn reachable_import_cycle_resolves() {
     let (documents, project) = project_modules(&[
         ("", "use crate.a.target\n"),
         ("a", "pub use crate.b.target\n"),
         (
             "b",
-            "pub fn target() -> Unit { () }\npub use crate.a.target\n",
+            "pub use crate.a.target\npub predicate target() = true\n",
         ),
     ]);
-    let table =
-        ProjectSymbolTable::link(&project, &empty_declarations(&documents, "reachable-cycle"))
-            .expect("reachable cycle converges")
-            .into_table();
+    let table = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "reachable-cycle"),
+    )
+    .expect("reachable cycle converges")
+    .into_table();
     let reference = SymbolPath::try_new(ModulePathRoot::ImplicitCrate, Vec::new(), "target")
         .expect("reference");
     let source = documents[0]
@@ -233,8 +616,11 @@ fn pure_import_cycle_is_rejected_with_related_cycle_sources() {
         ("a", "pub use crate.b.target\n"),
         ("b", "pub use crate.a.target\n"),
     ]);
-    let report = ProjectSymbolTable::link(&project, &empty_declarations(&documents, "pure-cycle"))
-        .expect_err("unanchored import cycles cannot publish a partial symbol table");
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "pure-cycle"),
+    )
+    .expect_err("unanchored import cycles cannot publish a partial symbol table");
     let cyclic = report
         .diagnostics()
         .iter()
@@ -267,7 +653,7 @@ fn three_module_unanchored_cycle_reports_every_edge_with_related_sources() {
         ("c", "pub use crate.a.target\n"),
     ]);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "three-module-pure-cycle"),
     )
     .expect_err("an unanchored three-node cycle is rejected");
@@ -313,16 +699,18 @@ fn ambiguous_reexport_cycle() {
         ("", ""),
         (
             "a",
-            "pub fn left() -> Unit { () }\npub use crate.a.left as target\npub use crate.b.target\n",
+            "pub use crate.a.left as target\npub use crate.b.target\npub predicate left() = true\n",
         ),
         (
             "b",
-            "pub fn right() -> Unit { () }\npub use crate.b.right as target\npub use crate.a.target\n",
+            "pub use crate.b.right as target\npub use crate.a.target\npub predicate right() = true\n",
         ),
     ]);
-    let report =
-        ProjectSymbolTable::link(&project, &empty_declarations(&documents, "ambiguous-cycle"))
-            .expect_err("cycle exposes two distinct targets");
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "ambiguous-cycle"),
+    )
+    .expect_err("cycle exposes two distinct targets");
 
     assert!(report.diagnostics().iter().any(|diagnostic| matches!(
         diagnostic,
@@ -334,18 +722,21 @@ fn ambiguous_reexport_cycle() {
 #[test]
 fn link_report_cap_and_work_are_observable() {
     let mut source = String::new();
-    for _ in 0..130 {
-        source.push_str("fn repeated() -> Unit { () }\n");
+    for index in 0..130 {
+        writeln!(source, "predicate repeated{index}() = true")
+            .expect("writing to a String cannot fail");
+        writeln!(source, "predicate repeated{index}() = true")
+            .expect("writing to a String cannot fail");
     }
     let (document, project) = project(&source);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &declarations(&document, Vec::new(), "diagnostic-cap"),
     )
     .expect_err("duplicate declarations exceed diagnostic cap");
     assert_eq!(report.diagnostics().len(), 128);
-    assert_eq!(report.omitted_diagnostics(), 1);
-    assert_eq!(report.work_charged(), 131);
+    assert_eq!(report.omitted_diagnostics(), 2);
+    assert_eq!(report.work_charged(), 261);
 
     let source = document.span(SourceRange::new(0, 1)).expect("work source");
     let mut work = super::super::ProjectSymbolLimits::PRODUCTION.work() - 1;

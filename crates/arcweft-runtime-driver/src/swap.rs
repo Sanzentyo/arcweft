@@ -22,8 +22,7 @@ use arcweft_core::plan::{
 };
 use arcweft_core::source::SourcePlan;
 use arcweft_core::stream::StreamPlan;
-use arcweft_dialogue::DialogueProfileRevision;
-use arcweft_render_text::LineDisplayCatalog;
+use arcweft_text_model::DialogueContentCatalog;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
@@ -58,7 +57,7 @@ pub struct CodeSlot {
 pub struct ProgramGeneration {
     pub id: GenerationId,
     pub content_root: BundleDigest,
-    pub dialogue_revision: DialogueProfileRevision,
+    pub dialogue_content: BundleDigest,
     pub bytecode_abi: u32,
     pub code_slots: BTreeMap<CodeSlotId, CodeSlot>,
     pub state_layouts: BTreeMap<StateId, TypeLayoutHash>,
@@ -184,12 +183,12 @@ impl ProgramGeneration {
     pub fn empty(
         id: GenerationId,
         content_root: BundleDigest,
-        dialogue_revision: DialogueProfileRevision,
+        dialogue_content: BundleDigest,
     ) -> Self {
         Self {
             id,
             content_root,
-            dialogue_revision,
+            dialogue_content,
             bytecode_abi: BYTECODE_ABI_VERSION,
             code_slots: BTreeMap::new(),
             state_layouts: BTreeMap::new(),
@@ -218,7 +217,7 @@ impl ProgramGeneration {
                 product_awbc.program(),
                 content_root(bundle)?,
                 adapter_requirements(bundle)?,
-                bundle.display.dialogue_revision().clone(),
+                dialogue_content_digest(bundle)?,
             );
         }
         bundle
@@ -230,7 +229,7 @@ impl ProgramGeneration {
             &bundle.bytecode.program,
             content_root(bundle)?,
             adapter_requirements(bundle)?,
-            bundle.display.dialogue_revision().clone(),
+            dialogue_content_digest(bundle)?,
         )
     }
 
@@ -239,13 +238,13 @@ impl ProgramGeneration {
         bytecode: &BytecodeProgram,
         content_root: BundleDigest,
         adapter_requirements: BundleDigest,
-        dialogue_revision: DialogueProfileRevision,
+        dialogue_content: BundleDigest,
     ) -> Result<Self, GenerationBuildError> {
         let (state_layouts, entry_compatibility) = bytecode_entry_compatibility(bytecode);
         Ok(Self {
             id,
             content_root,
-            dialogue_revision,
+            dialogue_content,
             bytecode_abi: bytecode.abi_version,
             code_slots: code_slots(bytecode)?,
             state_layouts,
@@ -259,13 +258,13 @@ impl ProgramGeneration {
         program: &AwbcProgram,
         content_root: BundleDigest,
         adapter_requirements: BundleDigest,
-        dialogue_revision: DialogueProfileRevision,
+        dialogue_content: BundleDigest,
     ) -> Result<Self, GenerationBuildError> {
         let (state_layouts, entry_compatibility) = awbc_entry_compatibility(program)?;
         Ok(Self {
             id,
             content_root,
-            dialogue_revision,
+            dialogue_content,
             bytecode_abi: program.header.abi_version,
             code_slots: awbc_code_slots(program)?,
             state_layouts,
@@ -370,7 +369,7 @@ fn stateful_compatibility(
 fn content_root(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildError> {
     #[derive(Serialize)]
     struct ContentFingerprint<'a> {
-        display: &'a LineDisplayCatalog,
+        dialogue_content: &'a DialogueContentCatalog,
         virtual_files: Vec<&'a BundleVirtualFile>,
         image_assets: Vec<&'a arcweft_bundle::BundleImageAsset>,
         audio: serde_json::Value,
@@ -390,12 +389,16 @@ fn content_root(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildE
     image_objects.sort_by(|left, right| left.id.cmp(&right.id));
 
     digest_serde(&ContentFingerprint {
-        display: &bundle.display,
+        dialogue_content: &bundle.dialogue_content,
         virtual_files,
         image_assets,
         audio: serde_json::to_value(&bundle.audio)?,
         image_objects,
     })
+}
+
+fn dialogue_content_digest(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildError> {
+    digest_serde(&bundle.dialogue_content)
 }
 
 fn adapter_requirements(bundle: &ArcweftBundle) -> Result<BundleDigest, GenerationBuildError> {
@@ -417,7 +420,7 @@ fn code_slots(
         .map(|flow| {
             let digest = digest_serde(flow)?;
             Ok((
-                CodeSlotId(flow.id.public_label().into_string()),
+                CodeSlotId(format!("flow:{}", flow.id.canonical_label())),
                 CodeSlot {
                     signature: conservative_signature(digest),
                     code_digest: digest,
@@ -505,7 +508,7 @@ fn awbc_function_code_slot(
         blocks,
     })?;
     Ok((
-        awbc_function_code_slot_id(index, public_id),
+        awbc_function_code_slot_id(program, index, public_id),
         CodeSlot {
             signature: conservative_signature(interface_digest),
             code_digest,
@@ -565,8 +568,22 @@ fn awbc_table_range_slice<'a, T>(
         })
 }
 
-fn awbc_function_code_slot_id(index: usize, public_id: Option<&str>) -> CodeSlotId {
-    let id = public_id.map_or_else(|| format!("function.{index}"), str::to_owned);
+fn awbc_function_code_slot_id(
+    program: &AwbcProgram,
+    index: usize,
+    public_id: Option<&str>,
+) -> CodeSlotId {
+    let function =
+        arcweft_core::awbc::schema::AwbcFunctionId(u32::try_from(index).unwrap_or(u32::MAX));
+    let id = program.flow_identity(function).map_or_else(
+        || {
+            public_id.map_or_else(
+                || format!("function:{index}"),
+                |public_id| format!("public:{public_id}"),
+            )
+        },
+        |flow| format!("flow:{}", flow.canonical_label()),
+    );
     CodeSlotId(format!("awbc:{id}"))
 }
 
@@ -684,7 +701,7 @@ pub fn classify_swap(active: &ProgramGeneration, next: &ProgramGeneration) -> Sw
         return SwapCompatibility::RestartRequired;
     }
     if active.code_slots == next.code_slots {
-        return if active.dialogue_revision == next.dialogue_revision {
+        return if active.dialogue_content == next.dialogue_content {
             SwapCompatibility::ContentOnly
         } else {
             // A different accepted profile/product generation may not retain

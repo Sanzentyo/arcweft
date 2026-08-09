@@ -17,12 +17,8 @@ pub struct HirThreadExpr {
 }
 
 impl HirThreadExpr {
-    pub(crate) fn try_new(
-        name: Option<HirName>,
-        mode: HirThreadMode,
-        body: HirThreadBody,
-    ) -> Result<Self, HirThreadIssue> {
-        Ok(Self { name, mode, body })
+    pub(crate) fn new(name: Option<HirName>, mode: HirThreadMode, body: HirThreadBody) -> Self {
+        Self { name, mode, body }
     }
 
     pub const fn name(&self) -> Option<&HirName> {

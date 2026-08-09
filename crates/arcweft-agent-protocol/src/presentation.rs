@@ -6,7 +6,7 @@ use crate::proxy::{
 };
 use crate::rich_text::AgentRichTextElementKind;
 use crate::serde_helpers::is_false;
-use arcweft_render_text::RichTextPresentation;
+use arcweft_text_model::RichTextPresentation;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -428,7 +428,10 @@ mod tests {
     use super::*;
     use crate::proxy::AgentPresentationObjectProxyParamQuery;
     use crate::rich_text::AgentRichTextElementKind;
-    use arcweft_render_text::{RichTextObjectProxyDeclaration, RichTextParam};
+    use arcweft_text_model::{
+        RichTextObjectProxyDeclaration, RichTextTextProxyField, RichTextTextProxyFieldKind,
+        RichTextTextProxyFieldSchema, RichTextTextProxyScalar, RichTextTextProxySchema,
+    };
     use std::collections::BTreeMap;
 
     #[test]
@@ -603,23 +606,37 @@ mod tests {
     }
 
     fn hotspot_proxy() -> AgentPresentationObjectProxyRef {
+        let declaration = RichTextObjectProxyDeclaration {
+            struct_name: "KeywordHit".to_owned(),
+            attribute: "text_proxy".to_owned(),
+        };
         AgentPresentationObjectProxyRef {
             id: "hotspot".to_owned(),
             type_name: Some("KeywordHit".to_owned()),
             role: Some("keyword".to_owned()),
             layer: Some("hit".to_owned()),
             depth: Some(4100),
-            declaration: Some(RichTextObjectProxyDeclaration {
-                struct_name: "KeywordHit".to_owned(),
-                attribute: "text_proxy".to_owned(),
+            declaration: Some(declaration.clone()),
+            schema: Some(RichTextTextProxySchema {
+                id: "KeywordHit".to_owned(),
+                declaration,
+                fields: vec![RichTextTextProxyFieldSchema {
+                    id: 0,
+                    name: "channel".to_owned(),
+                    kind: RichTextTextProxyFieldKind::Text,
+                    optional: false,
+                    default: None,
+                }],
             }),
             hit_test: true,
-            params: BTreeMap::from([(
-                "channel".to_owned(),
-                RichTextParam::Selector {
+            fields: vec![RichTextTextProxyField {
+                id: 0,
+                name: "channel".to_owned(),
+                value: RichTextTextProxyScalar::Text {
                     value: "choice".to_owned(),
                 },
-            )]),
+            }],
+            params: BTreeMap::new(),
         }
     }
 

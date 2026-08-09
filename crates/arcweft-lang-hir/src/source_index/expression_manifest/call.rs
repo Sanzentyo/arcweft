@@ -2,9 +2,10 @@
 
 use arcweft_lang_syntax::attachment::AttachedExpressionNode;
 use arcweft_lang_syntax::expressions::{
-    ExpressionProjection, SyntaxAssociatedCallSyntax, SyntaxCallArgumentListTerminator,
-    SyntaxCallArgumentProjection, SyntaxCallCalleeProjection, SyntaxCallProjection,
-    SyntaxCallTypeApplicationSpelling, SyntaxCallTypeApplicationTerminator,
+    ExpressionComponentRole, ExpressionProjection, SyntaxAssociatedCallSyntax,
+    SyntaxAssociatedReceiver, SyntaxAssociatedSeparator, SyntaxCallArgumentListTerminator,
+    SyntaxCallArgumentPart, SyntaxCallArgumentProjection, SyntaxCallCalleeProjection,
+    SyntaxCallProjection, SyntaxCallTypeApplicationSpelling, SyntaxCallTypeApplicationTerminator,
     SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxExpressionSlot,
     SyntaxRequiredTokenState,
 };
@@ -14,17 +15,20 @@ use arcweft_lang_syntax::name::SyntaxNameIssue;
 use super::projection::{expression_child_matches, poison_state_matches};
 use crate::arena::ArenaSnapshot;
 use crate::expr::{
-    HirAssociatedCallSyntax, HirAssociatedReceiver, HirCallArgument, HirCallArgumentListTerminator,
-    HirCallArgumentOrdinal, HirCallCallee, HirCallChildPoison, HirCallChildStates,
+    HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator, HirCallArgument,
+    HirCallArgumentListTerminator, HirCallCallee, HirCallChildPoison, HirCallChildStates,
     HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
     HirCallTypeArgument, HirCallValue, HirExpr, HirRecoveredName, HirRecoveryIssue,
     HirRequiredTokenState,
 };
 use crate::identity::{ExprId, TypeId};
 use crate::slot::{HirOrigin, SlotSnapshot};
-use crate::source_index::{HirCallArgumentSourcePart, HirExprSourceRole};
 use crate::type_ref::HirType;
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one Call projection validates callee, arguments, punctuation, ownership, and recovery in source order"
+)]
 pub(super) fn call_projection_matches(
     actual: &crate::expr::HirCallExpr,
     expected: &SyntaxCallProjection,
@@ -56,31 +60,35 @@ pub(super) fn call_projection_matches(
     let callee_matches = match (actual.callee(), expected.callee()) {
         (HirCallCallee::Value { .. }, SyntaxCallCalleeProjection::Ordinary) => true,
         (
-            HirCallCallee::UnresolvedDot { member: actual, .. },
-            SyntaxCallCalleeProjection::UnresolvedDot { member: expected },
-        ) => recovered_call_name_matches(actual, expected),
-        (
-            HirCallCallee::Associated {
-                member: actual_member,
-                syntax: actual_syntax,
+            HirCallCallee::UnresolvedDot {
+                separator: actual_separator,
+                member: actual,
                 ..
             },
-            SyntaxCallCalleeProjection::Associated {
-                member: expected_member,
-                syntax: expected_syntax,
+            SyntaxCallCalleeProjection::UnresolvedDot {
+                separator: expected_separator,
+                member: expected,
             },
         ) => {
-            recovered_call_name_matches(actual_member, expected_member)
-                && matches!(
-                    (actual_syntax, expected_syntax),
-                    (
-                        HirAssociatedCallSyntax::DotFallback,
-                        SyntaxAssociatedCallSyntax::DotFallback
-                    ) | (
-                        HirAssociatedCallSyntax::ExplicitDoubleColon,
-                        SyntaxAssociatedCallSyntax::ExplicitDoubleColon
-                    )
-                )
+            associated_separator_matches(*actual_separator, *expected_separator)
+                && recovered_call_name_matches(actual, expected)
+        }
+        (
+            HirCallCallee::Associated {
+                receiver: actual_receiver,
+                member: actual_member,
+                separator: actual_separator,
+            },
+            SyntaxCallCalleeProjection::Associated {
+                receiver: expected_receiver,
+                member: expected_member,
+                separator: expected_separator,
+            },
+        ) => {
+            matches!(expected_receiver, SyntaxAssociatedReceiver::Present)
+                && actual_receiver.type_id().is_some()
+                && associated_separator_matches(*actual_separator, *expected_separator)
+                && recovered_call_name_matches(actual_member, expected_member)
         }
         _ => false,
     };
@@ -144,6 +152,27 @@ pub(super) fn call_projection_matches(
             }
             _ => false,
         })
+}
+
+fn associated_separator_matches(
+    actual: HirAssociatedSeparator,
+    expected: SyntaxAssociatedSeparator,
+) -> bool {
+    let syntax_matches = |actual, expected| {
+        matches!(
+            (actual, expected),
+            (
+                HirAssociatedCallSyntax::DotFallback,
+                SyntaxAssociatedCallSyntax::DotFallback
+            ) | (
+                HirAssociatedCallSyntax::ExplicitDoubleColon,
+                SyntaxAssociatedCallSyntax::ExplicitDoubleColon
+            )
+        )
+    };
+    let (HirAssociatedSeparator::Present(actual), SyntaxAssociatedSeparator::Present(expected)) =
+        (actual, expected);
+    syntax_matches(actual, expected)
 }
 
 fn call_type_application_matches(
@@ -213,6 +242,10 @@ fn call_value_projection_matches(actual: &HirCallValue, expected: SyntaxExpressi
     )
 }
 
+#[allow(
+    clippy::match_same_arms,
+    reason = "the exhaustive recovery mapping keeps distinct malformed and missing callee evidence explicit"
+)]
 fn recovered_call_name_matches(
     actual: &HirRecoveredName,
     expected: &Result<arcweft_lang_syntax::name::SyntaxName, SyntaxNameIssue>,
@@ -247,6 +280,11 @@ const fn required_call_token_matches(
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "one Call-child projection compares exact typed owner, scope, cursor, attachment, and recovery state"
+)]
 pub(super) fn call_children_match(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -271,47 +309,50 @@ pub(super) fn call_children_match(
         return false;
     }
 
-    let callee_state = match expression.callee().value_expression() {
-        Some(callee) => {
-            let Some(attached_callee) = attached
-                .children()
-                .iter()
-                .find(|child| child.ordinal() == 0)
-            else {
-                return false;
-            };
-            let role = match expression.callee() {
-                HirCallCallee::Value { .. } => HirExprSourceRole::CallCallee,
-                HirCallCallee::UnresolvedDot { .. } => HirExprSourceRole::CallAssociatedReceiver,
-                HirCallCallee::Associated { .. } => return false,
-            };
-            if !expression_child_matches(
-                parsed,
-                slots,
-                expressions,
-                parent,
-                payload.scope(),
-                attached_callee,
-                callee,
-                role,
-            ) {
-                return false;
-            }
-            let Ok(callee_payload) = expressions.resolve_prepared(slots, callee) else {
-                return false;
-            };
-            if callee_payload.is_poisoned() {
-                HirCallChildPoison::Poisoned
-            } else {
-                HirCallChildPoison::Clean
-            }
+    let callee_state = if let Some(callee) = expression.callee().value_expression() {
+        let component_role = match expression.callee() {
+            HirCallCallee::Value { .. } => ExpressionComponentRole::CallCallee,
+            HirCallCallee::UnresolvedDot { .. } => ExpressionComponentRole::CallAssociatedReceiver,
+            HirCallCallee::Associated { .. } => return false,
+        };
+        let Some(attached_callee) = attached
+            .children()
+            .iter()
+            .find(|child| child.component_role() == component_role)
+        else {
+            return false;
+        };
+        if !expression_child_matches(
+            parsed,
+            slots,
+            expressions,
+            parent,
+            payload.scope(),
+            attached,
+            attached_callee,
+            callee,
+        ) {
+            return false;
         }
-        None => {
-            if attached.children().iter().any(|child| child.ordinal() == 0) {
-                return false;
-            }
+        let Ok(callee_payload) = expressions.resolve_prepared(slots, callee) else {
+            return false;
+        };
+        if callee_payload.is_poisoned() {
+            HirCallChildPoison::Poisoned
+        } else {
             HirCallChildPoison::Clean
         }
+    } else {
+        if attached.children().iter().any(|child| {
+            matches!(
+                child.component_role(),
+                ExpressionComponentRole::CallCallee
+                    | ExpressionComponentRole::CallAssociatedReceiver
+            )
+        }) {
+            return false;
+        }
+        HirCallChildPoison::Clean
     };
     let receiver_matches = match expression.callee() {
         HirCallCallee::Value { .. } => attached.call_type_children().iter().all(|child| {
@@ -352,17 +393,16 @@ pub(super) fn call_children_match(
 
     let mut argument_states = Vec::with_capacity(expression.arguments().len());
     for (position, argument) in expression.arguments().iter().enumerate() {
-        let Ok(child_ordinal) = u32::try_from(position + 1) else {
+        let Ok(argument_index) = u16::try_from(position) else {
             return false;
         };
-        let Some(attached_argument) = attached
-            .children()
-            .iter()
-            .find(|child| child.ordinal() == child_ordinal)
-        else {
-            return false;
-        };
-        let Ok(argument_ordinal) = HirCallArgumentOrdinal::try_new(position) else {
+        let Some(attached_argument) = attached.children().iter().find(|child| {
+            child.component_role()
+                == ExpressionComponentRole::CallArgument {
+                    argument: argument_index,
+                    part: SyntaxCallArgumentPart::Value,
+                }
+        }) else {
             return false;
         };
         if !expression_child_matches(
@@ -371,12 +411,9 @@ pub(super) fn call_children_match(
             expressions,
             parent,
             payload.scope(),
+            attached,
             attached_argument,
             argument.value(),
-            HirExprSourceRole::CallArgument {
-                argument: argument_ordinal,
-                part: HirCallArgumentSourcePart::Value,
-            },
         ) {
             return false;
         }
@@ -407,14 +444,16 @@ fn call_associated_receiver_matches(
     expected_role: SyntaxCallTypeChildRole,
     receiver: &HirAssociatedReceiver,
 ) -> bool {
-    let Some(attached_receiver) = attached
+    let attached_receiver = attached
         .call_type_children()
         .iter()
-        .find(|child| child.role() == expected_role)
-    else {
+        .find(|child| child.role() == expected_role);
+    let Some(attached_receiver) = attached_receiver else {
         return false;
     };
-    let receiver_id = receiver.type_id();
+    let Some(receiver_id) = receiver.type_id() else {
+        return false;
+    };
     let Ok(metadata) = slots.resolve_prepared(receiver_id) else {
         return false;
     };

@@ -1,13 +1,22 @@
 use crate::ast::common::TextRange;
 use crate::reference::{BorrowKind, RegionSyntax};
 use crate::types::{
-    LifetimeName, TypeRef, TypeRefComponentRole, TypeRefNodePath, TypeRefNodeStep, parse_type_ref,
+    LifetimeName, TypeRef, TypeRefComponentRole, TypeRefNodePath, TypeRefNodeStep,
+    parse_attached_type_for_test,
 };
+
+#[test]
+fn empty_generic_argument_list_is_a_typed_failure_instead_of_a_parser_panic() {
+    let error =
+        parse_attached_type_for_test("Bad<>").expect_err("empty generic receiver must be rejected");
+    assert_eq!(error.code(), "syntax.type.invalid");
+    assert_eq!(error.range(), Some(TextRange::new(4, 5)));
+}
 
 #[test]
 fn function_components_follow_the_exact_return_boundary_through_grouping() {
     let grouped = "(A -> B)";
-    let authored = parse_type_ref(grouped).expect("grouped function type");
+    let authored = parse_attached_type_for_test(grouped).expect("grouped function type");
     let root = TypeRefNodePath::root();
     assert_eq!(
         authored
@@ -23,7 +32,8 @@ fn function_components_follow_the_exact_return_boundary_through_grouping() {
     );
 
     let grouped_parameters = "((A, B) -> C)";
-    let authored = parse_type_ref(grouped_parameters).expect("grouped parameter function type");
+    let authored =
+        parse_attached_type_for_test(grouped_parameters).expect("grouped parameter function type");
     assert_eq!(
         authored
             .source()
@@ -44,7 +54,7 @@ fn function_components_follow_the_exact_return_boundary_through_grouping() {
     );
 
     let nested = "(A -> B) -> C";
-    let authored = parse_type_ref(nested).expect("nested function type");
+    let authored = parse_attached_type_for_test(nested).expect("nested function type");
     let parameter = root.child(TypeRefNodeStep::FunctionParameter(0));
     assert_eq!(
         authored
@@ -79,7 +89,7 @@ fn reference_forms_preserve_kind_region_and_operator_ranges() {
         ),
     ];
     for (source, kind, lifetime, mut_range) in fixtures {
-        let TypeRef::Reference(reference) = parse_type_ref(source)
+        let TypeRef::Reference(reference) = parse_attached_type_for_test(source)
             .expect("reference parses")
             .into_value()
         else {
@@ -96,7 +106,7 @@ fn reference_forms_preserve_kind_region_and_operator_ranges() {
 #[test]
 fn trivia_does_not_change_reference_mutability() {
     for source in ["& mut T", "&/* ownership */mut T", "&\nmut T"] {
-        let TypeRef::Reference(reference) = parse_type_ref(source)
+        let TypeRef::Reference(reference) = parse_attached_type_for_test(source)
             .expect("reference parses")
             .into_value()
         else {
@@ -104,7 +114,7 @@ fn trivia_does_not_change_reference_mutability() {
         };
         assert_eq!(reference.kind(), BorrowKind::Mutable);
     }
-    let TypeRef::Reference(reference) = parse_type_ref("&mutable")
+    let TypeRef::Reference(reference) = parse_attached_type_for_test("&mutable")
         .expect("reference parses")
         .into_value()
     else {
@@ -115,27 +125,28 @@ fn trivia_does_not_change_reference_mutability() {
 
 #[test]
 fn nested_reference_ranges_use_original_type_offsets() {
-    let TypeRef::Reference(outer) = parse_type_ref("  &&mut T  ")
+    let TypeRef::Reference(outer) = parse_attached_type_for_test("  & &mut T  ")
         .expect("nested reference")
         .into_value()
     else {
         panic!("expected outer reference");
     };
     assert_eq!(outer.amp_range(), TextRange::new(2, 3));
-    assert_eq!(outer.range(), TextRange::new(2, 9));
+    assert_eq!(outer.range(), TextRange::new(2, 10));
 
     let TypeRef::Reference(inner) = outer.referent() else {
         panic!("expected inner reference");
     };
-    assert_eq!(inner.amp_range(), TextRange::new(3, 4));
-    assert_eq!(inner.mut_range(), Some(TextRange::new(4, 7)));
-    assert_eq!(inner.range(), TextRange::new(3, 9));
+    assert_eq!(inner.amp_range(), TextRange::new(4, 5));
+    assert_eq!(inner.mut_range(), Some(TextRange::new(5, 8)));
+    assert_eq!(inner.range(), TextRange::new(4, 10));
 }
 
 #[test]
 fn references_inside_composite_types_keep_parent_offsets() {
-    let TypeRef::Generic { args, .. } =
-        parse_type_ref("Vec<&mut T>").expect("generic").into_value()
+    let TypeRef::Generic { args, .. } = parse_attached_type_for_test("Vec<&mut T>")
+        .expect("generic")
+        .into_value()
     else {
         panic!("expected generic");
     };
@@ -145,7 +156,10 @@ fn references_inside_composite_types_keep_parent_offsets() {
     assert_eq!(generic_reference.amp_range(), TextRange::new(4, 5));
     assert_eq!(generic_reference.range(), TextRange::new(4, 10));
 
-    let TypeRef::Tuple(items) = parse_type_ref("(&A, &mut B)").expect("tuple").into_value() else {
+    let TypeRef::Tuple(items) = parse_attached_type_for_test("(&A, &mut B)")
+        .expect("tuple")
+        .into_value()
+    else {
         panic!("expected tuple");
     };
     let TypeRef::Reference(first) = &items[0] else {
@@ -161,7 +175,7 @@ fn references_inside_composite_types_keep_parent_offsets() {
         params,
         return_type,
         ..
-    } = parse_type_ref("&A -> &mut B")
+    } = parse_attached_type_for_test("&A -> &mut B")
         .expect("function type")
         .into_value()
     else {
@@ -179,12 +193,12 @@ fn references_inside_composite_types_keep_parent_offsets() {
 
 #[test]
 fn invalid_region_order_and_missing_referent_are_typed() {
-    let order = parse_type_ref("&mut 'a T").expect_err("invalid order must fail");
+    let order = parse_attached_type_for_test("&mut 'a T").expect_err("invalid order must fail");
     assert_eq!(order.code(), "syntax.type.region_after_mut");
     assert_eq!(order.range(), Some(TextRange::new(5, 7)));
 
     for source in ["&", "&mut", "&'a"] {
-        let error = parse_type_ref(source).expect_err("missing referent must fail");
+        let error = parse_attached_type_for_test(source).expect_err("missing referent must fail");
         assert_eq!(error.code(), "syntax.type.reference_missing_referent");
         assert_eq!(
             error.range(),
@@ -195,7 +209,7 @@ fn invalid_region_order_and_missing_referent_are_typed() {
 
 #[test]
 fn reference_prefix_binds_tighter_than_type_choice() {
-    let TypeRef::Choice(alternatives) = parse_type_ref("&A | B")
+    let TypeRef::Choice(alternatives) = parse_attached_type_for_test("&A | B")
         .expect("choice parses")
         .into_value()
     else {
@@ -208,18 +222,18 @@ fn reference_prefix_binds_tighter_than_type_choice() {
 #[test]
 fn nominal_path_exposes_structural_heads_without_display_reconstruction() {
     for source in ["domain.Value", "Vec<I32>", "Iterator<Item = I32>"] {
-        let authored = parse_type_ref(source).expect("nominal type parses");
+        let authored = parse_attached_type_for_test(source).expect("nominal type parses");
         assert!(authored.value().nominal_path().is_some(), "{source}");
     }
     for source in ["!", "(A, B)", "A -> B", "&A", "[A]"] {
-        let authored = parse_type_ref(source).expect("non-nominal type parses");
+        let authored = parse_attached_type_for_test(source).expect("non-nominal type parses");
         assert!(authored.value().nominal_path().is_none(), "{source}");
     }
 }
 
 #[test]
 fn named_reference_region_retains_exact_token() {
-    let TypeRef::Reference(reference) = parse_type_ref("&'scene Value")
+    let TypeRef::Reference(reference) = parse_attached_type_for_test("&'scene Value")
         .expect("named region parses")
         .into_value()
     else {

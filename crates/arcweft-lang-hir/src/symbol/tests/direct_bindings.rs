@@ -107,7 +107,8 @@ fn direct_external_paths_survive_linking_and_resolve_to_one_target() {
         )],
         "typed-direct-paths",
     );
-    let link = ProjectSymbolTable::link(&project, &declarations).expect("external paths link");
+    let link =
+        ProjectSymbolTable::link(project.view(), &declarations).expect("external paths link");
     let declaration = link
         .seed_declarations()
         .next()
@@ -166,7 +167,7 @@ fn unaliased_and_explicit_alias_imports_use_typed_destination_paths() {
         )],
         "typed-path-imports",
     );
-    let link = ProjectSymbolTable::link(&project, &declarations).expect("imports link");
+    let link = ProjectSymbolTable::link(project.view(), &declarations).expect("imports link");
     let target = ProjectSymbolTargetId::External(
         link.seed_declarations()
             .next()
@@ -205,7 +206,7 @@ fn grouped_imports_use_selected_and_alias_segments() {
         ("consumer", "use crate.cast.{akane, hero as lead}\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "typed-group-imports"),
     )
     .expect("grouped imports link")
@@ -238,7 +239,7 @@ fn glob_and_fixed_point_reexport_preserve_qualified_external_segments() {
         )],
         "typed-glob-reexport",
     );
-    let link = ProjectSymbolTable::link(&project, &declarations).expect("glob chain links");
+    let link = ProjectSymbolTable::link(project.view(), &declarations).expect("glob chain links");
     let target = ProjectSymbolTargetId::External(
         link.seed_declarations()
             .next()
@@ -261,7 +262,7 @@ fn glob_and_fixed_point_reexport_preserve_qualified_external_segments() {
 #[test]
 fn external_only_qualifier_import_retains_the_full_typed_binding() {
     let (documents, project) = project_modules(&[
-        ("", "fn main() -> Unit { () }\n"),
+        ("", "predicate seed() = true\n"),
         ("consumer", "use character.hero-pack.2d\n"),
     ]);
     let declarations = declarations(
@@ -273,8 +274,8 @@ fn external_only_qualifier_import_retains_the_full_typed_binding() {
         )],
         "external-only-import",
     );
-    let link =
-        ProjectSymbolTable::link(&project, &declarations).expect("external-only import links");
+    let link = ProjectSymbolTable::link(project.view(), &declarations)
+        .expect("external-only import links");
     let target = ProjectSymbolTargetId::External(
         link.seed_declarations()
             .next()
@@ -316,7 +317,7 @@ fn typed_scope_iterator_is_insertion_order_independent_and_mixes_target_kinds() 
         ],
     );
     let forward = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &declarations(
             &documents[0],
             vec![forward_seed],
@@ -325,7 +326,7 @@ fn typed_scope_iterator_is_insertion_order_independent_and_mixes_target_kinds() 
     )
     .expect("forward facts link");
     let reverse = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &declarations(
             &documents[0],
             vec![reverse_seed],

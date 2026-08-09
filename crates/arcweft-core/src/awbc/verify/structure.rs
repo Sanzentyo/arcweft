@@ -10,8 +10,9 @@ use crate::awbc::schema::{
     AwbcFrameSlotRole, AwbcFunctionId, AwbcFunctionKind, AwbcLineTaskNode, AwbcLineTaskTrigger,
     AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource, AwbcRuntimeType,
     AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
-    AwbcTypeId,
+    AwbcTypeId, AwbcVariantIdentity,
 };
+use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowParameterMode};
 use std::collections::BTreeSet;
 
@@ -124,8 +125,10 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     }
                 }
             }
-            AwbcRuntimeType::Variant { public_id, cases } => {
-                check_optional_string(program, *public_id, &at)?;
+            AwbcRuntimeType::Variant { owner, cases } => {
+                if let AwbcVariantIdentity::Nominal { public_id, .. } = owner {
+                    check_string(program, *public_id, &at)?;
+                }
                 let mut names = BTreeSet::new();
                 for case in cases {
                     check_string(program, case.name, &at)?;
@@ -139,6 +142,20 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                         });
                     }
                 }
+                verify_builtin_variant_schema(program, owner, cases, &at)?;
+            }
+            AwbcRuntimeType::Choice(alternatives) => {
+                for alternative in alternatives {
+                    check_index(
+                        program.runtime_types.len(),
+                        alternative.0,
+                        "runtime_types",
+                        &at,
+                    )?;
+                }
+            }
+            AwbcRuntimeType::Nominal { public_id, .. } => {
+                check_string(program, *public_id, &at)?;
             }
             AwbcRuntimeType::Unit
             | AwbcRuntimeType::Bool
@@ -267,7 +284,6 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                             });
                         }
                     }
-                    AwbcRuntimeType::Dynamic => {}
                     _ => {
                         return Err(AwbcVerifyError::InvalidInvariant {
                             at,
@@ -299,6 +315,33 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcConstant::DurationNanos(_)
             | AwbcConstant::Bytes(_) => {}
         }
+    }
+    Ok(())
+}
+
+fn verify_builtin_variant_schema(
+    program: &AwbcProgram,
+    owner: &AwbcVariantIdentity,
+    cases: &[crate::awbc::schema::AwbcVariantCase],
+    at: &str,
+) -> Result<(), AwbcVerifyError> {
+    let matches_schema = |expected: &[(&str, bool)]| {
+        cases.len() == expected.len()
+            && cases.iter().zip(expected).all(|(case, (name, payload))| {
+                program.strings.get(case.name.index()).map(String::as_str) == Some(*name)
+                    && case.payload.is_some() == *payload
+            })
+    };
+    let valid = match owner {
+        AwbcVariantIdentity::Nominal { .. } => true,
+        AwbcVariantIdentity::Option => matches_schema(&[("Some", true), ("None", false)]),
+        AwbcVariantIdentity::Result => matches_schema(&[("Ok", true), ("Err", true)]),
+    };
+    if !valid {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: at.to_owned(),
+            message: "builtin variant owner has a non-canonical case schema".to_owned(),
+        });
     }
     Ok(())
 }
@@ -584,9 +627,7 @@ fn verify_patterns(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
                 payload,
                 ..
             } => {
-                if let Some(ty) = ty {
-                    check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
-                }
+                check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
                 check_string(program, *case_name, &at)?;
                 if let Some(payload) = payload {
                     check_index(program.patterns.len(), payload.0, "patterns", &at)?;
@@ -739,6 +780,14 @@ fn verify_runtime_tables(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyEr
             "functions",
             &at,
         )?;
+        if let Some(target) = option.target
+            && program.flow_identity(target).is_none()
+        {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "choice target has no exact semantic Flow binding".to_owned(),
+            });
+        }
         check_optional_index(
             program.effect_plans.len(),
             option.out_effect.map(|id| id.0),
@@ -920,9 +969,30 @@ fn verify_effect_payload_shape(
             require_effect_parameter_count(effect_index, effect.kind, parameter_count, &[0, 1])
         }
         AwbcEffectKind::Assert => {
-            require_effect_static_count(effect_index, effect.kind, static_count, 3)?;
+            require_effect_static_count(effect_index, effect.kind, static_count, 4)?;
             require_effect_parameter_count(effect_index, effect.kind, parameter_count, &[0, 2])?;
-            let profile = effect_static_string(program, effect, 2).ok_or_else(|| {
+            let guard = effect_static_bytes(program, effect, 0).ok_or_else(|| {
+                malformed_effect_payload(
+                    effect_index,
+                    effect.kind,
+                    "assert guard must be a byte-array constant",
+                )
+            })?;
+            let guard: [u8; 16] = guard.try_into().map_err(|_| {
+                malformed_effect_payload(
+                    effect_index,
+                    effect.kind,
+                    "assert guard must contain exactly 16 bytes",
+                )
+            })?;
+            RuntimeAssertionGuardId::try_from_bytes(guard).map_err(|error| {
+                malformed_effect_payload(
+                    effect_index,
+                    effect.kind,
+                    format!("invalid assert guard: {error}"),
+                )
+            })?;
+            let profile = effect_static_string(program, effect, 3).ok_or_else(|| {
                 malformed_effect_payload(
                     effect_index,
                     effect.kind,
@@ -1035,6 +1105,20 @@ fn effect_static_string<'a>(
         return None;
     };
     program.strings.get(string.index()).map(String::as_str)
+}
+
+fn effect_static_bytes<'a>(
+    program: &'a AwbcProgram,
+    effect: &AwbcEffectPlan,
+    index: usize,
+) -> Option<&'a [u8]> {
+    let constant = program
+        .constants
+        .get(effect.static_args.get(index)?.index())?;
+    let AwbcConstant::Bytes(bytes) = constant else {
+        return None;
+    };
+    Some(bytes)
 }
 
 fn verify_audio_command_refs(
@@ -1354,6 +1438,46 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
         }
     }
 
+    let mut bound_flow_ids = BTreeSet::new();
+    let mut bound_flow_functions = BTreeSet::new();
+    for (index, binding) in program.flow_bindings.iter().enumerate() {
+        let at = format!("flow binding {index}");
+        if !bound_flow_ids.insert(binding.flow.clone()) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "duplicate stable Flow binding identity".to_owned(),
+            });
+        }
+        if !bound_flow_functions.insert(binding.function) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "multiple semantic Flow identities map to one Product function".to_owned(),
+            });
+        }
+        check_index(
+            program.functions.len(),
+            binding.function.0,
+            "functions",
+            &at,
+        )?;
+        let function = &program.functions[binding.function.index()];
+        if function.kind != AwbcFunctionKind::Flow {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "semantic Flow binding maps to a non-flow Product function".to_owned(),
+            });
+        }
+    }
+    for (index, function) in program.functions.iter().enumerate() {
+        let function_id = AwbcFunctionId(u32::try_from(index).unwrap_or(u32::MAX));
+        if function.kind == AwbcFunctionKind::Flow && !bound_flow_functions.contains(&function_id) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at: format!("function {index}"),
+                message: "Flow function has no exact semantic Flow binding".to_owned(),
+            });
+        }
+    }
+
     let mut flow_ids = BTreeSet::new();
     for (index, executable) in program.flow_executables.iter().enumerate() {
         let at = format!("flow executable {index}");
@@ -1374,6 +1498,12 @@ fn verify_entry_runtime_contracts(verifier: &Verifier<'_, '_>) -> Result<(), Awb
             return Err(AwbcVerifyError::InvalidInvariant {
                 at,
                 message: "flow executable maps to a non-flow Product AWBC function".to_owned(),
+            });
+        }
+        if program.flow_function(&executable.metadata.flow) != Some(executable.function) {
+            return Err(AwbcVerifyError::InvalidInvariant {
+                at,
+                message: "flow executable metadata differs from the typed Flow binding".to_owned(),
             });
         }
         let signature = &program.signatures[function.signature.index()];
@@ -1629,6 +1759,12 @@ fn verify_entry_function(
             function: function.0,
         });
     }
+    if program.flow_identity(function).is_none() {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: format!("entry {entry_index}"),
+            message: "entry target has no exact semantic Flow binding".to_owned(),
+        });
+    }
     Ok(())
 }
 
@@ -1812,15 +1948,50 @@ pub(super) fn types_compatible(
     expected: AwbcTypeId,
     actual: AwbcTypeId,
 ) -> bool {
-    expected == actual
-        || matches!(
-            program.runtime_types.get(expected.index()),
-            Some(AwbcRuntimeType::Dynamic)
-        )
-        || matches!(
-            program.runtime_types.get(actual.index()),
-            Some(AwbcRuntimeType::Dynamic)
-        )
+    types_compatible_inner(program, expected, actual, &mut BTreeSet::new())
+}
+
+fn types_compatible_inner(
+    program: &AwbcProgram,
+    expected: AwbcTypeId,
+    actual: AwbcTypeId,
+    visiting: &mut BTreeSet<(AwbcTypeId, AwbcTypeId)>,
+) -> bool {
+    if expected == actual {
+        return true;
+    }
+    let Some(expected_type) = program.runtime_types.get(expected.index()) else {
+        return false;
+    };
+    let Some(actual_type) = program.runtime_types.get(actual.index()) else {
+        return false;
+    };
+    if matches!(expected_type, AwbcRuntimeType::Dynamic)
+        || matches!(actual_type, AwbcRuntimeType::Dynamic)
+    {
+        return true;
+    }
+    if !visiting.insert((expected, actual)) {
+        return false;
+    }
+    let compatible = match (expected_type, actual_type) {
+        (AwbcRuntimeType::Choice(expected), AwbcRuntimeType::Choice(actual)) => {
+            actual.iter().all(|actual| {
+                expected
+                    .iter()
+                    .any(|expected| types_compatible_inner(program, *expected, *actual, visiting))
+            })
+        }
+        (AwbcRuntimeType::Choice(expected), _) => expected
+            .iter()
+            .any(|expected| types_compatible_inner(program, *expected, actual, visiting)),
+        (_, AwbcRuntimeType::Choice(actual)) => actual
+            .iter()
+            .all(|actual| types_compatible_inner(program, expected, *actual, visiting)),
+        _ => false,
+    };
+    visiting.remove(&(expected, actual));
+    compatible
 }
 
 pub(super) fn effect_set_is_subset(

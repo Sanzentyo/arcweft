@@ -1,7 +1,5 @@
 use arcweft_data::{BytesFormat, EnumRepr, EnumTagStyle, FieldShape, TypeShape, VariantShape};
-use arcweft_lang_hir::symbol::{
-    CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
-};
+use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
 
 use crate::{
     callable::{CallableGroupKind, CallableParameterPassing, CallableParameterPresence},
@@ -89,8 +87,6 @@ pub(super) enum CanonicalConstructor {
     Stream,
     Source,
     Reduction,
-    Speaker,
-    SpeakerPreset,
     Ref,
     Probe,
     ThreadHandle,
@@ -212,8 +208,6 @@ impl CanonicalConstructor {
             Self::Stream => "Stream",
             Self::Source => "Source",
             Self::Reduction => "Reduction",
-            Self::Speaker => "Speaker",
-            Self::SpeakerPreset => "SpeakerPreset",
             Self::Ref => "Ref",
             Self::Probe => "Probe",
             Self::ThreadHandle => "ThreadHandle",
@@ -314,6 +308,7 @@ pub(super) fn flow_contract(
 fn flow_contract_bytes(id: &CheckedFlowId, contract: &CanonicalFlowContract) -> Vec<u8> {
     let mut bytes = CanonicalBytes::domain(b"arcweft.flow-contract\0");
     bytes.string(id.public_id().as_str());
+    bytes.fixed(id.declaration_digest().as_bytes());
     bytes.option(contract.signature.as_ref(), |bytes, signature| {
         bytes.signature(signature);
     });
@@ -377,6 +372,7 @@ fn stateful_binding_bytes(input: &StatefulBindingInput<'_>) -> Vec<u8> {
     bytes.callable_id(input.reducer.0);
     bytes.fixed(input.reducer.1.as_bytes());
     bytes.string(input.initial_flow.0.public_id().as_str());
+    bytes.fixed(input.initial_flow.0.declaration_digest().as_bytes());
     bytes.fixed(input.initial_flow.1.as_bytes());
     bytes.finish()
 }
@@ -503,15 +499,7 @@ impl CanonicalBytes {
     fn callable_id(&mut self, id: &CallableDeclarationId) {
         self.string(id.package().as_str());
         self.string(&id.module().to_string());
-        self.u8(match id.owner() {
-            CallableDeclarationOwner::Function => 1,
-            CallableDeclarationOwner::Predicate => 2,
-            CallableDeclarationOwner::Proof => 3,
-            CallableDeclarationOwner::ExternCapability => 4,
-            CallableDeclarationOwner::View => {
-                unreachable!("View callables cannot enter an accepted entry-role digest")
-            }
-        });
+        self.u8(id.owner().digest_tag().saturating_add(1));
         self.len(id.owner_path().len());
         for segment in id.owner_path() {
             self.string(segment.as_str());
@@ -799,8 +787,6 @@ const fn canonical_constructor_tag(constructor: CanonicalConstructor) -> u8 {
         CanonicalConstructor::Stream => 11,
         CanonicalConstructor::Source => 12,
         CanonicalConstructor::Reduction => 13,
-        CanonicalConstructor::Speaker => 14,
-        CanonicalConstructor::SpeakerPreset => 15,
         CanonicalConstructor::Ref => 16,
         CanonicalConstructor::Probe => 17,
         CanonicalConstructor::ThreadHandle => 18,
@@ -837,7 +823,7 @@ const fn enum_repr_tag(repr: EnumRepr) -> u8 {
 #[cfg(test)]
 mod tests {
     use arcweft_lang_hir::symbol::{
-        CallableDeclarationId, CallableDeclarationOwner, CallablePackageId,
+        CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId,
     };
     use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 
@@ -878,6 +864,15 @@ mod tests {
             name,
         )
         .unwrap()
+    }
+
+    fn flow(public_id: &str, declaration_seed: &str) -> CheckedFlowId {
+        let declaration_digest =
+            CallableDeclarationKey::Existing(callable(declaration_seed)).semantic_digest();
+        CheckedFlowId::for_test(
+            arcweft_id::PublicId::try_new(public_id).unwrap(),
+            declaration_digest,
+        )
     }
 
     fn empty_signature() -> CanonicalSignature {
@@ -929,7 +924,7 @@ mod tests {
         push_u32(&mut expected_callable, 0);
         assert_eq!(callable_contract_bytes(&callable), expected_callable);
 
-        let flow_id = CheckedFlowId::try_new("flow.opening").unwrap();
+        let flow_id = flow("flow.opening", "opening_flow_identity");
         let flow = CanonicalFlowContract {
             signature: Some(empty_signature()),
             contract_effects: EffectSet::new(),
@@ -937,6 +932,7 @@ mod tests {
         };
         let mut expected_flow = domain(b"arcweft.flow-contract\0");
         push_string(&mut expected_flow, "flow.opening");
+        expected_flow.extend_from_slice(flow_id.declaration_digest().as_bytes());
         expected_flow.push(1);
         push_u32(&mut expected_flow, 0);
         push_u32(&mut expected_flow, 1);
@@ -949,6 +945,24 @@ mod tests {
         push_u32(&mut expected_flow, 0);
         expected_flow.push(1);
         assert_eq!(flow_contract_bytes(&flow_id, &flow), expected_flow);
+    }
+
+    #[test]
+    fn same_public_flow_label_with_distinct_declarations_has_distinct_contract_identity() {
+        let left = flow("flow.opening", "opening_flow_left");
+        let right = flow("flow.opening", "opening_flow_right");
+        let contract = CanonicalFlowContract {
+            signature: Some(empty_signature()),
+            contract_effects: EffectSet::new(),
+            suspension: CanonicalFlowSuspension::Flow,
+        };
+
+        assert_eq!(left.public_id(), right.public_id());
+        assert_ne!(left.declaration_digest(), right.declaration_digest());
+        assert_ne!(
+            flow_contract(&left, &contract),
+            flow_contract(&right, &contract)
+        );
     }
 
     #[test]
@@ -1001,7 +1015,7 @@ mod tests {
         );
         let initializer = callable("initial_state");
         let reducer = callable("reduce");
-        let flow = CheckedFlowId::try_new("flow.opening").unwrap();
+        let flow = flow("flow.opening", "opening_flow_identity");
         let state_digest = NominalSchemaDigest::from_bytes([0x11; 32]);
         let initializer_digest = CallableContractDigest::from_bytes([0x22; 32]);
         let event_digest = NominalSchemaDigest::from_bytes([0x33; 32]);
@@ -1032,6 +1046,7 @@ mod tests {
         push_callable_id(&mut expected, "reduce");
         expected.extend_from_slice(&[0x44; 32]);
         push_string(&mut expected, "flow.opening");
+        expected.extend_from_slice(flow.declaration_digest().as_bytes());
         expected.extend_from_slice(&[0x55; 32]);
         assert_eq!(actual, expected);
     }
@@ -1054,7 +1069,7 @@ mod tests {
         );
         let initializer = callable("initial_state");
         let reducer = callable("reduce");
-        let flow = CheckedFlowId::try_new("flow.opening").unwrap();
+        let flow = flow("flow.opening", "opening_flow_identity");
         let state_digest = NominalSchemaDigest::from_bytes([0x11; 32]);
         let initializer_digest = CallableContractDigest::from_bytes([0x22; 32]);
         let event_digest = NominalSchemaDigest::from_bytes([0x33; 32]);

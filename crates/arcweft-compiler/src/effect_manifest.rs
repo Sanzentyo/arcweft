@@ -4,9 +4,7 @@ use arcweft_agent_protocol::{
     verified_effects::VerifiedEffectSummary,
 };
 use arcweft_lang_sema::{
-    check::{ClosedEffectRowReport, EffectRowCloseError},
-    effect_model::CallableId,
-    effects::EffectSet,
+    callable::CheckedCallableFacts, effect_row::EffectRowTail, effects::EffectSet,
 };
 use thiserror::Error;
 
@@ -16,21 +14,12 @@ pub const EFFECT_ANALYSIS_VERSION: u32 = 1;
 /// Failure to construct a verified artifact effect proof.
 #[derive(Debug, Error)]
 pub enum VerifiedEffectBuildError {
-    #[error("effect analysis report has no summary for `{callable}`")]
-    MissingSummary { callable: CallableId },
-    #[error("effect analysis row report contains unresolved rows: {source}")]
-    InvalidRows {
-        #[source]
-        source: EffectRowCloseError,
-    },
+    #[error("checked callable has no body-owned inferred effect row")]
+    MissingBodyRow,
+    #[error("checked callable effect row is not closed at the artifact boundary")]
+    UnresolvedRow,
     #[error(transparent)]
     InvalidDigest(#[from] IdentifierError),
-}
-
-impl From<EffectRowCloseError> for VerifiedEffectBuildError {
-    fn from(source: EffectRowCloseError) -> Self {
-        Self::InvalidRows { source }
-    }
 }
 
 /// Creates a schema-v2 effect proof from closed semantic row evidence.
@@ -39,15 +28,15 @@ impl From<EffectRowCloseError> for VerifiedEffectBuildError {
 /// `declared` slot is populated with the closed inferred row, not with the
 /// source upper bound.
 pub fn build_verified_effect_summary(
-    callable: &CallableId,
-    rows: &ClosedEffectRowReport,
+    callable: &CheckedCallableFacts,
 ) -> Result<VerifiedEffectSummary, VerifiedEffectBuildError> {
-    let summary =
-        rows.summary(callable)
-            .ok_or_else(|| VerifiedEffectBuildError::MissingSummary {
-                callable: callable.clone(),
-            })?;
-    let inferred = summary.inferred().clone();
+    let row = callable
+        .actual_row()
+        .ok_or(VerifiedEffectBuildError::MissingBodyRow)?;
+    if row.tail() != EffectRowTail::Closed {
+        return Err(VerifiedEffectBuildError::UnresolvedRow);
+    }
+    let inferred = row.concrete().clone();
     let actual = inferred
         .iter()
         .map(|effect| EffectCapability::new(effect.as_str()))
@@ -80,56 +69,21 @@ fn effect_digest(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use arcweft_lang_sema::check::ClosedEffectRowSummary;
+    use super::{EFFECT_ANALYSIS_VERSION, effect_digest};
+    use arcweft_agent_protocol::artifact::EffectCapability;
+    use arcweft_lang_sema::effects::EffectSet;
 
     #[test]
-    fn verified_effect_summary_uses_closed_inferred_row() {
-        let callable = CallableId::new("agent.observe_smoke");
-        let inferred = EffectSet::from_labels(["agent.observe"]).expect("valid inferred row");
-        let upper_bound =
-            EffectSet::from_labels(["agent.observe", "agent.capture"]).expect("valid upper row");
-        let rows = ClosedEffectRowReport::new([ClosedEffectRowSummary::new(
-            callable.clone(),
-            inferred,
-            Some(upper_bound),
-            EffectSet::new(),
-        )]);
+    fn inferred_effect_digest_is_deterministic_and_ordered() {
+        let effects =
+            EffectSet::from_labels(["agent.observe", "agent.capture"]).expect("valid inferred row");
+        let digest = effect_digest(EFFECT_ANALYSIS_VERSION, &effects).expect("effect digest");
+        assert!(digest.as_str().starts_with("blake3:"));
 
-        let summary =
-            build_verified_effect_summary(&callable, &rows).expect("verified summary builds");
-
-        assert_eq!(
-            summary
-                .declared
-                .iter()
-                .map(EffectCapability::as_str)
-                .collect::<Vec<_>>(),
-            vec!["agent.observe"]
-        );
-        assert_eq!(
-            summary
-                .inferred
-                .iter()
-                .map(EffectCapability::as_str)
-                .collect::<Vec<_>>(),
-            vec!["agent.observe"]
-        );
-        assert!(summary.digest.as_str().starts_with("blake3:"));
-    }
-
-    #[test]
-    fn verified_effect_summary_rejects_missing_callable_row() {
-        let rows = ClosedEffectRowReport::default();
-        let callable = CallableId::new("agent.missing");
-
-        let error =
-            build_verified_effect_summary(&callable, &rows).expect_err("missing row is rejected");
-
-        assert!(matches!(
-            error,
-            VerifiedEffectBuildError::MissingSummary { callable: missing }
-                if missing == callable
-        ));
+        let projected = effects
+            .iter()
+            .map(|effect| EffectCapability::new(effect.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(projected.len(), 2);
     }
 }

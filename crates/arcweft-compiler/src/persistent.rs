@@ -4,13 +4,24 @@
 //! `arcweft-project::persistent_object`. It intentionally does not perform cache
 //! reads, cache writes, or semantic/typecheck reuse.
 
-use arcweft_lang_hir::model::{HirAwait, HirChoice, HirFlowItem, HirModule, HirTopLevelDecl};
+use std::collections::BTreeMap;
+
+use arcweft_lang_hir::{
+    expr::HirExprKind,
+    identity::TypeId,
+    item::{
+        HirFunctionItem, HirGenericParameter, HirItemFamily, HirItemKind, HirParameter,
+        HirParameterKind, HirRequiredName, HirWherePredicate,
+    },
+    leaf::{HirPath, HirPathRoot, HirPathSegment, HirTypeRegion},
+    module::HirModule,
+    stmt::{HirConditionalElseBranch, HirContextualStmtBody, HirStmtKind, HirStmtMatchArmBody},
+    type_ref::HirTypeKind,
+};
 use arcweft_lang_syntax::{
-    ast::common::TextRange,
-    cst::{SyntaxKind, SyntaxNode, SyntaxParseStats},
-    parser::recovery::ParseError,
-    source::{LineIndex, ParsedSource},
-    types::{FnParamKind, FnSignature, GenericParam, TypeRef},
+    attachment::{SyntaxAccessError, SyntaxNode, TypedItemNode},
+    grammar::SyntaxKind,
+    incremental::{ParsedSource, SyntaxDiagnostic, SyntaxParseStats},
 };
 use arcweft_project::{
     fingerprint::{BuildDigest, NamedDigest},
@@ -121,6 +132,8 @@ pub enum PersistentFactsError {
     CountTooLarge { field: &'static str },
     #[error("{field} source digest does not match typecheck gate key")]
     SourceDigestMismatch { field: &'static str },
+    #[error(transparent)]
+    AttachedSyntax(#[from] SyntaxAccessError),
 }
 
 /// Builds a parsed-syntax payload object without serializing parser internals.
@@ -128,12 +141,13 @@ pub fn parsed_syntax_object(
     input: &ParsedSyntaxFactsInput<'_>,
 ) -> Result<ParsedSyntaxObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::ParsedSyntax)?;
-    let source_digest = BuildDigest::from(input.parsed.identity().revision());
+    let source_digest = BuildDigest::from(input.parsed.document().identity().revision());
+    let line_index = StableLineIndex::new(input.parsed.source());
     let diagnostics = input
         .parsed
-        .errors()
+        .diagnostics()
         .iter()
-        .map(|error| parse_error_diagnostic(error, input.parsed.line_index()))
+        .map(|diagnostic| syntax_diagnostic(diagnostic, &line_index))
         .collect::<Result<Vec<_>, _>>()?;
     let diagnostics = StableDiagnosticSummaryObject::new(diagnostics).map_err(|_| {
         PersistentFactsError::CountTooLarge {
@@ -147,7 +161,7 @@ pub fn parsed_syntax_object(
         source_label: input.source_label.to_owned(),
         source_digest,
         source_span: source_span(input.parsed)?,
-        stats: syntax_stats(input.parsed.source(), input.parsed.syntax_stats())?,
+        stats: syntax_stats(input.parsed.syntax_stats())?,
         diagnostics,
         stage_inputs: input.key.stage_inputs(),
         evidence: parsed_syntax_evidence(input.parsed)?,
@@ -168,7 +182,7 @@ pub fn hir_body_object(
     input: &HirBodyFactsInput<'_>,
 ) -> Result<HirBodyObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::HirBody)?;
-    let source_digest = BuildDigest::from(input.parsed.identity().revision());
+    let source_digest = BuildDigest::from(input.parsed.document().identity().revision());
     let facts = hir_body_facts(input.module, input.hir)?;
     Ok(HirBodyObject {
         schema_version: AWBO_SCHEMA_VERSION,
@@ -195,7 +209,7 @@ pub fn interface_summary_object(
     input: &InterfaceSummaryFactsInput<'_>,
 ) -> Result<InterfaceSummaryObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::InterfaceSummary)?;
-    let source_digest = BuildDigest::from(input.parsed.identity().revision());
+    let source_digest = BuildDigest::from(input.parsed.document().identity().revision());
     let stage_inputs = input.key.stage_inputs();
     let public_symbols = interface_public_symbols(input.module, input.hir)?;
     Ok(InterfaceSummaryObject {
@@ -221,12 +235,13 @@ pub fn interface_summary_payload(
     ))
 }
 
-/// Builds a stable typecheck gate object without serializing linked HIR or a `TypeCheckReport`.
+/// Builds a stable typecheck gate object without serializing the HIR project or a
+/// `TypeCheckReport`.
 pub fn typecheck_gate_object(
     input: &TypecheckGateFactsInput<'_>,
 ) -> Result<TypecheckGateObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::TypecheckGate)?;
-    let source_digest = BuildDigest::from(input.parsed.identity().revision());
+    let source_digest = BuildDigest::from(input.parsed.document().identity().revision());
     if input.interface_summary.source_digest != source_digest {
         return Err(PersistentFactsError::SourceDigestMismatch {
             field: "interface_summary",
@@ -279,7 +294,7 @@ pub fn bytecode_unit_object(
     input: &BytecodeUnitFactsInput<'_>,
 ) -> Result<BytecodeUnitObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::BytecodeUnit)?;
-    let source_digest = BuildDigest::from(input.parsed.identity().revision());
+    let source_digest = BuildDigest::from(input.parsed.document().identity().revision());
     if input.hir_body.source_digest != source_digest {
         return Err(PersistentFactsError::SourceDigestMismatch { field: "hir_body" });
     }
@@ -340,7 +355,7 @@ pub fn actual_bytecode_unit_object(
     input: &ActualBytecodeUnitFactsInput<'_>,
 ) -> Result<BytecodeUnitObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::BytecodeUnit)?;
-    let source_digest = BuildDigest::from(input.parsed.identity().revision());
+    let source_digest = BuildDigest::from(input.parsed.document().identity().revision());
     if input.hir_body.source_digest != source_digest {
         return Err(PersistentFactsError::SourceDigestMismatch { field: "hir_body" });
     }
@@ -398,7 +413,7 @@ pub fn link_plan_object(
     input: &LinkPlanFactsInput<'_>,
 ) -> Result<LinkPlanObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::LinkPlan)?;
-    let source_digest = BuildDigest::from(input.parsed.identity().revision());
+    let source_digest = BuildDigest::from(input.parsed.document().identity().revision());
     let stage_inputs = input.key.stage_inputs();
     let descriptor = LinkDescriptorObject {
         ordered_unit_identities: NamedDigest::canonicalize(input.ordered_unit_digests.clone()),
@@ -439,7 +454,7 @@ pub fn actual_link_plan_object(
     input: &ActualLinkPlanFactsInput<'_>,
 ) -> Result<LinkPlanObject, PersistentFactsError> {
     ensure_key_kind(input.key, CompilerObjectKind::LinkPlan)?;
-    let source_digest = BuildDigest::from(input.parsed.identity().revision());
+    let source_digest = BuildDigest::from(input.parsed.document().identity().revision());
     let stage_inputs = input.key.stage_inputs();
     let descriptor = LinkDescriptorObject {
         ordered_unit_identities: input.ordered_unit_identities.clone(),
@@ -490,13 +505,48 @@ fn ensure_key_kind(
     }
 }
 
+/// Deterministic UTF-8 line projection used only by the persistent codec.
+///
+/// The incremental parser owns syntax identity; this projection derives
+/// presentation coordinates from the same immutable document without adding
+/// a second parsed-source authority.
+struct StableLineIndex {
+    starts: Vec<usize>,
+}
+
+impl StableLineIndex {
+    fn new(source: &str) -> Self {
+        let mut starts = vec![0];
+        for (offset, character) in source.char_indices() {
+            if character == '\n' {
+                starts.push(offset + character.len_utf8());
+            }
+        }
+        Self { starts }
+    }
+
+    fn starts(&self) -> &[usize] {
+        &self.starts
+    }
+
+    fn line_col(&self, offset: usize) -> (usize, usize) {
+        let line = self.starts.partition_point(|start| *start <= offset);
+        let line = line.saturating_sub(1);
+        (line, offset.saturating_sub(self.starts[line]))
+    }
+}
+
 fn source_span(parsed: &ParsedSource) -> Result<StableSourceSpanObject, PersistentFactsError> {
-    stable_span_for_offsets(0, parsed.source().len(), parsed.line_index())
+    stable_span_for_offsets(
+        0,
+        parsed.source().len(),
+        &StableLineIndex::new(parsed.source()),
+    )
 }
 
 fn stable_span_for_range(
-    range: &TextRange,
-    line_index: &LineIndex,
+    range: arcweft_source::SourceRange,
+    line_index: &StableLineIndex,
 ) -> Result<StableSourceSpanObject, PersistentFactsError> {
     stable_span_for_offsets(range.start(), range.end(), line_index)
 }
@@ -504,7 +554,7 @@ fn stable_span_for_range(
 fn stable_span_for_offsets(
     start: usize,
     end: usize,
-    line_index: &LineIndex,
+    line_index: &StableLineIndex,
 ) -> Result<StableSourceSpanObject, PersistentFactsError> {
     let (start_line, start_column) = line_index.line_col(start);
     let (end_line, end_column) = line_index.line_col(end);
@@ -520,38 +570,38 @@ fn stable_span_for_offsets(
     })
 }
 
-fn syntax_stats(
-    source: &str,
-    stats: SyntaxParseStats,
-) -> Result<SyntaxStatsObject, PersistentFactsError> {
+fn syntax_stats(stats: SyntaxParseStats) -> Result<SyntaxStatsObject, PersistentFactsError> {
     Ok(SyntaxStatsObject {
-        bytes: to_u64("source bytes", source.len())?,
-        lines: to_u64("source lines", source.lines().count())?,
-        cst_lex_passes: to_u64("cst lex passes", stats.cst_lex_passes)?,
-        punctuation_scans: to_u64("punctuation scans", stats.punctuation_scans)?,
-        punctuation_scan_bytes: to_u64("punctuation scan bytes", stats.punctuation_scan_bytes)?,
-        line_owned_bytes: to_u64("line owned bytes", stats.line_owned_bytes)?,
-        block_owned_bytes: to_u64("block owned bytes", stats.block_owned_bytes)?,
-        raw_owned_bytes: to_u64("raw owned bytes", stats.raw_owned_bytes)?,
-        wiki_scan_performed: to_u64("wiki scans", stats.wiki_scan_performed)?,
-        dialogue_rescue_expr_parse_attempts: to_u64(
-            "dialogue rescue parse attempts",
-            stats.dialogue_rescue_expr_parse_attempts,
-        )?,
-        numeric_seq_summaries: to_u64("numeric sequence summaries", stats.numeric_seq_summaries)?,
+        accepted_source_bytes: to_u64("accepted source bytes", stats.accepted_source_bytes())?,
+        lexer_tokens: to_u64("lexer tokens", stats.lexer_tokens())?,
+        grammar_events: to_u64("grammar events", stats.grammar_events())?,
+        top_level_items: to_u64("top-level items", stats.top_level_items())?,
+        statements: to_u64("statements", stats.statements())?,
+        expressions: to_u64("expressions", stats.expressions())?,
+        type_nodes: to_u64("type nodes", stats.type_nodes())?,
+        pattern_nodes: to_u64("pattern nodes", stats.pattern_nodes())?,
+        identity_bearing_nodes: to_u64("identity-bearing nodes", stats.identity_bearing_nodes())?,
+        diagnostic_identities: to_u64("diagnostic identities", stats.diagnostic_identities())?,
     })
 }
 
-fn parse_error_diagnostic(
-    error: &ParseError,
-    line_index: &LineIndex,
+fn syntax_diagnostic(
+    diagnostic: &SyntaxDiagnostic,
+    line_index: &StableLineIndex,
 ) -> Result<StableDiagnosticObject, PersistentFactsError> {
     Ok(StableDiagnosticObject {
-        code: "syntax.parse".to_owned(),
+        code: diagnostic.code().to_owned(),
         severity: StableDiagnosticSeverity::Error,
-        message: error.message().to_owned(),
-        primary_span: Some(stable_span_for_range(error.range(), line_index)?),
-        related_spans: Vec::new(),
+        message: diagnostic.message().to_owned(),
+        primary_span: Some(stable_span_for_range(
+            diagnostic.primary().range(),
+            line_index,
+        )?),
+        related_spans: diagnostic
+            .related()
+            .map(|span| stable_span_for_range(span.range(), line_index))
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?,
     })
 }
 
@@ -560,23 +610,33 @@ fn parsed_syntax_evidence(
 ) -> Result<ParsedSyntaxEvidenceObject, PersistentFactsError> {
     let mut counts = SyntaxShapeCounts::default();
     let mut shape_bytes = Vec::new();
-    record_syntax_node(parsed.syntax(), &mut counts, &mut shape_bytes)?;
-    let typed_tree = parsed.typed_tree();
+    let root = parsed.root_syntax();
+    let rowan_root = root.rowan();
+    record_syntax_node(rowan_root, &mut counts, &mut shape_bytes)?;
+    let attributes = parsed.attributes()?;
+    let items = parsed.items()?;
+    let use_count = items
+        .iter()
+        .filter(|item| matches!(item, TypedItemNode::Use(_)))
+        .count();
+    let item_count = items
+        .iter()
+        .filter(|item| !matches!(item, TypedItemNode::Module(_) | TypedItemNode::Use(_)))
+        .count();
     Ok(ParsedSyntaxEvidenceObject {
-        root_kind: parsed.syntax().kind().cache_fact_tag().to_owned(),
+        root_kind: u32::from(root.kind() as u16),
         cst_shape_digest: BuildDigest::of(&shape_bytes),
-        line_index_digest: line_index_digest(parsed.line_index())?,
+        line_index_digest: line_index_digest(&StableLineIndex::new(parsed.source()))?,
         cst_node_count: counts.nodes,
         cst_token_count: counts.tokens,
         cst_error_node_count: counts.error_nodes,
-        typed_attribute_count: to_u64("typed attributes", typed_tree.attrs().len())?,
-        typed_use_count: to_u64("typed uses", typed_tree.uses().len())?,
-        typed_item_count: to_u64("typed items", typed_tree.items().len())?,
-        wiki_link_count: to_u64("wiki links", typed_tree.wiki_links().len())?,
+        typed_attribute_count: to_u64("typed attributes", attributes.len())?,
+        typed_use_count: to_u64("typed uses", use_count)?,
+        typed_item_count: to_u64("typed items", item_count)?,
     })
 }
 
-fn line_index_digest(line_index: &LineIndex) -> Result<BuildDigest, PersistentFactsError> {
+fn line_index_digest(line_index: &StableLineIndex) -> Result<BuildDigest, PersistentFactsError> {
     let mut bytes = Vec::new();
     put_len(&mut bytes, "line starts", line_index.starts().len())?;
     for start in line_index.starts() {
@@ -591,11 +651,12 @@ fn record_syntax_node(
     bytes: &mut Vec<u8>,
 ) -> Result<(), PersistentFactsError> {
     counts.nodes += 1;
-    if node.kind() == SyntaxKind::Error {
+    let kind = node.kind().0;
+    if is_error_syntax_kind(kind) {
         counts.error_nodes += 1;
     }
     put_str(bytes, "node")?;
-    put_str(bytes, node.kind().cache_fact_tag())?;
+    put_u32(bytes, u32::from(kind));
     let range = node.text_range();
     put_u32(bytes, range.start().into());
     put_u32(bytes, range.end().into());
@@ -605,13 +666,25 @@ fn record_syntax_node(
         } else if let Some(token) = element.as_token() {
             counts.tokens += 1;
             put_str(bytes, "token")?;
-            put_str(bytes, token.kind().cache_fact_tag())?;
+            put_u32(bytes, u32::from(token.kind().0));
             let range = token.text_range();
             put_u32(bytes, range.start().into());
             put_u32(bytes, range.end().into());
         }
     }
     Ok(())
+}
+
+const fn is_error_syntax_kind(kind: u16) -> bool {
+    kind == SyntaxKind::ErrorItem as u16
+        || kind == SyntaxKind::ErrorDeclarationMember as u16
+        || kind == SyntaxKind::ErrorStatement as u16
+        || kind == SyntaxKind::ErrorExpression as u16
+        || kind == SyntaxKind::ErrorPattern as u16
+        || kind == SyntaxKind::ErrorType as u16
+        || kind == SyntaxKind::RichTextInvalidArgument as u16
+        || kind == SyntaxKind::RichTextInvalidArgumentIssue as u16
+        || kind == SyntaxKind::ErrorNode as u16
 }
 
 fn hir_body_facts(
@@ -621,43 +694,84 @@ fn hir_body_facts(
     let mut counts = HirBodyCounts::default();
     let mut symbols = Vec::new();
     let mut shape = Vec::new();
+    let mut item_tags = BTreeMap::new();
+    let mut expression_tags = BTreeMap::new();
+    let mut statement_tags = BTreeMap::new();
+    let mut attribute_count = 0_usize;
 
     put_str(&mut symbols, module)?;
-    put_len(&mut shape, "hir attributes", hir.attributes().len())?;
-    for attribute in hir.attributes() {
-        put_str(&mut symbols, "attribute")?;
-        put_str(&mut symbols, attribute.name())?;
+    for &item_id in hir.source_ordered_items() {
+        let item = hir
+            .resolve_item(item_id)
+            .expect("accepted HIR source item remains live");
+        let family = item.family();
+        *item_tags.entry(item_family_tag(family)).or_insert(0_usize) += 1;
+        attribute_count = attribute_count
+            .checked_add(item.prefix().attributes().len())
+            .ok_or(PersistentFactsError::CoordinateTooLarge {
+                field: "hir attributes",
+                value: usize::MAX,
+            })?;
+        record_item_symbol(hir, item.kind(), item.prefix().attributes(), &mut symbols)?;
+        match item.kind() {
+            HirItemKind::Flow(flow) => {
+                counts.flows += 1;
+                counts.flow_items += to_u64("flow body", flow.body().items().len())?;
+            }
+            HirItemKind::Function(_) => counts.functions += 1,
+            kind if is_persistent_declaration(kind.family()) => counts.declarations += 1,
+            _ => {}
+        }
     }
 
-    for flow in hir.flows() {
-        put_str(&mut symbols, "flow")?;
-        put_str(&mut symbols, "flow")?;
-        put_option_str(&mut symbols, flow.name())?;
-        put_len(&mut shape, "flow body", flow.body().len())?;
-        counts.flows += 1;
-        record_hir_flow_items(flow.body(), &mut counts, &mut shape)?;
+    for (_, expression) in hir.expressions() {
+        let tag = expression_kind_tag(expression.kind());
+        *expression_tags.entry(tag).or_insert(0_usize) += 1;
+        match expression.kind() {
+            HirExprKind::DialogueContentApplication(_) => counts.dialogues += 1,
+            HirExprKind::Choice(_) => counts.choices += 1,
+            HirExprKind::Await(_) => counts.awaits += 1,
+            HirExprKind::Thread(thread) => {
+                counts.threads += 1;
+                counts.flow_items += to_u64("thread body", thread.body().items().len())?;
+            }
+            _ => {}
+        }
     }
 
-    for function in hir.functions() {
-        put_str(&mut symbols, "function")?;
-        put_str(&mut symbols, function.name())?;
-        put_len(
-            &mut shape,
-            "function statements",
-            function.statements().len(),
+    counts.statements = to_u64("statements", hir.statements().len())?;
+    for (_, statement) in hir.statements() {
+        let tag = statement_kind_tag(statement.kind());
+        *statement_tags.entry(tag).or_insert(0_usize) += 1;
+        counts.flow_items += to_u64(
+            "nested thread body",
+            immediate_thread_flow_item_count(statement.kind()),
         )?;
-        put_bool(&mut shape, function.value().is_some());
-        counts.functions += 1;
-        counts.statements += to_u64("function statements", function.statements().len())?;
+        match statement.kind() {
+            HirStmtKind::LetLoop { .. }
+            | HirStmtKind::Loop(_)
+            | HirStmtKind::While(_)
+            | HirStmtKind::WhileLet(_)
+            | HirStmtKind::For(_) => counts.loops += 1,
+            HirStmtKind::AwaitWith(_) => counts.awaits += 1,
+            HirStmtKind::Include(_) => counts.includes += 1,
+            _ => {}
+        }
     }
 
-    for declaration in hir.declarations() {
-        record_hir_declaration(declaration, &mut symbols, &mut shape)?;
-        counts.declarations += 1;
-    }
+    // A body dependency digest is deliberately conservative. Binding it to
+    // the accepted source revision guarantees that any authored body change
+    // invalidates downstream body consumers without reopening source text or
+    // serializing qualified arena IDs whose numeric slots are not persistent
+    // identities.
+    shape.extend_from_slice(hir.provenance().source_identity().revision().as_bytes());
+    record_tag_counts(&mut shape, "item kinds", &item_tags)?;
+    record_tag_counts(&mut shape, "expression kinds", &expression_tags)?;
+    record_tag_counts(&mut shape, "statement kinds", &statement_tags)?;
+    put_len(&mut shape, "hir attributes", attribute_count)?;
 
     Ok(HirBodyFactsObject {
-        attribute_count: to_u64("hir attributes", hir.attributes().len())?,
+        attribute_count: to_u64("hir attributes", attribute_count)?,
         flow_count: counts.flows,
         function_count: counts.functions,
         declaration_count: counts.declarations,
@@ -679,35 +793,47 @@ fn interface_public_symbols(
     hir: &HirModule,
 ) -> Result<Vec<PublicSymbolObject>, PersistentFactsError> {
     let mut symbols = Vec::new();
-    for flow in hir.flows() {
-        let Some(name) = flow.name() else {
-            continue;
-        };
-        symbols.push(public_symbol(
-            PublicSymbolKind::Flow,
-            module,
-            name,
-            signature_digest("flow", name, flow.signature())?,
-        ));
-    }
-
-    for function in hir.functions() {
-        symbols.push(public_symbol(
-            PublicSymbolKind::Function,
-            module,
-            function.name(),
-            signature_digest("function", function.name(), Some(function.signature()))?,
-        ));
-    }
-
-    for (index, declaration) in hir.declarations().iter().enumerate() {
-        let name = format!("decl:{index}:{}", declaration.cache_fact_tag());
-        symbols.push(public_symbol(
-            PublicSymbolKind::Declaration,
-            module,
-            &name,
-            signature_digest("declaration", declaration.cache_fact_tag(), None)?,
-        ));
+    let mut declaration_ordinal = 0_usize;
+    for &item_id in hir.source_ordered_items() {
+        let item = hir
+            .resolve_item(item_id)
+            .expect("accepted HIR source item remains live");
+        match item.kind() {
+            HirItemKind::Flow(flow) => {
+                let Some(name) = flow.identity().name() else {
+                    continue;
+                };
+                symbols.push(public_symbol(
+                    PublicSymbolKind::Flow,
+                    module,
+                    name.as_str(),
+                    flow_signature_digest(hir, name.as_str(), flow)?,
+                ));
+            }
+            HirItemKind::Function(function) => {
+                let Some(name) = function.name().resolved() else {
+                    continue;
+                };
+                symbols.push(public_symbol(
+                    PublicSymbolKind::Function,
+                    module,
+                    name.as_str(),
+                    function_signature_digest(hir, name.as_str(), function)?,
+                ));
+            }
+            kind if is_persistent_declaration(kind.family()) => {
+                let tag = item_family_tag(kind.family());
+                let name = format!("decl:{declaration_ordinal}:{tag}");
+                symbols.push(public_symbol(
+                    PublicSymbolKind::Declaration,
+                    module,
+                    &name,
+                    declaration_signature_digest(tag)?,
+                ));
+                declaration_ordinal += 1;
+            }
+            _ => {}
+        }
     }
 
     Ok(InterfaceSummaryObject::canonical_public_symbols(symbols))
@@ -726,303 +852,502 @@ fn public_symbol(
     }
 }
 
-fn signature_digest(
-    family: &str,
+fn function_signature_digest(
+    hir: &HirModule,
     name: &str,
-    signature: Option<&FnSignature>,
+    function: &HirFunctionItem,
 ) -> Result<BuildDigest, PersistentFactsError> {
     let mut bytes = Vec::new();
-    put_str(&mut bytes, family)?;
+    put_str(&mut bytes, "function")?;
     put_str(&mut bytes, name)?;
-    if let Some(signature) = signature {
-        record_fn_signature(signature, &mut bytes)?;
-    } else {
-        put_str(&mut bytes, "no-signature")?;
+    record_generic_parameters(hir, function.generic_parameters(), &mut bytes)?;
+    put_len(
+        &mut bytes,
+        "function parameter groups",
+        function.parameter_groups().len(),
+    )?;
+    for group in function.parameter_groups() {
+        record_parameters(hir, group.parameters(), &mut bytes)?;
     }
+    record_optional_type(hir, function.return_type(), &mut bytes)?;
+    record_where_predicates(hir, function.where_predicates(), &mut bytes)?;
     Ok(BuildDigest::of(&bytes))
 }
 
-fn record_fn_signature(
-    signature: &FnSignature,
+fn flow_signature_digest(
+    hir: &HirModule,
+    name: &str,
+    flow: &arcweft_lang_hir::item::HirFlowItem,
+) -> Result<BuildDigest, PersistentFactsError> {
+    let mut bytes = Vec::new();
+    put_str(&mut bytes, "flow")?;
+    put_str(&mut bytes, name)?;
+    record_generic_parameters(hir, flow.generic_parameters(), &mut bytes)?;
+    put_len(&mut bytes, "flow parameter groups", 1)?;
+    record_parameters(hir, flow.parameters(), &mut bytes)?;
+    record_optional_type(hir, flow.result().authored_type(), &mut bytes)?;
+    record_where_predicates(hir, flow.where_predicates(), &mut bytes)?;
+    Ok(BuildDigest::of(&bytes))
+}
+
+fn declaration_signature_digest(tag: &str) -> Result<BuildDigest, PersistentFactsError> {
+    let mut bytes = Vec::new();
+    put_str(&mut bytes, "declaration")?;
+    put_str(&mut bytes, tag)?;
+    put_str(&mut bytes, "no-signature")?;
+    Ok(BuildDigest::of(&bytes))
+}
+
+fn record_generic_parameters(
+    hir: &HirModule,
+    parameters: &[HirGenericParameter],
     bytes: &mut Vec<u8>,
 ) -> Result<(), PersistentFactsError> {
-    put_str(bytes, signature.name())?;
-    put_len(bytes, "generic params", signature.generic_params().len())?;
-    for param in signature.generic_params() {
-        match param {
-            GenericParam::Lifetime(lifetime) => {
+    put_len(bytes, "generic params", parameters.len())?;
+    for parameter in parameters {
+        match parameter {
+            HirGenericParameter::Lifetime { name } => {
                 put_str(bytes, "lifetime")?;
-                put_str(bytes, lifetime.name())?;
+                record_required_name(name, bytes)?;
             }
-            GenericParam::Type(param) => {
+            HirGenericParameter::Type { name, bounds } => {
                 put_str(bytes, "type")?;
-                put_str(bytes, param.name().as_str())?;
-                put_len(bytes, "type bounds", param.bounds().len())?;
-                for bound in param.bounds() {
-                    record_type_ref(bound.value(), bytes)?;
+                record_required_name(name, bytes)?;
+                put_len(bytes, "type bounds", bounds.len())?;
+                for &bound in bounds {
+                    record_type_ref(hir, bound, bytes)?;
                 }
             }
-        }
-    }
-
-    put_len(bytes, "param groups", signature.param_groups().len())?;
-    for group in signature.param_groups() {
-        put_len(bytes, "params", group.params().len())?;
-        for param in group.params() {
-            put_str(
-                bytes,
-                match param.kind() {
-                    FnParamKind::Fixed => "fixed",
-                    FnParamKind::Rest => "rest",
-                },
-            )?;
-            if let Some(ty) = param.ty() {
-                record_type_ref(ty.value(), bytes)?;
-            } else {
-                // Receivers now omit a redundant authored `Self` annotation.
-                // Keep their pre-migration persistent representation unchanged.
-                put_str(bytes, "path")?;
-                put_str(bytes, "Self")?;
-            }
-            put_bool(bytes, param.default().is_some());
-        }
-    }
-
-    if let Some(return_type) = signature.return_type() {
-        put_bool(bytes, true);
-        record_type_ref(return_type.value(), bytes)?;
-    } else {
-        put_bool(bytes, false);
-    }
-
-    put_len(bytes, "where clauses", signature.where_clauses().len())?;
-    for clause in signature.where_clauses() {
-        record_type_ref(clause.subject().value(), bytes)?;
-        put_len(bytes, "where bounds", clause.bounds().len())?;
-        for bound in clause.bounds() {
-            record_type_ref(bound.value(), bytes)?;
         }
     }
     Ok(())
 }
 
-fn record_type_ref(ty: &TypeRef, bytes: &mut Vec<u8>) -> Result<(), PersistentFactsError> {
-    match ty {
-        TypeRef::Never => put_str(bytes, "never")?,
-        TypeRef::ConstInt(value) => {
+fn record_parameters(
+    hir: &HirModule,
+    parameters: &[HirParameter],
+    bytes: &mut Vec<u8>,
+) -> Result<(), PersistentFactsError> {
+    put_len(bytes, "params", parameters.len())?;
+    for parameter in parameters {
+        put_str(
+            bytes,
+            match parameter.kind() {
+                HirParameterKind::Fixed => "fixed",
+                HirParameterKind::RestPositional => "rest-positional",
+            },
+        )?;
+        record_type_ref(hir, parameter.ty(), bytes)?;
+        put_bool(bytes, parameter.default().is_some());
+    }
+    Ok(())
+}
+
+fn record_optional_type(
+    hir: &HirModule,
+    ty: Option<TypeId>,
+    bytes: &mut Vec<u8>,
+) -> Result<(), PersistentFactsError> {
+    if let Some(ty) = ty {
+        put_bool(bytes, true);
+        record_type_ref(hir, ty, bytes)?;
+    } else {
+        put_bool(bytes, false);
+    }
+    Ok(())
+}
+
+fn record_where_predicates(
+    hir: &HirModule,
+    predicates: &[HirWherePredicate],
+    bytes: &mut Vec<u8>,
+) -> Result<(), PersistentFactsError> {
+    put_len(bytes, "where clauses", predicates.len())?;
+    for predicate in predicates {
+        record_type_ref(hir, predicate.subject(), bytes)?;
+        put_len(bytes, "where bounds", predicate.bounds().len())?;
+        for &bound in predicate.bounds() {
+            record_type_ref(hir, bound, bytes)?;
+        }
+    }
+    Ok(())
+}
+
+fn record_type_ref(
+    hir: &HirModule,
+    ty: TypeId,
+    bytes: &mut Vec<u8>,
+) -> Result<(), PersistentFactsError> {
+    let ty = hir
+        .resolve_type(ty)
+        .expect("accepted HIR signature type remains live");
+    match ty.kind() {
+        HirTypeKind::Never => put_str(bytes, "never")?,
+        HirTypeKind::ConstInt(value) => {
             put_str(bytes, "const-int")?;
             put_len(bytes, "const int", *value)?;
         }
-        TypeRef::Path(path) => {
+        HirTypeKind::Path(path) => {
             put_str(bytes, "path")?;
-            put_str(bytes, &path.canonical_string())?;
+            record_hir_path(path, bytes)?;
         }
-        TypeRef::Tuple(items) => {
+        HirTypeKind::Tuple(items) => {
             put_str(bytes, "tuple")?;
             put_len(bytes, "tuple items", items.len())?;
-            for item in items {
-                record_type_ref(item, bytes)?;
+            for &item in items {
+                record_type_ref(hir, item, bytes)?;
             }
         }
-        TypeRef::Function {
-            params,
-            return_type,
-            effects,
-        } => {
+        HirTypeKind::Function(function) => {
             put_str(bytes, "function")?;
-            put_len(bytes, "function params", params.len())?;
-            for param in params {
-                record_type_ref(param, bytes)?;
+            put_len(bytes, "function params", function.parameters().len())?;
+            for &parameter in function.parameters() {
+                record_type_ref(hir, parameter, bytes)?;
             }
-            record_type_ref(return_type, bytes)?;
-            match effects {
+            record_type_ref(hir, function.return_type(), bytes)?;
+            match function.effects() {
                 Some(effects) => {
                     put_str(bytes, "effects")?;
                     put_len(bytes, "function effect row", effects.effects().len())?;
                     for effect in effects.effects() {
-                        put_str(bytes, effect)?;
+                        put_str(bytes, effect.as_str())?;
                     }
                 }
                 None => put_str(bytes, "effects-unknown")?,
             }
         }
-        TypeRef::Choice(alternatives) => {
+        HirTypeKind::Choice(alternatives) => {
             put_str(bytes, "choice")?;
             put_len(bytes, "choice alternatives", alternatives.len())?;
-            for alternative in alternatives {
-                record_type_ref(alternative, bytes)?;
+            for &alternative in alternatives {
+                record_type_ref(hir, alternative, bytes)?;
             }
         }
-        TypeRef::Generic { base, args } => {
+        HirTypeKind::Generic(generic) => {
             put_str(bytes, "generic")?;
-            put_str(bytes, &base.canonical_string())?;
-            put_len(bytes, "generic args", args.len())?;
-            for arg in args {
-                record_type_ref(arg, bytes)?;
+            record_hir_path(generic.base(), bytes)?;
+            put_len(bytes, "generic args", generic.arguments().len())?;
+            for &argument in generic.arguments() {
+                record_type_ref(hir, argument, bytes)?;
             }
         }
-        TypeRef::TraitBound(bound) => {
+        HirTypeKind::TraitBound(bound) => {
             put_str(bytes, "trait-bound")?;
-            put_str(bytes, &bound.path().canonical_string())?;
-            put_len(bytes, "trait bound args", bound.args().len())?;
-            for arg in bound.args() {
-                record_type_ref(arg, bytes)?;
+            record_hir_path(bound.base(), bytes)?;
+            put_len(bytes, "trait bound args", bound.arguments().len())?;
+            for &argument in bound.arguments() {
+                record_type_ref(hir, argument, bytes)?;
             }
             put_len(bytes, "associated type bindings", bound.associated().len())?;
             for binding in bound.associated() {
                 put_str(bytes, binding.name().as_str())?;
-                record_type_ref(binding.value(), bytes)?;
+                record_type_ref(hir, binding.value(), bytes)?;
             }
         }
-        TypeRef::Projection { subject, assoc } => {
+        HirTypeKind::Projection(projection) => {
             put_str(bytes, "projection")?;
-            record_type_ref(subject, bytes)?;
-            put_str(bytes, assoc.as_str())?;
+            record_type_ref(hir, projection.subject(), bytes)?;
+            put_str(bytes, projection.associated().as_str())?;
         }
-        TypeRef::Reference(reference) => {
+        HirTypeKind::Reference(reference) => {
             put_str(bytes, "ref")?;
-            put_str(bytes, reference.kind().stable_label())?;
-            put_option_str(
+            put_str(
                 bytes,
-                reference
-                    .region()
-                    .name()
-                    .map(arcweft_lang_syntax::types::LifetimeName::name),
+                match reference.kind() {
+                    arcweft_lang_hir::expr::HirBorrowKind::Shared => "shared",
+                    arcweft_lang_hir::expr::HirBorrowKind::Mutable => "mutable",
+                },
             )?;
-            record_type_ref(reference.referent(), bytes)?;
+            match reference.region() {
+                Some(HirTypeRegion::Named(region)) => {
+                    put_str(bytes, "named-region")?;
+                    put_str(bytes, region.name().as_str())?;
+                }
+                Some(HirTypeRegion::Elided(_)) => put_str(bytes, "elided-region")?,
+                None => put_str(bytes, "no-region")?,
+            }
+            record_type_ref(hir, reference.referent(), bytes)?;
         }
-        TypeRef::Slice(inner) => {
+        HirTypeKind::Slice(inner) => {
             put_str(bytes, "slice")?;
-            record_type_ref(inner, bytes)?;
+            record_type_ref(hir, *inner, bytes)?;
         }
-        TypeRef::Recovery(id) => {
+        HirTypeKind::Recovery(_) => {
             put_str(bytes, "recovery")?;
-            put_u32(bytes, id.index());
         }
     }
     Ok(())
 }
 
-fn record_hir_declaration(
-    declaration: &HirTopLevelDecl,
+fn record_hir_path(path: &HirPath, bytes: &mut Vec<u8>) -> Result<(), PersistentFactsError> {
+    match path.root() {
+        HirPathRoot::ImplicitCrate => put_str(bytes, "implicit-crate")?,
+        HirPathRoot::Crate => put_str(bytes, "crate")?,
+        HirPathRoot::SelfModule => put_str(bytes, "self")?,
+        HirPathRoot::Super { depth } => {
+            put_str(bytes, "super")?;
+            put_len(bytes, "super depth", depth)?;
+        }
+    }
+    put_len(bytes, "path segments", path.segments().len())?;
+    for segment in path.segments() {
+        match segment {
+            HirPathSegment::Identifier(name) => {
+                put_str(bytes, "identifier")?;
+                put_str(bytes, name.as_str())?;
+            }
+            HirPathSegment::ProjectSymbol(name) => {
+                put_str(bytes, "project-symbol")?;
+                put_str(bytes, name.as_str())?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn record_required_name(
+    name: &HirRequiredName,
+    bytes: &mut Vec<u8>,
+) -> Result<(), PersistentFactsError> {
+    match name {
+        HirRequiredName::Resolved(name) => {
+            put_str(bytes, "resolved")?;
+            put_str(bytes, name.as_str())
+        }
+        HirRequiredName::Missing => put_str(bytes, "missing"),
+        HirRequiredName::Invalid => put_str(bytes, "invalid"),
+    }
+}
+
+fn record_item_symbol(
+    hir: &HirModule,
+    kind: &HirItemKind,
+    attributes: &[arcweft_lang_hir::item::HirAttribute],
     symbols: &mut Vec<u8>,
-    shape: &mut Vec<u8>,
 ) -> Result<(), PersistentFactsError> {
-    let tag = declaration.cache_fact_tag();
-    put_str(symbols, "decl")?;
+    let tag = item_family_tag(kind.family());
     put_str(symbols, tag)?;
-    put_str(shape, "decl")?;
-    put_str(shape, tag)
-}
-
-fn record_hir_flow_items(
-    items: &[HirFlowItem],
-    counts: &mut HirBodyCounts,
-    shape: &mut Vec<u8>,
-) -> Result<(), PersistentFactsError> {
-    for item in items {
-        counts.flow_items += 1;
-        put_str(shape, item.cache_fact_tag())?;
-        match item {
-            HirFlowItem::Stmt(_) => counts.statements += 1,
-            HirFlowItem::Dialogue(dialogue) => {
-                counts.dialogues += 1;
-                put_str(shape, dialogue.callee())?;
-            }
-            HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
-                record_choice(choice, counts, shape)?;
-            }
-            HirFlowItem::LetScope { scope, .. } => {
-                put_option_str(shape, scope.name())?;
-                put_len(shape, "scope statements", scope.statements().len())?;
-                put_bool(shape, scope.value().is_some());
-                counts.statements += to_u64("scope statements", scope.statements().len())?;
-            }
-            HirFlowItem::LetLoop { block, .. } => {
-                counts.loops += 1;
-                record_hir_flow_items(block.body(), counts, shape)?;
-            }
-            HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
-                record_await(await_with, counts, shape)?;
-            }
-            HirFlowItem::Thread(thread) => {
-                counts.threads += 1;
-                put_option_str(shape, thread.name())?;
-                put_bool(shape, thread.is_detached());
-                record_hir_flow_items(thread.body(), counts, shape)?;
-            }
-            HirFlowItem::If(block) => {
-                record_hir_flow_items(block.body(), counts, shape)?;
-                record_hir_flow_items(block.else_body(), counts, shape)?;
-            }
-            HirFlowItem::IfLet(block) => {
-                record_hir_flow_items(block.body(), counts, shape)?;
-                record_hir_flow_items(block.else_body(), counts, shape)?;
-            }
-            HirFlowItem::Match(block) => {
-                put_len(shape, "match arms", block.arms().len())?;
-                for arm in block.arms() {
-                    record_hir_flow_items(arm.body(), counts, shape)?;
-                }
-            }
-            HirFlowItem::Loop(block) => {
-                counts.loops += 1;
-                put_option_str(shape, block.label())?;
-                record_hir_flow_items(block.body(), counts, shape)?;
-            }
-            HirFlowItem::While(block) => {
-                counts.loops += 1;
-                record_hir_flow_items(block.body(), counts, shape)?;
-            }
-            HirFlowItem::WhileLet(block) => {
-                counts.loops += 1;
-                record_hir_flow_items(block.body(), counts, shape)?;
-            }
-            HirFlowItem::For(block) => {
-                counts.loops += 1;
-                record_hir_flow_items(block.body(), counts, shape)?;
-            }
-            HirFlowItem::Select(block) => {
-                put_len(shape, "select branches", block.branches().len())?;
-                for branch in block.branches() {
-                    record_hir_flow_items(branch.body(), counts, shape)?;
-                }
-            }
-            HirFlowItem::SourceLocale(block) => {
-                put_str(shape, block.locale())?;
-                record_hir_flow_items(block.body(), counts, shape)?;
-            }
-            HirFlowItem::Scope(block) => {
-                put_option_str(shape, block.name())?;
-                record_hir_flow_items(block.body(), counts, shape)?;
-            }
-            HirFlowItem::Include(_) => counts.includes += 1,
-        }
+    put_len(symbols, "item attributes", attributes.len())?;
+    for attribute in attributes {
+        record_hir_path(attribute.path(), symbols)?;
+        put_len(symbols, "attribute arguments", attribute.arguments().len())?;
     }
-    Ok(())
+    match kind {
+        HirItemKind::Flow(flow) => {
+            put_option_str(
+                symbols,
+                flow.identity()
+                    .name()
+                    .map(arcweft_lang_hir::leaf::HirName::as_str),
+            )?;
+            record_generic_parameters(hir, flow.generic_parameters(), symbols)?;
+            record_parameters(hir, flow.parameters(), symbols)?;
+            record_optional_type(hir, flow.result().authored_type(), symbols)?;
+            record_where_predicates(hir, flow.where_predicates(), symbols)
+        }
+        HirItemKind::Function(function) => {
+            record_required_name(function.name(), symbols)?;
+            record_generic_parameters(hir, function.generic_parameters(), symbols)?;
+            for group in function.parameter_groups() {
+                record_parameters(hir, group.parameters(), symbols)?;
+            }
+            record_optional_type(hir, function.return_type(), symbols)?;
+            record_where_predicates(hir, function.where_predicates(), symbols)
+        }
+        _ => Ok(()),
+    }
 }
 
-fn record_choice(
-    choice: &HirChoice,
-    counts: &mut HirBodyCounts,
-    shape: &mut Vec<u8>,
-) -> Result<(), PersistentFactsError> {
-    counts.choices += 1;
-    put_len(shape, "choice items", choice.items().len())?;
-    put_len(shape, "choice options", choice.options().len())
+fn is_persistent_declaration(family: HirItemFamily) -> bool {
+    !matches!(
+        family,
+        HirItemFamily::Module
+            | HirItemFamily::Use
+            | HirItemFamily::Flow
+            | HirItemFamily::Function
+            | HirItemFamily::Error
+    )
 }
 
-fn record_await(
-    await_with: &HirAwait,
-    counts: &mut HirBodyCounts,
-    shape: &mut Vec<u8>,
+const fn item_family_tag(family: HirItemFamily) -> &'static str {
+    match family {
+        HirItemFamily::Module => "module",
+        HirItemFamily::Use => "use",
+        HirItemFamily::Flow => "flow",
+        HirItemFamily::Function => "function",
+        HirItemFamily::Predicate => "predicate",
+        HirItemFamily::Proof => "proof",
+        HirItemFamily::Trait => "trait",
+        HirItemFamily::Impl => "impl",
+        HirItemFamily::Enum => "enum",
+        HirItemFamily::Struct => "struct",
+        HirItemFamily::TypeAlias => "type-alias",
+        HirItemFamily::Resource => "resource",
+        HirItemFamily::Character => "character",
+        HirItemFamily::View => "view",
+        HirItemFamily::Action => "action",
+        HirItemFamily::Activity => "activity",
+        HirItemFamily::Signal => "signal",
+        HirItemFamily::Metric => "metric",
+        HirItemFamily::Layer => "layer",
+        HirItemFamily::Entry => "entry",
+        HirItemFamily::ExternCapability => "extern-capability",
+        HirItemFamily::Test => "test",
+        HirItemFamily::Bench => "bench",
+        HirItemFamily::Source => "source",
+        HirItemFamily::Style => "style",
+        HirItemFamily::Error => "error",
+    }
+}
+
+const fn expression_kind_tag(kind: &HirExprKind) -> &'static str {
+    match kind {
+        HirExprKind::Unit => "unit",
+        HirExprKind::Literal(_) => "literal",
+        HirExprKind::EntityReference(_) => "entity-reference",
+        HirExprKind::LifetimePath(_) => "lifetime-path",
+        HirExprKind::Path(_) => "path",
+        HirExprKind::ShortVariant(_) => "short-variant",
+        HirExprKind::Placeholder(_) => "placeholder",
+        HirExprKind::Tuple(_) => "tuple",
+        HirExprKind::BracketSequence(_) => "bracket-sequence",
+        HirExprKind::NumericBracketSequence(_) => "numeric-bracket-sequence",
+        HirExprKind::ArrayRepeat(_) => "array-repeat",
+        HirExprKind::Call(_) => "call",
+        HirExprKind::Select(_) => "select",
+        HirExprKind::Index(_) => "index",
+        HirExprKind::Pipe(_) => "pipe",
+        HirExprKind::Try(_) => "try",
+        HirExprKind::Await(_) => "await",
+        HirExprKind::Thread(_) => "thread",
+        HirExprKind::Choice(_) => "choice",
+        HirExprKind::Range(_) => "range",
+        HirExprKind::Record(_) => "record",
+        HirExprKind::RecordLiteral(_) => "record-literal",
+        HirExprKind::Binary(_) => "binary",
+        HirExprKind::Borrow(_) => "borrow",
+        HirExprKind::Dereference(_) => "dereference",
+        HirExprKind::Closure(_) => "closure",
+        HirExprKind::Unary(_) => "unary",
+        HirExprKind::Block(_) => "block",
+        HirExprKind::ComputationBlock(_) => "computation-block",
+        HirExprKind::NamedBlock(_) => "named-block",
+        HirExprKind::If(_) => "if",
+        HirExprKind::IfLet(_) => "if-let",
+        HirExprKind::Match(_) => "match",
+        HirExprKind::DialogueContentApplication(_) => "dialogue-content-application",
+        HirExprKind::PostfixBracket(_) => "postfix-bracket",
+        HirExprKind::Error(_) => "error",
+        HirExprKind::ForSynthetic(_) => "for-synthetic",
+    }
+}
+
+const fn statement_kind_tag(kind: &HirStmtKind) -> &'static str {
+    match kind {
+        HirStmtKind::Assertion { .. } => "assertion",
+        HirStmtKind::Let { .. } => "let",
+        HirStmtKind::Assign { .. } => "assign",
+        HirStmtKind::LetElse { .. } => "let-else",
+        HirStmtKind::LetChoice { .. } => "let-choice",
+        HirStmtKind::LetScope { .. } => "let-scope",
+        HirStmtKind::LetLoop { .. } => "let-loop",
+        HirStmtKind::LetAwait { .. } => "let-await",
+        HirStmtKind::LetActionReceive { .. } => "let-action-receive",
+        HirStmtKind::Return { .. } => "return",
+        HirStmtKind::Out { .. } => "out",
+        HirStmtKind::Goto { .. } => "goto",
+        HirStmtKind::DeferBlock { .. } => "defer-block",
+        HirStmtKind::Defer { .. } => "defer",
+        HirStmtKind::Yield { .. } => "yield",
+        HirStmtKind::Signal { .. } => "signal",
+        HirStmtKind::LifetimeSet { .. } => "lifetime-set",
+        HirStmtKind::Wait { .. } => "wait",
+        HirStmtKind::On { .. } => "on",
+        HirStmtKind::UnsafeLifetime { .. } => "unsafe-lifetime",
+        HirStmtKind::Choice { .. } => "choice",
+        HirStmtKind::If(_) => "if",
+        HirStmtKind::IfLet(_) => "if-let",
+        HirStmtKind::Match(_) => "match",
+        HirStmtKind::Loop(_) => "loop",
+        HirStmtKind::While(_) => "while",
+        HirStmtKind::WhileLet(_) => "while-let",
+        HirStmtKind::For(_) => "for",
+        HirStmtKind::Close { .. } => "close",
+        HirStmtKind::Select(_) => "select",
+        HirStmtKind::SourceLocale(_) => "source-locale",
+        HirStmtKind::Scope(_) => "scope",
+        HirStmtKind::Include(_) => "include",
+        HirStmtKind::AwaitWith(_) => "await-with",
+        HirStmtKind::Break { .. } => "break",
+        HirStmtKind::Continue { .. } => "continue",
+        HirStmtKind::Expression { .. } => "expression",
+        HirStmtKind::ProofCall { .. } => "proof-call",
+        HirStmtKind::Error => "error",
+    }
+}
+
+fn immediate_thread_flow_item_count(kind: &HirStmtKind) -> usize {
+    match kind {
+        HirStmtKind::If(statement) => {
+            contextual_thread_flow_item_count(statement.then_body())
+                + statement
+                    .else_branch()
+                    .map_or(0, conditional_else_thread_flow_item_count)
+        }
+        HirStmtKind::IfLet(statement) => {
+            contextual_thread_flow_item_count(statement.then_body())
+                + statement
+                    .else_branch()
+                    .map_or(0, conditional_else_thread_flow_item_count)
+        }
+        HirStmtKind::Match(statement) => statement
+            .arms()
+            .iter()
+            .map(|arm| match arm.body() {
+                HirStmtMatchArmBody::Expression(_) => 0,
+                HirStmtMatchArmBody::Body(body) => contextual_thread_flow_item_count(body),
+            })
+            .sum(),
+        HirStmtKind::Loop(statement) => contextual_thread_flow_item_count(statement.body()),
+        HirStmtKind::While(statement) => contextual_thread_flow_item_count(statement.body()),
+        HirStmtKind::WhileLet(statement) => contextual_thread_flow_item_count(statement.body()),
+        HirStmtKind::For(statement) => contextual_thread_flow_item_count(statement.body()),
+        HirStmtKind::Select(statement) => statement
+            .branches()
+            .iter()
+            .map(|branch| contextual_thread_flow_item_count(branch.body()))
+            .sum(),
+        HirStmtKind::SourceLocale(statement) => contextual_thread_flow_item_count(statement.body()),
+        HirStmtKind::Scope(statement) => contextual_thread_flow_item_count(statement.body()),
+        HirStmtKind::AwaitWith(statement) => statement
+            .branches()
+            .iter()
+            .map(|branch| contextual_thread_flow_item_count(branch.body()))
+            .sum(),
+        _ => 0,
+    }
+}
+
+fn conditional_else_thread_flow_item_count(branch: &HirConditionalElseBranch) -> usize {
+    match branch {
+        HirConditionalElseBranch::Body(body) => contextual_thread_flow_item_count(body),
+        HirConditionalElseBranch::ElseIf(_) => 0,
+    }
+}
+
+fn contextual_thread_flow_item_count(body: &HirContextualStmtBody) -> usize {
+    body.thread_body().map_or(0, |body| body.items().len())
+}
+
+fn record_tag_counts(
+    bytes: &mut Vec<u8>,
+    field: &'static str,
+    tags: &BTreeMap<&'static str, usize>,
 ) -> Result<(), PersistentFactsError> {
-    counts.awaits += 1;
-    put_bool(shape, await_with.applies_try());
-    put_len(shape, "await branches", await_with.branches().len())?;
-    for branch in await_with.branches() {
-        put_str(shape, branch.kind().cache_fact_tag())?;
-        record_hir_flow_items(branch.body(), counts, shape)?;
+    put_len(bytes, field, tags.len())?;
+    for (&tag, &count) in tags {
+        put_str(bytes, tag)?;
+        put_len(bytes, field, count)?;
     }
     Ok(())
 }
@@ -1097,13 +1422,22 @@ struct HirBodyCounts {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_lang_hir::lower::lower_document_to_hir;
-    use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+    use arcweft_lang_hir::{
+        database::HirDatabase,
+        lowering::{HirModuleKey, LoweringRequest},
+        proof_return::HirProofReturnSemanticFactSet,
+        symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId},
+    };
+    use arcweft_lang_syntax::{
+        ast::module_path::CanonicalModulePath, incremental::SyntaxDatabase, parser::ParseOptions,
+    };
     use arcweft_project::{
         fingerprint::NamedDigest,
         persistent_object::{AwboEnvelope, AwboError, CompilerBuildIdentity},
     };
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{
+        SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId,
+    };
     use std::sync::Arc;
 
     const SOURCE: &str = r#"
@@ -1140,7 +1474,7 @@ return "done"
         CompilerObjectKey {
             kind,
             compiler: compiler(),
-            source_digest: BuildDigest::from(parsed.identity().revision()),
+            source_digest: BuildDigest::from(parsed.document().identity().revision()),
             query_options_digest: digest("options"),
             dependency_interface_digests: vec![
                 NamedDigest::new("z", digest("z-interface")),
@@ -1149,6 +1483,57 @@ return "done"
             dependency_body_digests: Vec::new(),
             environment_digest: digest("environment"),
         }
+    }
+
+    fn parse_attached_document(document: Arc<SourceDocument>) -> ParsedSource {
+        let snapshot = SourceSnapshotId::initial(document.display_name().clone());
+        SyntaxDatabase::try_new()
+            .expect("persistent test syntax database")
+            .parse_initial(snapshot, document, ParseOptions::default())
+            .expect("persistent test source parses")
+    }
+
+    fn lower_attached_hir(parsed: &ParsedSource) -> Arc<HirModule> {
+        let package = CallablePackageId::try_new("compiler-persistent-tests")
+            .expect("persistent test package ID");
+        let path = CanonicalModulePath::crate_root();
+        let key = HirModuleKey::new(
+            package.clone(),
+            path,
+            parsed.document().identity().id().clone(),
+        );
+        let mut database = HirDatabase::try_new().expect("persistent test HIR database");
+        let world = ProjectSymbolWorldId::try_new(
+            package,
+            parsed.document().identity().id().clone(),
+            "compiler-persistent-tests",
+        )
+        .expect("persistent test symbol world");
+        let revision = ProjectSymbolRevision::try_for_documents([parsed.document().identity()])
+            .expect("persistent test symbol revision");
+        let transaction =
+            database
+                .stage_proof_return_project(
+                    [LoweringRequest::try_new(key, parsed)
+                        .expect("bound persistent lowering request")],
+                    world,
+                    revision,
+                    [parsed.document().identity()],
+                    arcweft_lang_hir::lowering::HirLoweringControl::new(),
+                )
+                .expect("attached persistent project stages");
+        let facts = HirProofReturnSemanticFactSet::try_new(
+            Arc::clone(transaction.generation()),
+            transaction.headers().cloned(),
+            [],
+        )
+        .expect("persistent fixture has no authored Proof return headers");
+        let mut outputs = transaction
+            .publish_with_semantic_facts(&mut database, facts)
+            .expect("attached persistent project publishes");
+        let module = outputs.pop().expect("one persistent fixture module");
+        assert!(outputs.is_empty());
+        module.into_module()
     }
 
     #[test]
@@ -1162,8 +1547,8 @@ return "done"
             )
             .expect("persistent fixture source document"),
         );
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-        assert!(parsed.errors().is_empty());
+        let parsed = parse_attached_document(Arc::clone(&document));
+        assert!(parsed.diagnostics().is_empty());
         let key = key(CompilerObjectKind::ParsedSyntax, &parsed);
         let input = ParsedSyntaxFactsInput {
             key: &key,
@@ -1195,6 +1580,67 @@ return "done"
     }
 
     #[test]
+    fn persistent_facts_are_identical_across_syntax_and_hir_sessions() {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("arcweft-test://compiler/persistent/session.arcw")
+                    .expect("persistent fixture source ID"),
+                SourceName::path("compiler/persistent/session.arcw"),
+                SOURCE,
+            )
+            .expect("persistent fixture source document"),
+        );
+        let first_parsed = parse_attached_document(Arc::clone(&document));
+        let second_parsed = parse_attached_document(Arc::clone(&document));
+        assert_ne!(
+            first_parsed.snapshot_id().lineage().database(),
+            second_parsed.snapshot_id().lineage().database()
+        );
+
+        let parse_key = key(CompilerObjectKind::ParsedSyntax, &first_parsed);
+        let encode_parse = |parsed: &ParsedSource| {
+            AwboEnvelope::new(
+                &parse_key,
+                parsed_syntax_payload(&ParsedSyntaxFactsInput {
+                    key: &parse_key,
+                    source_label: "src/session.arcw",
+                    parsed,
+                })
+                .expect("parse payload builds"),
+            )
+            .expect("parse envelope builds")
+            .encode()
+            .expect("parse envelope encodes")
+        };
+        assert_eq!(encode_parse(&first_parsed), encode_parse(&second_parsed));
+
+        let first_hir = lower_attached_hir(&first_parsed);
+        let second_hir = lower_attached_hir(&second_parsed);
+        assert_ne!(
+            first_hir.snapshot_id().module().database(),
+            second_hir.snapshot_id().module().database()
+        );
+        let hir_key = key(CompilerObjectKind::HirBody, &first_parsed);
+        let encode_hir = |parsed: &ParsedSource, hir: &HirModule| {
+            let object = hir_body_object(&HirBodyFactsInput {
+                key: &hir_key,
+                module: "session",
+                parsed,
+                hir,
+            })
+            .expect("HIR facts build");
+            AwboEnvelope::new(&hir_key, CompilerObjectPayload::HirBody(object))
+                .expect("HIR envelope builds")
+                .encode()
+                .expect("HIR envelope encodes")
+        };
+        assert_eq!(
+            encode_hir(&first_parsed, &first_hir),
+            encode_hir(&second_parsed, &second_hir)
+        );
+    }
+
+    #[test]
     fn persistent_hir_body_facts_round_trip_without_hir_serialization() {
         let document = Arc::new(
             SourceDocument::try_new(
@@ -1205,10 +1651,9 @@ return "done"
             )
             .expect("persistent fixture source document"),
         );
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-        assert!(parsed.errors().is_empty());
-        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("source lowers to HIR");
+        let parsed = parse_attached_document(Arc::clone(&document));
+        assert!(parsed.diagnostics().is_empty());
+        let hir = lower_attached_hir(&parsed);
         let key = key(CompilerObjectKind::HirBody, &parsed);
         let object = hir_body_object(&HirBodyFactsInput {
             key: &key,
@@ -1241,10 +1686,9 @@ return "done"
             )
             .expect("persistent fixture source document"),
         );
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-        assert!(parsed.errors().is_empty());
-        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("source lowers to HIR");
+        let parsed = parse_attached_document(Arc::clone(&document));
+        assert!(parsed.diagnostics().is_empty());
+        let hir = lower_attached_hir(&parsed);
         let key = key(CompilerObjectKind::InterfaceSummary, &parsed);
         let object = interface_summary_object(&InterfaceSummaryFactsInput {
             key: &key,
@@ -1288,12 +1732,19 @@ return "done"
                 )
                 .expect("signature fixture source document"),
             );
-            let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-            assert!(parsed.errors().is_empty());
-            let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
-                .expect("source lowers to HIR");
-            let function = hir.functions().first().expect("function is present");
-            signature_digest("function", function.name(), Some(function.signature()))
+            let parsed = parse_attached_document(Arc::clone(&document));
+            assert!(parsed.diagnostics().is_empty());
+            let hir = lower_attached_hir(&parsed);
+            let function = hir
+                .source_ordered_items()
+                .iter()
+                .find_map(|&item| match hir.resolve_item(item).ok()?.kind() {
+                    HirItemKind::Function(function) => Some(function),
+                    _ => None,
+                })
+                .expect("function is present");
+            let name = function.name().resolved().expect("function name resolves");
+            function_signature_digest(&hir, name.as_str(), function)
                 .expect("signature digest builds")
         }
 
@@ -1328,7 +1779,7 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
             )
             .expect("persistent fixture source document"),
         );
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
+        let parsed = parse_attached_document(Arc::clone(&document));
         let key = key(CompilerObjectKind::HirBody, &parsed);
         let error = parsed_syntax_object(&ParsedSyntaxFactsInput {
             key: &key,
@@ -1357,8 +1808,8 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
             )
             .expect("persistent fixture source document"),
         );
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-        assert!(parsed.errors().is_empty());
+        let parsed = parse_attached_document(Arc::clone(&document));
+        assert!(parsed.diagnostics().is_empty());
         let key = key(CompilerObjectKind::ParsedSyntax, &parsed);
         let bytes = AwboEnvelope::new(
             &key,
@@ -1381,10 +1832,9 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
             AwboError::KeyDigestMismatch,
         );
 
-        let rebuilt = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-        assert!(rebuilt.errors().is_empty());
-        lower_document_to_hir(rebuilt.document(), rebuilt.typed_tree())
-            .expect("source rebuild still lowers to HIR");
+        let rebuilt = parse_attached_document(Arc::clone(&document));
+        assert!(rebuilt.diagnostics().is_empty());
+        lower_attached_hir(&rebuilt);
     }
 
     #[test]
@@ -1398,10 +1848,9 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
             )
             .expect("persistent fixture source document"),
         );
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-        assert!(parsed.errors().is_empty());
-        let hir = lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("source lowers to HIR");
+        let parsed = parse_attached_document(Arc::clone(&document));
+        assert!(parsed.diagnostics().is_empty());
+        let hir = lower_attached_hir(&parsed);
         let interface_key = key(CompilerObjectKind::InterfaceSummary, &parsed);
         let hir_key = key(CompilerObjectKind::HirBody, &parsed);
         let typecheck_key = key(CompilerObjectKind::TypecheckGate, &parsed);
@@ -1469,8 +1918,8 @@ pub fn retain(value: Ref<Flow>) -> Ref<Flow> {
             )
             .expect("persistent fixture source document"),
         );
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-        assert!(parsed.errors().is_empty());
+        let parsed = parse_attached_document(Arc::clone(&document));
+        assert!(parsed.diagnostics().is_empty());
         let key = key(CompilerObjectKind::LinkPlan, &parsed);
         let ordered = vec![
             NamedDigest::new("b", digest("b-bytecode")),

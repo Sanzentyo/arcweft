@@ -6,35 +6,14 @@ use arcweft_bundle::{
 };
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
-    AwbcTableRange, AwbcTerminator,
+    AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_dialogue::DialogueProfileRevision;
-use arcweft_render_text::LineDisplayCatalog;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let source = SourceDocument::try_new(
-        SourceDocumentId::try_new("bundle-product-awbc-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([source.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        source.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.bundle-product-awbc-test").expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
-}
+use arcweft_core::effect::RuntimeArtifactFingerprint;
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
 
 #[test]
 fn product_awbc_requires_executable() {
@@ -131,6 +110,8 @@ fn minimal_bundle() -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+                    .expect("non-zero runtime artifact fingerprint"),
                 entry_flow: None,
                 flows: 0,
                 bytecode_instructions: 0,
@@ -141,7 +122,7 @@ fn minimal_bundle() -> ArcweftBundle {
         },
         source_map("awbc-only.arcw", ""),
         BytecodeProgram::default(),
-        LineDisplayCatalog::new(test_dialogue_revision()),
+        DialogueContentCatalog::new(),
     )
     .expect("standard dialogue source joins source map")
 }
@@ -176,6 +157,14 @@ fn minimal_awbc_program() -> AwbcProgram {
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        }],
+        flow_bindings: vec![AwbcFlowBinding {
+            flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                [0xa1; 32],
+                "flow.main",
+            )
+            .expect("test checked Flow identity"),
+            function: AwbcFunctionId(0),
         }],
         blocks: vec![AwbcBlock {
             owner: AwbcFunctionId(0),

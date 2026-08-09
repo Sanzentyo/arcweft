@@ -53,7 +53,6 @@ struct ExpectedViewRuntimeState {
     root_bindings: BTreeMap<String, arcweft_core::value::RuntimeValue>,
     mounts: BTreeMap<ViewOccurrenceKey, MountedView>,
     axis_seeds: BundleViewAxisSeedRegistry,
-    declared_dialogue_views: BTreeSet<ViewId>,
     required_dialogue_views: BTreeSet<ViewId>,
 }
 
@@ -357,7 +356,6 @@ impl BundleViewRuntime {
             root_bindings: self.root_bindings.clone(),
             mounts: self.mounts.clone(),
             axis_seeds: self.axis_seeds.clone(),
-            declared_dialogue_views: self.declared_dialogue_views.clone(),
             required_dialogue_views: self.required_dialogue_views.clone(),
         }
     }
@@ -381,7 +379,6 @@ impl BundleViewRuntime {
             && self.root_bindings == expected.root_bindings
             && self.mounts == expected.mounts
             && self.axis_seeds == expected.axis_seeds
-            && self.declared_dialogue_views == expected.declared_dialogue_views
             && self.required_dialogue_views == expected.required_dialogue_views
     }
 

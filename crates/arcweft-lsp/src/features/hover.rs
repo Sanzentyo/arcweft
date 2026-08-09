@@ -1,28 +1,25 @@
 use crate::documents::DocumentSnapshot;
-use crate::features::cascade::effective_dialogue_cascade_at;
 use crate::features::character_metadata::character_hover_markdown;
 use crate::features::dialogue_view_metadata::{DialogueViewTypeMetadata, dialogue_view_types};
-use crate::features::view_part_metadata::ViewPartMetadataIndex;
 use crate::profiles::LspProfile;
-use arcweft_lang_hir::lower::lower_document_to_hir;
-use arcweft_lang_sema::{
-    check::{
-        EffectRow, EffectRowTail, TypeCheckReport, TypeJudgmentSubject, analyze_types,
-        validate_typecheck_ready,
+use arcweft_lang_hir::{
+    expr::HirExprKind,
+    identity::ItemId,
+    item::HirItemKind,
+    module::HirModule,
+    source_index::{
+        HirCallableSourceOwner, HirCallableSourceRole, HirExprSourceRole, HirFlowSourceRole,
+        HirItemSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
     },
-    effect_model::CallableId,
-    resolve::{registry_from_hir, validate_hir_references},
+};
+use arcweft_lang_sema::{
+    callable::{CheckedCallableSourceCategory, CheckedCallableSourceKey},
+    effects::EffectSet,
+    final_analysis::{CheckedExpressionResolution, CheckedValueResolution, FinalSemanticAnalysis},
     types::TypeKind,
 };
-use arcweft_lang_syntax::ast::{
-    common::TextRange,
-    items::{Item, TypedSyntaxTree},
-};
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
-use arcweft_render_text::{
-    LineDisplaySpec, RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource,
-    RichTextStyleContribution,
-};
+use arcweft_lang_syntax::ast::common::TextRange;
+use arcweft_source::SourceSpan;
 use arcweft_verify_lsp::{LspPositionMapper, profile_hover};
 use lsp_types::{Hover, HoverContents, MarkedString, Position};
 use std::sync::Arc;
@@ -38,6 +35,11 @@ pub fn hover(
         .try_byte_offset_from_position(position)
         .ok()?;
     let word = word_at_position_range(document, position);
+    if let Some((word, word_range)) = word.as_ref()
+        && let Some(hover) = callable_effect_row_hover(profile, document, word, *word_range)
+    {
+        return Some(hover);
+    }
     if let Some(hover) = crate::features::entry_roles::hover(profile, document, offset) {
         return Some(hover);
     }
@@ -49,23 +51,10 @@ pub fn hover(
     if let Some(hover) = crate::features::nominal_types::hover(profile, document, offset) {
         return Some(hover);
     }
-    if let Some(text) = ViewPartMetadataIndex::for_document(profile, document)
-        .and_then(|metadata| metadata.hover(offset))
-    {
-        return Some(Hover {
-            contents: HoverContents::Scalar(MarkedString::String(text)),
-            range: None,
-        });
-    }
-    if let Some(hover) = effective_dialogue_style_hover(profile, document, offset) {
-        return Some(hover);
-    }
-    if let Some((word, word_range)) = word.as_ref()
-        && let Some(hover) = callable_effect_row_hover(profile, document, word, *word_range)
-    {
-        return Some(hover);
-    }
     if let Some(hover) = closure_effect_row_hover(profile, document, offset) {
+        return Some(hover);
+    }
+    if let Some(hover) = dialogue_application_hover(profile, document, offset) {
         return Some(hover);
     }
     let (word, word_range) = word?;
@@ -85,52 +74,96 @@ pub fn hover(
     profile_hover(&profile.context(), &word)
 }
 
+fn dialogue_application_hover(
+    profile: &LspProfile,
+    document: &DocumentSnapshot,
+    offset: usize,
+) -> Option<Hover> {
+    let (module, analysis) = accepted_module_and_analysis(profile, document)?;
+    analysis
+        .expressions()
+        .filter_map(|(owner, checked)| {
+            if owner.module() != module.module_id() {
+                return None;
+            }
+            let HirExprKind::DialogueContentApplication(application) =
+                module.resolve_expr(owner).ok()?.kind()
+            else {
+                return None;
+            };
+            let CheckedExpressionResolution::DialogueApplication { character, .. } =
+                checked.resolution()
+            else {
+                return None;
+            };
+            let target_range = source_range_for_query(
+                module.as_ref(),
+                HirSourceQuery::Expr {
+                    owner,
+                    role: HirExprSourceRole::Target,
+                },
+            )?;
+            if offset < target_range.start() || offset >= target_range.end() {
+                return None;
+            }
+            let target = analysis.expression(application.target())?;
+            let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)) =
+                target.resolution()
+            else {
+                return None;
+            };
+            if item.retained_owner() != Some(*character) {
+                return None;
+            }
+            Some((target_range, item.public_id().as_str()))
+        })
+        .min_by_key(|(range, _)| range.end() - range.start())
+        .map(|(range, character)| Hover {
+            contents: HoverContents::Scalar(MarkedString::String(format!(
+                "CharacterDialogue content application\n\ncharacter: `@{character}`\n\nresult: `DialogueLine`"
+            ))),
+            range: Some(
+                document
+                    .line_index()
+                    .range_from_byte_span(range.start(), range.end()),
+            ),
+        })
+}
+
 fn character_nominal_type_at(
     profile: &LspProfile,
     document: &DocumentSnapshot,
     word_range: TextRange,
 ) -> Option<TypeKind> {
-    let parsed = parse_document_with_source(
-        Arc::clone(document.source_document()),
-        ParseOptions::default(),
-    );
-    if !parsed.errors().is_empty() {
-        return None;
-    }
-    let hir = lower_document_to_hir(parsed.document().as_ref(), parsed.typed_tree()).ok()?;
-    let registry = registry_from_hir(&hir);
-    if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
-    {
-        return None;
-    }
-    let report = analyze_types(&hir, &profile.typecheck_env());
-    report
-        .judgments
-        .iter()
-        .filter(|judgment| {
-            judgment.source_range.is_some_and(|range| {
+    let (module, analysis) = accepted_module_and_analysis(profile, document)?;
+    analysis
+        .expressions()
+        .filter(|(id, _)| {
+            source_range_for_query(
+                module.as_ref(),
+                HirSourceQuery::Expr {
+                    owner: *id,
+                    role: HirExprSourceRole::Whole,
+                },
+            )
+            .is_some_and(|range| {
                 range.start() <= word_range.start() && word_range.end() <= range.end()
             })
         })
-        .filter_map(|judgment| {
-            judgment
-                .expected_type()
-                .filter(|ty| ty.character_nominal().is_some())
-                .or_else(|| {
-                    judgment
-                        .ty
-                        .character_nominal()
-                        .is_some()
-                        .then_some(&judgment.ty)
-                })
-                .map(|ty| {
-                    (
-                        judgment
-                            .source_range
-                            .map_or(usize::MAX, |range| range.end() - range.start()),
-                        ty.clone(),
-                    )
-                })
+        .filter_map(|(id, checked)| {
+            let range = source_range_for_query(
+                module.as_ref(),
+                HirSourceQuery::Expr {
+                    owner: id,
+                    role: HirExprSourceRole::Whole,
+                },
+            )?;
+            checked
+                .ty()
+                .character_nominal()
+                .is_some()
+                .then_some(checked.ty())
+                .map(|ty| (range.end() - range.start(), ty.clone()))
         })
         .min_by_key(|(span, _)| *span)
         .map(|(_, ty)| ty)
@@ -188,36 +221,17 @@ fn closure_effect_row_hover(
     document: &DocumentSnapshot,
     offset: usize,
 ) -> Option<Hover> {
-    if !source_offset_may_be_closure_header(document.text(), offset) {
-        return None;
-    }
-    let parsed = parse_document_with_source(
-        Arc::clone(document.source_document()),
-        ParseOptions::default(),
-    );
-    if !parsed.errors().is_empty() {
-        return None;
-    }
-    let tree = parsed.typed_tree();
-    let hir = lower_document_to_hir(parsed.document().as_ref(), tree).ok()?;
-    let registry = registry_from_hir(&hir);
-    if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
-    {
-        return None;
-    }
-    let report = analyze_types(&hir, &profile.typecheck_env());
-    if !report.diagnostics.is_empty() {
-        return None;
-    }
-    let rows = report.effects.effect_rows();
-    let target = closure_effect_hover_target(&report, document.text(), offset)?;
-    let summary = rows.summary(&target.callable)?;
+    let (module, analysis) = accepted_module_and_analysis(profile, document)?;
+    let target = closure_effect_hover_target(module.as_ref(), analysis.as_ref(), offset)?;
+    let effects = analysis
+        .checked_callables()
+        .closure_at_source(&target.source)
+        .ok()?
+        .concrete();
     Some(Hover {
-        contents: HoverContents::Scalar(MarkedString::String(effect_row_hover_text(
+        contents: HoverContents::Scalar(MarkedString::String(checked_effect_hover_text(
             "closure expression",
-            summary.inferred(),
-            summary.upper_bound(),
-            summary.forbidden(),
+            effects,
         ))),
         range: Some(
             document
@@ -229,76 +243,56 @@ fn closure_effect_row_hover(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct ClosureEffectHoverTarget {
-    callable: CallableId,
+    source: SourceSpan,
     header_range: TextRange,
 }
 
 fn closure_effect_hover_target(
-    report: &TypeCheckReport,
-    source: &str,
+    module: &HirModule,
+    analysis: &FinalSemanticAnalysis,
     offset: usize,
 ) -> Option<ClosureEffectHoverTarget> {
-    report
-        .judgments
-        .iter()
-        .filter_map(|judgment| {
-            let TypeJudgmentSubject::Expr {
-                id,
-                kind: "closure",
-            } = &judgment.subject
-            else {
-                return None;
-            };
-            let id = *id;
-            let source_range = judgment.source_range?;
-            let header_range = closure_header_range(source, source_range)?;
-            if offset < header_range.start() || header_range.end() < offset {
+    analysis
+        .expressions()
+        .filter_map(|(id, _)| {
+            if id.module() != module.module_id()
+                || !matches!(
+                    module.resolve_expr(id).ok()?.kind(),
+                    HirExprKind::Closure(_)
+                )
+            {
                 return None;
             }
-            let callable = report.function_effect_callable_for_expression(id)?.clone();
+            let lookup = module
+                .source_site(
+                    module.provenance().source_identity(),
+                    HirSourceQuery::Expr {
+                        owner: id,
+                        role: HirExprSourceRole::Whole,
+                    },
+                )
+                .ok()?;
+            let HirSourcePresence::Present(HirSourceSite::Span(source)) = lookup.presence() else {
+                return None;
+            };
+            let whole = TextRange::new(source.range().start(), source.range().end());
+            let body = source_range_for_query(
+                module,
+                HirSourceQuery::Expr {
+                    owner: id,
+                    role: HirExprSourceRole::Body,
+                },
+            )?;
+            let header_range = TextRange::new(whole.start(), body.start());
+            if offset < header_range.start() || offset >= header_range.end() {
+                return None;
+            }
             Some(ClosureEffectHoverTarget {
-                callable,
+                source: source.clone(),
                 header_range,
             })
         })
         .min_by_key(|target| target.header_range.end() - target.header_range.start())
-}
-
-fn closure_header_range(source: &str, source_range: TextRange) -> Option<TextRange> {
-    let closure_source = source.get(source_range.as_range())?;
-    let first_pipe = closure_source.find('|')?;
-    let second_pipe = closure_source.get(first_pipe + 1..)?.find('|')? + first_pipe + 1;
-    Some(TextRange::new(
-        source_range.start() + first_pipe,
-        source_range.start() + second_pipe + 1,
-    ))
-}
-
-fn source_offset_may_be_closure_header(source: &str, offset: usize) -> bool {
-    if offset > source.len() {
-        return false;
-    }
-    let line_start = source[..offset].rfind('\n').map_or(0, |index| index + 1);
-    let line_end = source[offset..]
-        .find('\n')
-        .map_or(source.len(), |index| offset + index);
-    let Some(line) = source.get(line_start..line_end) else {
-        return false;
-    };
-    let relative_offset = offset.saturating_sub(line_start);
-    let mut search_start = 0usize;
-    while let Some(first_offset) = line.get(search_start..).and_then(|text| text.find('|')) {
-        let first = search_start + first_offset;
-        let Some(second_offset) = line.get(first + 1..).and_then(|text| text.find('|')) else {
-            return false;
-        };
-        let second = first + 1 + second_offset;
-        if first <= relative_offset && relative_offset <= second + 1 {
-            return true;
-        }
-        search_start = second + 1;
-    }
-    false
 }
 
 fn callable_effect_row_hover(
@@ -307,33 +301,23 @@ fn callable_effect_row_hover(
     word: &str,
     word_range: TextRange,
 ) -> Option<Hover> {
-    let parsed = parse_document_with_source(
-        Arc::clone(document.source_document()),
-        ParseOptions::default(),
-    );
-    if !parsed.errors().is_empty() {
-        return None;
-    }
-    let tree = parsed.typed_tree();
-    let callable = callable_at_word(tree, document.text(), word, word_range)?;
-    let hir = lower_document_to_hir(parsed.document().as_ref(), tree).ok()?;
-    let registry = registry_from_hir(&hir);
-    if validate_hir_references(&hir, &registry).is_err() || validate_typecheck_ready(&hir).is_err()
-    {
-        return None;
-    }
-    let report = analyze_types(&hir, &profile.typecheck_env());
-    if !report.diagnostics.is_empty() {
-        return None;
-    }
-    let rows = report.effects.effect_rows();
-    let summary = rows.summary(&callable.id)?;
+    let (module, analysis) = accepted_module_and_analysis(profile, document)?;
+    let callable = callable_at_word(module.as_ref(), word, word_range)?;
+    let effects = match &callable.owner {
+        CallableEffectOwner::Flow(owner) => analysis.item(*owner)?.effects(),
+        CallableEffectOwner::CheckedCallable(source) => {
+            let catalog = analysis.checked_callables();
+            catalog
+                .callable_at_source(source)
+                .ok()?
+                .exposed_row()
+                .concrete()
+        }
+    };
     Some(Hover {
-        contents: HoverContents::Scalar(MarkedString::String(effect_row_hover_text(
+        contents: HoverContents::Scalar(MarkedString::String(checked_effect_hover_text(
             callable.label.as_str(),
-            summary.inferred(),
-            summary.upper_bound(),
-            summary.forbidden(),
+            effects,
         ))),
         range: Some(
             document
@@ -345,225 +329,98 @@ fn callable_effect_row_hover(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct CallableHoverTarget {
-    id: CallableId,
+    owner: CallableEffectOwner,
     label: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum CallableEffectOwner {
+    Flow(ItemId),
+    CheckedCallable(CheckedCallableSourceKey),
+}
+
 fn callable_at_word(
-    tree: &TypedSyntaxTree,
-    source: &str,
+    module: &HirModule,
     word: &str,
     word_range: TextRange,
 ) -> Option<CallableHoverTarget> {
-    tree.items().iter().find_map(|item| match item {
-        Item::Flow(flow)
-            if flow.name() == Some(word)
-                && declaration_header_contains_word(source, flow.range(), word_range) =>
-        {
-            Some(CallableHoverTarget {
-                id: CallableId::new(format!("flow.{word}")),
-                label: word.to_owned(),
-            })
+    module.source_ordered_items().iter().find_map(|owner| {
+        let item = module.resolve_item(*owner).ok()?;
+        let (name, role) = match item.kind() {
+            HirItemKind::Flow(flow) => (
+                flow.identity().name()?.as_str(),
+                HirItemSourceRole::Flow(HirFlowSourceRole::Name),
+            ),
+            HirItemKind::Function(function) => (
+                function.name().resolved()?.as_str(),
+                HirItemSourceRole::Callable(HirCallableSourceRole::Name {
+                    owner: HirCallableSourceOwner::Item,
+                }),
+            ),
+            _ => return None,
+        };
+        if name != word {
+            return None;
         }
-        Item::Function(function)
-            if function.signature().name() == word
-                && declaration_header_contains_word(source, function.range(), word_range) =>
-        {
-            Some(CallableHoverTarget {
-                id: CallableId::new(format!("fn.{word}")),
+        let lookup = module
+            .source_site(
+                module.provenance().source_identity(),
+                HirSourceQuery::Item {
+                    owner: *owner,
+                    role,
+                },
+            )
+            .ok()?;
+        let HirSourcePresence::Present(HirSourceSite::Span(span)) = lookup.presence() else {
+            return None;
+        };
+        let range = TextRange::new(span.range().start(), span.range().end());
+        (range.start() <= word_range.start() && word_range.end() <= range.end()).then(|| {
+            let owner = match item.kind() {
+                HirItemKind::Flow(_) => CallableEffectOwner::Flow(*owner),
+                HirItemKind::Function(_) => CallableEffectOwner::CheckedCallable(
+                    CheckedCallableSourceKey::from_span(CheckedCallableSourceCategory::Name, span),
+                ),
+                _ => unreachable!("callable kind was filtered above"),
+            };
+            CallableHoverTarget {
+                owner,
                 label: word.to_owned(),
-            })
-        }
-        _ => None,
+            }
+        })
     })
 }
 
-fn declaration_header_contains_word(
-    source: &str,
-    item_range: &TextRange,
-    word_range: TextRange,
-) -> bool {
-    if word_range.start() < item_range.start() || item_range.end() < word_range.end() {
-        return false;
-    }
-    let Some(item_source) = source.get(item_range.as_range()) else {
-        return false;
-    };
-    let header_end = item_source.find('{').unwrap_or(item_source.len());
-    word_range.end() <= item_range.start().saturating_add(header_end)
-}
-
-fn effect_row_hover_text(
-    label: &str,
-    inferred: &EffectRow,
-    upper_bound: Option<&EffectRow>,
-    forbidden: &EffectRow,
-) -> String {
-    let mut lines = vec![
-        format!("effect row for `{label}`"),
-        format!("inferred: {}", inferred.display_label()),
-    ];
-    if let Some(upper_bound) = upper_bound {
-        lines.push(format!("upper bound: {}", upper_bound.display_label()));
-    } else {
-        lines.push("upper bound: inferred".to_owned());
-    }
-    if effect_row_has_visible_forbidden_value(forbidden) {
-        lines.push(format!("forbidden: {}", forbidden.display_label()));
-    }
-    lines.join("\n")
-}
-
-fn effect_row_has_visible_forbidden_value(row: &EffectRow) -> bool {
-    match row.tail() {
-        EffectRowTail::Unknown => false,
-        EffectRowTail::Closed => !row.concrete().is_empty(),
-        EffectRowTail::Variable(_) => true,
-    }
-}
-
-fn effective_dialogue_style_hover(
+fn accepted_module_and_analysis(
     profile: &LspProfile,
     document: &DocumentSnapshot,
-    offset: usize,
-) -> Option<Hover> {
-    let cascade = effective_dialogue_cascade_at(profile, document, offset)?;
-    let contributions = cascade.selected_contributions();
-    if contributions.is_empty() {
+) -> Option<(Arc<HirModule>, Arc<FinalSemanticAnalysis>)> {
+    let accepted = profile.accepted_environment()?;
+    let executable = accepted.executable()?;
+    let project = accepted.project();
+    let module =
+        Arc::clone(project.hir_for_open_document(document.uri(), document.source_document())?);
+    Some((module, Arc::clone(executable.final_analysis())))
+}
+
+fn source_range_for_query(module: &HirModule, query: HirSourceQuery) -> Option<TextRange> {
+    let lookup = module
+        .source_site(module.provenance().source_identity(), query)
+        .ok()?;
+    let HirSourcePresence::Present(HirSourceSite::Span(span)) = lookup.presence() else {
         return None;
-    }
-
-    Some(Hover {
-        contents: HoverContents::Scalar(MarkedString::String(effective_style_hover_text(
-            &cascade.spec,
-            cascade.selected_path.as_deref(),
-            &contributions,
-        ))),
-        range: None,
-    })
+    };
+    Some(TextRange::new(span.range().start(), span.range().end()))
 }
 
-fn effective_style_hover_text(
-    spec: &LineDisplaySpec,
-    selected_path: Option<&str>,
-    contributions: &[&RichTextStyleContribution],
-) -> String {
-    let mut lines = vec![selected_path.map_or_else(
-        || format!("effective dialogue style for `{}`", spec.callee),
-        |path| format!("effective dialogue style `{path}` for `{}`", spec.callee),
-    )];
-    let active = contributions
-        .iter()
-        .copied()
-        .filter(|contribution| contribution.active)
-        .collect::<Vec<_>>();
-    if !active.is_empty() {
-        lines.push("active contributors:".to_owned());
-        lines.extend(
-            active
-                .iter()
-                .take(8)
-                .map(|contribution| format!("  {}", contribution_label(contribution))),
-        );
-    }
-
-    let shadowed = contributions
-        .iter()
-        .copied()
-        .filter(|contribution| contribution.shadowed_by.is_some())
-        .collect::<Vec<_>>();
-    if !shadowed.is_empty() {
-        lines.push("shadowed contributors:".to_owned());
-        lines.extend(shadowed.iter().take(8).map(|contribution| {
-            let shadowed_by = contribution
-                .shadowed_by
-                .map_or("?".to_owned(), |index| format!("#{index}"));
-            format!(
-                "  {} (shadowed by {shadowed_by})",
-                contribution_label(contribution)
-            )
-        }));
-    }
-
-    let unset_layers = unset_cascade_layers(spec);
-    if !unset_layers.is_empty() {
-        lines.push(format!("unset layers: {}", unset_layers.join(", ")));
-    }
-
-    lines.join("\n")
-}
-
-fn contribution_label(contribution: &RichTextStyleContribution) -> String {
-    format!(
-        "{} = {} ({}, {}, {})",
-        contribution.path,
-        contribution.value,
-        cascade_layer_label(contribution.layer),
-        assign_op_label(contribution.op),
-        setting_source_label(&contribution.source)
-    )
-}
-
-fn unset_cascade_layers(spec: &LineDisplaySpec) -> Vec<&'static str> {
-    all_cascade_layers()
-        .into_iter()
-        .filter(|layer| {
-            !spec
-                .style_contributions
-                .iter()
-                .any(|contribution| contribution.layer == *layer)
-        })
-        .map(cascade_layer_label)
-        .collect()
-}
-
-fn all_cascade_layers() -> [RichTextCascadeLayer; 6] {
-    [
-        RichTextCascadeLayer::InlineSpan,
-        RichTextCascadeLayer::LineOptions,
-        RichTextCascadeLayer::SpeakerPreset,
-        RichTextCascadeLayer::CharacterDialogueStyle,
-        RichTextCascadeLayer::DialogueViewStyle,
-        RichTextCascadeLayer::EngineDefaults,
-    ]
-}
-
-fn cascade_layer_label(layer: RichTextCascadeLayer) -> &'static str {
-    match layer {
-        RichTextCascadeLayer::InlineSpan => "inline_span",
-        RichTextCascadeLayer::LineOptions => "line_options",
-        RichTextCascadeLayer::SpeakerPreset => "speaker_preset",
-        RichTextCascadeLayer::CharacterDialogueStyle => "character_dialogue_style",
-        RichTextCascadeLayer::DialogueViewStyle => "dialogue_view_style",
-        RichTextCascadeLayer::EngineDefaults => "engine_defaults",
-    }
-}
-
-fn assign_op_label(op: RichTextAssignOp) -> &'static str {
-    match op {
-        RichTextAssignOp::Replace => "replace",
-        RichTextAssignOp::Append => "append",
-    }
-}
-
-fn setting_source_label(source: &RichTextSettingSource) -> String {
-    match source {
-        RichTextSettingSource::SourceFile {
-            item_id,
-            public_id,
-            range,
-        } => {
-            let identity = item_id
-                .as_deref()
-                .or(public_id.as_deref())
-                .unwrap_or("source");
-            range.map_or_else(
-                || format!("source_file:{identity}"),
-                |range| format!("source_file:{identity}@{}..{}", range.start, range.end),
-            )
-        }
-        RichTextSettingSource::EngineDefault { key } => format!("engine_default:{key}"),
-    }
+fn checked_effect_hover_text(label: &str, effects: &EffectSet) -> String {
+    let labels = effects.to_labels();
+    let effects = if labels.is_empty() {
+        "{ }".to_owned()
+    } else {
+        format!("{{ {} }}", labels.join(", "))
+    };
+    format!("checked effects for `{label}`\n\neffects: {effects}")
 }
 
 fn word_at_position_range(
@@ -593,123 +450,48 @@ fn is_symbol_char(ch: char) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
     use super::*;
-    use crate::documents::DocumentStore;
+    use crate::documents::{AcceptedOpenDocument, DocumentStore};
     use crate::positions::PositionEncoding;
+    use crate::profiles::{LspProfileResolver, LspProfileTestHarness};
     use arcweft_runtime_host::RuntimeHostRunnerKind;
-    use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem};
+    use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem, Uri};
 
     #[test]
-    fn unaccepted_profile_does_not_synthesize_dialogue_style_cascade() {
-        let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#202122")
-            }
-        }
-    }
+    fn hover_describes_distinct_closed_flow_and_function_effect_rows() {
+        let source = r"
+extern capability fixture_agent {
+    fn observe() -> Unit effects { agent.observe }
 }
 
-flow opening {
-    alice: |[夢](ゆめ)[p]
-}
-"##;
-        let mut store = DocumentStore::default();
-        let uri = "file:///story.arcw".parse().expect("uri");
-        let document = store.open(
-            DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri,
-                    language_id: "arcweft".to_owned(),
-                    version: 1,
-                    text: source.to_owned(),
-                },
-            },
-            PositionEncoding::Utf16,
-        );
-        let offset = source.find("夢").expect("dialogue content offset");
-        let position = document.line_index().position_from_byte_offset(offset);
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        assert!(hover(&profile, &document, position).is_none());
-    }
-
-    #[test]
-    fn unaccepted_profile_does_not_locally_lower_fx_for_dialogue_hover() {
-        let source = r##"
-#[fx]
-fn red(value: Color = rgb("#a8b5ff")) -> Fx {
-    Fx.text(color = value)
-}
-
-pub character alice {}
-
-flow opening {
-    alice: [fx red()]colored[/fx][p]
-}
-"##;
-        let mut store = DocumentStore::default();
-        let uri = "file:///story.arcw".parse().expect("uri");
-        let document = store.open(
-            DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri,
-                    language_id: "arcweft".to_owned(),
-                    version: 1,
-                    text: source.to_owned(),
-                },
-            },
-            PositionEncoding::Utf16,
-        );
-        let offset = source.find("colored").expect("Fx content offset");
-        let position = document.line_index().position_from_byte_offset(offset);
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        assert!(hover(&profile, &document, position).is_none());
-    }
-
-    #[test]
-    fn hover_describes_closed_flow_and_inferred_function_effect_rows() {
-        let source = r#"
-extern capability fs {
-    fn read_text(path: String) -> String effects { fs.read }
-}
-
-fn load_story(path: String) -> String
-effects { fs.read }
+fn load_story() -> Unit
+effects { agent.observe }
 {
-    fs.read_text(path = path)
+    fixture_agent.observe()
+    ()
 }
 
 flow @flow.opening opening
-effects { fs.read }
-{
-    let body = load_story("story.arcw")
-}
-"#;
-        let mut store = DocumentStore::default();
-        let uri = "file:///effect-row-hover.arcw".parse().expect("uri");
-        let document = store.open(
-            DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri,
-                    language_id: "arcweft".to_owned(),
-                    version: 1,
-                    text: source.to_owned(),
-                },
-            },
-            PositionEncoding::Utf16,
-        );
+effects { network.request }
+{}
+";
+        let fixture = accepted_effect_hover_fixture("effect-row-hover", source);
+        let source = fixture.source.as_str();
+        let document = &fixture.document;
         let offset = source.find("opening\n").expect("flow name offset");
         let position = document.line_index().position_from_byte_offset(offset);
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let flow_hover = hover(&profile, &document, position).expect("effect row hover");
+        let flow_hover = hover(&fixture.profile, document, position).expect("effect row hover");
 
         match flow_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
-                assert!(text.contains("effect row for `opening`"));
-                assert!(text.contains("inferred: { fs.read }"));
-                assert!(text.contains("upper bound: { fs.read }"));
+                assert!(text.contains("checked effects for `opening`"));
+                assert!(text.contains("effects: { network.request }"));
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }
@@ -717,13 +499,54 @@ effects { fs.read }
         let offset = source.find("load_story").expect("function name offset");
         let position = document.line_index().position_from_byte_offset(offset);
         let function_hover =
-            hover(&profile, &document, position).expect("function effect row hover");
+            hover(&fixture.profile, document, position).expect("function effect row hover");
 
         match function_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
-                assert!(text.contains("effect row for `load_story`"));
-                assert!(text.contains("inferred: { fs.read | e"));
-                assert!(text.contains("upper bound: { fs.read }"));
+                assert!(
+                    text.contains("checked effects for `load_story`"),
+                    "unexpected Function hover: {text}"
+                );
+                assert!(
+                    text.contains("effects: { agent.observe }"),
+                    "unexpected Function effects: {text}"
+                );
+            }
+            other => panic!("unexpected hover contents: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn hover_describes_inferred_function_effect_row() {
+        let source = r"
+extern capability fixture_agent {
+    fn observe() -> Unit effects { agent.observe }
+}
+
+fn load_story() -> Unit
+{
+    fixture_agent.observe()
+    ()
+}
+";
+        let fixture = accepted_effect_hover_fixture("inferred-effect-row-hover", source);
+        let source = fixture.source.as_str();
+        let document = &fixture.document;
+        let offset = source.find("load_story").expect("function name offset");
+        let position = document.line_index().position_from_byte_offset(offset);
+        let function_hover = hover(&fixture.profile, document, position)
+            .expect("inferred Function effect row hover");
+
+        match function_hover.contents {
+            HoverContents::Scalar(MarkedString::String(text)) => {
+                assert!(
+                    text.contains("checked effects for `load_story`"),
+                    "unexpected Function hover: {text}"
+                );
+                assert!(
+                    text.contains("effects: { agent.observe }"),
+                    "unexpected inferred Function effects: {text}"
+                );
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }
@@ -731,97 +554,78 @@ effects { fs.read }
 
     #[test]
     fn callable_effect_row_hover_ignores_body_name_references() {
-        let source = r#"
-extern capability fs {
-    fn read_text(path: String) -> String effects { fs.read }
+        let source = r"
+extern capability fixture_agent {
+    fn observe() -> Unit effects { agent.observe }
 }
 
-fn load_story(path: String) -> String
-effects { fs.read }
+fn load_story() -> Unit
+effects { agent.observe }
 {
-    fs.read_text(path = path)
+    fixture_agent.observe()
+    ()
 }
 
 flow @flow.opening opening
-effects { fs.read }
+effects { agent.observe }
 {
-    let body = load_story("story.arcw")
+    let body = load_story()
 }
-"#;
-        let mut store = DocumentStore::default();
-        let uri = "file:///effect-row-body-hover.arcw".parse().expect("uri");
-        let document = store.open(
-            DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri,
-                    language_id: "arcweft".to_owned(),
-                    version: 1,
-                    text: source.to_owned(),
-                },
-            },
-            PositionEncoding::Utf16,
-        );
+";
+        let fixture = accepted_effect_hover_fixture("effect-row-body-hover", source);
+        let source = fixture.source.as_str();
+        let document = &fixture.document;
         let offset = source.rfind("load_story").expect("body call offset");
         let position = document.line_index().position_from_byte_offset(offset);
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        let (word, word_range) =
+            word_at_position_range(document, position).expect("body call word");
 
         assert!(
-            hover(&profile, &document, position).is_none(),
-            "body call references should not be treated as callable declarations"
+            callable_effect_row_hover(&fixture.profile, document, &word, word_range).is_none(),
+            "body call references must not be treated as callable declarations"
         );
     }
 
     #[test]
     fn hover_describes_closure_expression_inferred_open_effect_row() {
         let source = r"
-extern capability fs {
-    fn read_text(path: String) -> String effects { fs.read }
+extern capability fixture_agent {
+    fn observe() -> Unit effects { agent.observe }
 }
 
-flow @flow.opening opening
+fn retain_callback() -> Unit
 effects { }
 {
-    let later = |path: String| -> String {
-        fs.read_text(path = path)
+    let later = |_unit: Unit| -> Unit {
+        fixture_agent.observe()
+        ()
     }
+    ()
 }
 ";
-        let mut store = DocumentStore::default();
-        let uri = "file:///closure-effect-row-hover.arcw"
-            .parse()
-            .expect("uri");
-        let document = store.open(
-            DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri,
-                    language_id: "arcweft".to_owned(),
-                    version: 1,
-                    text: source.to_owned(),
-                },
-            },
-            PositionEncoding::Utf16,
-        );
-        let offset = source.find("|path").expect("closure header offset") + 1;
+        let fixture = accepted_effect_hover_fixture("closure-effect-row-hover", source);
+        let source = fixture.source.as_str();
+        let document = &fixture.document;
+        let offset = source.find("|_unit").expect("closure header offset") + 1;
         let position = document.line_index().position_from_byte_offset(offset);
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let closure_hover = hover(&profile, &document, position).expect("closure effect row hover");
+        let closure_hover =
+            hover(&fixture.profile, document, position).expect("closure effect row hover");
 
         match closure_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
-                assert!(text.contains("effect row for `closure expression`"));
-                assert!(text.contains("inferred: { fs.read | e"));
-                assert!(text.contains("upper bound: inferred"));
+                assert!(text.contains("checked effects for `closure expression`"));
+                assert!(text.contains("effects: { agent.observe }"));
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }
 
-        let body_offset = source.rfind("fs.read_text").expect("body call offset");
+        let body_offset = source.rfind("observe").expect("body call offset");
         let body_position = document.line_index().position_from_byte_offset(body_offset);
-        let body_hover = hover(&profile, &document, body_position);
+        let body_hover = hover(&fixture.profile, document, body_position);
         if let Some(body_hover) = body_hover {
             match body_hover.contents {
                 HoverContents::Scalar(MarkedString::String(text)) => assert!(
-                    !text.contains("effect row for `closure expression`"),
+                    !text.contains("checked effects for `closure expression`"),
                     "closure expression hover should stay limited to the closure header: {text}"
                 ),
                 other => panic!("unexpected hover contents: {other:?}"),
@@ -832,68 +636,160 @@ effects { }
     #[test]
     fn hover_describes_closure_expression_expected_effect_row_bound() {
         let source = r"
-extern capability fs {
-    fn read_text(path: String) -> String effects { fs.read }
+extern capability fixture_agent {
+    fn observe() -> Unit effects { agent.observe }
 }
 
-flow @flow.opening opening
+fn retain_callback() -> Unit
 effects { }
 {
-    let later: String -> String effects { fs.read } =
-        |path: String| -> String {
-            fs.read_text(path = path)
+    let later: (Unit) -> Unit effects { agent.observe } = |_unit: Unit| -> Unit {
+            fixture_agent.observe()
+            ()
         }
+    ()
 }
 ";
-        let mut store = DocumentStore::default();
-        let uri = "file:///closure-effect-row-bound-hover.arcw"
-            .parse()
-            .expect("uri");
-        let document = store.open(
-            DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri,
-                    language_id: "arcweft".to_owned(),
-                    version: 1,
-                    text: source.to_owned(),
-                },
-            },
-            PositionEncoding::Utf16,
-        );
-        let offset = source.find("|path").expect("closure header offset") + 1;
+        let fixture = accepted_effect_hover_fixture("closure-effect-row-bound-hover", source);
+        let source = fixture.source.as_str();
+        let document = &fixture.document;
+        let offset = source.find("|_unit").expect("closure header offset") + 1;
         let position = document.line_index().position_from_byte_offset(offset);
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let closure_hover = hover(&profile, &document, position).expect("closure effect row hover");
+        let closure_hover =
+            hover(&fixture.profile, document, position).expect("closure effect row hover");
 
         match closure_hover.contents {
             HoverContents::Scalar(MarkedString::String(text)) => {
-                assert!(text.contains("effect row for `closure expression`"));
-                assert!(text.contains("inferred: { fs.read | e"));
-                assert!(text.contains("upper bound: { fs.read }"));
+                assert!(text.contains("checked effects for `closure expression`"));
+                assert!(text.contains("effects: { agent.observe }"));
             }
             other => panic!("unexpected hover contents: {other:?}"),
         }
     }
 
     #[test]
-    fn effect_row_hover_text_renders_open_rows_without_closed_projection() {
-        use arcweft_lang_sema::{check::EffectVar, effects::EffectSet};
+    fn checked_effect_hover_text_renders_exact_final_effects() {
+        let effects = EffectSet::from_labels(["fs.read"]).expect("valid checked effects");
+        let text = checked_effect_hover_text("callback", &effects);
+        assert!(text.contains("checked effects for `callback`"));
+        assert!(text.contains("effects: { fs.read }"));
+    }
 
-        let variable = EffectVar::from_index(9);
-        let inferred = EffectRow::open(
-            EffectSet::from_labels(["fs.read"]).expect("valid inferred row"),
-            variable,
+    struct EffectHoverFixture {
+        _project: EffectHoverProject,
+        profile: LspProfile,
+        document: DocumentSnapshot,
+        source: String,
+    }
+
+    fn accepted_effect_hover_fixture(label: &str, authored: &str) -> EffectHoverFixture {
+        let project = EffectHoverProject::new(label);
+        let source = format!(
+            "{authored}\n\nfn lsp_test_controller() -> Result<Unit, AgentError>\neffects {{}}\n{{\n    Ok(())\n}}\n\nentry agent @entry.agent.main {{\n    controller = lsp_test_controller\n}}\n"
         );
-        let upper_bound = EffectRow::open(EffectSet::new(), variable);
-        let forbidden = EffectRow::closed(EffectSet::new());
-
-        let text = effect_row_hover_text("callback", &inferred, Some(&upper_bound), &forbidden);
-        assert!(text.contains("effect row for `callback`"));
-        assert!(text.contains("inferred: { fs.read | e9 }"));
-        assert!(text.contains("upper bound: { | e9 }"));
+        project.write("arcw.toml", &EffectHoverProject::manifest());
+        project.write("src/main.arcw", &source);
+        let source_path = project.path("src/main.arcw");
+        let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+            RuntimeHostRunnerKind::Native,
+            Some("agent".to_owned()),
+        ))
+        .resolve_for_document_path(&source_path)
+        .expect("effect-hover profile construction")
+        .publish_for_test();
         assert!(
-            !text.contains("forbidden:"),
-            "empty closed forbidden row should stay hidden: {text}"
+            profile.diagnostics().is_empty(),
+            "effect-hover fixture diagnostics: {:?}",
+            profile.diagnostics()
         );
+        let uri = file_uri(&source_path);
+        let accepted = profile.accepted_environment().expect("accepted profile");
+        let accepted_source = accepted
+            .project()
+            .sources()
+            .by_uri(&uri)
+            .expect("accepted effect-hover source");
+        let authority = AcceptedOpenDocument::new(Arc::clone(accepted_source.document()), None);
+        let mut store = DocumentStore::default();
+        let document = store
+            .open_with_authority(
+                DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri,
+                        language_id: "arcweft".to_owned(),
+                        version: 1,
+                        text: source.clone(),
+                    },
+                },
+                PositionEncoding::Utf16,
+                Some(&authority),
+            )
+            .expect("accepted effect-hover document");
+        EffectHoverFixture {
+            _project: project,
+            profile,
+            document,
+            source,
+        }
+    }
+
+    struct EffectHoverProject {
+        root: PathBuf,
+    }
+
+    impl EffectHoverProject {
+        fn new(label: &str) -> Self {
+            let unique = SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("clock")
+                .as_nanos();
+            let root = std::env::temp_dir().join(format!("arcweft-lsp-{label}-{unique}"));
+            fs::create_dir_all(&root).expect("effect-hover project root");
+            Self { root }
+        }
+
+        fn path(&self, path: impl AsRef<Path>) -> PathBuf {
+            self.root.join(path)
+        }
+
+        fn manifest() -> String {
+            r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.effect-hover"
+version = "0.1.0"
+
+[profiles.agent]
+kind = "agent"
+entry = "@entry.agent.main"
+source = "src/main.arcw"
+"#
+            .to_owned()
+        }
+
+        fn write(&self, path: &str, contents: &str) {
+            let path = self.path(path);
+            if let Some(parent) = path.parent() {
+                fs::create_dir_all(parent).expect("effect-hover fixture parent");
+            }
+            fs::write(path, contents).expect("effect-hover fixture write");
+        }
+    }
+
+    impl Drop for EffectHoverProject {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.root);
+        }
+    }
+
+    fn file_uri(path: &Path) -> Uri {
+        format!(
+            "file:///{}",
+            path.to_string_lossy()
+                .replace('\\', "/")
+                .trim_start_matches('/')
+        )
+        .parse()
+        .expect("file URI")
     }
 }

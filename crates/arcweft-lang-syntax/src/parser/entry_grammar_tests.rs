@@ -1,6 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -14,7 +14,7 @@ fn document(text: &str) -> SourceDocument {
 }
 
 fn parse(text: &str) -> GrammarBuild {
-    parse_shadow_document(&document(text), crate::parser::ParseOptions::default()).unwrap()
+    parse_document(&document(text), crate::parser::ParseOptions::default()).unwrap()
 }
 
 fn kind_count(entries: &[UnattachedGrammarEntry], kind: SyntaxKind) -> usize {

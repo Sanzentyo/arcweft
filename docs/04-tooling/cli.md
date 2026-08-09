@@ -6,19 +6,21 @@ The CLI should expose syntax-normalization tools without forcing formatter users
 
 `arcw check <file.arcw> [--json]` is the first developer-facing vertical slice.
 It keeps file I/O in the CLI adapter and runs the Sans I/O compiler stages over
-the source text:
+the exact accepted source-document snapshot:
 
 ```text
-parse_document_with_source
-lower_document_to_hir
-registry_from_hir
-validate_hir_references
-lint_id_policy
-validate_typecheck_ready
-analyze_types
-line_task::lower_line_task_groups
-verify_module --mode dev
+SyntaxDatabase::parse_initial / reparse -> ParsedSource
+LoweringRequest -> HirDatabase staging transaction
+HirProject::try_new -> accepted module-preserving project
+ProjectSymbolTable + final semantic analysis
+checked RichText / Dialogue / runtime-plan projection
+verify_project --mode dev
 ```
+
+The CLI never asks syntax for a detached whole-tree view and never reparses a
+source substring to recover HIR meaning. Project loading, compiler lowering,
+verification, script-test/bench manifests, and runtime planning all borrow the
+same accepted `ParsedSource`/`HirProject` generation.
 
 Success prints a compact summary:
 

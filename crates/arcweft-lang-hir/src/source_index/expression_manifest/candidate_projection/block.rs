@@ -15,7 +15,7 @@ use arcweft_lang_syntax::attachment::{
 use arcweft_lang_syntax::expressions::ExpressionProjection;
 use arcweft_lang_syntax::grammar::{SyntaxKind, SyntaxRole};
 
-use super::{CandidateChild, CandidateValidationCursor, source_index_has_typed_owner};
+use super::{CandidateChild, CandidateValidationCursor};
 use crate::expr::{HirExpressionRecoveryIssue, HirRecoveryIssue};
 use crate::identity::{
     ExprId, LocalGeneration, LocalId, ScopeId, StmtId, SyntheticKey, SyntheticOwner,
@@ -106,6 +106,10 @@ impl CandidateValidationCursor<'_> {
         (tail == actual_tail).then_some(recovery)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive candidate-statement dispatcher validates the closed typed family"
+    )]
     fn validate_statement(
         &mut self,
         source: AttachedCandidateStatement<'_>,
@@ -361,7 +365,7 @@ impl CandidateValidationCursor<'_> {
         if metadata.origin() != &HirOrigin::Synthetic(key)
             || metadata.source_site() != &site
             || payload.scope() != scope
-            || source_index_has_typed_owner(self.index, SyntheticOwner::Stmt(owner))
+            || self.source_index_has_typed_owner(SyntheticOwner::Stmt(owner))
             || !self.expected.statements.insert(owner)
         {
             return None;
@@ -369,6 +373,10 @@ impl CandidateValidationCursor<'_> {
         Some(owner)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one candidate If projection proves branches, bodies, source roles, and recovery together"
+    )]
     fn validate_if_statement(
         &mut self,
         statement: AttachedCandidateStatement<'_>,
@@ -552,6 +560,10 @@ impl CandidateValidationCursor<'_> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one candidate Match projection proves scrutinee, arm scopes, bodies, and recovery together"
+    )]
     fn validate_match_statement(
         &mut self,
         statement: AttachedCandidateStatement<'_>,
@@ -842,7 +854,7 @@ impl CandidateValidationCursor<'_> {
             || payload.kind() != kind
             || payload.parent() != Some(parent)
             || payload.owner() != &HirScopeOwner::Stmt(owner)
-            || source_index_has_typed_owner(self.index, SyntheticOwner::Scope(scope))
+            || self.source_index_has_typed_owner(SyntheticOwner::Scope(scope))
             || !self.expected.scopes.insert(scope)
         {
             return None;

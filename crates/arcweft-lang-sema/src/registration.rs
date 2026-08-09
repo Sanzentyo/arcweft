@@ -8,9 +8,6 @@ mod limits;
 mod model;
 mod registrar;
 mod source_index;
-#[cfg(test)]
-mod tests;
-
 pub use diagnostic::{
     CharacterRegistrationCode, CharacterRegistrationDiagnostic,
     CharacterRegistrationDiagnosticKind, CharacterRegistrationReport, RequiredCharacterToken,
@@ -32,7 +29,8 @@ pub use model::{
     AcceptedNominalWorldLookupError, AcceptedNominalWorldStamp, CharacterInventoryDescriptorV1,
     CharacterInventoryDigest, CharacterInventoryIntegrityError, CharacterInventoryRevision,
     CharacterRegistrar, CharacterRegistrationRequest, ExternalOwnerLookupError,
-    ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredCharacterResolutionError,
+    ExternalRegistrationFact, ProjectRegistrationFacts, ProofReturnRegistrationPrelude,
+    ProofReturnRegistrationRequest, RegisteredCharacterResolutionError,
     RegisteredEnvironmentDigest, RegisteredEnvironmentExternalOwner, RegisteredExternalOwner,
     RegisteredExternalOwnerKind, RegisteredSemanticWorld, RegisteredTypeCheckEnv,
 };

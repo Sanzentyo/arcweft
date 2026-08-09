@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use arcweft_bundle::resource_codec::{
-    FieldId, MAX_PRODUCT_SOURCE_ID_INPUT_BYTES, MAX_SOURCE_BYTES_PER_DOCUMENT,
-    MAX_SOURCE_DISPLAY_NAME_BYTES, MAX_SOURCE_MAP_DOCUMENTS, MAX_SOURCE_MAP_TOTAL_UTF8_BYTES,
-    ProductResourceEnvelope, ProductSectionCodecKind, ResourceField, ResourceWireType,
-    SectionCodecBudget, SectionCodecError, SourceMapBuildError, SourceMapCodecError,
-    SourceMapDocument, SourceMapSection, StringId,
+    FieldId, MAX_SOURCE_BYTES_PER_DOCUMENT, MAX_SOURCE_DISPLAY_NAME_BYTES,
+    MAX_SOURCE_MAP_DOCUMENTS, MAX_SOURCE_MAP_TOTAL_UTF8_BYTES, ProductResourceEnvelope,
+    ProductSectionCodecKind, ResourceField, ResourceWireType, SectionCodecBudget,
+    SectionCodecError, SourceMapBuildError, SourceMapCodecError, SourceMapDocument,
+    SourceMapSection, StringId,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{
+    MAX_PRODUCT_SOURCE_ID_INPUT_BYTES, SourceDocument, SourceDocumentId, SourceName,
+};
 
 const FIELD_SOURCE_MAP_TRANSCRIPT: FieldId = FieldId(1);
 const SET_REVISION_OFFSET: usize = 4;

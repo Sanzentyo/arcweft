@@ -8,19 +8,14 @@ pub(in crate::app) fn runtime_plan_command(options: &PlanOptions) -> Result<(), 
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
     let lowered = checked.runtime_plan();
-    let report = RuntimePlanReport::from_lowered(&checked, lowered);
+    let report = RuntimePlanReport::from_lowered(&checked, lowered)?;
     if options.json {
         print_json(&report)
     } else {
-        for line in &report.lines {
+        for (index, line) in report.lines.iter().enumerate() {
             println!(
-                "{} {} {} task_node={} child_task(s)={} effect(s)={}",
-                line.flow_id.as_deref().unwrap_or("-"),
-                line.line_id.as_deref().unwrap_or("-"),
-                line.callee,
-                line.root.kind,
-                line.child_tasks,
-                line.effects
+                "line_task_group={} task_node={} child_task(s)={} effect(s)={}",
+                index, line.root.kind, line.child_tasks, line.effects
             );
         }
         println!(

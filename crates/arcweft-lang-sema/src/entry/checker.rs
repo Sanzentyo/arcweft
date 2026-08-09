@@ -1,37 +1,37 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    str::FromStr,
-};
+use std::collections::{BTreeMap, BTreeSet};
 
+use arcweft_id::PublicId;
 use arcweft_lang_hir::{
-    entry::{HirEntryDecl, HirEntryItem},
-    model::{HirFlow, HirFunction, HirModule, HirTopLevelDecl},
-    project::HirProject,
+    identity::{ExprId, ItemId},
+    item::{
+        HirEntryDeclaration, HirEntryId, HirEntryKind, HirEntryMember, HirEntryPathValue,
+        HirEntryTarget, HirFlowItem, HirFunctionItem, HirItem, HirItemKind, HirParameterKind,
+    },
+    leaf::{HirIdRef, HirIdRefValue, HirPathValue},
+    module::HirModule,
+    pattern::{HirPatternBinding, HirPatternKind},
+    project::HirExecutableProjectView,
+    source_index::{
+        HirEntrySourcePart, HirExprSourceRole, HirItemSourceRole, HirSourcePresence,
+        HirSourceQuery, HirSourceSite,
+    },
     symbol::{
-        CallableDeclarationId, ProjectSymbolResolutionError, ProjectSymbolTable,
-        ProjectSymbolTargetId, ProjectTypeCandidate, nominal::ProjectNominalDeclarationKind,
+        CallableDeclarationId, CallableDeclarationKey, CallableDeclarationOwner, CallableSymbol,
+        ProjectEntityReferenceLookupError, ProjectSymbolTable, ProjectSymbolTargetId,
+        ProjectTypeCandidate, ProjectTypeLookupError, ProjectTypeTarget, ProjectValueLookup,
+        ProjectValueLookupError, ResolvedProjectSymbol, nominal::ProjectNominalDeclarationKind,
     },
+    type_ref::HirTypeKind,
 };
-use arcweft_lang_syntax::{
-    ast::{
-        common::TextRange,
-        ids::EntityRef,
-        items::{EntryKind, EntryRoleKind},
-        module_path::CanonicalModulePath,
-        symbol_path::{ProjectSymbolPath, SymbolPath},
-    },
-    expr::DottedPath,
-    types::{AuthoredTypeRef, TypePath, TypeRef, TypeRefNodePath},
-};
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::SourceSpan;
 
 use crate::{
-    callable::{CallTargetFact, CallableFamily, CallableRecord, RegisteredCallableCatalog},
-    check::TypeCheckReport,
-    nominal::{
-        ResolvedTypeNode, TypeArityTarget, TypeNameResolution, TypeResolutionFailure,
-        TypeResolutionReport,
+    callable::{
+        CallTargetFact, CallableCandidateId, CallableFamily, CheckedCallableCatalog,
+        CheckedCallableFacts,
     },
+    final_analysis::FinalSemanticAnalysis,
     types::TypeKind,
 };
 
@@ -44,11 +44,9 @@ use super::{
 
 mod contract;
 mod nominal;
-mod roles;
 
 use contract::{EntryContractBuilder, ReducerContractNominals};
 use nominal::NominalSchemaExpander;
-use roles::{Role, unique_item};
 
 /// Source-backed failure produced while constructing checked entry bindings.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -57,22 +55,6 @@ pub struct CheckedEntryDiagnostic {
     message: String,
     primary: SourceSpan,
     related: Vec<SourceSpan>,
-}
-
-/// Exact ordinary-function declarations selected as Agent entry controllers.
-///
-/// This inventory is resolved from typed entry-role references and the accepted
-/// project symbol table. It deliberately does not infer controller roles from
-/// function bodies, effects, names, or attributes.
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
-struct SelectedAgentControllerRoles {
-    declarations: BTreeSet<CallableDeclarationId>,
-}
-
-impl SelectedAgentControllerRoles {
-    fn contains(&self, declaration: &CallableDeclarationId) -> bool {
-        self.declarations.contains(declaration)
-    }
 }
 
 impl CheckedEntryDiagnostic {
@@ -116,125 +98,130 @@ impl CheckedEntryDiagnostic {
     }
 }
 
-/// Resolves every source entry against one already registered semantic world.
+/// Resolves every final-HIR Entry against the exact accepted semantic generation.
 ///
-/// Callable roles are resolved by the ordinary project symbol table and must
-/// name the same declaration published by the shared callable catalog.
+/// This boundary deliberately has no syntax-tree, detached HIR, type-check
+/// sidecar, or registered-only callable overload. Entry roles consume the same
+/// immutable HIR project, symbol table, and checked callable authority already
+/// accepted by final semantic analysis.
+///
+/// # Panics
+///
+/// Panics when the supplied project or symbol table is not the generation
+/// owned by `analysis`.
 pub fn check_project_entries(
-    project: &HirProject,
+    project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
-    callables: &RegisteredCallableCatalog,
-    typecheck: &TypeCheckReport,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<CheckedEntryCatalog, Vec<CheckedEntryDiagnostic>> {
-    let context = EntryCheckContext::new(project, symbols, callables, typecheck);
-    context.check()
+    analysis
+        .validate_generation(project, symbols)
+        .expect("Entry checking requires the exact accepted final-HIR generation");
+    EntryCheckContext::new(project, symbols, analysis, analysis.checked_callables()).check()
 }
 
 struct EntryCheckContext<'a> {
-    project: &'a HirProject,
+    project: HirExecutableProjectView<'a>,
     symbols: &'a ProjectSymbolTable,
-    callables: &'a RegisteredCallableCatalog,
-    typecheck: &'a TypeCheckReport,
+    analysis: &'a FinalSemanticAnalysis,
+    callables: &'a CheckedCallableCatalog,
     nominals: NominalSchemaExpander<'a>,
-    functions: BTreeMap<CallableDeclarationId, (&'a HirModule, &'a HirFunction)>,
-    flows: BTreeMap<String, Vec<(&'a HirModule, &'a HirFlow)>>,
 }
 
 struct ResolvedCallable<'a> {
-    declaration: &'a CallableDeclarationId,
+    declaration: CallableDeclarationId,
     module: &'a HirModule,
-    function: &'a HirFunction,
-    record: &'a CallableRecord,
+    item: &'a HirItem,
+    function: &'a HirFunctionItem,
+    facts: &'a CheckedCallableFacts,
     source: SourceSpan,
+}
+
+#[derive(Clone, Copy)]
+enum Role {
+    State,
+    Initializer,
+    Event,
+    Reducer,
+    Controller,
+}
+
+impl Role {
+    const fn label(self) -> &'static str {
+        match self {
+            Self::State => "state",
+            Self::Initializer => "initializer",
+            Self::Event => "event",
+            Self::Reducer => "reducer",
+            Self::Controller => "controller",
+        }
+    }
+
+    const fn matches(self, member: &HirEntryMember) -> bool {
+        matches!(
+            (self, member),
+            (Self::State, HirEntryMember::StateType(_))
+                | (Self::Initializer, HirEntryMember::Initializer(_))
+                | (Self::Event, HirEntryMember::EventType(_))
+                | (Self::Reducer, HirEntryMember::Reducer(_))
+                | (Self::Controller, HirEntryMember::Controller(_))
+        )
+    }
 }
 
 impl<'a> EntryCheckContext<'a> {
     fn new(
-        project: &'a HirProject,
+        project: HirExecutableProjectView<'a>,
         symbols: &'a ProjectSymbolTable,
-        callables: &'a RegisteredCallableCatalog,
-        typecheck: &'a TypeCheckReport,
+        analysis: &'a FinalSemanticAnalysis,
+        callables: &'a CheckedCallableCatalog,
     ) -> Self {
-        let nominals = NominalSchemaExpander::new(symbols, &typecheck.nominal_resolutions);
-        let mut functions = BTreeMap::new();
-        let mut flows = BTreeMap::<String, Vec<_>>::new();
-        for (_, module) in project.modules() {
-            for function in module.functions() {
-                if let Ok(declaration) =
-                    CallableDeclarationId::for_function(project.package(), function)
-                {
-                    functions.insert(declaration, (module, function));
-                }
-            }
-            for flow in module.flows() {
-                if let Some(id) = flow.id() {
-                    flows
-                        .entry(id.body().to_owned())
-                        .or_default()
-                        .push((module, flow));
-                }
-            }
-        }
         Self {
             project,
             symbols,
+            analysis,
             callables,
-            typecheck,
-            nominals,
-            functions,
-            flows,
+            nominals: NominalSchemaExpander::new(symbols, analysis),
         }
     }
 
     fn check(self) -> Result<CheckedEntryCatalog, Vec<CheckedEntryDiagnostic>> {
         let mut diagnostics = Vec::new();
         let mut entries = Vec::new();
-        let mut ids = BTreeMap::<String, SourceSpan>::new();
-        let selected_agent_controllers = self.selected_agent_controllers();
-        self.validate_function_role_attributes(&selected_agent_controllers, &mut diagnostics);
-        self.validate_agent_callable_roles(&selected_agent_controllers, &mut diagnostics);
+        let mut ids = BTreeMap::<PublicId, SourceSpan>::new();
 
-        for (module_path, module) in self.project.modules() {
-            for declaration in module.declarations() {
-                let HirTopLevelDecl::Entry(entry) = declaration else {
-                    continue;
-                };
-                let id_span = source_span(module, *entry.id().range());
-                let id_label = entry.id().body();
-                if !id_label.starts_with("entry.") {
-                    diagnostics.push(CheckedEntryDiagnostic::new(
-                        "sema.entry.invalid_id_family",
-                        format!("entry ID `{id_label}` must use the `entry.*` family"),
-                        id_span,
-                    ));
-                    continue;
-                }
-                let Ok(id) = CheckedEntryId::try_new(id_label.to_owned()) else {
-                    diagnostics.push(CheckedEntryDiagnostic::new(
-                        "sema.entry.invalid_id",
-                        format!("entry ID `{id_label}` is not canonical"),
-                        id_span,
-                    ));
-                    continue;
-                };
-                if let Some(first) = ids.insert(id_label.to_owned(), id_span.clone()) {
-                    diagnostics.push(
-                        CheckedEntryDiagnostic::new(
-                            "sema.entry.duplicate_id",
-                            format!("entry ID `{id_label}` is declared more than once"),
-                            id_span,
-                        )
-                        .with_related([first]),
-                    );
-                    continue;
-                }
-
-                match self.check_entry(module_path, module, entry, id) {
-                    Ok(binding) => entries.push(binding),
-                    Err(mut entry_diagnostics) => diagnostics.append(&mut entry_diagnostics),
-                }
+        for item in self.project.items() {
+            let HirItemKind::Entry(entry) = item.item().kind() else {
+                continue;
+            };
+            let id_source = entry_source(item.module(), item.id(), HirEntrySourcePart::Id);
+            let Some(id) = Self::checked_entry_id(entry, &id_source, &mut diagnostics) else {
+                continue;
+            };
+            if let Some(first) = ids.insert(id.public_id().clone(), id_source.clone()) {
+                diagnostics.push(
+                    CheckedEntryDiagnostic::new(
+                        "sema.entry.duplicate_id",
+                        format!("entry ID `{id}` is declared more than once"),
+                        id_source,
+                    )
+                    .with_related([first]),
+                );
+                continue;
+            }
+            match self.check_entry(item.module_path(), item.module(), item.id(), entry, id) {
+                Ok(binding) => entries.push(binding),
+                Err(mut failures) => diagnostics.append(&mut failures),
             }
         }
+
+        let selected_controllers = entries
+            .iter()
+            .filter_map(|entry| entry.agent())
+            .map(|agent| agent.controller().declaration().clone())
+            .collect::<BTreeSet<_>>();
+        self.validate_function_role_attributes(&selected_controllers, &mut diagnostics);
+        self.validate_agent_callable_roles(&selected_controllers, &mut diagnostics);
 
         if diagnostics.is_empty() {
             CheckedEntryCatalog::try_new(entries).map_err(|error| {
@@ -243,7 +230,7 @@ impl<'a> EntryCheckContext<'a> {
                     error.to_string(),
                     ids.values()
                         .next()
-                        .expect("a duplicate checked ID requires at least one source entry")
+                        .expect("a duplicate checked ID requires one source Entry")
                         .clone(),
                 )]
             })
@@ -252,128 +239,101 @@ impl<'a> EntryCheckContext<'a> {
         }
     }
 
-    fn selected_agent_controllers(&self) -> SelectedAgentControllerRoles {
-        let declarations = self
-            .project
-            .modules()
-            .flat_map(|(module_path, module)| {
-                module.declarations().iter().filter_map(move |declaration| {
-                    let HirTopLevelDecl::Entry(entry) = declaration else {
-                        return None;
-                    };
-                    if entry.kind() != &EntryKind::Agent {
-                        return None;
-                    }
-                    entry.items().iter().find_map(|item| {
-                        let HirEntryItem::Controller {
-                            path, value_range, ..
-                        } = item
-                        else {
-                            return None;
-                        };
-                        let source = source_span(module, *value_range);
-                        resolve_selected_agent_controller(self.symbols, module_path, path, &source)
-                    })
-                })
-            })
-            .collect();
-        SelectedAgentControllerRoles { declarations }
-    }
-
-    fn validate_function_role_attributes(
-        &self,
-        selected_agent_controllers: &SelectedAgentControllerRoles,
+    fn checked_entry_id(
+        entry: &HirEntryDeclaration,
+        source: &SourceSpan,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
-    ) {
-        for (declaration, (module, function)) in &self.functions {
-            for attribute in function.attributes() {
-                if matches!(attribute.name(), "agent" | "launch" | "bind") {
-                    diagnostics.push(CheckedEntryDiagnostic::new(
-                        "sema.entry.forbidden_role_attribute",
-                        format!(
-                            "`#[{}]` cannot assign a function entry role; bind the ordinary function from an `entry` declaration",
-                            attribute.name()
-                        ),
-                        source_span(module, *attribute.range()),
-                    ));
-                }
-                if attribute.name() == "budget" && !selected_agent_controllers.contains(declaration)
-                {
-                    diagnostics.push(CheckedEntryDiagnostic::new(
-                        "sema.entry.unbound_agent_budget",
-                        "`#[budget(...)]` is only valid on an ordinary function selected by an Agent entry",
-                        source_span(module, *attribute.range()),
-                    ));
-                }
-            }
+    ) -> Option<CheckedEntryId> {
+        let HirEntryId::Authored {
+            value,
+            canonical_entry_family,
+        } = entry.id()
+        else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_id",
+                "entry declaration is missing its canonical public ID",
+                source.clone(),
+            ));
+            return None;
+        };
+        let Some(public_id) = absolute_public_id_value(value) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_id",
+                "entry ID must be one complete absolute public ID",
+                source.clone(),
+            ));
+            return None;
+        };
+        if !canonical_entry_family || !public_id.as_str().starts_with("entry.") {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_id_family",
+                format!("entry ID `{public_id}` must use the `entry.*` family"),
+                source.clone(),
+            ));
+            return None;
         }
-    }
-
-    fn validate_agent_callable_roles(
-        &self,
-        selected_agent_controllers: &SelectedAgentControllerRoles,
-        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
-    ) {
-        // Rejected calls already stop at type checking. Entry policy owns only
-        // successful Agent-family selections whose lexical function lacks the
-        // exact controller role resolved above.
-        diagnostics.extend(self.typecheck.retained_call_target_facts().filter_map(|facts| {
-            let CallTargetFact::Selected { selected, .. } = facts.target() else {
-                return None;
-            };
-            if selected.id().family() != CallableFamily::Agent
-                || facts
-                    .enclosing_callable()
-                    .is_some_and(|owner| selected_agent_controllers.contains(owner))
-            {
-                return None;
-            }
-            Some(CheckedEntryDiagnostic::new(
-                "sema.entry.unbound_agent_intrinsic",
-                "Agent call is only valid inside an ordinary function selected as an Agent entry controller",
-                facts.call_span().clone(),
-            ))
-        }));
+        CheckedEntryId::try_new(public_id.as_str().to_owned())
+            .map_err(|_| {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.invalid_id",
+                    format!("entry ID `{public_id}` is not canonical"),
+                    source.clone(),
+                ));
+            })
+            .ok()
     }
 
     fn check_entry(
         &self,
         module_path: &CanonicalModulePath,
-        module: &HirModule,
-        entry: &HirEntryDecl,
+        module: &'a HirModule,
+        owner: ItemId,
+        entry: &'a HirEntryDeclaration,
         id: CheckedEntryId,
     ) -> Result<CheckedEntryBinding, Vec<CheckedEntryDiagnostic>> {
-        let mut diagnostics = Self::validate_entry_members(module, entry);
+        let mut diagnostics = Self::validate_entry_members(module, owner, entry);
         let result = match entry.kind() {
-            EntryKind::Game => self.check_stateful(
+            HirEntryKind::Game => self.check_stateful(
                 module_path,
                 module,
+                owner,
                 entry,
                 id,
                 CheckedStatefulEntryKind::Game,
             ),
-            EntryKind::Editor => self.check_stateful(
+            HirEntryKind::Editor => self.check_stateful(
                 module_path,
                 module,
+                owner,
                 entry,
                 id,
                 CheckedStatefulEntryKind::Editor,
             ),
-            EntryKind::Test => self.check_stateful(
+            HirEntryKind::Test => self.check_stateful(
                 module_path,
                 module,
+                owner,
                 entry,
                 id,
                 CheckedStatefulEntryKind::Test,
             ),
-            EntryKind::Agent => self.check_agent(module_path, module, entry, id),
-            kind => Ok(self.check_existing(id, kind)),
+            HirEntryKind::Agent => self.check_agent(module_path, module, owner, entry, id),
+            HirEntryKind::Cli
+            | HirEntryKind::Server
+            | HirEntryKind::Activity
+            | HirEntryKind::Bench
+            | HirEntryKind::Custom(_) => Ok(self.check_existing(owner, id, entry.kind())),
+            HirEntryKind::Recovered(_) => Err(vec![CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_kind",
+                "recovered Entry kind cannot enter an executable project",
+                entry_source(module, owner, HirEntrySourcePart::Whole),
+            )]),
         };
         match result {
             Ok(binding) if diagnostics.is_empty() => Ok(binding),
             Ok(_) => Err(diagnostics),
-            Err(mut binding_diagnostics) => {
-                diagnostics.append(&mut binding_diagnostics);
+            Err(mut failures) => {
+                diagnostics.append(&mut failures);
                 Err(diagnostics)
             }
         }
@@ -381,58 +341,60 @@ impl<'a> EntryCheckContext<'a> {
 
     fn validate_entry_members(
         module: &HirModule,
-        entry: &HirEntryDecl,
+        owner: ItemId,
+        entry: &HirEntryDeclaration,
     ) -> Vec<CheckedEntryDiagnostic> {
         let mut diagnostics = Vec::new();
-        for item in entry.items() {
-            let role = match item {
-                HirEntryItem::StateType { .. } => Some(EntryRoleKind::State),
-                HirEntryItem::Initializer { .. } => Some(EntryRoleKind::Initializer),
-                HirEntryItem::EventType { .. } => Some(EntryRoleKind::Event),
-                HirEntryItem::Reducer { .. } => Some(EntryRoleKind::Reducer),
-                HirEntryItem::Controller { .. } => Some(EntryRoleKind::Controller),
-                HirEntryItem::Goto(_)
-                | HirEntryItem::Route { .. }
-                | HirEntryItem::Option { .. }
-                | HirEntryItem::Raw(_) => None,
+        for (ordinal, member) in entry.members().iter().enumerate() {
+            let source = entry_member_source(module, owner, ordinal);
+            let role = match member {
+                HirEntryMember::StateType(_) => Some(Role::State),
+                HirEntryMember::Initializer(_) => Some(Role::Initializer),
+                HirEntryMember::EventType(_) => Some(Role::Event),
+                HirEntryMember::Reducer(_) => Some(Role::Reducer),
+                HirEntryMember::Controller(_) => Some(Role::Controller),
+                HirEntryMember::Goto(_)
+                | HirEntryMember::Route(_)
+                | HirEntryMember::Option(_)
+                | HirEntryMember::Error => None,
             };
             if let Some(role) = role
-                && !entry.kind().allows_role(role)
+                && !entry_kind_allows_role(entry.kind(), role)
             {
                 diagnostics.push(CheckedEntryDiagnostic::new(
                     "sema.entry.incompatible_role",
                     format!(
                         "entry kind `{}` cannot bind the `{}` role",
-                        entry.kind().as_str(),
-                        role.as_str()
+                        entry_kind_label(entry.kind()),
+                        role.label()
                     ),
-                    source_span(
-                        module,
-                        *item
-                            .range()
-                            .expect("typed HIR role members retain their source range"),
-                    ),
+                    source.clone(),
                 ));
             }
-            match item {
-                HirEntryItem::Goto(target) if !entry.kind().allows_goto() => {
+            match member {
+                HirEntryMember::Goto(_) if matches!(entry.kind(), HirEntryKind::Agent) => {
                     diagnostics.push(CheckedEntryDiagnostic::new(
                         "sema.entry.incompatible_goto",
-                        format!(
-                            "entry kind `{}` cannot declare `goto`",
-                            entry.kind().as_str()
-                        ),
-                        source_span(module, *target.range()),
+                        "Agent entry cannot declare `goto`",
+                        source,
                     ));
                 }
-                HirEntryItem::Route { target, .. } if !entry.kind().allows_routes() => {
+                HirEntryMember::Route(_)
+                    if matches!(
+                        entry.kind(),
+                        HirEntryKind::Game
+                            | HirEntryKind::Editor
+                            | HirEntryKind::Test
+                            | HirEntryKind::Agent
+                    ) =>
+                {
                     diagnostics.push(CheckedEntryDiagnostic::new(
                         "sema.entry.incompatible_route",
                         format!(
                             "entry kind `{}` cannot declare adapter routes",
-                            entry.kind().as_str()
+                            entry_kind_label(entry.kind())
                         ),
-                        source_span(module, *target.range()),
+                        source,
                     ));
                 }
                 _ => {}
@@ -443,65 +405,71 @@ impl<'a> EntryCheckContext<'a> {
 
     #[allow(
         clippy::too_many_lines,
-        reason = "stateful entry checking owns the atomic resolve-validate-digest transaction for all five required roles"
+        reason = "stateful Entry checking atomically resolves and seals all required roles"
     )]
     fn check_stateful(
         &self,
         module_path: &CanonicalModulePath,
-        module: &HirModule,
-        entry: &HirEntryDecl,
+        module: &'a HirModule,
+        owner: ItemId,
+        entry: &'a HirEntryDeclaration,
         id: CheckedEntryId,
         kind: CheckedStatefulEntryKind,
     ) -> Result<CheckedEntryBinding, Vec<CheckedEntryDiagnostic>> {
         let mut diagnostics = Vec::new();
-        let state = unique_item(module, entry, Role::State, &mut diagnostics).and_then(|item| {
-            let HirEntryItem::StateType {
-                ty, value_range, ..
-            } = item
-            else {
-                unreachable!("role filter returns the matching typed entry member")
-            };
-            self.resolve_nominal(module, ty, *value_range, "state", &mut diagnostics)
-        });
-        let initializer =
-            unique_item(module, entry, Role::Initializer, &mut diagnostics).and_then(|item| {
-                let HirEntryItem::Initializer {
-                    path, value_range, ..
-                } = item
-                else {
-                    unreachable!("role filter returns the matching typed entry member")
+        let state = Self::unique_member(module, owner, entry, Role::State, &mut diagnostics)
+            .and_then(|(ordinal, member)| {
+                let HirEntryMember::StateType(binding) = member else {
+                    unreachable!("role inventory returns its typed member family")
                 };
-                self.resolve_callable(
+                self.resolve_nominal(
                     module_path,
                     module,
-                    path,
-                    *value_range,
-                    "initializer",
+                    binding.ty(),
+                    entry_member_source(module, owner, ordinal),
+                    "state",
+                    BoundNominalKind::Struct,
                     &mut diagnostics,
                 )
             });
-        let event = unique_item(module, entry, Role::Event, &mut diagnostics).and_then(|item| {
-            let HirEntryItem::EventType {
-                ty, value_range, ..
-            } = item
-            else {
-                unreachable!("role filter returns the matching typed entry member")
-            };
-            self.resolve_nominal(module, ty, *value_range, "event", &mut diagnostics)
-        });
-        let reducer =
-            unique_item(module, entry, Role::Reducer, &mut diagnostics).and_then(|item| {
-                let HirEntryItem::Reducer {
-                    path, value_range, ..
-                } = item
-                else {
-                    unreachable!("role filter returns the matching typed entry member")
+        let initializer =
+            Self::unique_member(module, owner, entry, Role::Initializer, &mut diagnostics)
+                .and_then(|(ordinal, member)| {
+                    let HirEntryMember::Initializer(binding) = member else {
+                        unreachable!("role inventory returns its typed member family")
+                    };
+                    self.resolve_callable(
+                        module_path,
+                        binding.value(),
+                        entry_member_source(module, owner, ordinal),
+                        "initializer",
+                        &mut diagnostics,
+                    )
+                });
+        let event = Self::unique_member(module, owner, entry, Role::Event, &mut diagnostics)
+            .and_then(|(ordinal, member)| {
+                let HirEntryMember::EventType(binding) = member else {
+                    unreachable!("role inventory returns its typed member family")
+                };
+                self.resolve_nominal(
+                    module_path,
+                    module,
+                    binding.ty(),
+                    entry_member_source(module, owner, ordinal),
+                    "event",
+                    BoundNominalKind::Enum,
+                    &mut diagnostics,
+                )
+            });
+        let reducer = Self::unique_member(module, owner, entry, Role::Reducer, &mut diagnostics)
+            .and_then(|(ordinal, member)| {
+                let HirEntryMember::Reducer(binding) = member else {
+                    unreachable!("role inventory returns its typed member family")
                 };
                 self.resolve_callable(
                     module_path,
-                    module,
-                    path,
-                    *value_range,
+                    binding.value(),
+                    entry_member_source(module, owner, ordinal),
                     "reducer",
                     &mut diagnostics,
                 )
@@ -511,43 +479,29 @@ impl<'a> EntryCheckContext<'a> {
         else {
             return Err(diagnostics);
         };
-        let contracts = EntryContractBuilder::new(self.typecheck, self.project.package());
-        let initializer = match contracts.initializer(
-            initializer.module,
-            initializer.function,
-            initializer.record,
-            initializer.declaration,
-            state.key(),
-        ) {
-            Ok(contract) => CheckedCallableRole {
-                declaration: initializer.declaration.clone(),
-                contract_digest: digest::callable_contract(&contract),
-                source: initializer.source,
-            },
-            Err(message) => {
-                diagnostics.push(CheckedEntryDiagnostic::new(
-                    "sema.entry.invalid_initializer_contract",
-                    message,
-                    initializer.source,
-                ));
-                return Err(diagnostics);
-            }
-        };
-        let reducer = match contracts.reducer(
-            reducer.module,
+
+        let contracts = EntryContractBuilder::new(self.analysis, self.project.package());
+        let initializer_contract =
+            match contracts.initializer(initializer.function, initializer.facts, state.key()) {
+                Ok(contract) => contract,
+                Err(message) => {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.invalid_initializer_contract",
+                        message,
+                        initializer.source,
+                    ));
+                    return Err(diagnostics);
+                }
+            };
+        let reducer_contract = match contracts.reducer(
             reducer.function,
-            reducer.record,
-            reducer.declaration,
+            reducer.facts,
             ReducerContractNominals {
                 state: state.key(),
                 event: event.key(),
             },
         ) {
-            Ok(contract) => CheckedCallableRole {
-                declaration: reducer.declaration.clone(),
-                contract_digest: digest::callable_contract(&contract),
-                source: reducer.source,
-            },
+            Ok(contract) => contract,
             Err(message) => {
                 diagnostics.push(CheckedEntryDiagnostic::new(
                     "sema.entry.invalid_reducer_contract",
@@ -557,14 +511,24 @@ impl<'a> EntryCheckContext<'a> {
                 return Err(diagnostics);
             }
         };
-        let initial_flow = self.resolve_initial_flow(module, entry, state.key(), &mut diagnostics);
-        let Some(initial_flow) = initial_flow else {
+        let initializer = CheckedCallableRole {
+            declaration: initializer.declaration,
+            contract_digest: digest::callable_contract(&initializer_contract),
+            source: initializer.source,
+        };
+        let reducer = CheckedCallableRole {
+            declaration: reducer.declaration,
+            contract_digest: digest::callable_contract(&reducer_contract),
+            source: reducer.source,
+        };
+        let Some(initial_flow) =
+            self.resolve_initial_flow(module, owner, entry, state.key(), &mut diagnostics)
+        else {
             return Err(diagnostics);
         };
         if !diagnostics.is_empty() {
             return Err(diagnostics);
         }
-
         let binding_digest = digest::stateful_binding(digest::StatefulBindingInput {
             package: self.project.package(),
             id: &id,
@@ -577,6 +541,7 @@ impl<'a> EntryCheckContext<'a> {
         });
         Ok(CheckedEntryBinding::Stateful(Box::new(
             CheckedStatefulEntry {
+                source_item: owner,
                 id,
                 kind,
                 state,
@@ -592,50 +557,47 @@ impl<'a> EntryCheckContext<'a> {
     fn check_agent(
         &self,
         module_path: &CanonicalModulePath,
-        module: &HirModule,
-        entry: &HirEntryDecl,
+        module: &'a HirModule,
+        owner: ItemId,
+        entry: &'a HirEntryDeclaration,
         id: CheckedEntryId,
     ) -> Result<CheckedEntryBinding, Vec<CheckedEntryDiagnostic>> {
         let mut diagnostics = Vec::new();
         let controller =
-            unique_item(module, entry, Role::Controller, &mut diagnostics).and_then(|item| {
-                let HirEntryItem::Controller {
-                    path, value_range, ..
-                } = item
-                else {
-                    unreachable!("role filter returns the matching typed entry member")
-                };
-                self.resolve_callable(
-                    module_path,
-                    module,
-                    path,
-                    *value_range,
-                    "controller",
-                    &mut diagnostics,
-                )
-            });
+            Self::unique_member(module, owner, entry, Role::Controller, &mut diagnostics).and_then(
+                |(ordinal, member)| {
+                    let HirEntryMember::Controller(binding) = member else {
+                        unreachable!("role inventory returns its typed member family")
+                    };
+                    self.resolve_callable(
+                        module_path,
+                        binding.value(),
+                        entry_member_source(module, owner, ordinal),
+                        "controller",
+                        &mut diagnostics,
+                    )
+                },
+            );
         let Some(controller) = controller else {
             return Err(diagnostics);
         };
-        let contracts = EntryContractBuilder::new(self.typecheck, self.project.package());
-        let (contract, allowed_effects, inferred_effects) = match contracts.agent_controller(
+        let contracts = EntryContractBuilder::new(self.analysis, self.project.package());
+        let (contract, allowed_effects, inferred_effects) =
+            match contracts.agent_controller(controller.function, controller.facts) {
+                Ok(contract) => contract,
+                Err(message) => {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.invalid_agent_contract",
+                        message,
+                        controller.source,
+                    ));
+                    return Err(diagnostics);
+                }
+            };
+        let budget = match AgentBudget::from_hir_attributes(
             controller.module,
-            controller.function,
-            controller.record,
-            controller.declaration,
+            controller.item.prefix().attributes(),
         ) {
-            Ok(contract) => contract,
-            Err(message) => {
-                diagnostics.push(CheckedEntryDiagnostic::new(
-                    "sema.entry.invalid_agent_contract",
-                    message,
-                    controller.source,
-                ));
-                return Err(diagnostics);
-            }
-        };
-        let policy = CheckedAgentPolicy::new(allowed_effects, inferred_effects);
-        let budget = match AgentBudget::from_attributes(controller.function.attributes()) {
             Ok(budget) => budget,
             Err(error) => {
                 diagnostics.push(CheckedEntryDiagnostic::new(
@@ -646,8 +608,9 @@ impl<'a> EntryCheckContext<'a> {
                 return Err(diagnostics);
             }
         };
+        let policy = CheckedAgentPolicy::new(allowed_effects, inferred_effects);
         let controller = CheckedCallableRole {
-            declaration: controller.declaration.clone(),
+            declaration: controller.declaration,
             contract_digest: digest::callable_contract(&contract),
             source: controller.source,
         };
@@ -659,6 +622,7 @@ impl<'a> EntryCheckContext<'a> {
             &policy_digest,
         );
         Ok(CheckedEntryBinding::Agent(Box::new(CheckedAgentEntry {
+            source_item: owner,
             id,
             controller,
             policy,
@@ -668,120 +632,208 @@ impl<'a> EntryCheckContext<'a> {
         })))
     }
 
-    fn check_existing(&self, id: CheckedEntryId, kind: &EntryKind) -> CheckedEntryBinding {
+    fn check_existing(
+        &self,
+        source_item: ItemId,
+        id: CheckedEntryId,
+        kind: &HirEntryKind,
+    ) -> CheckedEntryBinding {
         let checked_kind = match kind {
-            EntryKind::Cli => CheckedEntryKind::Cli,
-            EntryKind::Server => CheckedEntryKind::Server,
-            EntryKind::Activity => CheckedEntryKind::Activity,
-            EntryKind::Bench => CheckedEntryKind::Bench,
-            EntryKind::Custom(value) => CheckedEntryKind::Custom(value.clone()),
-            EntryKind::Game | EntryKind::Editor | EntryKind::Test | EntryKind::Agent => {
-                unreachable!("special entry kinds are checked by their typed paths")
+            HirEntryKind::Cli => CheckedEntryKind::Cli,
+            HirEntryKind::Server => CheckedEntryKind::Server,
+            HirEntryKind::Activity => CheckedEntryKind::Activity,
+            HirEntryKind::Bench => CheckedEntryKind::Bench,
+            HirEntryKind::Custom(value) => CheckedEntryKind::Custom(value.as_str().to_owned()),
+            HirEntryKind::Game
+            | HirEntryKind::Editor
+            | HirEntryKind::Test
+            | HirEntryKind::Agent
+            | HirEntryKind::Recovered(_) => {
+                unreachable!("special Entry kinds use their typed checking paths")
             }
         };
         let binding_digest = digest::existing_binding(self.project.package(), &id, &checked_kind);
         CheckedEntryBinding::Existing(CheckedExistingEntry {
+            source_item,
             id,
             kind: checked_kind,
             binding_digest,
         })
     }
 
-    fn resolve_nominal(
-        &self,
+    fn unique_member(
         module: &HirModule,
-        ty: &AuthoredTypeRef,
-        range: TextRange,
-        role: &str,
+        owner: ItemId,
+        entry: &'a HirEntryDeclaration,
+        role: Role,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
-    ) -> Option<CheckedNominalRole> {
-        let source = source_span(module, range);
-        let resolution_root = source_span(module, *ty.root_source().whole());
-        let TypeRef::Path(path) = ty.value() else {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.role_not_direct_nominal",
-                format!("{role} role must name one direct project struct or enum"),
-                source,
-            ));
-            return None;
-        };
-        let Some(report) = self.typecheck.nominal_resolutions.report(&resolution_root) else {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.missing_nominal_resolution",
-                format!("{role} role type `{path}` has no accepted nominal-resolution fact"),
-                source,
-            ));
-            return None;
-        };
-        let root = self
-            .typecheck
-            .nominal_resolutions
-            .node(&resolution_root, &TypeRefNodePath::root());
-        if Self::reject_alias_nominal_root(root, report, path, role, &source, diagnostics) {
-            return None;
+    ) -> Option<(usize, &'a HirEntryMember)> {
+        let matches = entry
+            .members()
+            .iter()
+            .enumerate()
+            .filter(|(_, member)| role.matches(member))
+            .collect::<Vec<_>>();
+        match matches.as_slice() {
+            [(ordinal, member)] => Some((*ordinal, *member)),
+            [] => {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.missing_role",
+                    format!("entry is missing required `{}` role", role.label()),
+                    entry_source(module, owner, HirEntrySourcePart::Whole),
+                ));
+                None
+            }
+            [(first_ordinal, _), (duplicate_ordinal, _), ..] => {
+                diagnostics.push(
+                    CheckedEntryDiagnostic::new(
+                        "sema.entry.duplicate_role",
+                        format!("entry declares `{}` more than once", role.label()),
+                        entry_member_source(module, owner, *duplicate_ordinal),
+                    )
+                    .with_related([entry_member_source(
+                        module,
+                        owner,
+                        *first_ordinal,
+                    )]),
+                );
+                None
+            }
         }
-
-        if self.reject_failed_nominal_root(root, path, role, &source, diagnostics) {
-            return None;
-        }
-
-        self.finish_resolved_nominal_role(report, path, role, source, diagnostics)
     }
 
-    fn finish_resolved_nominal_role(
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "nominal role resolution keeps the exact HIR source and role contract together"
+    )]
+    #[expect(
+        clippy::too_many_lines,
+        reason = "Entry nominal admission keeps source lookup, schema expansion, family checks, and diagnostics in one typed transaction"
+    )]
+    fn resolve_nominal(
         &self,
-        report: &TypeResolutionReport,
-        path: &TypePath,
-        role: &str,
+        module_path: &CanonicalModulePath,
+        module: &HirModule,
+        ty: arcweft_lang_hir::identity::TypeId,
         source: SourceSpan,
+        role: &str,
+        expected_kind: BoundNominalKind,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
     ) -> Option<CheckedNominalRole> {
-        let TypeKind::ProjectNominal(nominal) = report.outcome().product().recovered() else {
+        let Ok(hir_type) = module.resolve_type(ty) else {
             diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.role_not_direct_nominal",
-                format!(
-                    "{role} role type `{path}` does not resolve to a direct project struct or enum"
-                ),
+                "sema.entry.missing_nominal_resolution",
+                format!("{role} role type is absent from the accepted HIR generation"),
                 source,
             ));
             return None;
         };
-        let Some(record) = self.symbols.nominal(nominal.declaration()) else {
+        let HirTypeKind::Path(path) = hir_type.kind() else {
+            let code = if matches!(hir_type.kind(), HirTypeKind::Generic(_)) {
+                "sema.entry.generic_nominal_root"
+            } else {
+                "sema.entry.role_not_direct_nominal"
+            };
             diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.missing_nominal_declaration",
-                format!(
-                    "{role} role type `{path}` resolved outside the accepted project symbol world"
-                ),
+                code,
+                format!("{role} role must name one direct non-generic project nominal"),
                 source,
             ));
             return None;
         };
-        if !nominal.arguments().is_empty() || !record.type_parameters().is_empty() {
+        let declaration =
+            match self
+                .symbols
+                .resolve_hir_type_target(module_path, path, source.clone())
+            {
+                Ok(ProjectTypeTarget::Nominal(declaration)) => declaration,
+                Ok(ProjectTypeTarget::External(_)) => {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.role_not_direct_nominal",
+                        format!("{role} role must name a project struct or enum"),
+                        source,
+                    ));
+                    return None;
+                }
+                Err(error) => {
+                    let (code, related) = type_lookup_diagnostic(&error);
+                    diagnostics.push(
+                        CheckedEntryDiagnostic::new(
+                            code,
+                            format!("cannot resolve {role} role type in the accepted project"),
+                            source,
+                        )
+                        .with_related(related),
+                    );
+                    return None;
+                }
+            };
+        let kind = match declaration.id().kind() {
+            ProjectNominalDeclarationKind::Struct => BoundNominalKind::Struct,
+            ProjectNominalDeclarationKind::Enum => BoundNominalKind::Enum,
+            ProjectNominalDeclarationKind::TypeAlias => {
+                diagnostics.push(
+                    CheckedEntryDiagnostic::new(
+                        "sema.entry.alias_nominal_root",
+                        format!(
+                            "{role} role is a type alias; bind one direct project struct or enum"
+                        ),
+                        source,
+                    )
+                    .with_related([declaration.source().whole().clone()]),
+                );
+                return None;
+            }
+        };
+        if kind != expected_kind {
             diagnostics.push(
                 CheckedEntryDiagnostic::new(
-                    "sema.entry.generic_nominal_root",
+                    "sema.entry.role_not_direct_nominal",
                     format!(
-                        "{role} role type `{path}` must be a non-generic project struct or enum"
+                        "{role} role requires a direct project {}, found {}",
+                        nominal_kind_label(expected_kind),
+                        nominal_kind_label(kind)
                     ),
                     source,
                 )
-                .with_related([record.source().whole().clone()]),
+                .with_related([declaration.source().whole().clone()]),
             );
             return None;
         }
-        match self.nominals.schema(record) {
+        if !declaration.type_parameters().is_empty() {
+            diagnostics.push(
+                CheckedEntryDiagnostic::new(
+                    "sema.entry.generic_nominal_root",
+                    format!("{role} role must be a non-generic project nominal"),
+                    source,
+                )
+                .with_related([declaration.source().whole().clone()]),
+            );
+            return None;
+        }
+        let Some(TypeKind::ProjectNominal(checked)) = self.analysis.ty(ty) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.missing_nominal_resolution",
+                format!("{role} role has no accepted project-nominal type fact"),
+                source,
+            ));
+            return None;
+        };
+        if checked.declaration() != declaration.id() || !checked.arguments().is_empty() {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.role_not_direct_nominal",
+                format!("{role} role did not retain the direct nominal declaration identity"),
+                source,
+            ));
+            return None;
+        }
+        match self.nominals.schema(declaration) {
             Ok(schema) => Some(CheckedNominalRole {
                 key: BoundNominalTypeKey::new(
                     self.project.package().clone(),
-                    record.id().module().clone(),
-                    record.id().name().as_str(),
-                    match record.id().kind() {
-                        ProjectNominalDeclarationKind::Struct => BoundNominalKind::Struct,
-                        ProjectNominalDeclarationKind::Enum => BoundNominalKind::Enum,
-                        ProjectNominalDeclarationKind::TypeAlias => {
-                            unreachable!("type-alias roots are rejected above")
-                        }
-                    },
+                    declaration.id().module().clone(),
+                    declaration.id().name().as_str(),
+                    kind,
                 ),
                 schema_digest: digest::nominal_schema(&schema),
                 schema,
@@ -791,345 +843,454 @@ impl<'a> EntryCheckContext<'a> {
                 diagnostics.push(
                     CheckedEntryDiagnostic::new(
                         "sema.entry.invalid_nominal_schema",
-                        format!("{role} role type `{path}` has no canonical data shape: {error}"),
+                        format!("{role} role type has no canonical data shape: {error}"),
                         source,
                     )
-                    .with_related([record.source().whole().clone()]),
+                    .with_related([declaration.source().whole().clone()]),
                 );
                 None
             }
         }
     }
 
-    fn reject_alias_nominal_root(
-        root: Option<&ResolvedTypeNode>,
-        report: &TypeResolutionReport,
-        path: &TypePath,
-        role: &str,
-        source: &SourceSpan,
-        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
-    ) -> bool {
-        if !matches!(
-            root.map(ResolvedTypeNode::outcome),
-            Some(TypeNameResolution::Alias(_))
-        ) {
-            return false;
-        }
-        let related = report
-            .outcome()
-            .product()
-            .aliases()
-            .first()
-            .map(|alias| alias.declaration_source().clone());
-        let diagnostic = CheckedEntryDiagnostic::new(
-            "sema.entry.alias_nominal_root",
-            format!(
-                "{role} role type `{path}` is a type alias; bind one direct project struct or enum"
-            ),
-            source.clone(),
-        );
-        diagnostics.push(match related {
-            Some(related) => diagnostic.with_related([related]),
-            None => diagnostic,
-        });
-        true
-    }
-
-    fn reject_failed_nominal_root(
+    fn resolve_callable(
         &self,
-        root: Option<&ResolvedTypeNode>,
-        path: &TypePath,
-        role: &str,
-        source: &SourceSpan,
-        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
-    ) -> bool {
-        let Some(TypeNameResolution::Failed(failure)) = root.map(ResolvedTypeNode::outcome) else {
-            return false;
-        };
-        let (code, message, related) = match failure {
-            TypeResolutionFailure::Ambiguous { candidates, .. } => (
-                "sema.entry.ambiguous_nominal",
-                format!("{role} role type `{path}` is ambiguous in the accepted project"),
-                resolution_candidate_sources(candidates),
-            ),
-            TypeResolutionFailure::Inaccessible { candidates, .. } => (
-                "sema.entry.inaccessible_nominal",
-                format!("{role} role type `{path}` is not visible from this entry module"),
-                resolution_candidate_sources(candidates),
-            ),
-            TypeResolutionFailure::WrongArity {
-                target: TypeArityTarget::Project(declaration),
-                ..
-            } if self
-                .symbols
-                .nominal(declaration)
-                .is_some_and(|record| !record.type_parameters().is_empty()) =>
-            {
-                let related = self
-                    .symbols
-                    .nominal(declaration)
-                    .map(|record| vec![record.source().whole().clone()])
-                    .unwrap_or_default();
-                (
-                    "sema.entry.generic_nominal_root",
-                    format!(
-                        "{role} role type `{path}` must be a non-generic project struct or enum"
-                    ),
-                    related,
-                )
-            }
-            TypeResolutionFailure::Unknown { .. } => (
-                "sema.entry.unresolved_nominal",
-                format!("{role} role type `{path}` is not declared in the accepted project"),
-                Vec::new(),
-            ),
-            _ => (
-                "sema.entry.role_not_direct_nominal",
-                format!(
-                    "{role} role type `{path}` does not resolve to a direct project struct or enum"
-                ),
-                Vec::new(),
-            ),
-        };
-        diagnostics
-            .push(CheckedEntryDiagnostic::new(code, message, source.clone()).with_related(related));
-        true
-    }
-
-    fn callable_resolution_sources(&self, error: &ProjectSymbolResolutionError) -> Vec<SourceSpan> {
-        let declaration_source = |target: &ProjectSymbolTargetId| match target {
-            ProjectSymbolTargetId::Callable(id) => self
-                .symbols
-                .callable(id.clone())
-                .map(|symbol| symbol.source().clone()),
-            ProjectSymbolTargetId::External(id) => self
-                .symbols
-                .external(*id)
-                .map(|symbol| symbol.declaration_span().clone()),
-            ProjectSymbolTargetId::Nominal(id) => self
-                .symbols
-                .nominal(id)
-                .map(|symbol| symbol.source().whole().clone()),
-            ProjectSymbolTargetId::Module(_) => None,
-        };
-        match error {
-            ProjectSymbolResolutionError::Ambiguous { candidates, .. } => {
-                candidates.iter().filter_map(declaration_source).collect()
-            }
-            ProjectSymbolResolutionError::NotCallable { actual, .. } => {
-                declaration_source(actual).into_iter().collect()
-            }
-            ProjectSymbolResolutionError::Unknown { .. }
-            | ProjectSymbolResolutionError::InvalidPath { .. } => Vec::new(),
-        }
-    }
-
-    fn resolve_callable<'b>(
-        &'b self,
         module_path: &CanonicalModulePath,
-        module: &HirModule,
-        path: &DottedPath,
-        range: TextRange,
+        value: &HirEntryPathValue,
+        source: SourceSpan,
         role: &str,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
-    ) -> Option<ResolvedCallable<'b>> {
-        let source = source_span(module, range);
-        let authored_leaf = path
-            .segments()
-            .last()
-            .and_then(|leaf| range.end().checked_sub(leaf.as_str().len()))
-            .map_or_else(
-                || source.clone(),
-                |start| source_span(module, TextRange::new(start, range.end())),
-            );
-        let parsed = ProjectSymbolPath::from_str(path.as_str())
-            .map_err(|error| error.to_string())
-            .and_then(|path| SymbolPath::try_from(&path).map_err(|error| error.to_string()));
-        let symbol_path = match parsed {
-            Ok(path) => path,
-            Err(error) => {
-                diagnostics.push(CheckedEntryDiagnostic::new(
-                    "sema.entry.invalid_callable_path",
-                    format!("invalid {role} role path `{path}`: {error}"),
-                    source,
-                ));
-                return None;
-            }
-        };
-        let symbol = match self
-            .symbols
-            .resolve_callable(module_path, &symbol_path, &source)
-        {
-            Ok(symbol) => symbol,
-            Err(error) => {
-                let related = self.callable_resolution_sources(&error);
-                diagnostics.push(
-                    CheckedEntryDiagnostic::new(
-                        "sema.entry.unresolved_callable",
-                        format!("cannot resolve {role} role `{path}`: {error}"),
-                        source,
-                    )
-                    .with_related(related),
-                );
-                return None;
-            }
-        };
-        let declaration = symbol.declaration();
-        let Some(record) = self.callables.project_record(declaration) else {
+    ) -> Option<ResolvedCallable<'a>> {
+        let HirEntryPathValue::Authored(HirPathValue::Resolved(path)) = value else {
             diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.callable_not_registered",
-                format!("{role} role `{path}` is not in the accepted callable catalog"),
+                "sema.entry.invalid_callable_path",
+                format!("{role} role requires one complete typed callable path"),
                 source,
             ));
             return None;
         };
-        let Some((function_module, function)) = self.functions.get(declaration) else {
+        let symbol = match self
+            .symbols
+            .resolve_hir_value_target(module_path, path, source.clone())
+        {
+            Ok(ProjectValueLookup::Present(symbol)) => symbol,
+            Ok(ProjectValueLookup::Absent) => {
+                diagnostics.push(CheckedEntryDiagnostic::new(
+                    "sema.entry.unresolved_callable",
+                    format!("cannot resolve {role} role in the callable value namespace"),
+                    source,
+                ));
+                return None;
+            }
+            Err(error) => {
+                diagnostics.push(
+                    CheckedEntryDiagnostic::new(
+                        "sema.entry.unresolved_callable",
+                        format!("cannot resolve {role} role: {error}"),
+                        source,
+                    )
+                    .with_related(self.value_lookup_sources(&error)),
+                );
+                return None;
+            }
+        };
+        if symbol.owner() != CallableDeclarationOwner::Function {
+            diagnostics.push(
+                CheckedEntryDiagnostic::new(
+                    "sema.entry.callable_not_function",
+                    format!("{role} role must name an ordinary function"),
+                    source,
+                )
+                .with_related([symbol.declaration_span().clone()]),
+            );
+            return None;
+        }
+        let CallableDeclarationKey::Existing(declaration) = symbol.declaration() else {
             diagnostics.push(CheckedEntryDiagnostic::new(
                 "sema.entry.callable_not_function",
-                format!("{role} role `{path}` does not name an ordinary function"),
+                format!("{role} role must use an ordinary function declaration identity"),
+                source,
+            ));
+            return None;
+        };
+        let Some((module, item, function)) = self.function_for_symbol(symbol) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.callable_not_function",
+                format!("{role} role function is absent from its accepted HIR generation"),
+                source,
+            ));
+            return None;
+        };
+        let candidate = CallableCandidateId::Project(symbol.declaration().clone());
+        let facts = self
+            .callables
+            .checked_for_candidate(&candidate)
+            .and_then(|id| self.callables.callable(id));
+        let Ok(facts) = facts else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.callable_not_registered",
+                format!("{role} role is absent from the accepted checked callable catalog"),
                 source,
             ));
             return None;
         };
         Some(ResolvedCallable {
-            declaration,
-            module: function_module,
+            declaration: declaration.clone(),
+            module,
+            item,
             function,
-            record,
-            source: authored_leaf,
+            facts,
+            source,
         })
     }
 
+    fn function_for_symbol(
+        &self,
+        symbol: &CallableSymbol,
+    ) -> Option<(&'a HirModule, &'a HirItem, &'a HirFunctionItem)> {
+        let module = self
+            .project
+            .modules()
+            .map(|(_, module)| module.as_ref())
+            .find(|module| module.snapshot_id() == symbol.source_snapshot())?;
+        let item = module.resolve_item(symbol.source_item()).ok()?;
+        let HirItemKind::Function(function) = item.kind() else {
+            return None;
+        };
+        Some((module, item, function))
+    }
+
+    #[expect(
+        clippy::too_many_lines,
+        reason = "initial-flow resolution keeps project lookup, checked callable identity, suspension role, and diagnostics adjacent"
+    )]
     fn resolve_initial_flow(
         &self,
         module: &HirModule,
-        entry: &HirEntryDecl,
+        owner: ItemId,
+        entry: &HirEntryDeclaration,
         state: &BoundNominalTypeKey,
         diagnostics: &mut Vec<CheckedEntryDiagnostic>,
     ) -> Option<CheckedInitialFlowRole> {
-        let target = unique_initial_flow_target(module, entry, diagnostics)?;
-        let source = source_span(module, *target.range());
-        if !target.body().starts_with("flow.") {
-            diagnostics.push(CheckedEntryDiagnostic::new(
-                "sema.entry.invalid_flow_family",
-                format!(
-                    "initial target `{}` must use the `flow.*` family",
-                    target.body()
+        let gotos = entry
+            .members()
+            .iter()
+            .enumerate()
+            .filter_map(|(ordinal, member)| match member {
+                HirEntryMember::Goto(target) => Some((ordinal, target)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [(ordinal, target)] = gotos.as_slice() else {
+            diagnostics.push(
+                CheckedEntryDiagnostic::new(
+                    "sema.entry.goto_cardinality",
+                    "stateful entry must contain exactly one initial `goto` target",
+                    entry_source(module, owner, HirEntrySourcePart::Whole),
+                )
+                .with_related(
+                    gotos
+                        .iter()
+                        .map(|(ordinal, _)| entry_member_source(module, owner, *ordinal)),
                 ),
-                source,
-            ));
+            );
             return None;
-        }
-        let Ok(id) = CheckedFlowId::try_new(target.body().to_owned()) else {
+        };
+        let source = entry_member_source(module, owner, *ordinal);
+        let HirEntryTarget::Authored(value) = target.target() else {
             diagnostics.push(CheckedEntryDiagnostic::new(
                 "sema.entry.invalid_flow_id",
-                format!("initial target `{}` is not canonical", target.body()),
+                "initial target must be one complete absolute Flow ID",
                 source,
             ));
             return None;
         };
-        match self.flows.get(target.body()).map(Vec::as_slice) {
-            Some([(flow_module, flow)]) => {
-                let contracts = EntryContractBuilder::new(self.typecheck, self.project.package());
-                match contracts.flow(flow_module, flow, state) {
-                    Ok(contract) => Some(CheckedInitialFlowRole {
-                        contract_digest: digest::flow_contract(&id, &contract),
-                        state_parameter_name: flow
-                            .signature()
-                            .and_then(|signature| signature.param_groups().first())
-                            .and_then(|group| group.params().first())
-                            .and_then(|parameter| parameter.pattern().simple_binding_name())
-                            .expect("accepted initial-flow contract has one direct state binding")
-                            .to_owned(),
-                        id,
-                        source,
-                    }),
-                    Err(message) => {
-                        diagnostics.push(CheckedEntryDiagnostic::new(
-                            "sema.entry.invalid_initial_flow_contract",
-                            message,
-                            source,
-                        ));
-                        None
-                    }
-                }
+        let Some(reference) = value.as_resolved() else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_flow_id",
+                "initial target must be one complete absolute Flow ID",
+                source,
+            ));
+            return None;
+        };
+        let Some(public_id) = absolute_public_id(reference) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_flow_id",
+                "initial target must be one complete absolute Flow ID",
+                source,
+            ));
+            return None;
+        };
+        if !public_id.as_str().starts_with("flow.") {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_flow_family",
+                format!("initial target `{public_id}` must use the `flow.*` family"),
+                source,
+            ));
+            return None;
+        }
+        let symbol = match self.symbols.resolve_entity_reference(
+            module.key().path(),
+            reference,
+            source.clone(),
+        ) {
+            Ok(ResolvedProjectSymbol::StructuralCallable(symbol))
+                if symbol.owner() == CallableDeclarationOwner::Flow =>
+            {
+                symbol
             }
-            Some(candidates) if candidates.len() > 1 => {
+            Ok(other) => {
                 diagnostics.push(
                     CheckedEntryDiagnostic::new(
-                        "sema.entry.ambiguous_flow",
-                        format!(
-                            "initial flow `{}` is declared more than once",
-                            target.body()
-                        ),
+                        "sema.entry.invalid_flow_family",
+                        format!("initial target `{public_id}` does not denote a Flow"),
                         source,
                     )
-                    .with_related(
-                        candidates
-                            .iter()
-                            .map(|(module, flow)| source_span(module, *flow.range())),
-                    ),
+                    .with_related(resolved_symbol_source(&other)),
                 );
-                None
+                return None;
             }
-            _ => {
+            Err(error) => {
+                let code = match &error {
+                    ProjectEntityReferenceLookupError::Ambiguous { .. } => {
+                        "sema.entry.ambiguous_flow"
+                    }
+                    _ => "sema.entry.unknown_flow",
+                };
+                diagnostics.push(
+                    CheckedEntryDiagnostic::new(code, error.to_string(), source)
+                        .with_related(entity_lookup_sources(self.symbols, &error)),
+                );
+                return None;
+            }
+        };
+        let CallableDeclarationKey::Flow(declaration) = symbol.declaration() else {
+            unreachable!("the structural Flow target owns a Flow declaration key")
+        };
+        let id = CheckedFlowId::from_declaration(declaration);
+        let Some((flow_module, flow_owner, flow)) = self.flow_for_symbol(symbol) else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.unknown_flow",
+                format!("initial Flow `{public_id}` is absent from its accepted HIR snapshot"),
+                source,
+            ));
+            return None;
+        };
+        let contracts = EntryContractBuilder::new(self.analysis, self.project.package());
+        let contract = match contracts.flow(flow_owner, flow, state) {
+            Ok(contract) => contract,
+            Err(message) => {
                 diagnostics.push(CheckedEntryDiagnostic::new(
-                    "sema.entry.unknown_flow",
-                    format!("initial flow `{}` does not exist", target.body()),
+                    "sema.entry.invalid_initial_flow_contract",
+                    message,
                     source,
                 ));
-                None
+                return None;
             }
+        };
+        let [parameter] = flow.parameters() else {
+            unreachable!("accepted initial Flow contract has exactly one parameter")
+        };
+        debug_assert_eq!(parameter.kind(), HirParameterKind::Fixed);
+        let pattern = flow_module
+            .resolve_pattern(parameter.pattern())
+            .expect("accepted initial Flow parameter pattern remains live");
+        let HirPatternKind::Binding(HirPatternBinding::Bound { name, .. }) = pattern.kind() else {
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.invalid_initial_flow_contract",
+                "initial Flow State parameter must be one direct immutable binding",
+                source,
+            ));
+            return None;
+        };
+        Some(CheckedInitialFlowRole {
+            source_item: flow_owner,
+            contract_digest: digest::flow_contract(&id, &contract),
+            state_parameter_name: name.as_str().to_owned(),
+            id,
+            source,
+        })
+    }
+
+    fn flow_for_symbol(
+        &self,
+        symbol: &CallableSymbol,
+    ) -> Option<(&'a HirModule, ItemId, &'a HirFlowItem)> {
+        let module = self
+            .project
+            .modules()
+            .map(|(_, module)| module.as_ref())
+            .find(|module| module.snapshot_id() == symbol.source_snapshot())?;
+        let owner = symbol.source_item();
+        let item = module.resolve_item(owner).ok()?;
+        let HirItemKind::Flow(flow) = item.kind() else {
+            return None;
+        };
+        Some((module, owner, flow))
+    }
+
+    fn validate_function_role_attributes(
+        &self,
+        selected: &BTreeSet<CallableDeclarationId>,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) {
+        for symbol in self.symbols.callable_symbols() {
+            if symbol.owner() != CallableDeclarationOwner::Function {
+                continue;
+            }
+            let CallableDeclarationKey::Existing(declaration) = symbol.declaration() else {
+                continue;
+            };
+            let Some((_, item, _)) = self.function_for_symbol(symbol) else {
+                continue;
+            };
+            for attribute in item.prefix().attributes() {
+                let Some(name) = simple_attribute_name(attribute.path()) else {
+                    continue;
+                };
+                if matches!(name, "agent" | "launch" | "bind") {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.forbidden_role_attribute",
+                        format!(
+                            "`#[{name}]` cannot assign a function Entry role; bind the ordinary function from an `entry` declaration"
+                        ),
+                        symbol.declaration_span().clone(),
+                    ));
+                }
+                if name == "budget" && !selected.contains(declaration) {
+                    diagnostics.push(CheckedEntryDiagnostic::new(
+                        "sema.entry.unbound_agent_budget",
+                        "`#[budget(...)]` is only valid on an ordinary function selected by an Agent entry",
+                        symbol.declaration_span().clone(),
+                    ));
+                }
+            }
+        }
+    }
+
+    fn validate_agent_callable_roles(
+        &self,
+        selected: &BTreeSet<CallableDeclarationId>,
+        diagnostics: &mut Vec<CheckedEntryDiagnostic>,
+    ) {
+        for (expression, facts) in self.analysis.calls() {
+            let CallTargetFact::Selected {
+                selected: callable, ..
+            } = facts.target()
+            else {
+                continue;
+            };
+            let selected_owner = facts.enclosing_callable().and_then(|owner| match owner {
+                CallableDeclarationKey::Existing(declaration) => Some(declaration),
+                CallableDeclarationKey::TraitRequirement(_)
+                | CallableDeclarationKey::ImplMethod(_)
+                | CallableDeclarationKey::Flow(_) => None,
+            });
+            if callable.family() != CallableFamily::Agent
+                || selected_owner.is_some_and(|owner| selected.contains(owner))
+            {
+                continue;
+            }
+            diagnostics.push(CheckedEntryDiagnostic::new(
+                "sema.entry.unbound_agent_intrinsic",
+                "Agent call is only valid inside an ordinary function selected as an Agent entry controller",
+                expression_source(self.project, expression),
+            ));
+        }
+    }
+
+    fn value_lookup_sources(&self, error: &ProjectValueLookupError) -> Vec<SourceSpan> {
+        let candidates = match error {
+            ProjectValueLookupError::Ambiguous { candidates, .. }
+            | ProjectValueLookupError::Inaccessible { candidates, .. } => candidates.as_ref(),
+            ProjectValueLookupError::Poisoned { target, .. } => std::slice::from_ref(target),
+            ProjectValueLookupError::InvalidPath { .. }
+            | ProjectValueLookupError::InvalidHirPath { .. } => &[],
+        };
+        candidates
+            .iter()
+            .filter_map(|candidate| project_target_source(self.symbols, candidate))
+            .collect()
+    }
+}
+
+fn entry_kind_allows_role(kind: &HirEntryKind, role: Role) -> bool {
+    match kind {
+        HirEntryKind::Game | HirEntryKind::Editor | HirEntryKind::Test => {
+            !matches!(role, Role::Controller)
+        }
+        HirEntryKind::Agent => matches!(role, Role::Controller),
+        HirEntryKind::Cli
+        | HirEntryKind::Server
+        | HirEntryKind::Activity
+        | HirEntryKind::Bench
+        | HirEntryKind::Custom(_)
+        | HirEntryKind::Recovered(_) => false,
+    }
+}
+
+fn entry_kind_label(kind: &HirEntryKind) -> &str {
+    match kind {
+        HirEntryKind::Game => "game",
+        HirEntryKind::Editor => "editor",
+        HirEntryKind::Cli => "cli",
+        HirEntryKind::Server => "server",
+        HirEntryKind::Activity => "activity",
+        HirEntryKind::Test => "test",
+        HirEntryKind::Bench => "bench",
+        HirEntryKind::Agent => "agent",
+        HirEntryKind::Custom(value) => value.as_str(),
+        HirEntryKind::Recovered(_) => "<recovered>",
+    }
+}
+
+const fn nominal_kind_label(kind: BoundNominalKind) -> &'static str {
+    match kind {
+        BoundNominalKind::Struct => "struct",
+        BoundNominalKind::Enum => "enum",
+    }
+}
+
+fn absolute_public_id(reference: &HirIdRef) -> Option<PublicId> {
+    let HirIdRef::Absolute(reference) = reference else {
+        return None;
+    };
+    PublicId::try_new(reference.as_str().to_owned()).ok()
+}
+
+fn absolute_public_id_value(value: &HirIdRefValue) -> Option<PublicId> {
+    value.as_resolved().and_then(absolute_public_id)
+}
+
+fn simple_attribute_name(path: &arcweft_lang_hir::leaf::HirPath) -> Option<&str> {
+    let [arcweft_lang_hir::leaf::HirPathSegment::Identifier(name)] = path.segments() else {
+        return None;
+    };
+    Some(name.as_str())
+}
+
+fn type_lookup_diagnostic(error: &ProjectTypeLookupError) -> (&'static str, Vec<SourceSpan>) {
+    match error {
+        ProjectTypeLookupError::Ambiguous { candidates, .. } => (
+            "sema.entry.ambiguous_nominal",
+            type_candidate_sources(candidates),
+        ),
+        ProjectTypeLookupError::Inaccessible { candidates, .. } => (
+            "sema.entry.inaccessible_nominal",
+            type_candidate_sources(candidates),
+        ),
+        ProjectTypeLookupError::Unknown { .. } => ("sema.entry.unresolved_nominal", Vec::new()),
+        ProjectTypeLookupError::WrongKind { actual, .. } => (
+            "sema.entry.role_not_direct_nominal",
+            type_candidate_sources(std::slice::from_ref(actual)),
+        ),
+        ProjectTypeLookupError::InvalidPath { .. } => {
+            ("sema.entry.role_not_direct_nominal", Vec::new())
         }
     }
 }
 
-fn unique_initial_flow_target<'a>(
-    module: &HirModule,
-    entry: &'a HirEntryDecl,
-    diagnostics: &mut Vec<CheckedEntryDiagnostic>,
-) -> Option<&'a EntityRef> {
-    let gotos = entry
-        .items()
-        .iter()
-        .filter_map(|item| match item {
-            HirEntryItem::Goto(target) => Some(target),
-            _ => None,
-        })
-        .collect::<Vec<_>>();
-    let [target] = gotos.as_slice() else {
-        diagnostics.push(
-            CheckedEntryDiagnostic::new(
-                "sema.entry.goto_cardinality",
-                "stateful entry must contain exactly one initial `goto` target",
-                source_span(module, *entry.range()),
-            )
-            .with_related(
-                gotos
-                    .iter()
-                    .map(|target| source_span(module, *target.range())),
-            ),
-        );
-        return None;
-    };
-    Some(target)
-}
-
-fn resolve_selected_agent_controller(
-    symbols: &ProjectSymbolTable,
-    module: &CanonicalModulePath,
-    path: &DottedPath,
-    source: &SourceSpan,
-) -> Option<CallableDeclarationId> {
-    let path = ProjectSymbolPath::from_str(path.as_str()).ok()?;
-    let path = SymbolPath::try_from(&path).ok()?;
-    symbols
-        .resolve_callable(module, &path, source)
-        .ok()
-        .map(|symbol| symbol.declaration().clone())
-}
-
-fn resolution_candidate_sources(candidates: &[ProjectTypeCandidate]) -> Vec<SourceSpan> {
+fn type_candidate_sources(candidates: &[ProjectTypeCandidate]) -> Vec<SourceSpan> {
     candidates
         .iter()
         .flat_map(|candidate| {
@@ -1142,8 +1303,110 @@ fn resolution_candidate_sources(candidates: &[ProjectTypeCandidate]) -> Vec<Sour
         .collect()
 }
 
-fn source_span(module: &HirModule, range: TextRange) -> SourceSpan {
-    module
-        .source_span(range)
-        .expect("HIR projects retain the exact source document used for lowering")
+fn project_target_source(
+    symbols: &ProjectSymbolTable,
+    target: &ProjectSymbolTargetId,
+) -> Option<SourceSpan> {
+    match target {
+        ProjectSymbolTargetId::Callable(id) | ProjectSymbolTargetId::StructuralCallable(id) => {
+            symbols
+                .callable(id)
+                .map(|symbol| symbol.declaration_span().clone())
+        }
+        ProjectSymbolTargetId::External(id) => symbols
+            .external(*id)
+            .map(|symbol| symbol.declaration_span().clone()),
+        ProjectSymbolTargetId::Nominal(id) => symbols
+            .nominal(id)
+            .map(|declaration| declaration.source().whole().clone()),
+        ProjectSymbolTargetId::Retained(id) => symbols
+            .retained(id)
+            .map(|symbol| symbol.declaration_span().clone()),
+        ProjectSymbolTargetId::Module(_) => None,
+    }
+}
+
+fn resolved_symbol_source(symbol: &ResolvedProjectSymbol<'_>) -> Option<SourceSpan> {
+    match symbol {
+        ResolvedProjectSymbol::Callable(symbol)
+        | ResolvedProjectSymbol::StructuralCallable(symbol) => {
+            Some(symbol.declaration_span().clone())
+        }
+        ResolvedProjectSymbol::External(symbol) => Some(symbol.declaration_span().clone()),
+        ResolvedProjectSymbol::Nominal(symbol) => Some(symbol.source().whole().clone()),
+        ResolvedProjectSymbol::Retained(symbol) => Some(symbol.declaration_span().clone()),
+        ResolvedProjectSymbol::Module(_) => None,
+    }
+}
+
+fn entity_lookup_sources(
+    symbols: &ProjectSymbolTable,
+    error: &ProjectEntityReferenceLookupError,
+) -> Vec<SourceSpan> {
+    match error {
+        ProjectEntityReferenceLookupError::Ambiguous { candidates, .. }
+        | ProjectEntityReferenceLookupError::Inaccessible { candidates, .. } => candidates
+            .iter()
+            .filter_map(|candidate| project_target_source(symbols, candidate))
+            .collect(),
+        ProjectEntityReferenceLookupError::Poisoned { declaration, .. } => {
+            vec![declaration.clone()]
+        }
+        ProjectEntityReferenceLookupError::Unknown { .. }
+        | ProjectEntityReferenceLookupError::RelativeRequiresFamily { .. }
+        | ProjectEntityReferenceLookupError::UnsupportedParentDepth { .. }
+        | ProjectEntityReferenceLookupError::InvalidIdentity { .. }
+        | ProjectEntityReferenceLookupError::InvalidReferencePath { .. }
+        | ProjectEntityReferenceLookupError::InvalidModulePath { .. }
+        | ProjectEntityReferenceLookupError::CatalogOwned { .. } => Vec::new(),
+    }
+}
+
+fn entry_source(module: &HirModule, owner: ItemId, part: HirEntrySourcePart) -> SourceSpan {
+    item_source(module, owner, HirItemSourceRole::Entry(part))
+}
+
+fn entry_member_source(module: &HirModule, owner: ItemId, ordinal: usize) -> SourceSpan {
+    let member = u32::try_from(ordinal).expect("accepted Entry member ordinal fits u32");
+    entry_source(module, owner, HirEntrySourcePart::MemberValue { member })
+}
+
+fn expression_source(project: HirExecutableProjectView<'_>, expression: ExprId) -> SourceSpan {
+    let module = project
+        .modules()
+        .map(|(_, module)| module.as_ref())
+        .find(|module| module.module_id() == expression.module())
+        .expect("checked expression belongs to the accepted project generation");
+    let lookup = module
+        .source_site(
+            module.provenance().source_identity(),
+            HirSourceQuery::Expr {
+                owner: expression,
+                role: HirExprSourceRole::Whole,
+            },
+        )
+        .expect("checked expression owns its validated source role");
+    match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(span)) => span.clone(),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+        | HirSourcePresence::AbsentOptional => {
+            unreachable!("executable checked Call expressions retain authored source")
+        }
+    }
+}
+
+fn item_source(module: &HirModule, owner: ItemId, role: HirItemSourceRole) -> SourceSpan {
+    let lookup = module
+        .source_site(
+            module.provenance().source_identity(),
+            HirSourceQuery::Item { owner, role },
+        )
+        .expect("accepted final-HIR item owns its validated source role");
+    match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(span)) => span.clone(),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+        | HirSourcePresence::AbsentOptional => {
+            unreachable!("executable Entry/Flow roles retain authored source")
+        }
+    }
 }

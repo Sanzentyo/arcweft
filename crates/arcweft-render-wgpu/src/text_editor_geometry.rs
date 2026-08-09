@@ -217,11 +217,11 @@ fn layout_rect_to_hit_rect(rect: LayoutRect) -> HitRect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_render_text::RichTextRange;
     use arcweft_text_layout::{
         FontFaceId, FontInventoryHash, GlyphOrientation, GlyphVerticalForm, LayoutPoint,
         LayoutSize, ShapedGlyphKey, TextLayoutGlyph, TextLayoutHash, TextLayoutSourceMap,
     };
+    use arcweft_text_model::RichTextRange;
 
     fn glyph(start: usize, end: usize, x: f32, width: f32) -> TextLayoutGlyph {
         glyph_at(start, end, x, 4.0, width)

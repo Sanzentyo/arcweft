@@ -4,9 +4,7 @@ use arcweft_bundle::resource_codec::view::{
     ViewProgramStyleResources, ViewStyleApplicationTarget, ViewStyleContractError,
     ViewStyleResource,
 };
-use arcweft_bundle::resource_codec::{
-    CrossSectionRef, ProductSourceRef, SourceMapSection, SourceRangeRef,
-};
+use arcweft_bundle::resource_codec::{CrossSectionRef, SourceMapSection, SourceRangeRef};
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::ViewId;
 use arcweft_view::style::{
@@ -225,18 +223,16 @@ fn style_resource_with_source_inventory(
     let patch_document = source_document(&format!("style-patch:{program_id}"));
     let section = SourceMapSection::try_from_documents(&[&sheet_document, &patch_document])
         .expect("source map");
-    let sheet_ref = ProductSourceRef::from_document(
-        section
-            .documents()
-            .find(|document| document.document_id() == sheet_document.identity().id())
-            .expect("sheet source"),
-    );
-    let patch_ref = ProductSourceRef::from_document(
-        section
-            .documents()
-            .find(|document| document.document_id() == patch_document.identity().id())
-            .expect("patch source"),
-    );
+    let sheet_ref = section
+        .documents()
+        .find(|document| document.document_id() == sheet_document.identity().id())
+        .expect("sheet source")
+        .product_source_ref();
+    let patch_ref = section
+        .documents()
+        .find(|document| document.document_id() == patch_document.identity().id())
+        .expect("patch source")
+        .product_source_ref();
     let mut source_refs = vec![sheet_ref.clone(), patch_ref.clone()];
     if reversed_sources {
         source_refs.reverse();

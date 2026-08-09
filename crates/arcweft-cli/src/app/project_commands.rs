@@ -1,26 +1,28 @@
 //! Cargo-like project commands and the rustc-like single-source compiler route.
 
 use super::bundle::{
-    build_patch_bundle_artifact_from_awfb_bytes, compile_bundle_for_selection,
+    build_patch_bundle_artifact_from_awfb_bytes, compile_bundle_from_profile_runtime_plan,
     write_bundle_artifact, write_patch_bundle_artifact,
 };
 use super::diagnostics::emit_diagnostics;
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
     ProfileOptions, SourceSelection, load_and_check_selection, print_project_compile_error,
-    project_compilation_context, resolve_source_selection, runtime_plan_options_for_selection,
-    semantic_context_for_selection,
+    project_compilation_context, resolve_source_selection, semantic_context_for_selection,
+    verify_compiled_project,
 };
+use super::runtime::profile::compile_accepted_project_runtime_plan;
 use super::runtime::run::watch_inputs;
+use super::runtime_artifact::accepted_build_snapshot;
 use super::shared::print_json;
 use arcweft_bundle::{
-    BundleFormat, BundleVirtualFileSpace,
+    ArcweftBundle, BundleFormat, BundleVirtualFileSpace,
     container::{BundleSectionKind, BundleView, ReadBudget, SectionDescriptor},
     patch::BundlePatchArtifact,
     patch::encode_patch_bundle,
 };
 use arcweft_compiler::{
-    incremental::{BuildSnapshotRequest, snapshot_compiled_project},
+    incremental::runtime_plan_artifact_key,
     persistent::{
         ActualBytecodeUnitFactsInput, ActualLinkPlanFactsInput, BytecodeUnitFactsInput,
         HirBodyFactsInput, InterfaceSummaryFactsInput, LinkPlanFactsInput, ParsedSyntaxFactsInput,
@@ -31,14 +33,15 @@ use arcweft_compiler::{
     },
     project::{
         CompiledProject, CompiledProjectModule, InMemoryProjectCompileCache, NoProjectCompileCache,
-        ProjectCompileCache, ProjectCompileCacheStatus, compile_project_with_cache,
+        ProjectCompilationSession, ProjectCompileCache, ProjectCompileCacheStatus,
+        compile_project_with_cache,
     },
 };
-use arcweft_lang_sema::project_index::{ProgramHash, project_semantic_index_from_checked_project};
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
-use arcweft_lang_syntax::source::ParsedSource;
+use arcweft_core::{effect::RuntimeArtifactFingerprint, plan::RuntimePlan};
+use arcweft_lang_hir::{item::HirItemFamily, project::HirProject};
+use arcweft_lang_syntax::incremental::{ParsedSource, SyntaxDatabase};
 use arcweft_project::{
-    artifact::{ArtifactKey, ArtifactKeyInput, ArtifactKind},
+    artifact::{ArtifactKey, ArtifactKeyInput, ArtifactKind, RuntimePlanArtifactKey},
     fingerprint::{BuildDigest, NamedDigest},
     incremental::{BuildSnapshot, CacheRecordStatus, InvalidationReason, QueryKind, QuerySnapshot},
     persistent_object::{
@@ -59,15 +62,17 @@ use arcweft_project_loader::project::{LoadedProject, ProjectLoadError};
 use arcweft_source::SourceDocument;
 use arcweft_verify::{
     BackendKind, Severity, VerificationDiagnostic, VerificationMode, VerificationPolicy,
-    VerificationReport, verify_module_with_env,
+    VerificationReport,
 };
 use clap::{Args, ValueEnum};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
-    env, fs,
+    env,
+    fmt::Write as _,
+    fs,
     path::{Path, PathBuf},
     process::ExitCode,
-    sync::Arc,
+    sync::{Arc, Mutex},
     thread,
     time::Duration,
 };
@@ -130,12 +135,37 @@ enum ProjectBuildMode {
 }
 
 struct ProjectCommandState {
+    session: Arc<Mutex<ProjectCommandSession>>,
     loaded: LoadedProject,
     selection: SourceSelection,
     source_document: Arc<SourceDocument>,
-    compiled: CompiledProject,
+    compiled: Arc<CompiledProject>,
     verification: VerificationReport,
     snapshot: BuildSnapshot,
+}
+
+struct ProjectCommandSession {
+    syntax: Arc<Mutex<SyntaxDatabase>>,
+    compiler: Arc<Mutex<ProjectCompilationSession>>,
+    previous: Option<LoadedProject>,
+}
+
+impl ProjectCommandSession {
+    fn try_new() -> Result<Self, ExitCode> {
+        let syntax = SyntaxDatabase::try_new().map_err(|error| {
+            eprintln!("error: failed to create project syntax session: {error}");
+            ExitCode::FAILURE
+        })?;
+        let compiler = ProjectCompilationSession::try_new().map_err(|error| {
+            eprintln!("error: failed to create project compiler session: {error}");
+            ExitCode::FAILURE
+        })?;
+        Ok(Self {
+            syntax: Arc::new(Mutex::new(syntax)),
+            compiler: Arc::new(Mutex::new(compiler)),
+            previous: None,
+        })
+    }
 }
 
 struct ProjectBuildArtifacts {
@@ -195,6 +225,19 @@ struct ProjectBuildCacheInputs<'a> {
     plan_bytes: &'a [u8],
     bundle_bytes: &'a [u8],
     hit_bundle_key: Option<ArtifactKey>,
+}
+
+const RUNTIME_PLAN_ARTIFACT_SCHEMA_VERSION: u32 = 1;
+
+/// Single current persisted runtime-plan cache payload. The artifact
+/// fingerprint is repeated inside the envelope so a cache read cannot bind a
+/// plan stored under a wrong or stale generic key.
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+struct RuntimePlanArtifactEnvelope {
+    schema_version: u32,
+    artifact_fingerprint: RuntimeArtifactFingerprint,
+    plan: RuntimePlan,
 }
 
 struct PersistentQueryWriteThroughResult {
@@ -389,10 +432,11 @@ impl ProjectCommandReport {
             flows: state
                 .compiled
                 .hir_project()
-                .modules()
-                .map(|(_, module)| module.flows().len())
-                .sum(),
-            line_task_groups: state.compiled.line_task_groups().len(),
+                .view()
+                .items()
+                .filter(|item| item.item().kind().family() == HirItemFamily::Flow)
+                .count(),
+            line_task_groups: state.compiled.runtime_plan().plan.line_task_groups.len(),
             verifier_diagnostics: state.verification.diagnostics.len(),
             obligations: state.verification.obligations.len(),
             unsafe_audits: state.verification.unsafe_audit_count(),
@@ -578,7 +622,14 @@ fn write_project_build_artifacts(
     let snapshot_path = target_root.join(format!("{package}.snapshot.json"));
     let bundle_path = target_root.join(format!("{package}.awfb"));
     write_json_file(&metadata_path, &report)?;
-    let plan_bytes = format!("{:#?}\n", state.compiled.runtime_plan().plan).into_bytes();
+    let runtime_plan_key = runtime_plan_artifact_key(&state.snapshot, &state.compiled);
+    let plan_bytes =
+        encode_runtime_plan_artifact(runtime_plan_key, &state.compiled.runtime_plan().plan)?;
+    let expected_runtime_artifact =
+        runtime_plan_fingerprint(runtime_plan_key).map_err(|error| {
+            eprintln!("error: invalid canonical runtime-plan artifact key: {error}");
+            ExitCode::FAILURE
+        })?;
     fs::write(&plan_path, &plan_bytes).map_err(|error| {
         eprintln!("error: failed to write {}: {error}", plan_path.display());
         ExitCode::FAILURE
@@ -597,10 +648,11 @@ fn write_project_build_artifacts(
         bundle_bytes,
         bundle_cache_hit,
         persistent_artifacts,
-    } = read_cached_project_bundle(&cache_root, bundle_key).map_or_else(
-        || compile_project_bundle_output(state, &plan_bytes),
-        |bytes| project_build_bundle_output_from_bytes(state, &plan_bytes, bytes, true),
-    )?;
+    } = read_cached_project_bundle(&cache_root, bundle_key, expected_runtime_artifact)
+        .map_or_else(
+            || compile_project_bundle_output(state, &plan_bytes),
+            |bytes| project_build_bundle_output_from_bytes(state, &plan_bytes, bytes, true),
+        )?;
     let mut phases = Vec::new();
     write_bundle_artifact(&bundle_path, bundle_bytes.clone(), &mut phases)?;
     let content_root = awfb_content_root_digest(&bundle_bytes)?;
@@ -673,10 +725,17 @@ fn compile_project_bundle_output(
     plan_bytes: &[u8],
 ) -> Result<ProjectBuildBundleOutput, ExitCode> {
     let mut phases = Vec::new();
-    let bundle = compile_bundle_for_selection(
+    let compiled = compile_accepted_project_runtime_plan(
+        state.loaded.sources(),
         &state.selection,
-        vec![BundleVirtualFileSpace::Asset],
+        Arc::clone(&state.source_document),
+        Arc::clone(&state.compiled),
         &mut phases,
+    )?;
+    let bundle = compile_bundle_from_profile_runtime_plan(
+        &state.selection,
+        compiled,
+        vec![BundleVirtualFileSpace::Asset],
     )?
     .bundle;
     let bundle_bytes = bundle
@@ -1053,7 +1112,11 @@ fn extend_build_digest(bytes: &mut Vec<u8>, digest: BuildDigest) {
     bytes.extend_from_slice(&digest.as_bytes());
 }
 
-fn read_cached_project_bundle(cache_root: &Path, key: ArtifactKey) -> Option<Vec<u8>> {
+fn read_cached_project_bundle(
+    cache_root: &Path,
+    key: ArtifactKey,
+    expected_runtime_artifact: RuntimeArtifactFingerprint,
+) -> Option<Vec<u8>> {
     let store = FilesystemCacheStore::new(cache_root);
     let bytes = match store.read_artifact(QueryKind::BundleIndex, key) {
         Ok(bytes) => bytes,
@@ -1066,14 +1129,84 @@ fn read_cached_project_bundle(cache_root: &Path, key: ArtifactKey) -> Option<Vec
         }
     };
     let bytes = bytes?;
-    if let Err(error) = BundleView::parse(&bytes, ReadBudget::default()) {
+    let bundle = match ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes) {
+        Ok(bundle) => bundle,
+        Err(error) => {
+            eprintln!(
+                "warning: ignoring cached project bundle with invalid AWFB bytes under {}: {error}",
+                cache_root.display()
+            );
+            return None;
+        }
+    };
+    if bundle.manifest.runtime.artifact_fingerprint != expected_runtime_artifact {
         eprintln!(
-            "warning: ignoring cached project bundle with invalid AWFB bytes under {}: {error}",
+            "warning: ignoring cached project bundle with a foreign runtime artifact under {}",
             cache_root.display()
         );
         return None;
     }
     Some(bytes)
+}
+
+fn encode_runtime_plan_artifact(
+    key: RuntimePlanArtifactKey,
+    plan: &RuntimePlan,
+) -> Result<Vec<u8>, ExitCode> {
+    let artifact_fingerprint = runtime_plan_fingerprint(key).map_err(|error| {
+        eprintln!("error: invalid canonical runtime-plan artifact key: {error}");
+        ExitCode::FAILURE
+    })?;
+    serde_json::to_vec_pretty(&RuntimePlanArtifactEnvelope {
+        schema_version: RUNTIME_PLAN_ARTIFACT_SCHEMA_VERSION,
+        artifact_fingerprint,
+        plan: plan.clone(),
+    })
+    .map_err(|error| {
+        eprintln!("error: failed to encode runtime-plan artifact: {error}");
+        ExitCode::FAILURE
+    })
+}
+
+fn read_runtime_plan_artifact(
+    store: &FilesystemCacheStore,
+    key: RuntimePlanArtifactKey,
+) -> Result<Option<RuntimePlanArtifactEnvelope>, String> {
+    let Some(bytes) = store
+        .read_artifact(QueryKind::RuntimePlan, key.artifact_key())
+        .map_err(|error| error.to_string())?
+    else {
+        return Ok(None);
+    };
+    decode_runtime_plan_artifact(key, &bytes).map(Some)
+}
+
+fn decode_runtime_plan_artifact(
+    key: RuntimePlanArtifactKey,
+    bytes: &[u8],
+) -> Result<RuntimePlanArtifactEnvelope, String> {
+    let artifact: RuntimePlanArtifactEnvelope =
+        serde_json::from_slice(bytes).map_err(|error| error.to_string())?;
+    if artifact.schema_version != RUNTIME_PLAN_ARTIFACT_SCHEMA_VERSION {
+        return Err(format!(
+            "unsupported runtime-plan artifact schema {}; expected {}",
+            artifact.schema_version, RUNTIME_PLAN_ARTIFACT_SCHEMA_VERSION
+        ));
+    }
+    let expected = runtime_plan_fingerprint(key)?;
+    if artifact.artifact_fingerprint != expected {
+        return Err(
+            "runtime-plan payload fingerprint does not match its typed cache key".to_owned(),
+        );
+    }
+    Ok(artifact)
+}
+
+fn runtime_plan_fingerprint(
+    key: RuntimePlanArtifactKey,
+) -> Result<RuntimeArtifactFingerprint, String> {
+    RuntimeArtifactFingerprint::try_from_bytes(key.digest().as_bytes())
+        .map_err(|error| error.to_string())
 }
 
 fn project_build_input_digest(state: &ProjectCommandState) -> Result<BuildDigest, ExitCode> {
@@ -1114,6 +1247,20 @@ fn store_project_build_cache_artifacts(
         eprintln!("error: failed to encode build snapshot for cache: {error}");
         ExitCode::FAILURE
     })?;
+    let runtime_plan_key =
+        runtime_plan_artifact_key(&inputs.state.snapshot, &inputs.state.compiled);
+    let runtime_plan_cache_hit = match read_runtime_plan_artifact(&store, runtime_plan_key) {
+        Ok(cached) => {
+            cached.is_some_and(|cached| cached.plan == inputs.state.compiled.runtime_plan().plan)
+        }
+        Err(error) => {
+            eprintln!(
+                "warning: ignoring invalid cached runtime plan under {}: {error}",
+                inputs.cache_root.display()
+            );
+            false
+        }
+    };
     [
         (
             QueryKind::TypeCheck,
@@ -1142,13 +1289,17 @@ fn store_project_build_cache_artifacts(
     ]
     .into_iter()
     .map(|(query, artifact_kind, logical_item, bytes)| {
-        let key = project_build_artifact_key(
-            inputs.state,
-            query,
-            artifact_kind,
-            logical_item,
-            inputs.build_input_digest,
-        );
+        let key = if query == QueryKind::RuntimePlan {
+            runtime_plan_key.artifact_key()
+        } else {
+            project_build_artifact_key(
+                inputs.state,
+                query,
+                artifact_kind,
+                logical_item,
+                inputs.build_input_digest,
+            )
+        };
         let record = store
             .store_artifact_with_logical_item(query, key, artifact_kind, Some(logical_item), bytes)
             .map_err(|error| {
@@ -1162,7 +1313,9 @@ fn store_project_build_cache_artifacts(
             query,
             artifact_kind,
             logical_item: logical_item.to_owned(),
-            status: if inputs.hit_bundle_key == Some(key) {
+            status: if inputs.hit_bundle_key == Some(key)
+                || (query == QueryKind::RuntimePlan && runtime_plan_cache_hit)
+            {
                 "hit"
             } else {
                 "stored"
@@ -1224,15 +1377,7 @@ fn write_persistent_query_source(
         .iter()
         .find(|module| module.module() == source.module())
         .expect("compiled project contains every loaded source module");
-    let parsed = parse_document_with_source(Arc::clone(source.document()), ParseOptions::default());
-    if !parsed.errors().is_empty() {
-        eprintln!(
-            "error: cannot persist parse facts for {} after a successful build: parser returned {} error(s)",
-            source.path().display(),
-            parsed.errors().len()
-        );
-        return Err(ExitCode::FAILURE);
-    }
+    let parsed = compiled.parsed();
     let unit_cache_status = module_compile_cache_status(context.state, source);
     for kind in [
         CompilerObjectKind::ParsedSyntax,
@@ -1247,7 +1392,7 @@ fn write_persistent_query_source(
             context.snapshot,
             source,
             compiled,
-            &parsed,
+            parsed,
             context.persistent_artifacts,
             kind,
         )? {
@@ -1898,6 +2043,7 @@ fn project_build_watch_loop(
     mut base_bytes: Vec<u8>,
     compile_cache: &mut InMemoryProjectCompileCache,
 ) -> Result<(), ExitCode> {
+    let session = Arc::clone(&initial_state.session);
     let mut selection = initial_state.selection;
     let mut base_snapshot = initial_snapshot;
     let mut inputs = watch_inputs(&selection)?;
@@ -1914,14 +2060,23 @@ fn project_build_watch_loop(
         }
         iterations += 1;
         thread::sleep(Duration::from_millis(options.watch_poll_ms));
+        if let Err(code) = selection.refresh() {
+            eprintln!("watch: project reload failed; keeping previous bundle active");
+            if max_iterations.is_some() {
+                return Err(code);
+            }
+            continue;
+        }
         let next_inputs = watch_inputs(&selection)?;
         if next_inputs == inputs {
             continue;
         }
-        match compile_project_command_with_cache(
+        match compile_project_command_in_session(
             &options.profile,
             mode.verification_mode(),
             compile_cache,
+            Arc::clone(&session),
+            Some(selection.clone()),
         ) {
             Ok(next_state) => {
                 let report = ProjectCommandReport::from_state(&next_state);
@@ -1996,15 +2151,14 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         CliProgressStatus::Verifying,
         options.input.display(),
         || {
-            Ok(verify_module_with_env(
-                &checked.hir,
-                &checked.env,
+            verify_compiled_project(
+                &checked.compiled,
                 VerificationPolicy {
                     mode: VerificationMode::Dev,
                     backend: BackendKind::Emit,
                     allow_trusted_proofs: true,
                 },
-            ))
+            )
         },
     )?;
     if verification.has_blocking_runtime_safety_gaps() {
@@ -2024,7 +2178,10 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         CompileEmit::Hir => {
             let output_path = output.as_deref().expect("HIR emit has a default path");
             progress.run(CliProgressStatus::Writing, output_path.display(), || {
-                write_text_artifact(output_path, &format!("{:#?}\n", checked.hir))
+                write_text_artifact(
+                    output_path,
+                    &format_hir_project(checked.compiled.hir_project()),
+                )
             })?;
         }
         CompileEmit::Plan => {
@@ -2044,8 +2201,14 @@ pub(super) fn compile_command(options: &CompileOptions) -> Result<(), ExitCode> 
         emit: options.emit.as_str(),
         output: output.as_ref().map(|path| path.display().to_string()),
         syntax_warnings: checked.syntax_warnings,
-        flows: checked.hir.flows().len(),
-        line_task_groups: checked.line_task_groups.len(),
+        flows: checked
+            .compiled
+            .hir_project()
+            .view()
+            .items()
+            .filter(|item| item.item().family() == HirItemFamily::Flow)
+            .count(),
+        line_task_groups: checked.runtime_plan().plan.line_task_groups.len(),
         verifier_diagnostics: verification.diagnostics.len(),
         obligations: verification.obligations.len(),
     };
@@ -2083,14 +2246,51 @@ fn compile_project_command_with_cache<C>(
 where
     C: ProjectCompileCache,
 {
-    let (loaded, resolved_profile) = load_project(profile)?;
-    let selection = if resolved_profile.profile.is_some() {
-        resolve_source_selection(None, &resolved_profile)?
+    let session = Arc::new(Mutex::new(ProjectCommandSession::try_new()?));
+    compile_project_command_in_session(profile, verification_mode, compile_cache, session, None)
+}
+
+fn compile_project_command_in_session<C>(
+    profile: &ProfileOptions,
+    verification_mode: VerificationMode,
+    compile_cache: &mut C,
+    session: Arc<Mutex<ProjectCommandSession>>,
+    previous_selection: Option<SourceSelection>,
+) -> Result<ProjectCommandState, ExitCode>
+where
+    C: ProjectCompileCache,
+{
+    let (loaded, selection) = if let Some(selection) = previous_selection {
+        let loaded = selection
+            .loaded_project()
+            .expect("project command selections retain their accepted loaded project")
+            .clone();
+        let mut guard = session.lock().map_err(|_| {
+            eprintln!("error: project command session lock is poisoned");
+            ExitCode::FAILURE
+        })?;
+        guard.previous = Some(loaded.clone());
+        drop(guard);
+        (loaded, selection)
+    } else if profile.profile.is_some() {
+        let selection = resolve_source_selection(None, profile)?;
+        let loaded = selection
+            .loaded_project()
+            .expect("profile selections retain their accepted loaded project")
+            .clone();
+        (loaded, selection)
     } else {
-        SourceSelection::Project {
-            manifest: loaded.sources().manifest_path().to_path_buf(),
-            path: loaded.sources().root_module().path().to_path_buf(),
-        }
+        let mut guard = session.lock().map_err(|_| {
+            eprintln!("error: project command session lock is poisoned");
+            ExitCode::FAILURE
+        })?;
+        let loaded = load_project(profile, &mut guard)?;
+        let selection = SourceSelection::from_loaded_project(
+            loaded.clone(),
+            Arc::clone(&guard.syntax),
+            Arc::clone(&guard.compiler),
+        );
+        (loaded, selection)
     };
     let source_document = Arc::clone(
         loaded
@@ -2098,63 +2298,53 @@ where
             .expect("loaded projects retain their root source document"),
     );
     let semantic = semantic_context_for_selection(&selection, None)?;
-    let runtime_options = runtime_plan_options_for_selection(&selection)?;
     let context = project_compilation_context(&loaded, &selection, &semantic)?;
-    let compiled =
-        compile_project_with_cache(loaded.sources(), &context, &runtime_options, compile_cache)
-            .map_err(|error| {
-                print_project_compile_error(&error);
-                ExitCode::FAILURE
-            })?;
-    let mut verification = verify_module_with_env(
-        compiled.linked_hir(),
-        semantic.base(),
+    let compiler = Arc::clone(
+        selection
+            .compiler_session()
+            .expect("project command selections retain their compiler session"),
+    );
+    let compiled_project = {
+        let mut session = compiler.lock().map_err(|_| {
+            eprintln!("error: project compiler session lock is poisoned");
+            ExitCode::FAILURE
+        })?;
+        compile_project_with_cache(
+            &mut session,
+            loaded.sources(),
+            loaded.module_parsed_source_map(),
+            &context,
+            compile_cache,
+        )
+        .map_err(|error| {
+            print_project_compile_error(&error);
+            ExitCode::FAILURE
+        })?
+    };
+    let mut verification = verify_compiled_project(
+        &compiled_project,
         VerificationPolicy {
             mode: verification_mode,
             backend: BackendKind::Emit,
             allow_trusted_proofs: verification_mode != VerificationMode::Release,
         },
+    )?;
+    append_release_dynamic_goto_diagnostics(
+        &mut verification,
+        &compiled_project,
+        verification_mode,
     );
-    append_release_dynamic_goto_diagnostics(&mut verification, &compiled, verification_mode);
-    let snapshot = snapshot_compiled_project(
-        loaded.sources(),
-        &compiled,
-        BuildSnapshotRequest {
-            build_id: project_build_id(&loaded, &compiled),
-            compiler_build_id: env!("CARGO_PKG_VERSION").to_owned(),
-            target_triple: format!("{}-{}", env::consts::ARCH, env::consts::OS),
-            target_features: Vec::new(),
-            profile: selection.profile().map_or_else(
-                || "default".to_owned(),
-                |profile| profile.id().as_str().to_owned(),
-            ),
-            selected_entries: selected_snapshot_entries(&selection),
-        },
-    );
+    let compiled_project = Arc::new(compiled_project);
+    let snapshot = accepted_build_snapshot(&selection, loaded.sources(), &compiled_project);
     Ok(ProjectCommandState {
+        session,
         loaded,
         selection,
         source_document,
-        compiled,
+        compiled: compiled_project,
         verification,
         snapshot,
     })
-}
-
-fn project_build_id(loaded: &LoadedProject, compiled: &CompiledProject) -> String {
-    let mut bytes = Vec::new();
-    bytes.extend_from_slice(loaded.sources().package().id.as_str().as_bytes());
-    for unit in compiled.compile_units() {
-        bytes.extend_from_slice(&unit.fingerprint().as_bytes());
-    }
-    blake3::hash(&bytes).to_hex().to_string()
-}
-
-fn selected_snapshot_entries(selection: &SourceSelection) -> Vec<String> {
-    selection.profile().map_or_else(
-        || vec![selection.path().display().to_string()],
-        |profile| vec![profile.id().as_str().to_owned()],
-    )
 }
 
 fn append_release_dynamic_goto_diagnostics(
@@ -2165,67 +2355,67 @@ fn append_release_dynamic_goto_diagnostics(
     if verification_mode != VerificationMode::Release {
         return;
     }
-    let Ok(index) = project_semantic_index_from_checked_project(
-        compiled.hir_project(),
-        compiled.registered_world().symbols(),
-        compiled.typecheck_report(),
-        ProgramHash::new("project.release"),
-        compiled.checked_entries(),
-    ) else {
-        verification.diagnostics.push(VerificationDiagnostic {
-            id: "diagnostic.release.dynamic_control_index".to_owned(),
-            severity: Severity::Error,
-            message: "release build could not index project control-flow shape".to_owned(),
-            source: None,
-            obligation: None,
-            related_ids: Vec::new(),
-            actions: Vec::new(),
-        });
-        return;
-    };
+    let index = compiled.semantic_index();
     verification.diagnostics.extend(
         index
             .flow_control_summaries()
             .iter()
             .filter(|(_, summary)| summary.dynamic_goto_count() > 0)
-            .map(|(flow, summary)| VerificationDiagnostic {
-                id: format!("diagnostic.release.dynamic_goto.{}", flow.as_str()),
+            .map(|(flow, summary)| {
+                let identity = flow.canonical_key();
+                VerificationDiagnostic {
+                id: format!("diagnostic.release.dynamic_goto.{identity}"),
                 severity: Severity::Error,
                 message: format!(
                     "release build rejects {} dynamic goto(s) in flow `{}`; use static flow references or a finite manifest-backed set",
                     summary.dynamic_goto_count(),
-                    flow.as_str()
+                    flow.public_id().as_str()
                 ),
                 source: None,
                 obligation: None,
-                related_ids: vec![flow.as_str().to_owned()],
+                related_ids: vec![identity],
                 actions: Vec::new(),
-            }),
+            }}),
     );
     verification
         .diagnostics
         .sort_by(|left, right| left.id.cmp(&right.id));
 }
 
-fn load_project(profile: &ProfileOptions) -> Result<(LoadedProject, ProfileOptions), ExitCode> {
+fn load_project(
+    profile: &ProfileOptions,
+    session: &mut ProjectCommandSession,
+) -> Result<LoadedProject, ExitCode> {
     let explicit = profile.manifest.as_path();
-    let loaded = if explicit.is_file() {
-        arcweft_project_loader::project::load(explicit)
+    let manifest = if explicit.is_file() {
+        explicit.to_path_buf()
     } else if explicit == Path::new("arcw.toml") {
         let current = env::current_dir().map_err(|error| {
             eprintln!("error: failed to resolve current directory: {error}");
             ExitCode::FAILURE
         })?;
-        arcweft_project_loader::project::load_discovered(&current)
+        arcweft_project_loader::project::discover_manifest(&current)
+            .map_err(|error| print_project_load_error(&error))?
     } else {
-        arcweft_project_loader::project::load(explicit)
+        explicit.to_path_buf()
+    };
+    let mut syntax = session.syntax.lock().map_err(|_| {
+        eprintln!("error: project syntax session lock is poisoned");
+        ExitCode::FAILURE
+    })?;
+    let loaded = if let Some(previous) = session
+        .previous
+        .as_ref()
+        .filter(|previous| previous.sources().manifest_path() == manifest)
+    {
+        arcweft_project_loader::project::reload(&mut syntax, previous, &manifest)
+    } else {
+        arcweft_project_loader::project::load(&mut syntax, &manifest)
     }
     .map_err(|error| print_project_load_error(&error))?;
-    let resolved = ProfileOptions {
-        profile: profile.profile.clone(),
-        manifest: loaded.sources().manifest_path().to_path_buf(),
-    };
-    Ok((loaded, resolved))
+    drop(syntax);
+    session.previous = Some(loaded.clone());
+    Ok(loaded)
 }
 
 fn print_project_load_error(error: &ProjectLoadError) -> ExitCode {
@@ -2255,6 +2445,29 @@ fn write_json_file<T: Serialize>(path: &Path, value: &T) -> Result<(), ExitCode>
         eprintln!("error: failed to write {}: {error}", path.display());
         ExitCode::FAILURE
     })
+}
+
+fn format_hir_project(project: &HirProject) -> String {
+    let mut output = String::new();
+    writeln!(
+        output,
+        "package={:?} database={:?}",
+        project.package(),
+        project.database_id()
+    )
+    .expect("writing final HIR metadata to a String cannot fail");
+    let view = project.view();
+    for item in view.items() {
+        writeln!(
+            output,
+            "\nmodule={} item={:?}\n{:#?}",
+            item.module_path(),
+            item.id(),
+            item.item()
+        )
+        .expect("writing final HIR item to a String cannot fail");
+    }
+    output
 }
 
 fn write_text_artifact(path: &Path, contents: &str) -> Result<(), ExitCode> {

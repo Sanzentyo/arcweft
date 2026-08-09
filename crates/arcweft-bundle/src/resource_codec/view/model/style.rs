@@ -1,6 +1,7 @@
 //! Thin bundle wrapper around canonical native Style product data.
 
-use crate::resource_codec::types::{CrossSectionRef, ProductSourceRef, SourceRangeRef};
+use crate::resource_codec::types::{CrossSectionRef, SourceRangeRef};
+use arcweft_source::ProductSourceRef;
 pub use arcweft_view::style::{
     ViewStyleApplicationTarget, ViewStyleAssignOp, ViewStyleDeclaration, ViewStylePatch,
     ViewStylePatchId, ViewStyleProgram, ViewStyleRule, ViewStyleSheet, ViewStyleSheetId,

@@ -131,7 +131,7 @@ fn bindings_reject_trailing_tokens_without_fabricating_a_local() {
             .iter()
             .find_map(|event| match event {
                 SyntaxEvent::StartNode {
-                    pattern_projection: Some(projection),
+                    projection: crate::grammar::event::PendingStartProjection::Pattern(projection),
                     ..
                 } if projection.path().steps().is_empty() => Some(projection),
                 _ => None,
@@ -553,7 +553,7 @@ fn projection(
         .find_map(|event| match event {
             SyntaxEvent::StartNode {
                 kind,
-                pattern_projection: Some(projection),
+                projection: crate::grammar::event::PendingStartProjection::Pattern(projection),
                 ..
             } if *kind == expected => Some(projection),
             _ => None,
@@ -566,7 +566,7 @@ fn pattern_events(source: &str) -> Vec<SyntaxEvent> {
     let mut events = Vec::new();
     let mut budget = GrammarBudget::default();
     {
-        let mut parser = ShadowDocumentParser::new(source, &tokens, &mut events, &mut budget);
+        let mut parser = DocumentParser::new(source, &tokens, &mut events, &mut budget);
         emit_pattern(&mut parser, tokens.len(), SyntaxRole::Element(0));
     }
     assert!(budget.failure().is_none());

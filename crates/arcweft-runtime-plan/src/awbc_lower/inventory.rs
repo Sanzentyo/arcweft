@@ -6,18 +6,18 @@ use arcweft_core::awbc::schema::{
     AwbcChildCleanup, AwbcChildJoinPolicy, AwbcChoice, AwbcChoiceId, AwbcChoiceOption,
     AwbcConstant, AwbcConstantId, AwbcContentUnit, AwbcContentUnitId, AwbcDisplayMapEntry,
     AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSet, AwbcEffectSetId, AwbcEntry,
-    AwbcEntryKind, AwbcEntryTarget, AwbcFlowExecutable, AwbcFrameLayout, AwbcFrameLayoutId,
-    AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall,
-    AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId, AwbcLineCancelHandler,
-    AwbcLineCleanupPolicy, AwbcLineOption, AwbcLineTaskGroup, AwbcLineTaskGroupId,
-    AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger, AwbcOverflowPolicy,
-    AwbcParallelPolicy, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup, AwbcPrivacyPolicy,
-    AwbcProgram, AwbcRegisterId, AwbcReplayPolicy, AwbcResumePoint, AwbcResumePointId, AwbcRoute,
-    AwbcRouteBinding, AwbcRouteBindingSource, AwbcRuntimeType, AwbcSafePointKind, AwbcSignature,
-    AwbcSignatureId, AwbcSignedIntKind, AwbcSourceEventKind, AwbcSourcePlan, AwbcSourcePlanId,
-    AwbcSourcePolicy, AwbcStreamPlan, AwbcStreamPlanId, AwbcStringId, AwbcTableRange,
-    AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId, AwbcTaskPolicy, AwbcTerminator,
-    AwbcTypeId, AwbcUnsignedIntKind,
+    AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding, AwbcFlowExecutable, AwbcFrameLayout,
+    AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+    AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcInstructionId,
+    AwbcLineCancelHandler, AwbcLineCleanupPolicy, AwbcLineOption, AwbcLineTaskGroup,
+    AwbcLineTaskGroupId, AwbcLineTaskNode, AwbcLineTaskNodeId, AwbcLineTaskTrigger,
+    AwbcOverflowPolicy, AwbcParallelPolicy, AwbcPattern, AwbcPatternId, AwbcPresentationCleanup,
+    AwbcPrivacyPolicy, AwbcProgram, AwbcRegisterId, AwbcReplayPolicy, AwbcResumePoint,
+    AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcRuntimeType,
+    AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcSignedIntKind, AwbcSourceEventKind,
+    AwbcSourcePlan, AwbcSourcePlanId, AwbcSourcePolicy, AwbcStreamPlan, AwbcStreamPlanId,
+    AwbcStringId, AwbcTableRange, AwbcTaskArgument, AwbcTaskClass, AwbcTaskPlan, AwbcTaskPlanId,
+    AwbcTaskPolicy, AwbcTerminator, AwbcTypeId, AwbcUnsignedIntKind,
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeEffectExpr, RuntimeWaitTarget};
 use arcweft_core::entry::{RuntimeCallableExecutableCode, RuntimeCallableRole};
@@ -38,7 +38,7 @@ use arcweft_core::step::RuntimeHostCallMode;
 use arcweft_core::stream::StreamRuntimeId;
 use arcweft_core::task::{HostTaskArgTemplate, HostTaskRequestTemplate};
 use arcweft_core::value::{RuntimeExpr, RuntimeInt, RuntimeRange, RuntimeUInt, RuntimeValue};
-use arcweft_render_text::LineDisplayCatalog;
+use arcweft_text_model::DialogueContentCatalog;
 use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -91,6 +91,7 @@ pub struct AwbcLowerStats {
     pub stream_plans: usize,
     pub trait_methods: usize,
     pub callable_executables: usize,
+    pub flow_bindings: usize,
     pub flow_executables: usize,
     pub entries: usize,
 }
@@ -111,6 +112,7 @@ impl AwbcLowerStats {
             stream_plans: program.stream_plans.len(),
             trait_methods: program.trait_methods.len(),
             callable_executables: program.callable_executables.len(),
+            flow_bindings: program.flow_bindings.len(),
             flow_executables: program.flow_executables.len(),
             entries: program.entries.len(),
         }
@@ -185,7 +187,12 @@ impl AwbcInventory {
         this
     }
 
-    pub fn finish(self) -> AwbcProgram {
+    pub fn finish(mut self) -> AwbcProgram {
+        self.program.flow_bindings = self
+            .flow_functions
+            .into_iter()
+            .map(|(flow, function)| AwbcFlowBinding { flow, function })
+            .collect();
         self.program
     }
 
@@ -209,12 +216,12 @@ impl AwbcInventory {
         self.intern_type(AwbcRuntimeType::EntityRef);
     }
 
-    pub fn intern_display_catalog(&mut self, display: &LineDisplayCatalog) {
+    pub fn intern_dialogue_content_catalog(&mut self, catalog: &DialogueContentCatalog) {
         if !self.options.emit_display_map {
             return;
         }
-        for spec in display.lines() {
-            let line = spec.line.public_label().into_string();
+        for spec in catalog.records() {
+            let line = spec.line().public_label().into_string();
             let key = self.intern_string(&line);
             let content = self.intern_content_unit(&line, None);
             self.program.display_map.push(AwbcDisplayMapEntry {
@@ -369,6 +376,19 @@ impl AwbcInventory {
         id
     }
 
+    pub fn constant_bytes(&mut self, value: &[u8]) -> AwbcConstantId {
+        let key = format!("bytes:{value:02x?}");
+        if let Some(id) = self.constants.get(&key).copied() {
+            return id;
+        }
+        let id = AwbcConstantId(table_index(self.program.constants.len()));
+        self.program
+            .constants
+            .push(AwbcConstant::Bytes(value.to_vec()));
+        self.constants.insert(key, id);
+        id
+    }
+
     pub fn constant_unit(&mut self) -> AwbcConstantId {
         let key = "unit".to_owned();
         if let Some(id) = self.constants.get(&key).copied() {
@@ -423,14 +443,14 @@ impl AwbcInventory {
                     record.type_id().as_str()
                 )
             }
-            RuntimeValue::Variant { name, payload, .. } => AwbcConstant::Variant {
-                ty: self.dynamic_ty(),
-                case: stable_ordinal(name),
-                case_name: self.intern_string(name),
-                payload: payload
-                    .as_deref()
-                    .map(|payload| self.constant_runtime_value(payload)),
-            },
+            RuntimeValue::Variant {
+                owner,
+                ordinal,
+                name,
+                ..
+            } => panic!(
+                "runtime variant `{owner:?}` case {ordinal} `{name}` requires a checked RuntimeExpr::Variant type and cannot be encoded through the type-erased constant API"
+            ),
             RuntimeValue::Range(range) => self.range_constant(range),
             RuntimeValue::Iterator(_) => {
                 panic!("runtime iterator state cannot be encoded as an AWBC constant")
@@ -1196,12 +1216,6 @@ fn unsigned_constant(value: RuntimeUInt) -> AwbcConstant {
     AwbcConstant::UInt { kind, bits }
 }
 
-fn stable_ordinal(value: &str) -> u32 {
-    value.bytes().fold(0_u32, |acc, byte| {
-        acc.wrapping_mul(16_777_619).wrapping_add(u32::from(byte))
-    })
-}
-
 fn effect_kind(effect: &LineEffectRequest) -> AwbcEffectKind {
     match effect {
         LineEffectRequest::RegisterHandle { .. } => AwbcEffectKind::RegisterHandle,
@@ -1306,9 +1320,10 @@ fn effect_static_args(
         }
         LineEffectRequest::Assert(assertion) => {
             vec![
-                inventory.constant_string(&assertion.condition),
-                inventory.constant_string(&assertion.message),
-                inventory.constant_string(match assertion.profile {
+                inventory.constant_bytes(assertion.guard().as_bytes()),
+                inventory.constant_string(assertion.condition()),
+                inventory.constant_string(assertion.message()),
+                inventory.constant_string(match assertion.profile() {
                     arcweft_core::effect::RuntimeAssertionProfile::Always => "always",
                     arcweft_core::effect::RuntimeAssertionProfile::DebugOnly => "debug_only",
                 }),

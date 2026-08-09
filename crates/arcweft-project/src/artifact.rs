@@ -7,6 +7,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::fmt::Display;
+use thiserror::Error;
 
 /// Compiler artifact family stored behind an incremental query key.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
@@ -29,6 +30,15 @@ pub enum ArtifactKind {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 pub struct ArtifactKey(BuildDigest);
 
+/// Opaque proof that an artifact key was derived for the one canonical
+/// runtime-plan artifact family.
+///
+/// This wrapper has no raw-key constructor. Runtime diagnostic inventories
+/// may bind only a key whose query, artifact kind, and logical item were
+/// validated together before derivation.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct RuntimePlanArtifactKey(ArtifactKey);
+
 /// Canonical artifact-key input.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ArtifactKeyInput {
@@ -47,6 +57,17 @@ pub struct ArtifactKeyInput {
     pub launch_profile_digest: BuildDigest,
     pub declared_environment_digest: BuildDigest,
     pub format_options_digest: BuildDigest,
+}
+
+/// Invalid attempt to derive the typed runtime-plan artifact key.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimePlanArtifactKeyError {
+    #[error("runtime-plan artifact key requires the RuntimePlan query, got {actual:?}")]
+    WrongQuery { actual: QueryKind },
+    #[error("runtime-plan artifact key requires the RuntimePlan artifact kind, got {actual}")]
+    WrongArtifactKind { actual: ArtifactKind },
+    #[error("runtime-plan artifact key requires logical item `runtime-plan`, got `{actual}`")]
+    WrongLogicalItem { actual: String },
 }
 
 impl ArtifactKind {
@@ -111,6 +132,38 @@ impl ArtifactKey {
     }
 }
 
+impl RuntimePlanArtifactKey {
+    /// Validates the complete artifact family before deriving the opaque key.
+    pub fn try_derive(input: &ArtifactKeyInput) -> Result<Self, RuntimePlanArtifactKeyError> {
+        if input.query != QueryKind::RuntimePlan {
+            return Err(RuntimePlanArtifactKeyError::WrongQuery {
+                actual: input.query,
+            });
+        }
+        if input.artifact_kind != ArtifactKind::RuntimePlan {
+            return Err(RuntimePlanArtifactKeyError::WrongArtifactKind {
+                actual: input.artifact_kind,
+            });
+        }
+        if input.logical_item != "runtime-plan" {
+            return Err(RuntimePlanArtifactKeyError::WrongLogicalItem {
+                actual: input.logical_item.clone(),
+            });
+        }
+        Ok(Self(ArtifactKey::derive(input)))
+    }
+
+    /// Returns the generic key only for existing cache-store plumbing.
+    pub const fn artifact_key(self) -> ArtifactKey {
+        self.0
+    }
+
+    /// Returns the exact canonical digest copied into runtime diagnostics.
+    pub const fn digest(self) -> BuildDigest {
+        self.0.digest()
+    }
+}
+
 impl Display for ArtifactKey {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         Display::fmt(&self.0, formatter)
@@ -119,7 +172,10 @@ impl Display for ArtifactKey {
 
 #[cfg(test)]
 mod tests {
-    use super::{ArtifactKey, ArtifactKeyInput, ArtifactKind};
+    use super::{
+        ArtifactKey, ArtifactKeyInput, ArtifactKind, RuntimePlanArtifactKey,
+        RuntimePlanArtifactKeyError,
+    };
     use crate::{
         fingerprint::{BuildDigest, NamedDigest},
         incremental::QueryKind,
@@ -181,5 +237,43 @@ mod tests {
             QueryKind::BundleIndex.artifact_kind(),
             ArtifactKind::BundleIndex
         );
+    }
+
+    #[test]
+    fn runtime_plan_artifact_key_rejects_other_artifact_families() {
+        let mut wrong_query = input(QueryKind::BytecodeUnit);
+        wrong_query.logical_item = "runtime-plan".to_owned();
+        assert!(matches!(
+            RuntimePlanArtifactKey::try_derive(&wrong_query),
+            Err(RuntimePlanArtifactKeyError::WrongQuery {
+                actual: QueryKind::BytecodeUnit
+            })
+        ));
+
+        let mut wrong_kind = input(QueryKind::RuntimePlan);
+        wrong_kind.artifact_kind = ArtifactKind::BytecodeUnit;
+        wrong_kind.logical_item = "runtime-plan".to_owned();
+        assert!(matches!(
+            RuntimePlanArtifactKey::try_derive(&wrong_kind),
+            Err(RuntimePlanArtifactKeyError::WrongArtifactKind {
+                actual: ArtifactKind::BytecodeUnit
+            })
+        ));
+
+        let mut wrong_item = input(QueryKind::RuntimePlan);
+        wrong_item.logical_item = "other".to_owned();
+        assert!(matches!(
+            RuntimePlanArtifactKey::try_derive(&wrong_item),
+            Err(RuntimePlanArtifactKeyError::WrongLogicalItem { .. })
+        ));
+    }
+
+    #[test]
+    fn runtime_plan_artifact_key_copies_the_canonical_generic_key() {
+        let mut input = input(QueryKind::RuntimePlan);
+        input.logical_item = "runtime-plan".to_owned();
+        let typed = RuntimePlanArtifactKey::try_derive(&input).expect("runtime-plan key");
+        assert_eq!(typed.artifact_key(), ArtifactKey::derive(&input));
+        assert_eq!(typed.digest(), ArtifactKey::derive(&input).digest());
     }
 }

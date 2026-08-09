@@ -7,6 +7,7 @@ use arcweft_core::entry::RuntimeValueDigest;
 use arcweft_core::locale::LocaleId;
 use arcweft_id::PublicId;
 use core::fmt;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Contract provenance retained by every `CharacterDialogue` value.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -18,7 +19,8 @@ pub struct CharacterDialogueContractIdentity {
 }
 
 /// Reusable voice selection for one `CharacterDialogue`.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "id", rename_all = "snake_case")]
 pub enum CharacterDialogueVoice {
     Auto,
     Id(CharacterDialogueVoiceId),
@@ -182,3 +184,32 @@ impl fmt::Display for DialogueLocaleId {
         formatter.write_str(self.as_str())
     }
 }
+
+macro_rules! validated_string_serde {
+    ($ty:ty, $constructor:path) => {
+        impl Serialize for $ty {
+            fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+            where
+                S: Serializer,
+            {
+                serializer.serialize_str(self.as_str())
+            }
+        }
+
+        impl<'de> Deserialize<'de> for $ty {
+            fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+            where
+                D: Deserializer<'de>,
+            {
+                $constructor(String::deserialize(deserializer)?).map_err(serde::de::Error::custom)
+            }
+        }
+    };
+}
+
+validated_string_serde!(CharacterDialogueVoiceId, CharacterDialogueVoiceId::try_new);
+validated_string_serde!(
+    CharacterDialogueCustomFieldId,
+    CharacterDialogueCustomFieldId::try_new
+);
+validated_string_serde!(DialogueLocaleId, DialogueLocaleId::try_new);

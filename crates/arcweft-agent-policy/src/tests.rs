@@ -124,12 +124,10 @@ fn gate_masks_image_before_publication() {
         .expect("publication succeeds");
 
     assert!(published.policy().sanitized);
-    let bytes = published
-        .resource()
-        .body
-        .decoded_bytes()
-        .expect("base64 is valid")
-        .expect("binary body");
+    let AgentResourceBody::BytesBase64(body) = &published.resource().body else {
+        panic!("published image must retain a binary body");
+    };
+    let bytes = crate::decode::decode_agent_binary_body(body).expect("base64 is valid");
     assert_eq!(bytes, vec![32, 32, 32, 255]);
     assert_eq!(
         published

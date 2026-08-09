@@ -1,14 +1,17 @@
 //! Structural extraction and projection validation for attached expressions.
 
+use std::collections::BTreeSet;
+
 use super::{
-    AstNode, AttachedCallTypeChild, AttachedClosureParameter, AttachedExpressionChild,
-    AttachedPath, AttachedPatternNode, AttachedTypeRefNode, BlockKind, ExpressionComponentRole,
-    ExpressionFamily, ExpressionProjection, ExpressionRecordFieldPart, FamilyNode, FamilySpec,
-    PathKind, PatternFamily, RecoveryFamily, SyntaxAccessError, SyntaxCallArgumentPart,
-    SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeApplicationComponentRole,
-    SyntaxCallTypeArgumentPart, SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole,
-    SyntaxClosureParameterPart, SyntaxKind, SyntaxNameIssue, SyntaxNodeHandle, SyntaxRecordField,
-    SyntaxRole,
+    AstNode, AttachedCallTypeChild, AttachedCandidateDialogueOwner, AttachedClosureParameter,
+    AttachedExpressionChild, AttachedPath, AttachedPatternNode, AttachedTypeRefNode, BlockKind,
+    ExpressionComponentRole, ExpressionFamily, ExpressionProjection, ExpressionRecordFieldPart,
+    FamilyNode, FamilySpec, PathKind, PatternFamily, RecoveryFamily, SyntaxAccessError,
+    SyntaxAssociatedReceiver, SyntaxCallArgumentPart, SyntaxCallCalleeProjection,
+    SyntaxCallProjection, SyntaxCallTypeApplicationComponentRole, SyntaxCallTypeArgumentPart,
+    SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxClosureParameterPart,
+    SyntaxKind, SyntaxNameIssue, SyntaxNodeHandle, SyntaxRecordField, SyntaxRole,
+    dialogue_expression_specs,
 };
 
 pub(super) fn attached_path(syntax: &SyntaxNodeHandle) -> Result<AttachedPath, SyntaxAccessError> {
@@ -83,10 +86,16 @@ pub(super) fn attached_composite_children(
                 if ExpressionFamily::accepts(prefix.kind())
                     && prefix.kind() != SyntaxKind::MissingExpression =>
             {
+                let recovery_source = components
+                    .iter()
+                    .find(|component| component.role() == ExpressionComponentRole::Recovery)
+                    .map(|component| component.range())
+                    .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
                 Ok(Box::new([AttachedExpressionChild::Authored {
                     ordinal: 0,
+                    component_role: ExpressionComponentRole::Recovery,
                     expression: FamilyNode::<ExpressionFamily>::new(prefix.clone())?,
-                    source: prefix.source_span(),
+                    source: syntax.source_span_for_range(recovery_source),
                 }]))
             }
             _ => Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }),
@@ -117,6 +126,78 @@ pub(super) fn attached_composite_children(
         .into_iter()
         .filter(|child| ExpressionFamily::accepts(child.kind()))
         .collect::<Vec<_>>();
+    let Some(slots) = composite_expression_slots(syntax, projection, &child_nodes)? else {
+        return Ok(Box::new([]));
+    };
+    if child_nodes.len() != slots.len() {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    }
+    attach_positional_composite_children(syntax, projection, components, child_nodes, slots)
+}
+
+fn attach_positional_composite_children(
+    syntax: &SyntaxNodeHandle,
+    projection: &ExpressionProjection,
+    components: &[crate::expressions::PendingExpressionComponent],
+    child_nodes: Vec<SyntaxNodeHandle>,
+    slots: Vec<(u32, crate::expressions::SyntaxExpressionSlot)>,
+) -> Result<Box<[AttachedExpressionChild]>, SyntaxAccessError> {
+    child_nodes
+        .into_iter()
+        .zip(slots)
+        .map(|(child, (ordinal, slot))| {
+            let expected_role = semantic_child_role(projection, ordinal);
+            let component = semantic_child_component(projection, components, ordinal);
+            let role_matches = expected_role.is_some_and(|role| child.role() == role)
+                || child.role()
+                    == SyntaxRole::Bucket(u16::try_from(ordinal).map_err(|_| {
+                        SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }
+                    })?)
+                    && matches!(projection, ExpressionProjection::BracketSequence(_))
+                    && syntax
+                        .parent()
+                        .is_some_and(|parent| parent.kind() == SyntaxKind::MetricBucketsMember);
+            if !role_matches
+                || component.is_none_or(|(_, source)| {
+                    !component_matches_semantic_child(syntax, &child, source)
+                })
+            {
+                return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+            }
+            let (component_role, component_source) = component
+                .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+            match slot {
+                crate::expressions::SyntaxExpressionSlot::Authored
+                    if child.kind() != SyntaxKind::MissingExpression =>
+                {
+                    Ok(AttachedExpressionChild::Authored {
+                        ordinal,
+                        component_role,
+                        expression: FamilyNode::<ExpressionFamily>::new(child)?,
+                        source: syntax.source_span_for_range(component_source),
+                    })
+                }
+                crate::expressions::SyntaxExpressionSlot::Missing
+                    if child.kind() == SyntaxKind::MissingExpression =>
+                {
+                    Ok(AttachedExpressionChild::Missing {
+                        ordinal,
+                        component_role,
+                        recovery: FamilyNode::<RecoveryFamily>::new(child)?,
+                    })
+                }
+                _ => Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }),
+            }
+        })
+        .collect::<Result<Vec<_>, _>>()
+        .map(Vec::into_boxed_slice)
+}
+
+fn composite_expression_slots(
+    syntax: &SyntaxNodeHandle,
+    projection: &ExpressionProjection,
+    child_nodes: &[SyntaxNodeHandle],
+) -> Result<Option<Vec<(u32, crate::expressions::SyntaxExpressionSlot)>>, SyntaxAccessError> {
     let slots = match projection {
         ExpressionProjection::Tuple(slots) | ExpressionProjection::BracketSequence(slots) => slots
             .iter()
@@ -138,16 +219,7 @@ pub(super) fn attached_composite_children(
                     .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })
             })
             .collect::<Result<Vec<_>, _>>()?,
-        ExpressionProjection::Index(index) => {
-            vec![(0, index.target()), (1, index.index())]
-        }
-        ExpressionProjection::DialogueContentApplication(_) => {
-            vec![(0, crate::expressions::SyntaxExpressionSlot::Authored)]
-        }
-        ExpressionProjection::PostfixBracket(_) => {
-            vec![(0, crate::expressions::SyntaxExpressionSlot::Authored)]
-        }
-        ExpressionProjection::Select(_) => {
+        ExpressionProjection::PostfixBracket(_) | ExpressionProjection::Select(_) => {
             vec![(0, crate::expressions::SyntaxExpressionSlot::Authored)]
         }
         ExpressionProjection::Try { operand, .. } | ExpressionProjection::Await { operand, .. } => {
@@ -164,9 +236,7 @@ pub(super) fn attached_composite_children(
             else_branch,
         } => {
             let mut slots = vec![(0, *condition), (1, *then_branch)];
-            if let Some(else_branch) = else_branch {
-                slots.push((2, *else_branch));
-            }
+            slots.extend(else_branch.map(|slot| (2, slot)));
             slots
         }
         ExpressionProjection::IfLet {
@@ -176,25 +246,17 @@ pub(super) fn attached_composite_children(
             else_branch,
         } => {
             let mut slots = vec![(0, *scrutinee)];
-            if let Some(guard) = guard {
-                slots.push((1, *guard));
-            }
+            slots.extend(guard.map(|slot| (1, slot)));
             slots.push((2, *then_branch));
-            if let Some(else_branch) = else_branch {
-                slots.push((3, *else_branch));
-            }
+            slots.extend(else_branch.map(|slot| (3, slot)));
             slots
         }
         ExpressionProjection::Match(projection) => vec![(0, projection.scrutinee())],
         ExpressionProjection::Range { start, end, .. } => {
             let mut slots =
                 Vec::with_capacity(usize::from(start.is_some()) + usize::from(end.is_some()));
-            if let Some(start) = start {
-                slots.push((0, *start));
-            }
-            if let Some(end) = end {
-                slots.push((1, *end));
-            }
+            slots.extend(start.map(|slot| (0, slot)));
+            slots.extend(end.map(|slot| (1, slot)));
             slots
         }
         ExpressionProjection::Unit
@@ -210,59 +272,9 @@ pub(super) fn attached_composite_children(
         {
             return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
         }
-        _ => return Ok(Box::new([])),
+        _ => return Ok(None),
     };
-    if child_nodes.len() != slots.len() {
-        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-    }
-
-    child_nodes
-        .into_iter()
-        .zip(slots)
-        .map(|(child, (ordinal, slot))| {
-            let expected_role = semantic_child_role(projection, ordinal);
-            let role_matches = expected_role.is_some_and(|role| child.role() == role)
-                || child.role()
-                    == SyntaxRole::Bucket(u16::try_from(ordinal).map_err(|_| {
-                        SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }
-                    })?)
-                    && matches!(projection, ExpressionProjection::BracketSequence(_))
-                    && syntax
-                        .parent()
-                        .is_some_and(|parent| parent.kind() == SyntaxKind::MetricBucketsMember);
-            if !role_matches
-                || component_range_for_slot(projection, components, ordinal).is_none_or(
-                    |component| !component_matches_semantic_child(syntax, &child, component),
-                )
-            {
-                return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-            }
-            match slot {
-                crate::expressions::SyntaxExpressionSlot::Authored
-                    if child.kind() != SyntaxKind::MissingExpression =>
-                {
-                    Ok(AttachedExpressionChild::Authored {
-                        ordinal,
-                        expression: FamilyNode::<ExpressionFamily>::new(child)?,
-                        source: syntax.source_span_for_range(
-                            component_range_for_slot(projection, components, ordinal)
-                                .expect("validated composite slot retains one source component"),
-                        ),
-                    })
-                }
-                crate::expressions::SyntaxExpressionSlot::Missing
-                    if child.kind() == SyntaxKind::MissingExpression =>
-                {
-                    Ok(AttachedExpressionChild::Missing {
-                        ordinal,
-                        recovery: FamilyNode::<RecoveryFamily>::new(child)?,
-                    })
-                }
-                _ => Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }),
-            }
-        })
-        .collect::<Result<Vec<_>, _>>()
-        .map(Vec::into_boxed_slice)
+    Ok(Some(slots))
 }
 
 fn attached_postfix_index_children(
@@ -303,6 +315,7 @@ fn attached_postfix_index_children(
         {
             AttachedExpressionChild::Authored {
                 ordinal: 0,
+                component_role: ExpressionComponentRole::Target,
                 expression: FamilyNode::<ExpressionFamily>::new(target.clone())?,
                 source: syntax.source_span_for_range(target_range),
             }
@@ -312,6 +325,7 @@ fn attached_postfix_index_children(
         {
             AttachedExpressionChild::Missing {
                 ordinal: 0,
+                component_role: ExpressionComponentRole::Target,
                 recovery: FamilyNode::<RecoveryFamily>::new(target.clone())?,
             }
         }
@@ -323,6 +337,7 @@ fn attached_postfix_index_children(
         {
             AttachedExpressionChild::Authored {
                 ordinal: 1,
+                component_role: ExpressionComponentRole::Index,
                 expression: FamilyNode::<ExpressionFamily>::new(index_node.clone())?,
                 source: syntax.source_span_for_range(index_range),
             }
@@ -332,6 +347,7 @@ fn attached_postfix_index_children(
         {
             AttachedExpressionChild::Missing {
                 ordinal: 1,
+                component_role: ExpressionComponentRole::Index,
                 recovery: FamilyNode::<RecoveryFamily>::new(index_node.clone())?,
             }
         }
@@ -377,6 +393,7 @@ fn attached_dialogue_application_children(
     }
     let mut children = vec![AttachedExpressionChild::Authored {
         ordinal: 0,
+        component_role: ExpressionComponentRole::Target,
         expression: FamilyNode::<ExpressionFamily>::new(target.clone())?,
         source: syntax.source_span_for_range(target_range),
     }];
@@ -393,83 +410,47 @@ fn attached_dialogue_application_children(
         };
     };
 
-    let mut expected = Vec::new();
-    for (ordinal, node) in content.nodes().iter().enumerate() {
-        let crate::expressions::SyntaxDialogueNodeProjection::Interpolation(slot) = node else {
-            continue;
-        };
-        let ordinal = u32::try_from(ordinal)
-            .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        let range = components
-            .iter()
-            .find(|component| {
-                component.role()
-                    == ExpressionComponentRole::DialogueNode {
-                        ordinal,
-                        part: crate::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
-                    }
-            })
-            .map(|component| component.range())
-            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        expected.push((*slot, SyntaxRole::Operand, range));
-    }
-    for (tag, projection) in content.tags().iter().enumerate() {
-        let (slot, role) = match projection.payload() {
-            crate::expressions::SyntaxRichTextTagPayloadProjection::FxCall(slot)
-            | crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(slot) => {
-                (*slot, SyntaxRole::Operand)
-            }
-            crate::expressions::SyntaxRichTextTagPayloadProjection::Condition(slot) => {
-                (*slot, SyntaxRole::Condition)
-            }
-            crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
-            | crate::expressions::SyntaxRichTextTagPayloadProjection::None => continue,
-        };
-        let tag = u32::try_from(tag)
-            .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        let range = components
-            .iter()
-            .find(|component| {
-                component.role()
-                    == ExpressionComponentRole::RichTextTag {
-                        tag,
-                        part: crate::expressions::SyntaxRichTextTagSourcePart::Payload,
-                    }
-            })
-            .map(|component| component.range())
-            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        expected.push((slot, role, range));
-    }
-    expected.sort_by_key(|(_, _, range)| (range.start(), range.end()));
-
     let mut nested = Vec::new();
     collect_expression_roots(payload, &mut nested);
-    if nested.len() != expected.len() {
+    let expected = dialogue_expression_specs(content);
+    let expected_count = expected.len();
+    if nested.len() != expected_count {
         return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
     }
-    for (position, (expression, (slot, role, owner_range))) in
-        nested.into_iter().zip(expected).enumerate()
-    {
-        if expression.role() != role
-            || expression.range().start() < owner_range.start()
-            || expression.range().end() > owner_range.end()
-        {
+    let mut seen = BTreeSet::new();
+    for (position, expression) in nested.into_iter().enumerate() {
+        let owner = dialogue_expression_owner(payload, &expression)
+            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+        if !seen.insert(owner) {
             return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
         }
+        let spec = expected
+            .iter()
+            .find(|spec| spec.owner == owner)
+            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+        if expression.role() != spec.syntax_role {
+            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+        }
+        let component_source = components
+            .iter()
+            .find(|component| component.role() == spec.component_role)
+            .map(|component| component.range())
+            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
         let ordinal = u32::try_from(
             position
                 .checked_add(1)
                 .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?,
         )
         .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        match slot {
+        match spec.slot {
             crate::expressions::SyntaxExpressionSlot::Authored
                 if expression.kind() != SyntaxKind::MissingExpression =>
             {
                 children.push(AttachedExpressionChild::Authored {
                     ordinal,
+                    component_role: spec.component_role,
                     expression: FamilyNode::<ExpressionFamily>::new(expression.clone())?,
-                    source: expression.source_span(),
+                    source: syntax.source_span_for_range(component_source),
                 });
             }
             crate::expressions::SyntaxExpressionSlot::Missing
@@ -477,6 +458,7 @@ fn attached_dialogue_application_children(
             {
                 children.push(AttachedExpressionChild::Missing {
                     ordinal,
+                    component_role: spec.component_role,
                     recovery: FamilyNode::<RecoveryFamily>::new(expression)?,
                 });
             }
@@ -485,7 +467,32 @@ fn attached_dialogue_application_children(
             }
         }
     }
+    if seen.len() != expected_count {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    }
     Ok(children.into_boxed_slice())
+}
+
+fn dialogue_expression_owner(
+    payload: &SyntaxNodeHandle,
+    expression: &SyntaxNodeHandle,
+) -> Option<AttachedCandidateDialogueOwner> {
+    let mut parent = expression.parent();
+    while let Some(ancestor) = parent {
+        if ancestor.id() == payload.id() {
+            return None;
+        }
+        match ancestor.role() {
+            SyntaxRole::DialogueNode(ordinal) => {
+                return Some(AttachedCandidateDialogueOwner::Node { ordinal });
+            }
+            SyntaxRole::RichTextTag(ordinal) => {
+                return Some(AttachedCandidateDialogueOwner::Tag { ordinal });
+            }
+            _ => parent = ancestor.parent(),
+        }
+    }
+    None
 }
 
 fn attached_call_children(
@@ -494,66 +501,25 @@ fn attached_call_children(
     components: &[crate::expressions::PendingExpressionComponent],
 ) -> Result<Box<[AttachedExpressionChild]>, SyntaxAccessError> {
     if let SyntaxCallProjection::CallbackBlock(callback) = call {
-        let callees = syntax.children_with_role(SyntaxRole::Callee);
-        let callbacks = syntax.children_with_role(SyntaxRole::Argument(0));
-        let ([callee], [callback_node]) = (callees.as_slice(), callbacks.as_slice()) else {
-            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-        };
-        let callee_range = components
-            .iter()
-            .find(|component| component.role() == ExpressionComponentRole::CallCallee)
-            .map(|component| component.range())
-            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        let callback_range = components
-            .iter()
-            .find(|component| {
-                component.role()
-                    == ExpressionComponentRole::CallArgument {
-                        argument: 0,
-                        part: SyntaxCallArgumentPart::Value,
-                    }
-            })
-            .map(|component| component.range())
-            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        if !ExpressionFamily::accepts(callee.kind())
-            || callee.kind() == SyntaxKind::MissingExpression
-            || !component_matches_semantic_child(syntax, callee, callee_range)
-            || !component_matches_semantic_child(syntax, callback_node, callback_range)
-        {
-            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-        }
-        let mut children = vec![AttachedExpressionChild::Authored {
-            ordinal: 0,
-            expression: FamilyNode::<ExpressionFamily>::new(callee.clone())?,
-            source: syntax.source_span_for_range(callee_range),
-        }];
-        match callback.callback() {
-            crate::expressions::SyntaxExpressionSlot::Authored
-                if callback_node.kind() == SyntaxKind::ClosureExpression =>
-            {
-                children.push(AttachedExpressionChild::Authored {
-                    ordinal: 1,
-                    expression: FamilyNode::<ExpressionFamily>::new(callback_node.clone())?,
-                    source: syntax.source_span_for_range(callback_range),
-                });
-            }
-            crate::expressions::SyntaxExpressionSlot::Missing
-                if callback_node.kind() == SyntaxKind::MissingExpression =>
-            {
-                children.push(AttachedExpressionChild::Missing {
-                    ordinal: 1,
-                    recovery: FamilyNode::<RecoveryFamily>::new(callback_node.clone())?,
-                });
-            }
-            _ => {
-                return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-            }
-        }
-        return Ok(children.into_boxed_slice());
+        return attached_callback_call_children(syntax, callback, components);
     }
     let Some(call) = call.parenthesized() else {
         return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
     };
+    let mut children = attached_call_callee(syntax, call, components)?;
+    for (argument, projection) in call.arguments().iter().enumerate() {
+        children.push(attached_call_argument(
+            syntax, components, argument, projection,
+        )?);
+    }
+    Ok(children.into_boxed_slice())
+}
+
+fn attached_call_callee(
+    syntax: &SyntaxNodeHandle,
+    call: &crate::expressions::SyntaxParenthesizedCallProjection,
+    components: &[crate::expressions::PendingExpressionComponent],
+) -> Result<Vec<AttachedExpressionChild>, SyntaxAccessError> {
     let callees = syntax.children_with_role(SyntaxRole::Callee);
     let callee_component_role = match call.callee() {
         SyntaxCallCalleeProjection::Ordinary => Some(ExpressionComponentRole::CallCallee),
@@ -562,7 +528,7 @@ fn attached_call_children(
         }
         SyntaxCallCalleeProjection::Associated { .. } => None,
     };
-    let mut children = Vec::new();
+    let mut children = Vec::with_capacity(1);
     match (callee_component_role, callees.as_slice()) {
         (Some(component_role), [callee]) => {
             let callee_component = components
@@ -578,6 +544,7 @@ fn attached_call_children(
             }
             children.push(AttachedExpressionChild::Authored {
                 ordinal: 0,
+                component_role,
                 expression: FamilyNode::<ExpressionFamily>::new(callee.clone())?,
                 source: syntax.source_span_for_range(callee_component),
             });
@@ -585,67 +552,145 @@ fn attached_call_children(
         (None, []) => {}
         _ => return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }),
     }
+    Ok(children)
+}
 
-    for (argument, projection) in call.arguments().iter().enumerate() {
-        let argument_ordinal = u16::try_from(argument)
-            .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        // `ArgumentList` is a structural wrapper and therefore does not own an
-        // attached identity. Its `CallArgument` descendants are attached
-        // directly to the Call while retaining their source-order role.
-        let argument_nodes = syntax.children_with_role(SyntaxRole::Argument(argument_ordinal));
-        let [argument_node] = argument_nodes.as_slice() else {
-            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-        };
-        if argument_node.kind() != SyntaxKind::CallArgument {
-            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-        }
-        let values = argument_node.children_with_role(SyntaxRole::Operand);
-        let [value] = values.as_slice() else {
-            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-        };
-        let value_component = components
-            .iter()
-            .find(|component| {
-                component.role()
-                    == ExpressionComponentRole::CallArgument {
-                        argument: argument_ordinal,
-                        part: SyntaxCallArgumentPart::Value,
-                    }
-            })
-            .map(|component| component.range())
-            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        if !ExpressionFamily::accepts(value.kind())
-            || !component_matches_semantic_child(syntax, value, value_component)
-        {
-            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-        }
-        let ordinal = u32::try_from(argument)
-            .ok()
-            .and_then(|argument| argument.checked_add(1))
-            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-        match projection.value() {
-            crate::expressions::SyntaxExpressionSlot::Authored
-                if value.kind() != SyntaxKind::MissingExpression =>
-            {
-                children.push(AttachedExpressionChild::Authored {
-                    ordinal,
-                    expression: FamilyNode::<ExpressionFamily>::new(value.clone())?,
-                    source: syntax.source_span_for_range(value_component),
-                });
-            }
-            crate::expressions::SyntaxExpressionSlot::Missing
-                if value.kind() == SyntaxKind::MissingExpression =>
-            {
-                children.push(AttachedExpressionChild::Missing {
-                    ordinal,
-                    recovery: FamilyNode::<RecoveryFamily>::new(value.clone())?,
-                });
-            }
-            _ => {
-                return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-            }
-        }
+fn attached_call_argument(
+    syntax: &SyntaxNodeHandle,
+    components: &[crate::expressions::PendingExpressionComponent],
+    argument: usize,
+    projection: &crate::expressions::SyntaxCallArgumentProjection,
+) -> Result<AttachedExpressionChild, SyntaxAccessError> {
+    let argument_ordinal = u16::try_from(argument)
+        .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+    // `ArgumentList` is a structural wrapper and therefore does not own an
+    // attached identity. Its `CallArgument` descendants are attached directly
+    // to the Call while retaining their source-order role.
+    let argument_nodes = syntax.children_with_role(SyntaxRole::Argument(argument_ordinal));
+    let [argument_node] = argument_nodes.as_slice() else {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    };
+    if argument_node.kind() != SyntaxKind::CallArgument {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
     }
+    let values = argument_node.children_with_role(SyntaxRole::Operand);
+    let [value] = values.as_slice() else {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    };
+    let value_component = components
+        .iter()
+        .find(|component| {
+            component.role()
+                == ExpressionComponentRole::CallArgument {
+                    argument: argument_ordinal,
+                    part: SyntaxCallArgumentPart::Value,
+                }
+        })
+        .map(|component| component.range())
+        .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+    if !ExpressionFamily::accepts(value.kind())
+        || !component_matches_semantic_child(syntax, value, value_component)
+    {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    }
+    let ordinal = u32::try_from(argument)
+        .ok()
+        .and_then(|argument| argument.checked_add(1))
+        .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+    let component_role = ExpressionComponentRole::CallArgument {
+        argument: argument_ordinal,
+        part: SyntaxCallArgumentPart::Value,
+    };
+    match projection.value() {
+        crate::expressions::SyntaxExpressionSlot::Authored
+            if value.kind() != SyntaxKind::MissingExpression =>
+        {
+            Ok(AttachedExpressionChild::Authored {
+                ordinal,
+                component_role,
+                expression: FamilyNode::<ExpressionFamily>::new(value.clone())?,
+                source: syntax.source_span_for_range(value_component),
+            })
+        }
+        crate::expressions::SyntaxExpressionSlot::Missing
+            if value.kind() == SyntaxKind::MissingExpression =>
+        {
+            Ok(AttachedExpressionChild::Missing {
+                ordinal,
+                component_role,
+                recovery: FamilyNode::<RecoveryFamily>::new(value.clone())?,
+            })
+        }
+        _ => Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }),
+    }
+}
+
+fn attached_callback_call_children(
+    syntax: &SyntaxNodeHandle,
+    callback: &crate::expressions::SyntaxCallbackBlockCallProjection,
+    components: &[crate::expressions::PendingExpressionComponent],
+) -> Result<Box<[AttachedExpressionChild]>, SyntaxAccessError> {
+    let callees = syntax.children_with_role(SyntaxRole::Callee);
+    let callbacks = syntax.children_with_role(SyntaxRole::Argument(0));
+    let ([callee], [callback_node]) = (callees.as_slice(), callbacks.as_slice()) else {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    };
+    let callee_range = components
+        .iter()
+        .find(|component| component.role() == ExpressionComponentRole::CallCallee)
+        .map(|component| component.range())
+        .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+    let callback_range = components
+        .iter()
+        .find(|component| {
+            component.role()
+                == ExpressionComponentRole::CallArgument {
+                    argument: 0,
+                    part: SyntaxCallArgumentPart::Value,
+                }
+        })
+        .map(|component| component.range())
+        .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+    if !ExpressionFamily::accepts(callee.kind())
+        || callee.kind() == SyntaxKind::MissingExpression
+        || !component_matches_semantic_child(syntax, callee, callee_range)
+        || !component_matches_semantic_child(syntax, callback_node, callback_range)
+    {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    }
+    let mut children = vec![AttachedExpressionChild::Authored {
+        ordinal: 0,
+        component_role: ExpressionComponentRole::CallCallee,
+        expression: FamilyNode::<ExpressionFamily>::new(callee.clone())?,
+        source: syntax.source_span_for_range(callee_range),
+    }];
+    let callback_role = ExpressionComponentRole::CallArgument {
+        argument: 0,
+        part: SyntaxCallArgumentPart::Value,
+    };
+    let child = match callback.callback() {
+        crate::expressions::SyntaxExpressionSlot::Authored
+            if callback_node.kind() == SyntaxKind::ClosureExpression =>
+        {
+            AttachedExpressionChild::Authored {
+                ordinal: 1,
+                component_role: callback_role,
+                expression: FamilyNode::<ExpressionFamily>::new(callback_node.clone())?,
+                source: syntax.source_span_for_range(callback_range),
+            }
+        }
+        crate::expressions::SyntaxExpressionSlot::Missing
+            if callback_node.kind() == SyntaxKind::MissingExpression =>
+        {
+            AttachedExpressionChild::Missing {
+                ordinal: 1,
+                component_role: callback_role,
+                recovery: FamilyNode::<RecoveryFamily>::new(callback_node.clone())?,
+            }
+        }
+        _ => return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }),
+    };
+    children.push(child);
     Ok(children.into_boxed_slice())
 }
 
@@ -695,7 +740,10 @@ pub(super) fn attached_call_type_children(
                 node: type_ref,
             });
         }
-        SyntaxCallCalleeProjection::Associated { .. } => {
+        SyntaxCallCalleeProjection::Associated {
+            receiver: SyntaxAssociatedReceiver::Present,
+            ..
+        } => {
             let Some(type_ref) = direct_types.get(direct_type_cursor) else {
                 return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
             };
@@ -703,7 +751,8 @@ pub(super) fn attached_call_type_children(
             let type_ref = AttachedTypeRefNode::from_syntax(type_ref.clone())?;
             let receiver_component = receiver_component
                 .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-            if type_ref.value().nominal_path().is_none()
+            if (type_ref.value().nominal_path().is_none()
+                && !matches!(type_ref.value(), crate::types::TypeRef::Recovery(_)))
                 || type_ref.whole_source_span().range() != receiver_component
             {
                 return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
@@ -716,47 +765,66 @@ pub(super) fn attached_call_type_children(
     }
 
     if let Some(application) = call.explicit_type_application() {
-        for (ordinal, projection) in application.arguments().iter().enumerate() {
-            let ordinal = u16::try_from(ordinal)
-                .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-            if matches!(projection, SyntaxCallTypeArgumentProjection::Missing) {
-                continue;
-            }
-            let Some(type_ref) = direct_types.get(direct_type_cursor) else {
-                return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-            };
-            direct_type_cursor += 1;
-            let type_ref = AttachedTypeRefNode::from_syntax(type_ref.clone())?;
-            let source = components
-                .iter()
-                .find(|component| {
-                    component.role()
-                        == ExpressionComponentRole::CallTypeApplication(
-                            SyntaxCallTypeApplicationComponentRole::Argument {
-                                argument: ordinal,
-                                part: SyntaxCallTypeArgumentPart::Type,
-                            },
-                        )
-                })
-                .map(|component| component.range())
-                .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
-            let recovery = matches!(type_ref.value(), crate::types::TypeRef::Recovery(_));
-            if type_ref.whole_source_span().range() != source
-                || recovery
-                    != matches!(projection, SyntaxCallTypeArgumentProjection::InvalidPresent)
-            {
-                return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
-            }
-            type_children.push(AttachedCallTypeChild {
-                role: SyntaxCallTypeChildRole::ExplicitCallTypeArgument { ordinal },
-                node: type_ref,
-            });
-        }
+        let (mut explicit, next_type_cursor) = attached_explicit_call_type_children(
+            syntax,
+            application,
+            components,
+            &direct_types,
+            direct_type_cursor,
+        )?;
+        type_children.append(&mut explicit);
+        direct_type_cursor = next_type_cursor;
     }
     if direct_type_cursor != direct_types.len() {
         return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
     }
     Ok(type_children.into_boxed_slice())
+}
+
+fn attached_explicit_call_type_children(
+    syntax: &SyntaxNodeHandle,
+    application: &crate::expressions::SyntaxCallTypeApplicationProjection,
+    components: &[crate::expressions::PendingExpressionComponent],
+    direct_types: &[SyntaxNodeHandle],
+    mut direct_type_cursor: usize,
+) -> Result<(Vec<AttachedCallTypeChild>, usize), SyntaxAccessError> {
+    let mut children = Vec::new();
+    for (ordinal, projection) in application.arguments().iter().enumerate() {
+        let ordinal = u16::try_from(ordinal)
+            .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+        if matches!(projection, SyntaxCallTypeArgumentProjection::Missing) {
+            continue;
+        }
+        let Some(type_ref) = direct_types.get(direct_type_cursor) else {
+            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+        };
+        direct_type_cursor += 1;
+        let type_ref = AttachedTypeRefNode::from_syntax(type_ref.clone())?;
+        let source = components
+            .iter()
+            .find(|component| {
+                component.role()
+                    == ExpressionComponentRole::CallTypeApplication(
+                        SyntaxCallTypeApplicationComponentRole::Argument {
+                            argument: ordinal,
+                            part: SyntaxCallTypeArgumentPart::Type,
+                        },
+                    )
+            })
+            .map(|component| component.range())
+            .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+        let recovery = matches!(type_ref.value(), crate::types::TypeRef::Recovery(_));
+        if type_ref.whole_source_span().range() != source
+            || recovery != matches!(projection, SyntaxCallTypeArgumentProjection::InvalidPresent)
+        {
+            return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+        }
+        children.push(AttachedCallTypeChild {
+            role: SyntaxCallTypeChildRole::ExplicitCallTypeArgument { ordinal },
+            node: type_ref,
+        });
+    }
+    Ok((children, direct_type_cursor))
 }
 
 pub(super) fn attached_closure_children(
@@ -867,115 +935,126 @@ fn attached_record_children(
         .into_iter()
         .zip(fields)
         .enumerate()
-        .filter_map(|(ordinal, (field_node, field))| {
-            let ordinal = match u32::try_from(ordinal) {
-                Ok(ordinal) => ordinal,
-                Err(_) => {
-                    return Some(Err(SyntaxAccessError::InvalidExpressionProjection {
-                        id: syntax.id(),
-                    }));
-                }
-            };
-            let field_role = match u16::try_from(ordinal) {
-                Ok(ordinal) => SyntaxRole::Field(ordinal),
-                Err(_) => {
-                    return Some(Err(SyntaxAccessError::InvalidExpressionProjection {
-                        id: syntax.id(),
-                    }));
-                }
-            };
-            let whole =
-                record_component_range(components, ordinal, ExpressionRecordFieldPart::Whole);
-            let name_range =
-                record_component_range(components, ordinal, ExpressionRecordFieldPart::Name);
-            let names = field_node.children_with_role(SyntaxRole::Name);
-            let [name_node] = names.as_slice() else {
-                return Some(Err(SyntaxAccessError::InvalidExpressionProjection {
-                    id: syntax.id(),
-                }));
-            };
-            let name_kind_matches = match field.name() {
-                Ok(_) => name_node.kind() == SyntaxKind::NameReference,
-                Err(SyntaxNameIssue::Missing) => name_node.kind() == SyntaxKind::MissingName,
-                Err(_) => name_node.kind() == SyntaxKind::NameReference,
-            };
-            if field_node.role() != field_role
-                || whole.is_none_or(|whole| {
-                    whole.start() != field_node.range().start()
-                        || whole.end() > field_node.range().end()
-                })
-                || name_range != Some(name_node.range())
-                || !name_kind_matches
-            {
-                return Some(Err(SyntaxAccessError::InvalidExpressionProjection {
-                    id: syntax.id(),
-                }));
-            }
-
-            match field {
-                SyntaxRecordField::Explicit { value, .. } => {
-                    let children = field_node.children_with_role(SyntaxRole::Initializer);
-                    let [child] = children.as_slice() else {
-                        return Some(Err(SyntaxAccessError::InvalidExpressionProjection {
-                            id: syntax.id(),
-                        }));
-                    };
-                    let Some(value_range) = record_component_range(
-                        components,
-                        ordinal,
-                        ExpressionRecordFieldPart::Value,
-                    ) else {
-                        return Some(Err(SyntaxAccessError::InvalidExpressionProjection {
-                            id: syntax.id(),
-                        }));
-                    };
-                    if !ExpressionFamily::accepts(child.kind())
-                        || !component_matches_semantic_child(syntax, child, value_range)
-                    {
-                        return Some(Err(SyntaxAccessError::InvalidExpressionProjection {
-                            id: syntax.id(),
-                        }));
-                    }
-                    Some(match value {
-                        crate::expressions::SyntaxExpressionSlot::Authored
-                            if child.kind() != SyntaxKind::MissingExpression =>
-                        {
-                            FamilyNode::<ExpressionFamily>::new(child.clone()).map(|expression| {
-                                AttachedExpressionChild::Authored {
-                                    ordinal,
-                                    expression,
-                                    source: syntax.source_span_for_range(value_range),
-                                }
-                            })
-                        }
-                        crate::expressions::SyntaxExpressionSlot::Missing
-                            if child.kind() == SyntaxKind::MissingExpression =>
-                        {
-                            FamilyNode::<RecoveryFamily>::new(child.clone()).map(|recovery| {
-                                AttachedExpressionChild::Missing { ordinal, recovery }
-                            })
-                        }
-                        _ => {
-                            Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })
-                        }
-                    })
-                }
-                SyntaxRecordField::Shorthand { .. } => {
-                    if !field_node
-                        .children()
-                        .into_iter()
-                        .all(|child| !ExpressionFamily::accepts(child.kind()))
-                    {
-                        return Some(Err(SyntaxAccessError::InvalidExpressionProjection {
-                            id: syntax.id(),
-                        }));
-                    }
-                    None
-                }
-            }
+        .map(|(ordinal, (field_node, field))| {
+            attached_record_child(syntax, components, ordinal, &field_node, field)
         })
         .collect::<Result<Vec<_>, _>>()
-        .map(Vec::into_boxed_slice)
+        .map(|children| {
+            children
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+                .into_boxed_slice()
+        })
+}
+
+fn attached_record_child(
+    syntax: &SyntaxNodeHandle,
+    components: &[crate::expressions::PendingExpressionComponent],
+    ordinal: usize,
+    field_node: &SyntaxNodeHandle,
+    field: &SyntaxRecordField,
+) -> Result<Option<AttachedExpressionChild>, SyntaxAccessError> {
+    let ordinal = u32::try_from(ordinal)
+        .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+    validate_record_field_node(syntax, components, ordinal, field_node, field)?;
+    match field {
+        SyntaxRecordField::Explicit { value, .. } => {
+            attached_record_value_child(syntax, components, ordinal, field_node, *value).map(Some)
+        }
+        SyntaxRecordField::Shorthand { .. } => {
+            if field_node
+                .children()
+                .into_iter()
+                .any(|child| ExpressionFamily::accepts(child.kind()))
+            {
+                return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+            }
+            Ok(None)
+        }
+    }
+}
+
+fn validate_record_field_node(
+    syntax: &SyntaxNodeHandle,
+    components: &[crate::expressions::PendingExpressionComponent],
+    ordinal: u32,
+    field_node: &SyntaxNodeHandle,
+    field: &SyntaxRecordField,
+) -> Result<(), SyntaxAccessError> {
+    let field_role = u16::try_from(ordinal)
+        .map(SyntaxRole::Field)
+        .map_err(|_| SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+    let whole = record_component_range(components, ordinal, ExpressionRecordFieldPart::Whole);
+    let name_range = record_component_range(components, ordinal, ExpressionRecordFieldPart::Name);
+    let names = field_node.children_with_role(SyntaxRole::Name);
+    let [name_node] = names.as_slice() else {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    };
+    let name_kind_matches = match field.name() {
+        Err(SyntaxNameIssue::Missing) => name_node.kind() == SyntaxKind::MissingName,
+        Ok(_) | Err(_) => name_node.kind() == SyntaxKind::NameReference,
+    };
+    if field_node.role() != field_role
+        || whole.is_none_or(|whole| {
+            whole.start() != field_node.range().start() || whole.end() > field_node.range().end()
+        })
+        || name_range != Some(name_node.range())
+        || !name_kind_matches
+    {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    }
+    Ok(())
+}
+
+fn attached_record_value_child(
+    syntax: &SyntaxNodeHandle,
+    components: &[crate::expressions::PendingExpressionComponent],
+    ordinal: u32,
+    field_node: &SyntaxNodeHandle,
+    slot: crate::expressions::SyntaxExpressionSlot,
+) -> Result<AttachedExpressionChild, SyntaxAccessError> {
+    let children = field_node.children_with_role(SyntaxRole::Initializer);
+    let [child] = children.as_slice() else {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    };
+    let value_range = record_component_range(components, ordinal, ExpressionRecordFieldPart::Value)
+        .ok_or(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() })?;
+    let component_role = ExpressionComponentRole::RecordField {
+        field: ordinal,
+        part: ExpressionRecordFieldPart::Value,
+    };
+    if !ExpressionFamily::accepts(child.kind())
+        || !component_matches_semantic_child(syntax, child, value_range)
+    {
+        return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
+    }
+    match slot {
+        crate::expressions::SyntaxExpressionSlot::Authored
+            if child.kind() != SyntaxKind::MissingExpression =>
+        {
+            FamilyNode::<ExpressionFamily>::new(child.clone()).map(|expression| {
+                AttachedExpressionChild::Authored {
+                    ordinal,
+                    component_role,
+                    expression,
+                    source: syntax.source_span_for_range(value_range),
+                }
+            })
+        }
+        crate::expressions::SyntaxExpressionSlot::Missing
+            if child.kind() == SyntaxKind::MissingExpression =>
+        {
+            FamilyNode::<RecoveryFamily>::new(child.clone()).map(|recovery| {
+                AttachedExpressionChild::Missing {
+                    ordinal,
+                    component_role,
+                    recovery,
+                }
+            })
+        }
+        _ => Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() }),
+    }
 }
 
 fn record_component_range(
@@ -996,28 +1075,39 @@ fn semantic_child_role(projection: &ExpressionProjection, ordinal: u32) -> Optio
         }
         ExpressionProjection::ArrayRepeat(_) if ordinal == 0 => Some(SyntaxRole::Element(0)),
         ExpressionProjection::ArrayRepeat(_) if ordinal == 1 => Some(SyntaxRole::Element(1)),
-        ExpressionProjection::Select(_) if ordinal == 0 => Some(SyntaxRole::Target),
-        ExpressionProjection::Index(_) if ordinal == 0 => Some(SyntaxRole::Target),
-        ExpressionProjection::Index(_) if ordinal == 1 => Some(SyntaxRole::Argument(0)),
-        ExpressionProjection::DialogueContentApplication(_) if ordinal == 0 => {
+        ExpressionProjection::Select(_)
+        | ExpressionProjection::Index(_)
+        | ExpressionProjection::DialogueContentApplication(_)
+        | ExpressionProjection::PostfixBracket(_)
+            if ordinal == 0 =>
+        {
             Some(SyntaxRole::Target)
         }
-        ExpressionProjection::PostfixBracket(_) if ordinal == 0 => Some(SyntaxRole::Target),
-        ExpressionProjection::Pipe(_) if ordinal == 0 => Some(SyntaxRole::LeftOperand),
-        ExpressionProjection::Pipe(_) if ordinal == 1 => Some(SyntaxRole::RightOperand),
-        ExpressionProjection::Range { .. } if ordinal == 0 => Some(SyntaxRole::LeftOperand),
-        ExpressionProjection::Range { .. } if ordinal == 1 => Some(SyntaxRole::RightOperand),
-        ExpressionProjection::Binary { .. } if ordinal == 0 => Some(SyntaxRole::LeftOperand),
-        ExpressionProjection::Binary { .. } if ordinal == 1 => Some(SyntaxRole::RightOperand),
+        ExpressionProjection::Index(_) if ordinal == 1 => Some(SyntaxRole::Argument(0)),
+        ExpressionProjection::Pipe(_)
+        | ExpressionProjection::Range { .. }
+        | ExpressionProjection::Binary { .. }
+            if ordinal == 0 =>
+        {
+            Some(SyntaxRole::LeftOperand)
+        }
+        ExpressionProjection::Pipe(_)
+        | ExpressionProjection::Range { .. }
+        | ExpressionProjection::Binary { .. }
+            if ordinal == 1 =>
+        {
+            Some(SyntaxRole::RightOperand)
+        }
         ExpressionProjection::Closure(_) if ordinal == 0 => Some(SyntaxRole::Body),
         ExpressionProjection::If { .. } if ordinal == 0 => Some(SyntaxRole::Condition),
         ExpressionProjection::If { .. } if ordinal == 1 => Some(SyntaxRole::ThenBranch),
         ExpressionProjection::If { .. } if ordinal == 2 => Some(SyntaxRole::ElseBranch),
-        ExpressionProjection::IfLet { .. } if ordinal == 0 => Some(SyntaxRole::Scrutinee),
+        ExpressionProjection::IfLet { .. } | ExpressionProjection::Match(_) if ordinal == 0 => {
+            Some(SyntaxRole::Scrutinee)
+        }
         ExpressionProjection::IfLet { .. } if ordinal == 1 => Some(SyntaxRole::Guard),
         ExpressionProjection::IfLet { .. } if ordinal == 2 => Some(SyntaxRole::ThenBranch),
         ExpressionProjection::IfLet { .. } if ordinal == 3 => Some(SyntaxRole::ElseBranch),
-        ExpressionProjection::Match(_) if ordinal == 0 => Some(SyntaxRole::Scrutinee),
         ExpressionProjection::Try { .. }
         | ExpressionProjection::Await { .. }
         | ExpressionProjection::Borrow { .. }
@@ -1036,38 +1126,16 @@ pub(super) fn component_matches_semantic_child(
     child: &SyntaxNodeHandle,
     component: arcweft_source::SourceRange,
 ) -> bool {
-    let mut outer_group = None;
-    let mut reached_parent = false;
-    for ancestor in child.rowan().ancestors().skip(1) {
-        if ancestor == *parent.rowan() {
-            reached_parent = true;
-            break;
-        }
-        if ancestor.kind().0 == SyntaxKind::DelimitedGroup as u16 {
-            outer_group = Some(ancestor);
-        }
-    }
-    if !reached_parent {
-        return false;
-    }
-    match outer_group {
-        Some(group) => {
-            let range = group.text_range();
-            component
-                == arcweft_source::SourceRange::new(
-                    usize::from(range.start()),
-                    usize::from(range.end()),
-                )
-        }
-        None => component == child.range(),
-    }
+    (child.parent_id() == Some(parent.id()) && component == child.parent_component_range())
+        || (child.semantic_parent_id() == Some(parent.id())
+            && component == child.semantic_component_range())
 }
 
-fn component_range_for_slot(
+fn semantic_child_component(
     projection: &ExpressionProjection,
     components: &[crate::expressions::PendingExpressionComponent],
     ordinal: u32,
-) -> Option<arcweft_source::SourceRange> {
+) -> Option<(ExpressionComponentRole, arcweft_source::SourceRange)> {
     let role = match projection {
         ExpressionProjection::Tuple(_) | ExpressionProjection::BracketSequence(_) => {
             ExpressionComponentRole::Element { ordinal }
@@ -1078,18 +1146,21 @@ fn component_range_for_slot(
         ExpressionProjection::ArrayRepeat(_) if ordinal == 1 => {
             ExpressionComponentRole::RepeatLength
         }
-        ExpressionProjection::Select(_) if ordinal == 0 => ExpressionComponentRole::Target,
-        ExpressionProjection::Index(_) if ordinal == 0 => ExpressionComponentRole::Target,
-        ExpressionProjection::Index(_) if ordinal == 1 => ExpressionComponentRole::Index,
-        ExpressionProjection::DialogueContentApplication(_) if ordinal == 0 => {
+        ExpressionProjection::Select(_)
+        | ExpressionProjection::Index(_)
+        | ExpressionProjection::DialogueContentApplication(_)
+        | ExpressionProjection::PostfixBracket(_)
+            if ordinal == 0 =>
+        {
             ExpressionComponentRole::Target
         }
-        ExpressionProjection::PostfixBracket(_) if ordinal == 0 => ExpressionComponentRole::Target,
-        ExpressionProjection::Pipe(_) if ordinal == 0 => ExpressionComponentRole::LeftOperand,
+        ExpressionProjection::Index(_) if ordinal == 1 => ExpressionComponentRole::Index,
+        ExpressionProjection::Pipe(_) | ExpressionProjection::Binary { .. } if ordinal == 0 => {
+            ExpressionComponentRole::LeftOperand
+        }
         ExpressionProjection::Pipe(_) if ordinal == 1 => ExpressionComponentRole::RightOperand,
         ExpressionProjection::Range { .. } if ordinal == 0 => ExpressionComponentRole::RangeStart,
         ExpressionProjection::Range { .. } if ordinal == 1 => ExpressionComponentRole::RangeEnd,
-        ExpressionProjection::Binary { .. } if ordinal == 0 => ExpressionComponentRole::LeftOperand,
         ExpressionProjection::Binary { .. } if ordinal == 1 => {
             ExpressionComponentRole::RightOperand
         }
@@ -1097,11 +1168,12 @@ fn component_range_for_slot(
         ExpressionProjection::If { .. } if ordinal == 0 => ExpressionComponentRole::Condition,
         ExpressionProjection::If { .. } if ordinal == 1 => ExpressionComponentRole::ThenBranch,
         ExpressionProjection::If { .. } if ordinal == 2 => ExpressionComponentRole::ElseBranch,
-        ExpressionProjection::IfLet { .. } if ordinal == 0 => ExpressionComponentRole::Scrutinee,
+        ExpressionProjection::IfLet { .. } | ExpressionProjection::Match(_) if ordinal == 0 => {
+            ExpressionComponentRole::Scrutinee
+        }
         ExpressionProjection::IfLet { .. } if ordinal == 1 => ExpressionComponentRole::Guard,
         ExpressionProjection::IfLet { .. } if ordinal == 2 => ExpressionComponentRole::ThenBranch,
         ExpressionProjection::IfLet { .. } if ordinal == 3 => ExpressionComponentRole::ElseBranch,
-        ExpressionProjection::Match(_) if ordinal == 0 => ExpressionComponentRole::Scrutinee,
         ExpressionProjection::Record(_) | ExpressionProjection::RecordLiteral(_) => {
             ExpressionComponentRole::RecordField {
                 field: ordinal,
@@ -1122,7 +1194,7 @@ fn component_range_for_slot(
     components
         .iter()
         .find(|component| component.role() == role)
-        .map(|component| component.range())
+        .map(|component| (role, component.range()))
 }
 
 pub(super) fn validate_short_variant_shape(
@@ -1138,9 +1210,8 @@ pub(super) fn validate_short_variant_shape(
         return Err(SyntaxAccessError::InvalidExpressionProjection { id: syntax.id() });
     };
     let child_matches = match name {
-        Ok(_) => name_node.kind() == SyntaxKind::NameReference,
         Err(SyntaxNameIssue::Missing) => name_node.kind() == SyntaxKind::MissingName,
-        Err(_) => name_node.kind() == SyntaxKind::NameReference,
+        Ok(_) | Err(_) => name_node.kind() == SyntaxKind::NameReference,
     };
     let range_matches = components
         .iter()

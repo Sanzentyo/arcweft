@@ -1,11 +1,17 @@
 //! Shared compiler policy for `#[fx] fn ... -> Fx` graph factories.
 
-use arcweft_lang_syntax::expr::{Expr, Literal, UnaryOp};
+use crate::expr::{HirExprKind, HirRecordField, HirUnaryOp};
+use crate::identity::ExprId;
+use crate::leaf::{
+    HirCharacterLiteral, HirDurationLiteral, HirFloatLiteral, HirIntegerLiteral, HirLiteral,
+    HirNumericSequenceRecovery, HirStringLiteral, HirUnitNumberLiteral,
+};
+use crate::module::HirModule;
 
 /// Closed value accepted by an Fx default or `RichText` invocation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct FxConst<'a> {
-    expr: &'a Expr,
+pub struct FxConst {
+    expr: ExprId,
     kind: FxConstKind,
 }
 
@@ -49,57 +55,96 @@ pub enum FxConstructorKind {
     Stack,
 }
 
-impl<'a> FxConst<'a> {
-    /// Classifies a recursively closed constant expression.
-    pub fn from_expr(expr: &'a Expr) -> Option<Self> {
-        let kind = match expr {
-            Expr::Literal(
-                Literal::String(_)
-                | Literal::Int(_)
-                | Literal::Float { .. }
-                | Literal::UnitNumber { .. }
-                | Literal::Bool(_)
-                | Literal::Duration { .. },
-            ) => FxConstKind::Literal,
-            Expr::Unary {
-                op: UnaryOp::Neg,
-                expr,
-            } if matches!(
-                expr.as_ref(),
-                Expr::Literal(
-                    Literal::Int(_)
-                        | Literal::Float { .. }
-                        | Literal::UnitNumber { .. }
-                        | Literal::Duration { .. }
-                )
-            ) =>
-            {
-                FxConstKind::SignedNumber
-            }
-            Expr::ShortVariant(_) => FxConstKind::Selector,
-            Expr::BracketSeq(items) if items.iter().all(|item| Self::from_expr(item).is_some()) => {
-                FxConstKind::List
-            }
-            Expr::NumericBracketSeq(_) => FxConstKind::List,
-            Expr::RecordLiteral(fields)
-                if fields
-                    .iter()
-                    .all(|(_, value)| Self::from_expr(value).is_some()) =>
-            {
-                FxConstKind::Record
-            }
-            _ => return None,
-        };
+impl FxConst {
+    /// Classifies a recursively closed constant from one accepted HIR lease.
+    pub fn from_expr(module: &HirModule, expr: ExprId) -> Option<Self> {
+        let kind = classify_expr(module, expr)?;
         Some(Self { expr, kind })
     }
 
-    pub const fn expr(self) -> &'a Expr {
+    /// Returns the exact qualified expression identity that was classified.
+    pub const fn expr(self) -> ExprId {
         self.expr
     }
 
     pub const fn kind(self) -> FxConstKind {
         self.kind
     }
+}
+
+fn classify_expr(module: &HirModule, expr: ExprId) -> Option<FxConstKind> {
+    let expression = module.resolve_expr(expr).ok()?;
+    if expression.is_poisoned() {
+        return None;
+    }
+    Some(match expression.kind() {
+        HirExprKind::Literal(literal) if is_closed_literal(literal) => FxConstKind::Literal,
+        HirExprKind::Unary(unary)
+            if unary.operator() == HirUnaryOp::Negate
+                && module
+                    .resolve_expr(unary.operand())
+                    .ok()
+                    .is_some_and(|operand| {
+                        !operand.is_poisoned()
+                            && matches!(
+                                operand.kind(),
+                                HirExprKind::Literal(literal) if is_signed_numeric_literal(literal)
+                            )
+                    }) =>
+        {
+            FxConstKind::SignedNumber
+        }
+        HirExprKind::ShortVariant(name) if name.as_resolved().is_some() => FxConstKind::Selector,
+        HirExprKind::BracketSequence(sequence)
+            if sequence
+                .elements()
+                .iter()
+                .all(|element| classify_expr(module, *element).is_some()) =>
+        {
+            FxConstKind::List
+        }
+        HirExprKind::NumericBracketSequence(sequence)
+            if sequence.recovery() == &HirNumericSequenceRecovery::Complete =>
+        {
+            FxConstKind::List
+        }
+        HirExprKind::RecordLiteral(record)
+            if record.fields().iter().all(|field| match field {
+                HirRecordField::Explicit { value, .. } => classify_expr(module, *value).is_some(),
+                HirRecordField::Shorthand { .. } | HirRecordField::Invalid { .. } => false,
+            }) =>
+        {
+            FxConstKind::Record
+        }
+        _ => return None,
+    })
+}
+
+const fn is_closed_literal(literal: &HirLiteral) -> bool {
+    match literal {
+        HirLiteral::String(HirStringLiteral::Value(_))
+        | HirLiteral::Integer(HirIntegerLiteral::Value { .. })
+        | HirLiteral::Float(HirFloatLiteral::Value { .. })
+        | HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { .. })
+        | HirLiteral::Boolean(_)
+        | HirLiteral::Duration(HirDurationLiteral::Value(_)) => true,
+        HirLiteral::Character(HirCharacterLiteral::Value(_) | HirCharacterLiteral::Invalid(_))
+        | HirLiteral::String(HirStringLiteral::Invalid(_))
+        | HirLiteral::Integer(HirIntegerLiteral::Invalid(_))
+        | HirLiteral::Float(HirFloatLiteral::Invalid(_))
+        | HirLiteral::UnitNumber(HirUnitNumberLiteral::Invalid(_))
+        | HirLiteral::Duration(HirDurationLiteral::Invalid(_)) => false,
+    }
+}
+
+const fn is_signed_numeric_literal(literal: &HirLiteral) -> bool {
+    matches!(
+        literal,
+        HirLiteral::Integer(HirIntegerLiteral::Value { .. })
+            | HirLiteral::Float(HirFloatLiteral::Value { .. })
+            | HirLiteral::UnitNumber(HirUnitNumberLiteral::Value { .. })
+            | HirLiteral::Duration(HirDurationLiteral::Value(_))
+    )
 }
 
 impl FxConstructorKind {
@@ -123,18 +168,7 @@ impl FxConstructorKind {
 
 #[cfg(test)]
 mod tests {
-    use super::{FxConst, FxConstructorKind};
-    use arcweft_lang_syntax::expr::parse_expr;
-
-    #[test]
-    fn fx_constants_are_closed_and_exclude_character_literals() {
-        for source in ["500ms", "-2px", "\"seed\"", ".glyph", "[1, 2]"] {
-            let expr = parse_expr(source).expect("Fx constant parses");
-            assert!(FxConst::from_expr(&expr).is_some(), "{source}");
-        }
-        let character = parse_expr("\"x\"c").expect("character literal parses");
-        assert!(FxConst::from_expr(&character).is_none());
-    }
+    use super::FxConstructorKind;
 
     #[test]
     fn fx_constructor_inventory_is_closed() {

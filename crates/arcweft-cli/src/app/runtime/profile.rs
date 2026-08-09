@@ -1,13 +1,13 @@
 use crate::app::project::{
     SelectionSemanticContext, SourceSelection, direct_project_compilation_input,
     print_project_compile_error, profile_project_compilation_context, project_compilation_context,
-    runtime_plan_options_for_selection,
 };
 use crate::output::RuntimeProfilePhase;
 use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_compiler::{
-    image::CompiledImageCatalog,
-    project::{ProjectCompilationContext, compile_project},
+    project::{
+        CompiledProject, ProjectCompilationContext, ProjectCompilationSession, compile_project,
+    },
     view::CompiledViewProduct,
 };
 use arcweft_core::{
@@ -16,35 +16,36 @@ use arcweft_core::{
     bytecode::{BytecodeProgram, BytecodeStats},
     plan::RuntimePlan,
 };
-use arcweft_lang_sema::check::TypeCheckReport;
-use arcweft_lang_syntax::cst::SyntaxParseStats;
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    incremental::{ParsedSource, SyntaxParseStats},
+};
 use arcweft_presentation::fx::FxDefinition;
 use arcweft_project::sources::ProjectSources;
-use arcweft_render_text::LineDisplayCatalog;
 use arcweft_runtime_plan::{
     awbc_lower::{AwbcLowerError, AwbcLowerer},
     flow::RuntimePlanLowerStats,
 };
 use arcweft_source::SourceDocument;
-use arcweft_verify::{RuntimeTypeValidationStats, validate_runtime_plan_types};
+use arcweft_text_model::DialogueContentCatalog;
+use std::collections::BTreeMap;
 use std::path::Path;
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 pub(in crate::app) struct ProfileCompiledRuntimePlan {
-    pub(in crate::app) hir: arcweft_lang_hir::model::HirModule,
-    pub(in crate::app) image_catalog: CompiledImageCatalog,
+    pub(in crate::app) compiled: Arc<CompiledProject>,
+    pub(in crate::app) execution_diagnostics:
+        Arc<arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext>,
     pub(in crate::app) fx_definitions: Arc<[FxDefinition]>,
     pub(in crate::app) view_product: CompiledViewProduct,
     pub(in crate::app) plan: RuntimePlan,
     pub(in crate::app) syntax_warnings: usize,
-    pub(in crate::app) syntax_stats: arcweft_lang_syntax::cst::SyntaxParseStats,
+    pub(in crate::app) syntax_stats: SyntaxParseStats,
     pub(in crate::app) line_task_groups: usize,
-    pub(in crate::app) typecheck_report: TypeCheckReport,
     pub(in crate::app) runtime_plan_stats: RuntimePlanLowerStats,
-    pub(in crate::app) line_display_catalog: LineDisplayCatalog,
-    pub(in crate::app) runtime_type_validation_stats: RuntimeTypeValidationStats,
+    pub(in crate::app) dialogue_content_catalog: DialogueContentCatalog,
     pub(in crate::app) product_awbc: AwbcProgram,
     pub(in crate::app) bytecode: BytecodeProgram,
     pub(in crate::app) bytecode_stats: BytecodeStats,
@@ -67,22 +68,29 @@ pub(in crate::app) fn compile_profile_runtime_plan(
             phases,
         );
     }
-    if let Some(manifest) = selection.project_manifest() {
-        return compile_project_runtime_plan(manifest, selection, semantic, phases);
+    if selection.project_manifest().is_some() {
+        return compile_project_runtime_plan(selection, semantic, phases);
     }
     let direct = direct_project_compilation_input(selection, semantic, phases)?;
-    compile_project_sources_runtime_plan(direct.sources(), direct.context(), selection, phases)
+    compile_project_sources_runtime_plan(
+        direct.sources(),
+        direct.parsed_sources(),
+        None,
+        direct.context(),
+        selection,
+        phases,
+    )
 }
 
 fn profile_lower_product_awbc(
     selection: &SourceSelection,
     plan: &RuntimePlan,
-    display: &LineDisplayCatalog,
+    dialogue_content: &DialogueContentCatalog,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<AwbcProgram, ExitCode> {
     let source_label = report_path(selection.path());
     let report = run_profile_phase(phases, "product_awbc_lower", || {
-        AwbcLowerer::new(plan, display, &source_label)
+        AwbcLowerer::new(plan, dialogue_content, &source_label)
             .lower()
             .map_err(|error| {
                 match error {
@@ -111,19 +119,15 @@ fn profile_lower_product_awbc(
 }
 
 fn compile_project_runtime_plan(
-    manifest: &Path,
     selection: &SourceSelection,
     semantic: &SelectionSemanticContext,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
-    let loaded = run_profile_phase(phases, "load_project", || {
-        arcweft_project_loader::project::load(manifest).map_err(|error| {
-            eprintln!("error: {error}");
-            ExitCode::FAILURE
-        })
-    })?;
-    let context = project_compilation_context(&loaded, selection, semantic)?;
-    compile_loaded_project_runtime_plan(&loaded, &context, selection, phases)
+    let loaded = selection
+        .loaded_project()
+        .expect("project selections retain their accepted loaded project");
+    let context = project_compilation_context(loaded, selection, semantic)?;
+    compile_loaded_project_runtime_plan(loaded, &context, selection, phases)
 }
 
 fn compile_loaded_project_runtime_plan(
@@ -132,48 +136,88 @@ fn compile_loaded_project_runtime_plan(
     selection: &SourceSelection,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
-    compile_project_sources_runtime_plan(loaded.sources(), context, selection, phases)
+    compile_project_sources_runtime_plan(
+        loaded.sources(),
+        loaded.module_parsed_source_map(),
+        selection.compiler_session(),
+        context,
+        selection,
+        phases,
+    )
 }
 
 fn compile_project_sources_runtime_plan(
     sources: &ProjectSources,
+    parsed_sources: &BTreeMap<CanonicalModulePath, ParsedSource>,
+    compiler: Option<&Arc<Mutex<ProjectCompilationSession>>>,
     context: &ProjectCompilationContext,
     selection: &SourceSelection,
     phases: &mut Vec<RuntimeProfilePhase>,
 ) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
     let source_document = Arc::clone(sources.root_module().document());
-    let runtime_options = runtime_plan_options_for_selection(selection)?;
-    let compiled = run_profile_phase(phases, "project_compile", || {
-        compile_project(sources, context, &runtime_options).map_err(|error| {
-            print_project_compile_error(&error);
+    let compiled_project = if let Some(compiler) = compiler {
+        let mut session = compiler.lock().map_err(|_| {
+            eprintln!("error: project compiler session lock is poisoned");
             ExitCode::FAILURE
-        })
-    })?;
+        })?;
+        run_profile_phase(phases, "project_compile", || {
+            compile_project(&mut session, sources, parsed_sources, context).map_err(|error| {
+                print_project_compile_error(&error);
+                ExitCode::FAILURE
+            })
+        })?
+    } else {
+        let mut session = ProjectCompilationSession::try_new().map_err(|error| {
+            eprintln!("error: failed to create project compiler session: {error}");
+            ExitCode::FAILURE
+        })?;
+        run_profile_phase(phases, "project_compile", || {
+            compile_project(&mut session, sources, parsed_sources, context).map_err(|error| {
+                print_project_compile_error(&error);
+                ExitCode::FAILURE
+            })
+        })?
+    };
+    compile_accepted_project_runtime_plan(
+        sources,
+        selection,
+        source_document,
+        Arc::new(compiled_project),
+        phases,
+    )
+}
+
+/// Lowers executable products from one already accepted compiler generation.
+///
+/// Project build uses this entry after its cached compilation transaction so
+/// bundle emission cannot compile a second HIR project and silently bind a
+/// different runtime artifact identity.
+pub(in crate::app) fn compile_accepted_project_runtime_plan(
+    sources: &ProjectSources,
+    selection: &SourceSelection,
+    source_document: Arc<SourceDocument>,
+    compiled: Arc<CompiledProject>,
+    phases: &mut Vec<RuntimeProfilePhase>,
+) -> Result<ProfileCompiledRuntimePlan, ExitCode> {
+    let execution_diagnostics =
+        crate::app::runtime_artifact::bind_execution_diagnostics(selection, sources, &compiled)?;
     let source_map = compiled.view_product().product().source_map().clone();
     let syntax_stats =
         compiled
             .modules()
             .iter()
-            .fold(SyntaxParseStats::default(), |mut stats, module| {
-                add_syntax_stats(&mut stats, module.syntax_stats());
-                stats
-            });
+            .try_fold(SyntaxParseStats::ZERO, |stats, module| {
+                stats.checked_add(*module.syntax_stats()).ok_or_else(|| {
+                    eprintln!("error: accepted syntax work accounting overflowed usize");
+                    ExitCode::FAILURE
+                })
+            })?;
     let runtime_plan_report = compiled.runtime_plan().clone();
     let plan = runtime_plan_report.plan;
-    let line_display_catalog = runtime_plan_report.line_display_catalog;
+    let dialogue_content_catalog = runtime_plan_report.dialogue_content_catalog;
     let runtime_plan_stats = runtime_plan_report.stats;
-    let runtime_type_validation_stats = run_profile_phase(phases, "runtime_type_validate", || {
-        let report = validate_runtime_plan_types(&plan, compiled.typecheck_report());
-        if report.has_errors() {
-            for diagnostic in report.diagnostics {
-                eprintln!("error: {}: {}", diagnostic.path, diagnostic.message);
-            }
-            Err(ExitCode::FAILURE)
-        } else {
-            Ok(report.stats)
-        }
-    })?;
-    let product_awbc = profile_lower_product_awbc(selection, &plan, &line_display_catalog, phases)?;
+    let product_awbc =
+        profile_lower_product_awbc(selection, &plan, &dialogue_content_catalog, phases)?;
     let aot = run_profile_phase(phases, "aot_lower", || {
         Ok::<AotProgram, ExitCode>(AotProgram::from_runtime_plan(&plan))
     })?;
@@ -186,38 +230,25 @@ fn compile_project_sources_runtime_plan(
         eprintln!("error: {error}");
         ExitCode::FAILURE
     })?;
+    let line_task_groups = plan.line_task_groups.len();
     Ok(ProfileCompiledRuntimePlan {
-        hir: compiled.linked_hir().clone(),
-        image_catalog: compiled.image_catalog().clone(),
+        execution_diagnostics,
         fx_definitions: Arc::from(compiled.fx_definitions()),
         view_product: compiled.view_product().clone(),
         plan,
         syntax_warnings: compiled.syntax_warnings(),
         syntax_stats,
-        line_task_groups: compiled.line_task_groups().len(),
-        typecheck_report: compiled.typecheck_report().clone(),
+        line_task_groups,
         runtime_plan_stats,
-        line_display_catalog,
-        runtime_type_validation_stats,
+        dialogue_content_catalog,
         product_awbc,
         bytecode,
         bytecode_stats,
         aot_stats,
         source_document,
         source_map,
+        compiled,
     })
-}
-
-fn add_syntax_stats(total: &mut SyntaxParseStats, item: &SyntaxParseStats) {
-    total.cst_lex_passes += item.cst_lex_passes;
-    total.punctuation_scans += item.punctuation_scans;
-    total.punctuation_scan_bytes += item.punctuation_scan_bytes;
-    total.line_owned_bytes += item.line_owned_bytes;
-    total.block_owned_bytes += item.block_owned_bytes;
-    total.raw_owned_bytes += item.raw_owned_bytes;
-    total.wiki_scan_performed += item.wiki_scan_performed;
-    total.dialogue_rescue_expr_parse_attempts += item.dialogue_rescue_expr_parse_attempts;
-    total.numeric_seq_summaries += item.numeric_seq_summaries;
 }
 
 pub(in crate::app) fn run_profile_phase<T>(

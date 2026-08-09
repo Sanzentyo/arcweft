@@ -1,10 +1,13 @@
 use std::fmt;
 
+use arcweft_id::{IdError, PublicId};
 use arcweft_lang_syntax::ast::{
     module_path::{CanonicalModulePath, ModulePathError},
     symbol_path::SymbolPath,
 };
 use arcweft_source::SourceSpan;
+
+use crate::leaf::HirIdRef;
 
 use super::{
     CallableDeclarationIdError, ProjectSymbolLimitKind, ProjectSymbolTargetId,
@@ -16,6 +19,10 @@ pub enum ProjectSymbolLinkError {
     DuplicateDeclaration {
         module: CanonicalModulePath,
         name: String,
+        sites: Box<[SourceSpan]>,
+    },
+    DuplicatePublicId {
+        public_id: PublicId,
         first: SourceSpan,
         duplicate: SourceSpan,
     },
@@ -77,6 +84,71 @@ pub enum ProjectSymbolLinkError {
     },
 }
 
+/// Terminal project-table failure for one typed entity reference.
+///
+/// Retained HIR declarations and registered external declarations are selected
+/// by one project-symbol transaction.  The error therefore retains unified
+/// target identities instead of exposing a retained-only fallback contract.
+#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
+pub enum ProjectEntityReferenceLookupError {
+    #[error("entity reference is unknown")]
+    Unknown {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+    },
+    #[error("entity reference is ambiguous")]
+    Ambiguous {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+        candidates: Box<[ProjectSymbolTargetId]>,
+    },
+    #[error("entity reference is inaccessible")]
+    Inaccessible {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+        candidates: Box<[ProjectSymbolTargetId]>,
+    },
+    #[error("bare relative ID references have no declaration-family anchor")]
+    RelativeRequiresFamily {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+    },
+    #[error("family-relative parent traversal is not admitted by this project identity domain")]
+    UnsupportedParentDepth {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+        parent_depth: usize,
+    },
+    #[error("entity reference has an invalid public identity")]
+    InvalidIdentity {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+        reason: IdError,
+    },
+    #[error("entity reference cannot be represented by the typed project-symbol path domain")]
+    InvalidReferencePath {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+    },
+    #[error("entity reference has an invalid module path")]
+    InvalidModulePath {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+        reason: ModulePathError,
+    },
+    #[error("asset identity belongs to the package catalog, not an authored HIR item")]
+    CatalogOwned {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+    },
+    #[error("entity reference resolves to a recovered retained declaration")]
+    Poisoned {
+        reference: HirIdRef,
+        reference_span: SourceSpan,
+        declaration: SourceSpan,
+    },
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectSymbolLinkReport {
     pub(super) diagnostics: Vec<ProjectSymbolLinkError>,
@@ -87,6 +159,7 @@ pub struct ProjectSymbolLinkReport {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum ProjectSymbolDiagnosticCode {
     DuplicateDeclaration,
+    DuplicatePublicId,
     InaccessibleImport,
     VisibilityEscalation,
     AmbiguousImport,
@@ -128,6 +201,7 @@ impl ProjectSymbolDiagnosticCode {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::DuplicateDeclaration => "aw.project.symbol.duplicate_declaration",
+            Self::DuplicatePublicId => "aw.project.symbol.duplicate_public_id",
             Self::InaccessibleImport => "aw.project.symbol.inaccessible_import",
             Self::VisibilityEscalation => "aw.project.symbol.visibility_escalation",
             Self::AmbiguousImport => "aw.project.symbol.ambiguous_import",
@@ -144,9 +218,32 @@ impl ProjectSymbolDiagnosticCode {
 }
 
 impl ProjectSymbolLinkError {
+    pub(super) fn duplicate_declaration(
+        module: CanonicalModulePath,
+        name: String,
+        first: SourceSpan,
+        duplicate: SourceSpan,
+    ) -> Self {
+        Self::DuplicateDeclaration {
+            module,
+            name,
+            sites: Box::new([first, duplicate]),
+        }
+    }
+
+    /// Returns every declaration site participating in one grouped duplicate
+    /// name diagnostic, in deterministic source order.
+    pub fn duplicate_declaration_sites(&self) -> Option<&[SourceSpan]> {
+        match self {
+            Self::DuplicateDeclaration { sites, .. } => Some(sites),
+            _ => None,
+        }
+    }
+
     pub const fn code(&self) -> ProjectSymbolDiagnosticCode {
         match self {
             Self::DuplicateDeclaration { .. } => ProjectSymbolDiagnosticCode::DuplicateDeclaration,
+            Self::DuplicatePublicId { .. } => ProjectSymbolDiagnosticCode::DuplicatePublicId,
             Self::InaccessibleImport { .. } => ProjectSymbolDiagnosticCode::InaccessibleImport,
             Self::VisibilityEscalation { .. } => ProjectSymbolDiagnosticCode::VisibilityEscalation,
             Self::AmbiguousImport { .. } => ProjectSymbolDiagnosticCode::AmbiguousImport,
@@ -165,7 +262,8 @@ impl ProjectSymbolLinkError {
 
     pub(super) fn source(&self) -> Option<&SourceSpan> {
         match self {
-            Self::DuplicateDeclaration { duplicate, .. } => Some(duplicate),
+            Self::DuplicateDeclaration { sites, .. } => sites.last(),
+            Self::DuplicatePublicId { duplicate, .. } => Some(duplicate),
             Self::InaccessibleImport { source, .. }
             | Self::VisibilityEscalation { source, .. }
             | Self::AmbiguousImport { source, .. }
@@ -187,6 +285,12 @@ impl fmt::Display for ProjectSymbolLinkError {
                 write!(
                     formatter,
                     "module `{module}` declares `{name}` more than once"
+                )
+            }
+            Self::DuplicatePublicId { public_id, .. } => {
+                write!(
+                    formatter,
+                    "project declares public ID `{public_id}` more than once"
                 )
             }
             Self::InaccessibleImport { module, import, .. } => {

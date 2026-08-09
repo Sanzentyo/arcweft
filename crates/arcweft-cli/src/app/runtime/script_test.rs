@@ -1,6 +1,6 @@
 use super::expectations::{test_expectation_failures, test_goto_flow};
 use super::options::ScriptTestOptions;
-use super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
+use super::steps::{NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
     SourceSelection, load_and_check_selection, native_host_policy_for_selection,
     require_profile_kind, resolve_source_selection, runtime_pure_config_for_selection,
@@ -10,9 +10,8 @@ use crate::output::{
     ScriptTestFinalStatus, ScriptTestRunReport, ScriptTestRunSummary, ScriptTestStatus,
 };
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
-use arcweft_core::plan::{FlowRuntimeId, RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
+use arcweft_core::plan::{RuntimeEntryKind, RuntimeEntryTarget, RuntimePlan};
 use arcweft_core::value::RuntimeBinding;
-use arcweft_host_adapter::HostCallPolicy;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_test::{ScriptTest, collect_script_tests};
@@ -57,7 +56,7 @@ pub(in crate::app) fn script_test_selection(
 ) -> Result<(), ExitCode> {
     let checked = load_and_check_selection(selection, None)?;
     let host_policy = native_host_policy_for_selection(selection)?;
-    let manifest = collect_script_tests(&checked.hir);
+    let manifest = collect_script_tests(checked.compiled.hir_project());
     let plan = checked.runtime_plan().plan.clone();
     let file_roots = selection.native_file_roots();
     let source = NativeRunSource::new(selection.path(), &file_roots);
@@ -69,11 +68,14 @@ pub(in crate::app) fn script_test_selection(
                 run_script_test(
                     test,
                     &plan,
-                    source,
+                    NativeRunHost {
+                        source: Some(source),
+                        policy: &host_policy,
+                        adapter_registrars,
+                    },
                     config,
-                    &host_policy,
-                    adapter_registrars,
                     values,
+                    &checked.execution_diagnostics,
                 )
             })
             .collect(),
@@ -107,14 +109,17 @@ pub(in crate::app) fn script_test_selection(
     }
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "one scenario test must retain its setup, execution, and final-status evidence together"
+)]
 fn run_script_test(
     test: &ScriptTest,
     plan: &RuntimePlan,
-    source: NativeRunSource<'_>,
+    host_config: NativeRunHost<'_>,
     config: RuntimeStepRunConfig,
-    host_policy: &HostCallPolicy,
-    adapter_registrars: &[NativeAdapterRegistrar],
     values: &[RuntimeBinding],
+    execution_diagnostics: &arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
 ) -> ScriptTestRunSummary {
     if test.kind != "scenario" {
         return ScriptTestRunSummary::skipped(
@@ -134,16 +139,19 @@ fn run_script_test(
             Vec::new(),
         );
     };
-    let Ok(start) = FlowRuntimeId::from_runtime_target_value(&start) else {
-        return ScriptTestRunSummary::completed(
-            test,
-            false,
-            ScriptTestFinalStatus::NotStarted,
-            vec![format!(
-                "scenario test `goto` target `{start}` is not a valid flow runtime ID"
-            )],
-            Vec::new(),
-        );
+    let start = match plan.resolve_flow_target_value(&start) {
+        Ok(start) => start,
+        Err(error) => {
+            return ScriptTestRunSummary::completed(
+                test,
+                false,
+                ScriptTestFinalStatus::NotStarted,
+                vec![format!(
+                    "scenario test `goto` target `{start}` cannot be resolved: {error}"
+                )],
+                Vec::new(),
+            );
+        }
     };
     let matching_entries = plan
         .entries
@@ -172,11 +180,10 @@ fn run_script_test(
     let Ok(trace) = run_runtime_steps(
         plan.clone(),
         &entry.id,
-        Some(source),
+        host_config,
         config,
-        host_policy,
-        adapter_registrars,
         values,
+        execution_diagnostics,
     ) else {
         return ScriptTestRunSummary::completed(
             test,
@@ -192,6 +199,11 @@ fn run_script_test(
         .iter()
         .flat_map(|step| step.diagnostics.iter().cloned())
         .collect::<Vec<_>>();
+    diagnostics.extend(trace.steps.iter().flat_map(|step| {
+        step.assertion_diagnostics
+            .iter()
+            .map(|diagnostic| format!("{}: {}", diagnostic.code, diagnostic.message))
+    }));
     diagnostics.extend(test_expectation_failures(test, &trace.steps));
     match trace.final_status {
         FlowFiberStatus::Done(_) => {}
@@ -201,6 +213,7 @@ fn run_script_test(
         FlowFiberStatus::Running
         | FlowFiberStatus::Dialogue(_)
         | FlowFiberStatus::Waiting(_)
+        | FlowFiberStatus::NeedWaiting(_)
         | FlowFiberStatus::WaitingMany(_)
         | FlowFiberStatus::HostCall(_)
         | FlowFiberStatus::Choice(_) => diagnostics.push(format!(

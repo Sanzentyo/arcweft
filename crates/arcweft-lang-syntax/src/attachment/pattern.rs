@@ -131,6 +131,28 @@ impl AttachedPatternNode {
         &self.path
     }
 
+    /// Returns the exact parser-owned root of this semantic Pattern tree.
+    ///
+    /// The returned node remains bound to the same syntax snapshot and
+    /// semantic projection. Consumers must use this edge instead of inferring
+    /// tree ownership from source-range containment, which is ambiguous for
+    /// zero-width recovery nodes.
+    pub fn root(&self) -> Result<Self, SyntaxAccessError> {
+        let path = PatternNodePath::root();
+        let syntax = self
+            .syntax
+            .pattern_node_for_projection(self.tree, &path)
+            .ok_or(SyntaxAccessError::InvalidPatternProjection { id: self.id() })?;
+        let root = Self::from_syntax(syntax)?;
+        if root.tree != self.tree
+            || root.path != path
+            || !Arc::ptr_eq(&root.authored, &self.authored)
+        {
+            return Err(SyntaxAccessError::InvalidPatternProjection { id: self.id() });
+        }
+        Ok(root)
+    }
+
     /// Semantic Pattern payload selected by the authoritative grammar transaction.
     ///
     /// # Panics

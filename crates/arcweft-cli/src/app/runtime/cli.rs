@@ -1,6 +1,6 @@
 use super::entry::select_runtime_cli_entry;
 use super::options::CliRunOptions;
-use super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
+use super::steps::{NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
 use crate::app::project::{
     load_and_check_selection, native_host_policy_for_selection, require_profile_kind,
     resolve_source_selection, runtime_pure_config_for_selection,
@@ -54,7 +54,11 @@ pub(in crate::app) fn runtime_cli_command(
     let trace = run_runtime_steps(
         plan,
         &entry,
-        Some(NativeRunSource::new(selection.path(), &file_roots)),
+        NativeRunHost {
+            source: Some(NativeRunSource::new(selection.path(), &file_roots)),
+            policy: &host_policy,
+            adapter_registrars,
+        },
         RuntimeStepRunConfig {
             steps: options.steps,
             mode: options.mode,
@@ -62,9 +66,8 @@ pub(in crate::app) fn runtime_cli_command(
             executor: options.executor,
             pure_config,
         },
-        &host_policy,
-        adapter_registrars,
         &bindings,
+        &checked.execution_diagnostics,
     )?;
     let report = RuntimeRunReport {
         host_system: host_system_info(),

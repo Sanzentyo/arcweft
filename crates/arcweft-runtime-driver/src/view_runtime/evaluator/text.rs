@@ -134,14 +134,12 @@ impl ViewEvaluator<'_> {
             )
         })?;
         match projection {
-            DialogueTextProjection::Speaker => Ok(BundleViewTextValue::DialogueSpeaker {
-                label: input
-                    .frame
-                    .speaker_label
-                    .clone()
-                    .unwrap_or_else(|| input.frame.callee.clone()),
-                frame: Box::new(input.frame.clone()),
-            }),
+            DialogueTextProjection::CharacterDisplayName => {
+                Ok(BundleViewTextValue::DialogueCharacterDisplayName {
+                    label: input.frame.character.display_name.clone(),
+                    frame: Box::new(input.frame.clone()),
+                })
+            }
             DialogueTextProjection::Content => {
                 let stage_index_value = input.state.stage.index.get();
                 let stage_index = usize::try_from(stage_index_value).map_err(|_| {

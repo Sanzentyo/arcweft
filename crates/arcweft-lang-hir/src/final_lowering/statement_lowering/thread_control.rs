@@ -19,7 +19,7 @@ use crate::expr::{
 use crate::identity::{
     ExprId, LocalId, ScopeId, StmtId, SyntheticKey, SyntheticOwner, SyntheticRole,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirLocal, HirLocalKind, HirPatternBindingPolicy, HirScopeKind, HirScopeOwner};
 use crate::source_index::{HirExprSourceRole, HirInsertionPoint, HirSourceSite};
 use crate::stmt::{
@@ -32,9 +32,13 @@ use crate::stmt::{
 
 use super::super::name_projection::{name, name_issue, require_attempted_name_limit};
 use super::super::{LocalGenerationLedgerEntry, StagedHirModuleTransaction};
-use super::nested_thread_body_recovery;
+use super::{HirStmtRecoveryOperandSlot, nested_thread_body_recovery};
 
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the closed Thread control-statement family is one exhaustive typed lowering matrix"
+    )]
     pub(super) fn lower_attached_thread_control_statement(
         &mut self,
         attached: &StatementNode,
@@ -44,7 +48,7 @@ impl StagedHirModuleTransaction<'_> {
     ) -> Result<(HirStmtKind, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
         match attached.kind() {
             SyntaxKind::LoopStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let attached = attached
                     .cast::<LoopStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -55,8 +59,10 @@ impl StagedHirModuleTransaction<'_> {
                     HirScopeOwner::Stmt(owner),
                     outer_scope,
                 )?;
-                let recovery =
-                    nested_thread_body_recovery(lowered.recovery, HirThreadStmtBodyRole::Loop)?;
+                let recovery = nested_thread_body_recovery(
+                    lowered.recovery.as_ref(),
+                    HirThreadStmtBodyRole::Loop,
+                )?;
                 let body = HirContextualStmtBody::try_thread(lowered.body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let statement = HirLoopStmt::try_new(None, body)
@@ -64,7 +70,7 @@ impl StagedHirModuleTransaction<'_> {
                 Ok((HirStmtKind::Loop(statement), recovery))
             }
             SyntaxKind::WhileStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let attached = attached
                     .cast::<WhileStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -74,8 +80,7 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     attached.condition(),
                     outer_scope,
-                    HirExprSourceRole::Condition,
-                    0,
+                    |insertion| HirStmtRecoveryOperandSlot::WhileCondition { insertion },
                 )?;
                 let condition_poisoned = self.staged_expression_is_poisoned(condition)?;
                 let lowered = self.lower_attached_nested_thread_body(
@@ -83,8 +88,10 @@ impl StagedHirModuleTransaction<'_> {
                     HirScopeOwner::Stmt(owner),
                     outer_scope,
                 )?;
-                let body_recovery =
-                    nested_thread_body_recovery(lowered.recovery, HirThreadStmtBodyRole::While)?;
+                let body_recovery = nested_thread_body_recovery(
+                    lowered.recovery.as_ref(),
+                    HirThreadStmtBodyRole::While,
+                )?;
                 let body = HirContextualStmtBody::try_thread(lowered.body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let statement = HirWhileStmt::try_new(condition, body)
@@ -95,7 +102,7 @@ impl StagedHirModuleTransaction<'_> {
                 Ok((HirStmtKind::While(statement), recovery))
             }
             SyntaxKind::WhileLetStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let attached = attached
                     .cast::<WhileLetStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -105,8 +112,7 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     attached.scrutinee(),
                     outer_scope,
-                    HirExprSourceRole::Scrutinee,
-                    0,
+                    |insertion| HirStmtRecoveryOperandSlot::WhileLetScrutinee { insertion },
                 )?;
                 let scrutinee_poisoned = self.staged_expression_is_poisoned(scrutinee)?;
                 let prepared = self.prepare_attached_nested_thread_body(
@@ -127,8 +133,7 @@ impl StagedHirModuleTransaction<'_> {
                             owner,
                             guard,
                             body_scope,
-                            HirExprSourceRole::Guard,
-                            1,
+                            |insertion| HirStmtRecoveryOperandSlot::WhileLetGuard { insertion },
                         )
                     })
                     .transpose()?;
@@ -138,8 +143,10 @@ impl StagedHirModuleTransaction<'_> {
                     .unwrap_or(false);
                 let lowered =
                     self.finish_attached_nested_thread_body(prepared, pattern.locals.clone())?;
-                let body_recovery =
-                    nested_thread_body_recovery(lowered.recovery, HirThreadStmtBodyRole::WhileLet)?;
+                let body_recovery = nested_thread_body_recovery(
+                    lowered.recovery.as_ref(),
+                    HirThreadStmtBodyRole::WhileLet,
+                )?;
                 let body = HirContextualStmtBody::try_thread(lowered.body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let statement =
@@ -159,7 +166,7 @@ impl StagedHirModuleTransaction<'_> {
                 Ok((HirStmtKind::WhileLet(statement), recovery))
             }
             SyntaxKind::ForStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let attached = attached
                     .cast::<ForStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -169,8 +176,7 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     attached.source(),
                     outer_scope,
-                    HirExprSourceRole::Scrutinee,
-                    0,
+                    |insertion| HirStmtRecoveryOperandSlot::ForSource { insertion },
                 )?;
                 let source_poisoned = self.staged_expression_is_poisoned(source)?;
                 let iterator_site =
@@ -214,8 +220,10 @@ impl StagedHirModuleTransaction<'_> {
                 )?;
                 let lowered =
                     self.finish_attached_nested_thread_body(prepared, pattern.locals.clone())?;
-                let body_recovery =
-                    nested_thread_body_recovery(lowered.recovery, HirThreadStmtBodyRole::For)?;
+                let body_recovery = nested_thread_body_recovery(
+                    lowered.recovery.as_ref(),
+                    HirThreadStmtBodyRole::For,
+                )?;
                 let body = HirContextualStmtBody::try_thread(lowered.body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let statement = HirForStmt::try_new(
@@ -254,8 +262,7 @@ impl StagedHirModuleTransaction<'_> {
                             owner,
                             operand,
                             outer_scope,
-                            HirExprSourceRole::Operand,
-                            0,
+                            |insertion| HirStmtRecoveryOperandSlot::SelectOperand { insertion },
                         )?;
                         let recovery = self.staged_expression_is_poisoned(expression)?.then_some(
                             HirStmtRecoveryIssue::RecoveredChild {
@@ -268,7 +275,7 @@ impl StagedHirModuleTransaction<'_> {
                         ))
                     }
                     AttachedSelectStatementForm::Branches(block) => {
-                        self.require_thread_statement_context(context)?;
+                        Self::require_thread_statement_context(context)?;
                         let select_scope = self.allocate_statement_scope(
                             block.syntax(),
                             owner,
@@ -313,7 +320,7 @@ impl StagedHirModuleTransaction<'_> {
                 }
             }
             SyntaxKind::AwaitWithStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let attached = attached
                     .cast::<AwaitWithStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -323,8 +330,7 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     attached.operand(),
                     outer_scope,
-                    HirExprSourceRole::Operand,
-                    0,
+                    |insertion| HirStmtRecoveryOperandSlot::AwaitWithOperand { insertion },
                 )?;
                 let mut recovery = self
                     .staged_expression_is_poisoned(operand)?
@@ -380,6 +386,10 @@ impl StagedHirModuleTransaction<'_> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Select branch lowering atomically seals each closed head, binding, body, and recovery form"
+    )]
     fn lower_select_branch(
         &mut self,
         owner: StmtId,
@@ -399,8 +409,10 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     source,
                     select_scope,
-                    HirExprSourceRole::Operand,
-                    branch,
+                    |insertion| HirStmtRecoveryOperandSlot::SelectBranchSource {
+                        insertion,
+                        branch,
+                    },
                 )?;
                 let source_poisoned = self.staged_expression_is_poisoned(source)?;
                 let prepared = self.prepare_attached_nested_thread_body(
@@ -461,7 +473,7 @@ impl StagedHirModuleTransaction<'_> {
                 let prefix: Box<[LocalId]> =
                     local.map_or_else(|| Box::from([]), |local| Box::from([local]));
                 let lowered = self.finish_attached_nested_thread_body(prepared, prefix)?;
-                let body_recovery = select_branch_body_recovery(lowered.recovery, branch)?;
+                let body_recovery = select_branch_body_recovery(lowered.recovery.as_ref(), branch)?;
                 let body = HirContextualStmtBody::try_thread(lowered.body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let recovery = binding_poisoned
@@ -499,7 +511,7 @@ impl StagedHirModuleTransaction<'_> {
                 )?;
                 let lowered =
                     self.finish_attached_nested_thread_body(prepared, pattern.locals.clone())?;
-                let body_recovery = select_branch_body_recovery(lowered.recovery, branch)?;
+                let body_recovery = select_branch_body_recovery(lowered.recovery.as_ref(), branch)?;
                 let body = HirContextualStmtBody::try_thread(lowered.body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 let recovery = pattern
@@ -527,7 +539,7 @@ impl StagedHirModuleTransaction<'_> {
                     HirScopeOwner::Stmt(owner),
                     select_scope,
                 )?;
-                let body_recovery = select_branch_body_recovery(lowered.recovery, branch)?;
+                let body_recovery = select_branch_body_recovery(lowered.recovery.as_ref(), branch)?;
                 let body = HirContextualStmtBody::try_thread(lowered.body)
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
                 (
@@ -558,8 +570,8 @@ impl StagedHirModuleTransaction<'_> {
             outer_scope,
         )?;
         let branch_scope = prepared.scope();
-        let (kind, pattern, locals, pattern_poisoned, head_recovery) = match attached.kind() {
-            Some(kind) => {
+        let (kind, pattern, locals, pattern_poisoned, head_recovery) =
+            if let Some(kind) = attached.kind() {
                 let pattern = attached
                     .pattern()
                     .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
@@ -581,8 +593,7 @@ impl StagedHirModuleTransaction<'_> {
                     pattern.poisoned,
                     false,
                 )
-            }
-            None => {
+            } else {
                 if attached.recovery().is_none() || attached.pattern().is_some() {
                     return Err(HirInvariantFailure::InvalidArenaCommit.into());
                 }
@@ -593,10 +604,9 @@ impl StagedHirModuleTransaction<'_> {
                     false,
                     true,
                 )
-            }
-        };
+            };
         let lowered = self.finish_attached_nested_thread_body(prepared, locals.clone())?;
-        let body_recovery = await_branch_body_recovery(lowered.recovery, branch)?;
+        let body_recovery = await_branch_body_recovery(lowered.recovery.as_ref(), branch)?;
         let body = HirContextualStmtBody::try_thread(lowered.body)
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let payload = HirAwaitWithBranch::try_new(kind, pattern, locals, body)
@@ -658,7 +668,7 @@ const fn thread_child(role: HirThreadStmtChildRole) -> HirStmtRecoveryIssue {
 }
 
 fn select_branch_body_recovery(
-    recovery: Option<HirThreadIssue>,
+    recovery: Option<&HirThreadIssue>,
     branch: u32,
 ) -> Result<Option<HirStmtRecoveryIssue>, HirLowerFailure> {
     branch_body_recovery(
@@ -669,7 +679,7 @@ fn select_branch_body_recovery(
 }
 
 fn await_branch_body_recovery(
-    recovery: Option<HirThreadIssue>,
+    recovery: Option<&HirThreadIssue>,
     branch: u32,
 ) -> Result<Option<HirStmtRecoveryIssue>, HirLowerFailure> {
     branch_body_recovery(
@@ -680,7 +690,7 @@ fn await_branch_body_recovery(
 }
 
 fn branch_body_recovery(
-    recovery: Option<HirThreadIssue>,
+    recovery: Option<&HirThreadIssue>,
     body_role: HirThreadStmtBodyRole,
     child_role: impl FnOnce(u32) -> HirThreadStmtChildRole,
 ) -> Result<Option<HirStmtRecoveryIssue>, HirLowerFailure> {
@@ -693,7 +703,7 @@ fn branch_body_recovery(
             HirThreadStmtRecoveryIssue::UnclosedBody { role: body_role },
         ))),
         Some(HirThreadIssue::RecoveredBodyChild { ordinal }) => {
-            Ok(Some(thread_child(child_role(ordinal))))
+            Ok(Some(thread_child(child_role(*ordinal))))
         }
         Some(
             HirThreadIssue::InvalidName

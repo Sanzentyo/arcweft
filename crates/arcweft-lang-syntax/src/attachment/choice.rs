@@ -33,6 +33,7 @@ use super::node::{
 };
 use super::source_file::AttachedDelimiterState;
 use super::thread_body::required_nested_thread_flow_body;
+use super::trigger::AttachedTriggerPattern;
 use super::{SyntaxAccessError, SyntaxNodeHandle};
 use crate::expressions::ExpressionProjection;
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
@@ -65,7 +66,7 @@ impl AttachedChoiceEntityReference {
 /// Required static entity reference or its exact missing-expression insertion.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedRequiredChoiceEntityReference {
-    Reference(AttachedChoiceEntityReference),
+    Reference(Box<AttachedChoiceEntityReference>),
     Missing(AstNode<MissingExpressionKind>),
 }
 
@@ -174,6 +175,186 @@ impl AttachedChoiceExpression {
                 .as_ref()
                 .is_some_and(AttachedChoicePlan::has_recovery)
     }
+
+    /// Returns the Choice-owned required expression slots in canonical semantic
+    /// preorder. Authored and missing forms occupy the same position; an
+    /// omitted optional slot occupies no position. Expressions owned by nested
+    /// statements, thread bodies, patterns, and ordinary expression triggers
+    /// are deliberately excluded because they retain their own HIR owner.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the iterative preorder is one exhaustive Choice-owned expression inventory"
+    )]
+    pub fn required_expression_slots(&self) -> Vec<&RequiredStatementExpressionNode> {
+        let mut slots = Vec::new();
+        let mut work = Vec::new();
+        if let Some(plan) = self.plan()
+            && let AttachedRequiredChoicePlanBody::Present(body) = plan.body()
+        {
+            work.push(ChoiceRequiredExpressionWork::PlanBody(body));
+        }
+        if let AttachedRequiredChoiceBody::Present(body) = self.body() {
+            work.push(ChoiceRequiredExpressionWork::Body(body));
+        }
+
+        while let Some(next) = work.pop() {
+            match next {
+                ChoiceRequiredExpressionWork::Expression(expression) => slots.push(expression),
+                ChoiceRequiredExpressionWork::Body(body) => {
+                    work.extend(
+                        body.items()
+                            .iter()
+                            .rev()
+                            .map(ChoiceRequiredExpressionWork::Item),
+                    );
+                }
+                ChoiceRequiredExpressionWork::Item(item) => match item {
+                    AttachedChoiceItem::Let(_) | AttachedChoiceItem::Recovered(_) => {}
+                    AttachedChoiceItem::If(expression) => {
+                        if let Some(AttachedRequiredChoiceBody::Present(body)) =
+                            expression.else_body()
+                        {
+                            work.push(ChoiceRequiredExpressionWork::Body(body));
+                        }
+                        for branch in expression.branches().iter().rev() {
+                            if let AttachedRequiredChoiceBody::Present(body) = branch.then_body() {
+                                work.push(ChoiceRequiredExpressionWork::Body(body));
+                            }
+                            work.push(ChoiceRequiredExpressionWork::Expression(branch.condition()));
+                        }
+                    }
+                    AttachedChoiceItem::For(expression) => {
+                        if let AttachedRequiredChoiceBody::Present(body) = expression.body() {
+                            work.push(ChoiceRequiredExpressionWork::Body(body));
+                        }
+                        work.push(ChoiceRequiredExpressionWork::Expression(
+                            expression.source(),
+                        ));
+                    }
+                    AttachedChoiceItem::Match(expression) => {
+                        if let AttachedRequiredChoiceMatchBody::Present(body) = expression.body() {
+                            for arm in body.arms().iter().rev() {
+                                work.push(ChoiceRequiredExpressionWork::MatchArmBody(arm.body()));
+                            }
+                        }
+                        work.push(ChoiceRequiredExpressionWork::Expression(
+                            expression.scrutinee(),
+                        ));
+                    }
+                    AttachedChoiceItem::Option(expression) => {
+                        if let AttachedRequiredChoiceOptionBody::Present(body) = expression.body() {
+                            work.push(ChoiceRequiredExpressionWork::OptionBody(body));
+                        }
+                        work.push(ChoiceRequiredExpressionWork::Expression(expression.id()));
+                    }
+                    AttachedChoiceItem::OptionFor(expression) => {
+                        if let AttachedRequiredChoiceOptionBody::Present(body) = expression.body() {
+                            work.push(ChoiceRequiredExpressionWork::OptionBody(body));
+                        }
+                        work.push(ChoiceRequiredExpressionWork::Expression(
+                            expression.source(),
+                        ));
+                    }
+                    AttachedChoiceItem::CompactArm(expression) => {
+                        if let AttachedChoiceCompactAction::Out { value, .. } = expression.action()
+                        {
+                            work.push(ChoiceRequiredExpressionWork::Expression(value));
+                        }
+                        if let Some(condition) = expression.condition() {
+                            work.push(ChoiceRequiredExpressionWork::Expression(condition));
+                        }
+                        work.push(ChoiceRequiredExpressionWork::Expression(expression.label()));
+                    }
+                },
+                ChoiceRequiredExpressionWork::MatchArmBody(body) => match body {
+                    AttachedChoiceMatchArmBody::Block(body) => {
+                        work.push(ChoiceRequiredExpressionWork::Body(body));
+                    }
+                    AttachedChoiceMatchArmBody::Single(item) => {
+                        work.push(ChoiceRequiredExpressionWork::Item(item));
+                    }
+                    AttachedChoiceMatchArmBody::Missing(_) => {}
+                },
+                ChoiceRequiredExpressionWork::OptionBody(body) => {
+                    for field in body.fields().iter().rev() {
+                        match field {
+                            AttachedChoiceOptionField::Label { value, .. }
+                            | AttachedChoiceOptionField::Id { value, .. }
+                            | AttachedChoiceOptionField::Value { value, .. }
+                            | AttachedChoiceOptionField::Visible { value, .. }
+                            | AttachedChoiceOptionField::Enabled { value, .. }
+                            | AttachedChoiceOptionField::Order { value, .. }
+                            | AttachedChoiceOptionField::Hotkey { value, .. } => {
+                                work.push(ChoiceRequiredExpressionWork::Expression(value));
+                            }
+                            AttachedChoiceOptionField::View(view) => {
+                                if let AttachedRequiredChoiceViewBody::Present(body) = view.body() {
+                                    for entry in body.fields().iter().rev() {
+                                        work.push(ChoiceRequiredExpressionWork::Expression(
+                                            entry.value(),
+                                        ));
+                                        work.push(ChoiceRequiredExpressionWork::Expression(
+                                            entry.key(),
+                                        ));
+                                    }
+                                }
+                            }
+                            AttachedChoiceOptionField::Select(_)
+                            | AttachedChoiceOptionField::Let(_)
+                            | AttachedChoiceOptionField::Recovered(_) => {}
+                        }
+                    }
+                }
+                ChoiceRequiredExpressionWork::PlanBody(body) => {
+                    work.extend(
+                        body.items()
+                            .iter()
+                            .rev()
+                            .map(ChoiceRequiredExpressionWork::PlanItem),
+                    );
+                }
+                ChoiceRequiredExpressionWork::PlanItem(item) => match item {
+                    AttachedChoicePlanItem::Assignment(assignment) => {
+                        work.push(ChoiceRequiredExpressionWork::Expression(assignment.value()));
+                    }
+                    AttachedChoicePlanItem::Timeout(timeout) => {
+                        work.push(ChoiceRequiredExpressionWork::Expression(timeout.duration()));
+                    }
+                    AttachedChoicePlanItem::Cancel(cancel) => {
+                        work.push(ChoiceRequiredExpressionWork::Trigger(cancel.trigger()));
+                    }
+                    AttachedChoicePlanItem::OnSelect(_) | AttachedChoicePlanItem::Recovered(_) => {}
+                },
+                ChoiceRequiredExpressionWork::Trigger(trigger) => match trigger {
+                    AttachedTriggerPattern::Signal(signal) => {
+                        work.push(ChoiceRequiredExpressionWork::Expression(signal.target()));
+                    }
+                    AttachedTriggerPattern::Timeout(timeout) => work.push(
+                        ChoiceRequiredExpressionWork::Expression(timeout.expression()),
+                    ),
+                    AttachedTriggerPattern::Input(_)
+                    | AttachedTriggerPattern::Event(_)
+                    | AttachedTriggerPattern::Mark(_)
+                    | AttachedTriggerPattern::Select(_)
+                    | AttachedTriggerPattern::Task(_)
+                    | AttachedTriggerPattern::Scope(_)
+                    | AttachedTriggerPattern::Expr(_) => {}
+                },
+            }
+        }
+        slots
+    }
+}
+
+enum ChoiceRequiredExpressionWork<'a> {
+    Expression(&'a RequiredStatementExpressionNode),
+    Body(&'a AttachedChoiceBody),
+    Item(&'a AttachedChoiceItem),
+    MatchArmBody(&'a AttachedChoiceMatchArmBody),
+    OptionBody(&'a AttachedChoiceOptionBody),
+    PlanBody(&'a AttachedChoicePlanBody),
+    PlanItem(&'a AttachedChoicePlanItem),
+    Trigger(&'a AttachedTriggerPattern),
 }
 
 /// Present Choice body or its exact missing-body insertion.
@@ -287,7 +468,7 @@ pub enum AttachedChoiceItem {
     Match(AttachedChoiceMatch),
     Option(AttachedChoiceOption),
     OptionFor(AttachedChoiceOptionFor),
-    CompactArm(AttachedChoiceCompactArm),
+    CompactArm(Box<AttachedChoiceCompactArm>),
     Recovered(AstNode<ErrorNodeKind>),
 }
 
@@ -304,9 +485,9 @@ impl AttachedChoiceItem {
             SyntaxKind::ChoiceOptionFor => {
                 Ok(Self::OptionFor(attach_choice_option_for(syntax.cast()?)?))
             }
-            SyntaxKind::ChoiceCompactArm => {
-                Ok(Self::CompactArm(attach_choice_compact_arm(syntax.cast()?)?))
-            }
+            SyntaxKind::ChoiceCompactArm => Ok(Self::CompactArm(Box::new(
+                attach_choice_compact_arm(syntax.cast()?)?,
+            ))),
             SyntaxKind::ErrorNode => Ok(Self::Recovered(syntax.cast()?)),
             _ => Err(SyntaxAccessError::InvalidChoiceShape { id: syntax.id() }),
         }
@@ -627,7 +808,7 @@ impl AstNode<ChoiceExpressionKind> {
         let id = self
             .syntax()
             .optional_unique_child(SyntaxRole::PublicId)?
-            .map(attach_choice_entity_reference)
+            .map(|syntax| attach_choice_entity_reference(&syntax))
             .transpose()?;
         let header_recovery = self.optional_exact_child(SyntaxRole::Recovery(0))?;
         let plan = self
@@ -856,36 +1037,36 @@ fn attach_choice_option_field(
             let text_key = field
                 .syntax()
                 .optional_unique_child(SyntaxRole::PublicId)?
-                .map(attach_required_choice_entity_reference)
+                .map(|syntax| attach_required_choice_entity_reference(&syntax))
                 .transpose()?;
             Ok(AttachedChoiceOptionField::Label {
                 value: required_statement_expression(&field, SyntaxRole::Value)?,
                 syntax: field,
-                text_key,
+                text_key: Box::new(text_key),
             })
         }
         SyntaxKind::ChoiceIdField => {
-            let (syntax, value) = attach_choice_value::<ChoiceIdFieldKind>(syntax)?;
+            let (syntax, value) = attach_choice_value::<ChoiceIdFieldKind>(&syntax)?;
             Ok(AttachedChoiceOptionField::Id { syntax, value })
         }
         SyntaxKind::ChoiceValueField => {
-            let (syntax, value) = attach_choice_value::<ChoiceValueFieldKind>(syntax)?;
+            let (syntax, value) = attach_choice_value::<ChoiceValueFieldKind>(&syntax)?;
             Ok(AttachedChoiceOptionField::Value { syntax, value })
         }
         SyntaxKind::ChoiceVisibleField => {
-            let (syntax, value) = attach_choice_value::<ChoiceVisibleFieldKind>(syntax)?;
+            let (syntax, value) = attach_choice_value::<ChoiceVisibleFieldKind>(&syntax)?;
             Ok(AttachedChoiceOptionField::Visible { syntax, value })
         }
         SyntaxKind::ChoiceEnabledField => {
-            let (syntax, value) = attach_choice_value::<ChoiceEnabledFieldKind>(syntax)?;
+            let (syntax, value) = attach_choice_value::<ChoiceEnabledFieldKind>(&syntax)?;
             Ok(AttachedChoiceOptionField::Enabled { syntax, value })
         }
         SyntaxKind::ChoiceOrderField => {
-            let (syntax, value) = attach_choice_value::<ChoiceOrderFieldKind>(syntax)?;
+            let (syntax, value) = attach_choice_value::<ChoiceOrderFieldKind>(&syntax)?;
             Ok(AttachedChoiceOptionField::Order { syntax, value })
         }
         SyntaxKind::ChoiceHotkeyField => {
-            let (syntax, value) = attach_choice_value::<ChoiceHotkeyFieldKind>(syntax)?;
+            let (syntax, value) = attach_choice_value::<ChoiceHotkeyFieldKind>(&syntax)?;
             Ok(AttachedChoiceOptionField::Hotkey { syntax, value })
         }
         SyntaxKind::ChoiceViewField => Ok(AttachedChoiceOptionField::View(attach_choice_view(
@@ -905,7 +1086,7 @@ fn attach_choice_option_field(
 }
 
 fn attach_choice_value<K: ExactAstKind>(
-    syntax: SyntaxNodeHandle,
+    syntax: &SyntaxNodeHandle,
 ) -> Result<(AstNode<K>, RequiredStatementExpressionNode), SyntaxAccessError> {
     let syntax = syntax.cast::<K>()?;
     let value = required_statement_expression(&syntax, SyntaxRole::Value)?;
@@ -972,7 +1153,7 @@ fn attach_choice_compact_arm(
         .syntax()
         .optional_unique_child(SyntaxRole::PublicId)?
         .ok_or_else(|| invalid(&syntax))?;
-    let id = attach_choice_entity_reference(id)?;
+    let id = attach_choice_entity_reference(&id)?;
     let label = required_statement_expression(&syntax, SyntaxRole::Label(0))?;
     let condition = optional_required_expression(&syntax, SyntaxRole::Condition)?;
     let action = syntax
@@ -983,7 +1164,10 @@ fn attach_choice_compact_arm(
         SyntaxKind::ChoiceGotoAction => {
             let action = action.cast::<ChoiceGotoActionKind>()?;
             AttachedChoiceCompactAction::Goto {
-                target: required_choice_entity_reference(&action, SyntaxRole::Target)?,
+                target: Box::new(required_choice_entity_reference(
+                    &action,
+                    SyntaxRole::Target,
+                )?),
                 syntax: action,
             }
         }
@@ -1035,24 +1219,24 @@ fn required_choice_entity_reference<K: AstKind>(
         .syntax()
         .optional_unique_child(role)?
         .ok_or_else(|| invalid(owner))?;
-    attach_required_choice_entity_reference(syntax)
+    attach_required_choice_entity_reference(&syntax)
 }
 
 fn attach_required_choice_entity_reference(
-    syntax: SyntaxNodeHandle,
+    syntax: &SyntaxNodeHandle,
 ) -> Result<AttachedRequiredChoiceEntityReference, SyntaxAccessError> {
     if syntax.kind() == SyntaxKind::MissingExpression && syntax.range().is_empty() {
         return Ok(AttachedRequiredChoiceEntityReference::Missing(
             syntax.cast()?,
         ));
     }
-    Ok(AttachedRequiredChoiceEntityReference::Reference(
+    Ok(AttachedRequiredChoiceEntityReference::Reference(Box::new(
         attach_choice_entity_reference(syntax)?,
-    ))
+    )))
 }
 
 fn attach_choice_entity_reference(
-    syntax: SyntaxNodeHandle,
+    syntax: &SyntaxNodeHandle,
 ) -> Result<AttachedChoiceEntityReference, SyntaxAccessError> {
     let expression = AttachedExpressionNode::from_syntax(syntax.clone())?;
     if !matches!(

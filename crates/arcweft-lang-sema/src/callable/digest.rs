@@ -1,6 +1,6 @@
 //! Canonical digest encodings for accepted callable schemas and catalogs.
 
-use arcweft_lang_hir::symbol::CallableDeclarationId;
+use arcweft_lang_hir::symbol::CallableDeclarationKey;
 use arcweft_source::SourceSpan;
 
 use crate::{effect_row::EffectRowTail, registration::AcceptedNominalWorldStamp};
@@ -46,6 +46,17 @@ macro_rules! digest_bytes {
 digest_bytes!(CallableSignatureSchemaDigest);
 digest_bytes!(EnvironmentCallablePublicationDigest);
 digest_bytes!(RegisteredCallableCatalogDigest);
+
+impl EnvironmentCallableId {
+    /// Canonical bytes used to order an environment declaration inside typed
+    /// checked identities. This is not a display spelling and is never parsed
+    /// back into a callable.
+    pub(crate) fn canonical_identity_bytes(&self) -> Vec<u8> {
+        let mut encoder = CanonicalEncoder::default();
+        encoder.environment_id(self);
+        encoder.into_bytes()
+    }
+}
 
 impl CallableSignatureSchema {
     /// Returns the canonical semantic digest of this checked signature.
@@ -162,18 +173,31 @@ impl CanonicalEncoder {
     }
 
     fn effect_schema(&mut self, effects: &CallableEffectSchema) {
-        let row = effects.declared();
-        self.usize(row.concrete().len());
-        for effect in row.concrete().iter() {
-            self.string(effect.as_str());
-        }
-        match row.tail() {
-            EffectRowTail::Closed => self.tag(0),
-            EffectRowTail::Variable(variable) => {
-                self.tag(1);
-                self.u32(variable.index());
+        match effects {
+            CallableEffectSchema::Fixed(row) => {
+                self.tag(0);
+                self.usize(row.concrete().len());
+                for effect in row.concrete().iter() {
+                    self.string(effect.as_str());
+                }
+                match row.tail() {
+                    EffectRowTail::Closed => self.tag(0),
+                    EffectRowTail::Variable(variable) => {
+                        self.tag(1);
+                        self.u32(variable.index());
+                    }
+                    EffectRowTail::Unknown => self.tag(2),
+                }
             }
-            EffectRowTail::Unknown => self.tag(2),
+            CallableEffectSchema::Project { declaration } => {
+                self.tag(1);
+                self.project_declaration(declaration);
+            }
+            CallableEffectSchema::Detached { declaration } => {
+                self.tag(2);
+                self.tag(declaration.owner().digest_tag().into());
+                self.u32(declaration.source_ordinal());
+            }
         }
     }
 
@@ -204,18 +228,26 @@ impl CanonicalEncoder {
             CallableValidator::Builtin(_) => 8,
             CallableValidator::Agent(_) => 9,
             CallableValidator::Presentation(_) => 10,
-            CallableValidator::Dialogue(_) => 11,
+            // Tag 11 belonged to the deleted Dialogue validator. Keep the
+            // unreleased semantic layout stable while replacing the former
+            // trait validator at tag 16 directly with `Method`.
             CallableValidator::Collection(_) => 12,
             CallableValidator::PresentationHandle(_) => 13,
             CallableValidator::Integer(_) => 14,
             CallableValidator::Domain(_) => 15,
-            CallableValidator::Trait(_) => 16,
+            CallableValidator::Method(_) => 16,
             CallableValidator::Capacity(_) => 17,
             CallableValidator::Stage(_) => 18,
             CallableValidator::Drop => 19,
             CallableValidator::Promotion(_) => 20,
-            CallableValidator::Speaker => 21,
         });
+        if let CallableValidator::Method(role) = validator {
+            self.tag(match role {
+                super::CallableMethodRole::TraitRequirement => 0,
+                super::CallableMethodRole::TraitImplementation => 1,
+                super::CallableMethodRole::Inherent => 2,
+            });
+        }
     }
 
     pub(super) fn nominal_world(&mut self, stamp: &AcceptedNominalWorldStamp) {
@@ -284,18 +316,8 @@ impl CanonicalEncoder {
         self.usize(id.overload().get());
     }
 
-    pub(super) fn project_declaration(&mut self, id: &CallableDeclarationId) {
-        self.string(id.package().as_str());
-        self.usize(id.module().segments().len());
-        for segment in id.module().segments() {
-            self.string(segment.as_str());
-        }
-        self.string(id.owner().as_str());
-        self.usize(id.owner_path().len());
-        for segment in id.owner_path() {
-            self.string(segment.as_str());
-        }
-        self.string(id.name());
+    pub(super) fn project_declaration(&mut self, id: &CallableDeclarationKey) {
+        self.bytes(id.semantic_digest().as_bytes());
     }
 
     pub(super) fn authority(&mut self, authority: CallableAuthorityRank) {
@@ -384,13 +406,12 @@ impl CanonicalEncoder {
                     LanguageDocumentationFamily::Fx => 1,
                     LanguageDocumentationFamily::Agent => 2,
                     LanguageDocumentationFamily::Presentation => 3,
-                    LanguageDocumentationFamily::Dialogue => 4,
-                    LanguageDocumentationFamily::Collection => 5,
-                    LanguageDocumentationFamily::Domain => 6,
-                    LanguageDocumentationFamily::Integer => 7,
-                    LanguageDocumentationFamily::Capacity => 8,
-                    LanguageDocumentationFamily::Trait => 9,
-                    LanguageDocumentationFamily::Constructor => 10,
+                    LanguageDocumentationFamily::Collection => 4,
+                    LanguageDocumentationFamily::Domain => 5,
+                    LanguageDocumentationFamily::Integer => 6,
+                    LanguageDocumentationFamily::Capacity => 7,
+                    LanguageDocumentationFamily::Trait => 8,
+                    LanguageDocumentationFamily::Constructor => 9,
                 });
             }
         }
@@ -420,5 +441,28 @@ impl CanonicalEncoder {
         self.u64(span.source().source_len());
         self.usize(span.range().start());
         self.usize(span.range().end());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CanonicalEncoder;
+    use crate::callable::{CallableMethodRole, CallableValidator};
+
+    #[test]
+    fn method_validator_replaces_reserved_tag_sixteen_with_exact_role_subtag() {
+        for (role, role_tag) in [
+            (CallableMethodRole::TraitRequirement, 0_u16),
+            (CallableMethodRole::TraitImplementation, 1_u16),
+            (CallableMethodRole::Inherent, 2_u16),
+        ] {
+            let mut encoder = CanonicalEncoder::default();
+            encoder.validator(&CallableValidator::Method(role));
+
+            let mut expected = Vec::new();
+            expected.extend_from_slice(&16_u16.to_le_bytes());
+            expected.extend_from_slice(&role_tag.to_le_bytes());
+            assert_eq!(encoder.into_bytes(), expected);
+        }
     }
 }

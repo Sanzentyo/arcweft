@@ -3,7 +3,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::expressions::{
-    ExpressionProjection, SyntaxExpressionSlot, SyntaxMatchBodyTerminator, SyntaxRequiredTokenState,
+    ExpressionComponentRole, ExpressionProjection, SyntaxExpressionSlot, SyntaxMatchBodyTerminator,
+    SyntaxRequiredTokenState,
 };
 use arcweft_lang_syntax::incremental::ParsedSource;
 
@@ -26,6 +27,10 @@ use crate::slot::SlotSnapshot;
 /// attached owner. Match arms deliberately have no HIR arena identity of
 /// their own; their distinct source-backed scopes are the synthetic-tail and
 /// local-visibility owners.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one projection proves Match scrutinee, per-arm scopes, bindings, values, source roles, and recovery together"
+)]
 pub(super) fn match_expression_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -46,7 +51,7 @@ pub(super) fn match_expression_matches(
     }
 
     let scrutinee_child = &attached.children()[0];
-    if scrutinee_child.ordinal() != 0
+    if scrutinee_child.component_role() != ExpressionComponentRole::Scrutinee
         || scrutinee_child.authored().is_some()
             != matches!(projection.scrutinee(), SyntaxExpressionSlot::Authored)
         || !expression_child_matches(
@@ -55,9 +60,9 @@ pub(super) fn match_expression_matches(
             arenas.expressions,
             owner,
             payload.scope(),
+            attached,
             scrutinee_child,
             expression.scrutinee(),
-            HirExprSourceRole::Scrutinee,
         )
     {
         return false;

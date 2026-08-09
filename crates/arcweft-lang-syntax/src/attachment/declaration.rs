@@ -134,7 +134,7 @@ impl AttachedCharacterAssignment {
 /// Display-name initializer retained without source rediscovery.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedCharacterInitializer {
-    Authored(AttachedExpressionNode),
+    Authored(Box<AttachedExpressionNode>),
     Missing(AstNode<MissingMemberValueKind>),
 }
 
@@ -178,7 +178,7 @@ impl AttachedCharacterDisplayNameMember {
 /// Closed Character member inventory in exact source order.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedCharacterMember {
-    DisplayName(AttachedCharacterDisplayNameMember),
+    DisplayName(Box<AttachedCharacterDisplayNameMember>),
     Recovery {
         source_ordinal: u16,
         syntax: AstNode<ErrorDeclarationMemberKind>,
@@ -284,13 +284,10 @@ impl AstNode<CharacterDeclarationItemKind> {
             .syntax()
             .optional_unique_child(SyntaxRole::Body)?
             .ok_or(SyntaxAccessError::InvalidCharacterProjection { id: self.id() })?;
-        let body = attach_body(self.id(), body_node, pending.body())?;
+        let body = attach_body(self.id(), &body_node, pending.body())?;
         let recoveries = self.ordered_exact_children::<ErrorNodeKind>(SyntaxRoleClass::Recovery)?;
-        let expected_recoveries = if pending.has_unexpected_header() {
-            1
-        } else {
-            0
-        } + if pending.has_trailing_syntax() { 1 } else { 0 };
+        let expected_recoveries = usize::from(pending.has_unexpected_header())
+            + usize::from(pending.has_trailing_syntax());
         if recoveries.len() != expected_recoveries {
             return Err(SyntaxAccessError::InvalidCharacterProjection { id: self.id() });
         }
@@ -509,7 +506,7 @@ fn attach_alias(
 
 fn attach_body(
     owner: SyntaxNodeId,
-    syntax: super::SyntaxNodeHandle,
+    syntax: &super::SyntaxNodeHandle,
     pending: &PendingCharacterBodyProjection,
 ) -> Result<AttachedCharacterBody, SyntaxAccessError> {
     match pending {
@@ -531,7 +528,7 @@ fn attach_body(
             let members = syntax_members
                 .into_iter()
                 .zip(members)
-                .map(|(syntax, projection)| attach_member(owner, syntax, projection))
+                .map(|(syntax, projection)| attach_member(owner, &syntax, projection))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice();
             Ok(AttachedCharacterBody::Braced {
@@ -546,7 +543,7 @@ fn attach_body(
 
 fn attach_member(
     owner: SyntaxNodeId,
-    syntax: super::SyntaxNodeHandle,
+    syntax: &super::SyntaxNodeHandle,
     pending: &PendingCharacterMemberProjection,
 ) -> Result<AttachedCharacterMember, SyntaxAccessError> {
     if syntax.role() != SyntaxRole::Member(pending.source_ordinal()) {
@@ -588,9 +585,9 @@ fn attach_member(
                 PendingCharacterInitializer::Authored
                     if initializer_node.kind().is_expression() =>
                 {
-                    AttachedCharacterInitializer::Authored(AttachedExpressionNode::from_syntax(
-                        initializer_node,
-                    )?)
+                    AttachedCharacterInitializer::Authored(Box::new(
+                        AttachedExpressionNode::from_syntax(initializer_node)?,
+                    ))
                 }
                 PendingCharacterInitializer::Missing
                     if initializer_node.kind() == SyntaxKind::MissingMemberValue =>
@@ -599,7 +596,7 @@ fn attach_member(
                 }
                 _ => return Err(SyntaxAccessError::InvalidCharacterProjection { id: owner }),
             };
-            Ok(AttachedCharacterMember::DisplayName(
+            Ok(AttachedCharacterMember::DisplayName(Box::new(
                 AttachedCharacterDisplayNameMember {
                     syntax: member,
                     source_ordinal: *source_ordinal,
@@ -608,7 +605,7 @@ fn attach_member(
                     assignment,
                     initializer,
                 },
-            ))
+            )))
         }
         _ => Err(SyntaxAccessError::InvalidCharacterProjection { id: owner }),
     }
@@ -654,7 +651,7 @@ mod tests {
         SyntaxSnapshotId, attach_typed_tree,
     };
     use crate::grammar::kinds::SyntaxKind;
-    use crate::parser::{ParseOptions, parse_shadow_document};
+    use crate::parser::{ParseOptions, parse_document};
 
     fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
         let document = Arc::new(
@@ -665,7 +662,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+        let build = parse_document(&document, ParseOptions::default()).unwrap();
         let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(93).unwrap());
         let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
         let snapshot = SyntaxSnapshotId::new(
@@ -732,7 +729,7 @@ mod tests {
             declaration
                 .prefix()
                 .visibility()
-                .map(|visibility| visibility.kind()),
+                .map(crate::attachment::source_file::AttachedVisibility::kind),
             Some(crate::attachment::source_file::AttachedVisibilityKind::Public)
         ));
         match declaration.header().public_id() {

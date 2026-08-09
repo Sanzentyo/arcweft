@@ -5,40 +5,22 @@
 //! crates do not depend on it.
 
 pub mod assertion;
-mod borrow;
 pub mod callable;
 pub mod character_definition;
-pub mod check;
-pub mod checker;
-pub mod diagnostics;
+pub mod checked_rich_text;
 pub mod dialogue_view;
 pub mod effect_analysis;
 pub mod effect_catalog;
-pub mod effect_collector;
-pub mod effect_contract;
 pub mod effect_diagnostics;
 pub mod effect_model;
 pub mod effect_row;
 pub mod effects;
 pub mod entry;
 pub mod env;
-mod fact_layer;
-mod lifetime;
+pub mod final_analysis;
 pub mod nominal;
 pub mod project_index;
-pub mod propagation;
+pub mod proof_return;
 pub mod registration;
-pub mod resolve;
-pub mod semantic;
 pub mod signature;
-pub mod style;
-pub mod symbols;
-pub mod traits;
 pub mod types;
-pub mod view_part;
-
-#[cfg(test)]
-mod test_support;
-
-#[cfg(test)]
-mod tests;

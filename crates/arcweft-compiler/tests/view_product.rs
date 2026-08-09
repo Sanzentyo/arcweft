@@ -1,21 +1,47 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use arcweft_compiler::project::{
-    CompiledProject, ProjectCompilationContext, ProjectCompileError, ProjectCompileStage,
-    compile_project,
+    CompiledProject, ProjectCompilationContext, ProjectCompilationSession, ProjectCompileError,
+    ProjectCompileStage, compile_project,
 };
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
-use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
+use arcweft_lang_syntax::{
+    ast::module_path::{CanonicalModulePath, ModuleSegment},
+    incremental::{ParsedSource, SyntaxDatabase},
+    parser::ParseOptions,
+};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{
     DiagnosticLabelStyle, SourceDocument, SourceDocumentId, SourceName, SourceRange,
+    identity::SourceSnapshotId,
 };
 use arcweft_view::{ViewId, style::ViewStyleSheetId};
+
+fn compile_attached_project(
+    project: &ProjectSources,
+    context: &ProjectCompilationContext,
+) -> Result<CompiledProject, ProjectCompileError> {
+    let mut syntax = SyntaxDatabase::try_new().expect("View test syntax database");
+    let parsed_sources: BTreeMap<CanonicalModulePath, ParsedSource> = project
+        .modules()
+        .map(|source| {
+            let parsed = syntax
+                .parse_initial(
+                    SourceSnapshotId::initial(source.document().display_name().clone()),
+                    Arc::clone(source.document()),
+                    ParseOptions::default(),
+                )
+                .expect("View test attached source");
+            (source.module().clone(), parsed)
+        })
+        .collect();
+    let mut compiler = ProjectCompilationSession::try_new().expect("View test HIR database");
+    compile_project(&mut compiler, project, &parsed_sources, context)
+}
 
 #[test]
 fn compiler_lowers_every_typed_view_into_one_validated_product() {
@@ -82,8 +108,8 @@ style Primary {
 fn compiler_lowers_project_views_in_canonical_module_and_source_order() {
     let (project, context, root_document, a_document, z_document) =
         canonical_view_project_fixture();
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
-        .expect("canonical multi-module View project");
+    let compiled =
+        compile_attached_project(&project, &context).expect("canonical multi-module View project");
     let program = compiled
         .view_product()
         .product()
@@ -149,7 +175,7 @@ fn compiler_rejects_nested_view_recovery_before_product_acceptance() {
                 .diagnostics()
                 .iter()
                 .all(|diagnostic| match diagnostic.stage() {
-                    ProjectCompileStage::Parse => diagnostic.parse_error().is_some(),
+                    ProjectCompileStage::Parse => diagnostic.syntax_diagnostic().is_some(),
                     ProjectCompileStage::ViewLower => {
                         diagnostic
                             .diagnostic()
@@ -488,11 +514,7 @@ struct ProjectViewFixture {
 
 impl ProjectViewFixture {
     fn compile(&self) -> Result<CompiledProject, ProjectCompileError> {
-        compile_project(
-            &self.project,
-            &self.context,
-            &RuntimePlanLowerOptions::default(),
-        )
+        compile_attached_project(&self.project, &self.context)
     }
 }
 

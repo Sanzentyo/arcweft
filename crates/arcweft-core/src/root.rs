@@ -10,6 +10,7 @@ use crate::entry::{
     RuntimeSchemaLimits, RuntimeStatefulEntryRoles, RuntimeValueDigest, TypeLayoutHash,
     canonical_runtime_value_bytes,
 };
+use crate::pattern::RuntimeVariantIdentity;
 use crate::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryRoles, RuntimePlan, RuntimePlanError,
 };
@@ -758,6 +759,8 @@ enum ParsedReducerResult {
 
 fn parse_reducer_result(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
     let RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Result,
+        ordinal,
         name,
         payload: Some(payload),
         ..
@@ -765,15 +768,14 @@ fn parse_reducer_result(value: RuntimeValue) -> Result<ParsedReducerResult, Stri
     else {
         return Err("reducer must return Result<Reduction<State>, ReducerError>".to_owned());
     };
-    match name.as_str() {
-        "Ok" => parse_reduction(*payload),
-        "Err" => parse_reducer_error(*payload),
+    match (ordinal, name.as_str()) {
+        (0, "Ok") => parse_reduction(*payload),
+        (1, "Err") => parse_reducer_error(*payload),
         _ => Err(format!("reducer returned unknown result variant `{name}`")),
     }
 }
 
 fn parse_reduction(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
-    let value = unwrap_named_variant(value, "Reduction")?;
     let fields = record_fields(value, "Reduction")?;
     let state = fields
         .get("state")
@@ -837,10 +839,11 @@ fn parse_command(value: RuntimeValue) -> Result<RuntimeCommand, String> {
 fn unwrap_named_variant(value: RuntimeValue, expected: &str) -> Result<RuntimeValue, String> {
     match value {
         RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Nominal { nominal, .. },
+            ordinal: 0,
             name,
             payload: Some(payload),
-            ..
-        } if name == expected => Ok(*payload),
+        } if nominal.as_str() == expected && name == expected => Ok(*payload),
         RuntimeValue::Record(_) => Ok(value),
         _ => Err(format!("expected `{expected}` value")),
     }

@@ -8,24 +8,24 @@
 //! make the exact identity contract harder to audit without reducing a mixed
 //! responsibility.
 
-#[cfg(test)]
-pub(crate) mod migration_evidence;
-
 use std::sync::Arc;
 
-use arcweft_character::id::CharacterId;
-use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
-
-use crate::{
-    checker::TypeExpressionId,
-    types::{EntityKind, TypeKind},
+use arcweft_lang_hir::{
+    identity::ExprId,
+    symbol::{
+        CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId, ProjectSymbolRevision,
+        ProjectSymbolWorldId,
+    },
 };
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_source::{SourceDocumentIdentity, SourceSpan};
+
+use crate::types::TypeKind;
 
 use super::{
     BuiltinIdentityError, CallableIdentityError, CallableIndexKind, CallableLimits,
     CallablePathError, CallableScalarError, CallableScalarKind, CallableSignatureSchema,
-    PRODUCTION_CALLABLE_LIMITS,
+    PRODUCTION_CALLABLE_LIMITS, RegisteredCallableCatalogDigest,
 };
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -43,8 +43,6 @@ pub struct CallableGroupIndex(u16);
 pub struct CallableParameterIndex(u16);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableOverloadIndex(u16);
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct CallableArgumentIndex(u16);
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableArgumentSlotIndex(u16);
 /// Unique lexical scope inside one type-check transaction.
@@ -179,19 +177,6 @@ impl CallableOverloadIndex {
         self.0 as usize
     }
 }
-impl CallableArgumentIndex {
-    pub fn try_from_usize(value: usize) -> Result<Self, CallableScalarError> {
-        u16::try_from(value)
-            .map(Self)
-            .map_err(|_| CallableScalarError::IndexOverflow {
-                kind: CallableIndexKind::Argument,
-                value,
-            })
-    }
-    pub const fn get(self) -> usize {
-        self.0 as usize
-    }
-}
 impl CallableArgumentSlotIndex {
     pub fn try_from_usize(value: usize) -> Result<Self, CallableScalarError> {
         u16::try_from(value)
@@ -206,9 +191,6 @@ impl CallableArgumentSlotIndex {
     }
 }
 impl LexicalBindingIndex {
-    pub(crate) const fn from_u32(value: u32) -> Self {
-        Self(value)
-    }
     pub fn try_from_usize(value: usize) -> Result<Self, CallableScalarError> {
         u32::try_from(value)
             .map(Self)
@@ -222,10 +204,6 @@ impl LexicalBindingIndex {
     }
 }
 impl SemanticScopeId {
-    pub(crate) const fn from_u32(value: u32) -> Self {
-        Self(value)
-    }
-
     pub const fn get(self) -> usize {
         self.0 as usize
     }
@@ -371,9 +349,9 @@ impl ProjectCallablePath {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum ProjectNameBinding {
-    Callable(CallableDeclarationId),
+    Callable(CallableDeclarationKey),
     AmbiguousCallables {
-        declarations: Arc<[CallableDeclarationId]>,
+        declarations: Arc<[CallableDeclarationKey]>,
     },
     Environment(EnvironmentCallableId),
     NonCallable {
@@ -415,6 +393,23 @@ pub struct EnvironmentCallableId {
     overload: CallableOverloadIndex,
 }
 
+/// Durable digest of one structural environment callable identity.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct EnvironmentCallableDigest([u8; 32]);
+
+impl Ord for EnvironmentCallableId {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.canonical_identity_bytes()
+            .cmp(&other.canonical_identity_bytes())
+    }
+}
+
+impl PartialOrd for EnvironmentCallableId {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
 impl EnvironmentCallableId {
     pub fn new(
         owner: EnvironmentCallableOwner,
@@ -440,6 +435,27 @@ impl EnvironmentCallableId {
     }
     pub const fn overload(&self) -> CallableOverloadIndex {
         self.overload
+    }
+
+    /// Returns the canonical durable digest for Agent and persistence
+    /// projections. Accepted catalog generation belongs to
+    /// [`CheckedCallableId`], not this structural declaration identity.
+    #[must_use]
+    pub fn semantic_digest(&self) -> EnvironmentCallableDigest {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.environment-callable-id.v1\0");
+        hasher.update(&self.canonical_identity_bytes());
+        EnvironmentCallableDigest(*hasher.finalize().as_bytes())
+    }
+}
+
+impl EnvironmentCallableDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub const fn into_bytes(self) -> [u8; 32] {
+        self.0
     }
 }
 
@@ -478,7 +494,6 @@ pub enum LanguageDocumentationFamily {
     Fx,
     Agent,
     Presentation,
-    Dialogue,
     Collection,
     Domain,
     Integer,
@@ -577,8 +592,6 @@ pub enum BuiltinCallableId {
     Fail,
     Bail,
     Ensure,
-    Assert,
-    DebugAssert,
     Rgb,
     Sin,
     Cos,
@@ -601,8 +614,6 @@ impl BuiltinCallableId {
             (&["fail"][..], Self::Fail),
             (&["bail"][..], Self::Bail),
             (&["ensure"][..], Self::Ensure),
-            (&["assert"][..], Self::Assert),
-            (&["debug_assert"][..], Self::DebugAssert),
             (&["rgb"][..], Self::Rgb),
             (&["sin"][..], Self::Sin),
             (&["cos"][..], Self::Cos),
@@ -940,9 +951,6 @@ pub struct LocalCallableId {
     binding: LexicalBindingIndex,
 }
 impl LocalCallableId {
-    pub(crate) fn new(scope: SemanticScopeId, binding: LexicalBindingIndex) -> Self {
-        Self { scope, binding }
-    }
     pub const fn scope(&self) -> &SemanticScopeId {
         &self.scope
     }
@@ -953,18 +961,17 @@ impl LocalCallableId {
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct FunctionValueSignatureId {
-    expression: TypeExpressionId,
+    expression: ExprId,
     ordinal: FunctionValueOrdinal,
 }
 impl FunctionValueSignatureId {
-    #[allow(dead_code, reason = "allocated by the shared resolver migration cut")]
-    pub(crate) fn new(expression: TypeExpressionId, ordinal: FunctionValueOrdinal) -> Self {
+    pub(crate) fn new(expression: ExprId, ordinal: FunctionValueOrdinal) -> Self {
         Self {
             expression,
             ordinal,
         }
     }
-    pub const fn expression(&self) -> TypeExpressionId {
+    pub const fn expression(&self) -> ExprId {
         self.expression
     }
     pub const fn ordinal(&self) -> FunctionValueOrdinal {
@@ -1130,12 +1137,6 @@ pub enum DomainMethodId {
     RagContextPackSummary,
     Context,
     WithContext,
-    CharacterFace {
-        character: Option<CharacterId>,
-    },
-    CharacterSay {
-        character: Option<CharacterId>,
-    },
 }
 
 impl DomainMethodId {
@@ -1189,29 +1190,8 @@ impl DomainMethodId {
                 _ => {}
             }
         }
-        if is_character_speaker(receiver) {
-            match name {
-                "face" => {
-                    return Some(Self::CharacterFace { character: None });
-                }
-                "say" => {
-                    return Some(Self::CharacterSay { character: None });
-                }
-                _ => {}
-            }
-        }
         None
     }
-}
-
-fn is_character_speaker(receiver: &TypeKind) -> bool {
-    matches!(
-        receiver,
-        TypeKind::Speaker(EntityKind::Character) | TypeKind::SpeakerPreset(EntityKind::Character)
-    ) || matches!(
-        receiver,
-        TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character
-    )
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
@@ -1330,62 +1310,6 @@ impl StageMethodId {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TraitImplementationIndex(u32);
-impl TraitImplementationIndex {
-    #[allow(dead_code, reason = "allocated by the trait resolver migration cut")]
-    pub(crate) fn try_from_usize(value: usize) -> Result<Self, CallableScalarError> {
-        u32::try_from(value)
-            .map(Self)
-            .map_err(|_| CallableScalarError::IndexOverflow {
-                kind: CallableIndexKind::FunctionValue,
-                value,
-            })
-    }
-    pub const fn get(self) -> usize {
-        self.0 as usize
-    }
-}
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum TraitCallableSource {
-    Inherent,
-    Predicate,
-}
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct TraitCallableId {
-    trait_name: CallablePath,
-    method: CallableName,
-    implementation: TraitImplementationIndex,
-    source: TraitCallableSource,
-}
-impl TraitCallableId {
-    pub fn new(
-        trait_name: CallablePath,
-        method: CallableName,
-        implementation: TraitImplementationIndex,
-        source: TraitCallableSource,
-    ) -> Self {
-        Self {
-            trait_name,
-            method,
-            implementation,
-            source,
-        }
-    }
-    pub const fn trait_name(&self) -> &CallablePath {
-        &self.trait_name
-    }
-    pub const fn method(&self) -> &CallableName {
-        &self.method
-    }
-    pub const fn implementation(&self) -> TraitImplementationIndex {
-        self.implementation
-    }
-    pub const fn source(&self) -> TraitCallableSource {
-        self.source
-    }
-}
-
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct DataLastCallableId {
     callable: Box<CallableCandidateId>,
@@ -1485,31 +1409,368 @@ impl PromotionCallableId {
         }
     }
 }
-#[derive(Clone, Debug, Eq, Hash, PartialEq)]
-pub struct SpeakerCallableId {
-    character: Option<CharacterId>,
-    preset: bool,
+
+/// Version of the immutable programmatic trait callable catalog.
+///
+/// The field is deliberately private: changing any installed declaration,
+/// signature, effect contract, or witness mapping requires changing the
+/// repository-owned constant rather than manufacturing a version at a call
+/// site.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StandardTraitCatalogVersion(u32);
+
+pub const STANDARD_TRAIT_CATALOG_VERSION: StandardTraitCatalogVersion =
+    StandardTraitCatalogVersion(1);
+
+impl StandardTraitCatalogVersion {
+    pub const fn as_u32(self) -> u32 {
+        self.0
+    }
 }
-impl SpeakerCallableId {
-    pub fn new(character: Option<CharacterId>, preset: bool) -> Self {
-        Self { character, preset }
-    }
-    pub const fn character(&self) -> Option<&CharacterId> {
-        self.character.as_ref()
-    }
-    pub const fn is_preset(&self) -> bool {
-        self.preset
+
+/// Structural identity of one programmatically installed standard callable.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct StandardCallableDeclarationId {
+    owner: CallableDeclarationOwner,
+    catalog_ordinal: u32,
+}
+
+impl StandardCallableDeclarationId {
+    pub const fn owner(&self) -> CallableDeclarationOwner {
+        self.owner
     }
 
-    pub fn resolve_value(ty: &TypeKind, character: Option<CharacterId>) -> Option<Self> {
-        match ty {
-            TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character => {
-                Some(Self::new(character, false))
+    pub const fn catalog_ordinal(&self) -> u32 {
+        self.catalog_ordinal
+    }
+}
+
+/// Structural identity of one callable in a detached source check.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct DetachedCallableDeclarationId {
+    owner: CallableDeclarationOwner,
+    source_ordinal: u32,
+}
+
+impl DetachedCallableDeclarationId {
+    pub const fn owner(&self) -> CallableDeclarationOwner {
+        self.owner
+    }
+
+    pub const fn source_ordinal(&self) -> u32 {
+        self.source_ordinal
+    }
+}
+
+/// Structural declaration retained by one checked callable identity.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub enum CheckedCallableDeclaration {
+    Project(CallableDeclarationKey),
+    Detached(DetachedCallableDeclarationId),
+    Environment(EnvironmentCallableId),
+    Standard(StandardCallableDeclarationId),
+}
+
+impl Ord for CheckedCallableDeclaration {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        fn tag(value: &CheckedCallableDeclaration) -> u8 {
+            match value {
+                CheckedCallableDeclaration::Project(_) => 0,
+                CheckedCallableDeclaration::Detached(_) => 1,
+                CheckedCallableDeclaration::Environment(_) => 2,
+                CheckedCallableDeclaration::Standard(_) => 3,
             }
-            TypeKind::Speaker(EntityKind::Character) => Some(Self::new(character, false)),
-            TypeKind::SpeakerPreset(EntityKind::Character) => Some(Self::new(character, true)),
-            _ => None,
         }
+        tag(self)
+            .cmp(&tag(other))
+            .then_with(|| match (self, other) {
+                (Self::Project(left), Self::Project(right)) => left.cmp(right),
+                (Self::Detached(left), Self::Detached(right)) => left.cmp(right),
+                (Self::Environment(left), Self::Environment(right)) => left
+                    .canonical_identity_bytes()
+                    .cmp(&right.canonical_identity_bytes()),
+                (Self::Standard(left), Self::Standard(right)) => left.cmp(right),
+                _ => std::cmp::Ordering::Equal,
+            })
+    }
+}
+
+impl PartialOrd for CheckedCallableDeclaration {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+/// Exact semantic context in which a callable declaration was accepted.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedCallableContext {
+    Project {
+        world: ProjectSymbolWorldId,
+        revision: ProjectSymbolRevision,
+        catalog: RegisteredCallableCatalogDigest,
+        standard: StandardTraitCatalogVersion,
+    },
+    Detached {
+        source: SourceDocumentIdentity,
+        standard: StandardTraitCatalogVersion,
+    },
+    Environment {
+        catalog: RegisteredCallableCatalogDigest,
+    },
+    Standard {
+        version: StandardTraitCatalogVersion,
+    },
+}
+
+/// Revision-bound semantic identity of one callable declaration.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedCallableId {
+    context: CheckedCallableContext,
+    declaration: CheckedCallableDeclaration,
+}
+
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedCallableDigest([u8; 32]);
+
+/// Source-bound closure identity within one checked callable.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct CheckedClosureId {
+    owner: CheckedCallableId,
+    expression: SourceSpan,
+}
+
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CheckedEffectCallableId {
+    Declaration(CheckedCallableId),
+    Closure(CheckedClosureId),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedCallableIdentityError {
+    ContextMismatch,
+    ProjectPackageMismatch,
+    ClosureSourceMismatch,
+}
+
+impl CheckedCallableId {
+    pub(crate) fn for_project(
+        world: ProjectSymbolWorldId,
+        revision: ProjectSymbolRevision,
+        catalog: RegisteredCallableCatalogDigest,
+        standard: StandardTraitCatalogVersion,
+        declaration: CallableDeclarationKey,
+    ) -> Result<Self, CheckedCallableIdentityError> {
+        if declaration.package() != world.package() {
+            return Err(CheckedCallableIdentityError::ProjectPackageMismatch);
+        }
+        Ok(Self {
+            context: CheckedCallableContext::Project {
+                world,
+                revision,
+                catalog,
+                standard,
+            },
+            declaration: CheckedCallableDeclaration::Project(declaration),
+        })
+    }
+
+    pub(crate) fn for_environment(
+        catalog: RegisteredCallableCatalogDigest,
+        declaration: EnvironmentCallableId,
+    ) -> Self {
+        Self {
+            context: CheckedCallableContext::Environment { catalog },
+            declaration: CheckedCallableDeclaration::Environment(declaration),
+        }
+    }
+
+    pub const fn context(&self) -> &CheckedCallableContext {
+        &self.context
+    }
+
+    pub const fn declaration(&self) -> &CheckedCallableDeclaration {
+        &self.declaration
+    }
+
+    /// Returns the canonical one-way semantic digest used by runtime lowering.
+    ///
+    /// The digest retains the complete accepted generation and structural
+    /// declaration. It is deliberately not a display spelling and cannot be
+    /// decoded back into a checked identity.
+    #[must_use]
+    pub fn semantic_digest(&self) -> CheckedCallableDigest {
+        let mut encoder = CheckedCallableDigestEncoder::new();
+        encoder.context(&self.context);
+        encoder.declaration(&self.declaration);
+        CheckedCallableDigest(encoder.finish())
+    }
+}
+
+impl CheckedCallableDigest {
+    pub const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+
+    pub const fn into_bytes(self) -> [u8; 32] {
+        self.0
+    }
+}
+
+struct CheckedCallableDigestEncoder {
+    hasher: blake3::Hasher,
+}
+
+impl CheckedCallableDigestEncoder {
+    fn new() -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.checked-callable.v2\0");
+        Self { hasher }
+    }
+
+    fn finish(self) -> [u8; 32] {
+        *self.hasher.finalize().as_bytes()
+    }
+
+    fn byte(&mut self, value: u8) {
+        self.hasher.update(&[value]);
+    }
+
+    fn u32(&mut self, value: u32) {
+        self.hasher.update(&value.to_le_bytes());
+    }
+
+    fn u64(&mut self, value: u64) {
+        self.hasher.update(&value.to_le_bytes());
+    }
+
+    fn string(&mut self, value: &str) {
+        let length = u32::try_from(value.len())
+            .expect("validated callable identity strings fit the u32 digest contract");
+        self.u32(length);
+        self.hasher.update(value.as_bytes());
+    }
+
+    fn segments(&mut self, segments: &[arcweft_lang_syntax::ast::module_path::ModuleSegment]) {
+        let length = u32::try_from(segments.len())
+            .expect("validated callable identity paths fit the u32 digest contract");
+        self.u32(length);
+        for segment in segments {
+            self.string(segment.as_str());
+        }
+    }
+
+    fn context(&mut self, context: &CheckedCallableContext) {
+        match context {
+            CheckedCallableContext::Project {
+                world,
+                revision,
+                catalog,
+                standard,
+            } => {
+                self.byte(0);
+                self.string(world.package().as_str());
+                self.string(world.root_document().as_str());
+                self.string(world.profile());
+                self.hasher.update(revision.as_source_set().as_bytes());
+                self.hasher.update(catalog.as_bytes());
+                self.u32(standard.as_u32());
+            }
+            CheckedCallableContext::Detached { source, standard } => {
+                self.byte(1);
+                self.string(source.id().as_str());
+                self.hasher.update(source.revision().as_bytes());
+                self.u64(source.source_len());
+                self.u32(standard.as_u32());
+            }
+            CheckedCallableContext::Environment { catalog } => {
+                self.byte(2);
+                self.hasher.update(catalog.as_bytes());
+            }
+            CheckedCallableContext::Standard { version } => {
+                self.byte(3);
+                self.u32(version.as_u32());
+            }
+        }
+    }
+
+    fn declaration(&mut self, declaration: &CheckedCallableDeclaration) {
+        match declaration {
+            CheckedCallableDeclaration::Project(CallableDeclarationKey::Existing(declaration)) => {
+                self.byte(0);
+                self.string(declaration.package().as_str());
+                self.segments(declaration.module().segments());
+                self.byte(declaration.owner().digest_tag());
+                self.segments(declaration.owner_path());
+                self.string(declaration.name());
+            }
+            CheckedCallableDeclaration::Project(CallableDeclarationKey::TraitRequirement(
+                declaration,
+            )) => {
+                self.byte(1);
+                let owner = declaration.trait_declaration();
+                self.string(owner.package().as_str());
+                self.segments(owner.module().segments());
+                self.string(owner.name().as_str());
+                self.string(declaration.method().as_str());
+            }
+            CheckedCallableDeclaration::Project(CallableDeclarationKey::ImplMethod(
+                declaration,
+            )) => {
+                self.byte(2);
+                let owner = declaration.implementation();
+                self.string(owner.package().as_str());
+                self.segments(owner.module().segments());
+                self.u32(owner.source_ordinal());
+                self.byte(declaration.kind().digest_tag());
+                self.string(declaration.method().as_str());
+            }
+            CheckedCallableDeclaration::Project(CallableDeclarationKey::Flow(declaration)) => {
+                self.byte(6);
+                self.string(declaration.package().as_str());
+                self.segments(declaration.module().segments());
+                self.string(declaration.public_id().as_str());
+                self.byte(match declaration.publication() {
+                    arcweft_lang_hir::symbol::FlowPublicationKind::ModuleScoped => 0,
+                    arcweft_lang_hir::symbol::FlowPublicationKind::AuthoredAbsolute => 1,
+                });
+            }
+            CheckedCallableDeclaration::Detached(declaration) => {
+                self.byte(3);
+                self.byte(declaration.owner().digest_tag());
+                self.u32(declaration.source_ordinal());
+            }
+            CheckedCallableDeclaration::Environment(declaration) => {
+                self.byte(4);
+                self.hasher.update(&declaration.canonical_identity_bytes());
+            }
+            CheckedCallableDeclaration::Standard(declaration) => {
+                self.byte(5);
+                self.byte(declaration.owner().digest_tag());
+                self.u32(declaration.catalog_ordinal());
+            }
+        }
+    }
+}
+
+impl CheckedClosureId {
+    pub(crate) fn from_checked_expression(
+        owner: CheckedCallableId,
+        expression: SourceSpan,
+    ) -> Result<Self, CheckedCallableIdentityError> {
+        if let CheckedCallableContext::Detached { source, .. } = owner.context()
+            && expression.source() != source
+        {
+            return Err(CheckedCallableIdentityError::ClosureSourceMismatch);
+        }
+        Ok(Self { owner, expression })
+    }
+
+    pub const fn owner(&self) -> &CheckedCallableId {
+        &self.owner
+    }
+
+    pub const fn expression(&self) -> &SourceSpan {
+        &self.expression
     }
 }
 
@@ -1522,9 +1783,10 @@ pub enum CallableCandidateId {
     Builtin(BuiltinCallableId),
     Agent(AgentIntrinsicSignatureId),
     Presentation(super::PresentationCallableId),
-    Dialogue(super::DialogueCallableId),
-    Project(CallableDeclarationId),
+    Project(CallableDeclarationKey),
+    Detached(DetachedCallableDeclarationId),
     Environment(EnvironmentCallableId),
+    Standard(StandardCallableDeclarationId),
     Local(LocalCallableId),
     FunctionValue(FunctionValueSignatureId),
     Curried(CurriedCallableId),
@@ -1532,13 +1794,11 @@ pub enum CallableCandidateId {
     PresentationHandleMethod(PresentationHandleMethodId),
     IntegerMethod(IntegerMethodId),
     DomainMethod(DomainMethodId),
-    TraitMethod(TraitCallableId),
     DataLast(DataLastCallableId),
     CapacityMethod(CapacityMethodId),
     StageMethod(StageMethodId),
     Drop(DropCallableId),
     Promotion(PromotionCallableId),
-    Speaker(SpeakerCallableId),
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -1550,7 +1810,6 @@ pub enum CallableFamily {
     Builtin,
     Agent,
     Presentation,
-    Dialogue,
     Project,
     Environment,
     Lexical,
@@ -1565,12 +1824,11 @@ pub enum CallableFamily {
     StageMethod,
     Drop,
     Promotion,
-    Speaker,
 }
 
 impl CallableFamily {
     /// Every production callable family in stable semantic-audit order.
-    pub const ALL: [Self; 23] = [
+    pub const ALL: [Self; 21] = [
         Self::Fx,
         Self::EnumConstructor,
         Self::ResultConstructor,
@@ -1578,7 +1836,6 @@ impl CallableFamily {
         Self::Builtin,
         Self::Agent,
         Self::Presentation,
-        Self::Dialogue,
         Self::Project,
         Self::Environment,
         Self::Lexical,
@@ -1593,12 +1850,11 @@ impl CallableFamily {
         Self::StageMethod,
         Self::Drop,
         Self::Promotion,
-        Self::Speaker,
     ];
 }
 
 impl CallableCandidateId {
-    pub const fn family(&self) -> CallableFamily {
+    pub(crate) const fn intrinsic_family(&self) -> CallableFamily {
         match self {
             Self::Fx(_) => CallableFamily::Fx,
             Self::EnumVariant(_) => CallableFamily::EnumConstructor,
@@ -1607,23 +1863,20 @@ impl CallableCandidateId {
             Self::Builtin(_) => CallableFamily::Builtin,
             Self::Agent(_) => CallableFamily::Agent,
             Self::Presentation(_) => CallableFamily::Presentation,
-            Self::Dialogue(_) => CallableFamily::Dialogue,
-            Self::Project(_) => CallableFamily::Project,
+            Self::Project(_) | Self::Detached(_) | Self::Standard(_) => CallableFamily::Project,
             Self::Environment(_) => CallableFamily::Environment,
             Self::Local(_) => CallableFamily::Lexical,
             Self::FunctionValue(_) => CallableFamily::FunctionValue,
-            Self::Curried(id) => id.base().family(),
+            Self::Curried(id) => id.base().intrinsic_family(),
             Self::CollectionMethod(_) => CallableFamily::CollectionMethod,
             Self::PresentationHandleMethod(_) => CallableFamily::PresentationHandleMethod,
             Self::IntegerMethod(_) => CallableFamily::IntegerMethod,
             Self::DomainMethod(_) => CallableFamily::DomainMethod,
-            Self::TraitMethod(_) => CallableFamily::TraitMethod,
             Self::DataLast(_) => CallableFamily::DataLast,
             Self::CapacityMethod(_) => CallableFamily::CapacityMethod,
             Self::StageMethod(_) => CallableFamily::StageMethod,
             Self::Drop(_) => CallableFamily::Drop,
             Self::Promotion(_) => CallableFamily::Promotion,
-            Self::Speaker(_) => CallableFamily::Speaker,
         }
     }
 }
@@ -1637,7 +1890,6 @@ pub enum LanguageCallableFamily {
     Builtin,
     Agent,
     Presentation,
-    Dialogue,
     CollectionMethod,
     PresentationHandleMethod,
     IntegerMethod,
@@ -1648,5 +1900,4 @@ pub enum LanguageCallableFamily {
     Drop,
     Promote,
     Assume,
-    Speaker,
 }

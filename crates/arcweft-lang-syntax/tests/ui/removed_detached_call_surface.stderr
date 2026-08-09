@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_syntax::expr`
+ --> tests/ui/removed_detached_call_surface.rs:1:26
+  |
+1 | use arcweft_lang_syntax::expr::{ArgumentListSyntax, CallSurfaceSyntax};
+  |                          ^^^^ could not find `expr` in `arcweft_lang_syntax`

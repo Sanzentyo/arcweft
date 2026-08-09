@@ -1,6 +1,5 @@
 use crate::documents::DocumentSnapshot;
 use crate::features::dialogue_view_metadata::{DialogueViewTypeMetadata, dialogue_view_types};
-use crate::features::view_part_metadata::ViewPartMetadataIndex;
 use crate::profiles::LspProfile;
 use arcweft_character::manifest::{CharacterManifest, CharacterPart, CharacterVariant};
 use arcweft_lang_sema::types::TypeKind;
@@ -51,9 +50,6 @@ pub fn completions_at(
         else {
             return Vec::new();
         };
-        if let Some(metadata) = ViewPartMetadataIndex::for_document(profile, document) {
-            items.extend(metadata.completions(document.text(), offset));
-        }
         items.extend(crate::features::nominal_types::contextual_completions(
             profile, document, offset,
         ));
@@ -237,7 +233,14 @@ fn variant_documentation(part: &CharacterPart, variant: &CharacterVariant) -> St
 }
 
 fn enum_variant_completions(profile: &LspProfile) -> Vec<CompletionItem> {
-    profile
+    let Some(accepted) = profile.accepted_environment() else {
+        return Vec::new();
+    };
+    let Some(world) = accepted.registered_world() else {
+        return Vec::new();
+    };
+    world
+        .environment()
         .typecheck_env()
         .enum_variant_sets()
         .into_iter()
@@ -272,4 +275,17 @@ fn dedup_completion_items(items: Vec<CompletionItem>) -> Vec<CompletionItem> {
 
 fn type_kind_label(ty: &TypeKind) -> String {
     ty.source_label()
+}
+
+#[cfg(test)]
+mod tests {
+    use arcweft_runtime_host::RuntimeHostRunnerKind;
+
+    use super::{LspProfile, enum_variant_completions};
+
+    #[test]
+    fn enum_variants_are_not_reconstructed_before_semantic_acceptance() {
+        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
+        assert!(enum_variant_completions(&profile).is_empty());
+    }
 }

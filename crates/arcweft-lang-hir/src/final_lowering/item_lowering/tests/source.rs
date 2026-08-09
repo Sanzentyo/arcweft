@@ -50,7 +50,6 @@ struct SourceSyntaxInventory {
 
 fn source_syntax_inventory(parsed: &ParsedSource) -> SourceSyntaxInventory {
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -78,7 +77,7 @@ fn source_syntax_inventory(parsed: &ParsedSource) -> SourceSyntaxInventory {
                     .push(policy.expression().syntax().id());
                 if let AttachedSourceBackpressurePolicy::Bounded {
                     capacity, overflow, ..
-                } = policy
+                } = policy.as_ref()
                 {
                     inventory.capacity = capacity.value().map(|value| value.syntax().id());
                     if let Some(argument) = overflow.argument()
@@ -121,7 +120,6 @@ fn source_syntax_inventory(parsed: &ParsedSource) -> SourceSyntaxInventory {
 
 fn source_id_syntax(parsed: &ParsedSource) -> Option<SyntaxNodeId> {
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -137,6 +135,10 @@ fn source_id_syntax(parsed: &ParsedSource) -> Option<SyntaxNodeId> {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical Source test asserts one complete executable child and handler owner graph"
+)]
 fn source_lowers_only_executable_children_and_freezes_handler_owners() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-source-clean",
@@ -254,6 +256,10 @@ fn source_lowers_only_executable_children_and_freezes_handler_owners() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Source identity test exhausts the accepted root, marker, and typed ID matrix"
+)]
 fn source_identity_matrix_preserves_exact_final_hir_roots_and_marker_names() {
     enum ExpectedIdentity {
         NameOnly,
@@ -521,6 +527,10 @@ fn source_identity_recovery_matrix_retains_shape_without_expression_allocation()
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Source identity recovery test exhausts every root and ID issue family"
+)]
 fn source_identity_recovery_covers_every_root_and_id_issue_family() {
     for (case, header, expected_shape) in [
         (
@@ -941,6 +951,10 @@ fn source_closed_policy_matrices_do_not_create_valid_recovery_defaults() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Source backpressure test exhausts the closed recovery and capacity ownership matrix"
+)]
 fn source_backpressure_recovery_matrix_retains_only_selected_capacity_ownership() {
     for (case, policy, clean) in [
         ("blocking", "blocking_not_allowed", true),
@@ -1550,9 +1564,7 @@ fn assert_source_freeze_rejects_from_source(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     let (slots, arenas) = transaction.storage_mut();
     let original = arenas.items().resolve_staged(slots, owner).unwrap().clone();
@@ -1601,6 +1613,10 @@ fn rebuild_source(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Source freeze test exhausts policy, event, scope, pattern, and statement substitution"
+)]
 fn source_freeze_rejects_policy_event_scope_pattern_and_statement_substitution() {
     assert_source_freeze_rejects("replay-policy", |owner, source| {
         let replay = source.replay().value().expect("authored replay");

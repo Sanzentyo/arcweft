@@ -1,138 +1,28 @@
-error[E0432]: unresolved imports `arcweft_runtime_plan::flow::lower_runtime_plan`, `arcweft_runtime_plan::fx::lower_fx_definitions`
- --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:3:37
+error[E0432]: unresolved imports `arcweft_runtime_plan::audio`, `arcweft_runtime_plan::expr`, `arcweft_runtime_plan::flow::RuntimePlanLowerOptions`, `arcweft_runtime_plan::flow::lower_runtime_plan`, `arcweft_runtime_plan::fx`, `arcweft_runtime_plan::host_request`, `arcweft_runtime_plan::labels`, `arcweft_runtime_plan::pattern`, `arcweft_runtime_plan::render_text`, `arcweft_runtime_plan::source`, `arcweft_runtime_plan::typed_evidence`
+ --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:2:5
   |
+2 |     audio, expr,
+  |     ^^^^^  ^^^^ no `expr` in the root
+  |     |
+  |     no `audio` in the root
 3 |     flow::{RuntimePlanLowerOptions, lower_runtime_plan},
-  |                                     ^^^^^^^^^^^^^^^^^^ no `lower_runtime_plan` in `flow`
+  |            ^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^ no `lower_runtime_plan` in `flow`
+  |            |
+  |            no `RuntimePlanLowerOptions` in `flow`
 4 |     fx::lower_fx_definitions,
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^ no `lower_fx_definitions` in `fx`
+  |     ^^ could not find `fx` in `arcweft_runtime_plan`
+5 |     host_request, labels, pattern, render_text, source,
+  |     ^^^^^^^^^^^^  ^^^^^^  ^^^^^^^  ^^^^^^^^^^^  ^^^^^^ no `source` in the root
+  |     |             |       |        |
+  |     |             |       |        no `render_text` in the root
+  |     |             |       no `pattern` in the root
+  |     |             no `labels` in the root
+  |     no `host_request` in the root
+6 |     typed_evidence::{RuntimeTypedExpressionId, RuntimeTypedLoweringEvidenceKind},
+  |     ^^^^^^^^^^^^^^
   |
 help: a similar name exists in the module
   |
 3 -     flow::{RuntimePlanLowerOptions, lower_runtime_plan},
-3 +     flow::{RuntimePlanLowerOptions, lower_runtime_flows},
+3 +     flow::{RuntimePlanLowerStats, lower_runtime_plan},
   |
-
-error[E0603]: module `audio` is private
- --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:2:5
-  |
-2 |     audio, expr,
-  |     ^^^^^ private module
-  |
-note: the module `audio` is defined here
- --> src/lib.rs
-  |
-  | mod audio;
-  | ^^^^^^^^^
-
-error[E0603]: module `expr` is private
- --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:2:12
-  |
-2 |     audio, expr,
-  |            ^^^^ private module
-  |
-note: the module `expr` is defined here
- --> src/lib.rs
-  |
-  | mod expr;
-  | ^^^^^^^^
-
-error[E0603]: module `host_request` is private
- --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:5:5
-  |
-5 |     host_request, labels, pattern, render_text, source,
-  |     ^^^^^^^^^^^^ private module
-  |
-note: the module `host_request` is defined here
- --> src/lib.rs
-  |
-  | mod host_request;
-  | ^^^^^^^^^^^^^^^^
-
-error[E0603]: module `labels` is private
- --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:5:19
-  |
-5 |     host_request, labels, pattern, render_text, source,
-  |                   ^^^^^^ private module
-  |
-note: the module `labels` is defined here
- --> src/lib.rs
-  |
-  | mod labels;
-  | ^^^^^^^^^^
-
-error[E0603]: module `pattern` is private
- --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:5:27
-  |
-5 |     host_request, labels, pattern, render_text, source,
-  |                           ^^^^^^^ private module
-  |
-note: the module `pattern` is defined here
- --> src/lib.rs
-  |
-  | mod pattern;
-  | ^^^^^^^^^^^
-
-error[E0603]: module `render_text` is private
- --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:5:36
-  |
-5 |     host_request, labels, pattern, render_text, source,
-  |                                    ^^^^^^^^^^^ private module
-  |
-note: the module `render_text` is defined here
- --> src/lib.rs
-  |
-  | mod render_text;
-  | ^^^^^^^^^^^^^^^
-
-error[E0603]: module `source` is private
- --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:5:49
-  |
-5 |     host_request, labels, pattern, render_text, source,
-  |                                                 ^^^^^^ private module
-  |
-note: the module `source` is defined here
- --> src/lib.rs
-  |
-  | mod source;
-  | ^^^^^^^^^^
-
-error[E0599]: no associated function or constant named `new` found for struct `RuntimePlanLowerOptions` in the current scope
-  --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:10:38
-   |
-10 |     let _ = RuntimePlanLowerOptions::new();
-   |                                      ^^^ associated function or constant not found in `RuntimePlanLowerOptions`
-   |
-help: there is a method `ne` with a similar name, but with different arguments
-  --> $RUST/core/src/cmp.rs
-   |
-   |     fn ne(&self, other: &Rhs) -> bool {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-
-error[E0599]: no method named `trait_methods` found for reference `&RuntimePlanLowerOptions` in the current scope
-  --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:11:21
-   |
-11 |     let _ = options.trait_methods();
-   |                     ^^^^^^^^^^^^^ private field, not a method
-   |
-help: there is a method `with_trait_methods` with a similar name, but with different arguments
-  --> src/flow.rs
-   |
-   | /     pub fn with_trait_methods(
-   | |         mut self,
-   | |         trait_methods: impl IntoIterator<Item = RuntimeTraitMethod>,
-   | |     ) -> Self {
-   | |_____________^
-
-error[E0599]: no method named `index` found for struct `RuntimeTypedExpressionId` in the current scope
-  --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:15:16
-   |
-15 |     let _ = id.index();
-   |                ^^^^^ method not found in `RuntimeTypedExpressionId`
-
-error[E0559]: variant `RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue` has no field named `arity`
-  --> tests/ui/removed_zero_consumer_runtime_plan_facades.rs:19:71
-   |
-19 |     let _ = RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue { arity: 1 };
-   |                                                                       ^^^^^ `RuntimeTypedLoweringEvidenceKind::ExpectedFunctionValue` does not have this field
-   |
-   = note: all struct fields are already assigned

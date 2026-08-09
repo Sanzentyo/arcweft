@@ -4,7 +4,7 @@ use crate::{
     LayoutPoint, LayoutSize,
     vertical_break::{VerticalBreakError, VerticalBreakPolicy},
 };
-use arcweft_render_text::{RichTextJlreqStrictness, RichTextRange, RichTextWritingMode};
+use arcweft_text_model::{RichTextJlreqStrictness, RichTextRange, RichTextWritingMode};
 use serde::{Deserialize, Serialize};
 use std::error::Error as StdError;
 use thiserror::Error;

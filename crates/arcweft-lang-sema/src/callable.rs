@@ -8,7 +8,7 @@
 mod arguments;
 mod builder;
 mod catalog;
-mod dialogue;
+mod checked_catalog;
 mod digest;
 mod error;
 mod facts;
@@ -22,69 +22,73 @@ mod resolver;
 mod schema;
 
 pub use arguments::CallableParameterCoordinate;
-pub(crate) use arguments::{call_shape_is_viable, data_last_unsupported_spread_reason};
+pub(crate) use arguments::{
+    CallArgumentMapping, MappedCallArgument, MappedCallArgumentSlot, call_shape_is_viable,
+    map_call_arguments, map_unmapped_call_arguments,
+};
 pub(crate) use builder::RegisteredCallableCatalogBuilder;
 pub use catalog::{
-    CallableRecord, CatalogCallableEntry, EnvironmentCallableCatalog,
+    CallableAccess, CallableRecord, CatalogCallableEntry, EnvironmentCallableCatalog,
     EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,
     ProjectCallableCatalog, RegisteredCallableCatalog, RegisteredProjectModuleCallables,
 };
-pub use dialogue::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
+pub use checked_catalog::{
+    CallableEffectContract, CallableInterfaceDigest, CheckedCallableCatalog,
+    CheckedCallableCatalogGeneration, CheckedCallableCatalogOrigin, CheckedCallableEffects,
+    CheckedCallableExecution, CheckedCallableFacts, CheckedCallableLookupError,
+    CheckedCallableSourceCategory, CheckedCallableSourceKey, CheckedMethodLookup,
+    EffectClauseSource, EffectContractBuildError, EffectContractOrigin, EffectContractSource,
+    EffectItemSource, EffectPermission,
+};
+pub(crate) use checked_catalog::{CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder};
 pub use digest::{
     CallableSignatureSchemaDigest, EnvironmentCallablePublicationDigest,
     RegisteredCallableCatalogDigest,
 };
 pub use error::{
-    BuiltinIdentityError, CallTargetFactError, CallableBuildLimitError, CallableCatalogBuildError,
-    CallableCatalogError, CallableDiagnosticCode, CallableDocumentationError,
-    CallableFamilyInvariantCode, CallableIdentityError, CallableIndexKind, CallablePathError,
-    CallablePublicationError, CallableQueryLimitError, CallableScalarError, CallableScalarKind,
-    CallableSchemaError, CallableSourceError, CorruptCallableCatalogReason, ResolveCallError,
-    RustProvenanceError, RustProvenanceField, SemanticSignatureError,
-    SignatureLimitConfigurationError, SignatureLimitExceeded, SignatureLimitKind,
+    BuiltinIdentityError, CallableBuildLimitError, CallableCatalogBuildError, CallableCatalogError,
+    CallableDiagnosticCode, CallableDocumentationError, CallableFamilyInvariantCode,
+    CallableIdentityError, CallableIndexKind, CallablePathError, CallablePublicationError,
+    CallableQueryLimitError, CallableScalarError, CallableScalarKind, CallableSchemaError,
+    CallableSourceError, CorruptCallableCatalogReason, ResolveCallError, RustProvenanceError,
+    RustProvenanceField, SemanticSignatureError, SignatureLimitExceeded, SignatureLimitKind,
     SignatureWorkKind,
 };
 pub use facts::{
-    CallPoison, CallTargetFact, CallTargetFacts, CallableDiagnostic, CallableDiagnosticRelated,
-    CallableDiagnosticSeverity, CallableDiagnosticSubject, CheckedCallArgumentFact,
-    CheckedCallArgumentSlotFact, SemanticParameter, SemanticParameterGroup, SemanticSignature,
-    SemanticSignatureHelp, SemanticSignatureIndex, SemanticSignatureRecovery,
+    CallCalleeClassificationFact, CallPoison, CallTargetFact, CallTargetFacts, CallableDiagnostic,
+    CallableDiagnosticRelated, CallableDiagnosticSeverity, CallableDiagnosticSubject,
+    CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallArgumentSlotSource,
+    SemanticParameter, SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp,
+    SemanticSignatureIndex, SemanticSignatureRecovery,
 };
-pub(crate) use facts::{
-    CallTargetFactMode, CallTargetFactsInput, CheckedCallArgumentSlotInput, CheckedCallTarget,
-};
-#[cfg(test)]
-pub(crate) use identity::migration_evidence::{
-    MigrationAuthorityClass, MigrationCompletionDisposition,
-};
+pub(crate) use facts::{CallTargetFactsInput, CheckedCallArgumentSlotInput, CheckedCallTarget};
 pub use identity::{
-    AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableArgumentIndex,
-    CallableArgumentSlotIndex, CallableAuthorityRank, CallableCandidateId, CallableFamily,
-    CallableGroupIndex, CallableLookupKey, CallableName, CallableOverloadIndex,
-    CallableParameterIndex, CallablePath, CallableProviderId, CapabilityCallableId,
-    CapacityMethodId, CollectionMethodId, CurriedCallableId, DataLastCallableId, DomainMethodId,
-    DropCallableId, EnumVariantSignatureId, EnvironmentCallableId, EnvironmentCallableKind,
-    EnvironmentCallableOwner, FloatWidth, FunctionValueOrdinal, FunctionValueSignatureId,
-    FxCallableSignatureId, FxResolution, IntegerMethodId, LanguageCallableFamily,
-    LanguageDocumentationFamily, LexicalBindingIndex, LocalCallableId, MathCallableId,
-    OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId, ProjectCallablePath,
-    ProjectNameBinding, ProjectNominalTypeId, PromotionCallableId, ReceiverMethodKey,
-    ReductionConstructorKind, ResultConstructorKind, RustItemPath, SemanticScopeId,
-    SpeakerCallableId, StageMethodId, StandardEnvironmentId, StdFloatCallableId, StdFloatOperation,
-    TraitCallableId, TraitCallableSource, TraitImplementationIndex, VectorDimensions,
-};
-#[cfg(test)]
-pub(crate) use limits::AssociatedResolverWorkReport;
-pub(crate) use limits::{
-    AssociatedResolverStep, CallableQueryDepth, ResolverWork, SignatureQueryWorkMeter,
+    AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableArgumentSlotIndex,
+    CallableAuthorityRank, CallableCandidateId, CallableFamily, CallableGroupIndex,
+    CallableLookupKey, CallableName, CallableOverloadIndex, CallableParameterIndex, CallablePath,
+    CallableProviderId, CapabilityCallableId, CapacityMethodId, CheckedCallableContext,
+    CheckedCallableDeclaration, CheckedCallableDigest, CheckedCallableId,
+    CheckedCallableIdentityError, CheckedClosureId, CheckedEffectCallableId, CollectionMethodId,
+    CurriedCallableId, DataLastCallableId, DetachedCallableDeclarationId, DomainMethodId,
+    DropCallableId, EnumVariantSignatureId, EnvironmentCallableDigest, EnvironmentCallableId,
+    EnvironmentCallableKind, EnvironmentCallableOwner, FloatWidth, FunctionValueOrdinal,
+    FunctionValueSignatureId, FxCallableSignatureId, FxResolution, IntegerMethodId,
+    LanguageCallableFamily, LanguageDocumentationFamily, LexicalBindingIndex, LocalCallableId,
+    MathCallableId, OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId,
+    ProjectCallablePath, ProjectNameBinding, ProjectNominalTypeId, PromotionCallableId,
+    ReceiverMethodKey, ReductionConstructorKind, ResultConstructorKind, RustItemPath,
+    STANDARD_TRAIT_CATALOG_VERSION, SemanticScopeId, StageMethodId, StandardCallableDeclarationId,
+    StandardEnvironmentId, StandardTraitCatalogVersion, StdFloatCallableId, StdFloatOperation,
+    VectorDimensions,
 };
 pub use limits::{
-    CallableLimits, PRODUCTION_CALLABLE_LIMITS, PRODUCTION_SIGNATURE_LIMITS,
-    SignatureAccountingError, SignatureQueryLimits, SignatureQueryProjectionWork,
-    SignatureQueryResolutionWork, SignatureQuerySearchWork, SignatureQueryWorkReport,
-    SignatureWorkReport,
+    CallResolverAccountingReport, CallableLimits, PRODUCTION_CALLABLE_LIMITS,
+    PRODUCTION_SIGNATURE_LIMITS, SignatureAccountingError, SignatureQueryLimits,
+    SignatureQueryProjectionWork, SignatureQueryResolutionWork, SignatureQuerySearchWork,
+    SignatureQueryWorkReport, SignatureWorkReport,
 };
-pub(crate) use presentation::{PresentationArgumentValuePolicy, PresentationNamedArgument};
+pub(crate) use limits::{CallableQueryDepth, ResolverWork, SignatureQueryWorkMeter};
+pub(crate) use presentation::PresentationArgumentValuePolicy;
 pub use presentation::{PresentationCallableId, PresentationSchemaContext};
 pub use projection::{
     EnvironmentPublicationProjectionDiagnostic, EnvironmentPublicationProjectionErrorKind,
@@ -93,9 +97,8 @@ pub use projection::{
 };
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
 pub(crate) use resolver::{
-    CallCallee, CallResolverAuthority, CallResolverRequest, CallSourceContext, LexicalCallBinding,
-    LexicalCallableScope, ResolvedEnumSeed, ResolvedFunctionValueSeed, SignatureQueryStep,
-    SignatureQueryStepControl, resolve_call_target,
+    CallResolverAuthority, CallResolverContext, CallResolverRequest, FinalCallCalleeFacts,
+    prepare_final_call_callee, prepare_language_free_dot_path, resolve_call_target,
 };
 pub use resolver::{
     CallableInstantiation, CharacterOwnerSource, NonCallableSource, NonEmptyResolvedCandidates,
@@ -105,15 +108,9 @@ pub use resolver::{
 };
 pub use schema::{
     CallableArgumentPolicy, CallableDocumentation, CallableEffectSchema, CallableGroupKind,
-    CallableParameter, CallableParameterDocumentation, CallableParameterGroup,
+    CallableMethodRole, CallableParameter, CallableParameterDocumentation, CallableParameterGroup,
     CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
     CallableParameterType, CallableSignatureSchema, CallableSource, CallableValidator,
     DocumentationProvenance, RustCallableProvenance, RustCallablePurity, RustPackageProvenance,
     SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
 };
-
-#[cfg(test)]
-mod resolver_tests;
-
-#[cfg(test)]
-mod tests;

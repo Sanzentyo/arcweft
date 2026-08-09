@@ -845,6 +845,10 @@ fn flow_body_graph_matches(
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the validator compares one typed Thread body against its exact expression, parent scope, attachment, and recovery inputs"
+)]
 fn thread_expression_body_graph_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,

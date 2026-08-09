@@ -11,10 +11,10 @@ use super::rag::{
 use super::script::{
     AgentCaptureBlob, AgentScriptRunInput, AgentScriptRunReport, CliAgentSession,
     CollectingDebugSink, agent_cli_session_id, agent_debug_finish_runtime_session,
-    agent_debug_start_runtime_session, agent_project_entities, agent_project_graph,
-    agent_script_project_entities_metadata, agent_script_project_graph_metadata,
-    agent_script_project_index, agent_script_run_bundle, agent_script_run_input,
-    agent_script_run_report_from_result, agent_script_runtime_policy, compile_agent_script_source,
+    agent_debug_start_runtime_session, agent_script_project_entities_metadata,
+    agent_script_project_graph_metadata, agent_script_run_bundle, agent_script_run_input,
+    agent_script_run_report_from_result, agent_script_runtime_policy,
+    agent_script_standalone_compile_target, compile_agent_script_source,
     parse_agent_script_signal_arg, parse_agent_script_state_arg,
     read_and_validate_agent_trace_records, write_agent_capture_blobs,
 };
@@ -26,8 +26,8 @@ use super::{
     AgentScriptRunOptions, AgentScriptSignalArg, AgentScriptStateArg, AgentSession,
     CliRuntimeExecutorTier, CliRuntimePureWorkers, CliRuntimeStepMode, ExitCode, FlowFiberStatus,
     NativeAdapterRegistrar, NativeTaskBridge, NoopRagService, Path, PathBuf, ProfileOptions, fs,
-    load_and_check_selection, native_host_policy_for_selection, parse_runtime_binding_arg,
-    parse_runtime_pure_workers, print_json, resolve_source_selection,
+    native_host_policy_for_selection, parse_runtime_binding_arg, parse_runtime_pure_workers,
+    print_json, resolve_source_selection,
 };
 use crate::app::debug::debug_project_readback_json;
 use crate::app::local_embedding::{
@@ -77,8 +77,8 @@ use arcweft_agent_protocol::proxy::{
     AgentPresentationObjectProxyParamQuery, AgentPresentationObjectProxyRef,
 };
 use arcweft_agent_protocol::resource::{
-    AgentBinaryEncoding, AgentResource, AgentResourceBody, AgentResourceKind, TraceResourceError,
-    trace_resource,
+    AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource, AgentResourceBody,
+    AgentResourceKind, TraceResourceError, trace_resource,
 };
 use arcweft_agent_protocol::rich_text::{
     AgentHitRegion, AgentHitRegionKind, AgentRichTextElementKind, AgentRichTextElementRef,
@@ -107,9 +107,7 @@ use arcweft_interaction_model::{
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
     payload::InteractionPayload,
 };
-use arcweft_lang_sema::check::{TypeCheckReport, TypeJudgmentRule};
-use arcweft_lang_sema::project_index::{ProgramHash, project_semantic_index_from_hir};
-use arcweft_lang_syntax::parser::{ParseCompletion, ParsedFragment, ParsedFragmentKind};
+use arcweft_lang_sema::project_index::ProgramHash;
 use arcweft_layout::{
     CaptureComposition as LayoutCaptureComposition, CaptureCropBounds,
     CaptureMaskMetadata as LayoutCaptureMaskMetadata, CaptureMetadata as LayoutCaptureMetadata,
@@ -117,14 +115,12 @@ use arcweft_layout::{
     LayoutRect, LayoutSize, ScalePolicy,
 };
 use arcweft_rag::fusion::{FusionConfig, reciprocal_rank_fusion};
-use arcweft_render_text::{LineDisplayFrame, RichTextRange};
 use arcweft_runtime_driver::session::BundleStepInput;
-#[cfg(feature = "agent-repl")]
-use arcweft_tooling::agent_repl::AgentReplCellCompletionKind;
+use arcweft_text_model::{LineDisplayFrame, RichTextRange};
 use arcweft_tooling::agent_repl::{
-    AgentReplCompletionContext, AgentReplCompletionEntity, agent_repl_classification_from_fragment,
-    agent_repl_classify_cell, agent_repl_completions, agent_repl_highlight_tokens,
-    agent_repl_parse_fragment,
+    AgentReplCellClassification, AgentReplCellCompletionKind, AgentReplCompletionContext,
+    AgentReplCompletionEntity, AgentReplFragmentKind, agent_repl_classify_cell,
+    agent_repl_completions, agent_repl_highlight_tokens,
 };
 
 const AGENT_ROLE_DIALOGUE_VIEW: &str = "dialogue_view";
@@ -141,6 +137,13 @@ use std::io::IsTerminal as _;
 use std::io::{BufRead as _, Read as _, Write as _};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+
+fn agent_binary_resource_body(bytes: &[u8]) -> AgentBinaryResourceBody {
+    AgentBinaryResourceBody {
+        encoding: AgentBinaryEncoding::Base64,
+        data: STANDARD.encode(bytes),
+    }
+}
 
 #[derive(Clone, Debug)]
 struct AgentLocalDevVisualClassifier;
@@ -261,7 +264,7 @@ use mcp_protocol::{
     AgentMcpFrame, AgentMcpObservation, AgentMcpProjectContext, AgentMcpState,
     AgentObservationState, AgentPublishedResourceCache, NativeAgentObservedSnapshot,
     NativeAgentRuntimeState, agent_mcp_agent_value, agent_mcp_bool_argument,
-    agent_mcp_cached_published_resource, agent_mcp_command, agent_mcp_project_context_from_hir,
+    agent_mcp_cached_published_resource, agent_mcp_command, agent_mcp_project_context_from_project,
     agent_mcp_store_observation, agent_publish_resource_for_state,
 };
 use mcp_rag::{

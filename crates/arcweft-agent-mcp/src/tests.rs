@@ -14,17 +14,22 @@ use arcweft_agent_policy::{
     AgentContentPolicyGate, AgentPublicationPolicy, PublishedAgentResource,
 };
 use arcweft_agent_protocol::{
-    geometry::AgentCoordinateSpace,
+    diagnostic::{AgentDiagnostic, AgentDiagnosticSeverity},
+    geometry::{AgentCoordinateSpace, AgentViewport},
     ids::{AgentResourceUri, AgentRunId, SessionId, StableHash},
     image::{
         AgentImageComposition, AgentImageContentBBox, AgentImageCropOrigin, AgentImageKind,
         AgentImageMetadata, AgentImageRenderer, AgentImageScope,
     },
+    observation::AgentObservationReport,
+    presentation::AgentPresentationTree,
     resource::{
         AGENT_TRACE_MIME_TYPE, AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource,
         AgentResourceBody, AgentResourceKind, TraceResourceError, trace_resource,
     },
+    session::AgentAudioState,
     trace::{AgentTraceKind, AgentTraceRecord},
+    view::AgentViewTree,
 };
 use arcweft_content_policy::{
     ClassificationReport, ClassifierIdentity, ClassifierRun, ContentClassifier,
@@ -690,6 +695,108 @@ fn json_agent_resource_maps_to_mcp_text_resource() {
         link,
         McpContentBlock::ResourceLink { name, mime_type: Some(mime_type), .. }
             if has_extension(&name, "json") && mime_type == "application/json"
+    ));
+}
+
+#[test]
+fn runtime_assertion_diagnostic_survives_observation_policy_and_mcp_projection() {
+    let report = AgentObservationReport {
+        status: "failed".to_owned(),
+        session_id: "assertion".to_owned(),
+        tick: 7,
+        frame_id: "frame.7".to_owned(),
+        state_hash: "state.assertion.7".to_owned(),
+        render_hash: "render.assertion.7".to_owned(),
+        source: "game.arcw".to_owned(),
+        viewport: AgentViewport {
+            width: 1280,
+            height: 720,
+            scale: 1.0,
+        },
+        images: Vec::new(),
+        layers: Vec::new(),
+        views: Vec::new(),
+        objects: Vec::new(),
+        presentation_tree: AgentPresentationTree::from_layers_and_objects(&[], &[]),
+        actions: Vec::new(),
+        scroll_regions: Vec::new(),
+        virtual_lists: Vec::new(),
+        view_tree: AgentViewTree {
+            root: "view.root".to_owned(),
+            children: Vec::new(),
+        },
+        scene_graph: Vec::new(),
+        audio_state: AgentAudioState {
+            active_voices: Vec::new(),
+            pending_events: Vec::new(),
+        },
+        logs: Vec::new(),
+        signals: Vec::new(),
+        metrics: Vec::new(),
+        events: Vec::new(),
+        diagnostics: vec![AgentDiagnostic {
+            step: 7,
+            severity: AgentDiagnosticSeverity::Error,
+            source: Some("game.arcw:12:9".to_owned()),
+            code: Some("runtime.assertion_failed".to_owned()),
+            effect_id: Some("assertion.guard.00112233445566778899aabbccddeeff".to_owned()),
+            // Deliberately resembles a successful condition. MCP must transport
+            // the projected diagnostic verbatim, never reinterpret message text.
+            message: "assertion condition `true` failed".to_owned(),
+        }],
+        steps: 1,
+        capture_time_millis: None,
+        task_requests: 0,
+        final_status: "failed".to_owned(),
+        overlay_svg: None,
+    };
+    let resource = publish(
+        report
+            .observation_resource()
+            .expect("typed assertion observation serializes"),
+    );
+
+    let read = read_resource_result(&resource).expect("MCP resource read serializes");
+    let tool = tool_result_for_resource(&resource).expect("MCP tool resource serializes");
+    let [
+        McpResourceContents::Text(McpTextResourceContents {
+            uri,
+            mime_type,
+            text,
+            ..
+        }),
+    ] = read.contents.as_slice()
+    else {
+        panic!("assertion observation must remain one JSON text resource");
+    };
+    let json: serde_json::Value =
+        serde_json::from_str(text).expect("MCP assertion observation is valid JSON");
+    assert!(
+        uri.starts_with("arcweft://moderated/") && uri.to_ascii_lowercase().ends_with(".json"),
+        "policy-owned publication URI must remain a moderated JSON resource: {uri}"
+    );
+    assert_eq!(mime_type.as_deref(), Some("application/json"));
+    assert_eq!(
+        json["diagnostics"],
+        serde_json::json!([{
+            "step": 7,
+            "severity": "error",
+            "source": "game.arcw:12:9",
+            "code": "runtime.assertion_failed",
+            "effect_id": "assertion.guard.00112233445566778899aabbccddeeff",
+            "message": "assertion condition `true` failed"
+        }])
+    );
+    assert!(matches!(
+        tool.content.as_slice(),
+        [
+            McpContentBlock::Text { .. },
+            McpContentBlock::Resource {
+                resource: McpResourceContents::Text(McpTextResourceContents { text, .. }),
+            },
+        ] if serde_json::from_str::<serde_json::Value>(text)
+            .is_ok_and(|value| value["diagnostics"][0]["code"] == "runtime.assertion_failed"
+                && value["diagnostics"][0]["message"] == "assertion condition `true` failed")
     ));
 }
 

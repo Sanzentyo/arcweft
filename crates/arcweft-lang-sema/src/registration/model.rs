@@ -1,7 +1,4 @@
-use std::{
-    collections::{BTreeMap, BTreeSet},
-    sync::Arc,
-};
+use std::{collections::BTreeMap, sync::Arc};
 
 use arcweft_character::{
     id::CharacterId,
@@ -11,7 +8,8 @@ use arcweft_character::{
     registration_catalog::SourceBackedCharacterCatalog,
 };
 use arcweft_lang_hir::{
-    project::HirProject,
+    project::HirProjectView,
+    proof_return::{HirProofReturnHeaderProjectView, HirProofReturnProjectGeneration},
     symbol::{
         ExternalDeclarationId, ExternalDeclarationSeed, ExternalDeclarationSeedId,
         ProjectExternalDeclarations, ProjectExternalDeclarationsError, ProjectSymbolRevision,
@@ -102,9 +100,34 @@ pub struct ProjectRegistrationFacts {
 
 pub struct CharacterRegistrationRequest<'a> {
     pub(crate) base: Arc<TypeCheckEnv>,
-    pub(crate) project: &'a HirProject,
+    pub(crate) project: HirProjectView<'a>,
     pub(crate) facts: &'a ProjectRegistrationFacts,
     pub(crate) previous: Option<&'a RegisteredTypeCheckEnv>,
+}
+
+/// Exact pre-publication registration input for one paused Proof-return HIR
+/// generation.
+pub struct ProofReturnRegistrationRequest<'a> {
+    pub(crate) base: Arc<TypeCheckEnv>,
+    pub(crate) generation: Arc<HirProofReturnProjectGeneration>,
+    pub(crate) project: HirProofReturnHeaderProjectView<'a, 'a>,
+    pub(crate) facts: &'a ProjectRegistrationFacts,
+    pub(crate) previous: Option<&'a RegisteredTypeCheckEnv>,
+}
+
+/// Registration state frozen against the paused HIR header view. The same
+/// symbol table and nominal world are consumed by Proof classification and by
+/// final registration after atomic HIR publication.
+pub struct ProofReturnRegistrationPrelude {
+    pub(crate) generation: Arc<HirProofReturnProjectGeneration>,
+    pub(crate) symbols: Arc<ProjectSymbolTable>,
+    pub(crate) nominal_world: Arc<AcceptedNominalWorld>,
+    pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
+    pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
+    pub(crate) character_variants: BTreeMap<CharacterNominalType, Box<[String]>>,
+    pub(crate) character_descriptor: CharacterInventoryDescriptorV1,
+    pub(crate) character_digest: CharacterInventoryDigest,
+    pub(crate) character_revision: CharacterInventoryRevision,
 }
 
 #[derive(Clone, Debug)]
@@ -128,19 +151,6 @@ impl<'a> RegistrationDocumentView<'a> {
             identity: document.identity(),
             text: document.text(),
             primary: full_span(document),
-        }
-    }
-
-    #[cfg(test)]
-    pub(super) fn with_injected_text(
-        identity: &'a SourceDocumentIdentity,
-        text: &'a str,
-        primary: SourceSpan,
-    ) -> Self {
-        Self {
-            identity,
-            text,
-            primary,
         }
     }
 }
@@ -200,7 +210,7 @@ pub struct RegisteredTypeCheckEnv {
     pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
     pub(crate) callables: Arc<RegisteredCallableCatalog>,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
-    pub(crate) character_variants: BTreeMap<CharacterNominalType, BTreeSet<String>>,
+    pub(crate) character_variants: BTreeMap<CharacterNominalType, Box<[String]>>,
     pub(crate) character_descriptor: CharacterInventoryDescriptorV1,
     pub(crate) character_digest: CharacterInventoryDigest,
     pub(crate) character_revision: CharacterInventoryRevision,
@@ -719,38 +729,12 @@ impl ProjectRegistrationFacts {
     ) -> Option<&SourceSpan> {
         self.manifest_owner_sources.get(&(catalog, manifest))
     }
-
-    #[cfg(test)]
-    pub(super) fn remove_first_manifest_owner_source_for_test(&mut self) {
-        let Some(key) = self.manifest_owner_sources.keys().next().copied() else {
-            return;
-        };
-        self.manifest_owner_sources.remove(&key);
-    }
-
-    #[cfg(test)]
-    pub(super) fn replace_first_manifest_owner_source_for_test(&mut self, source: SourceSpan) {
-        let Some(key) = self.manifest_owner_sources.keys().next().copied() else {
-            return;
-        };
-        self.manifest_owner_sources.insert(key, source);
-    }
-
-    #[cfg(test)]
-    pub(super) fn replace_symbol_revision_for_test(&mut self, revision: ProjectSymbolRevision) {
-        self.symbol_revision = revision;
-    }
-
-    #[cfg(test)]
-    pub(super) fn clear_external_owner_contributions_for_test(&mut self) {
-        self.external_owners.clear();
-    }
 }
 
 impl<'a> CharacterRegistrationRequest<'a> {
     pub fn new(
         base: Arc<TypeCheckEnv>,
-        project: &'a HirProject,
+        project: HirProjectView<'a>,
         facts: &'a ProjectRegistrationFacts,
         previous: Option<&'a RegisteredTypeCheckEnv>,
     ) -> Self {
@@ -760,6 +744,43 @@ impl<'a> CharacterRegistrationRequest<'a> {
             facts,
             previous,
         }
+    }
+}
+
+impl<'a> ProofReturnRegistrationRequest<'a> {
+    pub fn new(
+        base: Arc<TypeCheckEnv>,
+        generation: Arc<HirProofReturnProjectGeneration>,
+        project: HirProofReturnHeaderProjectView<'a, 'a>,
+        facts: &'a ProjectRegistrationFacts,
+        previous: Option<&'a RegisteredTypeCheckEnv>,
+    ) -> Self {
+        Self {
+            base,
+            generation,
+            project,
+            facts,
+            previous,
+        }
+    }
+}
+
+impl ProofReturnRegistrationPrelude {
+    pub const fn generation(&self) -> &Arc<HirProofReturnProjectGeneration> {
+        &self.generation
+    }
+
+    pub fn symbols(&self) -> &ProjectSymbolTable {
+        &self.symbols
+    }
+
+    /// Returns the sole project-symbol allocation frozen by this registration transaction.
+    pub const fn symbol_lease(&self) -> &Arc<ProjectSymbolTable> {
+        &self.symbols
+    }
+
+    pub fn nominal_world(&self) -> &AcceptedNominalWorld {
+        &self.nominal_world
     }
 }
 
@@ -836,6 +857,16 @@ impl RegisteredTypeCheckEnv {
         &self.callables
     }
 
+    /// Exact accepted callable-catalog allocation retained by this world.
+    ///
+    /// Checked semantic publication uses this crate-private lease to prove
+    /// pointer identity. Public query callers continue to borrow the catalog
+    /// through [`Self::callable_catalog`] and cannot substitute another equal
+    /// allocation.
+    pub(crate) const fn callable_catalog_arc(&self) -> &Arc<RegisteredCallableCatalog> {
+        &self.callables
+    }
+
     /// Immutable Rust ADT metadata accepted with this exact semantic world.
     pub fn rust_metadata(&self) -> &AcceptedRustTypeMetadataCatalog {
         &self.rust_metadata
@@ -867,11 +898,8 @@ impl RegisteredTypeCheckEnv {
         self.environment_digest
     }
 
-    pub fn character_enum_variants(
-        &self,
-        nominal: &CharacterNominalType,
-    ) -> Option<&BTreeSet<String>> {
-        self.character_variants.get(nominal)
+    pub fn character_enum_variants(&self, nominal: &CharacterNominalType) -> Option<&[String]> {
+        self.character_variants.get(nominal).map(AsRef::as_ref)
     }
 
     pub fn environment_binding(&self, id: &EnvironmentBindingId) -> Option<&TypeKind> {
@@ -894,15 +922,6 @@ impl RegisteredTypeCheckEnv {
 
     pub fn characters(&self) -> impl ExactSizeIterator<Item = (&CharacterId, &CharacterManifest)> {
         self.characters.iter()
-    }
-
-    #[cfg(test)]
-    pub(super) fn external_owners_mut_for_test(
-        &mut self,
-    ) -> &mut BTreeMap<ExternalDeclarationId, RegisteredExternalOwner> {
-        &mut Arc::make_mut(&mut self.nominal_world)
-            .external_owners
-            .owners
     }
 }
 

@@ -1,8 +1,11 @@
-use arcweft_lang_hir::symbol::{
-    ProjectTypeCandidate,
-    nominal::{ProjectNominalBody, ProjectNominalDeclarationId},
+use arcweft_lang_hir::{
+    identity::TypeId,
+    source_index::{HirSourceSite, HirTypeSourceRole},
+    symbol::{
+        ProjectTypeCandidate,
+        nominal::{ProjectNominalBody, ProjectNominalDeclarationId},
+    },
 };
-use arcweft_lang_syntax::types::TypeRefNodePath;
 
 use crate::types::TypePoisonId;
 
@@ -17,13 +20,13 @@ impl Resolver<'_, '_> {
     pub(super) fn failed_node(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
+        node: TypeId,
         failure: TypeResolutionFailure,
         related: Vec<NominalDiagnosticRelated>,
     ) -> NodeValue {
         let poison = self.emit_failure(&failure, context.evidence(node, true), related);
         self.nodes.push(ResolvedTypeNode::new(
-            node.clone(),
+            node,
             context.evidence(node, false),
             context.terminal_evidence(node),
             context.reference_path(node),
@@ -36,7 +39,7 @@ impl Resolver<'_, '_> {
     pub(super) fn failed_name(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
+        node: TypeId,
         failure: TypeResolutionFailure,
         child_causes: Vec<TypePoisonId>,
         related: Vec<NominalDiagnosticRelated>,
@@ -116,14 +119,14 @@ impl Resolver<'_, '_> {
     pub(super) fn work_overflow_node(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
+        node: TypeId,
         attempted: u64,
         maximum: u64,
     ) -> NodeValue {
         let failure = TypeResolutionFailure::WorkOverflow { attempted, maximum };
         let poison = self.emit_work_overflow(context.evidence(node, true), attempted, maximum);
         self.nodes.push(ResolvedTypeNode::new(
-            node.clone(),
+            node,
             context.evidence(node, false),
             context.terminal_evidence(node),
             context.reference_path(node),
@@ -147,7 +150,7 @@ impl Resolver<'_, '_> {
         &mut self,
         units: u64,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
+        node: TypeId,
         child_causes: Vec<TypePoisonId>,
     ) -> Option<super::NameResult> {
         let (attempted, maximum) = self.charge(units).err()?;
@@ -193,18 +196,14 @@ impl Resolver<'_, '_> {
         }
     }
 
-    pub(super) fn replace_node_outcome(
-        &mut self,
-        path: &TypeRefNodePath,
-        outcome: TypeNameResolution,
-    ) {
-        if let Some(index) = self.nodes.iter().rposition(|node| node.node() == path) {
+    pub(super) fn replace_node_outcome(&mut self, owner: TypeId, outcome: TypeNameResolution) {
+        if let Some(index) = self.nodes.iter().rposition(|node| node.node() == owner) {
             let source = self.nodes[index].source().clone();
             let terminal_source = self.nodes[index].terminal_source().cloned();
             let reference_path = self.nodes[index].reference_path().cloned();
             let recovered = self.nodes[index].recovered().cloned();
             self.nodes[index] = ResolvedTypeNode::new(
-                path.clone(),
+                owner,
                 source,
                 terminal_source,
                 reference_path,
@@ -256,20 +255,21 @@ impl Resolver<'_, '_> {
                     NominalRelatedMessage::CycleDeclaration,
                 );
                 let target_label = match declaration.body() {
-                    ProjectNominalBody::TypeAlias { target } => {
-                        let root = TypeRefNodePath::root();
-                        let source = target
-                            .spans()
-                            .source_at(&root)
-                            .expect("alias target has a bound root");
-                        Some(NominalDiagnosticRelated::new(
-                            evidence_from_project(source.head().map_or_else(
-                                || source.whole().clone(),
-                                |head| head.range().clone(),
+                    ProjectNominalBody::TypeAlias { target } => self
+                        .input
+                        .world()
+                        .project()
+                        .and_then(|project| project.module(declaration.id().module()))
+                        .and_then(|module| {
+                            module.type_source_site(*target, HirTypeSourceRole::Whole)
+                        })
+                        .and_then(|site| match site {
+                            HirSourceSite::Span(span) => Some(NominalDiagnosticRelated::new(
+                                TypeSourceEvidence::accepted(span.range(), span.clone()),
+                                NominalRelatedMessage::CycleTarget,
                             )),
-                            NominalRelatedMessage::CycleTarget,
-                        ))
-                    }
+                            HirSourceSite::Insertion(_) => None,
+                        }),
                     ProjectNominalBody::Struct { .. } | ProjectNominalBody::Enum { .. } => None,
                 };
                 core::iter::once(declaration_label).chain(target_label)
@@ -294,7 +294,7 @@ fn cap_related_labels(
 
 #[cfg(test)]
 mod tests {
-    use arcweft_lang_syntax::ast::common::TextRange;
+    use arcweft_source::SourceRange;
 
     use crate::{
         nominal::{
@@ -312,7 +312,7 @@ mod tests {
             .rev()
             .map(|index| {
                 NominalDiagnosticRelated::new(
-                    TypeSourceEvidence::new(TextRange::new(index, index + 1), None),
+                    TypeSourceEvidence::detached(SourceRange::new(index, index + 1)),
                     NominalRelatedMessage::CandidateBinding,
                 )
             })
@@ -321,7 +321,7 @@ mod tests {
         let diagnostic = NominalTypeDiagnostic::new(
             TypePoisonId::from_index(0),
             NominalTypeDiagnosticKind::SelfUnavailable,
-            TypeSourceEvidence::new(TextRange::new(0, 0), None),
+            TypeSourceEvidence::detached(SourceRange::new(0, 0)),
             retained,
             omitted,
         );

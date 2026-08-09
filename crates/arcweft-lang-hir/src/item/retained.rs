@@ -919,7 +919,10 @@ impl HirDeclarationMemberKind {
         expected: HirModuleId,
     ) -> Result<(), HirItemInvariantError> {
         match self {
-            Self::ViewExport(_) | Self::LayerReference(_) | Self::LayerPolicy(_) => Ok(()),
+            Self::ViewExport(_)
+            | Self::LayerReference(_)
+            | Self::LayerPolicy(_)
+            | Self::CharacterRecovery(_) => Ok(()),
             Self::ActivityInput(port) | Self::ActivityOutput(port) => {
                 port.validate_module(expected)
             }
@@ -932,7 +935,6 @@ impl HirDeclarationMemberKind {
                 }
                 Ok(())
             }
-            Self::CharacterRecovery(_) => Ok(()),
             Self::LayerExpression(expression) => match expression.payload().value() {
                 HirLayerMemberValue::Present(value)
                 | HirLayerMemberValue::Recovered(Some(value)) => validate_expr(expected, *value),
@@ -942,6 +944,10 @@ impl HirDeclarationMemberKind {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exhaustive validator keeps every declaration-member family paired with its exact recovery-state contract"
+)]
 fn member_state_matches_kind(
     kind: &HirDeclarationMemberKind,
     state: HirDeclarationMemberPoisonState,
@@ -974,10 +980,10 @@ fn member_state_matches_kind(
                 None
             };
             match (structural_issue, state) {
-                (None, HirDeclarationMemberPoisonState::Clean)
-                | (
+                (
                     None,
-                    HirDeclarationMemberPoisonState::Poisoned(
+                    HirDeclarationMemberPoisonState::Clean
+                    | HirDeclarationMemberPoisonState::Poisoned(
                         HirDeclarationMemberIssue::RecoveredChild,
                     ),
                 ) => true,

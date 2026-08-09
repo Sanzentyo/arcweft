@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::Write as _;
 use std::num::NonZeroU64;
 use std::sync::Arc;
 
@@ -28,7 +29,7 @@ use crate::grammar::SyntaxAwaitBranchKind;
 use crate::grammar::kinds::SyntaxKind;
 use crate::id_ref::SyntaxIdRefPart;
 use crate::name::SyntaxNameIssue;
-use crate::parser::{ParseOptions, parse_shadow_document};
+use crate::parser::{ParseOptions, parse_document};
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
     let document = Arc::new(
@@ -39,7 +40,7 @@ fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
         )
         .unwrap(),
     );
-    let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
     let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(211).unwrap());
     let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
     let snapshot = SyntaxSnapshotId::new(
@@ -144,6 +145,14 @@ fn flow_contract_attachment_preserves_heterogeneous_order_modes_and_keyword_site
     assert_eq!(
         no_effect.no_effect_keyword().unwrap().range(),
         SourceRange::new(no_effect_start, no_effect_start + "no_effect".len())
+    );
+    let AttachedFlowContractOperands::One(no_effect_operand) = no_effect.operands() else {
+        panic!("ensures no_effect must retain one scalar operand");
+    };
+    let operand_start = source.find("network.request").unwrap();
+    assert_eq!(
+        no_effect_operand.whole_source_span().range(),
+        SourceRange::new(operand_start, operand_start + "network.request".len())
     );
 
     let effects = clauses[1].list().unwrap();
@@ -335,6 +344,31 @@ fn flow_attachment_aggregates_shared_signature_and_statement_only_body_owners() 
         declaration.signature().result(),
         AttachedFlowReturnSyntax::Omitted
     ));
+}
+
+#[test]
+fn flow_missing_required_body_retains_the_typed_insertion_owner() {
+    let source = "flow unfinished";
+    let snapshot = attach(source);
+    let declaration = flow(&snapshot).semantics().unwrap();
+
+    assert!(declaration.has_recovery());
+    let AttachedRequiredFlowBody::Missing {
+        syntax,
+        missing,
+        insertion,
+    } = declaration.body()
+    else {
+        panic!("recognized Flow without a body must retain typed MissingBody recovery");
+    };
+    assert_eq!(syntax.kind(), SyntaxKind::FlowBody);
+    assert_eq!(missing.kind(), SyntaxKind::MissingBody);
+    assert!(missing.range().is_empty());
+    assert_eq!(missing.source_span(), insertion.clone());
+    assert_eq!(
+        insertion.range(),
+        SourceRange::new(source.len(), source.len())
+    );
 }
 
 #[test]
@@ -914,6 +948,10 @@ fn direct_and_let_choice_share_one_choice_expression_owner() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one closed Choice option/action ownership matrix is easier to audit together"
+)]
 fn choice_statement_owns_closed_candidate_option_and_action_families() {
     let snapshot = attach(concat!(
         "flow choice_matrix {\n",
@@ -2418,7 +2456,8 @@ fn dense_same_line_indented_choice_items_share_one_monotonic_indent_scan() {
         if ordinal != 0 {
             source.push_str("; ");
         }
-        source.push_str(&format!("@.item_{ordinal} \"Item {ordinal}\" => unit"));
+        write!(&mut source, "@.item_{ordinal} \"Item {ordinal}\" => unit")
+            .expect("writing to a String cannot fail");
     }
     source.push_str("\n    include @flow.next\n}\n");
 

@@ -1,11 +1,6 @@
 //! Balanced grammar events shared by document and nested parsers.
 
-#![allow(
-    dead_code,
-    reason = "the shadow grammar remains crate-private until the atomic syntax switch"
-)]
-
-use arcweft_source::SourceRange;
+use arcweft_source::{DiagnosticApplicability, SourceRange};
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -28,7 +23,7 @@ use crate::grammar::keyword_statement_projection::PendingKeywordStatementProject
 use crate::grammar::source_declaration_projection::PendingSourceDeclarationProjection;
 use crate::grammar::style_projection::PendingStyleDeclarationProjection;
 use crate::grammar::test_projection::PendingTestKindProjection;
-use crate::grammar::view_projection::PendingViewExportProjection;
+use crate::grammar::view_projection::{PendingViewExportProjection, PendingViewFragmentProjection};
 use crate::patterns::{AuthoredPattern, PatternNodePath};
 use crate::types::{AuthoredTypeRef, TypeRefNodePath};
 
@@ -208,7 +203,25 @@ pub(crate) struct PendingSyntaxDiagnostic {
     code: &'static str,
     range: SourceRange,
     related_range: Option<SourceRange>,
+    related_message: Option<String>,
+    expected: Box<[String]>,
+    suggestions: Box<[PendingSyntaxSuggestion]>,
     message: String,
+}
+
+/// Recovery edit staged before the grammar snapshot is source-bound.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PendingSyntaxEdit {
+    range: SourceRange,
+    replacement: String,
+}
+
+/// Generic recovery suggestion retained by the attached syntax authority.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct PendingSyntaxSuggestion {
+    message: String,
+    applicability: DiagnosticApplicability,
+    edits: Box<[PendingSyntaxEdit]>,
 }
 
 impl PendingSyntaxDiagnostic {
@@ -217,12 +230,43 @@ impl PendingSyntaxDiagnostic {
             code,
             range,
             related_range: None,
+            related_message: None,
+            expected: Box::new([]),
+            suggestions: Box::new([]),
             message: message.into(),
         }
     }
 
     pub(crate) const fn with_related_range(mut self, related_range: SourceRange) -> Self {
         self.related_range = Some(related_range);
+        self
+    }
+
+    pub(crate) fn with_related_message(mut self, message: impl Into<String>) -> Self {
+        self.related_message = Some(message.into());
+        self
+    }
+
+    pub(crate) fn with_expected(
+        mut self,
+        expected: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Self {
+        self.expected = expected
+            .into_iter()
+            .map(Into::into)
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
+        self
+    }
+
+    pub(crate) fn with_suggestions(
+        mut self,
+        suggestions: impl IntoIterator<Item = PendingSyntaxSuggestion>,
+    ) -> Self {
+        self.suggestions = suggestions
+            .into_iter()
+            .collect::<Vec<_>>()
+            .into_boxed_slice();
         self
     }
 
@@ -238,6 +282,18 @@ impl PendingSyntaxDiagnostic {
         self.related_range
     }
 
+    pub(crate) fn related_message(&self) -> Option<&str> {
+        self.related_message.as_deref()
+    }
+
+    pub(crate) fn expected(&self) -> &[String] {
+        &self.expected
+    }
+
+    pub(crate) fn suggestions(&self) -> &[PendingSyntaxSuggestion] {
+        &self.suggestions
+    }
+
     pub(crate) fn message(&self) -> &str {
         &self.message
     }
@@ -250,7 +306,196 @@ impl PendingSyntaxDiagnostic {
                 Some(range) => Some(rebase_range(range, offset)?),
                 None => None,
             },
+            related_message: self.related_message.clone(),
+            expected: self.expected.clone(),
+            suggestions: self
+                .suggestions
+                .iter()
+                .map(|suggestion| suggestion.rebased(offset))
+                .collect::<Option<Vec<_>>>()?
+                .into_boxed_slice(),
             message: self.message.clone(),
+        })
+    }
+}
+
+impl PendingSyntaxEdit {
+    pub(crate) fn new(range: SourceRange, replacement: impl Into<String>) -> Self {
+        Self {
+            range,
+            replacement: replacement.into(),
+        }
+    }
+
+    pub(crate) const fn range(&self) -> SourceRange {
+        self.range
+    }
+
+    pub(crate) fn replacement(&self) -> &str {
+        &self.replacement
+    }
+
+    fn rebased(&self, offset: usize) -> Option<Self> {
+        Some(Self::new(
+            rebase_range(self.range, offset)?,
+            self.replacement.clone(),
+        ))
+    }
+}
+
+impl PendingSyntaxSuggestion {
+    pub(crate) fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            applicability: DiagnosticApplicability::Unspecified,
+            edits: Box::new([]),
+        }
+    }
+
+    pub(crate) fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub(crate) const fn applicability(&self) -> DiagnosticApplicability {
+        self.applicability
+    }
+
+    pub(crate) fn edits(&self) -> &[PendingSyntaxEdit] {
+        &self.edits
+    }
+
+    fn rebased(&self, offset: usize) -> Option<Self> {
+        Some(Self {
+            message: self.message.clone(),
+            applicability: self.applicability,
+            edits: self
+                .edits
+                .iter()
+                .map(|edit| edit.rebased(offset))
+                .collect::<Option<Vec<_>>>()?
+                .into_boxed_slice(),
+        })
+    }
+}
+
+/// The sole semantic projection owned by one node-start event.
+///
+/// A closed variant replaces the former parallel `Option` fields, so parser
+/// transactions cannot represent a node with multiple competing semantic
+/// owners. Boxed payloads keep the lossless event stream compact while the
+/// selected projection retains its final typed schema.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) enum PendingStartProjection {
+    None,
+    Expression(Box<PendingExpressionProjection>),
+    Assertion(PendingAssertionProjection),
+    KeywordStatement(Box<PendingKeywordStatementProjection>),
+    Type(Box<PendingTypeProjection>),
+    Pattern(Box<PendingPatternProjection>),
+    Path(Box<PendingPathProjection>),
+    Use(Box<PendingUseProjection>),
+    Visibility(PendingVisibilityKind),
+    Attribute(Box<PendingOuterAttributeProjection>),
+    DeclarationHeader(Box<PendingDeclarationHeaderProjection>),
+    Character(Box<PendingCharacterDeclarationProjection>),
+    TestKind(Box<PendingTestKindProjection>),
+    Layer(Box<PendingLayerDeclarationProjection>),
+    Entry(Box<PendingEntryDeclarationProjection>),
+    Style(Box<PendingStyleDeclarationProjection>),
+    SourceDeclaration(Box<PendingSourceDeclarationProjection>),
+    MethodReceiver(Box<PendingMethodReceiverProjection>),
+    ContractClause(Box<PendingFlowContractClauseProjection>),
+    FlowDeclaration(Box<PendingFlowDeclarationProjection>),
+    ViewExport(Box<PendingViewExportProjection>),
+    ViewFragment(Box<PendingViewFragmentProjection>),
+}
+
+impl PendingStartProjection {
+    pub(crate) const fn is_none(&self) -> bool {
+        matches!(self, Self::None)
+    }
+
+    pub(crate) fn select(&mut self, projection: Self) {
+        assert!(self.is_none(), "one node event receives one semantic owner");
+        assert!(
+            !projection.is_none(),
+            "semantic projection selection is non-empty"
+        );
+        *self = projection;
+    }
+
+    pub(crate) fn accepts_kind(&self, kind: SyntaxKind) -> bool {
+        match self {
+            Self::None => true,
+            Self::Expression(projection) => projection.accepts_kind(kind),
+            Self::Assertion(_) => kind == SyntaxKind::AssertionStatement,
+            Self::KeywordStatement(projection) => projection.accepts_kind(kind),
+            Self::Type(_) => kind.is_type_node(),
+            Self::Pattern(_) => kind.is_pattern_node(),
+            Self::Path(_) => kind == SyntaxKind::Path,
+            Self::Use(_) => kind == SyntaxKind::UseDeclaration,
+            Self::Visibility(_) => kind == SyntaxKind::Visibility,
+            Self::Attribute(_) => matches!(
+                kind,
+                SyntaxKind::InnerAttribute | SyntaxKind::OuterAttribute
+            ),
+            Self::DeclarationHeader(_) => {
+                matches!(kind, SyntaxKind::DeclarationHeader | SyntaxKind::ProofItem)
+            }
+            Self::Character(_) => kind == SyntaxKind::CharacterDeclarationItem,
+            Self::TestKind(_) => kind == SyntaxKind::TestItem,
+            Self::Layer(_) => kind == SyntaxKind::LayerDeclarationItem,
+            Self::Entry(_) => kind == SyntaxKind::EntryDeclarationItem,
+            Self::Style(_) => kind == SyntaxKind::StyleItem,
+            Self::SourceDeclaration(_) => kind == SyntaxKind::SourceItem,
+            Self::MethodReceiver(_) => kind == SyntaxKind::Parameter,
+            Self::ContractClause(projection) => projection.accepts_kind(kind),
+            Self::FlowDeclaration(_) => kind == SyntaxKind::FlowItem,
+            Self::ViewExport(_) => kind == SyntaxKind::ViewExportDeclaration,
+            Self::ViewFragment(_) => kind == SyntaxKind::ViewFragment,
+        }
+    }
+
+    fn rebased(&self, offset: usize, context: &mut ProjectionRebaseContext) -> Option<Self> {
+        Some(match self {
+            Self::None => Self::None,
+            Self::Expression(projection) => Self::Expression(Box::new(projection.rebased(offset)?)),
+            Self::Assertion(projection) => Self::Assertion(*projection),
+            Self::KeywordStatement(projection) => {
+                Self::KeywordStatement(Box::new((**projection).clone()))
+            }
+            Self::Type(projection) => Self::Type(Box::new(projection.rebased(offset, context)?)),
+            Self::Pattern(projection) => {
+                Self::Pattern(Box::new(projection.rebased(offset, context)?))
+            }
+            Self::Path(projection) => Self::Path(Box::new(projection.rebased(offset)?)),
+            Self::Use(projection) => Self::Use(Box::new(projection.rebased(offset)?)),
+            Self::Visibility(projection) => Self::Visibility(*projection),
+            Self::Attribute(projection) => Self::Attribute(Box::new(projection.rebased(offset)?)),
+            Self::DeclarationHeader(projection) => {
+                Self::DeclarationHeader(Box::new(projection.rebased(offset)?))
+            }
+            Self::Character(projection) => Self::Character(Box::new(projection.rebased(offset)?)),
+            Self::TestKind(projection) => Self::TestKind(Box::new(projection.rebased(offset)?)),
+            Self::Layer(projection) => Self::Layer(Box::new(projection.rebased(offset)?)),
+            Self::Entry(projection) => Self::Entry(Box::new(projection.rebased(offset)?)),
+            Self::Style(projection) => Self::Style(Box::new(projection.rebased(offset)?)),
+            Self::SourceDeclaration(projection) => {
+                Self::SourceDeclaration(Box::new(projection.rebased(offset)?))
+            }
+            Self::MethodReceiver(projection) => {
+                Self::MethodReceiver(Box::new(projection.rebased(offset)?))
+            }
+            Self::ContractClause(projection) => {
+                Self::ContractClause(Box::new(projection.rebased(offset)?))
+            }
+            Self::FlowDeclaration(projection) => {
+                Self::FlowDeclaration(Box::new(projection.rebased(offset)?))
+            }
+            Self::ViewExport(projection) => Self::ViewExport(Box::new(projection.rebased(offset)?)),
+            Self::ViewFragment(projection) => {
+                Self::ViewFragment(Box::new(projection.rebased(offset)?))
+            }
         })
     }
 }
@@ -262,26 +507,7 @@ pub(crate) enum SyntaxEvent {
         kind: SyntaxKind,
         role: SyntaxRole,
         transparent_expression_group: bool,
-        expression_projection: Option<PendingExpressionProjection>,
-        assertion_projection: Option<PendingAssertionProjection>,
-        keyword_statement_projection: Option<PendingKeywordStatementProjection>,
-        type_projection: Option<PendingTypeProjection>,
-        pattern_projection: Option<PendingPatternProjection>,
-        path_projection: Option<PendingPathProjection>,
-        use_projection: Option<PendingUseProjection>,
-        visibility_projection: Option<PendingVisibilityKind>,
-        attribute_projection: Option<PendingOuterAttributeProjection>,
-        declaration_header_projection: Option<PendingDeclarationHeaderProjection>,
-        character_projection: Option<PendingCharacterDeclarationProjection>,
-        test_kind_projection: Option<PendingTestKindProjection>,
-        layer_projection: Option<PendingLayerDeclarationProjection>,
-        entry_projection: Option<PendingEntryDeclarationProjection>,
-        style_projection: Option<PendingStyleDeclarationProjection>,
-        source_declaration_projection: Option<PendingSourceDeclarationProjection>,
-        method_receiver_projection: Option<PendingMethodReceiverProjection>,
-        contract_clause_projection: Option<PendingFlowContractClauseProjection>,
-        flow_declaration_projection: Option<PendingFlowDeclarationProjection>,
-        view_export_projection: Option<PendingViewExportProjection>,
+        projection: PendingStartProjection,
     },
     Token {
         kind: SyntaxKind,
@@ -301,26 +527,7 @@ impl SyntaxEvent {
             kind,
             role,
             transparent_expression_group: false,
-            expression_projection: None,
-            assertion_projection: None,
-            keyword_statement_projection: None,
-            type_projection: None,
-            pattern_projection: None,
-            path_projection: None,
-            use_projection: None,
-            visibility_projection: None,
-            attribute_projection: None,
-            declaration_header_projection: None,
-            character_projection: None,
-            test_kind_projection: None,
-            layer_projection: None,
-            entry_projection: None,
-            style_projection: None,
-            source_declaration_projection: None,
-            method_receiver_projection: None,
-            contract_clause_projection: None,
-            flow_declaration_projection: None,
-            view_export_projection: None,
+            projection: PendingStartProjection::None,
         }
     }
 
@@ -331,30 +538,11 @@ impl SyntaxEvent {
             kind: SyntaxKind::DelimitedGroup,
             role,
             transparent_expression_group: true,
-            expression_projection: None,
-            assertion_projection: None,
-            keyword_statement_projection: None,
-            type_projection: None,
-            pattern_projection: None,
-            path_projection: None,
-            use_projection: None,
-            visibility_projection: None,
-            attribute_projection: None,
-            declaration_header_projection: None,
-            character_projection: None,
-            test_kind_projection: None,
-            layer_projection: None,
-            entry_projection: None,
-            style_projection: None,
-            source_declaration_projection: None,
-            method_receiver_projection: None,
-            contract_clause_projection: None,
-            flow_declaration_projection: None,
-            view_export_projection: None,
+            projection: PendingStartProjection::None,
         }
     }
 
-    pub(crate) const fn type_start(
+    pub(crate) fn type_start(
         kind: SyntaxKind,
         role: SyntaxRole,
         projection: PendingTypeProjection,
@@ -363,30 +551,12 @@ impl SyntaxEvent {
             kind,
             role,
             transparent_expression_group: false,
-            expression_projection: None,
-            assertion_projection: None,
-            keyword_statement_projection: None,
-            type_projection: Some(projection),
-            pattern_projection: None,
-            path_projection: None,
-            use_projection: None,
-            visibility_projection: None,
-            attribute_projection: None,
-            declaration_header_projection: None,
-            character_projection: None,
-            test_kind_projection: None,
-            layer_projection: None,
-            entry_projection: None,
-            style_projection: None,
-            source_declaration_projection: None,
-            method_receiver_projection: None,
-            contract_clause_projection: None,
-            flow_declaration_projection: None,
-            view_export_projection: None,
+            projection: PendingStartProjection::Type(Box::new(projection)),
         }
     }
 
-    pub(crate) const fn expression_start(
+    #[cfg(test)]
+    pub(crate) fn expression_start(
         kind: SyntaxKind,
         role: SyntaxRole,
         projection: PendingExpressionProjection,
@@ -395,30 +565,12 @@ impl SyntaxEvent {
             kind,
             role,
             transparent_expression_group: false,
-            expression_projection: Some(projection),
-            assertion_projection: None,
-            keyword_statement_projection: None,
-            type_projection: None,
-            pattern_projection: None,
-            path_projection: None,
-            use_projection: None,
-            visibility_projection: None,
-            attribute_projection: None,
-            declaration_header_projection: None,
-            character_projection: None,
-            test_kind_projection: None,
-            layer_projection: None,
-            entry_projection: None,
-            style_projection: None,
-            source_declaration_projection: None,
-            method_receiver_projection: None,
-            contract_clause_projection: None,
-            flow_declaration_projection: None,
-            view_export_projection: None,
+            projection: PendingStartProjection::Expression(Box::new(projection)),
         }
     }
 
-    pub(crate) const fn assertion_start(
+    #[cfg(test)]
+    pub(crate) fn assertion_start(
         role: SyntaxRole,
         projection: PendingAssertionProjection,
     ) -> Self {
@@ -426,58 +578,7 @@ impl SyntaxEvent {
             kind: SyntaxKind::AssertionStatement,
             role,
             transparent_expression_group: false,
-            expression_projection: None,
-            assertion_projection: Some(projection),
-            keyword_statement_projection: None,
-            type_projection: None,
-            pattern_projection: None,
-            path_projection: None,
-            use_projection: None,
-            visibility_projection: None,
-            attribute_projection: None,
-            declaration_header_projection: None,
-            character_projection: None,
-            test_kind_projection: None,
-            layer_projection: None,
-            entry_projection: None,
-            style_projection: None,
-            source_declaration_projection: None,
-            method_receiver_projection: None,
-            contract_clause_projection: None,
-            flow_declaration_projection: None,
-            view_export_projection: None,
-        }
-    }
-
-    pub(crate) const fn path_start(
-        kind: SyntaxKind,
-        role: SyntaxRole,
-        projection: PendingPathProjection,
-    ) -> Self {
-        Self::StartNode {
-            kind,
-            role,
-            transparent_expression_group: false,
-            expression_projection: None,
-            assertion_projection: None,
-            keyword_statement_projection: None,
-            type_projection: None,
-            pattern_projection: None,
-            path_projection: Some(projection),
-            use_projection: None,
-            visibility_projection: None,
-            attribute_projection: None,
-            declaration_header_projection: None,
-            character_projection: None,
-            test_kind_projection: None,
-            layer_projection: None,
-            entry_projection: None,
-            style_projection: None,
-            source_declaration_projection: None,
-            method_receiver_projection: None,
-            contract_clause_projection: None,
-            flow_declaration_projection: None,
-            view_export_projection: None,
+            projection: PendingStartProjection::Assertion(projection),
         }
     }
 
@@ -485,6 +586,7 @@ impl SyntaxEvent {
         Self::Token { kind, range }
     }
 
+    #[cfg(test)]
     pub(crate) fn rebased(&self, offset: usize) -> Option<Self> {
         self.rebased_with(offset, &mut ProjectionRebaseContext::default())
     }
@@ -503,99 +605,12 @@ impl SyntaxEvent {
                 kind,
                 role,
                 transparent_expression_group,
-                expression_projection,
-                assertion_projection,
-                keyword_statement_projection,
-                type_projection,
-                pattern_projection,
-                path_projection,
-                use_projection,
-                visibility_projection,
-                attribute_projection,
-                declaration_header_projection,
-                character_projection,
-                test_kind_projection,
-                layer_projection,
-                entry_projection,
-                style_projection,
-                source_declaration_projection,
-                method_receiver_projection,
-                contract_clause_projection,
-                flow_declaration_projection,
-                view_export_projection,
+                projection,
             } => Some(Self::StartNode {
                 kind: *kind,
                 role: *role,
                 transparent_expression_group: *transparent_expression_group,
-                expression_projection: match expression_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                assertion_projection: *assertion_projection,
-                keyword_statement_projection: keyword_statement_projection.clone(),
-                type_projection: match type_projection {
-                    Some(projection) => Some(projection.rebased(offset, context)?),
-                    None => None,
-                },
-                pattern_projection: match pattern_projection {
-                    Some(projection) => Some(projection.rebased(offset, context)?),
-                    None => None,
-                },
-                path_projection: match path_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                use_projection: match use_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                visibility_projection: *visibility_projection,
-                attribute_projection: match attribute_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                declaration_header_projection: match declaration_header_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                character_projection: match character_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                test_kind_projection: match test_kind_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                layer_projection: match layer_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                entry_projection: match entry_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                style_projection: rebase_style_projection(style_projection.as_ref(), offset)
-                    .ok()?,
-                source_declaration_projection: match source_declaration_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                method_receiver_projection: match method_receiver_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                contract_clause_projection: match contract_clause_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                flow_declaration_projection: match flow_declaration_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
-                view_export_projection: match view_export_projection {
-                    Some(projection) => Some(projection.rebased(offset)?),
-                    None => None,
-                },
+                projection: projection.rebased(offset, context)?,
             }),
             Self::Token { kind, range } => Some(Self::Token {
                 kind: *kind,
@@ -610,21 +625,6 @@ impl SyntaxEvent {
         }
     }
 }
-
-fn rebase_style_projection(
-    projection: Option<&PendingStyleDeclarationProjection>,
-    offset: usize,
-) -> Result<Option<PendingStyleDeclarationProjection>, ProjectionRebaseFailure> {
-    projection.map_or(Ok(None), |projection| {
-        projection
-            .rebased(offset)
-            .map(Some)
-            .ok_or(ProjectionRebaseFailure)
-    })
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct ProjectionRebaseFailure;
 
 fn rebase_range(range: SourceRange, offset: usize) -> Option<SourceRange> {
     Some(SourceRange::new(

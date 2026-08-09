@@ -254,6 +254,10 @@ pub struct HirTraitFunction {
 }
 
 impl HirTraitFunction {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the constructor validates the complete typed trait-method declaration schema"
+    )]
     pub(crate) fn try_new(
         expected: HirModuleId,
         prefix: HirItemPrefix,
@@ -351,6 +355,10 @@ pub struct HirImplFunction {
 }
 
 impl HirImplFunction {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the constructor validates the complete typed implementation-method declaration schema"
+    )]
     pub(crate) fn try_new(
         expected: HirModuleId,
         prefix: HirItemPrefix,
@@ -434,6 +442,10 @@ impl HirImplFunction {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the shared validator mirrors the complete method declaration schema without a compatibility carrier"
+)]
 fn validate_method(
     expected: HirModuleId,
     prefix: &HirItemPrefix,

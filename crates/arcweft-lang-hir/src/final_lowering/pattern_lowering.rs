@@ -26,7 +26,7 @@ use crate::identity::{
     LocalGeneration, LocalId, PatternId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole,
     TypeId,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::pattern::{
     HirGenericPatternIssue, HirPattern, HirPatternBinding, HirPatternError, HirPatternField,
     HirPatternKind, HirPatternRecoveryIssue, HirPatternSequenceRest, HirPatternSequenceRestIssue,
@@ -57,7 +57,7 @@ pub(super) enum PatternInput<'a> {
     Candidate(AttachedCandidatePatternProjection<'a>),
 }
 
-impl<'a> PatternInput<'a> {
+impl PatternInput<'_> {
     fn source_owner_id(&self) -> arcweft_lang_syntax::attachment::SyntaxNodeId {
         match self {
             Self::Source(pattern) => pattern.id(),
@@ -142,6 +142,7 @@ impl StagedHirModuleTransaction<'_> {
     /// The source-backed outer Pattern is reserved before binding preflight.
     /// No Local or child Pattern is staged until every Or alternative and the
     /// outer destructured-binding limit has been validated.
+    #[cfg(test)]
     pub(crate) fn lower_attached_pattern(
         &mut self,
         attached: &AttachedPatternNode,
@@ -222,13 +223,13 @@ impl StagedHirModuleTransaction<'_> {
         )
     }
 
-    fn lower_pattern_root_with_reservation<'input, 'cursor>(
+    fn lower_pattern_root_with_reservation(
         &mut self,
-        input: &PatternInput<'input>,
+        input: &PatternInput<'_>,
         scope: ScopeId,
         policy: HirPatternBindingPolicy,
         reservation: ArenaReservation<PatternId>,
-        allocation: PatternAllocationMode<'cursor>,
+        allocation: PatternAllocationMode<'_>,
     ) -> Result<LoweredPattern, HirLowerFailure> {
         let outer = reservation.id();
         if !reservation.is_first_touch() {
@@ -279,7 +280,7 @@ impl StagedHirModuleTransaction<'_> {
                 context
                     .locals
                     .get(allocation)
-                    .cloned()
+                    .copied()
                     .ok_or_else(|| HirInvariantFailure::InvalidLocalTimeline.into())
             })
             .collect::<Result<Vec<_>, HirLowerFailure>>()?
@@ -769,7 +770,7 @@ impl StagedHirModuleTransaction<'_> {
             PatternBindingSyntax::Resolved(source_name) => {
                 let allocation = context
                     .plan
-                    .allocation(BindingSite::new(attached.path(), role))?;
+                    .allocation(&BindingSite::new(attached.path(), role))?;
                 let projected_name = name(source_name)?;
                 let local = self.allocate_binding_local_with_allocation(
                     owner,
@@ -811,7 +812,7 @@ impl StagedHirModuleTransaction<'_> {
         }
         let allocation = context
             .plan
-            .allocation(BindingSite::new(attached.path(), role))?;
+            .allocation(&BindingSite::new(attached.path(), role))?;
         self.allocate_binding_local_with_allocation(
             owner, attached, role, allocation, name, scope, annotation, mutable, context,
         )

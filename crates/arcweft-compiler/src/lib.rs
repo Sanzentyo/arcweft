@@ -5,8 +5,6 @@ pub mod agent_project;
 pub mod content_partition;
 pub mod effect_manifest;
 pub mod error;
-pub mod hir;
-pub mod image;
 pub mod incremental;
 pub mod link;
 pub mod lower;
@@ -15,12 +13,8 @@ pub mod parse;
 pub mod persistent;
 pub mod project;
 pub mod reachability;
+pub mod runtime_diagnostics;
 pub mod source;
 pub mod style;
-pub mod trait_methods;
 pub mod types;
 pub mod view;
-pub mod view_part;
-
-#[cfg(test)]
-mod tests;

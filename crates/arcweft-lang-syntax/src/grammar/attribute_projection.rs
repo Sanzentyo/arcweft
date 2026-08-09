@@ -1,4 +1,4 @@
-//! Parser-owned semantic projection for one structured outer attribute.
+//! Parser-owned semantic projection shared by structured source and item attributes.
 
 use std::collections::HashSet;
 
@@ -141,6 +141,25 @@ fn validate_argument_components(
     roles: &HashSet<ExpressionComponentRole>,
     components: &[PendingExpressionComponent],
 ) -> bool {
+    let Some(expected) = expected_argument_roles(arguments, terminator, roles) else {
+        return false;
+    };
+    if components.len() != expected.len()
+        || expected.iter().any(|role| !roles.contains(role))
+        || components
+            .iter()
+            .any(|component| !expected.contains(&component.role()))
+    {
+        return false;
+    }
+    argument_ranges_validate(arguments, terminator, components)
+}
+
+fn expected_argument_roles(
+    arguments: &[SyntaxCallArgumentProjection],
+    terminator: SyntaxCallArgumentListTerminator,
+    roles: &HashSet<ExpressionComponentRole>,
+) -> Option<Vec<ExpressionComponentRole>> {
     let mut expected = vec![ExpressionComponentRole::CallArgumentListOpen];
     expected.push(match terminator {
         SyntaxCallArgumentListTerminator::Closed => ExpressionComponentRole::CallArgumentListClose,
@@ -153,9 +172,7 @@ fn validate_argument_components(
     }
 
     for (argument, projection) in arguments.iter().enumerate() {
-        let Ok(argument) = u16::try_from(argument) else {
-            return false;
-        };
+        let argument = u16::try_from(argument).ok()?;
         expected.extend([
             ExpressionComponentRole::CallArgument {
                 argument,
@@ -194,15 +211,14 @@ fn validate_argument_components(
     if roles.contains(&ExpressionComponentRole::CallArgumentTrailingSeparator) {
         expected.push(ExpressionComponentRole::CallArgumentTrailingSeparator);
     }
-    if components.len() != expected.len()
-        || expected.iter().any(|role| !roles.contains(role))
-        || components
-            .iter()
-            .any(|component| !expected.contains(&component.role()))
-    {
-        return false;
-    }
+    Some(expected)
+}
 
+fn argument_ranges_validate(
+    arguments: &[SyntaxCallArgumentProjection],
+    terminator: SyntaxCallArgumentListTerminator,
+    components: &[PendingExpressionComponent],
+) -> bool {
     let Some(open) = component_range(components, ExpressionComponentRole::CallArgumentListOpen)
     else {
         return false;

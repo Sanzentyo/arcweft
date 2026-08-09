@@ -343,18 +343,6 @@ impl CallableFacts {
     pub fn calls(&self) -> &[CallEdge] {
         &self.calls
     }
-
-    pub(crate) fn pop_direct_effect(&mut self) {
-        self.direct_effects
-            .pop()
-            .expect("effect transaction journal matches recorded effects");
-    }
-
-    pub(crate) fn pop_call(&mut self) {
-        self.calls
-            .pop()
-            .expect("effect transaction journal matches recorded calls");
-    }
 }
 
 impl EffectProgram {
@@ -381,16 +369,6 @@ impl EffectProgram {
 
     pub fn callable(&self, id: &CallableId) -> Option<&CallableFacts> {
         self.callables.get(id)
-    }
-
-    pub(crate) fn callable_mut(&mut self, id: &CallableId) -> Option<&mut CallableFacts> {
-        self.callables.get_mut(id)
-    }
-
-    pub(crate) fn remove_callable(&mut self, id: &CallableId) {
-        self.callables
-            .remove(id)
-            .expect("effect transaction journal matches registered callables");
     }
 
     pub fn callables(&self) -> impl ExactSizeIterator<Item = (&CallableId, &CallableFacts)> {

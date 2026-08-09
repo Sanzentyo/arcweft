@@ -1330,10 +1330,11 @@ impl PureEvaluator {
             } => self.evaluate_range_expr(start.as_deref(), end.as_deref(), *inclusive),
             RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields),
             RuntimeExpr::Variant {
-                path,
+                owner,
+                ordinal,
                 name,
                 payload,
-            } => self.evaluate_variant_expr(path.as_ref(), name, payload.as_deref()),
+            } => self.evaluate_variant_expr(owner, *ordinal, name, payload.as_deref()),
             RuntimeExpr::Field { target, field } => self.evaluate_field_expr(target, field),
             RuntimeExpr::ProjectTuple { target, ordinal } => {
                 self.evaluate_project_tuple_expr(target, *ordinal)
@@ -1412,12 +1413,22 @@ impl PureEvaluator {
 
     fn evaluate_variant_expr(
         &mut self,
-        path: Option<&String>,
+        owner: &crate::pattern::RuntimeCheckedType,
+        ordinal: u32,
         name: &str,
         payload: Option<&RuntimeExpr>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
+        if !owner.accepts_variant_case(ordinal, name) {
+            return Err(RuntimeEvalError::PatternMismatch(format!(
+                "variant owner {owner:?} case {ordinal} `{name}`"
+            )));
+        }
+        let owner = owner.variant_identity().ok_or_else(|| {
+            RuntimeEvalError::PatternMismatch(format!("non-variant checked owner {owner:?}"))
+        })?;
         Ok(RuntimeValue::Variant {
-            path: path.cloned(),
+            owner,
+            ordinal,
             name: name.to_owned(),
             payload: payload
                 .map(|expr| self.evaluate_expr(expr).map(Box::new))

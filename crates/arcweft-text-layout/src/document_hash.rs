@@ -1,9 +1,9 @@
 //! Stable identity for completed font-shaped document layout.
 
 use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextStyle, RichTextInlineDirection, RichTextRange,
-    RichTextWritingMode, TextFontFamily, TextSlant, TextWeight,
+    ResolvedTextDocument, ResolvedTextStyle, TextFontFamily, TextSlant, TextWeight,
 };
+use arcweft_text_model::{RichTextInlineDirection, RichTextRange, RichTextWritingMode};
 
 use crate::{
     FontInventoryHash, GlyphOrientation, GlyphVerticalForm, HorizontalWrap, JlreqStrictness,

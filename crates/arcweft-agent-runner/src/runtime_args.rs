@@ -4,7 +4,10 @@ use arcweft_agent_protocol::protocol::{
     AgentAction, AgentAssertionKind, AgentAssertionRequest, AgentAttachment, AgentInvokeAction,
     CaptureFormat, CaptureRequest, ObserveRequest, PointerButton, RagRequest, WaitRequest,
 };
-use arcweft_core::value::{RuntimePayload, RuntimeValue};
+use arcweft_core::{
+    task::NamedHostTaskArg,
+    value::{RuntimePayload, RuntimeValue},
+};
 
 use crate::label_parse::parse_pointer_button_label;
 use crate::runtime_value::{
@@ -14,47 +17,29 @@ use crate::runtime_value::{
     value_label,
 };
 
-pub(crate) const AGENT_NAMED_ARGS_VARIANT: &str = "named_args";
-
 #[derive(Debug)]
 pub(crate) struct RuntimeAgentArgs<'a> {
-    positionals: Vec<&'a RuntimeValue>,
-    named: BTreeMap<String, &'a RuntimeValue>,
+    positionals: &'a [RuntimePayload],
+    named: &'a [NamedHostTaskArg],
 }
 
 impl<'a> RuntimeAgentArgs<'a> {
-    pub(crate) fn new(args: &'a [RuntimePayload]) -> Self {
-        let mut positionals = Vec::new();
-        let mut named = BTreeMap::new();
-        for arg in args {
-            match arg.value() {
-                RuntimeValue::Variant {
-                    path,
-                    name,
-                    payload: Some(payload),
-                } if path.as_deref() == Some("agent") && name == AGENT_NAMED_ARGS_VARIANT => {
-                    let RuntimeValue::Record(fields) = payload.as_ref() else {
-                        positionals.push(arg.value());
-                        continue;
-                    };
-                    named.extend(
-                        fields
-                            .iter()
-                            .map(|field| (field.name.clone(), &field.value)),
-                    );
-                }
-                value => positionals.push(value),
-            }
+    pub(crate) fn new(args: &'a [RuntimePayload], named_args: &'a [NamedHostTaskArg]) -> Self {
+        Self {
+            positionals: args,
+            named: named_args,
         }
-        Self { positionals, named }
     }
 
     pub(crate) fn positional(&self, index: usize) -> Option<&'a RuntimeValue> {
-        self.positionals.get(index).copied()
+        self.positionals.get(index).map(RuntimePayload::value)
     }
 
     pub(crate) fn named(&self, name: &str) -> Option<&'a RuntimeValue> {
-        self.named.get(name).copied()
+        self.named
+            .iter()
+            .find(|argument| argument.name == name)
+            .map(|argument| argument.value.value())
     }
 
     pub(crate) fn named_any(&self, names: &[&str]) -> Option<&'a RuntimeValue> {

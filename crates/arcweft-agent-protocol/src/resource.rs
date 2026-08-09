@@ -3,8 +3,6 @@ use crate::{
     image::AgentImageMetadata,
     trace::AgentTraceRecord,
 };
-use base64::Engine as _;
-use base64::engine::general_purpose::STANDARD;
 use serde::{Deserialize, Serialize};
 
 /// MIME type of a typed Agent execution trace resource.
@@ -59,10 +57,6 @@ impl AgentResource {
 
     pub const fn title(&self) -> &'static str {
         self.kind.title()
-    }
-
-    pub fn decoded_len(&self) -> Option<u64> {
-        self.body.decoded_len()
     }
 
     pub fn description(&self) -> String {
@@ -162,40 +156,11 @@ pub enum AgentResourceBody {
     BytesBase64(AgentBinaryResourceBody),
 }
 
-impl AgentResourceBody {
-    pub fn decoded_len(&self) -> Option<u64> {
-        match self {
-            Self::Json(value) => serde_json::to_vec(value)
-                .ok()
-                .and_then(|bytes| u64::try_from(bytes.len()).ok()),
-            Self::Text(text) => u64::try_from(text.len()).ok(),
-            Self::BytesBase64(body) => body.decoded_len(),
-        }
-    }
-
-    pub fn decoded_bytes(&self) -> Result<Option<Vec<u8>>, base64::DecodeError> {
-        match self {
-            Self::BytesBase64(body) => body.decode().map(Some),
-            Self::Json(_) | Self::Text(_) => Ok(None),
-        }
-    }
-}
-
 /// Binary resource payload encoded for JSON/MCP transports.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentBinaryResourceBody {
     pub encoding: AgentBinaryEncoding,
     pub data: String,
-}
-
-impl AgentBinaryResourceBody {
-    pub fn decode(&self) -> Result<Vec<u8>, base64::DecodeError> {
-        self.encoding.decode(&self.data)
-    }
-
-    pub fn decoded_len(&self) -> Option<u64> {
-        self.encoding.decoded_len(&self.data)
-    }
 }
 
 /// Binary resource encoding.
@@ -210,18 +175,6 @@ impl AgentBinaryEncoding {
         match self {
             Self::Base64 => "base64",
         }
-    }
-
-    pub fn decode(self, value: &str) -> Result<Vec<u8>, base64::DecodeError> {
-        match self {
-            Self::Base64 => STANDARD.decode(value),
-        }
-    }
-
-    pub fn decoded_len(self, value: &str) -> Option<u64> {
-        self.decode(value)
-            .ok()
-            .and_then(|bytes| u64::try_from(bytes.len()).ok())
     }
 }
 

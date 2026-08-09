@@ -44,6 +44,7 @@ members = [
     "crates/arcweft-need",
     "crates/arcweft-presentation",
     "crates/arcweft-rich-text-schema",
+    "crates/arcweft-text-model",
     "crates/arcweft-view",
     "crates/arcweft-render-text",
     "crates/arcweft-text-layout",
@@ -177,6 +178,7 @@ arcweft-render-web = { path = "crates/arcweft-render-web" }
 arcweft-render-wgpu = { path = "crates/arcweft-render-wgpu" }
 arcweft-resource-model = { path = "crates/arcweft-resource-model" }
 arcweft-rich-text-schema = { path = "crates/arcweft-rich-text-schema" }
+arcweft-text-model = { path = "crates/arcweft-text-model" }
 arcweft-runtime-accelerator = { path = "crates/arcweft-runtime-accelerator", default-features = false }
 arcweft-runtime-codegen = { path = "crates/arcweft-runtime-codegen" }
 arcweft-runtime-driver = { path = "crates/arcweft-runtime-driver" }

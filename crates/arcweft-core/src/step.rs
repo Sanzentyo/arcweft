@@ -3,7 +3,7 @@ use crate::plan::{FlowEvent, RuntimeLineId};
 use crate::root::{RootEventInput, RootTransitionOutcome, RuntimeCommandEnvelope};
 use crate::source::{RuntimeSourceEvent, SourceId};
 use crate::stream::RuntimeStreamEvent;
-use crate::task::{CancelScopeId, TaskEvent, TaskSpec};
+use crate::task::{CancelScopeId, RuntimeNeedState, TaskEvent, TaskSpec};
 use crate::time::{LogicalDuration, TickId};
 use crate::value::{RuntimeBinding, RuntimePayload};
 use arcweft_interaction_model::{
@@ -22,6 +22,7 @@ pub struct RuntimeStepInput {
     pub dt: LogicalDuration,
     pub bindings: Vec<RuntimeBinding>,
     pub input_events: Vec<RoutedInputEvent>,
+    pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
@@ -43,6 +44,7 @@ pub struct RuntimeStepInputRef<'a> {
     dt: LogicalDuration,
     bindings: &'a [RuntimeBinding],
     input_events: &'a [RoutedInputEvent],
+    need_states: &'a [RuntimeNeedState],
     task_events: &'a [TaskEvent],
     audio_events: &'a [AudioEvent],
     source_events: &'a [RuntimeSourceEvent],
@@ -181,6 +183,7 @@ pub struct RuntimeStepStats {
     pub child_fibers: usize,
     pub pure: RuntimePureCallStats,
     pub task_events_in: usize,
+    pub need_states_in: usize,
     pub source_events_in: usize,
     pub root_events_in: usize,
     pub root_transitions: usize,
@@ -474,6 +477,7 @@ impl RuntimeStepInput {
             dt: self.dt,
             bindings: self.bindings.as_slice(),
             input_events: self.input_events.as_slice(),
+            need_states: self.need_states.as_slice(),
             task_events: self.task_events.as_slice(),
             audio_events: self.audio_events.as_slice(),
             source_events: self.source_events.as_slice(),
@@ -544,6 +548,10 @@ impl<'a> RuntimeStepInputRef<'a> {
 
     pub const fn input_events(&self) -> &'a [RoutedInputEvent] {
         self.input_events
+    }
+
+    pub const fn need_states(&self) -> &'a [RuntimeNeedState] {
+        self.need_states
     }
 
     pub const fn task_events(&self) -> &'a [TaskEvent] {

@@ -13,7 +13,7 @@ use arcweft_core::awbc::{
 use arcweft_core::bytecode::{
     BytecodeProgram, BytecodeVerificationBudget, BytecodeVerificationError,
 };
-use arcweft_core::effect::LineEffectRequest;
+use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
 use arcweft_core::engine::{EngineStartError, FlowFiber, FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor};
 use arcweft_core::plan::{EntryRuntimeId, FlowEvent, RuntimeEntryTarget, RuntimePlan};
@@ -154,6 +154,9 @@ pub struct BundleRunnerStepSummary {
     pub task_requests: usize,
     pub audio_commands: usize,
     pub diagnostics: Vec<String>,
+    /// Typed failures produced from emitted assertion requests. The host does
+    /// not parse materialized condition or message strings to create these.
+    pub assertion_failures: Vec<RuntimeAssertionFailure>,
     pub line_effects: Vec<String>,
     #[serde(skip)]
     pub flow_events: Vec<FlowEvent>,
@@ -711,6 +714,17 @@ impl BundleRunnerStepSummary {
         let task_requests = std::mem::take(&mut output.requests.tasks);
         let audio_commands = output.requests.audio;
         let flow_events = std::mem::take(&mut output.flow_events);
+        let assertion_failures = output
+            .effects
+            .line
+            .iter()
+            .filter_map(|effect| match effect {
+                LineEffectRequest::Assert(assertion) => {
+                    Some(RuntimeAssertionFailure::new(assertion.clone()))
+                }
+                _ => None,
+            })
+            .collect();
         (
             Self {
                 index,
@@ -724,6 +738,7 @@ impl BundleRunnerStepSummary {
                     .into_iter()
                     .map(|diagnostic| diagnostic.message)
                     .collect(),
+                assertion_failures,
                 line_effects: output.effects.line.iter().map(effect_label).collect(),
                 flow_events,
             },
@@ -852,7 +867,7 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::Fail(_) => "fail".to_owned(),
         LineEffectRequest::Bail(_) => "bail".to_owned(),
         LineEffectRequest::Ensure { .. } => "ensure".to_owned(),
-        LineEffectRequest::Assert(assertion) => match assertion.profile {
+        LineEffectRequest::Assert(assertion) => match assertion.profile() {
             arcweft_core::effect::RuntimeAssertionProfile::Always => "assert".to_owned(),
             arcweft_core::effect::RuntimeAssertionProfile::DebugOnly => "debug_assert".to_owned(),
         },
@@ -873,36 +888,54 @@ mod tests {
         BundleVirtualFileRef, BundleVirtualFileSpace,
     };
     use arcweft_core::bytecode::BytecodeProgram;
+    use arcweft_core::effect::{
+        RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
+    };
     use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
     use arcweft_core::line_task::LineTaskGroup;
     use arcweft_core::plan::{
         FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeFlow, RuntimeLineId,
     };
-    use arcweft_dialogue::DialogueProfileRevision;
-    use arcweft_render_text::LineDisplayCatalog;
-    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_id::TextKey;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_text_model::{
+        DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
+    };
 
-    fn dialogue_revision() -> DialogueProfileRevision {
-        let manifest = SourceDocument::try_new(
-            SourceDocumentId::try_new("runtime-host-bundle-runner-test").expect("document ID"),
-            SourceName::Memory,
-            "test manifest",
-        )
-        .expect("test document");
-        let sources =
-            SourceSetRevision::try_for_identities([manifest.identity()]).expect("source revision");
-        DialogueProfileRevision::from_admitted_parts(
-            manifest.identity().clone(),
-            sources,
-            sources,
-            ViewProgramId::try_new("view_program.runtime-host-bundle-runner-test")
-                .expect("View program ID"),
-            AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-            ResourceTypeRegistry::empty().digest(),
-        )
+    fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+            .expect("fixture runtime artifact fingerprint is non-zero")
+    }
+
+    #[test]
+    fn bundle_runner_wraps_emitted_assertion_without_condition_parsing() {
+        let assertion = RuntimeAssertion::new(
+            RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard"),
+            "opaque-condition-label".to_owned(),
+            "must be ready".to_owned(),
+            RuntimeAssertionProfile::Always,
+        );
+        let expected = RuntimeAssertionFailure::new(assertion.clone());
+        let result = RuntimeStepResult {
+            output: arcweft_core::step::RuntimeStepOutput {
+                effects: arcweft_core::step::RuntimeEffectBatch {
+                    line: vec![LineEffectRequest::Assert(assertion)],
+                    ..arcweft_core::step::RuntimeEffectBatch::default()
+                },
+                ..arcweft_core::step::RuntimeStepOutput::default()
+            },
+            fiber_status: FlowFiberStatus::Done(arcweft_core::engine::FlowExit::Done),
+            stop_reason: arcweft_core::step::RuntimeStepStopReason::Done,
+            stats: arcweft_core::step::RuntimeStepStats::default(),
+        };
+
+        let (summary, tasks, audio) = BundleRunnerStepSummary::from_result(0, result);
+
+        assert_eq!(summary.assertion_failures, vec![expected]);
+        assert_eq!(summary.line_effects, vec!["assert"]);
+        assert!(tasks.is_empty());
+        assert!(audio.is_empty());
     }
 
     #[test]
@@ -1130,8 +1163,22 @@ mod tests {
             target: RuntimeEntryTarget::Flow(flow_id("flow.main")),
             roles: RuntimeEntryRoles::None,
         }]);
-        let display = LineDisplayCatalog::new(dialogue_revision());
-        let product_awbc = AwbcLowerer::new(&plan, &display, "dialogue-bundle.arcw")
+        let source_map = source_map("dialogue-bundle.arcw", "flow main { dialogue }");
+        let dialogue_content =
+            DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
+                line_id("line.opening"),
+                TextKey::try_new("text.opening").expect("text key"),
+                RichTextDocument::new(vec![RichTextNode::Text {
+                    text: "Opening".to_owned(),
+                }]),
+                Vec::new(),
+                source_map
+                    .primary_document()
+                    .expect("fixture source map retains its source")
+                    .product_source_ref(),
+            )])
+            .expect("final dialogue content catalog");
+        let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "dialogue-bundle.arcw")
             .lower()
             .expect("product AWBC lowers")
             .program;
@@ -1145,6 +1192,7 @@ mod tests {
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
                     flows: 1,
                     bytecode_instructions: 2,
@@ -1153,9 +1201,9 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            source_map("dialogue-bundle.arcw", "flow main { dialogue }"),
+            source_map,
             bytecode,
-            display,
+            dialogue_content,
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(product_awbc)

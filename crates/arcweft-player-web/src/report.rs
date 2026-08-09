@@ -1,14 +1,12 @@
 use arcweft_glyphon::{PreparedTextItem, TextGlyphPaint};
 use arcweft_presentation::fx::FxDiagnostic;
-use arcweft_render_text::{
-    ResolvedTextStyle, RichTextInlineDirection, RichTextRange, RichTextWritingMode, TextFontFamily,
-    TextSlant, TextWeight,
-};
+use arcweft_render_text::{ResolvedTextStyle, TextFontFamily, TextSlant, TextWeight};
 use arcweft_render_wgpu::geometry::{
     PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind, RenderImage,
 };
 use arcweft_runtime_driver::{dialogue::BundlePresentationTransition, session::BundleSessionStep};
 use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect};
+use arcweft_text_model::{RichTextInlineDirection, RichTextRange, RichTextWritingMode};
 use num_traits::ToPrimitive;
 use serde::{Deserialize, Serialize};
 

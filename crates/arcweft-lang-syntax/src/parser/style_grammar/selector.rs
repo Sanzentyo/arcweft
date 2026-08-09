@@ -1,23 +1,23 @@
 //! Native Style rule, selector, and property grammar.
 
 use super::{
-    PendingStylePredicate, PendingStylePropertyProjection, PendingStyleRuleProjection,
-    PendingStyleSelectorPart, PendingStyleSelectorProjection, PendingStyleSelectorRelation,
-    PendingStyleSelectorSequence, PendingSyntaxDiagnostic, ShadowDocumentParser, SourceRange,
-    StylePropertyOperation, StyleSelectorRelation, SyntaxEvent, SyntaxKind, SyntaxRole,
-    bump_member_separators, bump_selector_trivia, bump_trivia_before, bump_until, emit_assignment,
-    emit_close_delimiter, emit_expression, emit_open_delimiter, emit_style_name, expected,
-    find_matching_close, find_top_level_boundary, member_boundary, next_nontrivia,
+    DocumentParser, PendingStylePredicate, PendingStylePropertyProjection,
+    PendingStyleRuleProjection, PendingStyleSelectorPart, PendingStyleSelectorProjection,
+    PendingStyleSelectorRelation, PendingStyleSelectorSequence, PendingSyntaxDiagnostic,
+    SourceRange, StylePropertyOperation, StyleSelectorRelation, SyntaxEvent, SyntaxKind,
+    SyntaxRole, bump_member_separators, bump_selector_trivia, bump_trivia_before, bump_until,
+    emit_assignment, emit_close_delimiter, emit_expression, emit_open_delimiter, emit_style_name,
+    expected, find_matching_close, find_top_level_boundary, member_boundary, next_nontrivia,
     selector_sequence_end, token_range,
 };
 
 pub(super) fn emit_rule(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     source_ordinal: u32,
 ) -> PendingStyleRuleProjection {
     let start = parser.cursor();
-    let open = find_top_level_boundary(parser, start, &["{"]).min(close);
+    let open = find_top_level_boundary(parser, start, close, &["{"]);
     parser.start(SyntaxKind::StyleRule, SyntaxRole::Element(source_ordinal));
     let selector = emit_selector(parser, open);
     bump_until(parser, open);
@@ -32,7 +32,7 @@ pub(super) fn emit_rule(
 }
 
 fn emit_selector(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
 ) -> PendingStyleSelectorProjection {
     parser.start(SyntaxKind::StyleSelector, SyntaxRole::Target);
@@ -112,7 +112,7 @@ fn emit_selector(
 }
 
 fn emit_selector_sequence(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     source_ordinal: u32,
     relation: Option<PendingStyleSelectorRelation>,
@@ -212,7 +212,7 @@ fn emit_selector_sequence(
 }
 
 fn emit_style_rule_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     enclosing_close: usize,
 ) -> (Vec<PendingStylePropertyProjection>, bool) {
     parser.start(SyntaxKind::StyleBody, SyntaxRole::Body);
@@ -250,7 +250,7 @@ fn emit_style_rule_body(
 }
 
 fn emit_property_declaration(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     source_ordinal: u32,
 ) -> PendingStylePropertyProjection {

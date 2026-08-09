@@ -3,7 +3,7 @@
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_retained_declaration_header;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
@@ -28,7 +28,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     let owner = parser.start_projected_owner(SyntaxKind::CharacterDeclarationItem, role);
     let surface_alias = emit_retained_declaration_header(
         &mut parser,
@@ -45,7 +45,7 @@ pub(super) fn emit_declaration(
         let start = parser.current_offset();
         parser.start(
             SyntaxKind::ErrorNode,
-            SyntaxRole::Recovery(if unexpected_header { 1 } else { 0 }),
+            SyntaxRole::Recovery(u32::from(unexpected_header)),
         );
         while parser.bump().is_some() {}
         parser.finish();
@@ -67,7 +67,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_surface_alias(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingCharacterSurfaceAlias {
+fn emit_surface_alias(parser: &mut DocumentParser<'_, '_>) -> PendingCharacterSurfaceAlias {
     if !parser.at("as") {
         return PendingCharacterSurfaceAlias::Absent;
     }
@@ -108,7 +108,7 @@ fn emit_surface_alias(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingChara
     state
 }
 
-fn recover_unexpected_header(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
+fn recover_unexpected_header(parser: &mut DocumentParser<'_, '_>) -> bool {
     if parser.at("{") || parser.is_at_end() {
         return false;
     }
@@ -131,9 +131,7 @@ fn recover_unexpected_header(parser: &mut ShadowDocumentParser<'_, '_>) -> bool 
     true
 }
 
-fn emit_character_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-) -> PendingCharacterBodyProjection {
+fn emit_character_body(parser: &mut DocumentParser<'_, '_>) -> PendingCharacterBodyProjection {
     if !parser.at("{") {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -170,7 +168,7 @@ fn emit_character_body(
 }
 
 fn emit_character_members(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     body_end: usize,
 ) -> Vec<PendingCharacterMemberProjection> {
     let mut ordinal = 0_u16;
@@ -201,7 +199,7 @@ fn emit_character_members(
 }
 
 fn emit_display_name_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     line_end: usize,
     ordinal: u16,
     first_display_name: &mut Option<SourceRange>,
@@ -278,7 +276,7 @@ fn emit_display_name_member(
 }
 
 fn emit_unknown_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     line_end: usize,
     ordinal: u16,
     name_range: SourceRange,

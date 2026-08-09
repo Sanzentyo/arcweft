@@ -116,7 +116,7 @@ character alice {
 }
 
 flow opening {
-    @<character.alice>.say[待って。[mark .release][p]]
+    @<character.alice>()[待って。[mark .release][p]]
     with:
         init:
             'line.flag <- true
@@ -275,7 +275,7 @@ pub character alice {
 }
 
 flow unsupported {
-    @<character.alice>.say[待って。[p]]
+    @<character.alice>()[待って。[p]]
     with:
         @bad raw item
 }
@@ -564,7 +564,7 @@ character alice {
 }
 
 flow cancel_cleanup {
-    @<character.alice>.say[待って。[p]]
+    @<character.alice>()[待って。[p]]
     with:
         init:
             'line.focus <- true
@@ -652,13 +652,13 @@ fn plan_json_lists_runtime_task_graph() {
     );
     let json: serde_json::Value =
         serde_json::from_str(&stdout).expect("plan output is structured JSON");
-    let line_display = json["line_display_catalog"]
+    let dialogue_content = json["dialogue_content_catalog"]
         .as_array()
         .and_then(|catalog| catalog.first())
-        .expect("plan JSON includes line display catalog");
-    let contributions = line_display["style_contributions"]
+        .expect("plan JSON includes dialogue content catalog");
+    let contributions = dialogue_content["inline_styles"]
         .as_array()
-        .expect("line display includes style contributions");
+        .expect("dialogue content includes inline style contributions");
     assert_plan_style_contributions(&stdout, contributions);
 }
 
@@ -668,7 +668,7 @@ fn runtime_plan_fixture_path() -> PathBuf {
         r##"
 pub view PlanDialogue(dialogue: DialogueView) {
     Panel {
-        Text(dialogue.speaker)
+        Text(dialogue.character_display_name)
         RichText(dialogue.content)
     }
 }
@@ -792,7 +792,7 @@ pub character alice {
 }
 
 flow run {
-    @<character.alice>.say[待って。[p]]
+    @<character.alice>()[待って。[p]]
     with:
         out .Done
 }

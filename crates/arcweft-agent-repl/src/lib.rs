@@ -29,8 +29,9 @@ pub use cell::{
     ReplResetOutcome, ReplUndoOptions, ReplUndoOutcome,
 };
 pub use diagnostics::{
-    AgentDiagnosticProjection, AgentDiagnosticProjector, AgentParserDiagnosticProjection,
-    AgentParserDiagnosticProjectionError,
+    AgentDiagnosticProjection, AgentDiagnosticProjector, AgentSyntaxDiagnosticProjection,
+    AgentSyntaxDiagnosticProjectionError, RuntimeAssertionDebugContext,
+    project_runtime_assertion_debug_diagnostic,
 };
 pub use error::{ReplParseCoordinateSpace, ReplTransactionError, ReplTransactionPhase};
 pub use evidence::{

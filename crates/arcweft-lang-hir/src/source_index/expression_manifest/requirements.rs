@@ -8,6 +8,7 @@ use arcweft_lang_syntax::expressions::{
 };
 
 use super::leaf::id_ref_source_shape;
+use crate::dialogue_application::HirDialogueContentApplication;
 use crate::expr::{
     HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal, HirCallCallee,
     HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
@@ -22,6 +23,11 @@ use crate::source_index::{
     HirRichTextArgumentSourcePart, HirRichTextTagSourcePart, HirSourceRequirement,
 };
 
+#[allow(
+    clippy::match_same_arms,
+    clippy::too_many_lines,
+    reason = "one exhaustive requirements matrix retains every expression family's exact mandatory and optional source roles"
+)]
 pub(super) fn expression_requirements(
     payload: &HirExprKind,
     projection: &ExpressionProjection,
@@ -61,7 +67,12 @@ pub(super) fn expression_requirements(
                     HirExprSourceRole::LiteralUnit,
                     Required,
                 ),
-                HirLiteral::Character(_) | HirLiteral::Boolean(_) => {}
+                HirLiteral::Character(_) => add_expression_requirement(
+                    &mut requirements,
+                    HirExprSourceRole::LiteralSuffix,
+                    Required,
+                ),
+                HirLiteral::Boolean(_) => {}
             }
         }
         HirExprKind::EntityReference(reference) => {
@@ -629,6 +640,46 @@ pub(super) fn expression_requirements(
     Some(requirements)
 }
 
+/// Re-derives the source-role contract for the Dialogue interpretation of an
+/// ambiguous postfix bracket. The candidate keeps the final E33 payload but
+/// borrows every source component from its source-backed outer E34 owner.
+pub(super) fn candidate_dialogue_requirements(
+    application: &HirDialogueContentApplication,
+    content: &SyntaxDialogueContentProjection,
+) -> BTreeMap<HirExprSourceRole, HirSourceRequirement> {
+    use HirSourceRequirement::{Optional, Required};
+
+    let mut requirements = BTreeMap::new();
+    for role in [
+        HirExprSourceRole::Target,
+        HirExprSourceRole::OpenBracket,
+        HirExprSourceRole::CloseBracket,
+        HirExprSourceRole::Content,
+        HirExprSourceRole::ContentBody,
+    ] {
+        add_expression_requirement(&mut requirements, role, Required);
+    }
+    add_expression_requirement(&mut requirements, HirExprSourceRole::Plan, Optional);
+    for coordinate in application.coordinates() {
+        for part in [
+            HirCallArgumentSourcePart::Whole,
+            HirCallArgumentSourcePart::Name,
+            HirCallArgumentSourcePart::Value,
+        ] {
+            add_expression_requirement(
+                &mut requirements,
+                HirExprSourceRole::ConfigurationArgument {
+                    argument: coordinate.argument(),
+                    part,
+                },
+                Required,
+            );
+        }
+    }
+    add_dialogue_content_requirements(&mut requirements, content);
+    requirements
+}
+
 fn add_dialogue_content_requirements(
     requirements: &mut BTreeMap<HirExprSourceRole, HirSourceRequirement>,
     projection: &SyntaxDialogueContentProjection,
@@ -714,8 +765,7 @@ fn dialogue_node_source_parts(
     node: &SyntaxDialogueNodeProjection,
 ) -> &'static [HirDialogueNodeSourcePart] {
     use HirDialogueNodeSourcePart::{
-        Control, Error, Escape, Interpolation, LineBreak, Mark, Raw, RubyBase, RubyText, Text,
-        Whole,
+        Error, Escape, Interpolation, LineBreak, Raw, RubyBase, RubyText, Text, Whole,
     };
 
     match node {
@@ -728,8 +778,6 @@ fn dialogue_node_source_parts(
         | SyntaxDialogueNodeProjection::AuthoredEndTag(_)
         | SyntaxDialogueNodeProjection::InferredEndTag(_) => &[Whole],
         SyntaxDialogueNodeProjection::Interpolation(_) => &[Whole, Interpolation],
-        SyntaxDialogueNodeProjection::Control(_) => &[Whole, Control],
-        SyntaxDialogueNodeProjection::Mark(_) => &[Whole, Mark],
         SyntaxDialogueNodeProjection::LineBreak(_) => &[Whole, LineBreak],
         SyntaxDialogueNodeProjection::Error(_) => &[Whole, Error],
     }

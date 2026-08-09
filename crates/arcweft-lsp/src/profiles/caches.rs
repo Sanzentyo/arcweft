@@ -145,7 +145,7 @@ pub(crate) struct CharacterReferenceCacheKey {
     symbol_revision: ProjectSymbolRevision,
     document: SourceDocumentIdentity,
     module: CanonicalModulePath,
-    syntax_snapshot: Option<SourceSnapshotId>,
+    syntax_snapshot: SourceSnapshotId,
     lsp_version: i32,
 }
 
@@ -594,7 +594,7 @@ impl CharacterReferenceCacheKey {
         symbol_revision: ProjectSymbolRevision,
         document: SourceDocumentIdentity,
         module: CanonicalModulePath,
-        syntax_snapshot: Option<SourceSnapshotId>,
+        syntax_snapshot: SourceSnapshotId,
         lsp_version: i32,
     ) -> Self {
         Self {

@@ -26,7 +26,7 @@ use crate::leaf::{
     HirIntegerSuffix, HirLifetimeRegistryScope, HirLiteral, HirNumericSequenceRecovery,
     HirPathSegment,
 };
-use crate::lower::{HirLowerFailure, HirModuleKey, LoweringRequest};
+use crate::lowering::{HirLowerFailure, HirModuleKey, LoweringRequest};
 use crate::module::{HirModule, HirModuleStatus};
 use crate::scope::{HirLocal, HirLocalKind, HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::HirOrigin;
@@ -49,6 +49,8 @@ mod dialogue;
 mod dialogue_candidate_block;
 #[path = "tests/dialogue_candidate_control.rs"]
 mod dialogue_candidate_control;
+#[path = "tests/identity.rs"]
+mod identity;
 #[path = "tests/select.rs"]
 mod select;
 #[path = "tests/select_limits.rs"]
@@ -83,6 +85,38 @@ fn parsed_source(document_id: &str, expressions: &[String]) -> ParsedSource {
             arcweft_lang_syntax::parser::ParseOptions::default(),
         )
         .expect("attached expression source parses")
+}
+
+struct DisagreeingDisplayTypedExpressionBuilder {
+    document_id: &'static str,
+    display_source: &'static str,
+    typed_expression: &'static str,
+}
+
+impl DisagreeingDisplayTypedExpressionBuilder {
+    fn build(self) -> ParsedSource {
+        let name = SourceName::path(self.display_source);
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(self.document_id)
+                    .expect("disagreeing-display document ID"),
+                name.clone(),
+                format!(
+                    "fn lower_typed_expression() {{\n    let value = {};\n}}\n",
+                    self.typed_expression
+                ),
+            )
+            .expect("disagreeing-display source"),
+        );
+        SyntaxDatabase::try_new()
+            .expect("disagreeing-display syntax database")
+            .parse_initial(
+                SourceSnapshotId::initial(name),
+                document,
+                arcweft_lang_syntax::parser::ParseOptions::default(),
+            )
+            .expect("disagreeing-display attached source parses")
+    }
 }
 
 fn repeated_numeric_sequence(element: &str, count: usize) -> String {
@@ -144,7 +178,6 @@ fn parsed_revisions(document_id: &str, expression: &str) -> (ParsedSource, Parse
 
 fn statements(parsed: &ParsedSource) -> Vec<StatementNode> {
     let item = parsed
-        .tree()
         .items()
         .expect("source item inventory")
         .into_iter()
@@ -207,11 +240,12 @@ fn stage<'source>(
     database: &HirDatabase,
     parsed: &'source ParsedSource,
 ) -> StagedHirModuleTransaction<'source> {
-    database
-        .stage_final_hir(
-            LoweringRequest::try_new(module_key(parsed), parsed).expect("lowering request"),
-        )
-        .expect("staged HIR module")
+    super::super::stage_unpublished_module_for_invariant_test(
+        database,
+        LoweringRequest::try_new(module_key(parsed), parsed).expect("lowering request"),
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .expect("staged HIR module")
 }
 
 fn allocate_module_scope(
@@ -272,6 +306,28 @@ fn expression(module: &HirModule, owner: ExprId) -> &HirExpr {
         .expressions()
         .resolve(module.slots(), owner)
         .expect("published expression")
+}
+
+#[test]
+fn fx_constants_are_classified_from_accepted_hir() {
+    let sources = ["500ms", "-2px", "\"seed\"", ".glyph", "[1, 2]", "\"x\"c"].map(str::to_owned);
+    let parsed = parsed_source("fx-constants", &sources);
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let expected = [
+        Some(crate::fx::FxConstKind::Literal),
+        Some(crate::fx::FxConstKind::SignedNumber),
+        Some(crate::fx::FxConstKind::Literal),
+        Some(crate::fx::FxConstKind::Selector),
+        Some(crate::fx::FxConstKind::List),
+        None,
+    ];
+    for ((source, owner), expected) in sources.iter().zip(owners).zip(expected) {
+        let constant = crate::fx::FxConst::from_expr(&module, owner);
+        assert_eq!(constant.map(crate::fx::FxConst::kind), expected, "{source}");
+        if let Some(constant) = constant {
+            assert_eq!(constant.expr(), owner);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -470,6 +526,22 @@ fn assert_synthetic_recovery_child(
     assert_eq!(
         child.state(),
         &HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand { role })
+    );
+}
+
+fn assert_no_synthetic_recovery_child(module: &HirModule, parent: ExprId) {
+    assert!(
+        module
+            .arenas()
+            .expressions()
+            .try_iter(module.slots())
+            .expect("published expression inventory")
+            .all(|(child, _)| !matches!(
+                module.slots().resolve(child).expect("expression slot").origin(),
+                HirOrigin::Synthetic(key)
+                    if key.owner() == SyntheticOwner::Expr(parent)
+                        && key.role() == SyntheticRole::RecoveryOperand
+            ))
     );
 }
 
@@ -862,6 +934,7 @@ fn attached_e19_range_publishes_optional_endpoints_and_exact_source_roles() {
         assert_eq!(range.start().is_some(), has_start);
         assert_eq!(range.end().is_some(), has_end);
         assert_eq!(range.inclusive(), inclusive);
+        assert_no_synthetic_recovery_child(&module, owner);
 
         for (role, present) in [
             (HirExprSourceRole::RangeStart, has_start),
@@ -953,6 +1026,82 @@ fn attached_e22_binary_publishes_closed_operators_children_and_source_roles() {
 }
 
 #[test]
+fn typed_child_beats_disagreeing_display_source() {
+    const DISPLAY_SOURCE: &str = "proof/non-authoritative/false - true.arcw";
+    let parsed = DisagreeingDisplayTypedExpressionBuilder {
+        document_id: "arcweft-test://lang-hir/typed-child-authority.arcw",
+        display_source: DISPLAY_SOURCE,
+        typed_expression: "40 + 2",
+    }
+    .build();
+    assert_eq!(
+        parsed.document().display_name().display_name(),
+        DISPLAY_SOURCE
+    );
+
+    let attached = attached_expressions(&parsed)
+        .pop()
+        .expect("one typed expression owner");
+    let ExpressionProjection::Binary { operator, .. } = attached.projection() else {
+        panic!("typed fixture must retain its parser-selected Binary family");
+    };
+    assert_eq!(*operator, SyntaxBinaryOperator::Add);
+    let typed_children = attached
+        .children()
+        .iter()
+        .map(|child| {
+            child
+                .authored_semantic()
+                .expect("typed child access")
+                .expect("both Binary children are authored")
+                .id()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(typed_children.len(), 2);
+
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+    assert_eq!(
+        module.provenance().document().display_name().display_name(),
+        DISPLAY_SOURCE,
+        "the disagreeing label remains real accepted provenance"
+    );
+    let HirExprKind::Binary(binary) = expression(&module, owners[0]).kind() else {
+        panic!("typed Binary must lower without consulting the display label");
+    };
+    assert_eq!(binary.operator(), HirBinaryOp::Add);
+
+    for (owner, expected_syntax) in [binary.left(), binary.right()]
+        .into_iter()
+        .zip(typed_children)
+    {
+        let metadata = module.slots().resolve(owner).expect("typed child slot");
+        assert!(matches!(
+            metadata.origin(),
+            HirOrigin::Source(source) if source.syntax() == expected_syntax
+        ));
+    }
+
+    for (owner, expected_magnitude) in [(binary.left(), 40_u32), (binary.right(), 2_u32)] {
+        let HirExprKind::Literal(HirLiteral::Integer(HirIntegerLiteral::Value {
+            magnitude,
+            radix,
+            suffix,
+        })) = expression(&module, owner).kind()
+        else {
+            panic!("typed Binary child must retain its integer literal value");
+        };
+        assert_eq!(magnitude.limbs_le(), &[expected_magnitude]);
+        assert_eq!(*radix, HirIntegerRadix::Decimal);
+        assert_eq!(*suffix, None);
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is the closed E20/E21 typed record-field, child, shorthand, and source-role matrix"
+)]
 fn attached_e20_e21_records_publish_typed_fields_children_and_source_roles() {
     let parsed = parsed_source(
         "record-owner-matrix",
@@ -1114,6 +1263,10 @@ fn e20_invalid_fields_remain_typed_and_c05_never_guesses_a_local() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is the complete E27 statement/local/tail ownership matrix for authored and synthetic tails"
+)]
 fn e27_block_owns_statements_locals_and_authored_or_synthetic_tail() {
     let parsed = parsed_source(
         "block-owner-matrix",
@@ -1248,6 +1401,10 @@ fn e27_block_owns_statements_locals_and_authored_or_synthetic_tail() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test validates the complete E27 statement and tail recovery precedence matrix"
+)]
 fn e27_block_keeps_typed_poison_for_statement_and_tail_recovery() {
     let parsed = parsed_source(
         "block-recovery-matrix",
@@ -1458,6 +1615,10 @@ fn c05_shorthand_uses_the_source_visible_same_scope_generation() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test executes one closed tail/shorthand source-freeze tamper matrix atomically"
+)]
 fn block_freeze_rejects_tail_and_shorthand_local_substitution() {
     let parsed = parsed_source(
         "block-tail-substitution",
@@ -1719,6 +1880,10 @@ fn e15_through_e17_missing_operands_keep_typed_parents_and_synthetic_children() 
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is the closed composite recovery matrix for typed parents and fixed synthetic descendants"
+)]
 fn composite_recovery_keeps_typed_parents_and_exact_synthetic_children() {
     let parsed = parsed_source(
         "composite-recovery",
@@ -1834,6 +1999,10 @@ fn composite_recovery_keeps_typed_parents_and_exact_synthetic_children() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test validates one complete arbitrary-width numeric-sequence payload and late-recovery scenario"
+)]
 fn numeric_sequence_retains_invalid_elements_late_suffixes_and_arbitrary_width_values() {
     let parsed = parsed_source(
         "numeric-sequence-matrix",
@@ -1965,6 +2134,10 @@ fn numeric_sequence_retains_invalid_elements_late_suffixes_and_arbitrary_width_v
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is one atomic rollback/retry matrix for numeric-sequence recovery diagnostics"
+)]
 fn numeric_sequence_rollback_and_relowering_publish_one_recovery_diagnostic() {
     let (initial, revised) = parsed_revisions("numeric-sequence-retry", "[1, 0x]");
     let initial_attached = attached_expressions(&initial).pop().unwrap();
@@ -2088,6 +2261,10 @@ fn numeric_sequence_rollback_and_relowering_publish_one_recovery_diagnostic() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test executes the complete composite source-manifest tamper matrix in one transactional fixture"
+)]
 fn composite_source_manifest_rejects_reordered_scoped_and_substituted_payloads() {
     let reordered = parsed_source("tuple-reordered", &["(1, 2)".into()]);
     let attached = attached_expressions(&reordered).pop().unwrap();
@@ -2403,6 +2580,10 @@ fn known_entity_recovery_keeps_exact_leaf_poison() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is the closed E35 generic-error and known-parent poison-propagation acceptance matrix"
+)]
 fn e35_generic_error_is_source_backed_and_known_parents_propagate_typed_poison() {
     let parsed = parsed_source(
         "generic-expression-recovery",

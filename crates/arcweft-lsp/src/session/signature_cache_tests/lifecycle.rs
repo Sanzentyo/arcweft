@@ -243,7 +243,10 @@ fn accepted_replacement_cancels_old_request_and_clears_only_old_cache_namespace(
     );
     assert_eq!(previous.signature_cache_snapshot_for_test().entries, 0);
     assert_eq!(current.signature_cache_snapshot_for_test().entries, 0);
-    assert!(Arc::ptr_eq(previous.world(), current.world()));
+    assert!(Arc::ptr_eq(
+        previous.executable().expect("previous executable"),
+        current.executable().expect("current executable")
+    ));
     assert!(Arc::ptr_eq(previous.project(), current.project()));
     let response = fixture.publish(&prepared, Ok(result));
     assert_eq!(
@@ -289,8 +292,8 @@ fn retained_old_accepted_reader_is_safe_but_its_stamp_cannot_publish() {
         .hir(prepared.stamp().module())
         .expect("old HIR remains readable");
     assert_eq!(
-        old_hir.source_identity(),
-        Some(prepared.stamp().accepted_document_identity())
+        old_hir.provenance().source_identity(),
+        prepared.stamp().accepted_document_identity()
     );
     assert!(!Arc::ptr_eq(&previous, &current));
 

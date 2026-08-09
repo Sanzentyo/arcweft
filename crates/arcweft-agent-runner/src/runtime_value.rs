@@ -48,11 +48,13 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
                 .collect::<Vec<_>>(),
         }),
         RuntimeValue::Variant {
-            path,
+            owner,
+            ordinal,
             name,
             payload,
         } => serde_json::json!({
-            "path": path,
+            "owner": owner,
+            "ordinal": ordinal,
             "name": name,
             "payload": payload.as_deref().map(runtime_value_to_json),
         }),

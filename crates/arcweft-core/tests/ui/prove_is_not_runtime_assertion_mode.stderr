@@ -1,0 +1,5 @@
+error[E0599]: no variant, associated function, or constant named `Prove` found for enum `RuntimeAssertionProfile` in the current scope
+ --> tests/ui/prove_is_not_runtime_assertion_mode.rs:4:38
+  |
+4 |     let _ = RuntimeAssertionProfile::Prove;
+  |                                      ^^^^^ variant, associated function, or constant not found in `RuntimeAssertionProfile`

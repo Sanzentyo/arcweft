@@ -3,37 +3,33 @@ use arcweft_bundle::{
     BundleImageObject, BundleImageObjectBounds, BundleImageObjectFit,
     container::{BundleView, ReadBudget},
     patch::{BundlePatchArtifact, encode_patch_bundle},
-    resource_codec::{
-        ViewInputResource, ViewProgramResource, ViewStyleResource,
-        view::{ViewActionButtonActionResource, ViewParameterRole},
-    },
+    resource_codec::{ViewInputResource, ViewProgramResource, ViewStyleResource},
 };
-use arcweft_compiler::project::{ProjectCompilationContext, compile_project};
+use arcweft_compiler::project::{
+    CompiledProject, ProjectCompilationContext, ProjectCompilationSession, compile_project,
+};
 use arcweft_core::bytecode::BytecodeProgram;
-use arcweft_core::effect::RuntimeEffectExpr;
+use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeEffectExpr};
 use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow, RuntimeLineId};
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
-use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy};
-use arcweft_lang_hir::{
-    model::HirModule,
-    symbol::{CallablePackageId, ProjectSymbolWorldId},
-};
+use arcweft_id::TextKey;
+use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
+use arcweft_lang_syntax::{incremental::SyntaxDatabase, parser::ParseOptions};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
-use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_runtime_driver::{
-    dialogue::{DialoguePresentationOperation, DialoguePresentationStore},
-    view_runtime::{BundleViewRuntime, BundleViewTextValue},
-};
+use arcweft_runtime_driver::view_runtime::BundleViewRuntime;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_source::{
+    ProductSourceId, ProductSourceRef, SourceDocument, SourceDocumentId, SourceName,
+    identity::SourceSnapshotId,
+};
+use arcweft_text_model::{
+    DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode, RichTextStyle,
+};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -42,11 +38,8 @@ use std::{
 mod scroll_style;
 mod view_part_recovery;
 
-fn parse_bundle_fixture(
-    logical_name: &str,
-    source: impl Into<Arc<str>>,
-) -> arcweft_lang_syntax::source::ParsedSource {
-    let document = Arc::new(
+fn bundle_fixture_document(logical_name: &str, source: impl Into<Arc<str>>) -> Arc<SourceDocument> {
+    Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new(format!("arcweft-test://cli/bundle/{logical_name}"))
                 .expect("fixture document ID"),
@@ -54,8 +47,7 @@ fn parse_bundle_fixture(
             source,
         )
         .expect("fixture source document"),
-    );
-    parse_document_with_source(document, ParseOptions::default())
+    )
 }
 
 #[derive(Clone, Debug)]
@@ -66,25 +58,6 @@ struct TestCompiledViewResources {
     text: Option<ViewTextResource>,
     input: Option<ViewInputResource>,
     image_objects: Vec<BundleImageObject>,
-}
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("cli-bundle-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.cli-bundle-test").expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
 }
 
 impl TestCompiledViewResources {
@@ -109,20 +82,47 @@ impl TestCompiledViewResources {
 }
 
 fn collect_bundle_dsl_view_resources(
-    module: &HirModule,
+    document: &Arc<SourceDocument>,
 ) -> Result<TestCompiledViewResources, ExitCode> {
-    collect_bundle_dsl_view_resources_for_package(module, "local.test-package")
+    collect_bundle_dsl_view_resources_for_package(document, "local.test-package")
 }
 
 fn collect_bundle_dsl_view_resources_for_package(
-    module: &HirModule,
+    document: &Arc<SourceDocument>,
     package: &str,
 ) -> Result<TestCompiledViewResources, ExitCode> {
-    let source = module.source_document().ok_or_else(|| {
-        eprintln!("error: test View compilation requires source-bound HIR");
+    let compiled = compile_bundle_fixture_project(document, package)?;
+    Ok(TestCompiledViewResources::from_compiled(
+        compiled.view_product().clone(),
+    ))
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture constructs one complete typed project authority for bundle tests"
+)]
+fn compile_bundle_fixture_project(
+    document: &Arc<SourceDocument>,
+    package: &str,
+) -> Result<CompiledProject, ExitCode> {
+    let mut syntax = SyntaxDatabase::try_new().map_err(|error| {
+        eprintln!("error: failed to create test syntax session: {error}");
         ExitCode::FAILURE
     })?;
-    let document = Arc::new(source.clone());
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            Arc::clone(document),
+            ParseOptions::default(),
+        )
+        .map_err(|error| {
+            eprintln!("error: failed to bind test View source: {error}");
+            ExitCode::FAILURE
+        })?;
+    let parsed_sources = std::collections::BTreeMap::from([(
+        arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
+        parsed,
+    )]);
     let package_spec = PackageSpec {
         id: PackageId::new(package).map_err(|error| {
             eprintln!("error: invalid test package ID: {error}");
@@ -157,7 +157,7 @@ fn collect_bundle_dsl_view_resources_for_package(
         [ProjectSourceFile::new(
             arcweft_lang_syntax::ast::module_path::CanonicalModulePath::crate_root(),
             PathBuf::from("main.arcw"),
-            Arc::clone(&document),
+            Arc::clone(document),
             [],
         )],
     )
@@ -180,7 +180,7 @@ fn collect_bundle_dsl_view_resources_for_package(
     })?;
     let facts = ProjectRegistrationFacts::try_new(
         world,
-        vec![Arc::clone(&document)],
+        vec![Arc::clone(document)],
         Vec::new(),
         Vec::new(),
         Vec::new(),
@@ -196,14 +196,16 @@ fn collect_bundle_dsl_view_resources_for_package(
         None,
         None,
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
-        .map_err(|error| {
+    let mut session = ProjectCompilationSession::try_new().map_err(|error| {
+        eprintln!("error: failed to create test compiler session: {error}");
+        ExitCode::FAILURE
+    })?;
+    let compiled =
+        compile_project(&mut session, &project, &parsed_sources, &context).map_err(|error| {
             eprintln!("error: failed to compile the test View project: {error:?}");
             ExitCode::FAILURE
         })?;
-    Ok(TestCompiledViewResources::from_compiled(
-        compiled.view_product().clone(),
-    ))
+    Ok(compiled)
 }
 
 fn image_await(id: &str) -> FlowOp {
@@ -330,12 +332,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(!program.instructions.is_empty());
@@ -387,7 +384,7 @@ fn nested_view_calls_retain_definition_spans_typed_parameters_and_reachability()
     use arcweft_presentation::fx::FxRuntimeType;
     use arcweft_view::ViewValueProgramInventory;
 
-    let parsed = parse_bundle_fixture(
+    let document = bundle_fixture_document(
         "nested-view-calls-retain-definition-spans-typed-parameters-and-reachability",
         r#"
 view Child(value: i32 = 2) {
@@ -414,11 +411,7 @@ flow test {
 }
 "#,
     );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     assert_eq!(
@@ -547,12 +540,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources_for_package(&hir, "local.test-package")
+    let sidecars = collect_bundle_dsl_view_resources_for_package(&document, "local.test-package")
         .expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let applications = program
@@ -664,12 +652,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(
@@ -708,7 +691,7 @@ flow test {
 fn view_box_and_scroll_lower_to_typed_view_resources() {
     use arcweft_bundle::resource_codec::view::{ViewElementKind, ViewProgramInstruction};
 
-    let parsed = parse_bundle_fixture(
+    let document = bundle_fixture_document(
         "view-box-and-scroll-lower-to-typed-view-resources",
         r#"
 style glass_shell {
@@ -739,11 +722,7 @@ flow test {
 }
 "#,
     );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert!(program.instructions.iter().any(|instruction| matches!(
@@ -830,12 +809,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
 
     let program = sidecars.program.expect("program sidecar");
     assert_eq!(program.scroll_regions.len(), 1);
@@ -878,13 +852,8 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
 
-    assert!(collect_bundle_dsl_view_resources(&hir).is_err());
+    assert!(collect_bundle_dsl_view_resources(&document).is_err());
 }
 
 #[test]
@@ -915,13 +884,20 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert!(parsed.errors().iter().any(|error| {
+    let mut syntax = SyntaxDatabase::try_new().expect("fixture syntax database");
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            document,
+            ParseOptions::default(),
+        )
+        .expect("attached fixture source");
+    assert!(parsed.diagnostics().iter().any(|error| {
         error
             .message()
             .contains("unsupported View element `LazyRow`")
     }));
-    assert!(parsed.errors().iter().any(|error| {
+    assert!(parsed.diagnostics().iter().any(|error| {
         error
             .message()
             .contains("unsupported View element `LazyColumn`")
@@ -953,13 +929,8 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
 
-    assert!(collect_bundle_dsl_view_resources(&hir).is_err());
+    assert!(collect_bundle_dsl_view_resources(&document).is_err());
 }
 
 #[test]
@@ -983,12 +954,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     assert_eq!(program.scroll_regions.len(), 1);
     assert_eq!(
@@ -1021,12 +987,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     assert_eq!(program.scroll_regions.len(), 1);
     let region = &program.scroll_regions[0];
@@ -1075,12 +1036,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
 
     assert_eq!(sidecars.image_objects.len(), 1);
     let image = &sidecars.image_objects[0];
@@ -1122,12 +1078,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program lowers");
     let text = sidecars.text.expect("text resource lowers");
 
@@ -1172,12 +1123,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program lowers");
 
     let status_blocks = view_text_blocks(&program, "view.StatusPanel");
@@ -1273,12 +1219,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let branch_count = program
@@ -1415,12 +1356,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let text = sidecars.text.expect("text sidecar");
 
     assert_eq!(
@@ -1439,14 +1375,14 @@ fn dialogue_view_text_style_and_primary_action_lower_to_typed_resources() {
     };
     use arcweft_view::style::{ViewStyleApplicationTarget, ViewStyleSheetId};
 
-    let parsed = parse_bundle_fixture(
+    let document = bundle_fixture_document(
         "dialogue-view-text-style-and-primary-action-lower-to-typed-resources",
         r#"
 pub style dialogue_text {}
 
 pub view DialoguePanel(dialogue: DialogueView) {
   Panel(x = 57.6px, y = 460.8px, width = 1164.8px, height = 201.6px, part = dialogue_panel) {
-    Text(dialogue.speaker)
+    Text(dialogue.character_display_name)
       .x(85.6px)
       .y(480.8px)
       .width(1108.8px)
@@ -1464,17 +1400,13 @@ pub view DialoguePanel(dialogue: DialogueView) {
 
 "#,
     );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let text = sidecars.text.expect("dialogue text sidecar");
     assert!(text.sources.iter().any(|source| {
         source.kind
             == ViewTextSourceKind::Dialogue {
                 parameter: "dialogue".to_owned(),
-                projection: DialogueTextProjection::Speaker,
+                projection: DialogueTextProjection::CharacterDisplayName,
             }
     }));
     assert!(text.sources.iter().any(|source| {
@@ -1559,12 +1491,7 @@ flow test {
         )
         .expect("source document"),
     );
-    let parsed = parse_document_with_source(document.clone(), ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let [export] = program.exported_parts.as_slice() else {
         panic!("authored export must produce exactly one product record");
@@ -1572,10 +1499,8 @@ flow test {
     assert_eq!(export.target.view.view_id().as_str(), "view.Card");
     assert_eq!(export.target.part.as_public_id().as_str(), "title");
     assert_eq!(export.public_name.as_public_id().as_str(), "heading");
-    let expected_source = arcweft_bundle::resource_codec::ProductSourceId::try_for_document_id(
-        document.identity().id(),
-    )
-    .expect("product source identity");
+    let expected_source = ProductSourceId::try_for_document_id(document.identity().id())
+        .expect("product source identity");
     assert_eq!(program.source_refs.len(), 1);
     assert_eq!(program.source_refs[0].id(), &expected_source);
     assert_eq!(
@@ -1612,7 +1537,7 @@ fn subtree_sheet_styles_survive_standard_resource_linking() {
         ViewStyleApplicationTarget, ViewStyleSheetId,
     };
 
-    let parsed = parse_bundle_fixture(
+    let document = bundle_fixture_document(
         "subtree-sheet-styles-survive-standard-resource-linking",
         r#"
 style showcase {
@@ -1634,11 +1559,7 @@ flow test {
 }
 "#,
     );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let product = sidecars.compiled.product();
     let program = product.program().expect("linked View program").resource();
     let style = product.style().expect("linked Style resource").resource();
@@ -1737,132 +1658,6 @@ fn assert_linked_style_sources_are_valid(
         .expect("linked Style source references remain canonically encodable");
 }
 
-const CUSTOM_DIALOGUE_VIEW_SOURCE: &str = r#"
-#[dialogue_view]
-pub struct StoryDialogue {
-  speaker: String
-  content: DialogueContent
-  occurrence: DialogueOccurrenceId
-  stage: DialogueStage
-  reveal: DialogueReveal
-  primary_action: DialogueAction
-}
-
-pub view StoryPanel(line: StoryDialogue) {
-  Panel(x = 32px, y = 400px, width = 900px, height = 240px) {
-    Text(line.speaker).x(48px).y(416px).width(860px).height(32px)
-    RichText(line.content).x(48px).y(456px).width(860px).height(140px)
-    Button("", x = 32px, y = 400px, width = 900px, height = 240px)
-      .on_click { line.primary_action }
-  }
-}
-
-"#;
-
-#[test]
-fn custom_dialogue_view_role_lowers_and_evaluates_through_the_bundle_runtime() {
-    let parsed = parse_bundle_fixture(
-        "custom-dialogue-view-role-lowers-and-evaluates-through-the-bundle-runtime",
-        CUSTOM_DIALOGUE_VIEW_SOURCE,
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
-    let program = sidecars.program.expect("custom dialogue View program");
-    let text = sidecars.text.expect("custom dialogue text resource");
-    let definition = program
-        .definitions
-        .iter()
-        .find(|definition| definition.public_id.as_str() == "view.StoryPanel")
-        .expect("custom View definition");
-    assert!(definition.parameters.iter().any(|parameter| {
-        parameter.name == "line" && parameter.role == ViewParameterRole::Dialogue
-    }));
-    assert!(program.action_buttons.iter().any(|button| matches!(
-        &button.action,
-        ViewActionButtonActionResource::DialoguePrimaryAction { parameter }
-            if parameter == "line"
-    )));
-    program
-        .validate_dialogue_contract(Some(&text))
-        .expect("custom role produces a valid bundle contract");
-
-    let line_id =
-        RuntimeLineId::from_runtime_line_value("say.custom.dialogue").expect("runtime line id");
-    let display_spec = LineDisplaySpec {
-        line: line_id.clone(),
-        callee: "character.hero".to_owned(),
-        speaker_label: Some("Hero".to_owned()),
-        text_key: None,
-        view: arcweft_view::ViewId::try_new("view.StoryPanel").unwrap(),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
-            text: "Custom runtime content".to_owned(),
-        }]),
-    };
-    let display_frame = display_spec
-        .clone()
-        .resolve_frame(&arcweft_render_text::RuntimeLineContext::default())
-        .expect("display frame resolves");
-    let mut dialogue = DialoguePresentationStore::default();
-    dialogue
-        .apply_operations(&[DialoguePresentationOperation::append(
-            arcweft_runtime_driver::dialogue::DialogueViewDefinition::new(
-                arcweft_view::ViewId::try_new("view.StoryPanel").unwrap(),
-            ),
-            display_frame.clone(),
-        )])
-        .expect("dialogue appends");
-    dialogue
-        .synchronize_waiting_line(Some(&line_id))
-        .expect("primary action synchronizes");
-    let product = arcweft_bundle::resource_codec::ValidatedViewProduct::try_new(
-        None,
-        Some(program),
-        None,
-        arcweft_bundle::resource_codec::ViewProductValidationLimits::default(),
-    )
-    .expect("custom dialogue View product validates");
-    let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
-        product,
-        Some(text),
-        &LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
-            .expect("test display catalog is revision-consistent"),
-    )
-    .expect("custom dialogue View runtime builds");
-    let frame = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);
-
-    assert!(frame.diagnostics.is_empty(), "{frame:#?}");
-    assert_eq!(frame.mounts.len(), 1);
-    let mount = &frame.mounts[0];
-    assert_eq!(mount.view.as_str(), "view.StoryPanel");
-    assert!(
-        mount
-            .dialogue
-            .is_some_and(|state| state.primary_action.target.is_some())
-    );
-    assert!(mount.text.iter().any(|output| matches!(
-        &output.value,
-        BundleViewTextValue::DialogueSpeaker { label, frame }
-            if label == "Hero" && frame.as_ref() == &display_frame
-    )));
-    assert!(mount.text.iter().any(|output| matches!(
-        &output.value,
-        BundleViewTextValue::DisplayFrame { frame, stage_index: 0 }
-            if frame.as_ref() == &display_frame
-    )));
-}
-
 #[test]
 fn view_declaration_is_catalogued_without_creating_a_runtime_mount() {
     let document = Arc::new(
@@ -1879,12 +1674,7 @@ view FeedbackForm() {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
 
     let product = sidecars.compiled.product().as_ref().clone();
     let runtime = BundleViewRuntime::try_new(product, sidecars.text.clone())
@@ -1908,7 +1698,7 @@ view FeedbackForm() {
 
 #[test]
 fn view_button_lowers_to_action_button_sidecar() {
-    let parsed = parse_bundle_fixture(
+    let document = bundle_fixture_document(
         "view-button-lowers-to-action-button-sidecar",
         r#"
 pub action feedback.submit(value: String)
@@ -1937,11 +1727,7 @@ flow test {
 }
 "#,
     );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let text = sidecars.text.expect("text sidecar");
     let input = sidecars.input.expect("input sidecar");
@@ -2041,12 +1827,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let input = sidecars.input.expect("input sidecar");
 
@@ -2090,12 +1871,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
     let input = sidecars.input.expect("input sidecar");
     let text = sidecars.text.expect("text sidecar");
@@ -2188,12 +1964,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let continue_button = program
@@ -2247,12 +2018,7 @@ flow test {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("HIR lowers");
-    let sidecars = collect_bundle_dsl_view_resources(&hir).expect("sidecars lower");
+    let sidecars = collect_bundle_dsl_view_resources(&document).expect("sidecars lower");
     let program = sidecars.program.expect("program sidecar");
 
     let button = program
@@ -2277,32 +2043,27 @@ flow test {
 }
 
 #[test]
-fn bundle_hydrates_default_view_localization_from_matching_display_text_key() {
+fn bundle_hydrates_default_view_localization_from_matching_content_text_key() {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("arcweft-test://cli/bundle/dialogue-localization")
+            .expect("source ID"),
+        SourceName::Memory,
+        "夢",
+    )
+    .expect("source document");
     let document = RichTextDocument::new(vec![RichTextNode::Ruby {
         base: "夢".to_owned(),
         ruby: "ゆめ".to_owned(),
     }]);
-    let display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![LineDisplaySpec {
-            line: RuntimeLineId::from_runtime_line_value("say.localization.display").unwrap(),
-            callee: "narrator".to_owned(),
-            speaker_label: None,
-            text_key: Some("text.opening.dream".to_owned()),
-            view: arcweft_bundle::standard_view::dialogue_view_id(),
-            profile_style: None,
-            dialogue_revision: test_dialogue_revision(),
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: document.clone(),
-        }],
-    )
-    .expect("test display catalog is revision-consistent");
+    let dialogue_content =
+        DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
+            RuntimeLineId::from_runtime_line_value("say.localization.display").unwrap(),
+            TextKey::try_new("text.opening.dream").expect("text key"),
+            document.clone(),
+            Vec::new(),
+            ProductSourceRef::try_for_identity(source.identity()).expect("product source"),
+        )])
+        .expect("dialogue content catalog is canonical");
     let mut text = ViewTextResource {
         sources: vec![arcweft_bundle::resource_codec::view::ViewTextSourceRecord {
             public_id: "text.view.dream".to_owned(),
@@ -2315,7 +2076,7 @@ fn bundle_hydrates_default_view_localization_from_matching_display_text_key() {
         ..ViewTextResource::default()
     };
 
-    hydrate_default_view_localization(&mut text, &display);
+    hydrate_default_view_localization(&mut text, &dialogue_content);
 
     assert_eq!(
         text.localized_document("text.opening.dream", None),
@@ -2335,23 +2096,11 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
         )
         .expect("source document"),
     );
-    let parsed = arcweft_lang_syntax::parser::parse_document_with_source(
-        Arc::clone(&document),
-        arcweft_lang_syntax::parser::ParseOptions::default(),
-    );
-    assert_eq!(parsed.errors(), &[]);
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("test source lowers to HIR");
-    let runtime_options = RuntimePlanLowerOptions::default().with_dialogue_profile(
-        DialoguePresentationProfile::engine_default(),
-        test_dialogue_revision(),
-    );
-    let plan = arcweft_runtime_plan::flow::lower_runtime_plan_with_stats(&hir, &runtime_options)
-        .expect("test source lowers to a runtime plan")
-        .plan;
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
-    let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
+    let compiled = compile_bundle_fixture_project(&document, "local.test-package")
+        .expect("test source compiles through the attached project authority");
+    let plan = compiled.runtime_plan().plan.clone();
+    let dialogue_content = compiled.runtime_plan().dialogue_content_catalog.clone();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, source_label)
         .lower()
         .expect("test product AWBC lowers")
         .program;
@@ -2366,6 +2115,7 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: test_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.test".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -2377,10 +2127,15 @@ fn return_bundle(source_label: &str, return_value: &str) -> ArcweftBundle {
         arcweft_bundle::resource_codec::SourceMapSection::try_from_documents(&[document.as_ref()])
             .expect("source map"),
         program,
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
+}
+
+fn test_runtime_artifact_fingerprint() -> RuntimeArtifactFingerprint {
+    RuntimeArtifactFingerprint::try_from_bytes([0x51; 32])
+        .expect("non-zero test runtime artifact fingerprint")
 }
 
 fn image_asset(id: &str) -> BundleImageAsset {
@@ -2483,7 +2238,7 @@ flow main(state: GameState) -> String { return "done" }
     assert!(!product_awbc.program().source_map.is_empty());
     assert_eq!(
         product_awbc.program().display_map.is_empty(),
-        artifact.bundle.display.lines().is_empty()
+        artifact.bundle.dialogue_content.records().is_empty()
     );
 
     let bytes = artifact
@@ -2537,12 +2292,16 @@ flow main() -> String {
 
     let artifact = compile_bundle_for_selection(&selection, Vec::new(), &mut phases)
         .expect("source-defined Fx bundle compiles");
-    let frame = artifact.bundle.display.lines()[0]
-        .resolve_frame(&arcweft_render_text::RuntimeLineContext::default())
-        .expect("line display resolves");
-    let application = frame
-        .fx_applications()
-        .next()
+    let application = artifact.bundle.dialogue_content.records()[0]
+        .content()
+        .nodes
+        .iter()
+        .find_map(|node| match node {
+            RichTextNode::StyleStart {
+                style: RichTextStyle::Fx { application },
+            } => Some(application),
+            _ => None,
+        })
         .expect("typed Fx application remains in RichText");
     let expected_definition = format!(
         "{}::wave",
@@ -2599,10 +2358,8 @@ flow main() -> String {
 "#,
     )
     .expect("temporary project source writes");
-    let selection = SourceSelection::Project {
-        manifest: manifest_path,
-        path: source_path,
-    };
+    let selection = crate::app::project::resolve_project_root_source_selection(&manifest_path)
+        .expect("project selection loads");
     let mut phases = Vec::new();
 
     let artifact = compile_bundle_for_selection(&selection, Vec::new(), &mut phases)
@@ -2670,10 +2427,8 @@ flow main() -> String { return "done" }
     fs::write(state_root.join("slot.txt"), "project-state").expect("project state writes");
     fs::write(source_root.join(".arcweft/save/legacy.txt"), "legacy-state")
         .expect("legacy state writes");
-    let selection = SourceSelection::Project {
-        manifest: manifest_path,
-        path: source_path,
-    };
+    let selection = crate::app::project::resolve_project_root_source_selection(&manifest_path)
+        .expect("project selection loads");
     let mut phases = Vec::new();
 
     let artifact = compile_bundle_for_selection(
@@ -2770,7 +2525,7 @@ fn static_image_asset_refs_collects_nested_asset_image_entity_refs() {
     }]);
 
     assert_eq!(
-        static_image_asset_refs(&plan, std::iter::empty::<&str>()),
+        static_image_asset_refs(&plan),
         vec!["asset.bg.room".to_owned(), "asset.view.logo".to_owned()]
     );
 }
@@ -2795,7 +2550,7 @@ fn static_image_asset_refs_collects_runtime_presentation_image_calls() {
     ]);
 
     assert_eq!(
-        static_image_asset_refs(&plan, std::iter::empty::<&str>()),
+        static_image_asset_refs(&plan),
         vec![
             "asset.bg.pulse".to_owned(),
             "asset.bg.room".to_owned(),
@@ -2811,7 +2566,7 @@ fn static_image_asset_refs_ignore_unknown_calls() {
         "asset = @asset:.view.logo",
     )]);
 
-    assert!(static_image_asset_refs(&plan, std::iter::empty::<&str>()).is_empty());
+    assert!(static_image_asset_refs(&plan).is_empty());
 }
 
 #[test]
@@ -2821,7 +2576,7 @@ fn static_image_asset_refs_rejects_non_asset_public_ids() {
         image_effect_call("bg", "not a public id"),
     ]);
 
-    assert!(static_image_asset_refs(&plan, std::iter::empty::<&str>()).is_empty());
+    assert!(static_image_asset_refs(&plan).is_empty());
 }
 
 #[test]
@@ -2831,7 +2586,7 @@ fn evaluated_builtin_effects_are_not_host_tasks_or_static_image_calls() {
     ))]);
 
     assert!(bundle_required_host_calls(&plan).is_empty());
-    assert!(static_image_asset_refs(&plan, std::iter::empty::<&str>()).is_empty());
+    assert!(static_image_asset_refs(&plan).is_empty());
 }
 
 #[test]
@@ -2841,18 +2596,7 @@ fn static_image_asset_refs_collects_line_task_image_calls() {
         args: vec!["@asset:.bg.room".to_owned()],
     }));
 
-    assert_eq!(
-        static_image_asset_refs(&plan, std::iter::empty::<&str>()),
-        vec!["asset.bg.room"]
-    );
-}
-
-#[test]
-fn static_image_asset_refs_collects_compiled_catalog_assets() {
-    assert_eq!(
-        static_image_asset_refs(&plan_with_ops(Vec::new()), ["asset.bg.pulse"]),
-        vec!["asset.bg.pulse"]
-    );
+    assert_eq!(static_image_asset_refs(&plan), vec!["asset.bg.room"]);
 }
 
 #[test]
@@ -2862,13 +2606,10 @@ fn validate_referenced_bundle_image_assets_rejects_missing_static_refs() {
         image_effect_call("image", "asset = @asset:.view.logo"),
     ]);
 
-    assert!(
-        validate_referenced_bundle_image_assets(&plan, std::iter::empty::<&str>(), &[]).is_err()
-    );
+    assert!(validate_referenced_bundle_image_assets(&plan, &[]).is_err());
     assert!(
         validate_referenced_bundle_image_assets(
             &plan,
-            std::iter::empty::<&str>(),
             &[image_asset("asset.bg.room"), image_asset("asset.view.logo")]
         )
         .is_ok()

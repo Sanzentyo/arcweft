@@ -10,7 +10,7 @@ use crate::item::{
     HirBenchItem, HirItem, HirItemIssue, HirItemKind, HirTestItem, HirTestKind, HirTestKindIssue,
 };
 use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::HirScopeKind;
 
 use super::super::{StagedHirModuleTransaction, id_ref_projection, name_projection};

@@ -32,6 +32,7 @@ pub struct HirStmt {
 }
 
 impl HirStmt {
+    #[cfg(test)]
     pub(crate) fn try_new(
         scope: ScopeId,
         kind: HirStmtKind,
@@ -71,11 +72,15 @@ impl HirStmt {
         &self.state
     }
 
-    pub(crate) const fn is_poisoned(&self) -> bool {
+    pub const fn is_poisoned(&self) -> bool {
         self.state.is_poisoned()
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exhaustive validator keeps every statement family paired with its exact recovery-state contract"
+)]
 fn state_matches_kind(kind: &HirStmtKind, state: &HirStmtPoisonState) -> bool {
     if matches!(kind, HirStmtKind::Error) {
         return matches!(
@@ -91,37 +96,27 @@ fn state_matches_kind(kind: &HirStmtKind, state: &HirStmtPoisonState) -> bool {
     }
 
     if let HirStmtKind::Assertion { mode, conditions } = kind {
-        return match (mode, conditions.is_empty(), state) {
+        return matches!(
+            (mode, conditions.is_empty(), state),
             (
                 HirAssertionMode::Recovered,
                 _,
                 HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidAssertionMode),
-            ) => true,
-            (
-                _,
-                _,
-                HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::PredicateAssertionNotAllowed),
-            ) => true,
-            (
+            ) | (
                 HirAssertionMode::Resolved(_),
                 true,
                 HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::MissingAssertionCondition),
-            ) => true,
-            (HirAssertionMode::Resolved(_), false, HirStmtPoisonState::Clean)
-            | (
+            ) | (
                 HirAssertionMode::Resolved(_),
                 false,
-                HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
-                    role: HirStmtChildRole::Condition,
-                }),
+                HirStmtPoisonState::Clean
+                    | HirStmtPoisonState::Poisoned(
+                        HirStmtRecoveryIssue::RecoveredChild {
+                            role: HirStmtChildRole::Condition,
+                        } | HirStmtRecoveryIssue::MalformedAssertion,
+                    ),
             )
-            | (
-                HirAssertionMode::Resolved(_),
-                false,
-                HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::MalformedAssertion),
-            ) => true,
-            _ => false,
-        };
+        );
     }
 
     if matches!(
@@ -130,7 +125,6 @@ fn state_matches_kind(kind: &HirStmtKind, state: &HirStmtPoisonState) -> bool {
             HirStmtRecoveryIssue::InvalidAssertionMode
                 | HirStmtRecoveryIssue::MissingAssertionCondition
                 | HirStmtRecoveryIssue::MalformedAssertion
-                | HirStmtRecoveryIssue::PredicateAssertionNotAllowed
         )
     ) {
         return false;
@@ -368,8 +362,6 @@ pub enum HirStmtRecoveryIssue {
     InvalidControlLabel(HirNameInvariantError),
     #[error("Continue statement has an unexpected value or suffix")]
     MalformedContinue,
-    #[error("Predicate bodies do not admit assertion statements")]
-    PredicateAssertionNotAllowed,
     #[error("statement syntax was not classified into a known family")]
     UnclassifiedSyntax,
 }
@@ -391,10 +383,6 @@ impl HirStatementContext {
             Self::Predicate => crate::scope::HirPatternBindingPolicy::PredicateLet,
             Self::Proof => crate::scope::HirPatternBindingPolicy::ProofLet,
         }
-    }
-
-    pub(crate) const fn rejects_assertions(self) -> bool {
-        matches!(self, Self::Predicate)
     }
 }
 
@@ -457,9 +445,6 @@ pub enum HirStmtKind {
     },
     Goto {
         target: ExprId,
-    },
-    Thread {
-        thread: ExprId,
     },
     DeferBlock {
         outcome: DeferOutcome,
@@ -584,6 +569,10 @@ impl HirStmtKind {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive statement-family validator preserves the closed typed-ID ownership matrix"
+    )]
     fn validate_module(&self, expected: HirModuleId) -> Result<(), HirStmtInvariantError> {
         match self {
             Self::Assertion { conditions, .. } => validate_exprs(expected, conditions),
@@ -652,7 +641,6 @@ impl HirStmtKind {
             Self::Goto { target } | Self::Wait { target } | Self::Close { target } => {
                 validate_expr(expected, *target)
             }
-            Self::Thread { thread } => validate_expr(expected, *thread),
             Self::DeferBlock { scope, body, .. } => {
                 validate_scope(expected, *scope)?;
                 validate_statements(expected, body)
@@ -687,10 +675,9 @@ impl HirStmtKind {
                 statement.validate_module(expected).map_err(Into::into)
             }
             Self::Scope(statement) => statement.validate_module(expected).map_err(Into::into),
-            Self::Include(_) => Ok(()),
+            Self::Include(_) | Self::Continue { .. } | Self::Error => Ok(()),
             Self::AwaitWith(statement) => statement.validate_module(expected).map_err(Into::into),
             Self::Break { value, .. } => validate_optional_expr(expected, *value),
-            Self::Continue { .. } | Self::Error => Ok(()),
         }
     }
 }

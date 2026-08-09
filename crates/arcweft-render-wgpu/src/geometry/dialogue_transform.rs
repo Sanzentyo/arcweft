@@ -3,8 +3,8 @@
 use arcweft_presentation::fx::{
     Angle, FiniteF32, FxTarget, Length, ResolvedTransform2D, Transform2D,
 };
-use arcweft_render_text::{RichTextPresentation, RichTextTransform, RichTextTransformOrigin};
 use arcweft_text_layout::{LayoutRect, LayoutSize};
+use arcweft_text_model::{RichTextPresentation, RichTextTransform, RichTextTransformOrigin};
 
 use super::FramePlanError;
 

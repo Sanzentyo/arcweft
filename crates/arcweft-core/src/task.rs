@@ -1,4 +1,5 @@
 use crate::value::{RuntimeExpr, RuntimePayload};
+use arcweft_need::Need;
 use serde::{Deserialize, Serialize};
 
 pub const AWAIT_MANY_ITEM_BINDING: &str = "__arcweft_await_many_item";
@@ -24,6 +25,52 @@ pub struct LogicalEpoch(pub u64);
     Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
 )]
 pub struct TaskSequence(pub u64);
+
+/// One producer-owned, in-memory state publication for a typed `Need<T, E>`.
+///
+/// This boundary deliberately does not add a `RuntimeValue` or AWBC wire
+/// surrogate. The handle carried by a verified `NeedHandle` register names the
+/// `NeedId`; the producer publishes the typed success/error payload here for
+/// the current deterministic runtime step.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeNeedState {
+    logical_epoch: LogicalEpoch,
+    need: NeedId,
+    sequence: TaskSequence,
+    state: Need<RuntimePayload, RuntimePayload>,
+}
+
+impl RuntimeNeedState {
+    pub const fn new(
+        logical_epoch: LogicalEpoch,
+        need: NeedId,
+        sequence: TaskSequence,
+        state: Need<RuntimePayload, RuntimePayload>,
+    ) -> Self {
+        Self {
+            logical_epoch,
+            need,
+            sequence,
+            state,
+        }
+    }
+
+    pub const fn logical_epoch(&self) -> LogicalEpoch {
+        self.logical_epoch
+    }
+
+    pub const fn need(&self) -> &NeedId {
+        &self.need
+    }
+
+    pub const fn sequence(&self) -> TaskSequence {
+        self.sequence
+    }
+
+    pub const fn state(&self) -> &Need<RuntimePayload, RuntimePayload> {
+        &self.state
+    }
+}
 
 #[derive(
     Clone, Copy, Debug, Default, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize,
@@ -500,4 +547,50 @@ pub fn compare_task_events(left: &TaskEvent, right: &TaskEvent) -> std::cmp::Ord
         .cmp(&right.logical_epoch)
         .then_with(|| left.task_id.cmp(&right.task_id))
         .then_with(|| left.sequence.cmp(&right.sequence))
+}
+
+/// Returns producer-owned Need states in replay-stable publication order.
+pub fn normalize_runtime_need_states(mut states: Vec<RuntimeNeedState>) -> Vec<RuntimeNeedState> {
+    if states.len() > 1 && !runtime_need_states_are_normalized(&states) {
+        states.sort_by(compare_runtime_need_states);
+    }
+    states
+}
+
+/// Returns true when Need states are already in replay-stable order.
+pub fn runtime_need_states_are_normalized(states: &[RuntimeNeedState]) -> bool {
+    states
+        .windows(2)
+        .all(|pair| compare_runtime_need_states(&pair[0], &pair[1]).is_le())
+}
+
+/// Compares Need states by the same deterministic epoch/identity/sequence
+/// vocabulary used by task events.
+pub fn compare_runtime_need_states(
+    left: &RuntimeNeedState,
+    right: &RuntimeNeedState,
+) -> std::cmp::Ordering {
+    left.logical_epoch()
+        .cmp(&right.logical_epoch())
+        .then_with(|| left.need().cmp(right.need()))
+        .then_with(|| left.sequence().cmp(&right.sequence()))
+}
+
+/// Selects the current state for one Need from a normalized publication list.
+///
+/// Progress and `NotStarted` publications may advance until the first terminal
+/// publication. Once Ready, Err, or Cancelled is committed, later publications
+/// for the same identity cannot replace it.
+pub fn resolved_runtime_need_state<'a>(
+    states: &'a [RuntimeNeedState],
+    need: &NeedId,
+) -> Option<&'a RuntimeNeedState> {
+    let mut current = None;
+    for candidate in states.iter().filter(|candidate| candidate.need() == need) {
+        current = Some(candidate);
+        if candidate.state().is_terminal() {
+            break;
+        }
+    }
+    current
 }

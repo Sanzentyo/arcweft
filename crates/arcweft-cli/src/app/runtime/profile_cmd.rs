@@ -9,9 +9,8 @@ use crate::app::project::{
 };
 use crate::app::shared::{is_arcw_path, print_json};
 use crate::output::{
-    AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, RuntimeExecutorTier,
+    AotProfileStats, BytecodeProfileStats, FinalSemanticProfileStats, RuntimeExecutorTier,
     RuntimePlanProfileStats, RuntimeProfileCompiler, RuntimeProfileReport, RuntimeProfileRuntime,
-    RuntimeTypeValidationProfileStats, TypeCheckProfileStats,
 };
 use arcweft_core::engine::FlowStatusLabelStyle;
 use arcweft_runtime_host::{NativeAdapterRegistrar, host_system_info};
@@ -44,6 +43,7 @@ pub(in crate::app) fn runtime_profile_command(
     }
 
     let compiled = compile_profile_runtime_plan(&selection, &semantic, &mut phases)?;
+    let execution_diagnostics = compiled.execution_diagnostics.clone();
     let plan = compiled.plan;
     let entry = selection.command_entry(options.entry.as_deref())?;
     let entry = select_runtime_entry(&plan, entry)?;
@@ -69,6 +69,7 @@ pub(in crate::app) fn runtime_profile_command(
             options.mode,
             options.max_ops,
             &options.values,
+            &execution_diagnostics,
         )
     })?;
     let final_status = trace.final_status.status_label(FlowStatusLabelStyle::Debug);
@@ -78,12 +79,8 @@ pub(in crate::app) fn runtime_profile_command(
         line_task_groups: compiled.line_task_groups,
         compiler: RuntimeProfileCompiler {
             syntax: compiled.syntax_stats.into(),
-            typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
-            borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
+            semantic: FinalSemanticProfileStats::from(compiled.compiled.final_analysis().as_ref()),
             runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
-            runtime_type_validation: RuntimeTypeValidationProfileStats::from(
-                &compiled.runtime_type_validation_stats,
-            ),
             bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
             aot: AotProfileStats::from(&compiled.aot_stats),
         },

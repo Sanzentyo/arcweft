@@ -1,5 +1,6 @@
 use crate::{
     entry::{RuntimeNominalTypeId, TypeLayoutHash},
+    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
     plan::RuntimePureHelperId,
     time::LogicalDuration,
     value::{
@@ -97,32 +98,63 @@ fn runtime_value_nesting_accepts_64_and_rejects_65() {
 #[test]
 fn option_none_conversion_rejects_same_named_non_option_variants() {
     let option = RuntimeValue::Variant {
-        path: Some("Option".to_owned()),
+        owner: RuntimeVariantIdentity::Option,
+        ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Bool(true))),
     };
     assert_eq!(
-        option.option_none_with_same_path(),
+        option.option_none_with_same_owner(),
         Some(RuntimeValue::Variant {
-            path: Some("Option".to_owned()),
+            owner: RuntimeVariantIdentity::Option,
+            ordinal: 1,
             name: "None".to_owned(),
             payload: None,
         })
     );
 
     let unrelated = RuntimeValue::Variant {
-        path: Some("custom.Choice".to_owned()),
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new("custom.Choice").expect("nominal identity"),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([3; 32]),
+        },
+        ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Bool(true))),
     };
-    assert_eq!(unrelated.option_none_with_same_path(), None);
+    assert_eq!(unrelated.option_none_with_same_owner(), None);
 
     let malformed = RuntimeValue::Variant {
-        path: Some("Option".to_owned()),
+        owner: RuntimeVariantIdentity::Option,
+        ordinal: 0,
         name: "Some".to_owned(),
         payload: None,
     };
-    assert_eq!(malformed.option_none_with_same_path(), None);
+    assert_eq!(malformed.option_none_with_same_owner(), None);
+}
+
+#[test]
+fn variant_canonical_bytes_retain_closed_owner_ordinal_and_semantic_identity() {
+    let option = RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Option,
+        ordinal: 0,
+        name: "Some".to_owned(),
+        payload: Some(Box::new(RuntimeValue::Unit)),
+    };
+    let result = RuntimeValue::result_ok(RuntimeValue::Unit);
+    let nominal = |semantic_identity| RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes(semantic_identity),
+        },
+        ordinal: 0,
+        name: "Some".to_owned(),
+        payload: Some(Box::new(RuntimeValue::Unit)),
+    };
+
+    let encode = |value: RuntimeValue| value.try_canonical_bytes(1024).expect("canonical value");
+    assert_ne!(encode(option), encode(result));
+    assert_ne!(encode(nominal([1; 32])), encode(nominal([2; 32])));
 }
 
 #[test]
@@ -869,12 +901,14 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
 
     let RuntimeValue::Seq(variant_seq) = runtime_sequence_from_literal_values(vec![
         RuntimeValue::Variant {
-            path: None,
+            owner: RuntimeVariantIdentity::Option,
+            ordinal: 0,
             name: "Some".to_owned(),
             payload: Some(Box::new(RuntimeValue::i64(1))),
         },
         RuntimeValue::Variant {
-            path: None,
+            owner: RuntimeVariantIdentity::Option,
+            ordinal: 0,
             name: "Some".to_owned(),
             payload: Some(Box::new(RuntimeValue::i64(2))),
         },

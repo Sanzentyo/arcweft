@@ -9,13 +9,17 @@ use crate::final_lowering::StagedHirModuleTransaction;
 use crate::final_lowering::name_projection::{name, name_issue, require_attempted_name_limit};
 use crate::identity::ScopeId;
 use crate::leaf::HirName;
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::HirExprSourceRole;
 use crate::stmt::{HirStmtChildRole, HirStmtKind, HirStmtRecoveryIssue};
 
 use super::super::CandidateCursor;
 
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "this is the exhaustive candidate-local lowering table for the closed keyword-statement family"
+    )]
     pub(super) fn lower_candidate_keyword_statement(
         &mut self,
         statement: AttachedCandidateStatement<'_>,

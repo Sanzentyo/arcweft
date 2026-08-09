@@ -23,6 +23,10 @@ fn attached_closure_retains_parameter_type_and_body_identities() {
     assert!(expression.closure_result_type().is_some());
     assert_eq!(expression.children().len(), 1);
     assert_eq!(expression.children()[0].ordinal(), 0);
+    assert_eq!(
+        expression.children()[0].component_role(),
+        ExpressionComponentRole::Body
+    );
     assert!(
         expression.children()[0]
             .authored_semantic()
@@ -50,6 +54,17 @@ fn attached_callback_call_retains_one_central_closure_argument() {
             .map(AttachedExpressionChild::ordinal)
             .collect::<Vec<_>>(),
         vec![0, 1]
+    );
+    assert_eq!(
+        expression.children()[0].component_role(),
+        ExpressionComponentRole::CallCallee
+    );
+    assert_eq!(
+        expression.children()[1].component_role(),
+        ExpressionComponentRole::CallArgument {
+            argument: 0,
+            part: SyntaxCallArgumentPart::Value,
+        }
     );
 
     let callback = expression.children()[1]
@@ -218,7 +233,11 @@ fn attached_if_distinguishes_missing_required_slots_from_omission() {
     assert_eq!(*else_branch, None);
     assert!(matches!(
         &missing_condition.children()[0],
-        AttachedExpressionChild::Missing { ordinal: 0, .. }
+        AttachedExpressionChild::Missing {
+            ordinal: 0,
+            component_role: ExpressionComponentRole::Condition,
+            ..
+        }
     ));
 
     let missing_then = expression("if true", SyntaxKind::IfExpression);
@@ -235,7 +254,11 @@ fn attached_if_distinguishes_missing_required_slots_from_omission() {
     assert_eq!(*else_branch, None);
     assert!(matches!(
         &missing_then.children()[1],
-        AttachedExpressionChild::Missing { ordinal: 1, .. }
+        AttachedExpressionChild::Missing {
+            ordinal: 1,
+            component_role: ExpressionComponentRole::ThenBranch,
+            ..
+        }
     ));
 
     let missing_authored_else = expression("if true { 1 } else", SyntaxKind::IfExpression);
@@ -245,7 +268,11 @@ fn attached_if_distinguishes_missing_required_slots_from_omission() {
     assert_eq!(*else_branch, Some(SyntaxExpressionSlot::Missing));
     assert!(matches!(
         &missing_authored_else.children()[2],
-        AttachedExpressionChild::Missing { ordinal: 2, .. }
+        AttachedExpressionChild::Missing {
+            ordinal: 2,
+            component_role: ExpressionComponentRole::ElseBranch,
+            ..
+        }
     ));
 }
 
@@ -391,20 +418,36 @@ fn attached_if_let_retains_pattern_and_fixed_semantic_child_ordinals() {
 #[test]
 fn attached_if_let_distinguishes_each_missing_slot_from_omitted_else() {
     let cases = [
-        ("if let value { 1 } else { 2 }", 0),
-        ("if let value = 1 when { 1 } else { 2 }", 1),
-        ("if let value = 1 else { 2 }", 2),
-        ("if let value = 1 { 1 } else", 3),
+        (
+            "if let value { 1 } else { 2 }",
+            0,
+            ExpressionComponentRole::Scrutinee,
+        ),
+        (
+            "if let value = 1 when { 1 } else { 2 }",
+            1,
+            ExpressionComponentRole::Guard,
+        ),
+        (
+            "if let value = 1 else { 2 }",
+            2,
+            ExpressionComponentRole::ThenBranch,
+        ),
+        (
+            "if let value = 1 { 1 } else",
+            3,
+            ExpressionComponentRole::ElseBranch,
+        ),
     ];
-    for (source, missing_ordinal) in cases {
+    for (source, missing_ordinal, component_role) in cases {
         let expression = expression(source, SyntaxKind::IfLetExpression);
-        assert!(matches!(
-            expression
-                .children()
-                .iter()
-                .find(|child| child.ordinal() == missing_ordinal),
-            Some(AttachedExpressionChild::Missing { .. })
-        ));
+        let missing = expression
+            .children()
+            .iter()
+            .find(|child| child.ordinal() == missing_ordinal)
+            .expect("required IfLet slot");
+        assert!(matches!(missing, AttachedExpressionChild::Missing { .. }));
+        assert_eq!(missing.component_role(), component_role);
     }
 
     let omitted = expression("if let value = 1 { value }", SyntaxKind::IfLetExpression);

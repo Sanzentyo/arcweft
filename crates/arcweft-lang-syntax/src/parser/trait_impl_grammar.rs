@@ -2,7 +2,7 @@
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::{
     FixedParameterGrammar, emit_fixed_parameters, emit_generic_parameters,
     emit_missing_parameter_group, emit_name, emit_outer_prefixes, emit_visibility,
@@ -29,7 +29,7 @@ pub(super) fn emit_declaration(
     budget: &mut GrammarBudget,
 ) {
     debug_assert!(matches!(kind, SyntaxKind::TraitItem | SyntaxKind::ImplItem));
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     parser.start(kind, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -50,7 +50,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_trait_header(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_trait_header(parser: &mut DocumentParser<'_, '_>) {
     if parser.at("trait") {
         parser.bump();
     }
@@ -66,14 +66,19 @@ fn emit_trait_header(parser: &mut ShadowDocumentParser<'_, '_>) {
     }
 
     parser.bump();
-    let end = find_top_level_boundary(parser, parser.cursor(), &["where", "{"]);
+    let end = find_top_level_boundary(
+        parser,
+        parser.cursor(),
+        token_count(parser),
+        &["where", "{"],
+    );
     let mut ordinal = 0_u32;
     while parser.cursor() < end {
         parser.bump_trivia();
         if parser.cursor() >= end {
             break;
         }
-        let bound_end = find_top_level_boundary(parser, parser.cursor(), &["+"]).min(end);
+        let bound_end = find_top_level_boundary(parser, parser.cursor(), end, &["+"]);
         emit_type(parser, bound_end, SyntaxRole::Element(ordinal));
         bump_until(parser, bound_end);
         ordinal = ordinal.saturating_add(1);
@@ -85,7 +90,7 @@ fn emit_trait_header(parser: &mut ShadowDocumentParser<'_, '_>) {
     }
 }
 
-fn emit_impl_header(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_impl_header(parser: &mut DocumentParser<'_, '_>) {
     if parser.at("impl") {
         parser.bump();
     }
@@ -95,8 +100,13 @@ fn emit_impl_header(parser: &mut ShadowDocumentParser<'_, '_>) {
         parser.bump_trivia();
     }
 
-    let end = find_top_level_boundary(parser, parser.cursor(), &["where", "{"]);
-    let for_token = find_top_level_boundary(parser, parser.cursor(), &["for"]);
+    let end = find_top_level_boundary(
+        parser,
+        parser.cursor(),
+        token_count(parser),
+        &["where", "{"],
+    );
+    let for_token = find_top_level_boundary(parser, parser.cursor(), end, &["for"]);
     if for_token < end {
         emit_type(parser, for_token, SyntaxRole::Target);
         bump_until(parser, for_token);
@@ -109,7 +119,7 @@ fn emit_impl_header(parser: &mut ShadowDocumentParser<'_, '_>) {
     bump_until(parser, end);
 }
 
-fn emit_member_body(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind) {
+fn emit_member_body(parser: &mut DocumentParser<'_, '_>, item_kind: SyntaxKind) {
     if !parser.at("{") {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -153,7 +163,7 @@ fn emit_member_body(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: Syntax
     parser.finish();
 }
 
-fn emit_members(parser: &mut ShadowDocumentParser<'_, '_>, close: usize, item_kind: SyntaxKind) {
+fn emit_members(parser: &mut DocumentParser<'_, '_>, close: usize, item_kind: SyntaxKind) {
     let mut ordinal = 0_u32;
     while parser.cursor() < close {
         bump_member_separators(parser);
@@ -173,7 +183,7 @@ fn emit_members(parser: &mut ShadowDocumentParser<'_, '_>, close: usize, item_ki
     }
 }
 
-fn bump_member_separators(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn bump_member_separators(parser: &mut DocumentParser<'_, '_>) {
     while parser.current_kind().is_some_and(|kind| {
         matches!(
             kind,
@@ -185,7 +195,7 @@ fn bump_member_separators(parser: &mut ShadowDocumentParser<'_, '_>) {
 }
 
 fn emit_associated_type(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     ordinal: u32,
     target_required: bool,
@@ -226,7 +236,7 @@ fn emit_associated_type(
     parser.finish();
 }
 
-fn emit_missing_associated_type_target(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_associated_type_target(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.push(SyntaxEvent::MissingToken {
         expected: expected(SyntaxKind::PunctuationToken),
@@ -240,7 +250,7 @@ fn emit_missing_associated_type_target(parser: &mut ShadowDocumentParser<'_, '_>
     )));
 }
 
-fn emit_function_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn emit_function_member(parser: &mut DocumentParser<'_, '_>, end: usize, ordinal: u32) {
     let content_end = member_content_end(parser, parser.cursor(), end);
     parser.start(SyntaxKind::FunctionItem, SyntaxRole::Element(ordinal));
     emit_outer_prefixes(parser);
@@ -302,11 +312,7 @@ fn emit_function_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, o
     parser.finish();
 }
 
-fn emit_member_tail_error(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    owner: &'static str,
-) {
+fn emit_member_tail_error(parser: &mut DocumentParser<'_, '_>, end: usize, owner: &'static str) {
     let start = parser.current_offset();
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
     bump_until(parser, end);
@@ -318,7 +324,7 @@ fn emit_member_tail_error(
     )));
 }
 
-fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_trailing_recovery(parser: &mut DocumentParser<'_, '_>) {
     parser.bump_trivia();
     if parser.is_at_end() {
         return;
@@ -334,7 +340,7 @@ fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
     )));
 }
 
-fn emit_member_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_member_return_type(parser: &mut DocumentParser<'_, '_>, end: usize) {
     parser.start(SyntaxKind::ReturnType, SyntaxRole::ReturnType);
     emit_required_punctuation(
         parser,
@@ -345,17 +351,17 @@ fn emit_member_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usize
         "authored return type requires `->`",
     );
     parser.bump_trivia();
-    let type_end = find_top_level_boundary(parser, parser.cursor(), &["where", "{"]).min(end);
+    let type_end = find_top_level_boundary(parser, parser.cursor(), end, &["where", "{"]);
     emit_type(parser, type_end, SyntaxRole::Type);
     bump_until(parser, type_end);
     parser.finish();
 }
 
-fn emit_member_where_clause(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_member_where_clause(parser: &mut DocumentParser<'_, '_>, end: usize) {
     parser.start(SyntaxKind::WhereClause, SyntaxRole::WhereClause);
     parser.bump();
     parser.bump_trivia();
-    let clause_end = find_top_level_boundary(parser, parser.cursor(), &["{"]).min(end);
+    let clause_end = find_top_level_boundary(parser, parser.cursor(), end, &["{"]);
     parser.start(SyntaxKind::WherePredicateList, SyntaxRole::Element(0));
     let mut ordinal = 0_u16;
     while parser.cursor() < clause_end {
@@ -363,8 +369,7 @@ fn emit_member_where_clause(parser: &mut ShadowDocumentParser<'_, '_>, end: usiz
         if parser.cursor() >= clause_end {
             break;
         }
-        let predicate_end =
-            find_top_level_boundary(parser, parser.cursor(), &[","]).min(clause_end);
+        let predicate_end = find_top_level_boundary(parser, parser.cursor(), clause_end, &[","]);
         parser.start(
             SyntaxKind::WherePredicate,
             SyntaxRole::WherePredicate(ordinal),
@@ -381,8 +386,8 @@ fn emit_member_where_clause(parser: &mut ShadowDocumentParser<'_, '_>, end: usiz
     parser.finish();
 }
 
-fn emit_bound_predicate(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
-    let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]).min(end);
+fn emit_bound_predicate(parser: &mut DocumentParser<'_, '_>, end: usize) {
+    let colon = find_top_level_boundary(parser, parser.cursor(), end, &[":"]);
     if colon == end {
         emit_type(parser, end, SyntaxRole::Type);
         return;
@@ -393,7 +398,7 @@ fn emit_bound_predicate(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     let mut ordinal = 0_u32;
     while parser.cursor() < end {
         parser.bump_trivia();
-        let bound_end = find_top_level_boundary(parser, parser.cursor(), &["+"]).min(end);
+        let bound_end = find_top_level_boundary(parser, parser.cursor(), end, &["+"]);
         emit_type(parser, bound_end, SyntaxRole::Element(ordinal));
         bump_until(parser, bound_end);
         ordinal = ordinal.saturating_add(1);
@@ -405,7 +410,7 @@ fn emit_bound_predicate(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     }
 }
 
-fn emit_error_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn emit_error_member(parser: &mut DocumentParser<'_, '_>, end: usize, ordinal: u32) {
     let start = parser.current_offset();
     parser.start(SyntaxKind::ErrorItem, SyntaxRole::Element(ordinal));
     bump_until(parser, end);
@@ -418,7 +423,7 @@ fn emit_error_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordi
 }
 
 fn member_head<'a>(
-    parser: &'a ShadowDocumentParser<'_, '_>,
+    parser: &'a DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<&'a str> {
@@ -426,11 +431,7 @@ fn member_head<'a>(
     token_text(parser, index)
 }
 
-fn member_head_index(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> Option<usize> {
+fn member_head_index(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Option<usize> {
     let index = member_payload_index(parser, start, end)?;
     token_text(parser, index)
         .is_some_and(|text| matches!(text, "type" | "fn"))
@@ -438,7 +439,7 @@ fn member_head_index(
 }
 
 fn member_payload_index(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<usize> {
@@ -461,7 +462,7 @@ fn member_payload_index(
     Some(index)
 }
 
-fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
+fn member_boundary(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let mut depth = 0_usize;
     let payload = member_payload_index(parser, start, end);
     for index in start..end {
@@ -482,9 +483,8 @@ fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usi
             return index;
         }
         match text {
-            "(" | "[" | "<" => depth += 1,
+            "(" | "[" | "<" | "{" => depth += 1,
             ")" | "]" | ">" => depth = depth.saturating_sub(1),
-            "{" => depth += 1,
             "}" if depth != 0 => depth -= 1,
             _ => {}
         }
@@ -492,7 +492,7 @@ fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usi
     end
 }
 
-fn member_content_end(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
+fn member_content_end(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let end = trimmed_end(parser, start, end);
     if end > start && token_text(parser, end - 1) == Some(";") {
         end - 1
@@ -501,11 +501,7 @@ fn member_content_end(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: 
     }
 }
 
-fn next_non_trivia(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> Option<usize> {
+fn next_non_trivia(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Option<usize> {
     (start..end).find(|index| {
         parser.token_at(*index).is_some_and(|token| {
             !matches!(
@@ -520,7 +516,7 @@ fn next_non_trivia(
 }
 
 fn skip_balanced_group(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
     open: &str,

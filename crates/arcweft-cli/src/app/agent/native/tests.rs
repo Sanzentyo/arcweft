@@ -30,33 +30,10 @@ use arcweft_debug_model::{
     script::DebugScriptRunOutcome,
     test_result::DebugTestResult,
 };
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use serde::Serialize;
 
 fn test_agent_resource_uri(value: impl Into<String>) -> AgentResourceUri {
     AgentResourceUri::new(value).expect("test resource URI is nonempty")
-}
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("cli-agent-native-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.cli-agent-native-test").expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
 }
 
 #[test]
@@ -231,16 +208,31 @@ fn test_line_display_frame() -> LineDisplayFrame {
     LineDisplayFrame {
         line: arcweft_core::plan::RuntimeLineId::from_runtime_line_value("line.test")
             .expect("runtime line id"),
-        callee: "test".to_owned(),
-        speaker_label: None,
+        character: arcweft_text_model::DialoguePresentationCharacter {
+            id: arcweft_character::id::CharacterId::try_new("character.test")
+                .expect("character id"),
+            display_name: "Test".to_owned(),
+        },
+        text_key: arcweft_id::TextKey::try_new("text.test").expect("text key"),
+        effective: arcweft_text_model::CharacterDialoguePresentationConfig {
+            view: arcweft_view::ViewId::try_new("view.dialogue.test").expect("View id"),
+            voice: None,
+            look: None,
+            stage: None,
+            portrait: None,
+            focus: None,
+            cleanup: None,
+            source_locale: None,
+            hooks: Vec::new(),
+            inline_failure: arcweft_dialogue::InlineFailurePolicy::FailLine,
+            custom: std::collections::BTreeMap::new(),
+            config_digest: arcweft_core::entry::RuntimeValueDigest::ZERO,
+        },
         text: String::new(),
         base_styles: Vec::new(),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        inline_failure: InlineFailurePolicy::FailLine,
         style_contributions: Vec::new(),
         nodes: Vec::new(),
-        display_map: arcweft_render_text::RichTextDisplayMap::default(),
+        display_map: arcweft_text_model::RichTextDisplayMap::default(),
         host_events: Vec::new(),
         inline_failures: Vec::new(),
         unresolved: Vec::new(),

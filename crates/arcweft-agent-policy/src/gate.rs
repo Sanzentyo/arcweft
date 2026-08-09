@@ -1,5 +1,5 @@
 use crate::AgentPublicationPolicy;
-use crate::decode::decode_agent_image;
+use crate::decode::{decode_agent_binary_body, decode_agent_image};
 use crate::published::{AgentPolicySummary, PublishedAgentResource};
 use arcweft_agent_protocol::resource::{
     AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource, AgentResourceBody,
@@ -458,7 +458,7 @@ fn resource_body_digest(body: &AgentResourceBody) -> ContentDigest {
     match body {
         AgentResourceBody::Json(value) => ContentDigest::from_bytes(value.to_string().as_bytes()),
         AgentResourceBody::Text(text) => ContentDigest::from_bytes(text.as_bytes()),
-        AgentResourceBody::BytesBase64(body) => body.decode().map_or_else(
+        AgentResourceBody::BytesBase64(body) => decode_agent_binary_body(body).map_or_else(
             |_| ContentDigest::from_bytes(body.data.as_bytes()),
             |bytes| ContentDigest::from_bytes(&bytes),
         ),

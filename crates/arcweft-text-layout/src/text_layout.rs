@@ -2,9 +2,8 @@
 
 use std::{fmt, ops::Range};
 
-use arcweft_render_text::{
-    ResolvedTextStyle, RichTextPresentation, RichTextRange, RichTextWritingMode,
-};
+use arcweft_render_text::ResolvedTextStyle;
+use arcweft_text_model::{RichTextPresentation, RichTextRange, RichTextWritingMode};
 use serde::{Deserialize, Serialize};
 
 use crate::{

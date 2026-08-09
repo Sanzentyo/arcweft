@@ -20,11 +20,13 @@ use arcweft_presentation::fx::{
     ResolvedFxPlan, ResolvedFxPostProcess,
 };
 use arcweft_render_text::{
-    LineDisplayStage, Milli, ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun,
-    ResolvedTextStyle, RichTextAngle, RichTextPresentation, RichTextRange, TextColor,
-    TextFontFamily, TextSlant, TextStyleCascade, TextWeight,
+    ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextStyle, TextColor,
+    TextFontFamily, TextSlant, TextStyleCascade, TextWeight, resolve_stage_document,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutSize, TextLayoutRequest, layout_document};
+use arcweft_text_model::{
+    LineDisplayStage, Milli, RichTextAngle, RichTextPresentation, RichTextRange,
+};
 
 struct DialogueFxEvaluator<'a> {
     resolver: &'a dyn FxApplicationResolver,
@@ -466,7 +468,7 @@ pub(super) fn prepare_stage(
         request.visual_time_millis,
     );
     let cascade = TextStyleCascade::new(request.default_style.clone());
-    let document = stage.frame().resolve_stage_document(stage, &cascade)?;
+    let document = resolve_stage_document(stage.frame(), stage, &cascade)?;
     let document = document.project(RichTextRange::new(
         reveal.display_start,
         document.text().len(),

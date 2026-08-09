@@ -419,6 +419,10 @@ fn exercise_lowered_total_slot_case(third_batch: &[&str], prefill: usize, exact:
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "this helper owns one production-sized exact/one-over slot-limit transaction and its rollback evidence"
+)]
 fn exercise_production_total_slot_case(document_id: &str, third_terminal: &str, exact: bool) {
     let expression_maximum = HirLimit::Expressions.maximum();
     let slot_maximum = HirLimit::TotalSlotsPerModule.maximum();
@@ -577,7 +581,8 @@ fn shallow_select_fixture_accounting_matches_attached_and_hir_counts() {
 }
 
 #[test]
-fn e13_total_slots_lowered_limit_uses_three_real_batches_and_retirement() {
+fn total_slot_limit_is_inclusive_and_atomic() {
+    assert_eq!(HirLimit::TotalSlotsPerModule.maximum(), 786_432);
     // One reused module scope plus 4 + 4 + 3/4 fresh expression slots gives
     // prefill 12/13. The direct Path+Select pair then reaches 14 or observes
     // 15 through the ordinary slot allocator; no counter is seeded.

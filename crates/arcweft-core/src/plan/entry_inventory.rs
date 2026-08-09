@@ -201,9 +201,9 @@ impl FlowRuntimeId {
     /// this code identity while retaining distinct entry bindings and policy.
     #[must_use]
     pub fn for_agent_controller_callable(callable: &RuntimeCallableId) -> Self {
-        Self {
-            path: RuntimeIdPath::for_agent_controller_callable(callable.as_str()),
-        }
+        Self::from_runtime_path(RuntimeIdPath::for_agent_controller_callable(
+            callable.as_str(),
+        ))
     }
 }
 

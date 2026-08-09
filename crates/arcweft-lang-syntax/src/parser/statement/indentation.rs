@@ -4,7 +4,7 @@
 //! reparses source strings; grammar-family modules remain responsible for
 //! deciding which typed child kind each logical line owns.
 
-use super::super::cursor::{ShadowDocumentParser, is_trivia_kind};
+use super::super::cursor::{DocumentParser, is_trivia_kind};
 use super::super::expression::is_expression_continuation_token;
 use super::super::shadow_recovery::token_text;
 use crate::grammar::kinds::SyntaxKind;
@@ -44,11 +44,7 @@ impl SuiteLineIndentCursor {
         }
     }
 
-    pub(super) fn observe(
-        &mut self,
-        parser: &ShadowDocumentParser<'_, '_>,
-        item_start: usize,
-    ) -> usize {
+    pub(super) fn observe(&mut self, parser: &DocumentParser<'_, '_>, item_start: usize) -> usize {
         if item_start != self.previous_item_start
             && has_newline_between(parser, self.previous_item_start, item_start)
         {
@@ -96,7 +92,7 @@ struct ContentLine {
 /// Finds the first top-level braced or indentation body introducer on the
 /// current physical head line.
 pub(super) fn head_body_introducer(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<usize> {
@@ -128,7 +124,7 @@ pub(super) fn head_body_introducer(
 /// bounded head. Earlier braces remain available to the shared expression or
 /// pattern parser as record/block payloads.
 pub(super) fn trailing_owner_body_token(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
     allow_colon: bool,
@@ -139,7 +135,7 @@ pub(super) fn trailing_owner_body_token(
 /// Finds the final owner-level braced body and its exclusive close boundary
 /// with one forward token scan. An unclosed final body extends to `end`.
 pub(super) fn trailing_braced_body_interval(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<(usize, usize)> {
@@ -147,7 +143,7 @@ pub(super) fn trailing_braced_body_interval(
 }
 
 fn scan_owner_body_suffix(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
     allow_colon: bool,
@@ -212,7 +208,7 @@ fn scan_owner_body_suffix(
 }
 
 pub(super) fn physical_line_end(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     limit: usize,
 ) -> usize {
@@ -226,7 +222,7 @@ pub(super) fn physical_line_end(
 }
 
 pub(super) fn has_newline_between(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> bool {
@@ -242,7 +238,7 @@ pub(super) fn has_newline_between(
 /// Suite intervals end immediately after the terminating newline of their
 /// final accepted item.  Treating that boundary as "same line" would let the
 /// following dedented statement leak back into the suite owner.
-pub(super) fn starts_physical_line(parser: &ShadowDocumentParser<'_, '_>, index: usize) -> bool {
+pub(super) fn starts_physical_line(parser: &DocumentParser<'_, '_>, index: usize) -> bool {
     index == 0
         || parser
             .token_at(index.saturating_sub(1))
@@ -252,7 +248,7 @@ pub(super) fn starts_physical_line(parser: &ShadowDocumentParser<'_, '_>, index:
 /// Consumes trivia only after the owning suite has committed that exact token
 /// interval. Pending trivia before a dedented sibling remains with the outer
 /// owner.
-pub(super) fn bump_trivia_before(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+pub(super) fn bump_trivia_before(parser: &mut DocumentParser<'_, '_>, end: usize) {
     while parser.cursor() < end && parser.current_kind().is_some_and(is_trivia_kind) {
         parser.bump();
     }
@@ -260,7 +256,7 @@ pub(super) fn bump_trivia_before(parser: &mut ShadowDocumentParser<'_, '_>, end:
 
 /// Measures one `:`-introduced suite through the first owner-level dedent.
 pub(super) fn indented_suite_interval(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     owner_start: usize,
     colon: usize,
     limit: usize,
@@ -358,7 +354,7 @@ pub(super) fn indented_suite_interval(
 
 /// Finds the exclusive token boundary of one source-ordered suite item.
 pub(super) fn indented_item_end(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     suite_end: usize,
     suite_indent: usize,
@@ -385,7 +381,9 @@ pub(super) fn indented_item_end(
             );
             let continues_current = next.indent == suite_indent
                 && is_continuation_head(
-                    parser.token_at(next.content).map(|token| token.kind()),
+                    parser
+                        .token_at(next.content)
+                        .map(super::super::lexer::LexToken::kind),
                     next_text,
                 );
             if !closes_current
@@ -394,7 +392,9 @@ pub(super) fn indented_item_end(
                 && (delimiters.is_empty()
                     || next.indent < suite_indent
                     || is_sibling_head(
-                        parser.token_at(next.content).map(|token| token.kind()),
+                        parser
+                            .token_at(next.content)
+                            .map(super::super::lexer::LexToken::kind),
                         next_text,
                     ))
             {
@@ -432,7 +432,7 @@ pub(super) fn indented_item_end(
 }
 
 fn next_content_line(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     limit: usize,
 ) -> Option<ContentLine> {
@@ -459,8 +459,9 @@ fn next_content_line(
                 line_start_offset = token.range().end();
                 first_content = None;
             }
-            SyntaxKind::WhitespaceToken => {}
-            SyntaxKind::CommentToken | SyntaxKind::DocCommentToken => {}
+            SyntaxKind::WhitespaceToken
+            | SyntaxKind::CommentToken
+            | SyntaxKind::DocCommentToken => {}
             _ => {
                 first_content.get_or_insert(index);
             }
@@ -482,7 +483,7 @@ fn next_content_line(
     })
 }
 
-pub(super) fn token_indent(parser: &ShadowDocumentParser<'_, '_>, index: usize) -> usize {
+pub(super) fn token_indent(parser: &DocumentParser<'_, '_>, index: usize) -> usize {
     let offset = parser
         .token_at(index)
         .expect("indentation anchor token exists")
@@ -502,10 +503,7 @@ pub(super) fn token_indent(parser: &ShadowDocumentParser<'_, '_>, index: usize) 
 /// Returns the first non-trivia token on the physical line containing
 /// `index`. Indentation-owned expression suites use the line owner rather
 /// than the inline expression token as their dedent baseline.
-pub(super) fn physical_line_owner_start(
-    parser: &ShadowDocumentParser<'_, '_>,
-    index: usize,
-) -> usize {
+pub(super) fn physical_line_owner_start(parser: &DocumentParser<'_, '_>, index: usize) -> usize {
     let line_start = (0..index)
         .rev()
         .find(|candidate| {
@@ -523,7 +521,7 @@ pub(super) fn physical_line_owner_start(
         .unwrap_or(index)
 }
 
-fn token_boundary_offset(parser: &ShadowDocumentParser<'_, '_>, index: usize) -> usize {
+fn token_boundary_offset(parser: &DocumentParser<'_, '_>, index: usize) -> usize {
     parser
         .token_at(index)
         .map_or_else(|| parser.current_offset(), |token| token.range().start())

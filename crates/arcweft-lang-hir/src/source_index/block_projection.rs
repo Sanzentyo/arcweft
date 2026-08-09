@@ -13,10 +13,10 @@ use arcweft_lang_syntax::attachment::node::{
     UnsafeLifetimeStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
-    AstNode, AttachedAssertionMode, AttachedExpressionNode, BlockTailNode, IfStatementElseNode,
-    IfStatementHeadNode, LetInitializerNode, MatchStatementArmBodyNode, MatchStatementBodyNode,
-    MatchStatementExpressionNode, StatementNode, SyntaxNodeId, UnsafeAuditBodyNode,
-    UnsafeAuditIdNode, UnsafeAuditReasonNode,
+    AstNode, AttachedAssertionMode, AttachedExpressionNode, AttachedRequiredNestedThreadFlowBody,
+    BlockTailNode, IfStatementElseNode, IfStatementHeadNode, LetInitializerNode,
+    MatchStatementArmBodyNode, MatchStatementBodyNode, MatchStatementExpressionNode, StatementNode,
+    SyntaxNodeId, UnsafeAuditBodyNode, UnsafeAuditIdNode, UnsafeAuditReasonNode,
 };
 use arcweft_lang_syntax::expressions::ExpressionProjection;
 use arcweft_lang_syntax::grammar::SyntaxKind;
@@ -24,7 +24,7 @@ use arcweft_lang_syntax::incremental::ParsedSource;
 
 use super::control_projection::canonical_pattern_locals;
 use super::pattern_projection::{BindingLocalValidation, binding_locals_match};
-use super::{HirExprSourceRole, HirSourceSite};
+use super::{HirSourceSite, HirStmtRecoveryOperandSlot};
 use crate::arena::ArenaSnapshot;
 use crate::expr::{
     HirBlockExpr, HirComputationBlockExpr, HirComputationBlockKind, HirExpr, HirExprKind,
@@ -37,6 +37,7 @@ use crate::identity::{
 };
 use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue, HirName};
 use crate::pattern::HirPattern;
+use crate::proof_return::HirProofReturnSemanticClass;
 use crate::scope::{
     HirLocal, HirLocalKind, HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner,
 };
@@ -193,12 +194,16 @@ pub(super) fn predicate_block_matches(
 
 /// Re-derives an item-owned Proof block. Unit-returning Proofs own a clean
 /// scope-keyed Unit tail; all other omitted tails own typed recovery.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the Proof block validator compares one typed owner against its exact body, return class, source, and arena context"
+)]
 pub(super) fn proof_block_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
     arenas: &BlockValidationArenas<'_>,
     retained: ItemValueBlockRetained<'_>,
-    return_is_unit: bool,
+    return_semantic_class: HirProofReturnSemanticClass,
     body_id: SyntaxNodeId,
     body_source: arcweft_source::SourceSpan,
     attached: &AstNode<ProofBlockKind>,
@@ -214,7 +219,7 @@ pub(super) fn proof_block_matches(
             attached_statements: attached.statements().ok()?,
             attached_tail: attached.tail().ok()?,
             scope_kind: HirScopeKind::Proof,
-            omitted_tail: if return_is_unit {
+            omitted_tail: if return_semantic_class.admits_implicit_unit_tail() {
                 OmittedTailExpectation::ImplicitUnit
             } else {
                 OmittedTailExpectation::MissingRequired
@@ -654,6 +659,10 @@ struct ValueBlockGraph<'a> {
     initial_recovery: Option<HirRecoveryIssue>,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one value-block projection proves statement order, lexical generations, tail ownership, and recovery together"
+)]
 fn value_block_expression_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -804,6 +813,11 @@ impl StatementEvidence {
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "one exhaustive statement projection dispatches the closed typed family with shared lexical-generation state"
+)]
 pub(super) fn statement_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -885,14 +899,14 @@ pub(super) fn statement_matches(
                     .len()
                     != expected_local_ids.len()
                 || !binding_locals_match(&attached_pattern, &expected_locals, &mut local_validation)
-                || locals.iter().copied().any(|local| {
+                || expected_locals.iter().any(|expected| {
                     !arenas
                         .locals
-                        .resolve_prepared(slots, local)
+                        .resolve_prepared(slots, expected.local)
                         .is_ok_and(|payload| {
                             payload.scope() == scope
                                 && payload.kind() == HirLocalKind::LetBinding
-                                && payload.pattern() == Some(*pattern)
+                                && payload.pattern() == Some(expected.pattern)
                         })
                 })
             {
@@ -1051,9 +1065,7 @@ pub(super) fn statement_matches(
                     .resolve_prepared(slots, condition)
                     .is_ok_and(HirExpr::is_poisoned);
             }
-            let state = if context.rejects_assertions() {
-                HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::PredicateAssertionNotAllowed)
-            } else if matches!(expected_mode, HirAssertionMode::Recovered) {
+            let state = if matches!(expected_mode, HirAssertionMode::Recovered) {
                 HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::InvalidAssertionMode)
             } else if conditions.is_empty() {
                 HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::MissingAssertionCondition)
@@ -1111,6 +1123,10 @@ pub(super) fn statement_matches(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one Match projection proves scrutinee, per-arm scopes, bindings, bodies, and recovery together"
+)]
 fn match_statement_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -1147,9 +1163,9 @@ fn match_statement_matches(
                 owner,
                 statement.scrutinee(),
                 outer_scope,
-                missing.range().start(),
-                0,
-                HirExprSourceRole::Scrutinee,
+                HirStmtRecoveryOperandSlot::MatchScrutinee {
+                    insertion: missing.range().start(),
+                },
             ) {
                 return None;
             }
@@ -1185,16 +1201,23 @@ fn match_statement_matches(
     for (arm_ordinal, (attached_arm, arm)) in attached_arms.iter().zip(statement.arms()).enumerate()
     {
         let arm_ordinal = u32::try_from(arm_ordinal).ok()?;
-        if !source_owner_matches(
-            slots,
-            arm.scope(),
-            attached_arm.id(),
-            &HirSourceSite::Span(attached_arm.source_span()),
-        ) {
-            return None;
-        }
+        let attached_arm_body = attached_arm.body().ok()?;
+        let thread_block_arm = matches!(
+            (&context, &attached_arm_body),
+            (
+                HirStatementContext::Thread,
+                MatchStatementArmBodyNode::Block(_)
+            )
+        );
         let arm_scope = arenas.scopes.resolve_prepared(slots, arm.scope()).ok()?;
-        if arm_scope.kind() != HirScopeKind::MatchArm
+        if (!thread_block_arm
+            && (!source_owner_matches(
+                slots,
+                arm.scope(),
+                attached_arm.id(),
+                &HirSourceSite::Span(attached_arm.source_span()),
+            ) || arm_scope.kind() != HirScopeKind::MatchArm))
+            || (thread_block_arm && arm_scope.kind() != HirScopeKind::Block)
             || arm_scope.parent() != Some(outer_scope)
             || arm_scope.owner() != &HirScopeOwner::Stmt(owner)
             || !parent_scope.children().contains(&arm.scope())
@@ -1288,7 +1311,6 @@ fn match_statement_matches(
                 }
             }
             (Some(MatchStatementExpressionNode::Missing(missing)), Some(guard)) => {
-                let ordinal = arm_ordinal.checked_add(1)?;
                 if !missing_statement_expression_matches(
                     parsed,
                     slots,
@@ -1296,9 +1318,10 @@ fn match_statement_matches(
                     owner,
                     guard,
                     arm.scope(),
-                    missing.range().start(),
-                    ordinal,
-                    HirExprSourceRole::Guard,
+                    HirStmtRecoveryOperandSlot::MatchArmGuard {
+                        insertion: missing.range().start(),
+                        arm: arm_ordinal,
+                    },
                 ) {
                     return None;
                 }
@@ -1309,7 +1332,7 @@ fn match_statement_matches(
             _ => return None,
         }
 
-        match (attached_arm.body().ok()?, arm.body()) {
+        match (attached_arm_body, arm.body()) {
             (
                 MatchStatementArmBodyNode::Expression(attached_body),
                 HirStmtMatchArmBody::Expression(body),
@@ -1354,6 +1377,28 @@ fn match_statement_matches(
                     role: HirStmtChildRole::MatchArmBody { arm: arm_ordinal },
                 });
             }
+            (MatchStatementArmBodyNode::Block(attached_body), HirStmtMatchArmBody::Body(body))
+                if context == HirStatementContext::Thread =>
+            {
+                let attached_body = AttachedRequiredNestedThreadFlowBody::Present(
+                    attached_body.thread_flow_body().ok()?,
+                );
+                if thread_control::nested_match_arm_body_is_poisoned(
+                    parsed,
+                    slots,
+                    arenas,
+                    owner,
+                    outer_scope,
+                    body,
+                    &attached_body,
+                    arm.locals(),
+                    &mut arm_generations,
+                )? {
+                    recovery.get_or_insert(HirStmtRecoveryIssue::RecoveredChild {
+                        role: HirStmtChildRole::MatchArmBody { arm: arm_ordinal },
+                    });
+                }
+            }
             (MatchStatementArmBodyNode::Block(attached_body), HirStmtMatchArmBody::Body(body)) => {
                 let statements = body.ordinary_statements()?;
                 let evidence = statement_block_contents_match(
@@ -1391,6 +1436,10 @@ fn match_statement_matches(
 }
 
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one UnsafeLifetime projection proves audit insertion, body scope, statements, and recovery together"
+)]
 fn unsafe_lifetime_statement_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -1448,9 +1497,9 @@ fn unsafe_lifetime_statement_matches(
                 owner,
                 reason,
                 outer_scope,
-                missing.range().start(),
-                0,
-                HirExprSourceRole::Operand,
+                HirStmtRecoveryOperandSlot::UnsafeAuditReason {
+                    insertion: missing.range().start(),
+                },
             ) {
                 return None;
             }
@@ -1508,6 +1557,11 @@ fn unsafe_lifetime_statement_matches(
     })
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "one IfLet projection proves asymmetric bindings, branch scopes, bodies, source roles, and recovery"
+)]
 fn if_let_statement_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -1835,6 +1889,10 @@ struct StatementBlockEvidence {
     first_poisoned: Option<u32>,
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the block validator carries one exact typed owner, scope pair, body, prefix-local set, context, and generation ledger"
+)]
 fn statement_block_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -1881,6 +1939,10 @@ fn statement_block_matches(
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the block-content validator compares one attached body with its exact typed scope, locals, context, and generation ledger"
+)]
 fn statement_block_contents_match(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -1934,6 +1996,10 @@ fn statement_block_contents_match(
     })
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the Let initializer validator compares one typed owner with its exact statement, scope, attachment, and insertion site"
+)]
 fn let_initializer_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -1957,9 +2023,9 @@ fn let_initializer_matches(
             statement,
             owner,
             scope,
-            missing.range().start(),
-            0,
-            HirExprSourceRole::Operand,
+            HirStmtRecoveryOperandSlot::LetInitializer {
+                insertion: missing.range().start(),
+            },
         ),
         None => missing_statement_expression_matches(
             parsed,
@@ -1968,9 +2034,9 @@ fn let_initializer_matches(
             statement,
             owner,
             scope,
-            missing_offset,
-            0,
-            HirExprSourceRole::Operand,
+            HirStmtRecoveryOperandSlot::LetInitializer {
+                insertion: missing_offset,
+            },
         ),
     }
 }
@@ -1982,10 +2048,11 @@ pub(super) fn missing_statement_expression_matches(
     statement: StmtId,
     owner: ExprId,
     scope: ScopeId,
-    missing_offset: usize,
-    ordinal: u32,
-    role: HirExprSourceRole,
+    slot: HirStmtRecoveryOperandSlot,
 ) -> bool {
+    let Some(ordinal) = slot.ordinal() else {
+        return false;
+    };
     let Ok(key) = SyntheticKey::try_new(
         SyntheticOwner::Stmt(statement),
         SyntheticRole::RecoveryOperand,
@@ -2002,16 +2069,23 @@ pub(super) fn missing_statement_expression_matches(
     matches!(metadata.origin(), HirOrigin::Synthetic(actual) if *actual == key)
         && matches!(metadata.source_site(), HirSourceSite::Insertion(point)
                     if point.source_identity() == parsed.document().identity()
-                        && point.offset() == missing_offset)
+                        && point.offset() == slot.insertion())
         && payload.scope() == scope
         && matches!(
             payload.kind(),
             HirExprKind::Error(error)
                 if error.issue() == HirGenericExprIssue::TransactionalChildFailure
         )
-        && payload.state() == &HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand { role })
+        && payload.state()
+            == &HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand {
+                role: slot.source_role(),
+            })
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the synthetic-tail validator consumes one exact source span for identity comparison"
+)]
 pub(super) fn missing_scope_tail_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -2048,6 +2122,10 @@ pub(super) fn missing_scope_tail_matches(
         )
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the synthetic-tail validator consumes one exact source span for identity comparison"
+)]
 fn missing_expr_tail_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -2085,6 +2163,10 @@ fn missing_expr_tail_matches(
         )
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the synthetic-tail validator consumes one exact source span for identity comparison"
+)]
 pub(super) fn implicit_unit_tail_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -2117,6 +2199,10 @@ pub(super) fn implicit_unit_tail_matches(
         && matches!(payload.state(), HirPoisonState::Clean)
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    reason = "the synthetic-tail validator consumes one exact source span for identity comparison"
+)]
 fn implicit_scope_unit_tail_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,

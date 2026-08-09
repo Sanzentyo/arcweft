@@ -9,7 +9,7 @@ fn nominal_declaration_limits_are_inclusive_and_report_typed_one_over_counts() {
     let exact_source = nominal_alias_declarations(per_module);
     let (documents, project) = project_modules(&[("", &exact_source)]);
     ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-declarations-per-module-exact"),
     )
     .expect("the exact per-module nominal declaration limit is accepted");
@@ -17,7 +17,7 @@ fn nominal_declaration_limits_are_inclusive_and_report_typed_one_over_counts() {
     let one_over_source = nominal_alias_declarations(per_module + 1);
     let (documents, project) = project_modules(&[("", &one_over_source)]);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-declarations-per-module-one-over"),
     )
     .expect_err("one over the per-module nominal declaration limit is rejected");
@@ -49,7 +49,7 @@ fn nominal_declaration_limits_are_inclusive_and_report_typed_one_over_counts() {
         .collect::<Vec<_>>();
     let (documents, project) = project_modules(&exact_refs);
     ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-declarations-per-world-exact"),
     )
     .expect("the exact world nominal declaration limit is accepted");
@@ -62,7 +62,7 @@ fn nominal_declaration_limits_are_inclusive_and_report_typed_one_over_counts() {
         .collect::<Vec<_>>();
     let (documents, project) = project_modules(&one_over_refs);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-declarations-per-world-one-over"),
     )
     .expect_err("one over the world nominal declaration limit is rejected");
@@ -76,39 +76,13 @@ fn nominal_declaration_limits_are_inclusive_and_report_typed_one_over_counts() {
 
 #[test]
 fn nominal_shape_limits_are_inclusive_and_report_typed_one_over_counts() {
-    let members = usize::try_from(
-        super::super::ProjectSymbolLimits::PRODUCTION.nominal_members_per_declaration(),
-    )
-    .expect("member limit fits usize");
-    let exact_source = nominal_struct_fields(members);
-    let (documents, project) = project_modules(&[("", &exact_source)]);
-    ProjectSymbolTable::link(
-        &project,
-        &empty_declarations(&documents, "nominal-members-exact"),
-    )
-    .expect("the exact nominal member limit is accepted");
-
-    let one_over_source = nominal_struct_fields(members + 1);
-    let (documents, project) = project_modules(&[("", &one_over_source)]);
-    let report = ProjectSymbolTable::link(
-        &project,
-        &empty_declarations(&documents, "nominal-members-one-over"),
-    )
-    .expect_err("one over the nominal member limit is rejected");
-    assert_symbol_limit(
-        &report,
-        super::super::ProjectSymbolLimitKind::NominalMembersPerDeclaration,
-        u64::try_from(members + 1).expect("observed member count fits u64"),
-        super::super::ProjectSymbolLimits::PRODUCTION.nominal_members_per_declaration(),
-    );
-
     let parameters =
         usize::try_from(super::super::ProjectSymbolLimits::PRODUCTION.nominal_type_parameters())
             .expect("parameter limit fits usize");
     let exact_source = nominal_type_parameters(parameters);
     let (documents, project) = project_modules(&[("", &exact_source)]);
     ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-parameters-exact"),
     )
     .expect("the exact nominal type parameter limit is accepted");
@@ -116,7 +90,7 @@ fn nominal_shape_limits_are_inclusive_and_report_typed_one_over_counts() {
     let one_over_source = nominal_type_parameters(parameters + 1);
     let (documents, project) = project_modules(&[("", &one_over_source)]);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-parameters-one-over"),
     )
     .expect_err("one over the nominal type parameter limit is rejected");
@@ -132,7 +106,7 @@ fn nominal_shape_limits_are_inclusive_and_report_typed_one_over_counts() {
     let exact_source = nominal_type_node_fields(false);
     let (documents, project) = project_modules(&[("", &exact_source)]);
     ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-type-nodes-exact"),
     )
     .expect("the exact nominal declaration type-node limit is accepted");
@@ -140,7 +114,7 @@ fn nominal_shape_limits_are_inclusive_and_report_typed_one_over_counts() {
     let one_over_source = nominal_type_node_fields(true);
     let (documents, project) = project_modules(&[("", &one_over_source)]);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "nominal-type-nodes-one-over"),
     )
     .expect_err("one over the nominal declaration type-node limit is rejected");
@@ -163,7 +137,7 @@ fn limit_aliases_per_module_exact_and_one_over() {
         ("origin", "pub fn target() -> Unit { () }\n"),
     ]);
     ProjectSymbolTable::link(
-        &exact_project,
+        exact_project.view(),
         &empty_declarations(&documents, "alias-exact"),
     )
     .expect("exact per-module alias limit is accepted");
@@ -173,9 +147,11 @@ fn limit_aliases_per_module_exact_and_one_over() {
         ("", one_over_source.as_str()),
         ("origin", "pub fn target() -> Unit { () }\n"),
     ]);
-    let report =
-        ProjectSymbolTable::link(&project, &empty_declarations(&documents, "alias-one-over"))
-            .expect_err("one-over per-module alias limit is rejected");
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &empty_declarations(&documents, "alias-one-over"),
+    )
+    .expect_err("one-over per-module alias limit is rejected");
     assert_symbol_limit(
         &report,
         super::super::ProjectSymbolLimitKind::AliasesPerModule,
@@ -212,7 +188,7 @@ fn limit_aliases_world_exact_and_one_over() {
         .collect::<Vec<_>>();
     let (documents, project) = project_modules(&exact_refs);
     ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "world-alias-exact"),
     )
     .expect("exact world alias limit is accepted");
@@ -225,7 +201,7 @@ fn limit_aliases_world_exact_and_one_over() {
         .collect::<Vec<_>>();
     let (documents, project) = project_modules(&one_over_refs);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "world-alias-one-over"),
     )
     .expect_err("one-over world alias limit is rejected");

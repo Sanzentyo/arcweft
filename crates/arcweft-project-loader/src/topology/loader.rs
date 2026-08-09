@@ -21,20 +21,17 @@ use arcweft_character::{
 };
 use arcweft_lang_syntax::{
     ast::{
-        common::UseTreeKind,
         module_path::{CanonicalModulePath, ModulePath},
         symbol_path::ProjectSymbolPath,
     },
-    parser::{ParseOptions, parse_document_with_source},
+    incremental::{ParsedSource, SyntaxDatabase},
 };
 use arcweft_launch::{accepted::SourceBackedManifest, resolve::ResolvedLaunchProfile};
 use arcweft_manifest_model::{AdapterFamily, RawDigest};
 use arcweft_project::{
     content::ProjectBinaryResource, graph::ModuleDependency, sources::ProjectSourceFile,
 };
-use arcweft_source::{
-    SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSetRevision,
-};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
@@ -45,12 +42,24 @@ use std::{
 
 /// Loads one complete profile topology without directory enumeration or fallback publication.
 pub fn load_profile_topology(
+    syntax: &mut SyntaxDatabase,
     request: ProfileTopologyLoadRequest<'_>,
 ) -> Result<LoadedProfileTopology, ProfileTopologyLoadError> {
-    TopologyBuilder::new(request)?.load()
+    TopologyBuilder::new(syntax, None, request)?.load()
 }
 
-struct TopologyBuilder<'a> {
+/// Reloads one topology through the same syntax session and prior exact module leases.
+pub fn reload_profile_topology(
+    syntax: &mut SyntaxDatabase,
+    previous: &project::LoadedProject,
+    request: ProfileTopologyLoadRequest<'_>,
+) -> Result<LoadedProfileTopology, ProfileTopologyLoadError> {
+    TopologyBuilder::new(syntax, Some(previous), request)?.load()
+}
+
+struct TopologyBuilder<'a, 'syntax> {
+    syntax: &'syntax mut SyntaxDatabase,
+    previous: Option<&'a project::LoadedProject>,
     manifest_path: PathBuf,
     project_root: PathBuf,
     workspace_owner: ProfileTopologyOwnerId,
@@ -199,8 +208,12 @@ fn validate_dependency_seed_uniqueness(
     Ok(())
 }
 
-impl<'a> TopologyBuilder<'a> {
-    fn new(request: ProfileTopologyLoadRequest<'a>) -> Result<Self, ProfileTopologyLoadError> {
+impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
+    fn new(
+        syntax: &'syntax mut SyntaxDatabase,
+        previous: Option<&'a project::LoadedProject>,
+        request: ProfileTopologyLoadRequest<'a>,
+    ) -> Result<Self, ProfileTopologyLoadError> {
         if !matches!(
             request.workspace_owner,
             ProfileTopologyOwnerId::Workspace { .. }
@@ -226,6 +239,8 @@ impl<'a> TopologyBuilder<'a> {
             request.dependency_binary_resources,
         )?;
         Ok(Self {
+            syntax,
+            previous,
             manifest_path: paths.manifest_path,
             project_root: paths.project_root,
             workspace_owner: request.workspace_owner,
@@ -561,7 +576,7 @@ impl<'a> TopologyBuilder<'a> {
         self,
         manifest: Arc<SourceBackedManifest>,
         layout: ContainedProjectLayout,
-        modules: Vec<ProjectSourceFile>,
+        modules: Vec<(ProjectSourceFile, ParsedSource)>,
         selected_profile: ResolvedLaunchProfile,
         external_modules: Vec<LoadedExternalModuleMetadata>,
         adapter: AdapterManifest,
@@ -590,7 +605,7 @@ impl<'a> TopologyBuilder<'a> {
                 path: selected_source.clone(),
                 kind: root_kind,
             })?;
-        let loaded_project = project::LoadedProject::from_exact_documents(
+        let loaded_project = project::LoadedProject::from_bound_modules(
             self.manifest_path.clone(),
             self.project_root.clone(),
             Arc::clone(&manifest),
@@ -635,7 +650,7 @@ impl<'a> TopologyBuilder<'a> {
         package: &str,
         source_root: &Path,
         selected_source: &Path,
-    ) -> Result<Vec<ProjectSourceFile>, ProfileTopologyLoadError> {
+    ) -> Result<Vec<(ProjectSourceFile, ParsedSource)>, ProfileTopologyLoadError> {
         let root = CanonicalModulePath::crate_root();
         let root_resource = self.acquire_document(
             package,
@@ -653,6 +668,7 @@ impl<'a> TopologyBuilder<'a> {
         )]);
         let mut queue = BTreeSet::from([root]);
         let mut dependencies = BTreeMap::<CanonicalModulePath, Vec<ModuleDependency>>::new();
+        let mut parsed_sources = BTreeMap::<CanonicalModulePath, ParsedSource>::new();
 
         while let Some(module) = queue.pop_first() {
             let Some((path, document)) = module_resources.get(&module).cloned() else {
@@ -671,7 +687,7 @@ impl<'a> TopologyBuilder<'a> {
                     },
                 }
             })?;
-            let module_dependencies = self.load_module_dependencies(
+            let (parsed, module_dependencies) = self.load_module_dependencies(
                 package,
                 source_root,
                 &module,
@@ -681,16 +697,50 @@ impl<'a> TopologyBuilder<'a> {
                 &mut module_resources,
                 &mut queue,
             )?;
+            let exact_document = Arc::clone(parsed.document_lease());
+            let Some((_, retained_document)) = module_resources.get_mut(&module) else {
+                return Err(ProfileTopologyLoadError::UnownedResourcePath {
+                    path: path.clone(),
+                    kind: ProfileTopologyResourceKind::ArcweftModule {
+                        module: module.clone(),
+                    },
+                });
+            };
+            *retained_document = Arc::clone(&exact_document);
+            let Some(resource) = self.resources.get_mut(&resource_id) else {
+                return Err(ProfileTopologyLoadError::UnownedResourcePath {
+                    path: path.clone(),
+                    kind: ProfileTopologyResourceKind::ArcweftModule {
+                        module: module.clone(),
+                    },
+                });
+            };
+            resource.payload = LoadedProfileTopologyResourcePayload::Text(exact_document);
+            parsed_sources.insert(module.clone(), parsed);
             dependencies.insert(module, module_dependencies);
         }
 
-        Ok(module_resources
+        module_resources
             .into_iter()
-            .map(|(module, (path, document))| {
+            .map(|(module, (path, _))| {
                 let module_dependencies = dependencies.remove(&module).unwrap_or_default();
-                ProjectSourceFile::new(module, path, document, module_dependencies)
+                let parsed = parsed_sources.remove(&module).ok_or_else(|| {
+                    ProfileTopologyLoadError::UnownedResourcePath {
+                        path: path.clone(),
+                        kind: ProfileTopologyResourceKind::ArcweftModule {
+                            module: module.clone(),
+                        },
+                    }
+                })?;
+                let source = ProjectSourceFile::new(
+                    module,
+                    path,
+                    Arc::clone(parsed.document_lease()),
+                    module_dependencies,
+                );
+                Ok((source, parsed))
             })
-            .collect())
+            .collect()
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -704,18 +754,27 @@ impl<'a> TopologyBuilder<'a> {
         resource_id: &ProfileTopologyResourceId,
         module_resources: &mut BTreeMap<CanonicalModulePath, (PathBuf, Arc<SourceDocument>)>,
         queue: &mut BTreeSet<CanonicalModulePath>,
-    ) -> Result<Vec<ModuleDependency>, ProfileTopologyLoadError> {
+    ) -> Result<(ParsedSource, Vec<ModuleDependency>), ProfileTopologyLoadError> {
         self.budget.charge_work(1)?;
-        let parsed = parse_document_with_source(Arc::clone(document), ParseOptions::default());
-        if !parsed.errors().is_empty() {
+        let previous = self
+            .previous
+            .and_then(|loaded| loaded.module_parsed_source(module));
+        let parsed =
+            project::bind_module_source(self.syntax, module, path, Arc::clone(document), previous)
+                .map_err(|source| ProfileTopologyLoadError::ModuleDeclaration {
+                    id: resource_id.clone(),
+                    path: path.to_path_buf(),
+                    source: Box::new(source),
+                })?;
+        if !parsed.diagnostics().is_empty() {
             let maximum = usize::try_from(ProfileTopologyLimits::PRODUCTION.diagnostics())
                 .map_err(|_| ProfileTopologyLoadError::ArithmeticOverflow {
                     kind: super::ProfileTopologyLimitKind::Diagnostics,
                 })?;
-            let truncated = parsed.errors().len() > maximum;
+            let truncated = parsed.diagnostics().len() > maximum;
             let retained = if truncated { maximum - 1 } else { maximum };
             let mut diagnostics = parsed
-                .errors()
+                .diagnostics()
                 .iter()
                 .take(retained)
                 .map(|error| error.message().to_owned())
@@ -740,38 +799,34 @@ impl<'a> TopologyBuilder<'a> {
                 truncated,
             });
         }
-        let tree = parsed.typed_tree();
-        Self::validate_module_declaration(module, path, tree, resource_id)?;
+        let inventory = project::read_module_inventory(path, &parsed).map_err(|source| {
+            ProfileTopologyLoadError::ModuleDeclaration {
+                id: resource_id.clone(),
+                path: path.to_path_buf(),
+                source: Box::new(source),
+            }
+        })?;
+        Self::validate_module_declaration(module, path, inventory.declaration(), resource_id)?;
         let mut dependencies = Vec::new();
-        for item in tree.uses() {
+        for item in inventory.imports() {
             self.budget.charge_work(1)?;
-            let spanned = match item.tree().kind() {
-                UseTreeKind::Path { path, .. } => path,
-                UseTreeKind::Glob { module } | UseTreeKind::Group { module, .. } => module,
-            };
             let target = self.resolve_import(
                 package,
                 source_root,
                 module,
                 path,
                 resource_id,
-                spanned.path(),
+                item.path(),
                 module_resources,
                 queue,
             )?;
             let Some(target) = target else {
-                let span = document
-                    .span(SourceRange::new(
-                        spanned.range().start(),
-                        spanned.range().end(),
-                    ))
-                    .ok();
                 return Err(ProfileTopologyLoadError::ModuleImport {
                     id: Box::new(resource_id.clone()),
                     path: path.to_path_buf(),
                     module: Box::new(module.clone()),
-                    import: spanned.path().to_string().into_boxed_str(),
-                    span: span.map(Box::new),
+                    import: item.path().to_string().into_boxed_str(),
+                    span: Some(Box::new(item.source().clone())),
                 });
             };
             if &target != module {
@@ -779,20 +834,19 @@ impl<'a> TopologyBuilder<'a> {
                 dependencies.push(ModuleDependency::new(target));
             }
         }
-        Ok(dependencies)
+        Ok((parsed, dependencies))
     }
 
     fn validate_module_declaration(
         expected: &CanonicalModulePath,
         path: &Path,
-        tree: &arcweft_lang_syntax::ast::items::TypedSyntaxTree,
+        declaration: Option<&ModulePath>,
         id: &ProfileTopologyResourceId,
     ) -> Result<(), ProfileTopologyLoadError> {
-        match tree.module() {
+        match declaration {
             Some(declaration) => {
                 let declared = declaration
-                    .module_path()
-                    .and_then(|module| module.resolve_declaration_for(expected))
+                    .resolve_declaration_for(expected)
                     .map_err(|source| ProfileTopologyLoadError::ModuleDeclaration {
                         id: id.clone(),
                         path: path.to_path_buf(),

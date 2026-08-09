@@ -7,8 +7,6 @@
 
 mod axis_seed;
 mod catalog;
-#[cfg(test)]
-mod dialogue_acceptance_tests;
 mod evaluator;
 mod owner;
 #[cfg(test)]
@@ -33,7 +31,7 @@ use arcweft_presentation::fx::{
     FiniteF32Error, FxGraphChildPath, FxId, FxInstanceId, FxLogicalTime, FxRuntimeType,
     FxRuntimeValue,
 };
-use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RichTextDocument};
+use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
 use arcweft_view::{
     ViewId, ViewMountAllocationError, ViewMountAllocator, ViewMountId, ViewMountSnapshot,
     ViewMountState, ViewPartName, ViewProgramId, ViewRegistry, ViewRegistryError, ViewRegistryId,
@@ -186,8 +184,8 @@ pub enum BundleViewTextValue {
     RichTextDocument {
         document: Box<RichTextDocument>,
     },
-    /// Speaker label retaining the same resolved frame/style provenance as content.
-    DialogueSpeaker {
+    /// Character display name retaining the same resolved frame provenance as content.
+    DialogueCharacterDisplayName {
         label: String,
         frame: Box<LineDisplayFrame>,
     },
@@ -481,7 +479,6 @@ pub struct BundleViewRuntime {
     root_bindings: BTreeMap<String, RuntimeValue>,
     mounts: BTreeMap<ViewOccurrenceKey, MountedView>,
     axis_seeds: axis_seed::BundleViewAxisSeedRegistry,
-    declared_dialogue_views: BTreeSet<ViewId>,
     required_dialogue_views: BTreeSet<ViewId>,
 }
 
@@ -564,19 +561,6 @@ impl BundleViewRuntime {
         Self::try_new_with_registry(product, text, ViewRegistry::default())
     }
 
-    /// Builds an evaluator and accepts the exact authored dialogue View owners
-    /// selected by the supplied display catalog before any dialogue input can
-    /// be evaluated.
-    pub fn try_new_with_dialogue_display(
-        product: ValidatedViewProduct,
-        text: Option<ViewTextResource>,
-        display: &LineDisplayCatalog,
-    ) -> Result<Self, BundleViewRuntimeError> {
-        let mut runtime = Self::try_new(product, text)?;
-        runtime.accept_dialogue_view_definitions(display)?;
-        Ok(runtime)
-    }
-
     /// Builds an evaluator while preserving already registered host Views.
     ///
     /// The supplied registry is consumed as a candidate. Arcweft definitions
@@ -635,7 +619,6 @@ impl BundleViewRuntime {
             root_bindings: BTreeMap::new(),
             mounts: BTreeMap::new(),
             axis_seeds: axis_seed::BundleViewAxisSeedRegistry::default(),
-            declared_dialogue_views: BTreeSet::new(),
             required_dialogue_views: BTreeSet::new(),
         })
     }
@@ -671,37 +654,6 @@ impl BundleViewRuntime {
         &self.product
     }
 
-    /// Accepts dialogue display owners only when they belong to this immutable
-    /// runtime generation's View catalog.
-    pub(crate) fn accept_dialogue_view_definitions(
-        &mut self,
-        display: &LineDisplayCatalog,
-    ) -> Result<(), BundleViewRuntimeError> {
-        let catalog = self.catalog.as_ref();
-        let mut accepted = BTreeSet::new();
-        for spec in display.lines() {
-            let Some(catalog) = catalog else {
-                return Err(BundleViewRuntimeError::UnknownDialogueViewDefinition {
-                    definition: spec.view.clone(),
-                });
-            };
-            if catalog.definition_index(&spec.view).is_none() {
-                return Err(BundleViewRuntimeError::UnknownDialogueViewDefinition {
-                    definition: spec.view.clone(),
-                });
-            }
-            if !catalog.accepts_dialogue_input(&spec.view) {
-                return Err(BundleViewRuntimeError::DialogueViewDefinitionMissingRole {
-                    definition: spec.view.clone(),
-                });
-            }
-            accepted.insert(spec.view.clone());
-        }
-        self.declared_dialogue_views.clone_from(&accepted);
-        self.required_dialogue_views = accepted;
-        Ok(())
-    }
-
     pub(crate) fn validate_dialogue_inputs(
         &mut self,
         dialogue: &[DialogueViewInput<'_>],
@@ -713,10 +665,7 @@ impl BundleViewRuntime {
     }
 
     pub(crate) fn transient_dialogue_view_owners(&self) -> Vec<ViewId> {
-        self.required_dialogue_views
-            .difference(&self.declared_dialogue_views)
-            .cloned()
-            .collect()
+        self.required_dialogue_views.iter().cloned().collect()
     }
 
     fn validate_dialogue_input_owners(

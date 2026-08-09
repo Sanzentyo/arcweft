@@ -4,7 +4,6 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::arena::ArenaSnapshot;
 use crate::identity::{LocalId, ScopeId, StmtId};
-use crate::leaf::HirName;
 use crate::scope::{HirLocal, HirLocalKind, HirScope, LocalLookup};
 use crate::slot::{HirSlotMetadata, SlotSnapshot};
 use crate::source_index::HirSourceSite;
@@ -116,7 +115,7 @@ impl<'arena> HirLocalResolver<'arena> {
     pub(crate) fn lookup(
         &self,
         use_scope: ScopeId,
-        name: &HirName,
+        name: &str,
         before_start: usize,
     ) -> Option<LocalLookup> {
         let mut current = Some(use_scope);
@@ -132,7 +131,10 @@ impl<'arena> HirLocalResolver<'arena> {
             for local in scope_payload.locals().iter().copied() {
                 let payload = resolve_local(self.locals, self.slots, self.state, local)?;
                 let start = self.visibility_starts.get(&local).copied()?;
-                if payload.scope() != scope || payload.name() != name || start >= before_start {
+                if payload.scope() != scope
+                    || payload.name().as_str() != name
+                    || start >= before_start
+                {
                     continue;
                 }
                 match generation {

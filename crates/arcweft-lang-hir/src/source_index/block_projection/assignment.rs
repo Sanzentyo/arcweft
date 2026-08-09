@@ -9,10 +9,32 @@ use crate::arena::ArenaSnapshot;
 use crate::expr::HirExpr;
 use crate::identity::{ExprId, ScopeId, StmtId};
 use crate::slot::SlotSnapshot;
-use crate::source_index::HirExprSourceRole;
+use crate::source_index::HirStmtRecoveryOperandSlot;
 use crate::stmt::{HirStmtChildRole, HirStmtPoisonState, HirStmtRecoveryIssue};
 
 use super::{StatementEvidence, missing_statement_expression_matches, source_expression_matches};
+
+#[derive(Clone, Copy)]
+enum AssignmentFamily {
+    Assignment,
+    LifetimeSet,
+}
+
+impl AssignmentFamily {
+    const fn target_slot(self, insertion: usize) -> HirStmtRecoveryOperandSlot {
+        match self {
+            Self::Assignment => HirStmtRecoveryOperandSlot::AssignmentTarget { insertion },
+            Self::LifetimeSet => HirStmtRecoveryOperandSlot::LifetimeSetTarget { insertion },
+        }
+    }
+
+    const fn value_slot(self, insertion: usize) -> HirStmtRecoveryOperandSlot {
+        match self {
+            Self::Assignment => HirStmtRecoveryOperandSlot::AssignmentValue { insertion },
+            Self::LifetimeSet => HirStmtRecoveryOperandSlot::LifetimeSetValue { insertion },
+        }
+    }
+}
 
 #[allow(clippy::too_many_arguments)]
 pub(super) fn assignment_statement_evidence(
@@ -25,14 +47,22 @@ pub(super) fn assignment_statement_evidence(
     value: ExprId,
     scope: ScopeId,
 ) -> Option<StatementEvidence> {
-    let (attached_target, attached_value) = match attached.kind() {
+    let (family, attached_target, attached_value) = match attached.kind() {
         SyntaxKind::AssignmentStatement => {
             let attached = attached.cast::<AssignmentStatementKind>().ok()?;
-            (attached.target().ok()?, attached.value().ok()?)
+            (
+                AssignmentFamily::Assignment,
+                attached.target().ok()?,
+                attached.value().ok()?,
+            )
         }
         SyntaxKind::LifetimeSetStatement => {
             let attached = attached.cast::<LifetimeSetStatementKind>().ok()?;
-            (attached.target().ok()?, attached.value().ok()?)
+            (
+                AssignmentFamily::LifetimeSet,
+                attached.target().ok()?,
+                attached.value().ok()?,
+            )
         }
         _ => return None,
     };
@@ -44,8 +74,8 @@ pub(super) fn assignment_statement_evidence(
         target,
         attached_target,
         scope,
-        0,
-        HirExprSourceRole::Target,
+        family,
+        true,
     ) || !assignment_expression_matches(
         parsed,
         slots,
@@ -54,8 +84,8 @@ pub(super) fn assignment_statement_evidence(
         value,
         attached_value,
         scope,
-        1,
-        HirExprSourceRole::Operand,
+        family,
+        false,
     ) {
         return None;
     }
@@ -91,8 +121,8 @@ fn assignment_expression_matches(
     owner: ExprId,
     attached: RequiredStatementExpressionNode,
     scope: ScopeId,
-    ordinal: u32,
-    role: HirExprSourceRole,
+    family: AssignmentFamily,
+    target: bool,
 ) -> bool {
     match attached {
         RequiredStatementExpressionNode::Expression(attached) => {
@@ -100,16 +130,21 @@ fn assignment_expression_matches(
                 source_expression_matches(slots, expressions, owner, &attached, scope)
             })
         }
-        RequiredStatementExpressionNode::Missing(missing) => missing_statement_expression_matches(
-            parsed,
-            slots,
-            expressions,
-            statement,
-            owner,
-            scope,
-            missing.range().start(),
-            ordinal,
-            role,
-        ),
+        RequiredStatementExpressionNode::Missing(missing) => {
+            let slot = if target {
+                family.target_slot(missing.range().start())
+            } else {
+                family.value_slot(missing.range().start())
+            };
+            missing_statement_expression_matches(
+                parsed,
+                slots,
+                expressions,
+                statement,
+                owner,
+                scope,
+                slot,
+            )
+        }
     }
 }

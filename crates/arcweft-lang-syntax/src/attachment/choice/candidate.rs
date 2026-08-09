@@ -135,7 +135,7 @@ impl AttachedChoiceOptionBody {
 pub enum AttachedChoiceOptionField {
     Label {
         syntax: AstNode<ChoiceLabelFieldKind>,
-        text_key: Option<AttachedRequiredChoiceEntityReference>,
+        text_key: Box<Option<AttachedRequiredChoiceEntityReference>>,
         value: RequiredStatementExpressionNode,
     },
     Id {
@@ -175,6 +175,7 @@ impl AttachedChoiceOptionField {
                 text_key, value, ..
             } => {
                 text_key
+                    .as_ref()
                     .as_ref()
                     .is_some_and(AttachedRequiredChoiceEntityReference::has_recovery)
                     || required_expression_has_recovery(value)
@@ -359,7 +360,7 @@ impl AttachedChoiceCompactArm {
 pub enum AttachedChoiceCompactAction {
     Goto {
         syntax: AstNode<ChoiceGotoActionKind>,
-        target: AttachedRequiredChoiceEntityReference,
+        target: Box<AttachedRequiredChoiceEntityReference>,
     },
     Out {
         syntax: AstNode<ChoiceOutActionKind>,

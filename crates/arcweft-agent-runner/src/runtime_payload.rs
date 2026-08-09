@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use arcweft_agent_protocol::{
     action::{AgentActionDispatch, AgentActionKind, AgentActionTarget},
     artifact::RequiredEntity,
-    ids::PublicId,
+    ids::{AgentProjectGraphSymbolId, PublicId},
     protocol::{
         AgentHostResponse, AgentProjectGraph, AgentProjectGraphEdge, AgentProjectGraphNeighborhood,
         AgentProjectGraphSymbol,
@@ -71,13 +71,13 @@ pub(crate) fn runtime_payload_from_response(response: &AgentHostResponse) -> Run
 
 pub(crate) fn project_graph_neighborhood(
     graph: &AgentProjectGraph,
-    root: &PublicId,
+    root: &AgentProjectGraphSymbolId,
     depth: u32,
 ) -> Option<AgentProjectGraphNeighborhood> {
     let root_symbol = graph
         .symbols
         .iter()
-        .find(|symbol| symbol.public_id.as_ref() == Some(root))?;
+        .find(|symbol| &symbol.symbol_id == root)?;
     let mut selected_symbols = BTreeSet::from([root_symbol.symbol_id.clone()]);
     let mut frontier = BTreeSet::from([root_symbol.symbol_id.clone()]);
     let mut selected_edges = BTreeSet::new();
@@ -216,13 +216,20 @@ fn runtime_project_graph_neighborhood_payload(
     ])
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the agent protocol symbol record is projected as one closed field schema so field ownership stays auditable"
+)]
 pub(crate) fn runtime_project_graph_symbol_payload(
     symbol: &AgentProjectGraphSymbol,
 ) -> RuntimeValue {
     let flow_control = symbol.flow_control;
     let project_summary = symbol.project_summary;
     RuntimeValue::Record(vec![
-        runtime_field("symbol_id", RuntimeValue::String(symbol.symbol_id.clone())),
+        runtime_field(
+            "symbol_id",
+            RuntimeValue::String(symbol.symbol_id.as_str().to_owned()),
+        ),
         runtime_field(
             "has_entity",
             RuntimeValue::Bool(symbol.public_id.as_ref().is_some()),
@@ -324,11 +331,11 @@ fn runtime_project_graph_edge_payload(edge: &AgentProjectGraphEdge) -> RuntimeVa
     RuntimeValue::Record(vec![
         runtime_field(
             "from_symbol_id",
-            RuntimeValue::String(edge.from_symbol_id.clone()),
+            RuntimeValue::String(edge.from_symbol_id.as_str().to_owned()),
         ),
         runtime_field(
             "to_symbol_id",
-            RuntimeValue::String(edge.to_symbol_id.clone()),
+            RuntimeValue::String(edge.to_symbol_id.as_str().to_owned()),
         ),
         runtime_field("kind", RuntimeValue::String(edge.edge_kind.clone())),
     ])

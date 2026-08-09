@@ -1,15 +1,5 @@
-error[E0432]: unresolved imports `arcweft_lang_syntax::ast::items::AgentItem`, `arcweft_lang_syntax::ast::items::CallableItem`, `arcweft_lang_syntax::ast::items::CallableKind`, `arcweft_lang_syntax::ast::items::StateItem`
- --> tests/ui/removed_role_items.rs:1:39
+error[E0432]: unresolved import `arcweft_lang_syntax::ast::items`
+ --> tests/ui/removed_role_items.rs:1:31
   |
 1 | use arcweft_lang_syntax::ast::items::{AgentItem, CallableItem, CallableKind, StateItem};
-  |                                       ^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^^^^  ^^^^^^^^^ no `StateItem` in `ast::items`
-  |                                       |          |             |
-  |                                       |          |             no `CallableKind` in `ast::items`
-  |                                       |          no `CallableItem` in `ast::items`
-  |                                       no `AgentItem` in `ast::items`
-  |
-help: a similar name exists in the module
-  |
-1 - use arcweft_lang_syntax::ast::items::{AgentItem, CallableItem, CallableKind, StateItem};
-1 + use arcweft_lang_syntax::ast::items::{TestItem, CallableItem, CallableKind, StateItem};
-  |
+  |                               ^^^^^ could not find `items` in `ast`

@@ -1,9 +1,14 @@
 use super::*;
 
-use crate::expr::{HirForSyntheticExpr, HirThreadFlowItem, HirThreadIssue};
+use crate::stmt::{HirMatchStmt, HirStmtMatchArm};
+
+use crate::expr::{HirForSyntheticExpr, HirThreadBodyOwner, HirThreadFlowItem, HirThreadIssue};
 use crate::identity::StmtId;
 use crate::leaf::{HirIdRef, HirIdRefShape, HirIdRefValue};
-use crate::source_index::{HirSourceRequirement, HirStmtSourceRole};
+use crate::scope::LocalLookup;
+use crate::source_index::{
+    HirSourceRequirement, HirStmtSourceRole, HirThreadBodySourceRole, HirThreadFlowItemSourcePart,
+};
 use crate::stmt::{
     HirConditionalElseBranch, HirSelectStmt, HirStmt, HirStmtChildRole, HirStmtMatchArmBody,
     HirStmtPoisonState, HirStmtRecoveryIssue, HirThreadStmtBodyRole, HirThreadStmtRecoveryIssue,
@@ -142,6 +147,246 @@ fn thread_control_families_lower_in_exact_source_order() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is the closed IfLet, Match, WhileLet, and For scope-ownership acceptance matrix"
+)]
+fn if_let_match_while_let_for_scopes_match_contract() {
+    const ORDINARY: &str = concat!(
+        "{ ",
+        "if let if_value = if_source when if_guard { consume(if_value) } ",
+        "else { consume(if_fallback) }; ",
+        "match match_source { ",
+        "first when first_guard => consume(first), ",
+        "second => consume(second) ",
+        "}; ",
+        "() ",
+        "}",
+    );
+    const THREAD: &str = concat!(
+        "thread {\n",
+        "    while let while_value = while_source when while_guard { consume(while_value) }\n",
+        "    for for_value in for_source { consume(for_value) }\n",
+        "}",
+    );
+    let ordinary = parsed_source("if-let-match-scope-contract", &[ORDINARY.into()]);
+    let (ordinary_module, owners, _) = lower_and_publish(&ordinary);
+    assert_eq!(ordinary_module.status(), HirModuleStatus::Clean);
+    let HirExprKind::Block(outer) = expression(&ordinary_module, owners[0]).kind() else {
+        panic!("ordinary control fixture must remain a value block");
+    };
+    let [if_owner, match_owner] = outer.statements() else {
+        panic!("ordinary control fixture must retain IfLet then Match");
+    };
+
+    let if_statement = ordinary_module.resolve_stmt(*if_owner).unwrap();
+    let HirStmtKind::IfLet(if_let) = if_statement.kind() else {
+        panic!("first ordinary control statement must remain IfLet");
+    };
+    let if_scope = ordinary_module.resolve_scope(if_let.then_scope()).unwrap();
+    assert_eq!(if_scope.kind(), HirScopeKind::Conditional);
+    assert_eq!(if_scope.parent(), Some(outer.scope()));
+    assert_eq!(if_scope.owner(), &HirScopeOwner::Stmt(*if_owner));
+    let [if_local_id] = if_let.locals() else {
+        panic!("IfLet must retain one pattern local");
+    };
+    assert_eq!(if_scope.locals(), [*if_local_id]);
+    let if_local = ordinary_module.resolve_local(*if_local_id).unwrap();
+    assert_eq!(if_local.scope(), if_let.then_scope());
+    assert_eq!(
+        expression(&ordinary_module, if_let.scrutinee()).scope(),
+        outer.scope()
+    );
+    assert_eq!(
+        expression(
+            &ordinary_module,
+            if_let.guard().expect("authored IfLet guard")
+        )
+        .scope(),
+        if_let.then_scope()
+    );
+    let Some(HirConditionalElseBranch::Body(else_body)) = if_let.else_branch() else {
+        panic!("IfLet fixture must retain its sibling else body");
+    };
+    let else_scope = ordinary_module.resolve_scope(else_body.scope()).unwrap();
+    assert_eq!(else_scope.kind(), HirScopeKind::Conditional);
+    assert_eq!(else_scope.parent(), Some(outer.scope()));
+    assert_eq!(else_scope.owner(), &HirScopeOwner::Stmt(*if_owner));
+    assert!(else_scope.locals().is_empty());
+    let else_use = ORDINARY.find("if_fallback").unwrap();
+    let else_span = ordinary
+        .document()
+        .span(SourceRange::new(
+            ordinary.document().text().find(ORDINARY).unwrap() + else_use,
+            ordinary.document().text().find(ORDINARY).unwrap() + else_use + "if_fallback".len(),
+        ))
+        .unwrap();
+    assert_eq!(
+        ordinary_module.lookup_local(else_body.scope(), if_local.name(), else_span.clone()),
+        Ok(LocalLookup::NotFound)
+    );
+    assert_eq!(
+        ordinary_module.lookup_local(outer.scope(), if_local.name(), else_span),
+        Ok(LocalLookup::NotFound)
+    );
+
+    let match_statement = ordinary_module.resolve_stmt(*match_owner).unwrap();
+    let HirStmtKind::Match(matched) = match_statement.kind() else {
+        panic!("second ordinary control statement must remain Match");
+    };
+    assert_eq!(
+        expression(&ordinary_module, matched.scrutinee()).scope(),
+        outer.scope()
+    );
+    let [first, second] = matched.arms() else {
+        panic!("Match fixture must retain two arms");
+    };
+    for arm in [first, second] {
+        let scope = ordinary_module.resolve_scope(arm.scope()).unwrap();
+        assert_eq!(scope.kind(), HirScopeKind::MatchArm);
+        assert_eq!(scope.parent(), Some(outer.scope()));
+        assert_eq!(scope.owner(), &HirScopeOwner::Stmt(*match_owner));
+        assert_eq!(scope.locals(), arm.locals());
+        assert_eq!(arm.locals().len(), 1);
+    }
+    assert_ne!(first.scope(), second.scope());
+    assert_eq!(
+        expression(
+            &ordinary_module,
+            first.guard().expect("first Match arm guard")
+        )
+        .scope(),
+        first.scope()
+    );
+    let first_local = ordinary_module.resolve_local(first.locals()[0]).unwrap();
+    let second_local = ordinary_module.resolve_local(second.locals()[0]).unwrap();
+    let second_use = ordinary.document().text().rfind("second").unwrap();
+    let second_span = ordinary
+        .document()
+        .span(SourceRange::new(second_use, second_use + "second".len()))
+        .unwrap();
+    assert_eq!(
+        ordinary_module.lookup_local(second.scope(), first_local.name(), second_span.clone()),
+        Ok(LocalLookup::NotFound)
+    );
+    assert_eq!(
+        ordinary_module.lookup_local(outer.scope(), second_local.name(), second_span),
+        Ok(LocalLookup::NotFound)
+    );
+
+    let thread_source = parsed_source("while-let-for-scope-contract", &[THREAD.into()]);
+    let (thread_module, owners, _) = lower_and_publish(&thread_source);
+    assert_eq!(thread_module.status(), HirModuleStatus::Clean);
+    let HirExprKind::Thread(thread) = expression(&thread_module, owners[0]).kind() else {
+        panic!("loop control fixture must remain a Thread expression");
+    };
+    let [
+        HirThreadFlowItem::WhileLet(while_owner),
+        HirThreadFlowItem::For(for_owner),
+    ] = thread.body().items()
+    else {
+        panic!("Thread fixture must retain WhileLet then For");
+    };
+    let thread_scope = thread.scope();
+
+    let while_statement = thread_module.resolve_stmt(*while_owner).unwrap();
+    let HirStmtKind::WhileLet(while_let) = while_statement.kind() else {
+        panic!("first Thread control statement must remain WhileLet");
+    };
+    let while_scope = thread_module
+        .resolve_scope(while_let.body().scope())
+        .unwrap();
+    assert_eq!(
+        while_scope.kind(),
+        HirScopeKind::Block,
+        "the shared nested Thread-body owner supersedes the old Loop scope label"
+    );
+    assert_eq!(while_scope.parent(), Some(thread_scope));
+    assert_eq!(while_scope.owner(), &HirScopeOwner::Stmt(*while_owner));
+    let [while_local_id] = while_let.locals() else {
+        panic!("WhileLet must retain one body binding");
+    };
+    assert_eq!(while_scope.locals(), [*while_local_id]);
+    let while_local = thread_module.resolve_local(*while_local_id).unwrap();
+    assert_eq!(while_local.scope(), while_let.body().scope());
+    assert_eq!(
+        expression(&thread_module, while_let.scrutinee()).scope(),
+        thread_scope
+    );
+    assert_eq!(
+        expression(
+            &thread_module,
+            while_let.guard().expect("authored WhileLet guard")
+        )
+        .scope(),
+        while_let.body().scope()
+    );
+
+    let for_statement = thread_module.resolve_stmt(*for_owner).unwrap();
+    let HirStmtKind::For(for_loop) = for_statement.kind() else {
+        panic!("second Thread control statement must remain For");
+    };
+    let for_scope = thread_module
+        .resolve_scope(for_loop.body().scope())
+        .unwrap();
+    assert_eq!(for_scope.kind(), HirScopeKind::Block);
+    assert_eq!(for_scope.parent(), Some(thread_scope));
+    assert_eq!(for_scope.owner(), &HirScopeOwner::Stmt(*for_owner));
+    let [for_local_id] = for_loop.locals() else {
+        panic!("For must retain one body binding");
+    };
+    assert_eq!(for_scope.locals(), [*for_local_id]);
+    let for_local = thread_module.resolve_local(*for_local_id).unwrap();
+    assert_eq!(for_local.scope(), for_loop.body().scope());
+    for owner in [
+        for_loop.source(),
+        for_loop.iterator(),
+        for_loop.next_value(),
+    ] {
+        assert_eq!(expression(&thread_module, owner).scope(), thread_scope);
+    }
+
+    let while_use = thread_source
+        .document()
+        .text()
+        .rfind("while_value")
+        .unwrap();
+    let while_span = thread_source
+        .document()
+        .span(SourceRange::new(while_use, while_use + "while_value".len()))
+        .unwrap();
+    let for_use = thread_source.document().text().rfind("for_value").unwrap();
+    let for_span = thread_source
+        .document()
+        .span(SourceRange::new(for_use, for_use + "for_value".len()))
+        .unwrap();
+    assert_eq!(
+        thread_module.lookup_local(while_let.body().scope(), while_local.name(), while_span),
+        Ok(LocalLookup::Found(*while_local_id))
+    );
+    assert_eq!(
+        thread_module.lookup_local(for_loop.body().scope(), for_local.name(), for_span.clone()),
+        Ok(LocalLookup::Found(*for_local_id))
+    );
+    assert_eq!(
+        thread_module.lookup_local(
+            for_loop.body().scope(),
+            while_local.name(),
+            for_span.clone()
+        ),
+        Ok(LocalLookup::NotFound)
+    );
+    assert_eq!(
+        thread_module.lookup_local(thread_scope, while_local.name(), for_span.clone()),
+        Ok(LocalLookup::NotFound)
+    );
+    assert_eq!(
+        thread_module.lookup_local(thread_scope, for_local.name(), for_span),
+        Ok(LocalLookup::NotFound)
+    );
+}
+
+#[test]
 fn thread_expression_lowers_the_complete_statement_only_family_inventory_in_source_order() {
     let parsed = parsed_source(
         "thread-complete-flow-item-inventory",
@@ -223,6 +468,285 @@ fn thread_expression_lowers_the_complete_statement_only_family_inventory_in_sour
         &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidThread(
             HirThreadIssue::RecoveredBodyChild { ordinal: 15 },
         ))
+    );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one focused test joins Match item identity, source projection, and the single braced-arm scope invariant"
+)]
+fn thread_match_braced_arms_use_one_nested_block_scope_each() {
+    let parsed = parsed_source(
+        "thread-match-single-body-scope",
+        &[concat!(
+            "thread {\n",
+            "    match value {\n",
+            "        first => {},\n",
+            "        second => {}\n",
+            "    }\n",
+            "}",
+        )
+        .into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+
+    let HirExprKind::Thread(thread) = expression(&module, owners[0]).kind() else {
+        panic!("fixture root must remain a Thread expression");
+    };
+    let [HirThreadFlowItem::Match(match_owner)] = thread.body().items() else {
+        panic!("Thread body must retain one Match flow item");
+    };
+
+    let item_query = HirSourceQuery::ThreadBody {
+        owner: HirThreadBodyOwner::ThreadExpression(owners[0]),
+        role: HirThreadBodySourceRole::Item {
+            ordinal: 0,
+            part: HirThreadFlowItemSourcePart::Whole,
+        },
+    };
+    let child_query = HirSourceQuery::ThreadBody {
+        owner: HirThreadBodyOwner::ThreadExpression(owners[0]),
+        role: HirThreadBodySourceRole::Item {
+            ordinal: 0,
+            part: HirThreadFlowItemSourcePart::ChildWhole,
+        },
+    };
+    let statement_query = HirSourceQuery::Stmt {
+        owner: *match_owner,
+        role: HirStmtSourceRole::Whole,
+    };
+    let item_source = module
+        .source_site(parsed.document().identity(), item_query)
+        .expect("Thread item ordinal 0 source component");
+    let child_source = module
+        .source_site(parsed.document().identity(), child_query)
+        .expect("Thread Match child source relation");
+    let statement_source = module
+        .source_site(parsed.document().identity(), statement_query)
+        .expect("Thread Match statement Whole source relation");
+    assert_eq!(item_source.presence(), statement_source.presence());
+    assert_eq!(child_source.presence(), statement_source.presence());
+
+    let statement = module
+        .resolve_stmt(*match_owner)
+        .expect("Thread Match statement");
+    let HirStmtKind::Match(matched) = statement.kind() else {
+        panic!("Thread Match flow item must retain its typed statement payload");
+    };
+    let [first, second] = matched.arms() else {
+        panic!("Thread Match must retain two source-ordered arms");
+    };
+    let thread_scope = module
+        .resolve_scope(thread.body().scope())
+        .expect("Thread body scope");
+    assert_eq!(thread_scope.children(), [first.scope(), second.scope()]);
+
+    for arm in [first, second] {
+        let scope = module
+            .resolve_scope(arm.scope())
+            .expect("Thread Match arm scope");
+        assert_eq!(scope.kind(), HirScopeKind::Block);
+        assert_eq!(scope.parent(), Some(thread.body().scope()));
+        assert_eq!(scope.owner(), &HirScopeOwner::Stmt(*match_owner));
+        assert!(scope.children().is_empty());
+        assert_eq!(scope.locals(), arm.locals());
+
+        let HirStmtMatchArmBody::Body(body) = arm.body() else {
+            panic!("braced Thread Match arm must retain a contextual body");
+        };
+        assert_eq!(body.scope(), arm.scope());
+        let nested = body
+            .thread_body()
+            .expect("Thread Match arm must retain the shared Thread body owner");
+        assert_eq!(nested.scope(), arm.scope());
+        assert!(nested.items().is_empty());
+
+        let source = module
+            .source_site(
+                parsed.document().identity(),
+                HirSourceQuery::ThreadBody {
+                    owner: HirThreadBodyOwner::NestedScope(arm.scope()),
+                    role: HirThreadBodySourceRole::Whole,
+                },
+            )
+            .expect("NestedScope-owned Thread Match body source");
+        assert_eq!(source.owner_status(), HirSourceOwnerStatus::Clean);
+        assert!(matches!(
+            source.presence(),
+            HirSourcePresence::Present(HirSourceSite::Span(_))
+        ));
+    }
+    assert_ne!(first.scope(), second.scope());
+
+    let first_query = HirSourceQuery::ThreadBody {
+        owner: HirThreadBodyOwner::NestedScope(first.scope()),
+        role: HirThreadBodySourceRole::Whole,
+    };
+    let second_query = HirSourceQuery::ThreadBody {
+        owner: HirThreadBodyOwner::NestedScope(second.scope()),
+        role: HirThreadBodySourceRole::Whole,
+    };
+    assert_ne!(first_query, second_query);
+    let first_source = module
+        .source_site(parsed.document().identity(), first_query)
+        .expect("first Match arm nested-body source");
+    let second_source = module
+        .source_site(parsed.document().identity(), second_query)
+        .expect("second Match arm nested-body source");
+    let (
+        HirSourcePresence::Present(HirSourceSite::Span(first_span)),
+        HirSourcePresence::Present(HirSourceSite::Span(second_span)),
+    ) = (first_source.presence(), second_source.presence())
+    else {
+        panic!("both Match arm nested bodies must retain authored spans");
+    };
+    assert_ne!(first_span, second_span);
+}
+
+#[test]
+fn thread_match_missing_arm_body_retains_typed_child_and_roleful_recovery() {
+    let parsed = parsed_source(
+        "thread-match-recovered-child",
+        &["thread { match subject { value => } }".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+
+    let root = expression(&module, owners[0]);
+    let HirExprKind::Thread(thread) = root.kind() else {
+        panic!("recovery fixture root must remain a Thread expression");
+    };
+    let [HirThreadFlowItem::Match(match_owner)] = thread.body().items() else {
+        panic!("malformed Thread Match must retain its typed statement item");
+    };
+    assert_eq!(
+        root.state(),
+        &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidThread(
+            HirThreadIssue::RecoveredBodyChild { ordinal: 0 },
+        ))
+    );
+
+    let statement = module
+        .resolve_stmt(*match_owner)
+        .expect("recovered Thread Match statement");
+    let HirStmtKind::Match(matched) = statement.kind() else {
+        panic!("malformed Thread Match must not collapse to Error or raw source");
+    };
+    assert_eq!(
+        statement.state(),
+        &HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+            role: HirStmtChildRole::MatchArmBody { arm: 0 },
+        })
+    );
+    let [arm] = matched.arms() else {
+        panic!("recovered Thread Match must retain one typed arm");
+    };
+    let HirStmtMatchArmBody::Expression(body) = arm.body() else {
+        panic!("missing Thread Match arm body must retain typed expression recovery");
+    };
+    assert!(matches!(
+        module
+            .slots()
+            .resolve(*body)
+            .expect("missing Thread Match arm body slot")
+            .origin(),
+        HirOrigin::Synthetic(key)
+            if key.owner() == SyntheticOwner::Scope(arm.scope())
+                && key.role() == SyntheticRole::MissingRequiredTail
+                && key.ordinal() == 0
+    ));
+
+    let item_query = HirSourceQuery::ThreadBody {
+        owner: HirThreadBodyOwner::ThreadExpression(owners[0]),
+        role: HirThreadBodySourceRole::Item {
+            ordinal: 0,
+            part: HirThreadFlowItemSourcePart::Whole,
+        },
+    };
+    let child_query = HirSourceQuery::ThreadBody {
+        owner: HirThreadBodyOwner::ThreadExpression(owners[0]),
+        role: HirThreadBodySourceRole::Item {
+            ordinal: 0,
+            part: HirThreadFlowItemSourcePart::ChildWhole,
+        },
+    };
+    let statement_query = HirSourceQuery::Stmt {
+        owner: *match_owner,
+        role: HirStmtSourceRole::Whole,
+    };
+    let item_source = module
+        .source_site(parsed.document().identity(), item_query)
+        .expect("recovered Thread item source component");
+    let child_source = module
+        .source_site(parsed.document().identity(), child_query)
+        .expect("recovered Thread Match child source relation");
+    let statement_source = module
+        .source_site(parsed.document().identity(), statement_query)
+        .expect("recovered Thread Match statement Whole source relation");
+    assert_eq!(item_source.presence(), statement_source.presence());
+    assert_eq!(child_source.presence(), statement_source.presence());
+    assert_eq!(item_source.owner_status(), HirSourceOwnerStatus::Poisoned);
+    assert_eq!(
+        statement_source.owner_status(),
+        HirSourceOwnerStatus::Poisoned
+    );
+}
+
+#[test]
+fn thread_match_source_freeze_rejects_match_arm_scope_substitution() {
+    assert_expression_source_freeze_rejects(
+        "thread-match-scope-substitution",
+        "thread { match value { first => {} } }",
+        |transaction, root| {
+            let match_owner = {
+                let (slots, arenas) = transaction.storage_mut();
+                let root = arenas
+                    .expressions()
+                    .resolve_staged(slots, root)
+                    .expect("staged Thread expression");
+                let HirExprKind::Thread(thread) = root.kind() else {
+                    panic!("fixture root must remain a Thread expression")
+                };
+                let [HirThreadFlowItem::Match(owner)] = thread.body().items() else {
+                    panic!("Thread body must retain one Match flow item")
+                };
+                *owner
+            };
+            let arm_scope = {
+                let (slots, arenas) = transaction.storage_mut();
+                let statement = arenas
+                    .statements()
+                    .resolve_staged(slots, match_owner)
+                    .expect("staged Thread Match statement");
+                let HirStmtKind::Match(matched) = statement.kind() else {
+                    panic!("Thread flow item must retain Match payload")
+                };
+                matched.arms()[0].scope()
+            };
+            let replacement = {
+                let (slots, arenas) = transaction.storage_mut();
+                let scope = arenas
+                    .scopes()
+                    .resolve_staged(slots, arm_scope)
+                    .expect("staged Thread Match arm scope");
+                HirScope::try_new(
+                    arm_scope.module(),
+                    HirScopeKind::MatchArm,
+                    scope.parent(),
+                    *scope.owner(),
+                    scope.children().to_vec().into_boxed_slice(),
+                    scope.locals().to_vec().into_boxed_slice(),
+                )
+                .expect("same-module MatchArm substitution")
+            };
+            let (slots, arenas) = transaction.storage_mut();
+            arenas
+                .scopes()
+                .revise_finalized(slots, arm_scope, replacement)
+                .expect("test-only scope-kind substitution");
+        },
     );
 }
 
@@ -972,6 +1496,10 @@ fn unsafe_lifetime_unclosed_body_retains_block_and_prior_child_recovery() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test validates one complete statement IfLet scope, block, local, and nested-else ownership scenario"
+)]
 fn statement_if_let_owns_scoped_bindings_statement_blocks_and_nested_else_if() {
     let parsed = parsed_source(
         "statement-if-let-owner",
@@ -1061,32 +1589,33 @@ fn statement_if_let_owns_scoped_bindings_statement_blocks_and_nested_else_if() {
     let Some(HirConditionalElseBranch::ElseIf(nested_id)) = if_let.else_branch() else {
         panic!("authored else-if must retain a separate statement identity");
     };
-    let nested = module
+    let nested_statement = module
         .arenas()
         .statements()
         .resolve(module.slots(), *nested_id)
         .expect("nested ordinary if statement");
-    assert_eq!(nested.scope(), outer_scope);
-    let HirStmtKind::If(nested_if) = nested.kind() else {
+    assert_eq!(nested_statement.scope(), outer_scope);
+    let HirStmtKind::If(nested_if_payload) = nested_statement.kind() else {
         panic!("nested else-if must retain its ordinary typed If payload");
     };
-    let nested_then_statements = nested_if
+    let nested_then_items = nested_if_payload
         .then_body()
         .ordinary_statements()
         .expect("ordinary nested then body");
-    let Some(HirConditionalElseBranch::Body(nested_else_body)) = nested_if.else_branch() else {
+    let Some(HirConditionalElseBranch::Body(nested_else_body)) = nested_if_payload.else_branch()
+    else {
         panic!("nested ordinary if must retain its terminal else body");
     };
-    let nested_else_statements = nested_else_body
+    let nested_else_items = nested_else_body
         .ordinary_statements()
         .expect("ordinary nested else body");
     assert_eq!(
-        expression(&module, nested_if.condition()).scope(),
+        expression(&module, nested_if_payload.condition()).scope(),
         outer_scope
     );
-    assert_eq!(nested_then_statements.len(), 1);
-    assert_eq!(nested_else_statements.len(), 1);
-    for branch_scope in [nested_if.then_scope(), nested_else_body.scope()] {
+    assert_eq!(nested_then_items.len(), 1);
+    assert_eq!(nested_else_items.len(), 1);
+    for branch_scope in [nested_if_payload.then_scope(), nested_else_body.scope()] {
         let branch = module
             .arenas()
             .scopes()
@@ -1229,6 +1758,10 @@ fn statement_if_let_freeze_rejects_pattern_to_body_generation_tampering() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test validates the complete ordered Match arm scope, local, guard, body, and source-role matrix"
+)]
 fn statement_match_owns_source_ordered_arms_scopes_and_locals() {
     let parsed = parsed_source(
         "statement-match-owner",
@@ -1300,6 +1833,14 @@ fn statement_match_owns_source_ordered_arms_scopes_and_locals() {
         block.scope()
     );
     assert_eq!(arms.len(), 2);
+    assert_eq!(
+        module
+            .resolve_scope(block.scope())
+            .expect("outer lexical block scope")
+            .children(),
+        [arms[0].scope(), arms[1].scope()],
+        "Match owns evaluation semantics, while its arms are the only child lexical scopes"
+    );
 
     let first = &arms[0];
     let first_scope = module
@@ -1440,6 +1981,63 @@ fn statement_match_missing_scrutinee_and_guard_keep_distinct_stmt_recovery_slots
                 && key.ordinal() == 1
     ));
     assert_eq!(expression(&module, guard).scope(), arms[0].scope());
+}
+
+#[test]
+fn statement_match_source_freeze_rejects_recovery_operand_slot_substitution() {
+    assert_expression_source_freeze_rejects(
+        "statement-match-recovery-operand-order",
+        "{ match { value when => result }; () }",
+        |transaction, root| {
+            let statement_id = {
+                let (slots, arenas) = transaction.storage_mut();
+                let root = arenas
+                    .expressions()
+                    .resolve_staged(slots, root)
+                    .expect("staged Match block");
+                let HirExprKind::Block(block) = root.kind() else {
+                    panic!("fixture root must remain a value block");
+                };
+                block.statements()[0]
+            };
+            let retained = {
+                let (slots, arenas) = transaction.storage_mut();
+                arenas
+                    .statements()
+                    .resolve_staged(slots, statement_id)
+                    .expect("staged Match statement")
+                    .clone()
+            };
+            let HirStmtKind::Match(matched) = retained.kind() else {
+                panic!("selected statement must remain Match");
+            };
+            let mut arms = matched.arms().to_vec();
+            let first = arms[0].clone();
+            let guard = first.guard().expect("recognized missing guard slot");
+            arms[0] = HirStmtMatchArm::try_new(
+                first.scope(),
+                first.pattern(),
+                Some(matched.scrutinee()),
+                first.body().clone(),
+                first.locals().into(),
+            )
+            .expect("same-module substituted Match arm");
+            let replacement = HirStmt::try_new_with_state(
+                retained.scope(),
+                HirStmtKind::Match(
+                    HirMatchStmt::try_new(guard, arms.into_boxed_slice())
+                        .expect("same-module substituted Match payload"),
+                ),
+                retained.state().clone(),
+            )
+            .expect("substituted Match remains structurally valid");
+            let (slots, arenas) = transaction.storage_mut();
+            arenas
+                .statements()
+                .revise_finalized(slots, statement_id, replacement)
+                .expect("test-only Match operand substitution");
+        },
+    );
 }
 
 #[test]

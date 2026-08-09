@@ -205,7 +205,6 @@ fn canonical_entry_retains_closed_members_and_allocates_only_typed_children() {
     );
 
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -576,7 +575,6 @@ fn entry_missing_type_and_option_value_keep_typed_recovery_owners() {
         ),
     );
     let missing_option_syntax = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -755,9 +753,7 @@ fn assert_entry_freeze_rejects_from_source(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     let (slots, arenas) = transaction.storage_mut();
     let original = arenas.items().resolve_staged(slots, owner).unwrap().clone();
@@ -1081,7 +1077,6 @@ fn entry_freeze_rejects_arena_allocation_for_inline_expression_leaves() {
         ),
     );
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -1113,9 +1108,7 @@ fn entry_freeze_rejects_arena_allocation_for_inline_expression_leaves() {
         let key = module_key(&parsed);
         let mut database = HirDatabase::try_new().unwrap();
         let mut transaction = stage(&database, &parsed, &key);
-        transaction
-            .lower_attached_source_file_items(&parsed.tree())
-            .unwrap();
+        transaction.lower_parsed_source_items(&parsed).unwrap();
         let owner = transaction.source_ordered_items[0];
         let scope = {
             let (slots, arenas) = transaction.storage_mut();
@@ -1146,9 +1139,7 @@ fn entry_freeze_rejects_an_option_expression_moved_to_a_foreign_scope() {
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let entry_owner = transaction.source_ordered_items[0];
     let function_owner = transaction.source_ordered_items[1];
     let (expression, entry_scope, foreign_scope, replacement) = {
@@ -1239,9 +1230,7 @@ fn entry_member_limit_accepts_exact_source_and_rejects_one_over_atomically() {
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    let Err(HirLowerFailure::Limit(error)) =
-        transaction.lower_attached_source_file_items(&parsed.tree())
-    else {
+    let Err(HirLowerFailure::Limit(error)) = transaction.lower_parsed_source_items(&parsed) else {
         panic!("first one-over Entry inventory must fail before child lowering")
     };
     assert_eq!(error.limit(), HirLimit::DeclarationMembers);
@@ -1291,9 +1280,7 @@ fn entry_route_binding_limit_accepts_exact_source_and_rejects_one_over_atomicall
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    let Err(HirLowerFailure::Limit(error)) =
-        transaction.lower_attached_source_file_items(&parsed.tree())
-    else {
+    let Err(HirLowerFailure::Limit(error)) = transaction.lower_parsed_source_items(&parsed) else {
         panic!("first one-over route binding inventory must fail before binding lowering")
     };
     assert_eq!(error.limit(), HirLimit::CallArguments);

@@ -1,99 +1,88 @@
 //! Canonical, syntax-owned edits for authored View-part identities.
 
-use arcweft_lang_syntax::{
-    ast::{
-        items::Item,
-        view::{ViewExpr, ViewModifier},
-    },
-    source::ParsedSource,
+use arcweft_lang_syntax::attachment::{
+    AttachedPath, AttachedPathRoot, AttachedViewPartLocalName, AttachedViewPartModifier,
+    AttachedViewPartPath, SyntaxAccessError, TypedItemNode, source_file::AttachedPathSegment,
 };
+use arcweft_lang_syntax::incremental::ParsedSource;
 
 use crate::model::TextEdit;
 
-/// Returns non-overlapping edits only for fully parsed View-part syntax.
-///
-/// Malformed and misplaced declarations are absent from the typed export list,
-/// so their source remains byte-for-byte unchanged while valid surrounding
-/// declarations and modifiers can still be normalized.
-pub(super) fn canonical_edits(source: &str, parsed: &ParsedSource) -> Vec<TextEdit> {
+/// Returns non-overlapping edits only for fully attached View-part syntax.
+pub(super) fn canonical_edits(
+    source: &str,
+    parsed: &ParsedSource,
+) -> Result<Vec<TextEdit>, SyntaxAccessError> {
     let mut edits = Vec::new();
-    for item in parsed.typed_tree().items() {
-        let Item::EntityDecl(entity) = item else {
+    for item in parsed.items()? {
+        let TypedItemNode::View(view) = item else {
             continue;
         };
-        let Some(body) = entity.view_body() else {
-            continue;
-        };
-        let Some(view) = body.view() else {
-            continue;
-        };
-
-        for declaration in view.exports() {
-            let range = declaration.declaration_span().range();
-            let replacement = format!(
-                "export part {} as {}",
-                declaration.local_name().text(),
-                declaration.public_name().text()
-            );
-            push_if_changed(source, range.start(), range.end(), replacement, &mut edits);
-        }
-        collect_part_edits(source, view.value(), &mut edits);
-    }
-    edits
-}
-
-fn collect_part_edits(source: &str, expression: &ViewExpr, edits: &mut Vec<TextEdit>) {
-    match expression {
-        ViewExpr::Fragment(items) => {
-            for item in items {
-                collect_part_edits(source, item, edits);
-            }
-        }
-        ViewExpr::Element(element) => {
-            collect_modifier_edits(source, element.modifiers(), edits);
-            for child in element.children() {
-                collect_part_edits(source, child, edits);
-            }
-        }
-        ViewExpr::ViewCall(call) => collect_modifier_edits(source, call.modifiers(), edits),
-        ViewExpr::Text(text) => collect_modifier_edits(source, text.modifiers(), edits),
-        ViewExpr::Image(image) => collect_modifier_edits(source, image.modifiers(), edits),
-        ViewExpr::TextField(field) => collect_modifier_edits(source, field.modifiers(), edits),
-        ViewExpr::Button(button) => collect_modifier_edits(source, button.modifiers(), edits),
-        ViewExpr::If(branch) => {
-            collect_part_edits(source, branch.then_branch(), edits);
-            if let Some(otherwise) = branch.else_branch() {
-                collect_part_edits(source, otherwise, edits);
-            }
-        }
-        ViewExpr::Match(branch) => {
-            for arm in branch.arms() {
-                collect_part_edits(source, arm.value(), edits);
-            }
-        }
-        ViewExpr::ForEach(repeat) => collect_part_edits(source, repeat.body(), edits),
-        ViewExpr::Await(awaited) => {
-            for branch in awaited.branches() {
-                collect_part_edits(source, branch.value(), edits);
-            }
-        }
-        ViewExpr::Let(_) | ViewExpr::Expr(_) | ViewExpr::Raw(_) => {}
-    }
-}
-
-fn collect_modifier_edits(source: &str, modifiers: &[ViewModifier], edits: &mut Vec<TextEdit>) {
-    for modifier in modifiers {
-        if let ViewModifier::Part(part) = modifier {
-            let range = part.modifier_span().range();
+        let view = view.semantics()?;
+        for export in view.exports().filter(|export| !export.has_recovery()) {
+            let (Some(local_part), Some(public_part)) = (
+                canonical_part_path(export.local_part()),
+                canonical_part_path(export.public_part()),
+            ) else {
+                continue;
+            };
+            let range = export.syntax().range();
             push_if_changed(
                 source,
                 range.start(),
                 range.end(),
-                format!(".part({})", part.local_name().text()),
-                edits,
+                format!("export part {local_part} as {public_part}"),
+                &mut edits,
             );
         }
+        if let Some(fragment) = view.body().fragment() {
+            for modifier in fragment.part_modifiers() {
+                if let Some(edit) = canonical_part_modifier(source, modifier) {
+                    edits.push(edit);
+                }
+            }
+        }
     }
+    Ok(edits)
+}
+
+fn canonical_part_path(path: &AttachedViewPartPath) -> Option<String> {
+    let AttachedViewPartPath::Path(path) = path else {
+        return None;
+    };
+    (!path.has_recovery()).then(|| canonical_path(path))
+}
+
+fn canonical_path(path: &AttachedPath) -> String {
+    let mut parts = Vec::new();
+    match path.root() {
+        AttachedPathRoot::ImplicitCrate => {}
+        AttachedPathRoot::Crate { .. } => parts.push("crate"),
+        AttachedPathRoot::SelfModule { .. } => parts.push("self"),
+        AttachedPathRoot::Super { levels } => {
+            parts.extend(std::iter::repeat_n("super", levels.len()));
+        }
+    }
+    parts.extend(path.segments().iter().map(AttachedPathSegment::source_text));
+    parts.join(".")
+}
+
+fn canonical_part_modifier(source: &str, modifier: &AttachedViewPartModifier) -> Option<TextEdit> {
+    if modifier.has_recovery() {
+        return None;
+    }
+    let AttachedViewPartLocalName::Present(local_name) = modifier.local_name() else {
+        return None;
+    };
+    let whole = modifier.whole().range();
+    let replacement = format!(".part({})", source.get(local_name.range().as_range())?);
+    let start = whole.start();
+    let end = whole.end();
+    (source.get(start..end)? != replacement).then_some(TextEdit {
+        start,
+        end,
+        replacement,
+    })
 }
 
 fn push_if_changed(

@@ -1,12 +1,14 @@
 //! Canonical semantic identity encoding for checked types.
 
-use arcweft_lang_hir::symbol::{
-    CallableDeclarationId, CallableDeclarationOwner, ProjectSymbolWorldId,
-    nominal::{ProjectNominalDeclarationId, ProjectNominalDeclarationKind},
+use arcweft_lang_hir::{
+    leaf::{HirPath, HirPathRoot, HirPathSegment},
+    symbol::{
+        CallableDeclarationKey, ProjectSymbolWorldId,
+        nominal::{ProjectNominalDeclarationId, ProjectNominalDeclarationKind},
+    },
 };
 use arcweft_lang_syntax::{
     ast::module_path::{CanonicalModulePath, ModulePathRoot},
-    expr::LifetimeScopeKind,
     reference::BorrowKind,
     types::TypePath,
 };
@@ -19,8 +21,8 @@ use crate::{
 
 use super::{
     AcceptedNominalType, ArrayLength, CharacterNominalType, EntityKind, GenericTypeOwnerId,
-    GenericTypeParameterId, HandleState, IteratorStateKind, MapKind, OpenNominalType,
-    ProjectNominalType, TypeKind,
+    GenericTypeParameterId, HandleState, IteratorStateKind, LifetimeScopeKind, MapKind,
+    OpenNominalType, ProjectNominalType, TypeKind,
 };
 
 const DOMAIN: &[u8] = b"arcweft.semantic-type.identity.v1\0";
@@ -289,14 +291,6 @@ impl Encoder {
                 self.option(trait_name.as_ref(), |encoder, value| encoder.string(value));
                 self.string(assoc);
             }
-            TypeKind::Speaker(kind) => {
-                self.tag(69);
-                self.entity_kind(kind);
-            }
-            TypeKind::SpeakerPreset(kind) => {
-                self.tag(70);
-                self.entity_kind(kind);
-            }
             TypeKind::CharacterPatch(kind) => {
                 self.tag(71);
                 self.entity_kind(kind);
@@ -390,19 +384,12 @@ impl Encoder {
 
     fn open_nominal(&mut self, nominal: &OpenNominalType) {
         self.open_rule(nominal.rule());
-        self.type_path(nominal.path());
+        self.hir_path(nominal.path());
         self.types(nominal.arguments());
     }
 
-    fn callable_declaration(&mut self, id: &CallableDeclarationId) {
-        self.string(id.package().as_str());
-        self.module_path(id.module());
-        self.callable_owner(id.owner());
-        self.len(id.owner_path().len());
-        for segment in id.owner_path() {
-            self.string(segment.as_str());
-        }
-        self.string(id.name());
+    fn callable_declaration(&mut self, id: &CallableDeclarationKey) {
+        self.0.update(id.semantic_digest().as_bytes());
     }
 
     fn project_nominal_declaration(&mut self, id: &ProjectNominalDeclarationId) {
@@ -459,6 +446,31 @@ impl Encoder {
         }
     }
 
+    fn hir_path(&mut self, path: &HirPath) {
+        match path.root() {
+            HirPathRoot::ImplicitCrate => self.byte(0),
+            HirPathRoot::Crate => self.byte(1),
+            HirPathRoot::SelfModule => self.byte(2),
+            HirPathRoot::Super { depth } => {
+                self.byte(3);
+                self.len(depth);
+            }
+        }
+        self.len(path.segments().len());
+        for segment in path.segments() {
+            match segment {
+                HirPathSegment::Identifier(name) => {
+                    self.byte(0);
+                    self.string(name.as_str());
+                }
+                HirPathSegment::ProjectSymbol(name) => {
+                    self.byte(1);
+                    self.string(name.as_str());
+                }
+            }
+        }
+    }
+
     fn module_path(&mut self, path: &CanonicalModulePath) {
         self.len(path.segments().len());
         for segment in path.segments() {
@@ -506,16 +518,6 @@ impl Encoder {
                 self.string(part.as_str());
             }
         }
-    }
-
-    fn callable_owner(&mut self, owner: CallableDeclarationOwner) {
-        self.byte(match owner {
-            CallableDeclarationOwner::Function => 0,
-            CallableDeclarationOwner::ExternCapability => 1,
-            CallableDeclarationOwner::View => 2,
-            CallableDeclarationOwner::Predicate => 3,
-            CallableDeclarationOwner::Proof => 4,
-        });
     }
 
     fn module_root(&mut self, root: ModulePathRoot) {

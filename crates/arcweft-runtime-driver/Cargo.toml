@@ -16,6 +16,7 @@ arcweft-save = { workspace = true }
 arcweft-layout.workspace = true
 arcweft-presentation = { workspace = true }
 arcweft-render-text = { workspace = true }
+arcweft-text-model = { workspace = true }
 arcweft-view = { workspace = true }
 blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }
@@ -23,6 +24,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+arcweft-character = { workspace = true }
 arcweft-resource-model = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }

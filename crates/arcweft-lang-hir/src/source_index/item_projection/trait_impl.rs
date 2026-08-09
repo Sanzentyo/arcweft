@@ -499,6 +499,11 @@ impl<'a> From<&'a HirImplFunction> for MethodRetention<'a> {
     }
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::too_many_lines,
+    reason = "one method projection compares the closed attached and retained schemas plus all owned types, scopes, and bodies"
+)]
 fn method_matches(
     owner: ItemId,
     item_scope: ScopeId,
@@ -622,6 +627,10 @@ struct MethodParameterState {
     recovered: bool,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered matrix validates every method parameter-group form and its typed binding ownership"
+)]
 fn method_parameter_groups_match(
     attached: &[AttachedMethodParameterGroup],
     retained: &[HirMethodParameterGroup],

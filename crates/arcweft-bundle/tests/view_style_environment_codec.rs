@@ -3,11 +3,11 @@ use arcweft_bundle::resource_codec::view::{
     ViewStyleEnvironmentSourceError, ViewStyleEnvironmentSourceRole, ViewStyleResource,
 };
 use arcweft_bundle::resource_codec::{
-    ProductSourceRef, SectionCodecError, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
+    SectionCodecError, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
     ViewProductValidationError, ViewProductValidationLimits,
 };
 use arcweft_presentation::appearance::ColorScheme;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::ViewElementKind;
 use arcweft_view::style::{
     ViewEnvironmentClause, ViewEnvironmentCondition, ViewEnvironmentWrapperIndex,
@@ -388,12 +388,11 @@ fn environment_cross_source_relation_rejects_complete_product() {
     let other = source_document("other.arcw", "other source");
     let source_map =
         SourceMapSection::try_from_documents(&[&document, &other]).expect("two-source map");
-    let other_ref = ProductSourceRef::from_document(
-        source_map
-            .documents()
-            .find(|document| document.text() == "other source")
-            .expect("other source document"),
-    );
+    let other_ref = source_map
+        .documents()
+        .find(|document| document.text() == "other source")
+        .expect("other source document")
+        .product_source_ref();
     let mut wrong_owner = resource.clone();
     wrong_owner.source_refs.push(other_ref.clone());
     wrong_owner.source_map_refs[0] = range(&wrong_owner.source_refs, &other_ref, 0, 1);
@@ -454,12 +453,11 @@ fn assert_nested_cross_source_roles_reject() {
     let nested_source_map =
         SourceMapSection::try_from_documents(&[&nested_document, &nested_other])
             .expect("two-source nested map");
-    let nested_other_ref = ProductSourceRef::from_document(
-        nested_source_map
-            .documents()
-            .find(|document| document.text() == "other source")
-            .expect("other nested source document"),
-    );
+    let nested_other_ref = nested_source_map
+        .documents()
+        .find(|document| document.text() == "other source")
+        .expect("other nested source document")
+        .product_source_ref();
     for (source_id, role) in [
         (
             5_usize,
@@ -1028,7 +1026,11 @@ fn fixture() -> (SourceDocument, ViewStyleResource) {
     let text = "éwhen environment(color-scheme == dark) { Button { opacity = 1 } }";
     let document = source_document("main.arcw", text);
     let source_map = SourceMapSection::try_from_documents(&[&document]).expect("source map");
-    let source = ProductSourceRef::from_document(source_map.documents().next().expect("source"));
+    let source = source_map
+        .documents()
+        .next()
+        .expect("source")
+        .product_source_ref();
     let source_refs = vec![source.clone()];
     let predicate_start = text.find('(').expect("predicate start");
     let predicate_end = text.find(')').expect("predicate end") + 1;
@@ -1099,6 +1101,10 @@ fn fixture() -> (SourceDocument, ViewStyleResource) {
     (document, resource)
 }
 
+#[expect(
+    clippy::too_many_lines,
+    reason = "the fixture preserves one nested environment tree and its exact source-map identity table"
+)]
 fn nested_fixture(
     document_id: &str,
     program_id: &str,
@@ -1107,7 +1113,11 @@ fn nested_fixture(
     let text = "when environment(color-scheme == dark) { when environment(reduced-motion == true) { Button { opacity = 1 } } }";
     let document = source_document(document_id, text);
     let source_map = SourceMapSection::try_from_documents(&[&document]).expect("source map");
-    let source = ProductSourceRef::from_document(source_map.documents().next().expect("source"));
+    let source = source_map
+        .documents()
+        .next()
+        .expect("source")
+        .product_source_ref();
     let source_refs = vec![source.clone()];
     let opens = text
         .match_indices('{')

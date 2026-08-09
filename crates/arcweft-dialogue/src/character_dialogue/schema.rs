@@ -18,6 +18,7 @@ use arcweft_core::{
         RuntimeBytesFormat, RuntimeNominalTypeId, RuntimeSchemaField, RuntimeTypeSchema,
         RuntimeValueDigest, TypeLayoutHash,
     },
+    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
     value::{RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bytes},
 };
 use arcweft_view::{ViewId, ViewRegistry};
@@ -25,6 +26,60 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const CHARACTER_DIALOGUE_FIELD_COUNT: usize = 18;
 const CUSTOM_ENTRY_FIELD_COUNT: usize = 4;
+
+#[derive(Clone, Copy)]
+enum DialogueRuntimeVariantOwner {
+    Voice,
+    InlineFailure,
+    InlineFallback,
+    FallbackStyle,
+}
+
+impl DialogueRuntimeVariantOwner {
+    const fn public_id(self) -> &'static str {
+        match self {
+            Self::Voice => "arcweft.dialogue.CharacterDialogueVoice",
+            Self::InlineFailure => "arcweft.dialogue.InlineFailurePolicy",
+            Self::InlineFallback => "arcweft.dialogue.InlineFallback",
+            Self::FallbackStyle => "arcweft.dialogue.FallbackStylePolicy",
+        }
+    }
+
+    const fn semantic_digest(self) -> [u8; 32] {
+        match self {
+            // SHA-256 of the versioned canonical owner labels. The bytes are
+            // frozen schema identity, not source or display spellings.
+            Self::Voice => [
+                0x76, 0x53, 0x13, 0x17, 0x90, 0x11, 0xc8, 0xe7, 0x34, 0x93, 0xbe, 0xbe, 0x4e, 0xc0,
+                0x4d, 0x05, 0x6a, 0xd3, 0xd5, 0xcd, 0x6a, 0xbd, 0xd3, 0x94, 0x9b, 0x0f, 0x8a, 0x36,
+                0x9e, 0x3c, 0x6a, 0x4d,
+            ],
+            Self::InlineFailure => [
+                0x5c, 0xfa, 0x09, 0xb9, 0xb5, 0x88, 0x19, 0x62, 0xe9, 0xdd, 0xe3, 0x22, 0xfb, 0xe5,
+                0x50, 0xa8, 0x7a, 0x2b, 0xcc, 0x6f, 0xe1, 0x98, 0xc0, 0xe4, 0xd8, 0x51, 0x51, 0xb2,
+                0x24, 0x8d, 0xed, 0x77,
+            ],
+            Self::InlineFallback => [
+                0xb0, 0x2c, 0xfa, 0x28, 0x38, 0xd6, 0xf8, 0x30, 0x9e, 0x47, 0xad, 0xab, 0x77, 0xf1,
+                0x24, 0xea, 0x90, 0x2a, 0xb6, 0xea, 0xa4, 0xa6, 0xf9, 0x88, 0xfa, 0xec, 0x56, 0x58,
+                0x28, 0x50, 0x69, 0xc5,
+            ],
+            Self::FallbackStyle => [
+                0x89, 0xa6, 0x0b, 0xba, 0xba, 0x9b, 0x88, 0xe0, 0x84, 0x03, 0x27, 0x37, 0xd8, 0x0e,
+                0x27, 0xa3, 0xf4, 0xdd, 0x5a, 0x63, 0xeb, 0x3b, 0xec, 0x51, 0xcc, 0x7d, 0x5b, 0xd9,
+                0x09, 0x82, 0xc1, 0xe2,
+            ],
+        }
+    }
+
+    fn identity(self) -> RuntimeVariantIdentity {
+        RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new(self.public_id())
+                .expect("dialogue runtime variant owner IDs are valid"),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes(self.semantic_digest()),
+        }
+    }
+}
 
 /// Runtime-only custom-field descriptor accepted with one bundle generation.
 #[derive(Clone, Debug, PartialEq)]
@@ -445,22 +500,34 @@ fn decode_record(
 
 fn encode_voice(voice: &CharacterDialogueVoice) -> RuntimeValue {
     match voice {
-        CharacterDialogueVoice::Auto => variant("Auto", None),
-        CharacterDialogueVoice::Id(id) => {
-            variant("Id", Some(RuntimeValue::EntityRef(id.as_str().to_owned())))
+        CharacterDialogueVoice::Auto => {
+            dialogue_variant(DialogueRuntimeVariantOwner::Voice, 0, "Auto", None)
         }
+        CharacterDialogueVoice::Id(id) => dialogue_variant(
+            DialogueRuntimeVariantOwner::Voice,
+            1,
+            "Id",
+            Some(RuntimeValue::EntityRef(id.as_str().to_owned())),
+        ),
     }
 }
 
 fn decode_voice(
     value: &RuntimeValue,
 ) -> Result<CharacterDialogueVoice, CharacterDialogueValueError> {
-    let RuntimeValue::Variant { name, payload, .. } = value else {
+    let RuntimeValue::Variant {
+        owner,
+        ordinal,
+        name,
+        payload,
+    } = value
+    else {
         return Err(field_shape("voice", "expected DialogueVoice variant"));
     };
-    match (name.as_str(), payload.as_deref()) {
-        ("Auto", None) => Ok(CharacterDialogueVoice::Auto),
-        ("Id", Some(RuntimeValue::EntityRef(id))) => {
+    expect_dialogue_variant_owner(owner, DialogueRuntimeVariantOwner::Voice, "voice")?;
+    match (*ordinal, name.as_str(), payload.as_deref()) {
+        (0, "Auto", None) => Ok(CharacterDialogueVoice::Auto),
+        (1, "Id", Some(RuntimeValue::EntityRef(id))) => {
             CharacterDialogueVoiceId::try_new(id.clone()).map(CharacterDialogueVoice::Id)
         }
         _ => Err(field_shape("voice", "invalid DialogueVoice variant")),
@@ -493,8 +560,8 @@ fn typed_from_nominal(
 
 fn encode_option(value: Option<RuntimeValue>) -> RuntimeValue {
     match value {
-        Some(value) => variant("Some", Some(value)),
-        None => variant("None", None),
+        Some(value) => RuntimeValue::option_some(value),
+        None => RuntimeValue::option_none(),
     }
 }
 
@@ -502,12 +569,18 @@ fn decode_option<'a>(
     value: &'a RuntimeValue,
     field: &'static str,
 ) -> Result<Option<&'a RuntimeValue>, CharacterDialogueValueError> {
-    let RuntimeValue::Variant { name, payload, .. } = value else {
+    let RuntimeValue::Variant {
+        owner,
+        ordinal,
+        name,
+        payload,
+    } = value
+    else {
         return Err(field_shape(field, "expected Option variant"));
     };
-    match (name.as_str(), payload.as_deref()) {
-        ("None", None) => Ok(None),
-        ("Some", Some(value)) => Ok(Some(value)),
+    match (owner, *ordinal, name.as_str(), payload.as_deref()) {
+        (RuntimeVariantIdentity::Option, 1, "None", None) => Ok(None),
+        (RuntimeVariantIdentity::Option, 0, "Some", Some(value)) => Ok(Some(value)),
         _ => Err(field_shape(field, "invalid Option payload")),
     }
 }
@@ -591,11 +664,24 @@ fn decode_custom(
 
 fn encode_inline_failure(policy: &InlineFailurePolicy) -> RuntimeValue {
     let value = match policy {
-        InlineFailurePolicy::FailLine => variant("FailLine", None),
-        InlineFailurePolicy::Discard => variant("Discard", None),
-        InlineFailurePolicy::Fallback { fallback } => {
-            variant("Fallback", Some(encode_fallback(fallback)))
-        }
+        InlineFailurePolicy::FailLine => dialogue_variant(
+            DialogueRuntimeVariantOwner::InlineFailure,
+            0,
+            "FailLine",
+            None,
+        ),
+        InlineFailurePolicy::Discard => dialogue_variant(
+            DialogueRuntimeVariantOwner::InlineFailure,
+            1,
+            "Discard",
+            None,
+        ),
+        InlineFailurePolicy::Fallback { fallback } => dialogue_variant(
+            DialogueRuntimeVariantOwner::InlineFailure,
+            2,
+            "Fallback",
+            Some(encode_fallback(fallback)),
+        ),
     };
     RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
         inline_failure_type_id(),
@@ -611,13 +697,24 @@ fn decode_inline_failure(
         return Err(field_shape("inline_failure", "expected nominal record"));
     };
     record.validate_shape(&inline_failure_type_id(), inline_failure_layout(), 1)?;
-    let RuntimeValue::Variant { name, payload, .. } = &record.fields()[0] else {
+    let RuntimeValue::Variant {
+        owner,
+        ordinal,
+        name,
+        payload,
+    } = &record.fields()[0]
+    else {
         return Err(field_shape("inline_failure", "expected policy variant"));
     };
-    match (name.as_str(), payload.as_deref()) {
-        ("FailLine", None) => Ok(InlineFailurePolicy::FailLine),
-        ("Discard", None) => Ok(InlineFailurePolicy::Discard),
-        ("Fallback", Some(value)) => Ok(InlineFailurePolicy::Fallback {
+    expect_dialogue_variant_owner(
+        owner,
+        DialogueRuntimeVariantOwner::InlineFailure,
+        "inline_failure",
+    )?;
+    match (*ordinal, name.as_str(), payload.as_deref()) {
+        (0, "FailLine", None) => Ok(InlineFailurePolicy::FailLine),
+        (1, "Discard", None) => Ok(InlineFailurePolicy::Discard),
+        (2, "Fallback", Some(value)) => Ok(InlineFailurePolicy::Fallback {
             fallback: decode_fallback(value)?,
         }),
         _ => Err(field_shape("inline_failure", "invalid policy variant")),
@@ -626,29 +723,53 @@ fn decode_inline_failure(
 
 fn encode_fallback(fallback: &InlineFallback) -> RuntimeValue {
     match fallback {
-        InlineFallback::Text { text, style } => variant(
+        InlineFallback::Text { text, style } => dialogue_variant(
+            DialogueRuntimeVariantOwner::InlineFallback,
+            0,
             "Text",
             Some(RuntimeValue::Tuple(vec![
                 RuntimeValue::String(text.clone()),
                 encode_fallback_style(style),
             ])),
         ),
-        InlineFallback::ExprSource { style } => {
-            variant("ExprSource", Some(encode_fallback_style(style)))
-        }
-        InlineFallback::CallSource { style } => {
-            variant("CallSource", Some(encode_fallback_style(style)))
-        }
-        InlineFallback::ValuePlain => variant("ValuePlain", None),
+        InlineFallback::ExprSource { style } => dialogue_variant(
+            DialogueRuntimeVariantOwner::InlineFallback,
+            1,
+            "ExprSource",
+            Some(encode_fallback_style(style)),
+        ),
+        InlineFallback::CallSource { style } => dialogue_variant(
+            DialogueRuntimeVariantOwner::InlineFallback,
+            2,
+            "CallSource",
+            Some(encode_fallback_style(style)),
+        ),
+        InlineFallback::ValuePlain => dialogue_variant(
+            DialogueRuntimeVariantOwner::InlineFallback,
+            3,
+            "ValuePlain",
+            None,
+        ),
     }
 }
 
 fn decode_fallback(value: &RuntimeValue) -> Result<InlineFallback, CharacterDialogueValueError> {
-    let RuntimeValue::Variant { name, payload, .. } = value else {
+    let RuntimeValue::Variant {
+        owner,
+        ordinal,
+        name,
+        payload,
+    } = value
+    else {
         return Err(field_shape("inline_failure", "expected fallback variant"));
     };
-    match (name.as_str(), payload.as_deref()) {
-        ("Text", Some(RuntimeValue::Tuple(values))) if values.len() == 2 => {
+    expect_dialogue_variant_owner(
+        owner,
+        DialogueRuntimeVariantOwner::InlineFallback,
+        "inline_failure",
+    )?;
+    match (*ordinal, name.as_str(), payload.as_deref()) {
+        (0, "Text", Some(RuntimeValue::Tuple(values))) if values.len() == 2 => {
             let RuntimeValue::String(text) = &values[0] else {
                 return Err(field_shape(
                     "inline_failure",
@@ -660,22 +781,31 @@ fn decode_fallback(value: &RuntimeValue) -> Result<InlineFallback, CharacterDial
                 style: decode_fallback_style(&values[1])?,
             })
         }
-        ("ExprSource", Some(style)) => Ok(InlineFallback::ExprSource {
+        (1, "ExprSource", Some(style)) => Ok(InlineFallback::ExprSource {
             style: decode_fallback_style(style)?,
         }),
-        ("CallSource", Some(style)) => Ok(InlineFallback::CallSource {
+        (2, "CallSource", Some(style)) => Ok(InlineFallback::CallSource {
             style: decode_fallback_style(style)?,
         }),
-        ("ValuePlain", None) => Ok(InlineFallback::ValuePlain),
+        (3, "ValuePlain", None) => Ok(InlineFallback::ValuePlain),
         _ => Err(field_shape("inline_failure", "invalid fallback variant")),
     }
 }
 
 fn encode_fallback_style(style: &FallbackStylePolicy) -> RuntimeValue {
     match style {
-        FallbackStylePolicy::Plain => variant("Plain", None),
-        FallbackStylePolicy::InheritSurrounding => variant("InheritSurrounding", None),
-        FallbackStylePolicy::Apply { styles } => variant(
+        FallbackStylePolicy::Plain => {
+            dialogue_variant(DialogueRuntimeVariantOwner::FallbackStyle, 0, "Plain", None)
+        }
+        FallbackStylePolicy::InheritSurrounding => dialogue_variant(
+            DialogueRuntimeVariantOwner::FallbackStyle,
+            1,
+            "InheritSurrounding",
+            None,
+        ),
+        FallbackStylePolicy::Apply { styles } => dialogue_variant(
+            DialogueRuntimeVariantOwner::FallbackStyle,
+            2,
             "Apply",
             Some(RuntimeValue::Seq(RuntimeSeq::values(
                 styles
@@ -690,16 +820,27 @@ fn encode_fallback_style(style: &FallbackStylePolicy) -> RuntimeValue {
 fn decode_fallback_style(
     value: &RuntimeValue,
 ) -> Result<FallbackStylePolicy, CharacterDialogueValueError> {
-    let RuntimeValue::Variant { name, payload, .. } = value else {
+    let RuntimeValue::Variant {
+        owner,
+        ordinal,
+        name,
+        payload,
+    } = value
+    else {
         return Err(field_shape(
             "inline_failure",
             "expected fallback style variant",
         ));
     };
-    match (name.as_str(), payload.as_deref()) {
-        ("Plain", None) => Ok(FallbackStylePolicy::Plain),
-        ("InheritSurrounding", None) => Ok(FallbackStylePolicy::InheritSurrounding),
-        ("Apply", Some(RuntimeValue::Seq(styles))) => Ok(FallbackStylePolicy::Apply {
+    expect_dialogue_variant_owner(
+        owner,
+        DialogueRuntimeVariantOwner::FallbackStyle,
+        "inline_failure",
+    )?;
+    match (*ordinal, name.as_str(), payload.as_deref()) {
+        (0, "Plain", None) => Ok(FallbackStylePolicy::Plain),
+        (1, "InheritSurrounding", None) => Ok(FallbackStylePolicy::InheritSurrounding),
+        (2, "Apply", Some(RuntimeValue::Seq(styles))) => Ok(FallbackStylePolicy::Apply {
             styles: styles
                 .clone()
                 .into_values()
@@ -717,11 +858,29 @@ fn decode_fallback_style(
     }
 }
 
-fn variant(name: &str, payload: Option<RuntimeValue>) -> RuntimeValue {
+fn dialogue_variant(
+    owner: DialogueRuntimeVariantOwner,
+    ordinal: u32,
+    name: &str,
+    payload: Option<RuntimeValue>,
+) -> RuntimeValue {
     RuntimeValue::Variant {
-        path: None,
+        owner: owner.identity(),
+        ordinal,
         name: name.to_owned(),
         payload: payload.map(Box::new),
+    }
+}
+
+fn expect_dialogue_variant_owner(
+    actual: &RuntimeVariantIdentity,
+    expected: DialogueRuntimeVariantOwner,
+    field: &'static str,
+) -> Result<(), CharacterDialogueValueError> {
+    if actual == &expected.identity() {
+        Ok(())
+    } else {
+        Err(field_shape(field, "variant has the wrong typed owner"))
     }
 }
 

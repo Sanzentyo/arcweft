@@ -1,8 +1,8 @@
 use crate::geometry::AgentBBox;
 use crate::serde_helpers::is_zero;
-use arcweft_render_text::{
+use arcweft_text_model::{
     RichTextObjectProxyDeclaration, RichTextParam, RichTextPresentation, RichTextRange,
-    RichTextTextSource,
+    RichTextTextProxyField, RichTextTextProxySchema, RichTextTextSource,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -66,11 +66,16 @@ pub struct AgentHitRegion {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_declaration: Option<RichTextObjectProxyDeclaration>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub proxy_schema: Option<RichTextTextProxySchema>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub proxy_fields: Vec<RichTextTextProxyField>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_role: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub proxy_layer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depth: Option<i32>,
+    /// Image-object proxy parameters remain owned by the image resource model.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub proxy_params: BTreeMap<String, RichTextParam>,
 }

@@ -6,11 +6,13 @@ use arcweft_glyphon::{
 };
 use arcweft_render_text::{
     ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextRunSource,
-    ResolvedTextStyle, RichTextInlineDirection, RichTextPresentation, RichTextRange,
-    RichTextWritingMode, TextDocumentRevision, TextFontFamily,
+    ResolvedTextStyle, TextDocumentRevision, TextFontFamily,
 };
 use arcweft_text_layout::{
     GlyphOrientation, LayoutPoint, LayoutRect, LayoutSize, TextLayoutRequest, layout_document,
+};
+use arcweft_text_model::{
+    RichTextInlineDirection, RichTextPresentation, RichTextRange, RichTextWritingMode,
 };
 
 const JAPANESE_FONT: &[u8] = include_bytes!("../../../web/assets/noto-sans-jp-vf.ttf");

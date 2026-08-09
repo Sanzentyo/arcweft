@@ -93,7 +93,11 @@ fn attached_match_preserves_missing_body_guard_arrow_value_and_close() {
     assert_eq!(projection.scrutinee(), SyntaxExpressionSlot::Missing);
     assert!(matches!(
         missing_scrutinee.children(),
-        [AttachedExpressionChild::Missing { ordinal: 0, .. }]
+        [AttachedExpressionChild::Missing {
+            ordinal: 0,
+            component_role: ExpressionComponentRole::Scrutinee,
+            ..
+        }]
     ));
 
     let missing_guard = expression("match value { _ when => 1 }", SyntaxKind::MatchExpression);

@@ -11,6 +11,7 @@ path = "src/lib.rs"
 
 [dependencies]
 blake3.workspace = true
+arcweft-id = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 

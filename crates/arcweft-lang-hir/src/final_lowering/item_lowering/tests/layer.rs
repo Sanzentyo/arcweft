@@ -82,9 +82,7 @@ fn lower_output(
     key: &HirModuleKey,
 ) -> crate::database::HirLowerOutput {
     let mut transaction = stage(database, parsed, key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(parsed).unwrap();
     transaction.finish(database).unwrap()
 }
 
@@ -100,9 +98,7 @@ fn assert_layer_freeze_rejects(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     tamper(&mut transaction, owner);
     assert!(
@@ -136,6 +132,10 @@ fn revise_expression_scope(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical Layer test asserts one closed kind/member/expression/source matrix"
+)]
 fn canonical_layer_freezes_closed_kind_members_and_exact_expression_owners() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-layer-clean",
@@ -208,13 +208,11 @@ fn canonical_layer_freezes_closed_kind_members_and_exact_expression_owners() {
 
     for position in 2..=4 {
         let payload = match member(&module, position).kind() {
-            HirDeclarationMemberKind::LayerExpression(HirLayerExpressionMember::Z(payload))
-            | HirDeclarationMemberKind::LayerExpression(HirLayerExpressionMember::Visible(
-                payload,
-            ))
-            | HirDeclarationMemberKind::LayerExpression(HirLayerExpressionMember::Transform(
-                payload,
-            )) => payload,
+            HirDeclarationMemberKind::LayerExpression(
+                HirLayerExpressionMember::Z(payload)
+                | HirLayerExpressionMember::Visible(payload)
+                | HirLayerExpressionMember::Transform(payload),
+            ) => payload,
             other => panic!("expected Layer expression member, got {other:?}"),
         };
         let HirLayerMemberValue::Present(expression) = payload.value() else {
@@ -593,6 +591,10 @@ fn layer_freeze_rejects_kind_and_expression_scope_tampering() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the incremental Layer test asserts one complete owner reconciliation and retirement matrix"
+)]
 fn incremental_layer_preserves_reconciled_owners_and_retires_only_edited_children() {
     let name = SourceName::path("proof/layer-incremental.arcw");
     let document_id = "arcweft-test://proof/layer-incremental";

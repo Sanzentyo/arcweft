@@ -5,18 +5,20 @@
 //! This module never falls back to the structured VM.
 
 use super::fiber::{
-    FiberAwaitManyState, FiberCursor, FiberResumeTarget, FiberReturnPoint, FiberSafePoint,
-    FiberScopeCleanup, FiberState, FiberStateError, FiberStatus, FiberSuspension,
-    FiberSuspensionReason, FiberTerminalValue, FiberTrap,
+    FiberAwaitManyState, FiberAwaitTarget, FiberCursor, FiberResumeTarget, FiberReturnPoint,
+    FiberSafePoint, FiberScopeCleanup, FiberState, FiberStateError, FiberStatus, FiberSuspension,
+    FiberSuspensionReason, FiberTerminalValue, FiberTrap, runtime_value_matches_type,
+    runtime_variant_identity,
 };
 use super::schema::{
     AwbcBinaryOp, AwbcBlockId, AwbcCodeLocation, AwbcConstant, AwbcConstantId, AwbcContentUnitId,
     AwbcEffectPlanId, AwbcFunctionId, AwbcInstruction, AwbcInstructionId, AwbcIntrinsicId,
     AwbcOpcode, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcPureHelperId, AwbcRegisterId,
-    AwbcResumePointId, AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId,
-    AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId, AwbcTraitReceiverMode,
-    AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
+    AwbcResumePointId, AwbcRuntimeType, AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId,
+    AwbcStreamPlanId, AwbcStringId, AwbcTaskPlanId, AwbcTerminator, AwbcTraitMethodId,
+    AwbcTraitReceiverMode, AwbcTrapCode, AwbcTypeId, AwbcUnaryOp, AwbcUnsignedIntKind,
 };
+use crate::task::NeedId;
 use crate::time::LogicalDuration;
 use crate::value::{
     RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeSeq, RuntimeValue,
@@ -357,8 +359,27 @@ fn execute_instruction(
                 });
         }
         AwbcInstruction::ExitScope { .. } => {
-            if let Some(scope) = fiber.active_frame_mut()?.scopes.pop() {
+            let layout_id = fiber.active_frame()?.layout;
+            let layout = program
+                .frame_layouts
+                .get(layout_id.index())
+                .ok_or(FiberStateError::UnknownFrameLayout(layout_id.0))?;
+            let frame = fiber.active_frame_mut()?;
+            if let Some(scope) = frame.scopes.pop() {
                 emit_cleanup_observations(scope.cleanups, observations);
+            }
+            let active_scope_depth = u32::try_from(frame.scopes.len())
+                .map_err(|_| VmError::Runtime("scope depth exceeds u32".to_owned()))?;
+            for (register, slot) in frame.registers.iter_mut().zip(&layout.slots) {
+                if slot.scope_depth > active_scope_depth
+                    && !matches!(
+                        slot.role,
+                        super::schema::AwbcFrameSlotRole::Parameter
+                            | super::schema::AwbcFrameSlotRole::RuntimeState
+                    )
+                {
+                    *register = None;
+                }
             }
         }
         AwbcInstruction::BindPattern { pattern, value, .. } => {
@@ -505,9 +526,10 @@ fn execute_instruction(
         }
         AwbcInstruction::MakeVariant {
             dst,
+            ty,
+            case,
             case_name,
             payload,
-            ..
         } => {
             let payload = payload
                 .map(|payload| register(fiber, payload).cloned())
@@ -516,7 +538,8 @@ fn execute_instruction(
             fiber.active_frame_mut()?.set_register(
                 *dst,
                 RuntimeValue::Variant {
-                    path: None,
+                    owner: variant_identity_for_type(program, *ty)?,
+                    ordinal: *case,
                     name: string(program, *case_name)?.to_owned(),
                     payload,
                 },
@@ -619,6 +642,9 @@ fn execute_instruction(
         } => {
             let outcome =
                 execute_trait_method_call(program, fiber, host, *method, *receiver, args)?;
+            let TraitMethodCallOutcome::Completed(outcome) = outcome else {
+                return Ok(InstructionControl::Transferred);
+            };
             fiber
                 .active_frame_mut()?
                 .set_register(*dst, outcome.value)?;
@@ -880,6 +906,12 @@ struct TraitMethodVmOutcome {
     updated_receiver: Option<RuntimeValue>,
 }
 
+#[derive(Debug)]
+enum TraitMethodCallOutcome {
+    Completed(TraitMethodVmOutcome),
+    BudgetYield,
+}
+
 fn execute_trait_method_call(
     program: &AwbcProgram,
     caller: &mut FiberState,
@@ -887,7 +919,7 @@ fn execute_trait_method_call(
     method: AwbcTraitMethodId,
     receiver: AwbcRegisterId,
     args: &[AwbcRegisterId],
-) -> Result<TraitMethodVmOutcome, VmError> {
+) -> Result<TraitMethodCallOutcome, VmError> {
     const TRAIT_METHOD_BUDGET: u64 = 4_096;
 
     let method_record = program
@@ -924,9 +956,12 @@ fn execute_trait_method_call(
             VmExit::Running if executed < TRAIT_METHOD_BUDGET => {}
             VmExit::Returned(Some(value)) => {
                 if executed > 0 && !caller.consume_budget(executed) {
-                    return Err(VmError::Runtime(
-                        "trait method call exceeded caller instruction budget".to_owned(),
-                    ));
+                    let safe_point = caller.safe_point(None)?;
+                    caller.suspend(FiberSuspension {
+                        resume: FiberResumeTarget::Exact(safe_point.cursor),
+                        reason: FiberSuspensionReason::BudgetYield,
+                    })?;
+                    return Ok(TraitMethodCallOutcome::BudgetYield);
                 }
                 let updated_receiver = if method_record.receiver == AwbcTraitReceiverMode::MutRef {
                     let slot = method_record.receiver_state_slot.ok_or_else(|| {
@@ -938,10 +973,10 @@ fn execute_trait_method_call(
                 } else {
                     None
                 };
-                return Ok(TraitMethodVmOutcome {
+                return Ok(TraitMethodCallOutcome::Completed(TraitMethodVmOutcome {
                     value,
                     updated_receiver,
-                });
+                }));
             }
             VmExit::Returned(None) => {
                 return Err(VmError::Runtime(
@@ -1062,25 +1097,16 @@ fn execute_terminator(
             let target_value = register(fiber, *target)?.clone();
             let target = match &target_value {
                 RuntimeValue::String(target) | RuntimeValue::EntityRef(target) => program
-                    .functions
-                    .iter()
-                    .enumerate()
-                    .find_map(|(index, function)| {
-                        function
-                            .public_id
-                            .and_then(|id| program.strings.get(id.index()))
-                            .filter(|public_id| *public_id == target)
-                            .and_then(|_| u32::try_from(index).ok())
-                            .map(AwbcFunctionId)
-                    }),
-                _ => None,
-            }
-            .ok_or_else(|| {
-                VmError::Runtime(format!(
-                    "missing dynamic goto target `{}`",
-                    runtime_value_label(&target_value)
-                ))
-            })?;
+                    .resolve_flow_target_value(target)
+                    .map(|(_, function)| function)
+                    .map_err(|error| VmError::Runtime(error.to_string()))?,
+                _ => {
+                    return Err(VmError::Runtime(format!(
+                        "invalid dynamic goto target `{}`",
+                        runtime_value_label(&target_value)
+                    )));
+                }
+            };
             let args = register_values(fiber, args)?;
             drain_active_frame_cleanups(fiber, observations)?;
             fiber.replace_active_function(program, target, &args)?;
@@ -1112,17 +1138,20 @@ fn execute_terminator(
             },
         ),
         AwbcTerminator::Await {
-            task,
+            handle,
             binding,
             resume,
-        } => suspend(
-            fiber,
-            *resume,
-            FiberSuspensionReason::Await {
-                task: register(fiber, *task)?.clone(),
-                binding: *binding,
-            },
-        ),
+        } => {
+            let target = await_target(program, fiber, *handle)?;
+            suspend(
+                fiber,
+                *resume,
+                FiberSuspensionReason::Await {
+                    target,
+                    binding: *binding,
+                },
+            )
+        }
         AwbcTerminator::AwaitMany {
             plan,
             source,
@@ -1220,6 +1249,36 @@ fn register(fiber: &FiberState, register: AwbcRegisterId) -> Result<&RuntimeValu
         .map_err(VmError::from)
 }
 
+fn await_target(
+    program: &AwbcProgram,
+    fiber: &FiberState,
+    register_id: AwbcRegisterId,
+) -> Result<FiberAwaitTarget, VmError> {
+    let frame = fiber.active_frame()?;
+    let runtime_type = program
+        .frame_layouts
+        .get(frame.layout.index())
+        .and_then(|layout| layout.slots.get(register_id.index()))
+        .and_then(|slot| program.runtime_types.get(slot.ty.index()))
+        .ok_or_else(|| VmError::Runtime("await handle register has no runtime type".to_owned()))?;
+    let value = register(fiber, register_id)?.clone();
+    match runtime_type {
+        AwbcRuntimeType::NeedHandle => match value {
+            RuntimeValue::String(need) if !need.is_empty() => {
+                Ok(FiberAwaitTarget::Need(NeedId(need)))
+            }
+            value => Err(VmError::Runtime(format!(
+                "NeedHandle register contained {}",
+                runtime_value_label(&value)
+            ))),
+        },
+        AwbcRuntimeType::TaskHandle | AwbcRuntimeType::Dynamic => Ok(FiberAwaitTarget::Task(value)),
+        _ => Err(VmError::Runtime(
+            "await register is neither a task handle nor a Need handle".to_owned(),
+        )),
+    }
+}
+
 fn register_values(
     fiber: &FiberState,
     registers: &[AwbcRegisterId],
@@ -1304,9 +1363,13 @@ pub(crate) fn constant_value(
                 .collect::<Result<Vec<_>, VmError>>()?,
         )),
         AwbcConstant::Variant {
-            case_name, payload, ..
+            ty,
+            case,
+            case_name,
+            payload,
         } => Ok(RuntimeValue::Variant {
-            path: None,
+            owner: variant_identity_for_type(program, *ty)?,
+            ordinal: *case,
             name: string(program, *case_name)?.to_owned(),
             payload: payload
                 .map(|id| constant_value(program, id))
@@ -1410,6 +1473,20 @@ fn string(program: &AwbcProgram, id: AwbcStringId) -> Result<&str, VmError> {
         .ok_or(VmError::MissingString(id))
 }
 
+fn variant_identity_for_type(
+    program: &AwbcProgram,
+    ty: AwbcTypeId,
+) -> Result<crate::pattern::RuntimeVariantIdentity, VmError> {
+    match program.runtime_types.get(ty.index()) {
+        Some(AwbcRuntimeType::Variant { owner, .. }) => runtime_variant_identity(program, owner)
+            .ok_or_else(|| VmError::Runtime("variant owner identity is invalid".to_owned())),
+        Some(_) => Err(VmError::Runtime(
+            "variant value references a non-variant runtime type".to_owned(),
+        )),
+        None => Err(VmError::MissingType(ty)),
+    }
+}
+
 pub(crate) fn test_pattern(
     program: &AwbcProgram,
     pattern: AwbcPatternId,
@@ -1420,7 +1497,10 @@ pub(crate) fn test_pattern(
         .get(pattern.index())
         .ok_or(VmError::MissingPattern(pattern))?;
     Ok(match pattern {
-        AwbcPattern::Bind { .. } | AwbcPattern::Discard => true,
+        AwbcPattern::Bind { expected, .. } => {
+            expected.is_none_or(|expected| runtime_value_matches_type(program, value, expected, 0))
+        }
+        AwbcPattern::Discard => true,
         AwbcPattern::Literal(id) => constant_value(program, *id)? == *value,
         AwbcPattern::Entity(id) => {
             matches!(value, RuntimeValue::EntityRef(actual) if actual == string(program, *id)?)
@@ -1428,17 +1508,46 @@ pub(crate) fn test_pattern(
         AwbcPattern::Tuple(patterns) => {
             matches!(value, RuntimeValue::Tuple(values) if values.len() == patterns.len() && patterns.iter().zip(values).all(|(pattern, value)| test_pattern(program, *pattern, value).unwrap_or(false)))
         }
-        AwbcPattern::Record { fields, .. } => {
-            matches!(value, RuntimeValue::Record(values) if fields.iter().all(|field| values.get(field.field as usize).is_some_and(|value| test_pattern(program, field.pattern, &value.value).unwrap_or(false))))
+        AwbcPattern::Record { ty, fields, rest } => {
+            let owner_matches =
+                ty.is_none_or(|ty| runtime_value_matches_type(program, value, ty, 0));
+            owner_matches
+                && match value {
+                    RuntimeValue::Record(values) => {
+                        (*rest || values.len() == fields.len())
+                            && fields.iter().all(|field| {
+                                values.get(field.field as usize).is_some_and(|value| {
+                                    test_pattern(program, field.pattern, &value.value)
+                                        .unwrap_or(false)
+                                })
+                            })
+                    }
+                    RuntimeValue::NominalRecord(record) => {
+                        (*rest || record.fields().len() == fields.len())
+                            && fields.iter().all(|field| {
+                                record
+                                    .fields()
+                                    .get(field.field as usize)
+                                    .is_some_and(|value| {
+                                        test_pattern(program, field.pattern, value).unwrap_or(false)
+                                    })
+                            })
+                    }
+                    _ => false,
+                }
         }
         AwbcPattern::Sequence { items, .. } => {
             matches!(value, RuntimeValue::Seq(sequence) if sequence.len() >= items.len() && items.iter().enumerate().all(|(index, pattern)| test_pattern(program, *pattern, &sequence.value_at(index)).unwrap_or(false)))
         }
         AwbcPattern::Variant {
-            case_name, payload, ..
+            ty,
+            case,
+            case_name,
+            payload,
         } => {
             let case_name = string(program, *case_name)?;
-            matches!(value, RuntimeValue::Variant { name, payload: actual, .. } if case_name == name && payload.is_none_or(|pattern| actual.as_deref().is_some_and(|value| test_pattern(program, pattern, value).unwrap_or(false))))
+            runtime_value_matches_type(program, value, *ty, 0)
+                && matches!(value, RuntimeValue::Variant { ordinal, name, payload: actual, .. } if case == ordinal && case_name == name && payload.is_none_or(|pattern| actual.as_deref().is_some_and(|value| test_pattern(program, pattern, value).unwrap_or(false))))
         }
         AwbcPattern::Whole { inner, .. } => test_pattern(program, *inner, value)?,
     })
@@ -1456,7 +1565,19 @@ pub(crate) fn bind_pattern(
         .ok_or(VmError::MissingPattern(pattern))?
         .clone();
     match pattern_record {
-        AwbcPattern::Bind { target, .. } | AwbcPattern::Whole { target, .. } => {
+        AwbcPattern::Bind {
+            target, expected, ..
+        } => {
+            if expected
+                .is_some_and(|expected| !runtime_value_matches_type(program, value, expected, 0))
+            {
+                return Err(VmError::Runtime("pattern did not match".to_owned()));
+            }
+            fiber
+                .active_frame_mut()?
+                .set_register(target, value.clone())?;
+        }
+        AwbcPattern::Whole { target, .. } => {
             fiber
                 .active_frame_mut()?
                 .set_register(target, value.clone())?;
@@ -1479,6 +1600,30 @@ pub(crate) fn bind_pattern(
                         .active_frame_mut()?
                         .set_register(rest, RuntimeValue::Seq(sequence.tail_from(item_count)))?;
                 }
+            }
+        }
+        AwbcPattern::Record { fields, .. } => {
+            if !test_pattern(program, pattern, value)? {
+                return Err(VmError::Runtime("pattern did not match".to_owned()));
+            }
+            match value {
+                RuntimeValue::Record(values) => {
+                    for field in fields {
+                        let value = values.get(field.field as usize).ok_or_else(|| {
+                            VmError::Runtime("record pattern field is absent".to_owned())
+                        })?;
+                        bind_pattern(program, fiber, field.pattern, &value.value)?;
+                    }
+                }
+                RuntimeValue::NominalRecord(record) => {
+                    for field in fields {
+                        let value = record.fields().get(field.field as usize).ok_or_else(|| {
+                            VmError::Runtime("record pattern field is absent".to_owned())
+                        })?;
+                        bind_pattern(program, fiber, field.pattern, value)?;
+                    }
+                }
+                _ => unreachable!("record pattern was tested before binding"),
             }
         }
         _ => {

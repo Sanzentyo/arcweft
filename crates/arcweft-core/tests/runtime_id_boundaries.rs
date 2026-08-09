@@ -1,4 +1,6 @@
-use arcweft_core::plan::{EntryRuntimeId, FlowRuntimeId, RuntimeLineId};
+use arcweft_core::plan::{
+    EntryRuntimeId, FlowRuntimeId, RuntimeFlow, RuntimeFlowTargetError, RuntimeLineId, RuntimePlan,
+};
 use arcweft_core::runtime_id::{
     RuntimeIdError, RuntimeIdFamily, RuntimeIdPath, RuntimeIdReference, RuntimeIdReferenceAnchor,
     RuntimePublicLabel,
@@ -12,6 +14,63 @@ fn source_flow_entity_lowers_to_canonical_runtime_id_without_family_payload() {
     assert_eq!(flow.canonical_label(), "main");
     assert_eq!(flow.public_label().as_str(), "flow.main");
     assert_eq!(flow.path().segments().len(), 1);
+}
+
+#[test]
+fn checked_flow_identity_is_one_way_and_keeps_public_label_separate() {
+    let left = FlowRuntimeId::from_checked_declaration_digest([0x11; 32], "flow.opening")
+        .expect("accepted Flow public label");
+    let right = FlowRuntimeId::from_checked_declaration_digest([0x22; 32], "flow.opening")
+        .expect("accepted Flow public label");
+
+    assert_ne!(left, right);
+    assert_eq!(left.public_label().as_str(), "flow.opening");
+    assert_eq!(right.public_label().as_str(), "flow.opening");
+    assert!(left.canonical_label().starts_with("__checked_flow."));
+    assert!(right.canonical_label().starts_with("__checked_flow."));
+    assert_ne!(left.canonical_label(), right.canonical_label());
+}
+
+#[test]
+fn dynamic_flow_target_selects_one_accepted_identity_or_reports_label_ambiguity() {
+    let left = FlowRuntimeId::from_checked_declaration_digest([0x11; 32], "flow.opening")
+        .expect("accepted Flow public label");
+    let right = FlowRuntimeId::from_checked_declaration_digest([0x22; 32], "flow.opening")
+        .expect("accepted Flow public label");
+    let one = RuntimePlan::new(
+        vec![RuntimeFlow {
+            id: left.clone(),
+            ops: Vec::new(),
+        }],
+        Vec::new(),
+    )
+    .expect("single Flow plan");
+    assert_eq!(
+        one.resolve_flow_target_value("flow.opening"),
+        Ok(left.clone())
+    );
+
+    let ambiguous = RuntimePlan::new(
+        vec![
+            RuntimeFlow {
+                id: left,
+                ops: Vec::new(),
+            },
+            RuntimeFlow {
+                id: right,
+                ops: Vec::new(),
+            },
+        ],
+        Vec::new(),
+    )
+    .expect("module-distinct Flow plan");
+    assert_eq!(
+        ambiguous.resolve_flow_target_value("flow.opening"),
+        Err(RuntimeFlowTargetError::Ambiguous {
+            target: "flow.opening".to_owned(),
+            matches: 2,
+        })
+    );
 }
 
 #[test]

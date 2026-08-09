@@ -1,7 +1,9 @@
 //! Typed semantic identities produced by nominal type resolution.
 
-use arcweft_lang_hir::symbol::{CallableDeclarationId, nominal::ProjectNominalDeclarationId};
-use arcweft_lang_syntax::types::TypePath;
+use arcweft_lang_hir::{
+    leaf::{HirPath, HirPathRoot, HirPathSegment},
+    symbol::{CallableDeclarationKey, nominal::ProjectNominalDeclarationId},
+};
 use arcweft_source::SourceSpan;
 use std::sync::Arc;
 
@@ -16,7 +18,7 @@ pub struct TypePoisonId(u32);
 /// Declaration or detached scope that owns one semantic generic parameter.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum GenericTypeOwnerId {
-    Callable(CallableDeclarationId),
+    Callable(CallableDeclarationKey),
     Nominal(ProjectNominalDeclarationId),
     AcceptedNominal(AcceptedNominalId),
     AcceptedSource(SourceSpan),
@@ -52,7 +54,7 @@ pub struct AcceptedNominalType {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct OpenNominalType {
     rule: Arc<OpenNominalRuleId>,
-    path: Arc<TypePath>,
+    path: Arc<HirPath>,
     arguments: Box<[TypeKind]>,
 }
 
@@ -101,7 +103,9 @@ impl GenericTypeParameterId {
 
     pub(super) fn source_label(&self) -> String {
         let owner = match self.owner.as_ref() {
-            GenericTypeOwnerId::Callable(owner) => owner.qualified_name(),
+            GenericTypeOwnerId::Callable(owner) => {
+                format!("{}::{}::{}", owner.package(), owner.module(), owner.name())
+            }
             GenericTypeOwnerId::Nominal(owner) => owner.qualified_name(),
             GenericTypeOwnerId::AcceptedNominal(owner) => owner.source_label(),
             GenericTypeOwnerId::AcceptedSource(source) => {
@@ -181,7 +185,7 @@ impl OpenNominalType {
     /// Creates a checked instantiation admitted by an explicit open rule.
     pub(crate) fn new(
         rule: OpenNominalRuleId,
-        path: TypePath,
+        path: HirPath,
         arguments: impl Into<Box<[TypeKind]>>,
     ) -> Self {
         Self {
@@ -196,8 +200,8 @@ impl OpenNominalType {
         self.rule.as_ref()
     }
 
-    /// Authored typed path retained for deterministic diagnostics.
-    pub fn path(&self) -> &TypePath {
+    /// Root-preserving semantic path retained for deterministic diagnostics.
+    pub fn path(&self) -> &HirPath {
         self.path.as_ref()
     }
 
@@ -207,8 +211,29 @@ impl OpenNominalType {
     }
 
     pub(super) fn source_label(&self) -> String {
-        application_label(&self.path.canonical_string(), &self.arguments)
+        application_label(&hir_path_label(&self.path), &self.arguments)
     }
+}
+
+fn hir_path_label(path: &HirPath) -> String {
+    let mut label = match path.root() {
+        HirPathRoot::ImplicitCrate => String::new(),
+        HirPathRoot::Crate => "crate.".to_owned(),
+        HirPathRoot::SelfModule => "self.".to_owned(),
+        HirPathRoot::Super { depth } => "super.".repeat(depth),
+    };
+    label.push_str(
+        &path
+            .segments()
+            .iter()
+            .map(|segment| match segment {
+                HirPathSegment::Identifier(name) => name.as_str(),
+                HirPathSegment::ProjectSymbol(name) => name.as_str(),
+            })
+            .collect::<Vec<_>>()
+            .join("."),
+    );
+    label
 }
 
 fn application_label(head: &str, arguments: &[TypeKind]) -> String {

@@ -372,7 +372,9 @@ impl HirSourceBackpressureValue {
                 HirSourceBackpressurePolicy::Latest
                 | HirSourceBackpressurePolicy::BlockingNotAllowed,
             ) => Ok(()),
-            Self::Recovered { authored, issue } => validate_policy_recovery(authored, *issue),
+            Self::Recovered { authored, issue } => {
+                validate_policy_recovery(authored.as_ref(), *issue)
+            }
         }
     }
 }
@@ -449,7 +451,9 @@ impl HirSourceOverflowValue {
     fn validate(&self) -> Result<(), HirItemInvariantError> {
         match self {
             Self::Resolved(_) => Ok(()),
-            Self::Recovered { authored, issue } => validate_policy_recovery(authored, *issue),
+            Self::Recovered { authored, issue } => {
+                validate_policy_recovery(authored.as_ref(), *issue)
+            }
         }
     }
 }
@@ -479,7 +483,9 @@ impl HirSourceReplayValue {
     fn validate(&self) -> Result<(), HirItemInvariantError> {
         match self {
             Self::Resolved(_) => Ok(()),
-            Self::Recovered { authored, issue } => validate_policy_recovery(authored, *issue),
+            Self::Recovered { authored, issue } => {
+                validate_policy_recovery(authored.as_ref(), *issue)
+            }
         }
     }
 }
@@ -510,7 +516,9 @@ impl HirSourcePrivacyValue {
     fn validate(&self) -> Result<(), HirItemInvariantError> {
         match self {
             Self::Resolved(_) => Ok(()),
-            Self::Recovered { authored, issue } => validate_policy_recovery(authored, *issue),
+            Self::Recovered { authored, issue } => {
+                validate_policy_recovery(authored.as_ref(), *issue)
+            }
         }
     }
 }
@@ -531,7 +539,7 @@ pub enum HirSourcePolicyIssue {
 }
 
 fn validate_policy_recovery(
-    authored: &Option<HirName>,
+    authored: Option<&HirName>,
     issue: HirSourcePolicyIssue,
 ) -> Result<(), HirItemInvariantError> {
     let valid = match issue {

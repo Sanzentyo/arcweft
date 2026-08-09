@@ -1,6 +1,7 @@
 use crate::entry::{
     EntryBindingIdentity, RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowExecutable,
 };
+use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
 };
@@ -10,9 +11,9 @@ use serde::{Deserialize, Serialize};
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
 ///
-/// Version 7 adds first-class closure allocation/application opcodes.
-/// V6 readers cannot skip the new canonical instruction payloads.
-pub const AWBC_CODEC_VERSION: u16 = 7;
+/// Version 10 persists the exact semantic Flow-to-function binding table.
+/// Earlier readers would reconstruct Flow identity from display strings.
+pub const AWBC_CODEC_VERSION: u16 = 10;
 /// Magic at the beginning of a standalone canonical AWBC payload.
 pub const AWBC_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
 
@@ -146,6 +147,7 @@ pub struct AwbcProgram {
     pub source_map: Vec<AwbcSourceMapEntry>,
     pub resources: Vec<AwbcResourceRef>,
     pub callable_executables: Vec<AwbcCallableExecutable>,
+    pub flow_bindings: Vec<AwbcFlowBinding>,
     pub flow_executables: Vec<AwbcFlowExecutable>,
     pub entries: Vec<AwbcEntry>,
 }
@@ -184,6 +186,7 @@ impl Default for AwbcProgram {
             source_map: Vec::new(),
             resources: Vec::new(),
             callable_executables: Vec::new(),
+            flow_bindings: Vec::new(),
             flow_executables: Vec::new(),
             entries: Vec::new(),
         }
@@ -191,6 +194,45 @@ impl Default for AwbcProgram {
 }
 
 impl AwbcProgram {
+    /// Returns the Product function selected by one exact semantic Flow ID.
+    #[must_use]
+    pub fn flow_function(&self, flow: &FlowRuntimeId) -> Option<AwbcFunctionId> {
+        self.flow_bindings
+            .iter()
+            .find(|binding| binding.flow == *flow)
+            .map(|binding| binding.function)
+    }
+
+    /// Returns the exact semantic Flow ID owned by one Product function.
+    #[must_use]
+    pub fn flow_identity(&self, function: AwbcFunctionId) -> Option<&FlowRuntimeId> {
+        self.flow_bindings
+            .iter()
+            .find(|binding| binding.function == function)
+            .map(|binding| &binding.flow)
+    }
+
+    /// Resolves runtime-authored target text through the persisted accepted
+    /// Flow inventory, never through function display strings.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the internally selected Flow identity has lost the
+    /// function binding from the same accepted AWBC inventory.
+    pub fn resolve_flow_target_value(
+        &self,
+        value: &str,
+    ) -> Result<(&FlowRuntimeId, AwbcFunctionId), RuntimeFlowTargetError> {
+        let flow = FlowRuntimeId::resolve_runtime_target(
+            value,
+            self.flow_bindings.iter().map(|binding| &binding.flow),
+        )?;
+        let function = self
+            .flow_function(flow)
+            .expect("selected AWBC Flow identity must retain its function binding");
+        Ok((flow, function))
+    }
+
     /// Sorts and deduplicates the canonical string table while preserving every
     /// existing `AwbcStringId` reference.
     ///
@@ -376,12 +418,15 @@ fn visit_runtime_type_strings(
                 visit_string_id(&mut field.name, visitor);
             }
         }
-        AwbcRuntimeType::Variant { public_id, cases } => {
-            visit_optional_string_id(public_id, visitor);
+        AwbcRuntimeType::Variant { owner, cases } => {
+            if let AwbcVariantIdentity::Nominal { public_id, .. } = owner {
+                visit_string_id(public_id, visitor);
+            }
             for case in cases {
                 visit_string_id(&mut case.name, visitor);
             }
         }
+        AwbcRuntimeType::Nominal { public_id, .. } => visit_string_id(public_id, visitor),
         AwbcRuntimeType::Unit
         | AwbcRuntimeType::Bool
         | AwbcRuntimeType::Int(_)
@@ -394,6 +439,7 @@ fn visit_runtime_type_strings(
         | AwbcRuntimeType::EntityRef
         | AwbcRuntimeType::Tuple(_)
         | AwbcRuntimeType::Sequence(_)
+        | AwbcRuntimeType::Choice(_)
         | AwbcRuntimeType::MatrixF32
         | AwbcRuntimeType::MatrixF64
         | AwbcRuntimeType::TensorF32
@@ -575,8 +621,15 @@ pub enum AwbcRuntimeType {
         fields: Vec<AwbcRecordField>,
     },
     Variant {
-        public_id: Option<AwbcStringId>,
+        owner: AwbcVariantIdentity,
         cases: Vec<AwbcVariantCase>,
+    },
+    /// One of several closed structural alternatives.
+    Choice(Vec<AwbcTypeId>),
+    /// Checked nominal identity shared by project and standard runtime types.
+    Nominal {
+        public_id: AwbcStringId,
+        semantic_identity: [u8; 32],
     },
     MatrixF32,
     MatrixF64,
@@ -585,6 +638,17 @@ pub enum AwbcRuntimeType {
     TaskHandle,
     NeedHandle,
     Dynamic,
+}
+
+/// Closed semantic owner for an AWBC variant type.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub enum AwbcVariantIdentity {
+    Nominal {
+        public_id: AwbcStringId,
+        semantic_identity: [u8; 32],
+    },
+    Option,
+    Result,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -1250,7 +1314,7 @@ pub enum AwbcTerminator {
         resume: AwbcResumePointId,
     },
     Await {
-        task: AwbcRegisterId,
+        handle: AwbcRegisterId,
         binding: Option<AwbcPatternId>,
         resume: AwbcResumePointId,
     },
@@ -1381,7 +1445,7 @@ pub enum AwbcPattern {
         rest: Option<AwbcRegisterId>,
     },
     Variant {
-        ty: Option<AwbcTypeId>,
+        ty: AwbcTypeId,
         case: u32,
         case_name: AwbcStringId,
         payload: Option<AwbcPatternId>,
@@ -1992,6 +2056,17 @@ pub struct AwbcEntry {
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AwbcCallableExecutable {
     pub role: RuntimeCallableRole,
+    pub function: AwbcFunctionId,
+}
+
+/// Exact accepted semantic Flow identity mapped to its Product function.
+///
+/// This covers every lowered Flow. Entry-role metadata remains separately
+/// represented by `AwbcFlowExecutable` and must not be used as a fallback
+/// identity index.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct AwbcFlowBinding {
+    pub flow: FlowRuntimeId,
     pub function: AwbcFunctionId,
 }
 

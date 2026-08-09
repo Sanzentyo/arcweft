@@ -16,7 +16,7 @@ pub enum HirDiagnostic {
 }
 
 impl HirDiagnostic {
-    pub(crate) fn source_site(&self) -> HirSourceSiteRef<'_> {
+    pub fn source_site(&self) -> HirSourceSiteRef<'_> {
         match self {
             Self::Syntax(diagnostic) => HirSourceSiteRef::Span(diagnostic.primary()),
             Self::Recovery(diagnostic) => HirSourceSiteRef::Hir(diagnostic.primary()),
@@ -41,7 +41,7 @@ impl HirDiagnostic {
             })
     }
 
-    pub(crate) fn syntax(&self) -> Option<&SyntaxDiagnostic> {
+    pub fn syntax(&self) -> Option<&SyntaxDiagnostic> {
         match self {
             Self::Syntax(diagnostic) => Some(diagnostic),
             Self::Recovery(_) => None,
@@ -56,7 +56,7 @@ impl HirDiagnostic {
     }
 }
 
-pub(crate) enum HirSourceSiteRef<'a> {
+pub enum HirSourceSiteRef<'a> {
     Span(&'a arcweft_source::SourceSpan),
     Hir(&'a HirSourceSite),
 }
@@ -72,7 +72,7 @@ impl HirSourceSiteRef<'_> {
         }
     }
 
-    pub(crate) fn source_identity(&self) -> &arcweft_source::SourceDocumentIdentity {
+    pub fn source_identity(&self) -> &arcweft_source::SourceDocumentIdentity {
         match self {
             Self::Span(span) => span.source(),
             Self::Hir(site) => site.source_identity(),
@@ -86,21 +86,21 @@ impl HirSourceSiteRef<'_> {
 /// query. Owners without such a family keep their exact slot-owned `Whole`
 /// site explicitly instead of being forced through a fabricated role.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirRecoveryPrimary {
+pub enum HirRecoveryPrimary {
     Query(HirSourceQuery),
     OwnerWhole(SyntheticOwner),
 }
 
 impl HirRecoveryPrimary {
-    pub(crate) const fn query(query: HirSourceQuery) -> Self {
+    pub const fn query(query: HirSourceQuery) -> Self {
         Self::Query(query)
     }
 
-    pub(crate) const fn owner_whole(owner: SyntheticOwner) -> Self {
+    pub const fn owner_whole(owner: SyntheticOwner) -> Self {
         Self::OwnerWhole(owner)
     }
 
-    pub(crate) const fn owner(&self) -> SyntheticOwner {
+    pub const fn owner(&self) -> SyntheticOwner {
         match self {
             Self::Query(query) => query.owner(),
             Self::OwnerWhole(owner) => *owner,
@@ -138,7 +138,7 @@ impl HirRecoveryDiagnostic {
         self.owner
     }
 
-    pub(crate) fn primary_role(&self) -> HirRecoveryPrimary {
+    pub fn primary_role(&self) -> HirRecoveryPrimary {
         self.primary.clone()
     }
 

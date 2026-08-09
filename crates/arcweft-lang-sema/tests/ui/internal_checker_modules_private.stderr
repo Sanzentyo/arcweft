@@ -1,35 +1,11 @@
-error[E0603]: module `borrow` is private
+error[E0432]: unresolved imports `arcweft_lang_sema::borrow`, `arcweft_lang_sema::fact_layer`, `arcweft_lang_sema::lifetime`
  --> tests/ui/internal_checker_modules_private.rs:1:25
   |
 1 | use arcweft_lang_sema::{borrow, fact_layer, lifetime};
-  |                         ^^^^^^ private module
+  |                         ^^^^^^  ^^^^^^^^^^  ^^^^^^^^ no `lifetime` in the root
+  |                         |       |
+  |                         |       no `fact_layer` in the root
+  |                         no `borrow` in the root
   |
-note: the module `borrow` is defined here
- --> src/lib.rs
-  |
-  | mod borrow;
-  | ^^^^^^^^^^
-
-error[E0603]: module `fact_layer` is private
- --> tests/ui/internal_checker_modules_private.rs:1:33
-  |
-1 | use arcweft_lang_sema::{borrow, fact_layer, lifetime};
-  |                                 ^^^^^^^^^^ private module
-  |
-note: the module `fact_layer` is defined here
- --> src/lib.rs
-  |
-  | mod fact_layer;
-  | ^^^^^^^^^^^^^^
-
-error[E0603]: module `lifetime` is private
- --> tests/ui/internal_checker_modules_private.rs:1:45
-  |
-1 | use arcweft_lang_sema::{borrow, fact_layer, lifetime};
-  |                                             ^^^^^^^^ private module
-  |
-note: the module `lifetime` is defined here
- --> src/lib.rs
-  |
-  | mod lifetime;
-  | ^^^^^^^^^^^^
+  = help: consider importing this module instead:
+          std::borrow

@@ -6,15 +6,15 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    AstNode, AttachedViewFragmentEntry, AttachedViewPartPath, AttachedViewRequiredKeyword,
-    ViewDeclarationItemKind,
+    AstNode, AttachedViewFragmentEntry, AttachedViewPartLocalName, AttachedViewPartPath,
+    AttachedViewRequiredKeyword, ViewDeclarationItemKind,
 };
 use crate::attachment::{
     GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotData,
     SyntaxSnapshotId, attach_typed_tree,
 };
 use crate::grammar::kinds::SyntaxKind;
-use crate::parser::{ParseOptions, parse_shadow_document};
+use crate::parser::{ParseOptions, parse_document};
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
     let document = Arc::new(
@@ -25,7 +25,7 @@ fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
         )
         .unwrap(),
     );
-    let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
     let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(163).unwrap());
     let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
     let snapshot = SyntaxSnapshotId::new(
@@ -105,7 +105,7 @@ fn view_attachment_reuses_callable_parameters_and_owns_exports_and_values() {
         public
             .segments()
             .iter()
-            .map(|segment| segment.source_text())
+            .map(super::super::source_file::AttachedPathSegment::source_text)
             .collect::<Vec<_>>(),
         ["public", "panel"]
     );
@@ -185,8 +185,55 @@ fn keyword_and_destructuring_parameters_poison_view_without_losing_typed_pattern
     assert!(
         declarations
             .iter()
-            .all(|declaration| declaration.has_recovery())
+            .all(super::AttachedViewDeclaration::has_recovery)
     );
     assert_eq!(declarations[0].parameter_group().parameters().len(), 1);
     assert_eq!(declarations[1].parameter_group().parameters().len(), 1);
+}
+
+#[test]
+fn view_fragment_owns_part_modifier_roles_without_detached_view_reparse() {
+    let source = concat!(
+        "view Card() {\n",
+        "    Column {\n",
+        "        Text(\"Body\").part( body )\n",
+        "        Text(\"Title\")\n",
+        "            .part( header.title )\n",
+        "    }\n",
+        "}\n",
+    );
+    let snapshot = attach(source);
+    let declaration = views(&snapshot)[0].semantics().unwrap();
+    let modifiers = declaration.body().fragment().unwrap().part_modifiers();
+    assert_eq!(modifiers.len(), 2);
+    for (ordinal, (modifier, expected)) in
+        modifiers.iter().zip(["body", "header.title"]).enumerate()
+    {
+        assert_eq!(modifier.source_ordinal(), u32::try_from(ordinal).unwrap());
+        assert!(!modifier.has_recovery());
+        let AttachedViewPartLocalName::Present(local_name) = modifier.local_name() else {
+            panic!("clean View part modifier must own a present local name");
+        };
+        assert_eq!(&source[local_name.range().as_range()], expected);
+        assert_eq!(&source[modifier.name().range().as_range()], "part");
+        assert_eq!(&source[modifier.dot().range().as_range()], ".");
+        assert_eq!(&source[modifier.open().range().as_range()], "(");
+        assert_eq!(&source[modifier.close().unwrap().range().as_range()], ")");
+    }
+}
+
+#[test]
+fn malformed_part_modifier_is_typed_recovery_and_not_a_clean_local_name() {
+    let source = "view Broken() { Text(\"Body\").part( header..title ) }\n";
+    let snapshot = attach(source);
+    let declaration = views(&snapshot)[0].semantics().unwrap();
+    let [modifier] = declaration.body().fragment().unwrap().part_modifiers() else {
+        panic!("fixture has one View part modifier");
+    };
+    assert!(modifier.has_recovery());
+    assert!(matches!(
+        modifier.local_name(),
+        AttachedViewPartLocalName::Invalid(_)
+    ));
+    assert!(declaration.has_recovery());
 }

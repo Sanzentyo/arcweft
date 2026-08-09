@@ -492,7 +492,6 @@ fn is_keyword(spelling: &str) -> bool {
             | "crate"
             | "debug"
             | "defer"
-            | "dialogue"
             | "defaults"
             | "else"
             | "ensures"

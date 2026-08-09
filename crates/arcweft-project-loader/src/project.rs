@@ -3,11 +3,18 @@
 use crate::project_limits::ProjectLoadLimits;
 use arcweft_lang_syntax::{
     ast::{
-        common::UseTreeKind,
-        module_path::{CanonicalModulePath, ModulePath, ModulePathError, ModuleSegment},
-        symbol_path::ProjectSymbolPath,
+        module_path::{
+            CanonicalModulePath, ModulePath, ModulePathError, ModulePathRoot, ModuleSegment,
+        },
+        symbol_path::{ProjectSymbolPath, ProjectSymbolPathError, ProjectSymbolSegment},
     },
-    parser::{ParseOptions, parse_document_with_source},
+    attachment::{
+        SyntaxAccessError, SyntaxLookupError, SyntaxNodeId,
+        item::TypedItemNode,
+        source_file::{AttachedPath, AttachedPathRoot, AttachedUseTree},
+    },
+    incremental::{ParseFailure, ParsedSource, SyntaxDatabase},
+    parser::ParseOptions,
 };
 use arcweft_launch::{accepted::SourceBackedManifest, diagnostic::ManifestReport};
 use arcweft_project::{
@@ -15,7 +22,8 @@ use arcweft_project::{
     sources::{ProjectSourceFile, ProjectSources},
 };
 use arcweft_source::{
-    SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceName,
+    SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceEdit,
+    SourceName, SourceRange, SourceSpan, SourceSpanError, identity::SourceSnapshotId,
 };
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -32,7 +40,7 @@ pub const PROJECT_MANIFEST_FILE: &str = "arcw.toml";
 #[derive(Clone, Debug)]
 pub struct LoadedProject {
     sources: ProjectSources,
-    module_documents: BTreeMap<CanonicalModulePath, Arc<SourceDocument>>,
+    module_parsed_sources: BTreeMap<CanonicalModulePath, ParsedSource>,
     manifest: Arc<SourceBackedManifest>,
 }
 
@@ -74,6 +82,47 @@ pub enum ProjectLoadError {
     DocumentId(#[from] SourceDocumentIdError),
     #[error(transparent)]
     Document(#[from] SourceDocumentError),
+    #[error("failed to bind syntax for project source `{path}`: {source}")]
+    Parse {
+        path: PathBuf,
+        #[source]
+        source: Box<ParseFailure>,
+    },
+    #[error("failed to read attached syntax for project source `{path}`: {source}")]
+    SyntaxAccess {
+        path: PathBuf,
+        #[source]
+        source: Box<SyntaxAccessError>,
+    },
+    #[error("failed to resolve the current syntax lineage for project source `{path}`: {source}")]
+    SyntaxLookup {
+        path: PathBuf,
+        #[source]
+        source: Box<SyntaxLookupError>,
+    },
+    #[error("project source `{path}` contains a recovered path at syntax identity {node:?}")]
+    RecoveredPath { path: PathBuf, node: SyntaxNodeId },
+    #[error("project source `{path}` has an invalid project-symbol path: {source}")]
+    ProjectSymbolPath {
+        path: PathBuf,
+        #[source]
+        source: ProjectSymbolPathError,
+    },
+    #[error(transparent)]
+    SourceSpan(#[from] SourceSpanError),
+    #[error(
+        "syntax lineage for module `{module}` does not match source `{path}`: expected document `{expected_document}` named `{expected_name}`, found `{actual_document}` named `{actual_name}`"
+    )]
+    SourceIdentityMismatch {
+        module: Box<CanonicalModulePath>,
+        path: Box<PathBuf>,
+        expected_document: Box<SourceDocumentId>,
+        expected_name: String,
+        actual_document: Box<SourceDocumentId>,
+        actual_name: String,
+    },
+    #[error("parsed source for module `{module}` does not retain its exact project document")]
+    ParsedDocumentMismatch { module: CanonicalModulePath },
     #[error("`mod.arcw` is not a supported module layout; use `{suggested}`")]
     ModFileLayout { suggested: PathBuf },
     #[error(transparent)]
@@ -186,15 +235,22 @@ impl ProjectLoadBudget {
 }
 
 impl LoadedProject {
-    pub(crate) fn from_exact_documents(
+    pub(crate) fn from_bound_modules(
         manifest_path: PathBuf,
         project_root: PathBuf,
         manifest: Arc<SourceBackedManifest>,
-        modules: Vec<ProjectSourceFile>,
+        modules: Vec<(ProjectSourceFile, ParsedSource)>,
     ) -> Result<Self, ProjectLoadError> {
-        let module_documents = modules
+        for (module, parsed) in &modules {
+            if !Arc::ptr_eq(module.document(), parsed.document_lease()) {
+                return Err(ProjectLoadError::ParsedDocumentMismatch {
+                    module: module.module().clone(),
+                });
+            }
+        }
+        let module_parsed_sources = modules
             .iter()
-            .map(|module| (module.module().clone(), Arc::clone(module.document())))
+            .map(|(module, parsed)| (module.module().clone(), parsed.clone()))
             .collect();
         let sources = ProjectSources::new(
             manifest_path,
@@ -202,11 +258,11 @@ impl LoadedProject {
             manifest.manifest().package().clone(),
             manifest.manifest().build().clone(),
             Arc::clone(manifest.document()),
-            modules,
+            modules.into_iter().map(|(module, _)| module),
         )?;
         Ok(Self {
             sources,
-            module_documents,
+            module_parsed_sources,
             manifest,
         })
     }
@@ -226,11 +282,32 @@ impl LoadedProject {
     pub fn module_documents(
         &self,
     ) -> impl ExactSizeIterator<Item = (&CanonicalModulePath, &Arc<SourceDocument>)> {
-        self.module_documents.iter()
+        self.module_parsed_sources
+            .iter()
+            .map(|(module, parsed)| (module, parsed.document_lease()))
     }
 
     pub fn module_document(&self, module: &CanonicalModulePath) -> Option<&Arc<SourceDocument>> {
-        self.module_documents.get(module)
+        self.module_parsed_sources
+            .get(module)
+            .map(ParsedSource::document_lease)
+    }
+
+    /// Exact attached syntax leases retained for every canonical module.
+    pub fn module_parsed_sources(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&CanonicalModulePath, &ParsedSource)> {
+        self.module_parsed_sources.iter()
+    }
+
+    /// Complete canonical module-to-snapshot map owned by this load transaction.
+    pub const fn module_parsed_source_map(&self) -> &BTreeMap<CanonicalModulePath, ParsedSource> {
+        &self.module_parsed_sources
+    }
+
+    /// Exact attached syntax lease retained for one canonical module.
+    pub fn module_parsed_source(&self, module: &CanonicalModulePath) -> Option<&ParsedSource> {
+        self.module_parsed_sources.get(module)
     }
 }
 
@@ -251,17 +328,61 @@ pub fn discover_manifest(start: &Path) -> Result<PathBuf, ProjectLoadError> {
 }
 
 /// Discovers and loads the project containing `start`.
-pub fn load_discovered(start: &Path) -> Result<LoadedProject, ProjectLoadError> {
-    load(&discover_manifest(start)?)
+pub fn load_discovered(
+    syntax: &mut SyntaxDatabase,
+    start: &Path,
+) -> Result<LoadedProject, ProjectLoadError> {
+    load(syntax, &discover_manifest(start)?)
 }
 
 /// Loads one explicit `arcw.toml` and all `.arcw` sources under its source root.
-pub fn load(manifest_path: &Path) -> Result<LoadedProject, ProjectLoadError> {
-    load_with_limits(manifest_path, ProjectLoadLimits::new(u64::MAX, u64::MAX))
+pub fn load(
+    syntax: &mut SyntaxDatabase,
+    manifest_path: &Path,
+) -> Result<LoadedProject, ProjectLoadError> {
+    load_with_limits(
+        syntax,
+        manifest_path,
+        ProjectLoadLimits::new(u64::MAX, u64::MAX),
+    )
 }
 
 /// Loads one explicit project while bounding all accepted UTF-8 documents before parsing.
 pub fn load_with_limits(
+    syntax: &mut SyntaxDatabase,
+    manifest_path: &Path,
+    limits: ProjectLoadLimits,
+) -> Result<LoadedProject, ProjectLoadError> {
+    load_with_previous(syntax, None, manifest_path, limits)
+}
+
+/// Reloads one project through the same syntax session and exact prior module leases.
+pub fn reload(
+    syntax: &mut SyntaxDatabase,
+    previous: &LoadedProject,
+    manifest_path: &Path,
+) -> Result<LoadedProject, ProjectLoadError> {
+    reload_with_limits(
+        syntax,
+        previous,
+        manifest_path,
+        ProjectLoadLimits::new(u64::MAX, u64::MAX),
+    )
+}
+
+/// Reloads one bounded project through the same syntax session and prior module leases.
+pub fn reload_with_limits(
+    syntax: &mut SyntaxDatabase,
+    previous: &LoadedProject,
+    manifest_path: &Path,
+    limits: ProjectLoadLimits,
+) -> Result<LoadedProject, ProjectLoadError> {
+    load_with_previous(syntax, Some(previous), manifest_path, limits)
+}
+
+fn load_with_previous(
+    syntax: &mut SyntaxDatabase,
+    previous: Option<&LoadedProject>,
     manifest_path: &Path,
     limits: ProjectLoadLimits,
 ) -> Result<LoadedProject, ProjectLoadError> {
@@ -281,7 +402,17 @@ pub fn load_with_limits(
     let source_paths = collect_arcw_files(&source_root, limits.documents(), budget.documents)?;
     let scanned = source_paths
         .into_iter()
-        .map(|path| scan_source(package, project_root, &source_root, path, &mut budget))
+        .map(|path| {
+            scan_source(
+                syntax,
+                previous,
+                package,
+                project_root,
+                &source_root,
+                path,
+                &mut budget,
+            )
+        })
         .collect::<Result<Vec<_>, _>>()?;
     let module_paths = scanned
         .iter()
@@ -291,25 +422,12 @@ pub fn load_with_limits(
         .into_iter()
         .map(|source| source.finish(&module_paths))
         .collect::<Vec<_>>();
-    let mut modules = Vec::with_capacity(loaded_modules.len());
-    let mut module_documents = BTreeMap::new();
-    for (module, document) in loaded_modules {
-        module_documents.insert(module.module().clone(), document);
-        modules.push(module);
-    }
-    let sources = ProjectSources::new(
+    LoadedProject::from_bound_modules(
         manifest_path.to_path_buf(),
         project_root.to_path_buf(),
-        manifest.manifest().package().clone(),
-        manifest.manifest().build().clone(),
-        Arc::clone(&manifest_document),
-        modules,
-    )?;
-    Ok(LoadedProject {
-        sources,
-        module_documents,
         manifest,
-    })
+        loaded_modules,
+    )
 }
 
 pub(crate) fn manifest_document_id(
@@ -323,10 +441,217 @@ pub(crate) fn manifest_document_id(
     .map_err(ProjectLoadError::from)
 }
 
+/// Binds one canonical module document to the caller-selected syntax session.
+pub(crate) fn bind_module_source(
+    syntax: &mut SyntaxDatabase,
+    module: &CanonicalModulePath,
+    path: &Path,
+    document: Arc<SourceDocument>,
+    previous: Option<&ParsedSource>,
+) -> Result<ParsedSource, ProjectLoadError> {
+    let current = if let Some(previous) = previous {
+        validate_source_identity(module, path, previous.document(), &document)?;
+        Some(
+            syntax
+                .current(previous.snapshot_id().lineage())
+                .map_err(|source| ProjectLoadError::SyntaxLookup {
+                    path: path.to_path_buf(),
+                    source: Box::new(source),
+                })?,
+        )
+    } else {
+        syntax.current_for_source(document.display_name())
+    };
+    let result = if let Some(current) = current {
+        validate_source_identity(module, path, current.document(), &document)?;
+        if current.source() == document.text() {
+            syntax.reparse(&current, &[], ParseOptions::default())
+        } else {
+            let whole = current
+                .document()
+                .span(SourceRange::new(0, current.source().len()))?;
+            syntax.reparse(
+                &current,
+                &[SourceEdit::new(whole, document.text())],
+                ParseOptions::default(),
+            )
+        }
+    } else {
+        syntax.parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            document,
+            ParseOptions::default(),
+        )
+    };
+    result.map_err(|source| ProjectLoadError::Parse {
+        path: path.to_path_buf(),
+        source: Box::new(source),
+    })
+}
+
+fn validate_source_identity(
+    module: &CanonicalModulePath,
+    path: &Path,
+    expected: &SourceDocument,
+    actual: &SourceDocument,
+) -> Result<(), ProjectLoadError> {
+    if expected.identity().id() != actual.identity().id()
+        || expected.display_name() != actual.display_name()
+    {
+        return Err(ProjectLoadError::SourceIdentityMismatch {
+            module: Box::new(module.clone()),
+            path: Box::new(path.to_path_buf()),
+            expected_document: Box::new(expected.identity().id().clone()),
+            expected_name: expected.display_name().display_name().to_owned(),
+            actual_document: Box::new(actual.identity().id().clone()),
+            actual_name: actual.display_name().display_name().to_owned(),
+        });
+    }
+    Ok(())
+}
+
+/// One parser-owned module/import projection from an exact attached snapshot.
+#[derive(Clone, Debug)]
+pub(crate) struct ModuleSourceInventory {
+    declaration: Option<ModulePath>,
+    imports: Vec<ModuleSourceImport>,
+}
+
+impl ModuleSourceInventory {
+    pub(crate) const fn declaration(&self) -> Option<&ModulePath> {
+        self.declaration.as_ref()
+    }
+
+    pub(crate) fn imports(&self) -> &[ModuleSourceImport] {
+        &self.imports
+    }
+}
+
+/// One typed import path and its exact attached source span.
+#[derive(Clone, Debug)]
+pub(crate) struct ModuleSourceImport {
+    path: ProjectSymbolPath,
+    source: SourceSpan,
+}
+
+impl ModuleSourceImport {
+    pub(crate) const fn path(&self) -> &ProjectSymbolPath {
+        &self.path
+    }
+
+    pub(crate) const fn source(&self) -> &SourceSpan {
+        &self.source
+    }
+}
+
+/// Reads module topology only from the retained attached source-file tree.
+pub(crate) fn read_module_inventory(
+    path: &Path,
+    parsed: &ParsedSource,
+) -> Result<ModuleSourceInventory, ProjectLoadError> {
+    let items = parsed
+        .items()
+        .map_err(|source| ProjectLoadError::SyntaxAccess {
+            path: path.to_path_buf(),
+            source: Box::new(source),
+        })?;
+    let mut declaration = None;
+    let mut imports = Vec::new();
+    for item in items {
+        match item {
+            TypedItemNode::Module(module) if declaration.is_none() => {
+                let attached = module
+                    .path()
+                    .map_err(|source| ProjectLoadError::SyntaxAccess {
+                        path: path.to_path_buf(),
+                        source: Box::new(source),
+                    })?;
+                declaration = Some(attached_module_path(path, &attached)?);
+            }
+            TypedItemNode::Use(import) => {
+                let tree = import
+                    .tree()
+                    .map_err(|source| ProjectLoadError::SyntaxAccess {
+                        path: path.to_path_buf(),
+                        source: Box::new(source),
+                    })?;
+                let attached = match tree {
+                    AttachedUseTree::Path { path, .. } => path,
+                    AttachedUseTree::Glob { module, .. }
+                    | AttachedUseTree::Group { module, .. } => module,
+                };
+                imports.push(ModuleSourceImport {
+                    path: attached_project_symbol_path(path, &attached)?,
+                    source: attached.syntax().source_span(),
+                });
+            }
+            _ => {}
+        }
+    }
+    Ok(ModuleSourceInventory {
+        declaration,
+        imports,
+    })
+}
+
+fn attached_module_path(
+    path: &Path,
+    attached: &AttachedPath,
+) -> Result<ModulePath, ProjectLoadError> {
+    reject_recovered_path(path, attached)?;
+    let segments = attached
+        .segments()
+        .iter()
+        .map(|segment| ModuleSegment::new(segment.source_text().to_owned()))
+        .collect::<Result<Vec<_>, _>>()?;
+    ModulePath::new(attached_module_root(attached.root()), segments).map_err(ProjectLoadError::from)
+}
+
+fn attached_project_symbol_path(
+    path: &Path,
+    attached: &AttachedPath,
+) -> Result<ProjectSymbolPath, ProjectLoadError> {
+    reject_recovered_path(path, attached)?;
+    let segments = attached
+        .segments()
+        .iter()
+        .map(|segment| ProjectSymbolSegment::try_new(segment.source_text().to_owned()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|source| ProjectLoadError::ProjectSymbolPath {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    ProjectSymbolPath::new(attached_module_root(attached.root()), segments).map_err(|source| {
+        ProjectLoadError::ProjectSymbolPath {
+            path: path.to_path_buf(),
+            source,
+        }
+    })
+}
+
+fn reject_recovered_path(path: &Path, attached: &AttachedPath) -> Result<(), ProjectLoadError> {
+    if attached.has_recovery() {
+        return Err(ProjectLoadError::RecoveredPath {
+            path: path.to_path_buf(),
+            node: attached.syntax().id(),
+        });
+    }
+    Ok(())
+}
+
+const fn attached_module_root(root: &AttachedPathRoot) -> ModulePathRoot {
+    match root {
+        AttachedPathRoot::ImplicitCrate => ModulePathRoot::ImplicitCrate,
+        AttachedPathRoot::Crate { .. } => ModulePathRoot::Crate,
+        AttachedPathRoot::SelfModule { .. } => ModulePathRoot::SelfModule,
+        AttachedPathRoot::Super { levels } => ModulePathRoot::Super(levels.len()),
+    }
+}
+
 #[derive(Clone, Debug)]
 struct ScannedSource {
     path: PathBuf,
-    document: Arc<SourceDocument>,
+    parsed: ParsedSource,
     module: CanonicalModulePath,
     imports: Vec<PendingImport>,
 }
@@ -337,10 +662,7 @@ struct PendingImport {
 }
 
 impl ScannedSource {
-    fn finish(
-        self,
-        modules: &BTreeSet<CanonicalModulePath>,
-    ) -> (ProjectSourceFile, Arc<SourceDocument>) {
+    fn finish(self, modules: &BTreeSet<CanonicalModulePath>) -> (ProjectSourceFile, ParsedSource) {
         let dependencies = self
             .imports
             .into_iter()
@@ -350,19 +672,17 @@ impl ScannedSource {
                     .map(ModuleDependency::new)
             })
             .collect::<Vec<_>>();
+        let document = Arc::clone(self.parsed.document_lease());
         (
-            ProjectSourceFile::new(
-                self.module,
-                self.path,
-                Arc::clone(&self.document),
-                dependencies,
-            ),
-            self.document,
+            ProjectSourceFile::new(self.module, self.path, document, dependencies),
+            self.parsed,
         )
     }
 }
 
 fn scan_source(
+    syntax: &mut SyntaxDatabase,
+    previous: Option<&LoadedProject>,
     package: &str,
     project_root: &Path,
     source_root: &Path,
@@ -375,24 +695,23 @@ fn scan_source(
         SourceName::path(path.display().to_string()),
         source,
     )?);
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    if !parsed.errors().is_empty() {
+    let inferred = inferred_module_path(source_root, &path)?;
+    let previous = previous.and_then(|loaded| loaded.module_parsed_source(&inferred));
+    let parsed = bind_module_source(syntax, &inferred, &path, document, previous)?;
+    if !parsed.diagnostics().is_empty() {
         return Err(ProjectLoadError::Syntax {
             path,
             diagnostics: parsed
-                .errors()
+                .diagnostics()
                 .iter()
                 .map(|error| error.message().to_owned())
                 .collect(),
         });
     }
-    let tree = parsed.typed_tree();
-    let inferred = inferred_module_path(source_root, &path)?;
-    let module = match tree.module() {
+    let inventory = read_module_inventory(&path, &parsed)?;
+    let module = match inventory.declaration() {
         Some(declaration) => {
-            let declared = declaration
-                .module_path()?
-                .resolve_declaration_for(&inferred)?;
+            let declared = declaration.resolve_declaration_for(&inferred)?;
             if declared != inferred {
                 return Err(ProjectLoadError::ModulePathMismatch {
                     path,
@@ -410,20 +729,16 @@ fn scan_source(
             });
         }
     };
-    let imports = tree
-        .uses()
+    let imports = inventory
+        .imports()
         .iter()
         .map(|item| PendingImport {
-            path: match item.tree().kind() {
-                UseTreeKind::Path { path, .. } => path.path(),
-                UseTreeKind::Glob { module } | UseTreeKind::Group { module, .. } => module.path(),
-            }
-            .clone(),
+            path: item.path().clone(),
         })
         .collect();
     Ok(ScannedSource {
         path,
-        document,
+        parsed,
         module,
         imports,
     })
@@ -653,10 +968,12 @@ fn read_utf8_bounded(
 mod tests {
     use super::{
         ProjectLoadBudget, ProjectLoadError, ProjectLoadLimitKind, inferred_module_path,
-        load_with_limits, project_document_id,
+        load_with_limits, project_document_id, reload_with_limits,
     };
     use crate::project_limits::ProjectLoadLimits;
-    use std::{fs, path::Path};
+    use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, incremental::SyntaxDatabase};
+    use arcweft_source::SourceName;
+    use std::{fs, path::Path, sync::Arc};
 
     struct ProjectFixture {
         root: std::path::PathBuf,
@@ -749,8 +1066,10 @@ mod tests {
     #[test]
     fn bounded_project_load_accepts_exact_document_and_source_byte_limits() {
         let fixture = ProjectFixture::new("flow opening {}\n");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
 
         let loaded = load_with_limits(
+            &mut syntax,
             &fixture.manifest,
             ProjectLoadLimits::new(2, fixture.source_bytes()),
         )
@@ -762,9 +1081,11 @@ mod tests {
     #[test]
     fn bounded_project_load_stops_enumeration_at_one_document_over_limit() {
         let fixture = ProjectFixture::new("this source must not be parsed");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
 
         assert!(matches!(
             load_with_limits(
+                &mut syntax,
                 &fixture.manifest,
                 ProjectLoadLimits::new(1, fixture.source_bytes()),
             ),
@@ -780,9 +1101,11 @@ mod tests {
     fn bounded_project_load_reads_only_one_byte_over_remaining_limit() {
         let fixture = ProjectFixture::new("flow opening {}\n");
         let maximum = fixture.source_bytes() - 1;
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
 
         assert!(matches!(
             load_with_limits(
+                &mut syntax,
                 &fixture.manifest,
                 ProjectLoadLimits::new(2, maximum),
             ),
@@ -791,6 +1114,237 @@ mod tests {
                 observed,
                 maximum: actual_maximum,
             }) if observed == maximum + 1 && actual_maximum == maximum
+        ));
+    }
+
+    #[test]
+    fn reload_reuses_the_exact_lineage_and_publishes_the_new_document_lease() {
+        let mut fixture = ProjectFixture::new("flow opening {}\n");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let initial = load_with_limits(
+            &mut syntax,
+            &fixture.manifest,
+            ProjectLoadLimits::new(2, fixture.source_bytes()),
+        )
+        .expect("initial load");
+        let root = CanonicalModulePath::crate_root();
+        let initial_parsed = initial
+            .module_parsed_source(&root)
+            .expect("initial root parse")
+            .clone();
+
+        fixture.module_source = "flow revised {}\n".to_owned();
+        fs::write(fixture.root.join("src/main.arcw"), &fixture.module_source)
+            .expect("revised module writes");
+        let revised = reload_with_limits(
+            &mut syntax,
+            &initial,
+            &fixture.manifest,
+            ProjectLoadLimits::new(2, fixture.source_bytes()),
+        )
+        .expect("reload succeeds");
+        let revised_parsed = revised
+            .module_parsed_source(&root)
+            .expect("revised root parse");
+
+        assert_eq!(
+            revised_parsed.snapshot_id().lineage(),
+            initial_parsed.snapshot_id().lineage()
+        );
+        assert_eq!(revised_parsed.source_snapshot_id().generation().get(), 2);
+        assert_eq!(revised_parsed.source(), fixture.module_source);
+        assert!(Arc::ptr_eq(
+            revised_parsed.document_lease(),
+            revised
+                .module_document(&root)
+                .expect("revised module document")
+        ));
+        assert!(Arc::ptr_eq(
+            revised_parsed.document_lease(),
+            revised
+                .sources()
+                .module(&root)
+                .expect("revised project source")
+                .document()
+        ));
+    }
+
+    #[test]
+    fn unchanged_reload_retains_the_exact_parsed_snapshot_and_document_lease() {
+        let fixture = ProjectFixture::new("flow opening {}\n");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let initial = load_with_limits(
+            &mut syntax,
+            &fixture.manifest,
+            ProjectLoadLimits::new(2, fixture.source_bytes()),
+        )
+        .expect("initial load");
+        let root = CanonicalModulePath::crate_root();
+        let initial_parsed = initial
+            .module_parsed_source(&root)
+            .expect("initial root parse");
+
+        let unchanged = reload_with_limits(
+            &mut syntax,
+            &initial,
+            &fixture.manifest,
+            ProjectLoadLimits::new(2, fixture.source_bytes()),
+        )
+        .expect("unchanged reload succeeds");
+        let unchanged_parsed = unchanged
+            .module_parsed_source(&root)
+            .expect("unchanged root parse");
+
+        assert!(initial_parsed.is_same_snapshot(unchanged_parsed));
+        assert!(Arc::ptr_eq(
+            initial_parsed.document_lease(),
+            unchanged_parsed.document_lease()
+        ));
+    }
+
+    #[test]
+    fn reload_does_not_fallback_when_a_prior_module_identity_changes() {
+        let fixture = ProjectFixture::new("flow opening {}\n");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let initial = load_with_limits(
+            &mut syntax,
+            &fixture.manifest,
+            ProjectLoadLimits::new(2, fixture.source_bytes()),
+        )
+        .expect("initial load");
+        let changed_manifest = fixture.manifest_source.replace(
+            "org.arcweft.fixtures.project-limits",
+            "org.arcweft.fixtures.project-rebound",
+        );
+        fs::write(&fixture.manifest, changed_manifest).expect("changed manifest writes");
+
+        assert!(matches!(
+            reload_with_limits(
+                &mut syntax,
+                &initial,
+                &fixture.manifest,
+                ProjectLoadLimits::new(u64::MAX, u64::MAX),
+            ),
+            Err(ProjectLoadError::SourceIdentityMismatch { module, .. })
+                if module.as_ref() == &CanonicalModulePath::crate_root()
+        ));
+    }
+
+    #[test]
+    fn reload_continues_from_a_private_recovered_generation_after_rejection() {
+        let mut fixture = ProjectFixture::new("flow opening {}\n");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let initial = load_with_limits(
+            &mut syntax,
+            &fixture.manifest,
+            ProjectLoadLimits::new(2, fixture.source_bytes()),
+        )
+        .expect("initial load");
+        let root = CanonicalModulePath::crate_root();
+        let initial_parsed = initial
+            .module_parsed_source(&root)
+            .expect("initial root parse");
+
+        fixture.module_source = "flow opening {\n".to_owned();
+        fs::write(fixture.root.join("src/main.arcw"), &fixture.module_source)
+            .expect("recovered module writes");
+        assert!(matches!(
+            reload_with_limits(
+                &mut syntax,
+                &initial,
+                &fixture.manifest,
+                ProjectLoadLimits::new(2, fixture.source_bytes()),
+            ),
+            Err(ProjectLoadError::Syntax { .. })
+        ));
+        let rejected = syntax
+            .current(initial_parsed.snapshot_id().lineage())
+            .expect("recovered generation remains private");
+        assert_eq!(rejected.source_snapshot_id().generation().get(), 2);
+
+        fixture.module_source = "flow revised {}\n".to_owned();
+        fs::write(fixture.root.join("src/main.arcw"), &fixture.module_source)
+            .expect("corrected module writes");
+        let revised = reload_with_limits(
+            &mut syntax,
+            &initial,
+            &fixture.manifest,
+            ProjectLoadLimits::new(2, fixture.source_bytes()),
+        )
+        .expect("reload continues from the current private syntax generation");
+        let revised_parsed = revised
+            .module_parsed_source(&root)
+            .expect("revised root parse");
+
+        assert_eq!(
+            revised_parsed.snapshot_id().lineage(),
+            initial_parsed.snapshot_id().lineage()
+        );
+        assert_eq!(revised_parsed.source_snapshot_id().generation().get(), 3);
+        assert_eq!(revised_parsed.source(), fixture.module_source);
+    }
+
+    #[test]
+    fn reload_reuses_a_rejected_new_module_lineage_without_a_published_sidecar() {
+        let fixture = ProjectFixture::new("flow opening {}\n");
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let initial = load_with_limits(
+            &mut syntax,
+            &fixture.manifest,
+            ProjectLoadLimits::new(u64::MAX, u64::MAX),
+        )
+        .expect("initial load");
+        let source_root = fixture.root.join("src");
+        let added_path = source_root.join("routes").join("added.arcw");
+        fs::create_dir_all(added_path.parent().expect("added module parent"))
+            .expect("added module directory");
+        fs::write(&added_path, "mod routes.added\nflow added {\n")
+            .expect("recovered new module writes");
+        let added_module = inferred_module_path(&source_root, &added_path).expect("module path");
+
+        assert!(matches!(
+            reload_with_limits(
+                &mut syntax,
+                &initial,
+                &fixture.manifest,
+                ProjectLoadLimits::new(u64::MAX, u64::MAX),
+            ),
+            Err(ProjectLoadError::Syntax { .. })
+        ));
+        assert!(initial.module_parsed_source(&added_module).is_none());
+        let added_name = SourceName::path(added_path.display().to_string());
+        let rejected = syntax
+            .current_for_source(&added_name)
+            .expect("rejected new module remains syntax-session private");
+        assert_eq!(rejected.source_snapshot_id().generation().get(), 1);
+        assert!(!rejected.diagnostics().is_empty());
+
+        fs::write(&added_path, "mod routes.added\nflow added {}\n")
+            .expect("corrected new module writes");
+        let revised = reload_with_limits(
+            &mut syntax,
+            &initial,
+            &fixture.manifest,
+            ProjectLoadLimits::new(u64::MAX, u64::MAX),
+        )
+        .expect("corrected new module reload succeeds");
+        let accepted = revised
+            .module_parsed_source(&added_module)
+            .expect("new module accepted");
+        let project_source = revised
+            .sources()
+            .module(&added_module)
+            .expect("new project module accepted");
+
+        assert_eq!(
+            accepted.snapshot_id().lineage(),
+            rejected.snapshot_id().lineage()
+        );
+        assert_eq!(accepted.source_snapshot_id().generation().get(), 2);
+        assert!(accepted.diagnostics().is_empty());
+        assert!(Arc::ptr_eq(
+            accepted.document_lease(),
+            project_source.document()
         ));
     }
 

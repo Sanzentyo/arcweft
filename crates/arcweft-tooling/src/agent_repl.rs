@@ -1,7 +1,8 @@
 //! Sans I/O helpers for Agent REPL frontends.
 
 use arcweft_lang_syntax::parser::{
-    FragmentKind, ParseCompletion, ParseOptions, ParsedFragment, ParsedFragmentKind, parse_fragment,
+    FragmentKind, ParseCompletion, ParseOptions, UnboundFragment, parse_expression_fragment,
+    parse_statement_fragment,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -225,71 +226,45 @@ pub fn agent_repl_highlight_tokens(source: &str) -> Vec<AgentReplHighlightToken>
     tokens
 }
 
-/// Parses a REPL cell with the shared Agent fragment parser and syntax-family selection.
-pub fn agent_repl_parse_fragment(source: &str) -> ParsedFragment {
-    agent_repl_parse_fragment_with_kind(source).0
-}
-
-fn agent_repl_parse_fragment_with_kind(source: &str) -> (ParsedFragment, AgentReplFragmentKind) {
+/// Classifies one source-free REPL cell through the exact standalone grammar entrypoints.
+pub fn agent_repl_classify_cell(source: &str) -> AgentReplCellClassification {
     if source.starts_with("let ")
         || source.starts_with("try ")
         || source.starts_with("expect(")
         || source.starts_with("deny(")
         || source.starts_with("wait(")
     {
-        return (
-            parse_agent_fragment(source, AgentReplFragmentKind::Statements),
+        return classification_from_fragment(
+            &parse_statement_fragment(source, ParseOptions::default()),
             AgentReplFragmentKind::Statements,
         );
     }
-    let expression = parse_agent_fragment(source, AgentReplFragmentKind::Expression);
+    let expression = parse_expression_fragment(source, ParseOptions::default());
     if matches!(
         expression.completion(),
         ParseCompletion::Complete | ParseCompletion::Incomplete { .. }
     ) {
-        return (expression, AgentReplFragmentKind::Expression);
+        return classification_from_fragment(&expression, AgentReplFragmentKind::Expression);
     }
-    let items = parse_agent_fragment(source, AgentReplFragmentKind::Items);
-    if matches!(items.kind(), Some(ParsedFragmentKind::Items))
-        && matches!(items.completion(), ParseCompletion::Complete)
-    {
-        return (items, AgentReplFragmentKind::Items);
-    }
-    (
-        parse_agent_fragment(source, AgentReplFragmentKind::Statements),
-        AgentReplFragmentKind::Statements,
-    )
+    let statement = parse_statement_fragment(source, ParseOptions::default());
+    let kind = if matches!(statement.completion(), ParseCompletion::Invalid) {
+        AgentReplFragmentKind::Unknown
+    } else {
+        AgentReplFragmentKind::Statements
+    };
+    classification_from_fragment(&statement, kind)
 }
 
-fn parse_agent_fragment(source: &str, kind: AgentReplFragmentKind) -> ParsedFragment {
-    parse_fragment(
-        source,
-        match kind {
-            AgentReplFragmentKind::Expression => FragmentKind::Expression,
-            AgentReplFragmentKind::Statements | AgentReplFragmentKind::Unknown => {
-                FragmentKind::Statements
-            }
-            AgentReplFragmentKind::Items => FragmentKind::Items,
-        },
-        ParseOptions::default(),
-    )
-}
-
-/// Classifies one REPL cell for editor completeness validation and scripted inspection.
-pub fn agent_repl_classify_cell(source: &str) -> AgentReplCellClassification {
-    let (fragment, fragment_kind) = agent_repl_parse_fragment_with_kind(source);
-    agent_repl_classification_from_fragment_with_kind(&fragment, fragment_kind)
-}
-
-/// Converts a parsed fragment into the stable REPL classification report.
-pub fn agent_repl_classification_from_fragment(
-    fragment: &ParsedFragment,
+/// Projects an explicitly selected exact standalone fragment for editor transports.
+pub fn agent_repl_classification<K: FragmentKind>(
+    fragment: &UnboundFragment<K>,
+    fragment_kind: AgentReplFragmentKind,
 ) -> AgentReplCellClassification {
-    agent_repl_classification_from_fragment_with_kind(fragment, agent_repl_fragment_kind(fragment))
+    classification_from_fragment(fragment, fragment_kind)
 }
 
-fn agent_repl_classification_from_fragment_with_kind(
-    fragment: &ParsedFragment,
+fn classification_from_fragment<K: FragmentKind>(
+    fragment: &UnboundFragment<K>,
     fragment_kind: AgentReplFragmentKind,
 ) -> AgentReplCellClassification {
     let completion = match fragment.completion() {
@@ -313,23 +288,14 @@ fn agent_repl_classification_from_fragment_with_kind(
         completion,
         fragment_kind,
         errors: fragment
-            .errors()
+            .diagnostics()
             .iter()
-            .map(|error| AgentReplParseDiagnostic {
-                message: error.message().to_owned(),
-                expected: error.expected().to_vec(),
-                found: error.found().map(str::to_owned),
+            .map(|diagnostic| AgentReplParseDiagnostic {
+                message: diagnostic.message().to_owned(),
+                expected: Vec::new(),
+                found: None,
             })
             .collect(),
-    }
-}
-
-fn agent_repl_fragment_kind(fragment: &ParsedFragment) -> AgentReplFragmentKind {
-    match fragment.kind() {
-        Some(ParsedFragmentKind::Expression) => AgentReplFragmentKind::Expression,
-        Some(ParsedFragmentKind::Statements(_)) => AgentReplFragmentKind::Statements,
-        Some(ParsedFragmentKind::Items) => AgentReplFragmentKind::Items,
-        None => AgentReplFragmentKind::Unknown,
     }
 }
 
@@ -849,15 +815,14 @@ mod tests {
     }
 
     #[test]
-    fn repl_classify_cell_recognizes_ordinary_function_items() {
+    fn source_free_classifier_does_not_fabricate_an_item_fragment_family() {
         let classified = agent_repl_classify_cell("fn helper(value: i64) -> i64 { value + 1 }");
 
         assert_eq!(
             classified.completion.kind,
-            AgentReplCellCompletionKind::Complete
+            AgentReplCellCompletionKind::Invalid
         );
-        assert_eq!(classified.fragment_kind, AgentReplFragmentKind::Items);
-        assert!(classified.errors.is_empty());
+        assert_eq!(classified.fragment_kind, AgentReplFragmentKind::Unknown);
     }
 
     #[test]

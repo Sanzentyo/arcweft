@@ -3,9 +3,3 @@ error[E0432]: unresolved import `arcweft_lang_syntax::parser::parse_source`
   |
 1 | use arcweft_lang_syntax::parser::parse_source;
   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_source` in `parser`
-  |
-help: a similar name exists in the module
-  |
-1 - use arcweft_lang_syntax::parser::parse_source;
-1 + use arcweft_lang_syntax::parser::ParsedSource;
-  |

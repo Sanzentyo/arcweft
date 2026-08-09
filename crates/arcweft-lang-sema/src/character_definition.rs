@@ -3,10 +3,6 @@
 mod query;
 mod request_budget;
 
-#[cfg(test)]
-#[path = "character_definition/tests.rs"]
-mod tests;
-
 pub use query::query_character_definition;
 pub use request_budget::{
     CharacterDefinitionBudgetCheckpoint, CharacterDefinitionRequestBudget,
@@ -17,29 +13,29 @@ use arcweft_character::{
     id::{CharacterLookId, CharacterPartId, CharacterVariantId},
     symbol::CharacterSymbolDescriptor,
 };
-use arcweft_lang_hir::symbol::{
-    ProjectSymbolResolutionError, ProjectSymbolRevision, ProjectSymbolTargetId,
-    ProjectSymbolWorldId,
-};
-use arcweft_lang_syntax::{
-    ast::{
-        items::TypedSyntaxTree,
-        module_path::CanonicalModulePath,
-        symbol_path::{SpannedProjectSymbolPath, SymbolPath},
+use arcweft_lang_hir::{
+    expr::HirExprKind,
+    identity::ExprId,
+    leaf::{HirIdRef, HirIdRefShape, HirIdRefValue, HirShortVariantName},
+    module::HirModule,
+    project::HirExecutableProjectView,
+    source_index::{
+        HirExprSourceRole, HirIdRefSourcePart, HirSourcePresence, HirSourceQuery, HirSourceSite,
     },
-    expr::{Expr, parse_expr},
-    parser::recovery::ParseError,
+    symbol::{ProjectSymbolRevision, ProjectSymbolTargetId, ProjectSymbolWorldId},
 };
-use arcweft_source::{
-    SourceDocument, SourceDocumentIdentity, SourceRange, SourceSpan, identity::SourceSnapshotId,
+use arcweft_lang_syntax::ast::{
+    module_path::{CanonicalModulePath, ModulePathRoot},
+    symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
 };
+use arcweft_source::{SourceDocumentIdentity, SourceSpan, identity::SourceSnapshotId};
 use thiserror::Error;
 
 use crate::{
-    check::{TypeCheckReport, TypeJudgmentSubject},
+    final_analysis::{CheckedExpressionResolution, CheckedValueResolution, FinalSemanticAnalysis},
     registration::{
         CharacterDeclarationSource, CharacterDefinitionLimitKind, CharacterDefinitionLimits,
-        ExternalOwnerLookupError, RegisteredCharacterResolutionError, RegisteredSemanticWorld,
+        RegisteredSemanticWorld,
     },
     types::{CharacterNominalType, EntityKind},
 };
@@ -51,7 +47,7 @@ pub struct CharacterReferenceInventory {
     symbol_revision: ProjectSymbolRevision,
     document: SourceDocumentIdentity,
     module: CanonicalModulePath,
-    syntax_snapshot: Option<SourceSnapshotId>,
+    syntax_snapshot: SourceSnapshotId,
     facts: Vec<CharacterReferenceFact>,
 }
 
@@ -74,6 +70,12 @@ pub enum CharacterReferenceForm {
         spelling: String,
         expected: Option<CharacterNominalType>,
     },
+    /// A source-backed owner reference whose typed HIR leaf retained recovery
+    /// instead of fabricating a semantic path.
+    RecoveredOwner,
+    /// A source-backed short member whose typed HIR leaf retained recovery
+    /// instead of fabricating a semantic identifier.
+    RecoveredLocalMember,
 }
 
 /// Typed resolution stored with one current reference fact.
@@ -95,35 +97,30 @@ pub struct CharacterReferenceOccurrence {
 /// Exact current analysis values used to collect character references.
 #[derive(Clone, Copy)]
 pub struct CharacterReferenceInput<'a> {
-    document: &'a SourceDocument,
-    module: &'a CanonicalModulePath,
-    typed_tree: &'a TypedSyntaxTree,
-    type_report: &'a TypeCheckReport,
-    parse_diagnostics: &'a [ParseError],
-    syntax_snapshot: Option<&'a SourceSnapshotId>,
+    project: HirExecutableProjectView<'a>,
+    module: &'a HirModule,
+    analysis: &'a FinalSemanticAnalysis,
 }
 
 impl<'a> CharacterReferenceInput<'a> {
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "the request boundary keeps all independently checked source and semantic identities explicit"
-    )]
     pub fn new(
-        document: &'a SourceDocument,
-        module: &'a CanonicalModulePath,
-        typed_tree: &'a TypedSyntaxTree,
-        type_report: &'a TypeCheckReport,
-        parse_diagnostics: &'a [ParseError],
-        syntax_snapshot: Option<&'a SourceSnapshotId>,
+        project: HirExecutableProjectView<'a>,
+        module: &'a HirModule,
+        analysis: &'a FinalSemanticAnalysis,
     ) -> Self {
         Self {
-            document,
+            project,
             module,
-            typed_tree,
-            type_report,
-            parse_diagnostics,
-            syntax_snapshot,
+            analysis,
         }
+    }
+
+    fn document(&self) -> &arcweft_source::SourceDocument {
+        self.module.provenance().document().as_ref()
+    }
+
+    const fn module_path(&self) -> &CanonicalModulePath {
+        self.module.key().path()
     }
 }
 
@@ -144,8 +141,8 @@ impl CharacterReferenceInventory {
         &self.module
     }
 
-    pub const fn syntax_snapshot(&self) -> Option<&SourceSnapshotId> {
-        self.syntax_snapshot.as_ref()
+    pub const fn syntax_snapshot(&self) -> &SourceSnapshotId {
+        &self.syntax_snapshot
     }
 
     pub fn facts(&self) -> impl ExactSizeIterator<Item = &CharacterReferenceFact> {
@@ -257,11 +254,12 @@ pub enum CharacterReferenceInventoryError {
         expected: ProjectSymbolRevision,
         actual: ProjectSymbolRevision,
     },
-    #[error("character reference inventory document differs from the typed source")]
-    DocumentMismatch {
-        expected: SourceDocumentIdentity,
-        actual: SourceDocumentIdentity,
-    },
+    #[error("character reference inventory module lease is not owned by its accepted project")]
+    ProjectModuleMismatch { module: CanonicalModulePath },
+    #[error("character reference inventory semantic analysis belongs to a different generation")]
+    SemanticGenerationMismatch,
+    #[error("character reference inventory expression owner is not present in its accepted HIR")]
+    SemanticOwnerMismatch { owner: ExprId },
     #[error("character reference inventory resource limit exceeded")]
     Limit {
         kind: CharacterDefinitionLimitKind,
@@ -307,66 +305,54 @@ pub fn collect_character_references(
     budget
         .charge(CharacterDefinitionWorkKind::IdentityCheck)
         .map_err(CharacterReferenceInventoryError::from)?;
-    if input.typed_tree.source() != input.document.text() {
+    let module_path = input.module_path();
+    let Some(project_module) = input.project.module(module_path) else {
         admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-        let actual = SourceDocument::try_new(
-            input.document.identity().id().clone(),
-            input.document.display_name().clone(),
-            input.typed_tree.source(),
-        )
-        .map_err(|_| CharacterReferenceInventoryError::ArithmeticOverflow {
-            counter: CharacterDefinitionLimitKind::SourceBytes,
-        })?;
-        return Err(CharacterReferenceInventoryError::DocumentMismatch {
-            expected: input.document.identity().clone(),
-            actual: actual.identity().clone(),
+        return Err(CharacterReferenceInventoryError::ProjectModuleMismatch {
+            module: module_path.clone(),
         });
+    };
+    if !std::ptr::eq(project_module.as_ref(), input.module) {
+        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+        return Err(CharacterReferenceInventoryError::ProjectModuleMismatch {
+            module: module_path.clone(),
+        });
+    }
+    budget
+        .charge(CharacterDefinitionWorkKind::IdentityCheck)
+        .map_err(CharacterReferenceInventoryError::from)?;
+    if input
+        .analysis
+        .validate_generation(input.project, world.symbols())
+        .is_err()
+    {
+        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+        return Err(CharacterReferenceInventoryError::SemanticGenerationMismatch);
     }
 
     let limits = CharacterDefinitionLimits::PRODUCTION;
     let mut facts = Vec::new();
-    let mut seen = std::collections::BTreeSet::new();
-    for judgment in &input.type_report.judgments {
+    for (id, checked) in input.analysis.expressions() {
         budget
             .charge(CharacterDefinitionWorkKind::ParserFact)
             .map_err(CharacterReferenceInventoryError::from)?;
-        let TypeJudgmentSubject::Expr { kind, .. } = &judgment.subject else {
-            continue;
-        };
-        if !matches!(*kind, "entity_ref" | "short_variant") {
+        if id.module() != input.module.module_id() {
             continue;
         }
-        let Some(range) = judgment.source_range else {
-            continue;
-        };
-        if !seen.insert((range, *kind)) {
-            continue;
-        }
-        let Some(source) = input.document.text().get(range.as_range()) else {
-            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-            return Err(CharacterReferenceInventoryError::DocumentMismatch {
-                expected: input.document.identity().clone(),
-                actual: input.document.identity().clone(),
-            });
-        };
         budget
             .charge(CharacterDefinitionWorkKind::ParserFact)
             .map_err(CharacterReferenceInventoryError::from)?;
-        let Ok(expr) = parse_expr(source) else {
-            continue;
-        };
-        let fact = match expr {
-            Expr::EntityRef(entity)
-                if judgment.ty.is_entity_ref_kind(&EntityKind::Character)
-                    || judgment
-                        .expected_type()
-                        .is_some_and(|ty| ty.is_entity_ref_kind(&EntityKind::Character)) =>
+        let expression = input
+            .module
+            .resolve_expr(id)
+            .map_err(|_| CharacterReferenceInventoryError::SemanticOwnerMismatch { owner: id })?;
+        let fact = match expression.kind() {
+            HirExprKind::EntityReference(reference)
+                if checked.ty().is_entity_ref_kind(&EntityKind::Character) =>
             {
-                owner_fact(world, &input, range, &entity, budget)?
+                owner_fact(&input, id, reference, budget)?
             }
-            Expr::ShortVariant(name) => {
-                local_member_fact(world, &input, range, name.as_str(), budget)?
-            }
+            HirExprKind::ShortVariant(name) => local_member_fact(world, &input, id, name, budget)?,
             _ => None,
         };
         if let Some(fact) = fact {
@@ -378,9 +364,9 @@ pub fn collect_character_references(
     Ok(CharacterReferenceInventory {
         world: world.symbols().world().clone(),
         symbol_revision: *world.symbols().revision(),
-        document: input.document.identity().clone(),
-        module: input.module.clone(),
-        syntax_snapshot: input.syntax_snapshot.cloned(),
+        document: input.document().identity().clone(),
+        module: input.module_path().clone(),
+        syntax_snapshot: input.module.provenance().source_snapshot().clone(),
         facts,
     })
 }
@@ -416,68 +402,85 @@ fn admit_reference_fact(
     reason = "inventory failures retain complete typed stale identities"
 )]
 fn owner_fact(
-    world: &RegisteredSemanticWorld,
     input: &CharacterReferenceInput<'_>,
-    range: arcweft_lang_syntax::ast::common::TextRange,
-    entity: &arcweft_lang_syntax::ast::ids::EntityRefSyntax,
+    owner: ExprId,
+    reference: &HirIdRefValue,
     budget: &mut CharacterDefinitionRequestBudget,
 ) -> Result<Option<CharacterReferenceFact>, CharacterReferenceInventoryError> {
-    let Some(entity) = entity.as_absolute() else {
+    let Some(reference_span) = expression_source_span(
+        input,
+        owner,
+        HirExprSourceRole::EntityReference(HirIdRefSourcePart::Whole),
+        budget,
+    )?
+    else {
         return Ok(None);
     };
-    if !entity.is_authored() || entity.is_delimited() {
-        return Ok(None);
-    }
-    let body = entity.body();
-    let Some(authored_body_range) = entity.authored_body_range() else {
-        return Ok(None);
-    };
-    let Some(body_base) = range.start().checked_add(authored_body_range.start()) else {
-        return Ok(None);
-    };
-    let Ok(spanned) = SpannedProjectSymbolPath::parse_at(body, body_base) else {
-        return Ok(None);
-    };
-    let Ok(path) = SymbolPath::try_from(spanned.path()) else {
-        return Ok(None);
-    };
-    let Some(selection_range) = spanned.segment_ranges().last().copied() else {
-        return Ok(None);
-    };
-    let reference_span = input
-        .document
-        .span(SourceRange::new(range.start(), range.end()))
-        .expect("a type judgment range belongs to its parsed source");
-    let selection_span = input
-        .document
-        .span(SourceRange::new(
-            selection_range.start(),
-            selection_range.end(),
-        ))
-        .expect("a parsed path segment range belongs to its source");
-    let form = CharacterReferenceForm::OwnerPath { path: path.clone() };
-    let resolution = if intersects_recovery(range, input.parse_diagnostics, budget)? {
-        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-        CharacterReferenceResolution::Unresolved(CharacterDefinitionIssue::RecoveredToken {
-            source: reference_span.clone(),
-        })
-    } else {
-        match world.environment().resolve_character_owner(
-            world.symbols(),
-            input.module,
-            &path,
-            &reference_span,
-        ) {
-            Ok(character) => {
-                budget
-                    .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
-                    .map_err(CharacterReferenceInventoryError::from)?;
+    let (selection_ordinal, form, resolution) = match reference.as_resolved() {
+        Some(HirIdRef::Absolute(entity)) => {
+            let Some(path) = character_owner_path(entity) else {
+                return Ok(None);
+            };
+            let Some(selection_ordinal) = entity.segment_count().checked_sub(1) else {
+                return Ok(None);
+            };
+            let selection_ordinal = u32::try_from(selection_ordinal).map_err(|_| {
+                CharacterReferenceInventoryError::ArithmeticOverflow {
+                    counter: CharacterDefinitionLimitKind::Candidates,
+                }
+            })?;
+            let checked = input
+                .analysis
+                .expression(owner)
+                .ok_or(CharacterReferenceInventoryError::SemanticOwnerMismatch { owner })?;
+            let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)) =
+                checked.resolution()
+            else {
+                return Err(CharacterReferenceInventoryError::SemanticOwnerMismatch { owner });
+            };
+            let character = item
+                .character()
+                .ok_or(CharacterReferenceInventoryError::SemanticOwnerMismatch { owner })?;
+            budget
+                .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
+                .map_err(CharacterReferenceInventoryError::from)?;
+            let resolution =
                 CharacterReferenceResolution::Resolved(CharacterSymbolDescriptor::Owner {
                     character,
-                })
-            }
-            Err(error) => map_owner_issue(path, error, budget)?,
+                });
+            (
+                selection_ordinal,
+                CharacterReferenceForm::OwnerPath { path },
+                resolution,
+            )
         }
+        Some(HirIdRef::Relative(_) | HirIdRef::FamilyRelative(_)) => return Ok(None),
+        None => {
+            let Some(selection_ordinal) = recovered_owner_selection_ordinal(reference) else {
+                return Ok(None);
+            };
+            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+            (
+                selection_ordinal,
+                CharacterReferenceForm::RecoveredOwner,
+                CharacterReferenceResolution::Unresolved(
+                    CharacterDefinitionIssue::RecoveredToken {
+                        source: reference_span.clone(),
+                    },
+                ),
+            )
+        }
+    };
+    let Some(selection_span) = expression_source_span(
+        input,
+        owner,
+        HirExprSourceRole::EntityReference(HirIdRefSourcePart::SuffixSegment {
+            ordinal: selection_ordinal,
+        }),
+        budget,
+    )?
+    else {
+        return Ok(None);
     };
     Ok(Some(CharacterReferenceFact {
         reference_span,
@@ -487,101 +490,33 @@ fn owner_fact(
     }))
 }
 
-#[allow(
-    clippy::result_large_err,
-    reason = "inventory failures retain complete typed stale identities"
-)]
-fn map_owner_issue(
-    reference: SymbolPath,
-    error: RegisteredCharacterResolutionError,
-    budget: &mut CharacterDefinitionRequestBudget,
-) -> Result<CharacterReferenceResolution, CharacterReferenceInventoryError> {
-    Ok(CharacterReferenceResolution::Unresolved(match error {
-        RegisteredCharacterResolutionError::Symbol(
-            ProjectSymbolResolutionError::Unknown { .. }
-            | ProjectSymbolResolutionError::InvalidPath { .. },
-        )
-        | RegisteredCharacterResolutionError::Owner(ExternalOwnerLookupError::Unknown { .. }) => {
-            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-            CharacterDefinitionIssue::UnknownOwner { reference }
-        }
-        RegisteredCharacterResolutionError::Symbol(ProjectSymbolResolutionError::Ambiguous {
-            mut candidates,
+fn character_owner_path(
+    reference: &arcweft_lang_hir::leaf::HirEntityReference,
+) -> Option<SymbolPath> {
+    let segments = reference
+        .segments()
+        .map(|segment| ProjectSymbolSegment::try_new(segment.to_owned()))
+        .collect::<Result<Vec<_>, _>>()
+        .ok()?;
+    let path = ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, segments).ok()?;
+    SymbolPath::try_from(&path).ok()
+}
+
+fn recovered_owner_selection_ordinal(reference: &HirIdRefValue) -> Option<u32> {
+    let recovery = reference.recovery()?;
+    let count = match recovery.shape() {
+        HirIdRefShape::Absolute { segment_count } => segment_count,
+        HirIdRefShape::Relative {
+            suffix_segment_count,
             ..
-        }) => {
-            candidates.sort();
-            candidates.dedup();
-            let maximum = CharacterDefinitionLimits::PRODUCTION.candidates();
-            let mut candidate_count = 0_u64;
-            for _ in &candidates {
-                budget
-                    .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
-                    .map_err(CharacterReferenceInventoryError::from)?;
-                let observed = candidate_count.checked_add(1).ok_or(
-                    CharacterReferenceInventoryError::ArithmeticOverflow {
-                        counter: CharacterDefinitionLimitKind::Candidates,
-                    },
-                )?;
-                if observed > maximum {
-                    return Err(CharacterReferenceInventoryError::Limit {
-                        kind: CharacterDefinitionLimitKind::Candidates,
-                        observed,
-                        maximum,
-                    });
-                }
-                candidate_count = observed;
-            }
-            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-            let candidates = admit_error_payload(budget, candidates.iter())
-                .map_err(CharacterReferenceInventoryError::from)?;
-            CharacterDefinitionIssue::AmbiguousAlias {
-                reference,
-                candidates,
-            }
         }
-        RegisteredCharacterResolutionError::Symbol(ProjectSymbolResolutionError::NotCallable {
-            actual,
+        | HirIdRefShape::FamilyRelative {
+            suffix_segment_count,
             ..
-        })
-        | RegisteredCharacterResolutionError::NotExternal { actual } => {
-            budget
-                .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
-                .map_err(CharacterReferenceInventoryError::from)?;
-            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-            CharacterDefinitionIssue::WrongOwnerKind { reference, actual }
-        }
-        RegisteredCharacterResolutionError::Owner(ExternalOwnerLookupError::WrongKind {
-            declaration,
-            ..
-        }) => {
-            budget
-                .charge(CharacterDefinitionWorkKind::ProjectSymbolCandidate)
-                .map_err(CharacterReferenceInventoryError::from)?;
-            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-            CharacterDefinitionIssue::WrongOwnerKind {
-                reference,
-                actual: ProjectSymbolTargetId::External(declaration),
-            }
-        }
-        RegisteredCharacterResolutionError::Owner(ExternalOwnerLookupError::Stale {
-            expected_world,
-            actual_world,
-            expected_revision,
-            actual_revision,
-        }) => {
-            admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-            if expected_world != actual_world {
-                return Err(CharacterReferenceInventoryError::StaleWorld {
-                    expected: expected_world,
-                    actual: actual_world,
-                });
-            }
-            return Err(CharacterReferenceInventoryError::StaleSymbolRevision {
-                expected: expected_revision,
-                actual: actual_revision,
-            });
-        }
-    }))
+        } => suffix_segment_count,
+        HirIdRefShape::Missing => 0,
+    };
+    count.checked_sub(1)
 }
 
 #[allow(
@@ -591,58 +526,43 @@ fn map_owner_issue(
 fn local_member_fact(
     world: &RegisteredSemanticWorld,
     input: &CharacterReferenceInput<'_>,
-    range: arcweft_lang_syntax::ast::common::TextRange,
-    spelling: &str,
+    owner: ExprId,
+    name: &HirShortVariantName,
     budget: &mut CharacterDefinitionRequestBudget,
 ) -> Result<Option<CharacterReferenceFact>, CharacterReferenceInventoryError> {
-    let Some(selection_start) = range.start().checked_add(1) else {
-        return Err(CharacterReferenceInventoryError::ArithmeticOverflow {
-            counter: CharacterDefinitionLimitKind::QueryWork,
-        });
-    };
-    if selection_start > range.end() {
+    let Some(reference_span) =
+        expression_source_span(input, owner, HirExprSourceRole::Whole, budget)?
+    else {
         return Ok(None);
-    }
-    let reference_span = input
-        .document
-        .span(SourceRange::new(range.start(), range.end()))
-        .expect("a type judgment range belongs to its parsed source");
-    let selection_span = input
-        .document
-        .span(SourceRange::new(selection_start, range.end()))
-        .expect("a local-member identifier belongs to its parsed source");
-    let expected = expected_nominal(input.type_report, selection_span.range(), budget)?;
-    let form_expected = match &expected {
-        ExpectedNominal::Missing | ExpectedNominal::Ambiguous(_) => None,
-        ExpectedNominal::Unique(expected) => Some(expected.clone()),
     };
+    let Some(selection_span) =
+        expression_source_span(input, owner, HirExprSourceRole::ShortVariantName, budget)?
+    else {
+        return Ok(None);
+    };
+    let Some(spelling) = name
+        .as_resolved()
+        .map(arcweft_lang_hir::leaf::HirName::as_str)
+    else {
+        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
+        return Ok(Some(CharacterReferenceFact {
+            reference_span: reference_span.clone(),
+            selection_span,
+            form: CharacterReferenceForm::RecoveredLocalMember,
+            resolution: CharacterReferenceResolution::Unresolved(
+                CharacterDefinitionIssue::RecoveredToken {
+                    source: reference_span,
+                },
+            ),
+        }));
+    };
+    let expected = expected_nominal(input.analysis, owner, budget)?;
+    let form_expected = expected.clone();
     let form = CharacterReferenceForm::LocalMember {
         spelling: spelling.to_owned(),
         expected: form_expected,
     };
-    let resolution = if intersects_recovery(range, input.parse_diagnostics, budget)? {
-        admit_nonresource_error(budget, 0).map_err(CharacterReferenceInventoryError::from)?;
-        CharacterReferenceResolution::Unresolved(CharacterDefinitionIssue::RecoveredToken {
-            source: reference_span.clone(),
-        })
-    } else {
-        match expected {
-            ExpectedNominal::Missing => resolve_local_member(world, spelling, None, budget)?,
-            ExpectedNominal::Unique(expected) => {
-                resolve_local_member(world, spelling, Some(expected), budget)?
-            }
-            ExpectedNominal::Ambiguous(candidates) => {
-                admit_nonresource_error(budget, candidates.len())
-                    .map_err(CharacterReferenceInventoryError::from)?;
-                CharacterReferenceResolution::Unresolved(
-                    CharacterDefinitionIssue::AmbiguousSemanticContext {
-                        spelling: spelling.to_owned(),
-                        candidates,
-                    },
-                )
-            }
-        }
-    };
+    let resolution = resolve_local_member(world, spelling, expected, budget)?;
     Ok(Some(CharacterReferenceFact {
         reference_span,
         selection_span,
@@ -651,79 +571,22 @@ fn local_member_fact(
     }))
 }
 
-enum ExpectedNominal {
-    Missing,
-    Unique(CharacterNominalType),
-    Ambiguous(Vec<CharacterNominalType>),
-}
-
 #[allow(
     clippy::result_large_err,
     reason = "inventory failures retain complete typed stale identities"
 )]
 fn expected_nominal(
-    report: &TypeCheckReport,
-    selection: SourceRange,
+    analysis: &FinalSemanticAnalysis,
+    owner: ExprId,
     budget: &mut CharacterDefinitionRequestBudget,
-) -> Result<ExpectedNominal, CharacterReferenceInventoryError> {
-    let mut closest_width = None;
-    let mut closest = std::collections::BTreeSet::new();
-    for judgment in &report.judgments {
-        budget
-            .charge(CharacterDefinitionWorkKind::ParserFact)
-            .map_err(CharacterReferenceInventoryError::from)?;
-        let Some(range) = judgment.source_range else {
-            continue;
-        };
-        if selection.start() < range.start() || range.end() < selection.end() {
-            continue;
-        }
-        let Some(nominal) = judgment
-            .expected_type()
-            .and_then(|ty| ty.character_nominal())
-            .or_else(|| judgment.ty.character_nominal())
-        else {
-            continue;
-        };
-        let width = range.end().checked_sub(range.start()).ok_or(
-            CharacterReferenceInventoryError::ArithmeticOverflow {
-                counter: CharacterDefinitionLimitKind::QueryWork,
-            },
-        )?;
-        match closest_width {
-            Some(current) if current < width => continue,
-            Some(current) if width < current => {
-                closest.clear();
-                closest_width = Some(width);
-            }
-            None => closest_width = Some(width),
-            Some(_) => {}
-        }
-        if closest.contains(nominal) {
-            continue;
-        }
-        let observed = u64::try_from(closest.len())
-            .ok()
-            .and_then(|count| count.checked_add(1))
-            .ok_or(CharacterReferenceInventoryError::ArithmeticOverflow {
-                counter: CharacterDefinitionLimitKind::Candidates,
-            })?;
-        let maximum = CharacterDefinitionLimits::PRODUCTION.candidates();
-        if observed > maximum {
-            return Err(CharacterReferenceInventoryError::Limit {
-                kind: CharacterDefinitionLimitKind::Candidates,
-                observed,
-                maximum,
-            });
-        }
-        closest.insert(nominal.clone());
-    }
-    let closest = closest.into_iter().collect::<Vec<_>>();
-    match closest.as_slice() {
-        [expected] => Ok(ExpectedNominal::Unique(expected.clone())),
-        [] => Ok(ExpectedNominal::Missing),
-        _ => Ok(ExpectedNominal::Ambiguous(closest)),
-    }
+) -> Result<Option<CharacterNominalType>, CharacterReferenceInventoryError> {
+    budget
+        .charge(CharacterDefinitionWorkKind::ParserFact)
+        .map_err(CharacterReferenceInventoryError::from)?;
+    Ok(analysis
+        .expression(owner)
+        .and_then(|checked| checked.ty().character_nominal())
+        .cloned())
 }
 
 #[allow(
@@ -872,21 +735,27 @@ fn admit_error_payload<'a, T: Clone + 'a>(
     clippy::result_large_err,
     reason = "inventory failures retain complete typed stale identities"
 )]
-fn intersects_recovery(
-    reference: arcweft_lang_syntax::ast::common::TextRange,
-    diagnostics: &[ParseError],
+fn expression_source_span(
+    input: &CharacterReferenceInput<'_>,
+    owner: ExprId,
+    role: HirExprSourceRole,
     budget: &mut CharacterDefinitionRequestBudget,
-) -> Result<bool, CharacterReferenceInventoryError> {
-    for diagnostic in diagnostics {
-        budget
-            .charge(CharacterDefinitionWorkKind::ParserFact)
-            .map_err(CharacterReferenceInventoryError::from)?;
-        let recovery = diagnostic.range();
-        if reference.start() < recovery.end() && recovery.start() < reference.end() {
-            return Ok(true);
-        }
-    }
-    Ok(false)
+) -> Result<Option<SourceSpan>, CharacterReferenceInventoryError> {
+    budget
+        .charge(CharacterDefinitionWorkKind::ParserFact)
+        .map_err(CharacterReferenceInventoryError::from)?;
+    let lookup = input
+        .module
+        .source_site(
+            input.document().identity(),
+            HirSourceQuery::Expr { owner, role },
+        )
+        .map_err(|_| CharacterReferenceInventoryError::SemanticOwnerMismatch { owner })?;
+    Ok(match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(span)) => Some(span.clone()),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+        | HirSourcePresence::AbsentOptional => None,
+    })
 }
 
 #[allow(
@@ -1030,4 +899,11 @@ pub enum CharacterDefinitionIntegrityError {
         world: ProjectSymbolWorldId,
         revision: ProjectSymbolRevision,
     },
+    AcceptedModuleInvariant {
+        module: CanonicalModulePath,
+    },
+    AcceptedExpressionInvariant {
+        owner: ExprId,
+    },
+    AcceptedSemanticGenerationInvariant,
 }

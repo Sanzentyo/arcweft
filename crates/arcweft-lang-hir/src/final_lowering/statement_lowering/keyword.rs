@@ -14,11 +14,16 @@ use crate::final_lowering::StagedHirModuleTransaction;
 use crate::final_lowering::name_projection::{name, name_issue, require_attempted_name_limit};
 use crate::identity::{ExprId, ScopeId, StmtId};
 use crate::leaf::HirName;
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
-use crate::source_index::HirExprSourceRole;
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::stmt::{HirStmtChildRole, HirStmtKind, HirStmtRecoveryIssue};
 
+use super::HirStmtRecoveryOperandSlot;
+
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the closed keyword-statement family is one exhaustive typed lowering matrix"
+    )]
     pub(super) fn lower_attached_keyword_statement(
         &mut self,
         attached: &StatementNode,
@@ -37,8 +42,7 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     statement.value(),
                     scope,
-                    0,
-                    HirExprSourceRole::Operand,
+                    |insertion| HirStmtRecoveryOperandSlot::OutValue { insertion },
                 )?;
                 let value_recovery = self.staged_expression_is_poisoned(value)?.then_some(
                     HirStmtRecoveryIssue::RecoveredChild {
@@ -60,8 +64,7 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     statement.target(),
                     scope,
-                    0,
-                    HirExprSourceRole::Target,
+                    |insertion| HirStmtRecoveryOperandSlot::GotoTarget { insertion },
                 )?;
                 let recovery = self.staged_expression_is_poisoned(target)?.then_some(
                     HirStmtRecoveryIssue::RecoveredChild {
@@ -80,8 +83,7 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     statement.expression(),
                     scope,
-                    0,
-                    HirExprSourceRole::Operand,
+                    |insertion| HirStmtRecoveryOperandSlot::DeferExpression { insertion },
                 )?;
                 let recovery = self.staged_expression_is_poisoned(expression)?.then_some(
                     HirStmtRecoveryIssue::RecoveredChild {
@@ -106,16 +108,14 @@ impl StagedHirModuleTransaction<'_> {
                     owner,
                     statement.target(),
                     scope,
-                    0,
-                    HirExprSourceRole::Target,
+                    |insertion| HirStmtRecoveryOperandSlot::SignalTarget { insertion },
                 )?;
                 let target_poisoned = self.staged_expression_is_poisoned(target)?;
                 let value = self.lower_keyword_required_expression(
                     owner,
                     statement.value(),
                     scope,
-                    1,
-                    HirExprSourceRole::Operand,
+                    |insertion| HirStmtRecoveryOperandSlot::SignalValue { insertion },
                 )?;
                 let value_poisoned = self.staged_expression_is_poisoned(value)?;
                 let recovery = if target_poisoned {
@@ -179,8 +179,7 @@ impl StagedHirModuleTransaction<'_> {
         owner: StmtId,
         expression: &RequiredStatementExpressionNode,
         scope: ScopeId,
-        ordinal: u32,
-        role: HirExprSourceRole,
+        missing_slot: impl FnOnce(usize) -> HirStmtRecoveryOperandSlot,
     ) -> Result<ExprId, HirLowerFailure> {
         match expression {
             RequiredStatementExpressionNode::Expression(expression) => {
@@ -193,9 +192,7 @@ impl StagedHirModuleTransaction<'_> {
                 .lower_missing_statement_expression(
                     owner,
                     scope,
-                    missing.range().start(),
-                    ordinal,
-                    role,
+                    missing_slot(missing.range().start()),
                 ),
         }
     }

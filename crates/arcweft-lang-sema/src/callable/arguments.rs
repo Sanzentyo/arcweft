@@ -1,12 +1,17 @@
 //! Shared argument coordinates used by schemas, facts, and query results.
 
-use arcweft_lang_syntax::expr::{CallArg, Expr};
+use arcweft_lang_hir::{
+    expr::{HirCallArgument, HirExprKind},
+    identity::ExprId,
+    module::HirModule,
+};
 
 use super::{
-    CallableGroupIndex, CallableParameter, CallableParameterIndex, CallableParameterPassing,
-    CallableParameterPresence, CallableSignatureSchema, SpreadArgumentPolicy,
-    UnknownNamedArgumentPolicy,
+    CallableArgumentSlotIndex, CallableGroupIndex, CallableParameter, CallableParameterIndex,
+    CallableParameterPassing, CallableParameterPresence, CallableSignatureSchema,
+    CheckedCallArgumentSlotSource, SpreadArgumentPolicy, UnknownNamedArgumentPolicy,
 };
+use crate::types::TypeKind;
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct CallableParameterCoordinate {
@@ -26,18 +31,319 @@ impl CallableParameterCoordinate {
     }
 }
 
-pub(crate) fn call_shape_is_viable(
+/// Candidate-specific, source-ordered mapping of one authored argument.
+///
+/// This carrier contains final-HIR expression identities and schema
+/// coordinates only. It never reconstructs argument text or creates a second
+/// call AST.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MappedCallArgument {
+    slots: Vec<MappedCallArgumentSlot>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct MappedCallArgumentSlot {
+    slot: CallableArgumentSlotIndex,
+    source: CheckedCallArgumentSlotSource,
+    coordinate: Option<CallableParameterCoordinate>,
+    expected: Option<TypeKind>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct CallArgumentMapping {
+    arguments: Vec<MappedCallArgument>,
+    omitted_parameters: usize,
+    unchecked_or_open_slots: usize,
+}
+
+impl MappedCallArgument {
+    pub(crate) fn slots(&self) -> &[MappedCallArgumentSlot] {
+        &self.slots
+    }
+}
+
+impl MappedCallArgumentSlot {
+    pub(crate) const fn slot(&self) -> CallableArgumentSlotIndex {
+        self.slot
+    }
+
+    pub(crate) const fn source(&self) -> CheckedCallArgumentSlotSource {
+        self.source
+    }
+
+    pub(crate) const fn coordinate(&self) -> Option<CallableParameterCoordinate> {
+        self.coordinate
+    }
+
+    pub(crate) const fn expected(&self) -> Option<&TypeKind> {
+        self.expected.as_ref()
+    }
+}
+
+impl CallArgumentMapping {
+    pub(crate) fn arguments(&self) -> &[MappedCallArgument] {
+        &self.arguments
+    }
+
+    pub(crate) const fn omitted_parameters(&self) -> usize {
+        self.omitted_parameters
+    }
+
+    pub(crate) const fn unchecked_or_open_slots(&self) -> usize {
+        self.unchecked_or_open_slots
+    }
+}
+
+/// Maps one authored argument list to one candidate schema without checking
+/// expression types. `None` is a terminal shape rejection for that candidate.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one source-ordered mapping transaction owns named, positional, recovered, and spread slot accounting"
+)]
+pub(crate) fn map_call_arguments(
+    module: &HirModule,
     schema: &CallableSignatureSchema,
     group: CallableGroupIndex,
-    arguments: &[CallArg],
+    arguments: &[HirCallArgument],
+    implicit: Option<CallableParameterIndex>,
+) -> Option<CallArgumentMapping> {
+    let group = schema.group(group)?;
+    let parameters = group.parameters();
+    let mut provided = vec![false; parameters.len()];
+    if let Some(implicit) = implicit {
+        *provided.get_mut(implicit.get())? = true;
+    }
+    let mut positional = 0usize;
+    let mut unchecked_or_open_slots = 0usize;
+    let mut mapped_arguments = Vec::with_capacity(arguments.len());
+
+    for argument in arguments {
+        let mut slots = Vec::new();
+        match argument {
+            HirCallArgument::Positional { .. } => {
+                let parameter =
+                    take_positional_parameter(parameters, &mut provided, &mut positional)?;
+                push_mapped_slot(
+                    &mut slots,
+                    argument.value(),
+                    group.index(),
+                    Some(parameter),
+                    &mut unchecked_or_open_slots,
+                )?;
+            }
+            HirCallArgument::Named { .. } => {
+                let name = argument.resolved_name()?;
+                if let Some(parameter) = named_parameter(parameters, name) {
+                    if parameter.passing() != CallableParameterPassing::RestNamed {
+                        let index = parameter.index().get();
+                        if provided[index] {
+                            return None;
+                        }
+                        provided[index] = true;
+                    }
+                    push_mapped_slot(
+                        &mut slots,
+                        argument.value(),
+                        group.index(),
+                        Some(parameter),
+                        &mut unchecked_or_open_slots,
+                    )?;
+                } else {
+                    match schema.argument_policy().unknown_named() {
+                        UnknownNamedArgumentPolicy::Reject => return None,
+                        UnknownNamedArgumentPolicy::OpenChecked
+                        | UnknownNamedArgumentPolicy::OpenUnchecked => {
+                            unchecked_or_open_slots = unchecked_or_open_slots.checked_add(1)?;
+                            slots.push(MappedCallArgumentSlot {
+                                slot: CallableArgumentSlotIndex::try_from_usize(0).ok()?,
+                                source: CheckedCallArgumentSlotSource::Expression(argument.value()),
+                                coordinate: None,
+                                expected: None,
+                            });
+                        }
+                    }
+                }
+            }
+            HirCallArgument::Spread { .. } => match schema.argument_policy().spread() {
+                SpreadArgumentPolicy::Reject => return None,
+                SpreadArgumentPolicy::Unchecked => {
+                    unchecked_or_open_slots = unchecked_or_open_slots.checked_add(1)?;
+                    slots.push(MappedCallArgumentSlot {
+                        slot: CallableArgumentSlotIndex::try_from_usize(0).ok()?,
+                        source: CheckedCallArgumentSlotSource::Expression(argument.value()),
+                        coordinate: parameters
+                            .iter()
+                            .find(|parameter| {
+                                parameter.passing() == CallableParameterPassing::RestPositional
+                            })
+                            .map(|parameter| {
+                                CallableParameterCoordinate::new(group.index(), parameter.index())
+                            }),
+                        expected: None,
+                    });
+                }
+                SpreadArgumentPolicy::FixedLiteralOnly => {
+                    let sources = fixed_literal_spread_sources(module, argument.value())?;
+                    for source in sources {
+                        let parameter =
+                            take_positional_parameter(parameters, &mut provided, &mut positional)?;
+                        push_mapped_slot(
+                            &mut slots,
+                            source,
+                            group.index(),
+                            Some(parameter),
+                            &mut unchecked_or_open_slots,
+                        )?;
+                    }
+                }
+                SpreadArgumentPolicy::TypedRest => {
+                    if let Some(sources) = fixed_literal_spread_sources(module, argument.value()) {
+                        for source in sources {
+                            let parameter = take_positional_parameter(
+                                parameters,
+                                &mut provided,
+                                &mut positional,
+                            )?;
+                            push_mapped_slot(
+                                &mut slots,
+                                source,
+                                group.index(),
+                                Some(parameter),
+                                &mut unchecked_or_open_slots,
+                            )?;
+                        }
+                    } else {
+                        let parameter = parameters.iter().find(|parameter| {
+                            parameter.passing() == CallableParameterPassing::RestPositional
+                        })?;
+                        unchecked_or_open_slots = unchecked_or_open_slots.checked_add(1)?;
+                        slots.push(MappedCallArgumentSlot {
+                            slot: CallableArgumentSlotIndex::try_from_usize(0).ok()?,
+                            source: CheckedCallArgumentSlotSource::Expression(argument.value()),
+                            coordinate: Some(CallableParameterCoordinate::new(
+                                group.index(),
+                                parameter.index(),
+                            )),
+                            // The runtime container family determines how the
+                            // rest item type is projected. Retain the typed
+                            // parameter coordinate, but do not pretend that
+                            // the container expression has the item type.
+                            expected: None,
+                        });
+                    }
+                }
+            },
+        }
+        mapped_arguments.push(MappedCallArgument { slots });
+    }
+
+    if required_fixed_parameter_is_missing(parameters, &provided) {
+        return None;
+    }
+    let omitted_parameters = parameters
+        .iter()
+        .filter(|parameter| {
+            !provided[parameter.index().get()]
+                && !matches!(
+                    parameter.passing(),
+                    CallableParameterPassing::RestPositional | CallableParameterPassing::RestNamed
+                )
+        })
+        .count();
+    Some(CallArgumentMapping {
+        arguments: mapped_arguments,
+        omitted_parameters,
+        unchecked_or_open_slots,
+    })
+}
+
+/// Builds the deterministic candidate-recovery projection when a schema
+/// rejects the authored shape before parameter mapping can complete.
+///
+/// Each authored argument remains one unmapped expression evaluation. Spread
+/// containers are not expanded because no accepting schema supplied logical
+/// parameter slots for that candidate.
+pub(crate) fn map_unmapped_call_arguments(
+    arguments: &[HirCallArgument],
+) -> Option<CallArgumentMapping> {
+    let arguments = arguments
+        .iter()
+        .map(|argument| {
+            Some(MappedCallArgument {
+                slots: vec![MappedCallArgumentSlot {
+                    slot: CallableArgumentSlotIndex::try_from_usize(0).ok()?,
+                    source: CheckedCallArgumentSlotSource::Expression(argument.value()),
+                    coordinate: None,
+                    expected: None,
+                }],
+            })
+        })
+        .collect::<Option<Vec<_>>>()?;
+    Some(CallArgumentMapping {
+        unchecked_or_open_slots: arguments.len(),
+        arguments,
+        omitted_parameters: 0,
+    })
+}
+
+fn take_positional_parameter<'a>(
+    parameters: &'a [CallableParameter],
+    provided: &mut [bool],
+    positional: &mut usize,
+) -> Option<&'a CallableParameter> {
+    let parameter = next_positional_parameter(parameters, provided, positional)?;
+    if parameter.passing() != CallableParameterPassing::RestPositional {
+        let index = parameter.index().get();
+        provided[index] = true;
+        *positional = index.checked_add(1)?;
+    }
+    Some(parameter)
+}
+
+fn push_mapped_slot(
+    slots: &mut Vec<MappedCallArgumentSlot>,
+    source: impl Into<CheckedCallArgumentSlotSource>,
+    group: CallableGroupIndex,
+    parameter: Option<&CallableParameter>,
+    unchecked_or_open_slots: &mut usize,
+) -> Option<()> {
+    let slot = CallableArgumentSlotIndex::try_from_usize(slots.len()).ok()?;
+    let (coordinate, expected) = parameter.map_or((None, None), |parameter| {
+        let expected = match parameter.ty() {
+            super::CallableParameterType::Exact(ty) => Some(ty.clone()),
+            super::CallableParameterType::Unchecked => None,
+        };
+        (
+            Some(CallableParameterCoordinate::new(group, parameter.index())),
+            expected,
+        )
+    });
+    if expected.is_none() {
+        *unchecked_or_open_slots = unchecked_or_open_slots.checked_add(1)?;
+    }
+    slots.push(MappedCallArgumentSlot {
+        slot,
+        source: source.into(),
+        coordinate,
+        expected,
+    });
+    Some(())
+}
+
+pub(crate) fn call_shape_is_viable(
+    module: &HirModule,
+    schema: &CallableSignatureSchema,
+    group: CallableGroupIndex,
+    arguments: &[HirCallArgument],
 ) -> bool {
-    call_shape_is_viable_with_implicit(schema, group, arguments, None)
+    call_shape_is_viable_with_implicit(module, schema, group, arguments, None)
 }
 
 pub(crate) fn call_shape_is_viable_with_implicit(
+    module: &HirModule,
     schema: &CallableSignatureSchema,
     group: CallableGroupIndex,
-    arguments: &[CallArg],
+    arguments: &[HirCallArgument],
     implicit: Option<CallableParameterIndex>,
 ) -> bool {
     let Some(group) = schema.group(group) else {
@@ -54,12 +360,15 @@ pub(crate) fn call_shape_is_viable_with_implicit(
     let mut positional = 0usize;
     for argument in arguments {
         match argument {
-            CallArg::Positional(_) => {
+            HirCallArgument::Positional { .. } => {
                 if !mark_viable_positional(parameters, &mut provided, &mut positional) {
                     return false;
                 }
             }
-            CallArg::Named { name, .. } => {
+            HirCallArgument::Named { .. } => {
+                let Some(name) = argument.resolved_name() else {
+                    return false;
+                };
                 let Some(parameter) = named_parameter(parameters, name) else {
                     if schema.argument_policy().unknown_named()
                         == UnknownNamedArgumentPolicy::Reject
@@ -76,11 +385,12 @@ pub(crate) fn call_shape_is_viable_with_implicit(
                     provided[index] = true;
                 }
             }
-            CallArg::Spread { value } => match schema.argument_policy().spread() {
+            HirCallArgument::Spread { .. } => match schema.argument_policy().spread() {
                 SpreadArgumentPolicy::Reject => return false,
                 SpreadArgumentPolicy::Unchecked => {}
                 SpreadArgumentPolicy::FixedLiteralOnly => {
-                    let Some(count) = fixed_literal_spread_slot_count(value) else {
+                    let Some(count) = fixed_literal_spread_slot_count(module, argument.value())
+                    else {
                         return false;
                     };
                     if (0..count).any(|_| {
@@ -90,7 +400,7 @@ pub(crate) fn call_shape_is_viable_with_implicit(
                     }
                 }
                 SpreadArgumentPolicy::TypedRest => {
-                    if let Some(count) = fixed_literal_spread_slot_count(value) {
+                    if let Some(count) = fixed_literal_spread_slot_count(module, argument.value()) {
                         if (0..count).any(|_| {
                             !mark_viable_positional(parameters, &mut provided, &mut positional)
                         }) {
@@ -107,43 +417,6 @@ pub(crate) fn call_shape_is_viable_with_implicit(
         }
     }
     !required_fixed_parameter_is_missing(parameters, &provided)
-}
-
-pub(crate) fn data_last_unsupported_spread_reason(arguments: &[CallArg]) -> Option<&'static str> {
-    if !arguments.iter().any(CallArg::is_spread) {
-        return None;
-    }
-    if arguments
-        .iter()
-        .filter_map(|argument| match argument {
-            CallArg::Spread { value } => Some(value.as_ref()),
-            CallArg::Positional(_) | CallArg::Named { .. } => None,
-        })
-        .all(|value| fixed_literal_spread_slot_count(value).is_some())
-    {
-        return None;
-    }
-    if arguments
-        .iter()
-        .filter(|argument| argument.is_spread())
-        .count()
-        > 1
-    {
-        return Some(
-            "multiple spread arguments are not supported in data-last fallback; runtime expansion ranges are not specified",
-        );
-    }
-    let spread_index = arguments.iter().position(CallArg::is_spread)?;
-    if arguments
-        .iter()
-        .skip(spread_index + 1)
-        .any(|argument| !argument.is_spread())
-    {
-        return Some(
-            "spread arguments cannot be followed by fixed data-last fallback arguments; runtime argument order is not specified",
-        );
-    }
-    Some("spread arguments are not supported; use positional arguments")
 }
 
 fn mark_viable_positional(
@@ -188,14 +461,14 @@ fn next_positional_parameter<'a>(
 
 fn named_parameter<'a>(
     parameters: &'a [CallableParameter],
-    name: &str,
+    name: &arcweft_lang_hir::leaf::HirName,
 ) -> Option<&'a CallableParameter> {
     parameters
         .iter()
         .find(|parameter| {
             parameter
                 .name()
-                .is_some_and(|candidate| candidate.as_str() == name)
+                .is_some_and(|candidate| candidate.as_str() == name.as_str())
                 && matches!(
                     parameter.passing(),
                     CallableParameterPassing::PositionalOrNamed
@@ -223,10 +496,47 @@ fn required_fixed_parameter_is_missing(
     })
 }
 
-fn fixed_literal_spread_slot_count(value: &Expr) -> Option<usize> {
-    match value {
-        Expr::BracketSeq(items) => Some(items.len()),
-        Expr::NumericBracketSeq(sequence) => Some(sequence.len()),
+fn fixed_literal_spread_slot_count(
+    module: &HirModule,
+    value: arcweft_lang_hir::identity::ExprId,
+) -> Option<usize> {
+    match module.resolve_expr(value).ok()?.kind() {
+        HirExprKind::BracketSequence(sequence) => Some(sequence.elements().len()),
+        HirExprKind::NumericBracketSequence(sequence) => Some(sequence.elements().len()),
         _ => None,
+    }
+}
+
+fn fixed_literal_spread_sources(
+    module: &HirModule,
+    value: ExprId,
+) -> Option<Vec<CheckedCallArgumentSlotSource>> {
+    match module.resolve_expr(value).ok()?.kind() {
+        HirExprKind::BracketSequence(sequence) => Some(
+            sequence
+                .elements()
+                .iter()
+                .copied()
+                .map(CheckedCallArgumentSlotSource::Expression)
+                .collect(),
+        ),
+        HirExprKind::NumericBracketSequence(sequence) => sequence
+            .elements()
+            .iter()
+            .enumerate()
+            .map(|(ordinal, _)| {
+                Some(CheckedCallArgumentSlotSource::CompactNumericElement {
+                    sequence: value,
+                    ordinal: u32::try_from(ordinal).ok()?,
+                })
+            })
+            .collect(),
+        _ => None,
+    }
+}
+
+impl From<ExprId> for CheckedCallArgumentSlotSource {
+    fn from(value: ExprId) -> Self {
+        Self::Expression(value)
     }
 }

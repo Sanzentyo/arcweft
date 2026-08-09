@@ -71,7 +71,10 @@ pub(crate) struct ItemValidationArenas<'a> {
 
 mod activity;
 mod callable;
+mod callable_source;
+mod declaration;
 mod entry;
+mod entry_source;
 mod extern_capability;
 mod flow;
 mod function;
@@ -84,7 +87,9 @@ mod resource;
 mod source;
 mod style;
 mod trait_impl;
+mod use_declaration;
 mod view;
+mod view_source;
 
 pub(super) fn retained_style_expression_owners(
     items: &ArenaSnapshot<HirItem, ItemId>,
@@ -96,6 +101,10 @@ pub(super) fn retained_style_expression_owners(
 impl HirSourceIndex {
     /// Re-derives every accepted item payload without adding an item component
     /// map or a declaration-member query authority.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive item projection validates every final declaration family against its exact attached owner"
+    )]
     pub(crate) fn validates_attached_items(
         &self,
         parsed: &ParsedSource,
@@ -104,7 +113,7 @@ impl HirSourceIndex {
         declaration_members: &HirDeclarationMemberIndex,
         arenas: &ItemValidationArenas<'_>,
     ) -> bool {
-        let Ok(attached_items) = parsed.tree().items() else {
+        let Ok(attached_items) = parsed.items() else {
             return false;
         };
         let attached_items = attached_items
@@ -134,11 +143,23 @@ impl HirSourceIndex {
             if metadata.source_site() != &HirSourceSite::Span(attached.source_span()) {
                 return false;
             }
+            if !declaration::exact_manifest(self, parsed, owner, attached, item.kind())
+                || !entry_source::exact_manifest(self, parsed, owner, attached, item.kind())
+                || !callable_source::exact_manifest(self, parsed, owner, attached, item.kind())
+                || !use_declaration::exact_manifest(self, parsed, owner, attached, item.kind())
+                || !view_source::exact_manifest(self, parsed, owner, attached, item.kind())
+            {
+                return false;
+            }
 
             match (attached, item.kind()) {
-                (TypedItemNode::Module(_), HirItemKind::Module(_))
-                | (TypedItemNode::Use(_), HirItemKind::Use(_)) => {
+                (TypedItemNode::Module(_), HirItemKind::Module(_)) => {
                     item.members().is_empty() && declaration_members.arena(owner).is_none()
+                }
+                (TypedItemNode::Use(attached), HirItemKind::Use(retained)) => {
+                    use_declaration::payload_matches(attached, retained)
+                        && item.members().is_empty()
+                        && declaration_members.arena(owner).is_none()
                 }
                 (TypedItemNode::Error(_), HirItemKind::Error(_)) => {
                     item.prefix().documentation().is_none()
@@ -853,6 +874,10 @@ fn signal_item_state(
     )
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one action-family matrix proves every typed payload and recovery shape without a parallel reader"
+)]
 fn action_payload_matches(
     owner: ItemId,
     attached: &AttachedActionDeclaration,

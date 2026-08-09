@@ -15,13 +15,15 @@ use arcweft_agent_repl::command::{
 use arcweft_agent_repl::{ReplBaseSnapshot, ReplSession, ReplSessionOptions};
 use arcweft_agent_runner::policy::RuntimeAgentCapability;
 use arcweft_agent_runner::session::AgentSession;
-use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
+use arcweft_lang_sema::project_index::ProgramHash;
 
 fn test_session() -> ReplSession {
     ReplSession::new(
-        ReplBaseSnapshot::from_project(
+        ReplBaseSnapshot::new(
             "test.base",
-            ProjectSemanticIndex::new(ProgramHash::new("hash.test.base")),
+            &ProgramHash::new("hash.test.base"),
+            std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
         ),
         ReplSessionOptions::default(),
     )

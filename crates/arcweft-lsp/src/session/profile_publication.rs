@@ -5,7 +5,6 @@ use std::sync::Arc;
 use lsp_server::Notification;
 
 use crate::{
-    documents::rebind_overlay,
     profiles::{
         LspProfile, LspProfileDiagnostic, LspProfileDiagnosticKind, ProfileRegistrationOverlay,
         file_path_from_uri, register_profile_environment_with_overlays,
@@ -66,6 +65,8 @@ impl ArcweftLspSession {
             return;
         };
         let registered = self.profile_resolver.resolve_candidate_for_uri(
+            self.documents.syntax_database_mut(),
+            &mut self.project_compiler,
             uri,
             &overlays,
             previous_accepted.as_ref(),
@@ -109,7 +110,7 @@ impl ArcweftLspSession {
             &profile,
             &candidate_profile,
         );
-        let (candidate, characters, topology) = registered.into_parts();
+        let (candidate, characters, topology, _) = registered.into_parts();
         let expected = if profile_remapped {
             None
         } else {
@@ -197,7 +198,7 @@ impl ArcweftLspSession {
             self.profile_resolver
                 .default_with_diagnostic_and_state(diagnostic.clone(), Arc::clone(state))
         });
-        profile.replace_diagnostics(diagnostic);
+        profile.set_diagnostic(Some(diagnostic));
         self.profiles_by_uri.insert(key, profile);
     }
 
@@ -237,10 +238,10 @@ impl ArcweftLspSession {
                     )
                 },
                 |mut profile| {
-                    profile.replace_diagnostics(LspProfileDiagnostic::new(
+                    profile.set_diagnostic(Some(LspProfileDiagnostic::new(
                         LspProfileDiagnosticKind::ProfilePublication,
                         error.to_string(),
-                    ));
+                    )));
                     profile
                 },
             );
@@ -364,9 +365,11 @@ impl ArcweftLspSession {
                 continue;
             };
             let version = snapshot.version();
-            let Ok(document) = rebind_overlay(snapshot, accepted_source) else {
+            if snapshot.source_document().identity().id()
+                != accepted_source.document().identity().id()
+            {
                 return;
-            };
+            }
             let Some(path) = file_path_from_uri(snapshot.uri()) else {
                 return;
             };
@@ -379,7 +382,7 @@ impl ArcweftLspSession {
             let uri = LspUriKey::from_uri(snapshot.uri());
             overlay_entries.push((
                 uri.clone(),
-                AcceptedOverlayEntry::new(version, document.identity().clone()),
+                AcceptedOverlayEntry::new(version, snapshot.source_document().identity().clone()),
             ));
             registration_overlays.push(ProfileRegistrationOverlay::new(seed, uri, version));
         }
@@ -394,22 +397,34 @@ impl ArcweftLspSession {
             return;
         }
         let registered = register_profile_environment_with_overlays(
+            self.documents.syntax_database_mut(),
+            &mut self.project_compiler,
             &manifest_path,
             resolved.id(),
             &registration_overlays,
-            Some(previous.world().environment()),
+            previous
+                .registered_world()
+                .map(arcweft_lang_sema::registration::RegisteredSemanticWorld::environment),
         );
         let Ok(registered) = registered else {
             let _ = self.record_failed_replacement(profile.state(), &previous);
             return;
         };
-        let (candidate, characters, topology) = registered.into_parts();
+        let diagnostic = registered.metadata().2.cloned();
+        let (candidate, characters, topology, _) = registered.into_parts();
         let state = Arc::clone(profile.state());
         if self
             .replace_profile_candidate(&profile, &previous, candidate, requests)
             .is_err()
         {
             return;
+        }
+        for mapped in self
+            .profiles_by_uri
+            .values_mut()
+            .filter(|mapped| Arc::ptr_eq(mapped.state(), &state))
+        {
+            mapped.set_diagnostic(diagnostic.clone());
         }
         self.apply_registered_topology_to_profile_state(&state, &topology, &characters);
     }

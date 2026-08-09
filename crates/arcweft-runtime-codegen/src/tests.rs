@@ -96,6 +96,14 @@ fn program() -> AwbcProgram {
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
         }],
+        flow_bindings: vec![AwbcFlowBinding {
+            flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                [0x31; 32],
+                "flow.main",
+            )
+            .expect("test checked Flow identity"),
+            function: AwbcFunctionId(0),
+        }],
         blocks: vec![
             AwbcBlock {
                 owner: AwbcFunctionId(0),

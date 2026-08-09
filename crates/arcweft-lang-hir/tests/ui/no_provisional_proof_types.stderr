@@ -1,0 +1,23 @@
+error[E0433]: cannot find `proof` in `ast`
+ --> tests/ui/no_provisional_proof_types.rs:1:47
+  |
+1 | type OldProofItem = arcweft_lang_syntax::ast::proof::ProofItem;
+  |                                               ^^^^^ could not find `proof` in `ast`
+
+error[E0433]: cannot find `proof` in `ast`
+ --> tests/ui/no_provisional_proof_types.rs:2:49
+  |
+2 | type OldProofClause = arcweft_lang_syntax::ast::proof::ProofClause;
+  |                                                 ^^^^^ could not find `proof` in `ast`
+
+error[E0433]: cannot find `proof` in `ast`
+ --> tests/ui/no_provisional_proof_types.rs:3:50
+  |
+3 | type OldTrustedAxiom = arcweft_lang_syntax::ast::proof::TrustedAxiomItem;
+  |                                                  ^^^^^ could not find `proof` in `ast`
+
+error[E0433]: cannot find `ids` in `ast`
+ --> tests/ui/no_provisional_proof_types.rs:4:53
+  |
+4 | type OldAuthoredProofId = arcweft_lang_syntax::ast::ids::IdRef;
+  |                                                     ^^^ could not find `ids` in `ast`

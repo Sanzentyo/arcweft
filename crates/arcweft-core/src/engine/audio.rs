@@ -17,7 +17,7 @@ impl Engine {
         &mut self,
         effect: &RuntimeEffectExpr,
         pure_backend: &mut impl RuntimeCallBackend,
-    ) -> Result<LineEffectRequest, RuntimeEvalError> {
+    ) -> Result<Option<LineEffectRequest>, RuntimeEvalError> {
         let values = effect
             .argument_exprs()
             .into_iter()

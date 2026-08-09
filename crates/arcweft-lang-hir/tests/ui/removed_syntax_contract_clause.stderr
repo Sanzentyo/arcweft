@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_syntax::ast::flow`
+ --> tests/ui/removed_syntax_contract_clause.rs:1:31
+  |
+1 | use arcweft_lang_syntax::ast::flow::ContractClause;
+  |                               ^^^^ could not find `flow` in `ast`

@@ -9,10 +9,9 @@ use crate::app::project::{
 };
 use crate::app::shared::print_json;
 use crate::output::{
-    AotProfileStats, BorrowCheckProfileStats, BytecodeProfileStats, RuntimePlanProfileStats,
-    RuntimeProfileCompiler, RuntimeTypeValidationProfileStats, TypeCheckProfileStats,
+    AotProfileStats, BytecodeProfileStats, FinalSemanticProfileStats, RuntimePlanProfileStats,
+    RuntimeProfileCompiler,
 };
-use arcweft_compiler::lower::lower_source_pure_helper_candidates;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_launch::LaunchKind;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -27,6 +26,8 @@ pub(in crate::app) struct BenchRuntimeContext<'a> {
     pub(in crate::app) host_policy: &'a HostCallPolicy,
     pub(in crate::app) adapter_registrars: &'a [NativeAdapterRegistrar],
     pub(in crate::app) file_roots: &'a NativeFileRoots,
+    pub(in crate::app) execution_diagnostics:
+        &'a arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
 }
 
 pub(in crate::app) fn script_bench_command(
@@ -57,14 +58,14 @@ pub(in crate::app) fn script_bench_selection(
     let compiled = compile_profile_runtime_plan(selection, &semantic, &mut phases)?;
     let host_policy = native_host_policy_for_selection(selection)?;
     let file_roots = selection.native_file_roots();
-    let manifest = collect_script_tests(&compiled.hir);
-    let pure_helpers =
-        lower_source_pure_helper_candidates(&compiled.hir).map(|report| report.candidates);
+    let manifest = collect_script_tests(compiled.compiled.hir_project());
+    let pure_helpers = compiled.plan.pure_helpers.clone();
     let runtime = BenchRuntimeContext {
         pure_config,
         host_policy: &host_policy,
         adapter_registrars,
         file_roots: &file_roots,
+        execution_diagnostics: &compiled.execution_diagnostics,
     };
     let output = crate::output::ScriptBenchRunReport {
         source: report_path(selection.path()),
@@ -72,12 +73,8 @@ pub(in crate::app) fn script_bench_selection(
         line_task_groups: compiled.line_task_groups,
         compiler: RuntimeProfileCompiler {
             syntax: compiled.syntax_stats.into(),
-            typecheck: TypeCheckProfileStats::from(&compiled.typecheck_report),
-            borrow_check: BorrowCheckProfileStats::from(&compiled.typecheck_report.stats),
+            semantic: FinalSemanticProfileStats::from(compiled.compiled.final_analysis().as_ref()),
             runtime_plan: RuntimePlanProfileStats::from(compiled.runtime_plan_stats),
-            runtime_type_validation: RuntimeTypeValidationProfileStats::from(
-                &compiled.runtime_type_validation_stats,
-            ),
             bytecode: BytecodeProfileStats::from(&compiled.bytecode_stats),
             aot: AotProfileStats::from(&compiled.aot_stats),
         },

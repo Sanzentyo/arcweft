@@ -88,6 +88,10 @@ pub(super) fn payload_matches(
         && item.state() == &expected_item_state(attached, retained, item, slots, body.issue)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one Source body projection validates all typed clauses, handlers, ownership, and recovery in source order"
+)]
 fn body_matches(
     owner: ItemId,
     retained: &HirSourceItem,
@@ -743,6 +747,10 @@ fn recovered_name_matches(
     issue == expected_issue && retained == expected.as_ref()
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the handler validator compares one typed owner with its exact event, punctuation, body, scope, and arena context"
+)]
 fn handler_matches(
     owner: ItemId,
     retained: &HirSourceHandler,

@@ -7,6 +7,8 @@ use arcweft_agent_repl::command::{
     ReplCommandEvidence, ReplCommandId, ReplCommandJsonOptions, ReplCommandResult,
     ReplCommandStatus, ReplTracePolicy, repl_command_result_json,
 };
+use arcweft_lang_sema::project_index::ProjectSemanticIndex;
+use std::sync::Arc;
 
 pub(super) fn agent_mcp_command(
     options: &AgentMcpOptions,
@@ -178,6 +180,8 @@ pub(super) struct NativeAgentRuntimeState {
     pub(super) prepared_frame: Option<arcweft_player_scene::frame::PlayerPreparedFrame>,
     pub(super) source_path: PathBuf,
     pub(super) project_context: AgentMcpProjectContext,
+    pub(super) execution_diagnostics:
+        Arc<arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext>,
     pub(super) shared_capture: arcweft_render_wgpu::offscreen::SharedOffscreenCapture,
     pub(super) host: Option<NativeTaskBridge>,
     pub(super) task_events: Vec<arcweft_core::task::TaskEvent>,
@@ -199,21 +203,13 @@ impl AgentMcpProjectContext {
     }
 }
 
-pub(super) fn agent_mcp_project_context_from_hir(
-    hir: &arcweft_lang_hir::model::HirModule,
-    source_path: &Path,
-    document: &arcweft_source::SourceDocument,
+pub(super) fn agent_mcp_project_context_from_project(
+    project: &ProjectSemanticIndex,
 ) -> Result<AgentMcpProjectContext, String> {
-    let project = project_semantic_index_from_hir(
-        hir,
-        ProgramHash::new(format!("native-source:{}", source_path.display())),
-        document,
-    )
-    .map_err(|error| error.to_string())?;
     let project_entities =
-        arcweft_compiler::agent_project::agent_required_entities_from_project(&project)
+        arcweft_compiler::agent_project::agent_required_entities_from_project(project)
             .map_err(|error| error.to_string())?;
-    let project_graph = arcweft_compiler::agent_project::agent_project_graph_from_project(&project)
+    let project_graph = arcweft_compiler::agent_project::agent_project_graph_from_project(project)
         .map_err(|error| error.to_string())?;
     Ok(AgentMcpProjectContext {
         project_entities: agent_script_project_entities_metadata(&project_entities),
@@ -658,7 +654,7 @@ fn agent_mcp_call_shared_repl_command(
     request: &McpReplCommandRequest,
     state: &mut AgentMcpState,
 ) -> Result<McpCallToolResult, String> {
-    agent_mcp_ensure_repl_session(state)?;
+    agent_mcp_ensure_repl_session(state);
     let Some(session) = state.repl_session.as_mut() else {
         return Err("failed to initialize MCP REPL command session".to_owned());
     };
@@ -718,16 +714,19 @@ fn agent_mcp_repl_tool_result_from_json(
     }
 }
 
-fn agent_mcp_ensure_repl_session(state: &mut AgentMcpState) -> Result<(), String> {
+fn agent_mcp_ensure_repl_session(state: &mut AgentMcpState) {
     if state.repl_session.is_some() {
-        return Ok(());
+        return;
     }
-    let project = agent_script_project_index(&[])?;
     state.repl_session = Some(arcweft_agent_repl::ReplSession::new(
-        arcweft_agent_repl::ReplBaseSnapshot::from_project("mcp-agent-repl", project),
+        arcweft_agent_repl::ReplBaseSnapshot::new(
+            "mcp-agent-repl",
+            &ProgramHash::new("mcp-agent-repl"),
+            std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
+        ),
         arcweft_agent_repl::ReplSessionOptions::default(),
     ));
-    Ok(())
 }
 
 fn agent_mcp_program_hash_for_state(state: &AgentMcpState) -> String {
@@ -983,6 +982,7 @@ pub(super) fn agent_mcp_call_script_run(
             blobs_written: 0,
             blob_bytes: 0,
             responses: Vec::new(),
+            assertion_diagnostics: Vec::new(),
             error: Some(error),
         },
     };

@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 /// accident.
 #[derive(Clone, Debug, Eq, Ord, PartialEq, PartialOrd)]
 pub enum FrameSlotKey {
-    Local(String),
+    Local { name: String, scope_depth: u32 },
     Temp(u32),
     RootTemp(u32),
     ReturnValue(u32),
@@ -81,7 +81,10 @@ impl FrameBuilder {
 
     pub fn local(&mut self, name: &str, name_id: AwbcStringId, ty: AwbcTypeId) -> AwbcRegisterId {
         self.slot(
-            FrameSlotKey::Local(name.to_owned()),
+            FrameSlotKey::Local {
+                name: name.to_owned(),
+                scope_depth: self.scope_depth,
+            },
             Some(name_id),
             ty,
             AwbcFrameSlotRole::Local,
@@ -95,7 +98,10 @@ impl FrameBuilder {
         ty: AwbcTypeId,
     ) -> AwbcRegisterId {
         self.slot(
-            FrameSlotKey::Local(name.to_owned()),
+            FrameSlotKey::Local {
+                name: name.to_owned(),
+                scope_depth: self.scope_depth,
+            },
             Some(name_id),
             ty,
             AwbcFrameSlotRole::Parameter,
@@ -169,26 +175,46 @@ impl FrameBuilder {
     }
 
     pub fn register_for_local(&self, name: &str) -> Option<AwbcRegisterId> {
-        self.by_key
-            .get(&FrameSlotKey::Local(name.to_owned()))
-            .copied()
+        (0..=self.scope_depth).rev().find_map(|scope_depth| {
+            self.by_key
+                .get(&FrameSlotKey::Local {
+                    name: name.to_owned(),
+                    scope_depth,
+                })
+                .copied()
+        })
     }
 
     pub fn capture_slots(&self) -> Vec<FrameCaptureSlot> {
-        self.by_key
-            .iter()
-            .filter_map(|(key, register)| {
-                let FrameSlotKey::Local(name) = key else {
-                    return None;
-                };
-                let name_id = self.slots.get(register.index())?.name?;
-                Some(FrameCaptureSlot {
-                    name: name.clone(),
-                    name_id,
-                    register: *register,
-                })
-            })
-            .collect()
+        let mut visible = BTreeMap::<String, (u32, FrameCaptureSlot)>::new();
+        for (key, register) in &self.by_key {
+            let FrameSlotKey::Local { name, scope_depth } = key else {
+                continue;
+            };
+            if *scope_depth > self.scope_depth {
+                continue;
+            }
+            let Some(name_id) = self.slots.get(register.index()).and_then(|slot| slot.name) else {
+                continue;
+            };
+            let capture = FrameCaptureSlot {
+                name: name.clone(),
+                name_id,
+                register: *register,
+            };
+            match visible.entry(name.clone()) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert((*scope_depth, capture));
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry)
+                    if *scope_depth > entry.get().0 =>
+                {
+                    entry.insert((*scope_depth, capture));
+                }
+                std::collections::btree_map::Entry::Occupied(_) => {}
+            }
+        }
+        visible.into_values().map(|(_, capture)| capture).collect()
     }
 
     pub fn finish(self) -> AwbcFrameLayout {
@@ -202,5 +228,42 @@ impl FrameBuilder {
 impl Default for FrameBuilder {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_lookup_and_capture_select_the_innermost_lexical_slot() {
+        let mut frame = FrameBuilder::new();
+        let ty = AwbcTypeId(0);
+        let outer = frame.local("value", AwbcStringId(0), ty);
+
+        let _scope = frame.enter_scope();
+        let inner = frame.local("value", AwbcStringId(1), ty);
+
+        assert_ne!(outer, inner);
+        assert_eq!(frame.register_for_local("value"), Some(inner));
+        assert_eq!(
+            frame.capture_slots(),
+            vec![FrameCaptureSlot {
+                name: "value".to_owned(),
+                name_id: AwbcStringId(1),
+                register: inner,
+            }]
+        );
+
+        frame.exit_scope();
+        assert_eq!(frame.register_for_local("value"), Some(outer));
+        assert_eq!(
+            frame.capture_slots(),
+            vec![FrameCaptureSlot {
+                name: "value".to_owned(),
+                name_id: AwbcStringId(0),
+                register: outer,
+            }]
+        );
     }
 }

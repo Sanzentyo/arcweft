@@ -17,6 +17,7 @@ arcweft-player-scene = { workspace = true }
 arcweft-player-text-input = { workspace = true }
 arcweft-presentation = { workspace = true }
 arcweft-render-text = { workspace = true }
+arcweft-text-model = { workspace = true }
 arcweft-render-wgpu = { workspace = true }
 arcweft-runtime-driver = { workspace = true }
 arcweft-text-layout = { workspace = true }

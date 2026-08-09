@@ -10,8 +10,10 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeControlVisualStyle, ViewRuntimeScrollRegion, ViewRuntimeScrollRegionBounds,
     ViewRuntimeSurface, ViewRuntimeSurfaceBounds, ViewTextBlockBounds,
 };
-use arcweft_core::plan::RuntimeLineId;
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_character::id::CharacterId;
+use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::TextKey;
 use arcweft_player_scene::{
     fonts::{DEFAULT_PLAYER_FONT_BYTES, PlayerFontSet},
     frame::{PlayerFrameFit, PlayerFramePlanner, PlayerFramePlannerState, PlayerFrameRequest},
@@ -22,40 +24,58 @@ use arcweft_player_scene::{
     },
 };
 use arcweft_presentation::input::{PointerId, ViewportPoint};
-use arcweft_render_text::{
-    LineDisplaySpec, RichTextControl, RichTextDocument, RichTextInlineDirection, RichTextLayout,
-    RichTextNode, RichTextStyle, RichTextWritingMode, RuntimeLineContext,
-};
+use arcweft_render_text::{RuntimeLineContext, resolve_frame};
 use arcweft_render_wgpu::geometry::{RenderPreferences, RenderViewport};
 use arcweft_render_wgpu::view_scene::ViewPrimitive;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewPaintItem, BundleViewStyleNode,
     BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::{
+    CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
+    RichTextControl, RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode,
+    RichTextStyle, RichTextWritingMode,
+};
 use arcweft_view::style::{ViewBoxAxisHostSeed, ViewBoxAxisSeedGeneration, ViewInheritedBoxAxes};
-use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewMountId, ViewProgramId};
+use arcweft_view::{ViewId, ViewMountId};
+use std::collections::BTreeMap;
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
+fn test_source_ref() -> ProductSourceRef {
+    let source = SourceDocument::try_new(
         SourceDocumentId::try_new("player-scene-scroll-regions-test").expect("document ID"),
         SourceName::Memory,
-        "test manifest",
+        "scroll regions test",
     )
     .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.player-scene-scroll-regions-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
+    ProductSourceRef::try_for_identity(source.identity()).expect("product source reference")
+}
+
+fn test_line_context() -> RuntimeLineContext {
+    RuntimeLineContext::new(
+        Vec::new(),
+        DialoguePresentationCharacter {
+            id: CharacterId::try_new("character.narrator").expect("character identity"),
+            display_name: "Narrator".to_owned(),
+        },
+        CharacterDialoguePresentationConfig {
+            view: arcweft_bundle::standard_view::dialogue_view_id(),
+            voice: None,
+            look: None,
+            stage: None,
+            portrait: None,
+            focus: None,
+            cleanup: None,
+            source_locale: None,
+            hooks: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            custom: BTreeMap::new(),
+            config_digest: RuntimeValueDigest::ZERO,
+        },
+        Vec::new(),
+        Vec::new(),
     )
 }
 
@@ -627,34 +647,26 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
         ViewTextSelectionPolicy::Disabled,
         ViewRuntimeControlVisualStyle::default(),
     );
-    let display = LineDisplaySpec {
-        line: RuntimeLineId::from_runtime_line_value("say.typed_sources.display").unwrap(),
-        callee: "narrator".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_bundle::standard_view::dialogue_view_id(),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![
-            RichTextNode::Text {
-                text: "Stage one".to_owned(),
-            },
-            RichTextNode::Control {
-                control: RichTextControl::Page,
-            },
-            RichTextNode::Text {
-                text: "Stage two".to_owned(),
-            },
-        ]),
-    }
-    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
+    let display = resolve_frame(
+        &DialogueContentSpec::new(
+            RuntimeLineId::from_runtime_line_value("say.typed_sources.display").unwrap(),
+            TextKey::try_new("text.typed_sources.display").expect("text key"),
+            RichTextDocument::new(vec![
+                RichTextNode::Text {
+                    text: "Stage one".to_owned(),
+                },
+                RichTextNode::Control {
+                    control: RichTextControl::Page,
+                },
+                RichTextNode::Text {
+                    text: "Stage two".to_owned(),
+                },
+            ]),
+            Vec::new(),
+            test_source_ref(),
+        ),
+        &test_line_context(),
+    )
     .unwrap();
     presentation.view.mounts[1].text[0].value = BundleViewTextValue::DisplayFrame {
         frame: Box::new(display),

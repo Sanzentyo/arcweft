@@ -10,9 +10,9 @@ use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
 use arcweft_launch::ProfileId;
 use lsp_server::{Connection, ErrorCode, Message, Notification, RequestId, Response};
 use lsp_types::{
-    DidChangeWatchedFilesParams, DidOpenTextDocumentParams, FileChangeType, FileEvent,
-    SignatureHelpParams, TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams,
-    WorkDoneProgressParams,
+    DidChangeTextDocumentParams, DidChangeWatchedFilesParams, FileChangeType, FileEvent,
+    SignatureHelpParams, TextDocumentContentChangeEvent, TextDocumentIdentifier,
+    TextDocumentPositionParams, VersionedTextDocumentIdentifier, WorkDoneProgressParams,
     notification::{DidChangeWatchedFiles, Notification as LspNotification},
 };
 
@@ -488,79 +488,86 @@ impl StampMutation {
                 let alternate = fixture.accepted_from_disk("alt", SOURCE, CHARACTER_A);
                 assert_ne!(
                     prepared.stamp().world_id(),
-                    alternate.world().symbols().world()
+                    accepted_world(&alternate).symbols().world()
                 );
                 Some(install_environment(
                     prepared,
-                    AcceptedEnvironmentStampMutation::World(Arc::clone(alternate.world())),
+                    AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
             Self::SymbolRevision => {
                 let alternate = fixture.accepted_from_disk("dev", CHANGED_SOURCE, CHARACTER_A);
                 assert_eq!(
                     prepared.stamp().world_id(),
-                    alternate.world().symbols().world()
+                    accepted_world(&alternate).symbols().world()
                 );
                 assert_ne!(
                     prepared.stamp().symbol_revision(),
-                    *alternate.world().symbols().revision()
+                    *accepted_world(&alternate).symbols().revision()
                 );
                 Some(install_environment(
                     prepared,
-                    AcceptedEnvironmentStampMutation::World(Arc::clone(alternate.world())),
+                    AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
             Self::CharacterDigest => {
                 let alternate = fixture.accepted_from_disk("dev", SOURCE, &character_b());
                 assert_eq!(
                     prepared.stamp().world_id(),
-                    alternate.world().symbols().world()
+                    accepted_world(&alternate).symbols().world()
                 );
-                prepared
-                    .align_symbol_revision_for_stamp_test(*alternate.world().symbols().revision());
+                prepared.align_symbol_revision_for_stamp_test(
+                    *accepted_world(&alternate).symbols().revision(),
+                );
                 assert_ne!(
                     prepared.stamp().character_digest(),
-                    alternate.world().environment().character_digest()
+                    accepted_world(&alternate).environment().character_digest()
                 );
                 Some(install_environment(
                     prepared,
-                    AcceptedEnvironmentStampMutation::World(Arc::clone(alternate.world())),
+                    AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
             Self::CharacterRevision => {
                 let alternate = fixture.advanced_character_revision();
-                assert_world_and_revision(prepared, alternate.world());
+                assert_world_and_revision(prepared, &accepted_world(&alternate));
                 assert_eq!(
                     prepared.stamp().character_digest(),
-                    alternate.world().environment().character_digest()
+                    accepted_world(&alternate).environment().character_digest()
                 );
                 assert_ne!(
                     prepared.stamp().character_revision(),
-                    alternate.world().environment().character_revision()
+                    accepted_world(&alternate)
+                        .environment()
+                        .character_revision()
                 );
                 Some(install_environment(
                     prepared,
-                    AcceptedEnvironmentStampMutation::World(Arc::clone(alternate.world())),
+                    AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
             Self::EnvironmentDigest => {
                 let alternate = fixture.accepted_with_adapter_from_disk("inference-tensor");
                 assert_eq!(
                     prepared.stamp().world_id(),
-                    alternate.world().symbols().world()
+                    accepted_world(&alternate).symbols().world()
                 );
-                let alternate_symbol_revision = *alternate.world().symbols().revision();
+                let alternate_symbol_revision = *accepted_world(&alternate).symbols().revision();
                 assert_eq!(
                     prepared.stamp().character_digest(),
-                    alternate.world().environment().character_digest()
+                    accepted_world(&alternate).environment().character_digest()
                 );
                 assert_eq!(
                     prepared.stamp().character_revision(),
-                    alternate.world().environment().character_revision()
+                    accepted_world(&alternate)
+                        .environment()
+                        .character_revision()
                 );
                 assert_ne!(
                     prepared.stamp().environment_digest(),
-                    alternate.world().environment().environment_digest()
+                    accepted_world(&alternate)
+                        .environment()
+                        .environment_digest()
                 );
                 if matches!(point, ValidationPoint::CacheHit) {
                     let byte_offset = prepared
@@ -584,46 +591,78 @@ impl StampMutation {
                 }
                 Some(install_environment(
                     prepared,
-                    AcceptedEnvironmentStampMutation::World(Arc::clone(alternate.world())),
+                    AcceptedEnvironmentStampMutation::World(accepted_world(&alternate)),
                 ))
             }
             Self::ProjectAllocation => Some(install_project(
                 prepared,
                 rebuilt_project(prepared, ProjectRebuild::Allocation),
             )),
-            Self::HirAllocation => Some(install_project(
-                prepared,
-                rebuilt_project(prepared, ProjectRebuild::HirAllocation),
-            )),
+            Self::HirAllocation => {
+                let alternate = fixture.accepted_from_disk("dev", SOURCE, CHARACTER_A);
+                assert!(!Arc::ptr_eq(
+                    prepared.stamp().hir_project(),
+                    alternate.project().hir_project()
+                ));
+                Some(install_project(prepared, Arc::clone(alternate.project())))
+            }
             Self::DocumentIdentity => {
+                let next_version = prepared.stamp().lsp_version() + 1;
                 let mut session = fixture.session.write().expect("session write");
                 let encoding = session.position_encoding;
-                session.documents.open(
-                    DidOpenTextDocumentParams {
-                        text_document: TextDocumentItem {
-                            uri: fixture.uri.clone(),
-                            language_id: "arcweft".to_owned(),
-                            version: prepared.stamp().lsp_version(),
-                            text: CHANGED_SOURCE.to_owned(),
+                let changed = session
+                    .documents
+                    .change(
+                        DidChangeTextDocumentParams {
+                            text_document: VersionedTextDocumentIdentifier {
+                                uri: fixture.uri.clone(),
+                                version: next_version,
+                            },
+                            content_changes: vec![TextDocumentContentChangeEvent {
+                                range: None,
+                                range_length: None,
+                                text: CHANGED_SOURCE.to_owned(),
+                            }],
                         },
-                    },
-                    encoding,
+                        encoding,
+                    )
+                    .expect("document identity change");
+                assert_ne!(
+                    changed.source_document().identity(),
+                    prepared.stamp().protocol_document()
                 );
+                prepared.align_lsp_version_for_stamp_test(next_version);
                 None
             }
             Self::DocumentVersion => {
+                let next_version = prepared.stamp().lsp_version() + 1;
                 let mut session = fixture.session.write().expect("session write");
                 let encoding = session.position_encoding;
-                session.documents.open(
-                    DidOpenTextDocumentParams {
-                        text_document: TextDocumentItem {
-                            uri: fixture.uri.clone(),
-                            language_id: "arcweft".to_owned(),
-                            version: prepared.stamp().lsp_version() + 1,
-                            text: SOURCE.to_owned(),
+                let changed = session
+                    .documents
+                    .change(
+                        DidChangeTextDocumentParams {
+                            text_document: VersionedTextDocumentIdentifier {
+                                uri: fixture.uri.clone(),
+                                version: next_version,
+                            },
+                            content_changes: vec![TextDocumentContentChangeEvent {
+                                range: None,
+                                range_length: None,
+                                text: SOURCE.to_owned(),
+                            }],
                         },
-                    },
-                    encoding,
+                        encoding,
+                    )
+                    .expect("document version change");
+                assert!(Arc::ptr_eq(
+                    changed.source_document(),
+                    prepared.snapshot().source_document()
+                ));
+                assert!(
+                    changed
+                        .parsed_source()
+                        .is_same_snapshot(prepared.snapshot().parsed_source())
                 );
                 None
             }
@@ -631,10 +670,11 @@ impl StampMutation {
                 prepared,
                 rebuilt_project(prepared, ProjectRebuild::RemoveUri),
             )),
-            Self::AcceptedDocumentAllocation => Some(install_project(
-                prepared,
-                rebuilt_project(prepared, ProjectRebuild::DocumentAllocation),
-            )),
+            Self::AcceptedDocumentAllocation => {
+                let document = Arc::new(prepared.stamp().accepted_document().as_ref().clone());
+                prepared.replace_accepted_document_for_stamp_test(document);
+                None
+            }
             Self::ModuleMapping => {
                 let module =
                     CanonicalModulePath::from_segments([
@@ -697,7 +737,9 @@ impl StampMutation {
                 assert_eq!(expected, prepared.stamp().world_id());
                 assert_eq!(
                     actual,
-                    current_environment(prepared).world().symbols().world()
+                    accepted_world(&current_environment(prepared))
+                        .symbols()
+                        .world()
                 );
             }
             (
@@ -707,7 +749,9 @@ impl StampMutation {
                 assert_eq!(*expected, prepared.stamp().symbol_revision());
                 assert_eq!(
                     *actual,
-                    *current_environment(prepared).world().symbols().revision()
+                    *accepted_world(&current_environment(prepared))
+                        .symbols()
+                        .revision()
                 );
             }
             (
@@ -717,8 +761,7 @@ impl StampMutation {
                 assert_eq!(*expected, prepared.stamp().character_digest());
                 assert_eq!(
                     *actual,
-                    current_environment(prepared)
-                        .world()
+                    accepted_world(&current_environment(prepared))
                         .environment()
                         .character_digest()
                 );
@@ -730,8 +773,7 @@ impl StampMutation {
                 assert_eq!(*expected, prepared.stamp().character_revision());
                 assert_eq!(
                     *actual,
-                    current_environment(prepared)
-                        .world()
+                    accepted_world(&current_environment(prepared))
                         .environment()
                         .character_revision()
                 );
@@ -743,8 +785,7 @@ impl StampMutation {
                 assert_eq!(*expected, prepared.stamp().environment_digest());
                 assert_eq!(
                     *actual,
-                    current_environment(prepared)
-                        .world()
+                    accepted_world(&current_environment(prepared))
                         .environment()
                         .environment_digest()
                 );
@@ -807,9 +848,7 @@ impl StampMutation {
 #[derive(Clone, Copy)]
 enum ProjectRebuild {
     Allocation,
-    HirAllocation,
     RemoveUri,
-    DocumentAllocation,
 }
 
 fn rebuilt_project(
@@ -823,11 +862,7 @@ fn rebuilt_project(
         .documents()
         .map(|source| {
             let is_target = source.document().identity() == target;
-            let document = if is_target && matches!(mutation, ProjectRebuild::DocumentAllocation) {
-                Arc::new(source.document().as_ref().clone())
-            } else {
-                Arc::clone(source.document())
-            };
+            let document = Arc::clone(source.document());
             let locator = if is_target && matches!(mutation, ProjectRebuild::RemoveUri) {
                 AcceptedSourceLocator::Unavailable
             } else {
@@ -836,14 +871,27 @@ fn rebuilt_project(
             AcceptedSourceDocumentSeed::new(document, locator, source.ownership(), source.access())
         })
         .collect();
-    let hir = if matches!(mutation, ProjectRebuild::HirAllocation) {
-        Arc::new(current.hir_project().as_ref().clone())
-    } else {
-        Arc::clone(current.hir_project())
-    };
     Arc::new(
-        AcceptedProjectSnapshot::try_new(hir, prepared.stamp().world().as_ref(), seeds)
-            .expect("reconstructed accepted stamp project"),
+        AcceptedProjectSnapshot::try_new(
+            Arc::clone(
+                prepared
+                    .stamp()
+                    .accepted()
+                    .executable()
+                    .expect("stamp executable")
+                    .tooling_lease(),
+            ),
+            Some(
+                prepared
+                    .stamp()
+                    .accepted()
+                    .executable()
+                    .expect("stamp executable")
+                    .as_ref(),
+            ),
+            seeds,
+        )
+        .expect("reconstructed accepted stamp project"),
     )
 }
 
@@ -872,6 +920,12 @@ fn current_environment(prepared: &PreparedSignatureRequest) -> Arc<AcceptedProfi
         .profile_state()
         .current()
         .expect("current stamp environment")
+}
+
+fn accepted_world(environment: &AcceptedProfileEnvironment) -> Arc<RegisteredSemanticWorld> {
+    environment
+        .registered_world_arc()
+        .expect("stamp environment has a registered world")
 }
 
 fn alternate_profile(prepared: &PreparedSignatureRequest) -> AcceptedProfileKey {

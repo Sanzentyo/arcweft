@@ -46,8 +46,8 @@ pub use crate::patterns::{
 pub use access::{
     BlockTailNode, DeclarationBodyNode, IfStatementElseNode, IfStatementHeadNode,
     LetInitializerNode, MatchStatementArmBodyNode, MatchStatementBodyNode,
-    MatchStatementExpressionNode, RequiredStatementExpressionNode, TypedSyntaxTree,
-    UnsafeAuditBodyNode, UnsafeAuditIdNode, UnsafeAuditReasonNode,
+    MatchStatementExpressionNode, RequiredStatementExpressionNode, UnsafeAuditBodyNode,
+    UnsafeAuditIdNode, UnsafeAuditReasonNode,
 };
 pub use action::{
     AttachedActionDeclaration, AttachedActionForbiddenDefault, AttachedActionParameter,
@@ -68,7 +68,7 @@ pub use callable::{
     AttachedFunctionDeclaration, AttachedMethodParameter, AttachedMethodParameterGroup,
     AttachedMethodReceiver, AttachedMethodReceiverKind, AttachedPredicateBody,
     AttachedPredicateDeclaration, AttachedPredicateReturnRecovery, AttachedProofBody,
-    AttachedProofDeclaration,
+    AttachedProofDeclaration, ProofTrustSyntax, TrustReasonSyntax, TrustReasonSyntaxError,
 };
 pub use choice::{
     AttachedChoiceBody, AttachedChoiceCompactAction, AttachedChoiceCompactArm,
@@ -136,8 +136,8 @@ pub use flow::{
 pub use item::TypedItemNode;
 pub use item_prefix::{
     AttachedAttributeArgument, AttachedAttributeComponent, AttachedAttributeValue,
-    AttachedDocumentation, AttachedItemPrefix, AttachedOuterAttribute, AttachedOuterAttributeForm,
-    AttachedOuterAttributeIssue,
+    AttachedDocumentation, AttachedInnerAttribute, AttachedItemPrefix, AttachedOuterAttribute,
+    AttachedOuterAttributeForm, AttachedOuterAttributeIssue,
 };
 pub use layer::{
     AttachedLayerBody, AttachedLayerDeclaration, AttachedLayerEntry, AttachedLayerExpression,
@@ -182,6 +182,7 @@ pub use source::{
     AttachedSourcePrivacyPolicy, AttachedSourcePunctuation, AttachedSourceReplayPolicy,
     AttachedSourceType,
 };
+pub use source_file::{AttachedPath, AttachedPathRoot};
 pub use statement::{
     AttachedBreakStatement, AttachedContinueStatement, AttachedControlLabel,
     AttachedDeferStatement, AttachedGotoStatement, AttachedOutStatement, AttachedSignalStatement,
@@ -231,7 +232,8 @@ pub use type_ref::{
 };
 pub use view::{
     AttachedViewBody, AttachedViewDeclaration, AttachedViewExport, AttachedViewFragment,
-    AttachedViewFragmentEntry, AttachedViewPartPath, AttachedViewRequiredKeyword,
+    AttachedViewFragmentEntry, AttachedViewPartLocalName, AttachedViewPartModifier,
+    AttachedViewPartPath, AttachedViewRequiredKeyword,
 };
 
 use crate::grammar::build::{GrammarBuild, GrammarEventPath, UnattachedGrammarEntry};
@@ -317,7 +319,7 @@ struct AttachmentInventoryBuilder<'a> {
     expected_count: usize,
     by_path: BTreeMap<GrammarEventPath, SyntaxNodeId>,
     seen_ids: HashSet<SyntaxNodeId>,
-    ancestry: Vec<(GrammarEventPath, SyntaxNodeId)>,
+    ancestry: Vec<(GrammarEventPath, SyntaxNodeId, SyntaxKind, SyntaxNode)>,
     pending: Vec<PendingAttachment>,
     children: HashMap<SyntaxNodeId, Vec<SyntaxNodeId>>,
     children_by_role: HashMap<SyntaxNodeId, BTreeMap<SyntaxRole, Vec<SyntaxNodeId>>>,
@@ -346,19 +348,31 @@ impl<'a> AttachmentInventoryBuilder<'a> {
         mut self,
         entries: &[UnattachedGrammarEntry],
     ) -> Result<AttachmentInventory, AttachmentFailure> {
+        let paths = entries
+            .iter()
+            .map(|entry| entry.path().clone())
+            .collect::<HashSet<_>>();
+        let mut nodes =
+            grammar_nodes_for_paths(self.root, &paths).ok_or(AttachmentFailure::MissingRoot)?;
         for entry in entries {
-            self.attach(entry)?;
+            let id = self
+                .identities
+                .id_for_path(entry.path())
+                .ok_or(AttachmentFailure::MissingIdentity)?;
+            let node = nodes
+                .remove(entry.path())
+                .ok_or(AttachmentFailure::MissingAttachment { id })?;
+            self.attach(entry, id, &node)?;
         }
         self.finish()
     }
 
-    fn attach(&mut self, entry: &UnattachedGrammarEntry) -> Result<(), AttachmentFailure> {
-        let id = self
-            .identities
-            .id_for_path(entry.path())
-            .ok_or(AttachmentFailure::MissingIdentity)?;
-        let node = grammar_node_at_path(self.root, entry.path())
-            .ok_or(AttachmentFailure::MissingAttachment { id })?;
+    fn attach(
+        &mut self,
+        entry: &UnattachedGrammarEntry,
+        id: SyntaxNodeId,
+        node: &SyntaxNode,
+    ) -> Result<(), AttachmentFailure> {
         let actual = node.kind();
         let expected = rowan::SyntaxKind(entry.kind() as u16);
         if actual != expected {
@@ -375,12 +389,12 @@ impl<'a> AttachmentInventoryBuilder<'a> {
                 id,
                 kind: entry.kind(),
             })?;
-        while self.ancestry.last().is_some_and(|(candidate, _)| {
+        while self.ancestry.last().is_some_and(|(candidate, _, _, _)| {
             !strict_path_prefix(candidate.elements(), entry.path().elements())
         }) {
             self.ancestry.pop();
         }
-        let parent = self.ancestry.last().map(|(_, id)| *id);
+        let parent = self.ancestry.last().map(|(_, id, _, _)| *id);
         if let Some(parent) = parent {
             self.children.entry(parent).or_default().push(id);
             self.children_by_role
@@ -393,19 +407,39 @@ impl<'a> AttachmentInventoryBuilder<'a> {
         if !self.seen_ids.insert(id) || self.by_path.insert(entry.path().clone(), id).is_some() {
             return Err(AttachmentFailure::DuplicateAttachment { id });
         }
+        let text_range = node.text_range();
+        let range = arcweft_source::SourceRange::new(
+            usize::from(text_range.start()),
+            usize::from(text_range.end()),
+        );
+        let parent_component_range = self
+            .ancestry
+            .last()
+            .map_or(Some(range), |(_, _, _, parent)| {
+                semantic_component_range(node, parent, range)
+            })
+            .ok_or(AttachmentFailure::SnapshotInvariant)?;
+        let semantic_parent = self
+            .ancestry
+            .iter()
+            .rev()
+            .find(|(_, _, kind, _)| kind.is_expression());
+        let semantic_parent_id = semantic_parent.map(|(_, id, _, _)| *id);
+        let semantic_component_range = semantic_parent
+            .map_or(Some(range), |(_, _, _, parent)| {
+                semantic_component_range(node, parent, range)
+            })
+            .ok_or(AttachmentFailure::SnapshotInvariant)?;
         self.pending.push(PendingAttachment {
             id,
             kind: entry.kind(),
             tag,
             role: entry.role(),
             path: entry.path().clone(),
-            range: {
-                let range = node.text_range();
-                arcweft_source::SourceRange::new(
-                    usize::from(range.start()),
-                    usize::from(range.end()),
-                )
-            },
+            range,
+            parent_component_range,
+            semantic_parent: semantic_parent_id,
+            semantic_component_range,
             parent,
             expression_projection: entry.expression_projection().cloned(),
             assertion_projection: entry.assertion_projection(),
@@ -427,8 +461,10 @@ impl<'a> AttachmentInventoryBuilder<'a> {
             contract_clause_projection: entry.contract_clause_projection().cloned(),
             flow_declaration_projection: entry.flow_declaration_projection().cloned(),
             view_export_projection: entry.view_export_projection().cloned(),
+            view_fragment_projection: entry.view_fragment_projection().cloned(),
         });
-        self.ancestry.push((entry.path().clone(), id));
+        self.ancestry
+            .push((entry.path().clone(), id, entry.kind(), node.clone()));
         Ok(())
     }
 
@@ -442,6 +478,9 @@ impl<'a> AttachmentInventoryBuilder<'a> {
                     role: node.role,
                     path: node.path,
                     range: node.range,
+                    parent_component_range: node.parent_component_range,
+                    semantic_parent: node.semantic_parent,
+                    semantic_component_range: node.semantic_component_range,
                     parent: node.parent,
                     children: self
                         .children
@@ -475,6 +514,7 @@ impl<'a> AttachmentInventoryBuilder<'a> {
                     contract_clause_projection: node.contract_clause_projection,
                     flow_declaration_projection: node.flow_declaration_projection,
                     view_export_projection: node.view_export_projection,
+                    view_fragment_projection: node.view_fragment_projection,
                 });
             if records.insert(node.id, record).is_some() {
                 return Err(AttachmentFailure::DuplicateAttachment { id: node.id });
@@ -501,6 +541,9 @@ struct PendingAttachment {
     role: SyntaxRole,
     path: GrammarEventPath,
     range: arcweft_source::SourceRange,
+    parent_component_range: arcweft_source::SourceRange,
+    semantic_parent: Option<SyntaxNodeId>,
+    semantic_component_range: arcweft_source::SourceRange,
     parent: Option<SyntaxNodeId>,
     expression_projection: Option<crate::expressions::PendingExpressionProjection>,
     assertion_projection: Option<crate::grammar::assertion_projection::PendingAssertionProjection>,
@@ -531,16 +574,71 @@ struct PendingAttachment {
     flow_declaration_projection:
         Option<crate::grammar::flow_projection::PendingFlowDeclarationProjection>,
     view_export_projection: Option<crate::grammar::view_projection::PendingViewExportProjection>,
+    view_fragment_projection:
+        Option<crate::grammar::view_projection::PendingViewFragmentProjection>,
+}
+
+fn semantic_component_range(
+    node: &SyntaxNode,
+    identity_parent: &SyntaxNode,
+    node_range: arcweft_source::SourceRange,
+) -> Option<arcweft_source::SourceRange> {
+    let mut outer_group = None;
+    for ancestor in node.ancestors().skip(1) {
+        if &ancestor == identity_parent {
+            return Some(outer_group.unwrap_or(node_range));
+        }
+        if ancestor.kind().0 == SyntaxKind::DelimitedGroup as u16 {
+            let range = ancestor.text_range();
+            outer_group = Some(arcweft_source::SourceRange::new(
+                usize::from(range.start()),
+                usize::from(range.end()),
+            ));
+        }
+    }
+    None
 }
 
 fn strict_path_prefix(parent: &[u32], child: &[u32]) -> bool {
     parent.len() < child.len() && child.starts_with(parent)
 }
 
-pub(crate) fn grammar_node_at_path(
+/// Resolves every identity-bearing grammar path in one source-order Rowan walk.
+///
+/// A separate root-to-path replay for each sibling becomes quadratic because a
+/// Rowan child index is reached by iterator position. This transaction-local
+/// inventory is consumed by the final shape/attachment owners and is never
+/// published as another syntax authority.
+pub(crate) fn grammar_nodes_for_paths(
     root: &SyntaxNode,
-    path: &GrammarEventPath,
-) -> Option<SyntaxNode> {
+    paths: &HashSet<GrammarEventPath>,
+) -> Option<HashMap<GrammarEventPath, SyntaxNode>> {
+    let mut nodes = HashMap::with_capacity(paths.len());
+    let mut stack = vec![(root.clone(), Vec::<u32>::new())];
+    while let Some((node, elements)) = stack.pop() {
+        let path = GrammarEventPath::from_elements(elements.clone().into_boxed_slice());
+        if paths.contains(&path) {
+            nodes.insert(path, node.clone());
+        }
+        let children = node
+            .children_with_tokens()
+            .enumerate()
+            .filter_map(|(index, element)| {
+                let node = element.into_node()?;
+                let index = u32::try_from(index).ok()?;
+                Some((index, node))
+            })
+            .collect::<Vec<_>>();
+        for (index, child) in children.into_iter().rev() {
+            let mut child_elements = elements.clone();
+            child_elements.push(index);
+            stack.push((child, child_elements));
+        }
+    }
+    (nodes.len() == paths.len()).then_some(nodes)
+}
+
+fn grammar_node_at_path(root: &SyntaxNode, path: &GrammarEventPath) -> Option<SyntaxNode> {
     let mut current = root.clone();
     for &element in path.elements() {
         let index = usize::try_from(element).ok()?;
@@ -551,12 +649,23 @@ pub(crate) fn grammar_node_at_path(
 
 fn validate_snapshot(snapshot: &Arc<SyntaxSnapshotData>) -> Result<(), AttachmentFailure> {
     let root = snapshot.root_handle();
+    validate_snapshot_root(snapshot, &root)?;
+    for node in snapshot.nodes() {
+        validate_snapshot_node(snapshot, &root, &node)?;
+    }
+    Ok(())
+}
+
+fn validate_snapshot_root(
+    snapshot: &Arc<SyntaxSnapshotData>,
+    root: &SyntaxNodeHandle,
+) -> Result<(), AttachmentFailure> {
     let typed_root = snapshot
         .typed_node::<SourceFileKind>(root.id())
         .map_err(|_| AttachmentFailure::SnapshotInvariant)?;
     if typed_root.id() != root.id()
         || typed_root.snapshot_id() != snapshot.snapshot_id()
-        || typed_root.syntax() != root
+        || typed_root.syntax() != *root
         || typed_root.range() != root.range()
         || !typed_root.is_same_reconciled_node(&typed_root.clone())
         || root.parent().is_some()
@@ -569,146 +678,178 @@ fn validate_snapshot(snapshot: &Arc<SyntaxSnapshotData>) -> Result<(), Attachmen
     {
         return Err(AttachmentFailure::SnapshotInvariant);
     }
+    Ok(())
+}
 
-    for node in snapshot.nodes() {
-        if snapshot
-            .syntax_node(node.id())
+fn validate_snapshot_node(
+    snapshot: &Arc<SyntaxSnapshotData>,
+    root: &SyntaxNodeHandle,
+    node: &SyntaxNodeHandle,
+) -> Result<(), AttachmentFailure> {
+    validate_node_lookup(snapshot, node)?;
+    if !node_projection_shape_is_valid(node) {
+        return Err(AttachmentFailure::SnapshotInvariant);
+    }
+    validate_node_semantics(node)?;
+    validate_node_projection_origin(node)?;
+    if node.id() != root.id() && node.parent().is_none() {
+        return Err(AttachmentFailure::SnapshotInvariant);
+    }
+    validate_node_children(node)?;
+    let _ = node.role().class();
+    Ok(())
+}
+
+fn validate_node_lookup(
+    snapshot: &Arc<SyntaxSnapshotData>,
+    node: &SyntaxNodeHandle,
+) -> Result<(), AttachmentFailure> {
+    if snapshot
+        .syntax_node(node.id())
+        .map_err(|_| AttachmentFailure::SnapshotInvariant)?
+        != *node
+        || snapshot
+            .node_for_path(node.path())
+            .is_none_or(|by_path| by_path != *node)
+        || snapshot
+            .resolve_exact(node)
             .map_err(|_| AttachmentFailure::SnapshotInvariant)?
-            != node
-            || snapshot
-                .node_for_path(node.path())
-                .is_none_or(|by_path| by_path != node)
-            || snapshot
-                .bind_rowan(node.rowan())
-                .map_err(|_| AttachmentFailure::SnapshotInvariant)?
-                != node
-            || snapshot
-                .resolve_exact(&node)
-                .map_err(|_| AttachmentFailure::SnapshotInvariant)?
-                != node
-            || node.kind().ast_tag() != Some(node.tag())
-            || node.range().end() > snapshot.document().text().len()
-            || (crate::expressions::PendingExpressionProjection::kind_requires_projection(
-                node.kind(),
-            ) && node.expression_projection().is_none())
-            || ((node.kind() == SyntaxKind::AssertionStatement)
-                != node.assertion_projection().is_some())
-            || (crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection::kind_requires_projection(
-                node.kind(),
-            ) != node.keyword_statement_projection().is_some())
-            || node
-                .keyword_statement_projection()
-                .is_some_and(|projection| !projection.accepts_kind(node.kind()))
-            || node.kind().is_type_node() != node.type_projection().is_some()
-            || (node.kind() == SyntaxKind::Path) != node.path_projection().is_some()
-            || (node.kind() == SyntaxKind::UseDeclaration) != node.use_projection().is_some()
-            || (node.kind() == SyntaxKind::Visibility) != node.visibility_projection().is_some()
-            || (node.kind() == SyntaxKind::OuterAttribute) != node.attribute_projection().is_some()
-            || (node.kind() == SyntaxKind::TestItem) != node.test_kind_projection().is_some()
-            || (node.kind() == SyntaxKind::EntryDeclarationItem)
-                != node.entry_projection().is_some()
-            || (node.kind() == SyntaxKind::StyleItem) != node.style_projection().is_some()
-            || (node.kind() == SyntaxKind::SourceItem)
-                != node.source_declaration_projection().is_some()
-            || (node.kind() != SyntaxKind::Parameter && node.method_receiver_projection().is_some())
-            || (matches!(
-                node.kind(),
-                SyntaxKind::InvariantClause
-                    | SyntaxKind::AssumeClause
-                    | SyntaxKind::ReadsClause
-                    | SyntaxKind::EffectsClause
-                    | SyntaxKind::NoEffectClause
-                    | SyntaxKind::ModifiesClause
-                    | SyntaxKind::DecreasesClause
-            ) && node.contract_clause_projection().is_none())
-            || node.contract_clause_projection().is_some_and(|projection| {
-                !projection.ranges_are_valid_for(node.kind(), node.range())
-            })
-            || (node.kind() == SyntaxKind::FlowItem)
-                != node.flow_declaration_projection().is_some()
-            || node
-                .flow_declaration_projection()
-                .is_some_and(|projection| !projection.ranges_are_valid_for(node.range()))
-            || (node.kind() == SyntaxKind::ViewExportDeclaration)
-                != node.view_export_projection().is_some()
-        {
-            return Err(AttachmentFailure::SnapshotInvariant);
-        }
-        if node.expression_projection().is_some()
-            && expression::AttachedExpressionNode::from_syntax(node.clone()).is_err()
-        {
-            return Err(AttachmentFailure::SnapshotInvariant);
-        }
-        if node.attribute_projection().is_some()
-            && match node.clone().cast::<node::OuterAttributeKind>() {
-                Ok(attribute) => attribute.semantics().is_err(),
-                Err(_) => true,
-            }
-        {
-            return Err(AttachmentFailure::SnapshotInvariant);
-        }
-        if node.style_projection().is_some()
-            && match node.clone().cast::<node::StyleItemKind>() {
-                Ok(style) => style.semantics().is_err(),
-                Err(_) => true,
-            }
-        {
-            return Err(AttachmentFailure::SnapshotInvariant);
-        }
-        if node.flow_declaration_projection().is_some()
-            && match node.clone().cast::<node::FlowItemKind>() {
-                Ok(flow) => flow.semantics().is_err(),
-                Err(_) => true,
-            }
-        {
-            return Err(AttachmentFailure::SnapshotInvariant);
-        }
-        if let Some(projection) = node.pattern_projection()
-            && (projection
+            != *node
+        || node.kind().ast_tag() != Some(node.tag())
+        || node.range().end() > snapshot.document().text().len()
+    {
+        return Err(AttachmentFailure::SnapshotInvariant);
+    }
+    Ok(())
+}
+
+fn node_projection_shape_is_valid(node: &SyntaxNodeHandle) -> bool {
+    (!crate::expressions::PendingExpressionProjection::kind_requires_projection(node.kind())
+        || node.expression_projection().is_some())
+        && ((node.kind() == SyntaxKind::AssertionStatement)
+            == node.assertion_projection().is_some())
+        && (crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection::kind_requires_projection(
+            node.kind(),
+        ) == node.keyword_statement_projection().is_some())
+        && node
+            .keyword_statement_projection()
+            .is_none_or(|projection| projection.accepts_kind(node.kind()))
+        && node.kind().is_type_node() == node.type_projection().is_some()
+        && (node.kind() == SyntaxKind::Path) == node.path_projection().is_some()
+        && (node.kind() == SyntaxKind::UseDeclaration) == node.use_projection().is_some()
+        && (node.kind() == SyntaxKind::Visibility) == node.visibility_projection().is_some()
+        && matches!(
+            node.kind(),
+            SyntaxKind::InnerAttribute | SyntaxKind::OuterAttribute
+        ) == node.attribute_projection().is_some()
+        && (node.kind() == SyntaxKind::TestItem) == node.test_kind_projection().is_some()
+        && (node.kind() == SyntaxKind::EntryDeclarationItem) == node.entry_projection().is_some()
+        && (node.kind() == SyntaxKind::StyleItem) == node.style_projection().is_some()
+        && (node.kind() == SyntaxKind::SourceItem)
+            == node.source_declaration_projection().is_some()
+        && (node.kind() == SyntaxKind::Parameter || node.method_receiver_projection().is_none())
+        && (!matches!(
+            node.kind(),
+            SyntaxKind::InvariantClause
+                | SyntaxKind::AssumeClause
+                | SyntaxKind::ReadsClause
+                | SyntaxKind::EffectsClause
+                | SyntaxKind::NoEffectClause
+                | SyntaxKind::ModifiesClause
+                | SyntaxKind::DecreasesClause
+        ) || node.contract_clause_projection().is_some())
+        && node.contract_clause_projection().is_none_or(|projection| {
+            projection.ranges_are_valid_for(node.kind(), node.range())
+        })
+        && (node.kind() == SyntaxKind::FlowItem) == node.flow_declaration_projection().is_some()
+        && node
+            .flow_declaration_projection()
+            .is_none_or(|projection| projection.ranges_are_valid_for(node.range()))
+        && (node.kind() == SyntaxKind::ViewExportDeclaration)
+            == node.view_export_projection().is_some()
+        && (node.kind() == SyntaxKind::ViewFragment) == node.view_fragment_projection().is_some()
+        && node
+            .view_fragment_projection()
+            .is_none_or(|projection| projection.ranges_are_valid_for(node.range()))
+}
+
+fn validate_node_semantics(node: &SyntaxNodeHandle) -> Result<(), AttachmentFailure> {
+    let expression_invalid = node.expression_projection().is_some()
+        && expression::AttachedExpressionNode::from_syntax(node.clone()).is_err();
+    let attribute_invalid = node.attribute_projection().is_some()
+        && match node.kind() {
+            SyntaxKind::InnerAttribute => node
+                .clone()
+                .cast::<node::InnerAttributeKind>()
+                .map_or(true, |attribute| attribute.semantics().is_err()),
+            SyntaxKind::OuterAttribute => node
+                .clone()
+                .cast::<node::OuterAttributeKind>()
+                .map_or(true, |attribute| attribute.semantics().is_err()),
+            _ => true,
+        };
+    let style_invalid = node.style_projection().is_some()
+        && node
+            .clone()
+            .cast::<node::StyleItemKind>()
+            .map_or(true, |style| style.semantics().is_err());
+    let flow_invalid = node.flow_declaration_projection().is_some()
+        && node
+            .clone()
+            .cast::<node::FlowItemKind>()
+            .map_or(true, |flow| flow.semantics().is_err());
+    if expression_invalid || attribute_invalid || style_invalid || flow_invalid {
+        return Err(AttachmentFailure::SnapshotInvariant);
+    }
+    Ok(())
+}
+
+fn validate_node_projection_origin(node: &SyntaxNodeHandle) -> Result<(), AttachmentFailure> {
+    if let Some(projection) = node.pattern_projection()
+        && (projection
+            .authored()
+            .value_at(projection.path())
+            .is_none_or(|value| !pattern::family_accepts_kind(value.family(), node.kind()))
+            || projection
                 .authored()
-                .value_at(projection.path())
-                .is_none_or(|value| !pattern::family_accepts_kind(value.family(), node.kind()))
-                || projection
-                    .authored()
-                    .source()
-                    .source_at(projection.path())
-                    .is_none_or(|range| *range != node.range())
-                || node
-                    .pattern_node_for_projection(projection.tree(), projection.path())
-                    .as_ref()
-                    != Some(&node))
-        {
-            return Err(AttachmentFailure::SnapshotInvariant);
-        }
-        if node.id() != root.id() && node.parent().is_none() {
-            return Err(AttachmentFailure::SnapshotInvariant);
-        }
-        if let Some(projection) = node.type_projection()
-            && (node
-                .type_node_for_projection(projection.tree(), projection.path())
+                .source()
+                .source_at(projection.path())
+                .is_none_or(|range| *range != node.range())
+            || node
+                .pattern_node_for_projection(projection.tree(), projection.path())
                 .as_ref()
-                != Some(&node)
-                || projection
-                    .authored()
-                    .source_at(projection.path())
-                    .is_none_or(|source| {
-                        node.range().start() != source.whole().start()
-                            || node.range().end() != source.whole().end()
-                    }))
+                != Some(node))
+    {
+        return Err(AttachmentFailure::SnapshotInvariant);
+    }
+    if let Some(projection) = node.type_projection()
+        && (node
+            .type_node_for_projection(projection.tree(), projection.path())
+            .as_ref()
+            != Some(node)
+            || projection
+                .authored()
+                .source_at(projection.path())
+                .is_none_or(|source| {
+                    node.range().start() != source.whole().start()
+                        || node.range().end() != source.whole().end()
+                }))
+    {
+        return Err(AttachmentFailure::SnapshotInvariant);
+    }
+    Ok(())
+}
+
+fn validate_node_children(node: &SyntaxNodeHandle) -> Result<(), AttachmentFailure> {
+    for child in node.children() {
+        let same_role = node.children_with_role(child.role());
+        if child.parent().as_ref() != Some(node)
+            || !same_role.contains(&child)
+            || (same_role.len() == 1 && node.child(child.role()).as_ref() != Some(&child))
+            || !strict_path_prefix(node.path().elements(), child.path().elements())
         {
             return Err(AttachmentFailure::SnapshotInvariant);
         }
-        for child in node.children() {
-            let same_role = node.children_with_role(child.role());
-            if child.parent().as_ref() != Some(&node)
-                || !same_role.contains(&child)
-                || (same_role.len() == 1 && node.child(child.role()).as_ref() != Some(&child))
-                || !strict_path_prefix(node.path().elements(), child.path().elements())
-            {
-                return Err(AttachmentFailure::SnapshotInvariant);
-            }
-        }
-        let _ = node.role().class();
     }
     Ok(())
 }
@@ -739,7 +880,7 @@ mod tests {
         ProofBodyKind, ProofCallStatementKind, RecordPatternKind, RichTextArgumentPayloadKind,
         RichTextArgumentValueKind, RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind,
         RichTextEndTagKind, RichTextFxCallPayloadKind, RichTextInvalidArgumentKind,
-        RichTextNamedArgumentKind, RichTextTagKind, UnsafeLifetimeStatementKind,
+        RichTextNamedArgumentKind, RichTextTagKind, SourceFileKind, UnsafeLifetimeStatementKind,
         WholeBindingPatternKind,
     };
     use super::{
@@ -747,10 +888,9 @@ mod tests {
         SyntaxLineageId, SyntaxLookupError, SyntaxNodeId, SyntaxSnapshotId, TypedItemNode,
         attach_typed_tree,
     };
-    use crate::ast::dialogue::DialogueToken;
     use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole, SyntaxRoleClass};
-    use crate::parser::parse_shadow_document;
-    use crate::text::parse_dialogue_text;
+    use crate::parser::parse_document;
+    use crate::text::{ScannedTagArgument, scan_tag_arguments};
 
     fn document(text: &str) -> Arc<SourceDocument> {
         Arc::new(
@@ -765,6 +905,10 @@ mod tests {
 
     fn attach(text: &str) -> Arc<super::SyntaxSnapshotData> {
         attach_at(text, 1, 1)
+    }
+
+    fn source_file(snapshot: &Arc<super::SyntaxSnapshotData>) -> AstNode<SourceFileKind> {
+        snapshot.root_handle().cast().unwrap()
     }
 
     fn attached_dialogue_content(
@@ -810,8 +954,7 @@ mod tests {
         lineage_ordinal: u64,
     ) -> Arc<super::SyntaxSnapshotData> {
         let document = document(text);
-        let build =
-            parse_shadow_document(&document, crate::parser::ParseOptions::default()).unwrap();
+        let build = parse_document(&document, crate::parser::ParseOptions::default()).unwrap();
         let database =
             SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(database_ordinal).unwrap());
         let lineage =
@@ -882,7 +1025,7 @@ mod tests {
     fn typed_handle_cannot_cross_an_immutable_snapshot_lineage() {
         let first = attach_at("proof valid() = ()\n", 1, 1);
         let second = attach_at("proof valid() = ()\n", 1, 2);
-        let first_item = first.typed_tree().unwrap().items().unwrap().remove(0);
+        let first_item = source_file(&first).items().unwrap().remove(0);
         assert!(matches!(
             second.resolve_exact(&first_item.syntax()),
             Err(SyntaxLookupError::WrongSnapshot { .. })
@@ -1226,9 +1369,9 @@ mod tests {
             "-> Bool where T: Ord requires cmp.ready() ensures result = left == right\n",
         );
         let snapshot = attach(source);
-        let tree = snapshot.typed_tree().unwrap();
-        assert_eq!(tree.root().range(), SourceRange::new(0, source.len()));
-        let items = tree.items().unwrap();
+        let root = source_file(&snapshot);
+        assert_eq!(root.range(), SourceRange::new(0, source.len()));
+        let items = root.items().unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].role(), SyntaxRole::Element(0));
 
@@ -1310,7 +1453,7 @@ mod tests {
     #[test]
     fn ordinary_call_accessors_keep_named_and_positional_argument_order() {
         let snapshot = attach("predicate next(value: Int) = outer(named = inner(value), value)\n");
-        let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+        let item = source_file(&snapshot).items().unwrap().remove(0);
         let DeclarationBodyNode::Body(predicate_body) = item.body().unwrap().unwrap() else {
             panic!("predicate has an authored body");
         };
@@ -1377,7 +1520,7 @@ mod tests {
             "}\n",
         );
         let snapshot = attach(source);
-        let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+        let item = source_file(&snapshot).items().unwrap().remove(0);
         let TypedItemNode::Character(character) = &item else {
             panic!("expected character item");
         };
@@ -1428,7 +1571,7 @@ mod tests {
             "}\n",
         );
         let snapshot = attach(source);
-        let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+        let item = source_file(&snapshot).items().unwrap().remove(0);
         let TypedItemNode::Proof(proof) = item else {
             panic!("expected proof item");
         };
@@ -1514,7 +1657,7 @@ mod tests {
             "    let absent;\n",
             "}\n",
         ));
-        let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+        let item = source_file(&snapshot).items().unwrap().remove(0);
         let Some(DeclarationBodyNode::Body(body)) = item.body().unwrap() else {
             panic!("function owns an authored body");
         };
@@ -1547,7 +1690,7 @@ mod tests {
     #[test]
     fn missing_and_wrong_kind_paths_fail_without_range_or_text_lookup() {
         let snapshot = attach("proof ()() \n");
-        let item = snapshot.typed_tree().unwrap().items().unwrap().remove(0);
+        let item = source_file(&snapshot).items().unwrap().remove(0);
         let TypedItemNode::Proof(proof) = &item else {
             panic!("expected proof item");
         };
@@ -1579,12 +1722,7 @@ mod tests {
         ));
 
         let call_snapshot = attach("predicate broken() = outer(value\n");
-        let item = call_snapshot
-            .typed_tree()
-            .unwrap()
-            .items()
-            .unwrap()
-            .remove(0);
+        let item = source_file(&call_snapshot).items().unwrap().remove(0);
         let TypedItemNode::Predicate(predicate) = item else {
             panic!("expected predicate item");
         };
@@ -1871,8 +2009,9 @@ mod tests {
     }
 
     #[test]
-    fn attached_rich_text_ranges_match_the_public_lossless_scan() {
+    fn attached_rich_text_ranges_match_the_canonical_argument_scanner() {
         let tag_source = "[effect .wave\u{3000}amp=2 label=\"游 ゴシック\"]";
+        let attrs = ".wave\u{3000}amp=2 label=\"游 ゴシック\"";
         let source =
             format!("flow opening {{\r\n    let line = alice[本文。{tag_source}]\r\n}}\r\n");
         let snapshot = attach(&source);
@@ -1887,48 +2026,45 @@ mod tests {
             .unwrap();
         let private_arguments = payload.arguments().unwrap();
 
-        let parsed = parse_dialogue_text(tag_source);
+        let tag_start = source.find(tag_source).unwrap();
+        let attrs_start = source.find(attrs).unwrap();
+        let scanned = scan_tag_arguments(attrs, attrs_start, 32);
         assert!(
-            parsed.diagnostics().is_empty(),
+            scanned.diagnostics().is_empty(),
             "{:?}",
-            parsed.diagnostics()
+            scanned.diagnostics()
         );
-        let public_tag = parsed
-            .tokens()
-            .iter()
-            .find_map(|token| match token {
-                DialogueToken::Tag(tag) => Some(tag),
-                _ => None,
-            })
-            .unwrap();
-        let base = source.find(tag_source).unwrap();
         assert_eq!(
             private_tag.range(),
-            SourceRange::new(
-                base + public_tag.range().start(),
-                base + public_tag.range().end(),
-            )
+            SourceRange::new(tag_start, tag_start + tag_source.len())
         );
-        assert_eq!(private_arguments.len(), public_tag.arguments().len());
-        for (private, public) in private_arguments.iter().zip(public_tag.arguments()) {
+        assert_eq!(private_arguments.len(), scanned.entries().len());
+        for (private, scanned) in private_arguments.iter().zip(scanned.entries()) {
             assert_eq!(
                 private.range(),
-                SourceRange::new(base + public.range().start(), base + public.range().end())
+                SourceRange::new(scanned.range().start(), scanned.range().end())
             );
         }
 
         let private_label = private_arguments[2]
             .cast::<RichTextNamedArgumentKind>()
             .unwrap();
-        let public_label = &public_tag.arguments()[2];
-        let public_value = public_label.value().unwrap();
+        let ScannedTagArgument::Named {
+            name_range,
+            equals_range,
+            value,
+            ..
+        } = &scanned.entries()[2]
+        else {
+            panic!("label remains a named RichText argument");
+        };
         assert_eq!(
             private_label.key().unwrap().range(),
-            shifted(base, public_label.name_range().unwrap())
+            SourceRange::new(name_range.start(), name_range.end())
         );
         assert_eq!(
             private_label.equals().unwrap().range(),
-            shifted(base, public_label.equals_range().unwrap())
+            SourceRange::new(equals_range.start(), equals_range.end())
         );
         let private_value = private_label
             .value()
@@ -1938,24 +2074,26 @@ mod tests {
         let private_token = private_value.token().unwrap();
         assert_eq!(
             private_token.range(),
-            shifted(base, public_value.token_range())
+            SourceRange::new(value.token_range().start(), value.token_range().end())
         );
         assert_eq!(
             private_token.content().unwrap().range(),
-            shifted(base, public_value.content_range())
+            SourceRange::new(value.content_range().start(), value.content_range().end())
         );
         assert_eq!(
             private_token.opening_quote().unwrap().unwrap().range(),
-            shifted(base, public_value.opening_quote_range().unwrap())
+            SourceRange::new(
+                value.opening_quote_range().unwrap().start(),
+                value.opening_quote_range().unwrap().end(),
+            )
         );
         assert_eq!(
             private_token.closing_quote().unwrap().unwrap().range(),
-            shifted(base, public_value.closing_quote_range().unwrap())
+            SourceRange::new(
+                value.closing_quote_range().unwrap().start(),
+                value.closing_quote_range().unwrap().end(),
+            )
         );
-    }
-
-    fn shifted(base: usize, range: crate::ast::common::TextRange) -> SourceRange {
-        SourceRange::new(base + range.start(), base + range.end())
     }
 
     #[test]

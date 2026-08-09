@@ -29,13 +29,13 @@ pub(crate) use trait_method::AwbcTraitMethodLowerer;
 use arcweft_core::awbc::schema::{AwbcProgram, AwbcSourceMapEntry};
 use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use arcweft_core::plan::RuntimePlan;
-use arcweft_render_text::LineDisplayCatalog;
+use arcweft_text_model::DialogueContentCatalog;
 
 /// Compiler-side context for one `RuntimePlan` to AWBC lowering operation.
 #[derive(Clone, Copy, Debug)]
 pub struct AwbcLowerer<'a> {
     plan: &'a RuntimePlan,
-    display: &'a LineDisplayCatalog,
+    dialogue_content: &'a DialogueContentCatalog,
     source_label: &'a str,
     options: AwbcLowerOptions,
 }
@@ -83,12 +83,12 @@ impl<'a> AwbcLowerer<'a> {
     /// Creates a lowerer with the stable default emission options.
     pub fn new(
         plan: &'a RuntimePlan,
-        display: &'a LineDisplayCatalog,
+        dialogue_content: &'a DialogueContentCatalog,
         source_label: &'a str,
     ) -> Self {
         Self {
             plan,
-            display,
+            dialogue_content,
             source_label,
             options: AwbcLowerOptions::default(),
         }
@@ -105,13 +105,13 @@ impl<'a> AwbcLowerer<'a> {
     pub fn lower(self) -> Result<AwbcLowerReport, AwbcLowerError> {
         let Self {
             plan,
-            display,
+            dialogue_content,
             source_label,
             options,
         } = self;
         let mut inventory = AwbcInventory::new(source_label, options);
         inventory.intern_runtime_primitives();
-        inventory.intern_display_catalog(display);
+        inventory.intern_dialogue_content_catalog(dialogue_content);
 
         let mut diagnostics = {
             let mut flow_lowerer = AwbcFlowLowerer::new(&mut inventory);

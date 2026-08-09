@@ -53,15 +53,13 @@ Sample    サンプル列
 ## assert
 
 ```arcw
-assert(state.affection[@character.alice] >= 0)
-assert_eq(route_title(@flow.opening), "Opening")
-debug_assert(choices.len() > 0)
-assert_ok(load_config())
-assert_some(state.current_bg)
+assert.check(state.affection[@character.alice] >= 0)
+assert.check(route_title(@flow.opening) == "Opening")
+assert.debug(choices.len() > 0)
 ```
 
-`assert(...)` は常に有効な runtime assertion として扱う。
-`debug_assert(...)` は debug/test profile でのみ強制される assertion として
+`assert.check(...)` は常に有効な runtime assertion として扱う。
+`assert.debug(...)` は debug/test profile でのみ強制される assertion として
 runtime plan に残す。失敗時は `AssertionEvent` として
 log/signal/trace/crash bundle に流す。
 

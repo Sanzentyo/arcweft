@@ -4,9 +4,11 @@ use super::{
         ProfileRegistrationOverlay, RegisteredProfileCandidate, register_profile_environment,
     },
     model::{LspProfile, ProfileSourceSelection},
-    state::{AcceptedProfileCandidate, AcceptedProfileEnvironment, LspProfileState},
+    state::{AcceptedProfileEnvironment, LspProfileState},
     uri::file_path_from_uri,
 };
+use arcweft_compiler::project::ProjectCompilationSession;
+use arcweft_lang_syntax::incremental::SyntaxDatabase;
 use arcweft_launch::{LaunchProfileSelection, accepted::SourceBackedManifest};
 use arcweft_manifest_model::ProfileId;
 use arcweft_project_loader::topology::LoadedProfileTopology;
@@ -15,6 +17,9 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+
+#[cfg(test)]
+use super::state::AcceptedProfileCandidate;
 
 const DEFAULT_MANIFEST_NAME: &str = "arcw.toml";
 
@@ -27,10 +32,19 @@ pub struct LspProfileResolver {
     arbitrary_expression_type_inlays: bool,
 }
 
-/// A fully validated profile construction that has not been published into a
-/// live LSP session.
+/// Test-only owner of the syntax and compiler sessions used to exercise profile
+/// loading without creating a second production authority.
+#[cfg(test)]
+pub(crate) struct LspProfileTestHarness {
+    resolver: LspProfileResolver,
+    syntax: SyntaxDatabase,
+    compiler: ProjectCompilationSession,
+}
+
+/// A fully validated test profile construction that has not been published.
+#[cfg(test)]
 #[derive(Debug)]
-pub struct LspProfileBuild {
+pub(crate) struct LspProfileBuild {
     profile: LspProfile,
     candidate: AcceptedProfileCandidate,
 }
@@ -88,13 +102,15 @@ impl LspProfileResolver {
 
     pub(crate) fn resolve_candidate_for_uri(
         &self,
+        syntax: &mut SyntaxDatabase,
+        compiler: &mut ProjectCompilationSession,
         uri: &lsp_types::Uri,
         overlays: &[ProfileRegistrationOverlay],
         previous: Option<&Arc<AcceptedProfileEnvironment>>,
     ) -> Result<RegisteredProfileCandidate, LspProfileDiagnostic> {
         match file_path_from_uri(uri) {
             Some(path) => self
-                .try_resolve_for_document_path(&path, overlays, previous)
+                .try_resolve_for_document_path(syntax, compiler, &path, overlays, previous)
                 .map_err(LspProfileLoadError::into_diagnostic),
             None => Err(LspProfileDiagnostic::new(
                 LspProfileDiagnosticKind::NonFileDocumentUri,
@@ -103,21 +119,10 @@ impl LspProfileResolver {
         }
     }
 
-    /// Constructs a validated profile for one local document path without
-    /// publishing accepted session state.
-    pub fn resolve_for_document_path(
-        &self,
-        document_path: &Path,
-    ) -> Result<LspProfileBuild, LspProfileDiagnostic> {
-        let state = Arc::new(LspProfileState::new());
-        let registered = self
-            .try_resolve_for_document_path(document_path, &[], None)
-            .map_err(LspProfileLoadError::into_diagnostic)?;
-        Ok(self.profile_build_from_registered(registered, state))
-    }
-
     fn try_resolve_for_document_path(
         &self,
+        syntax: &mut SyntaxDatabase,
+        compiler: &mut ProjectCompilationSession,
         document_path: &Path,
         overlays: &[ProfileRegistrationOverlay],
         previous: Option<&Arc<AcceptedProfileEnvironment>>,
@@ -133,12 +138,21 @@ impl LspProfileResolver {
             },
             LaunchProfileSelection::Explicit,
         );
-        let previous_environment = previous.map(|environment| environment.world().environment());
-        register_profile_environment(&manifest_path, selection, overlays, previous_environment)
-            .map_err(|error| LspProfileLoadError::Environment {
-                profile_id: self.profile_id.clone(),
-                source: Box::new(error),
-            })
+        let previous_environment = previous
+            .and_then(|environment| environment.registered_world())
+            .map(arcweft_lang_sema::registration::RegisteredSemanticWorld::environment);
+        register_profile_environment(
+            syntax,
+            compiler,
+            &manifest_path,
+            selection,
+            overlays,
+            previous_environment,
+        )
+        .map_err(|error| LspProfileLoadError::Environment {
+            profile_id: self.profile_id.clone(),
+            source: Box::new(error),
+        })
     }
 
     fn find_manifest(&self, document_path: &Path) -> Option<PathBuf> {
@@ -149,12 +163,13 @@ impl LspProfileResolver {
             .find(|candidate| candidate.is_file())
     }
 
+    #[cfg(test)]
     fn profile_build_from_registered(
         &self,
         registered: RegisteredProfileCandidate,
         state: Arc<LspProfileState>,
     ) -> LspProfileBuild {
-        let (candidate, characters, topology) = registered.into_parts();
+        let (candidate, characters, topology, diagnostic) = registered.into_parts();
         let profile = topology.selected_profile();
         let manifest = topology.loaded_project().manifest();
         LspProfileBuild {
@@ -174,7 +189,7 @@ impl LspProfileResolver {
                 characters,
                 resolved_profile: Some(profile.clone()),
                 state,
-                diagnostics: Vec::new(),
+                diagnostics: diagnostic.into_iter().collect(),
                 arbitrary_expression_type_inlays: self.arbitrary_expression_type_inlays,
             },
             candidate,
@@ -197,7 +212,7 @@ impl LspProfileResolver {
         registered: &RegisteredProfileCandidate,
         state: Arc<LspProfileState>,
     ) -> LspProfile {
-        let (characters, topology) = registered.metadata();
+        let (characters, topology, diagnostic) = registered.metadata();
         let profile = topology.selected_profile();
         let manifest = topology.loaded_project().manifest();
         LspProfile {
@@ -216,12 +231,43 @@ impl LspProfileResolver {
             characters: characters.clone(),
             resolved_profile: Some(profile.clone()),
             state,
-            diagnostics: Vec::new(),
+            diagnostics: diagnostic.cloned().into_iter().collect(),
             arbitrary_expression_type_inlays: self.arbitrary_expression_type_inlays,
         }
     }
 }
 
+#[cfg(test)]
+impl LspProfileTestHarness {
+    pub(crate) fn new(resolver: LspProfileResolver) -> Self {
+        Self {
+            resolver,
+            syntax: SyntaxDatabase::try_new().expect("test syntax session"),
+            compiler: ProjectCompilationSession::try_new().expect("test compiler session"),
+        }
+    }
+
+    pub(crate) fn resolve_for_document_path(
+        &mut self,
+        document_path: &Path,
+    ) -> Result<LspProfileBuild, LspProfileDiagnostic> {
+        let registered = self
+            .resolver
+            .try_resolve_for_document_path(
+                &mut self.syntax,
+                &mut self.compiler,
+                document_path,
+                &[],
+                None,
+            )
+            .map_err(LspProfileLoadError::into_diagnostic)?;
+        Ok(self
+            .resolver
+            .profile_build_from_registered(registered, Arc::new(LspProfileState::new())))
+    }
+}
+
+#[cfg(test)]
 impl LspProfileBuild {
     /// Resolved profile metadata. Its state has no accepted environment until
     /// a session consumes the construction through its publication gate.

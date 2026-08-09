@@ -1,8 +1,7 @@
 use super::table::PublicIdRef;
-use super::{ProductSourceId, SourceMapDocument};
 use crate::container::{BundleDigest, SectionId, SectionKindCode};
-use arcweft_source::SourceRevision;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use arcweft_source::ProductSourceRef;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 /// Stable 128-bit resource identity derived from an owner-defined stable key.
@@ -26,14 +25,6 @@ pub struct StableId([u8; 16]);
 #[derive(Clone, Copy, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
 pub struct DigestRef {
     pub digest: BundleDigest,
-}
-
-/// Revision-bound reference to one source document in a product source table.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub struct ProductSourceRef {
-    id: ProductSourceId,
-    revision: SourceRevision,
-    source_len: u64,
 }
 
 /// Opaque index into one resource's canonical product-source table.
@@ -87,28 +78,6 @@ impl StableId {
 
     pub const fn as_bytes(self) -> [u8; 16] {
         self.0
-    }
-}
-
-impl ProductSourceRef {
-    pub fn from_document(document: &SourceMapDocument) -> Self {
-        Self {
-            id: document.id().clone(),
-            revision: document.revision(),
-            source_len: document.source_len(),
-        }
-    }
-
-    pub const fn id(&self) -> &ProductSourceId {
-        &self.id
-    }
-
-    pub const fn revision(&self) -> SourceRevision {
-        self.revision
-    }
-
-    pub const fn source_len(&self) -> u64 {
-        self.source_len
     }
 }
 
@@ -168,41 +137,5 @@ impl SourceRangeRef {
 
     pub(crate) fn set_source(&mut self, source: ProductSourceRefIndex) {
         self.source = source;
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ProductSourceRefWire {
-    id: ProductSourceId,
-    revision: [u8; 32],
-    source_len: u64,
-}
-
-impl Serialize for ProductSourceRef {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        ProductSourceRefWire {
-            id: self.id.clone(),
-            revision: *self.revision.as_bytes(),
-            source_len: self.source_len,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ProductSourceRef {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let wire = ProductSourceRefWire::deserialize(deserializer)?;
-        Ok(Self {
-            id: wire.id,
-            revision: SourceRevision::from_bytes(wire.revision),
-            source_len: wire.source_len,
-        })
     }
 }

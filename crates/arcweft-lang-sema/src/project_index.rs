@@ -4,56 +4,31 @@
 //! callable host surfaces. This module keeps that view typed and source-aware
 //! without adding parser-specific command shapes.
 
-use crate::checker::TypeCheckReport;
+use crate::callable::{
+    AgentIntrinsicSignatureId, CallableCandidateId, CallableInterfaceDigest, CallableValidator,
+    CheckedCallableCatalog, CheckedCallableDeclaration, CheckedCallableFacts, CheckedCallableId,
+    CheckedCallableLookupError, EnvironmentCallableId,
+};
 use crate::entry::{CheckedEntryCatalog, CheckedEntryId};
-use crate::env::{
-    AgentActionEnvSignature, DebugPathKind, EffectCapability, FunctionParam, FunctionSignature,
-    TypeCheckEnv,
-};
-use crate::types::{EntityKind, EntityType, MapKind, TypeKind};
+use crate::env::{EffectCapability, FunctionSignature, TypeCheckEnv};
+use crate::types::{EntityType, TypeKind};
 use arcweft_id::PublicId;
-use arcweft_lang_hir::style::HirStyleDecl;
-use arcweft_lang_hir::{
-    entry::HirEntryItem,
-    model::{HirFlowItem, HirModule, HirTopLevelDecl},
-    project::HirProject,
-    symbol::{
-        CallableDeclarationId, CallableDeclarationOwner, CallablePackageId, ProjectSymbolTable,
-        nominal::ProjectNominalDeclarationId,
-    },
+use arcweft_lang_hir::symbol::{
+    CallableDeclarationKey, CallableDeclarationOwner, FlowDeclarationId,
+    nominal::ProjectNominalDeclarationId,
 };
-use arcweft_lang_syntax::{
-    ast::{
-        choice::ChoiceAction,
-        flow::{Stmt, StmtMatchArm},
-        ids::EntityRef,
-        items::{EntityDeclItem, EntityDeclKind},
-        module_path::CanonicalModulePath,
-        pattern::Pattern,
-    },
-    expr::{CallArg, Expr, Literal, MatchExprArm},
-    types::{FnParam as SyntaxFnParam, FnSignature as SyntaxFnSignature},
-};
-use arcweft_source::{SourceAnchor, SourceDocument, SourceDocumentIdentity, SourceSpan};
-use std::collections::BTreeMap;
+use arcweft_source::SourceAnchor;
+use std::{collections::BTreeMap, sync::Arc};
 use thiserror::Error;
 
-mod agent_prelude;
-mod entities;
 mod entry_roles;
-mod flow_control;
+mod final_projection;
 mod nominal;
-mod relations;
 
 pub use entry_roles::{
     ProjectEntryRecord, ProjectEntryRoleEdge, ProjectEntryRoleKind, ProjectEntryRoleTarget,
 };
 pub use nominal::{ProjectNominalIndexRecord, ProjectNominalReferenceEdge};
-
-type SourceName = SourceDocument;
-
-#[cfg(test)]
-mod tests;
 
 /// Semantic index schema supported by this crate.
 pub const PROJECT_SEMANTIC_INDEX_SCHEMA_VERSION: u32 = 2;
@@ -81,18 +56,30 @@ pub struct TypeName(String);
 /// Project entity symbol available to Agent Script.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EntitySymbol {
-    id: PublicId,
+    identity: ProjectEntityId,
     ty: EntityType,
     source: SourceAnchor,
     semantic_hash: SemanticHash,
     agent_actions: Vec<AgentActionSignature>,
 }
 
+/// Sole project-index identity for an entity.
+///
+/// Public declarations use their project-global public identity. Structural
+/// Flow declarations retain the exact module-preserving identity selected by
+/// the accepted project symbol transaction; their public ID is presentation
+/// metadata and is not a project-global lookup key.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ProjectEntityId {
+    Public(PublicId),
+    StructuralFlow(FlowDeclarationId),
+}
+
 /// Directed semantic relation between two project entities.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectGraphRelation {
-    from: PublicId,
-    to: PublicId,
+    from: ProjectEntityId,
+    to: ProjectEntityId,
     edge_kind: ProjectGraphRelationKind,
 }
 
@@ -119,18 +106,17 @@ pub struct ProjectFlowControlSummary {
 /// Endpoint of a project graph dependency relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum ProjectGraphSymbolRef {
-    Entity(PublicId),
-    Callable(QualifiedName),
+    Entity(ProjectEntityId),
+    Callable(CheckedCallableId),
 }
 
 /// Project-owned callable symbol declared by source code.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectCallableSymbol {
+    declaration: CallableDeclarationKey,
+    checked: CheckedCallableId,
     kind: ProjectCallableKind,
-    declaration: CallableDeclarationId,
-    signature: FunctionSignature,
-    source: SourceAnchor,
-    semantic_hash: SemanticHash,
+    interface_digest: CallableInterfaceDigest,
 }
 
 /// Source callable family represented in the project graph.
@@ -138,6 +124,9 @@ pub struct ProjectCallableSymbol {
 pub enum ProjectCallableKind {
     Function,
     View,
+    TraitRequirement,
+    TraitImplementation,
+    InherentMethod,
 }
 
 /// Kind of semantic relation represented in the project graph.
@@ -178,55 +167,18 @@ pub struct AgentActionParam {
     has_default: bool,
 }
 
-/// Callable symbol available in the Agent compile environment.
+/// Non-authoritative execution projection for an accepted environment callable.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CallableSymbol {
-    signature: FunctionSignature,
-    effects: Vec<EffectCapability>,
+pub struct EnvironmentCallableLowering {
+    checked: CheckedCallableId,
     lowering: CallableLowering,
 }
 
-/// How a callable is lowered after type/effect checking.
+/// How an accepted environment callable is lowered after semantic checking.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CallableLowering {
-    Bytecode,
-    HostCapability(QualifiedName),
-    AgentIntrinsic(AgentIntrinsic),
-}
-
-/// Agent intrinsic call families with structured checker rules.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AgentIntrinsic {
-    Observe,
-    AdvanceText,
-    Choose,
-    ChoiceAction,
-    Invoke,
-    ViewportPoint,
-    PointerClick,
-    SignalProbe,
-    MetricProbe,
-    DebugStatePath,
-    ObservationFieldPath,
-    StateProbe,
-    ObservationProbe,
-    EntityMetadata,
-    ProjectGraphNeighborhood,
-    Diagnostics,
-    PredicateExists,
-    PredicateActionEnabled,
-    PredicateAll,
-    PredicateAny,
-    PredicateNot,
-    Wait,
-    Capture,
-    Expect,
-    Deny,
-    Checkpoint,
-    Attach,
-    Note,
-    ReadResource,
-    RagQuery,
+    HostCapability(EnvironmentCallableId),
+    AgentIntrinsic(AgentIntrinsicSignatureId),
 }
 
 /// Debug query symbol exposed to Agent RAG/debug commands.
@@ -241,9 +193,10 @@ pub struct ProjectSemanticIndex {
     schema_version: u32,
     program_hash: ProgramHash,
     bundle_hash: Option<BundleHash>,
-    entities: BTreeMap<PublicId, EntitySymbol>,
-    callables: BTreeMap<QualifiedName, CallableSymbol>,
-    project_callables: BTreeMap<CallableDeclarationId, ProjectCallableSymbol>,
+    entities: BTreeMap<ProjectEntityId, EntitySymbol>,
+    checked_callables: Arc<CheckedCallableCatalog>,
+    project_callables: BTreeMap<CallableDeclarationKey, ProjectCallableSymbol>,
+    environment_lowerings: BTreeMap<EnvironmentCallableId, EnvironmentCallableLowering>,
     entry_records: BTreeMap<CheckedEntryId, ProjectEntryRecord>,
     entry_role_edges: Vec<ProjectEntryRoleEdge>,
     project_nominals: BTreeMap<ProjectNominalDeclarationId, ProjectNominalIndexRecord>,
@@ -252,7 +205,7 @@ pub struct ProjectSemanticIndex {
     debug_queries: BTreeMap<QualifiedName, DebugQuerySymbol>,
     relations: Vec<ProjectGraphRelation>,
     dependency_relations: Vec<ProjectGraphDependencyRelation>,
-    flow_control_summaries: BTreeMap<PublicId, ProjectFlowControlSummary>,
+    flow_control_summaries: BTreeMap<ProjectEntityId, ProjectFlowControlSummary>,
 }
 
 /// Policy applied while compiling Agent Script.
@@ -274,6 +227,10 @@ pub struct AgentCompileContext<'a> {
 /// Failure while projecting a checked HIR module into an Agent project index.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ProjectSemanticIndexError {
+    #[error("final semantic generation is not accepted by this project index: {0}")]
+    FinalAnalysis(Box<crate::final_analysis::FinalSemanticAnalysisError>),
+    #[error("typed final-HIR source lookup failed: {0}")]
+    SourceQuery(Box<arcweft_lang_hir::source_index::HirSourceQueryError>),
     #[error("invalid public id `{id}` while indexing {kind}: {message}")]
     InvalidPublicId {
         id: String,
@@ -287,19 +244,102 @@ pub enum ProjectSemanticIndexError {
     #[error("HIR project module `{module}` is not bound to its source document")]
     MissingProjectSource { module: String },
     #[error(
-        "accepted type-check report has no semantic type for {document:?} bytes {range:?}: {reason}"
+        "accepted type-check report has no semantic type for final-HIR root {root:?}: {reason}"
     )]
     MissingCheckedType {
-        document: SourceDocumentIdentity,
-        range: (usize, usize),
+        root: arcweft_lang_hir::identity::TypeId,
         reason: String,
     },
-    #[error("accepted nominal reference {root:?} node {node} lacks {reason}")]
+    #[error("final semantic analysis has no checked item fact for {owner:?}")]
+    MissingCheckedItem {
+        owner: arcweft_lang_hir::identity::ItemId,
+    },
+    #[error("project semantic indexing cannot resolve final-HIR item {owner:?}")]
+    MissingProjectItem {
+        owner: arcweft_lang_hir::identity::ItemId,
+    },
+    #[error("accepted Flow item {owner:?} has no structural project symbol")]
+    MissingFlowSymbol {
+        owner: arcweft_lang_hir::identity::ItemId,
+    },
+    #[error("project semantic indexing cannot resolve final-HIR statement {owner:?}")]
+    MissingFlowStatement {
+        owner: arcweft_lang_hir::identity::StmtId,
+    },
+    #[error("project semantic indexing cannot resolve final-HIR expression {owner:?}")]
+    MissingFlowExpression {
+        owner: arcweft_lang_hir::identity::ExprId,
+    },
+    #[error("accepted Flow statement {owner:?} has no authored source span")]
+    MissingFlowStatementSource {
+        owner: arcweft_lang_hir::identity::StmtId,
+    },
+    #[error("accepted Flow target lookup failed: {0}")]
+    FlowTargetLookup(Box<arcweft_lang_hir::symbol::ProjectEntityReferenceLookupError>),
+    #[error("final-HIR item {owner:?} does not match the accepted semantic entity family")]
+    WrongEntityOwner {
+        owner: arcweft_lang_hir::identity::ItemId,
+    },
+    #[error("accepted entity {id} has no authored whole-declaration source span")]
+    MissingEntitySource { id: PublicId },
+    #[error("project semantic index contains duplicate entity {id:?}")]
+    DuplicateEntity { id: ProjectEntityId },
+    #[error("project semantic index contains duplicate type name `{name}`")]
+    DuplicateType { name: String },
+    #[error("typed entity identity `{id}` is invalid for {family}: {message}")]
+    InvalidEntityIdentity {
+        id: String,
+        family: &'static str,
+        message: String,
+    },
+    #[error("project relation references missing entity endpoint {id:?}")]
+    MissingRelationEndpoint { id: ProjectEntityId },
+    #[error("checked call parent {declaration:?} is absent from the project callable index")]
+    MissingProjectCallableParent {
+        declaration: Box<CallableDeclarationKey>,
+    },
+    #[error("accepted nominal reference {root:?} node {node:?} lacks {reason}")]
     MissingNominalReferenceEvidence {
-        root: SourceSpan,
-        node: String,
+        root: arcweft_lang_hir::identity::TypeId,
+        node: arcweft_lang_hir::identity::TypeId,
         reason: &'static str,
     },
+    #[error("checked callable catalog lookup failed while constructing the project index: {0:?}")]
+    CheckedCallableLookup(Box<CheckedCallableLookupError>),
+    #[error("checked callable catalog contains inconsistent project callable identity")]
+    InvalidProjectCallableIdentity,
+    #[error("checked callable catalog contains inconsistent environment callable identity")]
+    InvalidEnvironmentCallableIdentity,
+    #[error("checked callable catalog contains a duplicate structural project declaration")]
+    DuplicateProjectCallable,
+    #[error("checked callable catalog contains a duplicate environment declaration")]
+    DuplicateEnvironmentCallable,
+}
+
+impl From<crate::final_analysis::FinalSemanticAnalysisError> for ProjectSemanticIndexError {
+    fn from(error: crate::final_analysis::FinalSemanticAnalysisError) -> Self {
+        Self::FinalAnalysis(Box::new(error))
+    }
+}
+
+impl From<arcweft_lang_hir::source_index::HirSourceQueryError> for ProjectSemanticIndexError {
+    fn from(error: arcweft_lang_hir::source_index::HirSourceQueryError) -> Self {
+        Self::SourceQuery(Box::new(error))
+    }
+}
+
+impl From<CheckedCallableLookupError> for ProjectSemanticIndexError {
+    fn from(error: CheckedCallableLookupError) -> Self {
+        Self::CheckedCallableLookup(Box::new(error))
+    }
+}
+
+impl From<arcweft_lang_hir::symbol::ProjectEntityReferenceLookupError>
+    for ProjectSemanticIndexError
+{
+    fn from(error: arcweft_lang_hir::symbol::ProjectEntityReferenceLookupError) -> Self {
+        Self::FlowTargetLookup(Box::new(error))
+    }
 }
 
 impl ProgramHash {
@@ -354,13 +394,13 @@ impl TypeName {
 
 impl EntitySymbol {
     pub fn new(
-        id: PublicId,
+        identity: ProjectEntityId,
         ty: EntityType,
         source: SourceAnchor,
         semantic_hash: SemanticHash,
     ) -> Self {
         Self {
-            id,
+            identity,
             ty,
             source,
             semantic_hash,
@@ -374,8 +414,12 @@ impl EntitySymbol {
         self
     }
 
-    pub const fn id(&self) -> &PublicId {
-        &self.id
+    pub const fn identity(&self) -> &ProjectEntityId {
+        &self.identity
+    }
+
+    pub const fn public_id(&self) -> &PublicId {
+        self.identity.public_id()
     }
 
     pub const fn ty(&self) -> &EntityType {
@@ -396,7 +440,11 @@ impl EntitySymbol {
 }
 
 impl ProjectGraphRelation {
-    pub const fn new(from: PublicId, to: PublicId, edge_kind: ProjectGraphRelationKind) -> Self {
+    pub const fn new(
+        from: ProjectEntityId,
+        to: ProjectEntityId,
+        edge_kind: ProjectGraphRelationKind,
+    ) -> Self {
         Self {
             from,
             to,
@@ -404,11 +452,11 @@ impl ProjectGraphRelation {
         }
     }
 
-    pub const fn from(&self) -> &PublicId {
+    pub const fn from(&self) -> &ProjectEntityId {
         &self.from
     }
 
-    pub const fn to(&self) -> &PublicId {
+    pub const fn to(&self) -> &ProjectEntityId {
         &self.to
     }
 
@@ -516,83 +564,72 @@ impl ProjectFlowControlSummary {
     fn add_select_branches(&mut self, count: usize) {
         self.select_branches += count;
     }
-
-    fn merge(&mut self, other: Self) {
-        self.static_gotos += other.static_gotos;
-        self.dynamic_gotos += other.dynamic_gotos;
-        self.branches += other.branches;
-        self.loops += other.loops;
-        self.awaits += other.awaits;
-        self.threads += other.threads;
-        self.select_branches += other.select_branches;
-    }
 }
 
 impl ProjectGraphSymbolRef {
-    pub fn entity(id: impl Into<PublicId>) -> Self {
-        Self::Entity(id.into())
+    pub const fn entity(id: ProjectEntityId) -> Self {
+        Self::Entity(id)
     }
 
-    pub fn callable(name: impl Into<QualifiedName>) -> Self {
-        Self::Callable(name.into())
+    pub const fn callable(id: CheckedCallableId) -> Self {
+        Self::Callable(id)
+    }
+}
+
+impl ProjectEntityId {
+    pub const fn public(id: PublicId) -> Self {
+        Self::Public(id)
+    }
+
+    pub const fn structural_flow(declaration: FlowDeclarationId) -> Self {
+        Self::StructuralFlow(declaration)
+    }
+
+    pub const fn public_id(&self) -> &PublicId {
+        match self {
+            Self::Public(id) => id,
+            Self::StructuralFlow(declaration) => declaration.public_id(),
+        }
+    }
+
+    pub const fn flow_declaration(&self) -> Option<&FlowDeclarationId> {
+        match self {
+            Self::StructuralFlow(declaration) => Some(declaration),
+            Self::Public(_) => None,
+        }
+    }
+
+    /// Canonical project-index key for durable diagnostics and graph protocol
+    /// projection. Public labels remain display metadata for structural Flow.
+    pub fn canonical_key(&self) -> String {
+        match self {
+            Self::Public(id) => format!("public:{}", id.as_str()),
+            Self::StructuralFlow(declaration) => {
+                format!("flow:{}", declaration.semantic_digest())
+            }
+        }
     }
 }
 
 impl ProjectCallableSymbol {
-    /// Creates an ordinary function record with its canonical project identity.
-    pub const fn function(
-        declaration: CallableDeclarationId,
-        signature: FunctionSignature,
-        source: SourceAnchor,
-        semantic_hash: SemanticHash,
-    ) -> Self {
-        Self {
-            kind: ProjectCallableKind::Function,
-            declaration,
-            signature,
-            source,
-            semantic_hash,
-        }
-    }
-
-    pub const fn view(
-        declaration: CallableDeclarationId,
-        signature: FunctionSignature,
-        source: SourceAnchor,
-        semantic_hash: SemanticHash,
-    ) -> Self {
-        Self {
-            kind: ProjectCallableKind::View,
-            declaration,
-            signature,
-            source,
-            semantic_hash,
-        }
-    }
-
     /// Callable family from source syntax.
     pub const fn kind(&self) -> ProjectCallableKind {
         self.kind
     }
 
-    /// Canonical source declaration for an ordinary function.
-    pub const fn declaration(&self) -> &CallableDeclarationId {
+    /// Canonical structural source declaration.
+    pub const fn declaration(&self) -> &CallableDeclarationKey {
         &self.declaration
     }
 
-    /// Typed callable signature projected from source syntax.
-    pub const fn signature(&self) -> &FunctionSignature {
-        &self.signature
+    /// Revision-bound checked identity admitted for this declaration.
+    pub const fn checked(&self) -> &CheckedCallableId {
+        &self.checked
     }
 
-    /// Source range that declared this callable.
-    pub const fn source(&self) -> &SourceAnchor {
-        &self.source
-    }
-
-    /// Stable semantic shape hash for graph/RAG indexing.
-    pub const fn semantic_hash(&self) -> &SemanticHash {
-        &self.semantic_hash
+    /// Derived checked interface digest used by durable projections.
+    pub const fn interface_digest(&self) -> CallableInterfaceDigest {
+        self.interface_digest
     }
 }
 
@@ -602,6 +639,9 @@ impl ProjectCallableKind {
         match self {
             Self::Function => "function",
             Self::View => "view",
+            Self::TraitRequirement => "trait_requirement",
+            Self::TraitImplementation => "trait_implementation",
+            Self::InherentMethod => "inherent_method",
         }
     }
 }
@@ -689,25 +729,9 @@ impl AgentActionParam {
     }
 }
 
-impl CallableSymbol {
-    pub fn new(
-        signature: FunctionSignature,
-        effects: impl IntoIterator<Item = EffectCapability>,
-        lowering: CallableLowering,
-    ) -> Self {
-        Self {
-            signature,
-            effects: effects.into_iter().collect(),
-            lowering,
-        }
-    }
-
-    pub const fn signature(&self) -> &FunctionSignature {
-        &self.signature
-    }
-
-    pub fn effects(&self) -> &[EffectCapability] {
-        &self.effects
+impl EnvironmentCallableLowering {
+    pub const fn checked(&self) -> &CheckedCallableId {
+        &self.checked
     }
 
     pub const fn lowering(&self) -> &CallableLowering {
@@ -726,14 +750,20 @@ impl DebugQuerySymbol {
 }
 
 impl ProjectSemanticIndex {
-    pub fn new(program_hash: ProgramHash) -> Self {
-        Self {
+    pub fn try_new(
+        program_hash: ProgramHash,
+        checked_callables: Arc<CheckedCallableCatalog>,
+    ) -> Result<Self, ProjectSemanticIndexError> {
+        let (project_callables, environment_lowerings) =
+            checked_callable_projections(&checked_callables)?;
+        Ok(Self {
             schema_version: PROJECT_SEMANTIC_INDEX_SCHEMA_VERSION,
             program_hash,
             bundle_hash: None,
             entities: BTreeMap::new(),
-            callables: agent_prelude::agent_prelude_callables(),
-            project_callables: BTreeMap::new(),
+            checked_callables,
+            project_callables,
+            environment_lowerings,
             entry_records: BTreeMap::new(),
             entry_role_edges: Vec::new(),
             project_nominals: BTreeMap::new(),
@@ -743,7 +773,7 @@ impl ProjectSemanticIndex {
             relations: Vec::new(),
             dependency_relations: Vec::new(),
             flow_control_summaries: BTreeMap::new(),
-        }
+        })
     }
 
     #[must_use]
@@ -754,20 +784,7 @@ impl ProjectSemanticIndex {
 
     #[must_use]
     pub fn with_entity(mut self, symbol: EntitySymbol) -> Self {
-        self.entities.insert(symbol.id.clone(), symbol);
-        self
-    }
-
-    #[must_use]
-    pub fn with_callable(mut self, name: QualifiedName, symbol: CallableSymbol) -> Self {
-        self.callables.insert(name, symbol);
-        self
-    }
-
-    #[must_use]
-    pub fn with_project_callable(mut self, symbol: ProjectCallableSymbol) -> Self {
-        self.project_callables
-            .insert(symbol.declaration().clone(), symbol);
+        self.entities.insert(symbol.identity.clone(), symbol);
         self
     }
 
@@ -776,6 +793,32 @@ impl ProjectSemanticIndex {
     pub fn with_checked_entry_catalog(mut self, catalog: &CheckedEntryCatalog) -> Self {
         (self.entry_records, self.entry_role_edges) =
             entry_roles::checked_entry_records_and_edges(catalog);
+        self
+    }
+
+    /// Replaces the entry inventory with records produced by the final typed
+    /// entry transaction.
+    #[must_use]
+    pub fn with_entry_inventory(
+        mut self,
+        records: BTreeMap<CheckedEntryId, ProjectEntryRecord>,
+        edges: impl Into<Vec<ProjectEntryRoleEdge>>,
+    ) -> Self {
+        self.entry_records = records;
+        self.entry_role_edges = edges.into();
+        self
+    }
+
+    /// Replaces nominal tooling projections produced from the exact accepted
+    /// final semantic generation.
+    #[must_use]
+    pub fn with_project_nominal_inventory(
+        mut self,
+        records: BTreeMap<ProjectNominalDeclarationId, ProjectNominalIndexRecord>,
+        references: impl Into<Box<[ProjectNominalReferenceEdge]>>,
+    ) -> Self {
+        self.project_nominals = records;
+        self.project_nominal_references = references.into();
         self
     }
 
@@ -810,7 +853,7 @@ impl ProjectSemanticIndex {
     #[must_use]
     pub fn with_flow_control_summary(
         mut self,
-        flow_id: PublicId,
+        flow_id: ProjectEntityId,
         summary: ProjectFlowControlSummary,
     ) -> Self {
         self.flow_control_summaries.insert(flow_id, summary);
@@ -829,16 +872,22 @@ impl ProjectSemanticIndex {
         self.bundle_hash.as_ref()
     }
 
-    pub fn entities(&self) -> &BTreeMap<PublicId, EntitySymbol> {
+    pub fn entities(&self) -> &BTreeMap<ProjectEntityId, EntitySymbol> {
         &self.entities
     }
 
-    pub fn callables(&self) -> &BTreeMap<QualifiedName, CallableSymbol> {
-        &self.callables
+    pub const fn checked_callables(&self) -> &Arc<CheckedCallableCatalog> {
+        &self.checked_callables
     }
 
-    pub fn project_callables(&self) -> &BTreeMap<CallableDeclarationId, ProjectCallableSymbol> {
+    pub fn project_callables(&self) -> &BTreeMap<CallableDeclarationKey, ProjectCallableSymbol> {
         &self.project_callables
+    }
+
+    pub fn environment_lowerings(
+        &self,
+    ) -> &BTreeMap<EnvironmentCallableId, EnvironmentCallableLowering> {
+        &self.environment_lowerings
     }
 
     pub fn entry_records(&self) -> &BTreeMap<CheckedEntryId, ProjectEntryRecord> {
@@ -882,36 +931,40 @@ impl ProjectSemanticIndex {
         &self.dependency_relations
     }
 
-    pub fn flow_control_summaries(&self) -> &BTreeMap<PublicId, ProjectFlowControlSummary> {
+    pub fn flow_control_summaries(&self) -> &BTreeMap<ProjectEntityId, ProjectFlowControlSummary> {
         &self.flow_control_summaries
     }
 
-    pub fn flow_control_summary(&self, flow_id: &PublicId) -> Option<&ProjectFlowControlSummary> {
+    pub fn flow_control_summary(
+        &self,
+        flow_id: &ProjectEntityId,
+    ) -> Option<&ProjectFlowControlSummary> {
         self.flow_control_summaries.get(flow_id)
     }
 
-    pub fn entity(&self, id: &PublicId) -> Option<&EntitySymbol> {
+    pub fn entity(&self, id: &ProjectEntityId) -> Option<&EntitySymbol> {
         self.entities.get(id)
-    }
-
-    pub fn callable(&self, name: &QualifiedName) -> Option<&CallableSymbol> {
-        self.callables.get(name)
-    }
-
-    pub fn project_callable(&self, name: &QualifiedName) -> Option<&ProjectCallableSymbol> {
-        let mut matches = self
-            .project_callables
-            .values()
-            .filter(|symbol| symbol.declaration().qualified_name() == name.as_str());
-        let callable = matches.next()?;
-        matches.next().is_none().then_some(callable)
     }
 
     pub fn project_callable_by_declaration(
         &self,
-        declaration: &CallableDeclarationId,
+        declaration: &CallableDeclarationKey,
     ) -> Option<&ProjectCallableSymbol> {
         self.project_callables.get(declaration)
+    }
+
+    pub fn checked_callable(
+        &self,
+        checked: &CheckedCallableId,
+    ) -> Result<&CheckedCallableFacts, CheckedCallableLookupError> {
+        self.checked_callables.callable(checked)
+    }
+
+    pub fn environment_lowering(
+        &self,
+        declaration: &EnvironmentCallableId,
+    ) -> Option<&EnvironmentCallableLowering> {
+        self.environment_lowerings.get(declaration)
     }
 
     pub fn entry_record(&self, id: &CheckedEntryId) -> Option<&ProjectEntryRecord> {
@@ -926,317 +979,97 @@ impl ProjectSemanticIndex {
             .iter()
             .filter(move |edge| edge.entry() == id)
     }
+}
 
-    pub fn typecheck_env(&self) -> TypeCheckEnv {
-        let mut env = agent_prelude::agent_prelude_env();
-        for entity in self.entities.values() {
-            env = env.with_symbol(entity.id.as_str(), TypeKind::Ref(entity.ty.clone()));
-            for action in entity.agent_actions() {
-                env = env.with_agent_action(
-                    entity.id.as_str(),
-                    AgentActionEnvSignature::new(
-                        action.action().as_str(),
-                        action.params().iter().map(|param| {
-                            crate::env::AgentActionEnvParam::new(
-                                param.name(),
-                                param.ty().clone(),
-                                param.has_default(),
-                            )
-                        }),
-                        action.return_type().clone(),
-                    ),
-                );
+type ProjectCallableProjectionMap = BTreeMap<CallableDeclarationKey, ProjectCallableSymbol>;
+type EnvironmentCallableProjectionMap =
+    BTreeMap<EnvironmentCallableId, EnvironmentCallableLowering>;
+type CheckedCallableProjections = (
+    ProjectCallableProjectionMap,
+    EnvironmentCallableProjectionMap,
+);
+
+fn checked_callable_projections(
+    catalog: &CheckedCallableCatalog,
+) -> Result<CheckedCallableProjections, ProjectSemanticIndexError> {
+    let mut project_callables = BTreeMap::new();
+    let mut environment_lowerings = BTreeMap::new();
+    for facts in catalog.records() {
+        match facts.id().declaration() {
+            CheckedCallableDeclaration::Project(declaration) => {
+                let Some(kind) = project_callable_kind(declaration.owner()) else {
+                    continue;
+                };
+                let retained = catalog.project_callable(declaration)?;
+                if !std::ptr::eq(retained, facts)
+                    || retained.id() != facts.id()
+                    || retained.interface_digest() != facts.interface_digest()
+                    || !matches!(
+                        retained.record().id(),
+                        CallableCandidateId::Project(candidate) if candidate == declaration
+                    )
+                {
+                    return Err(ProjectSemanticIndexError::InvalidProjectCallableIdentity);
+                }
+                let symbol = ProjectCallableSymbol {
+                    declaration: declaration.clone(),
+                    checked: facts.id().clone(),
+                    kind,
+                    interface_digest: facts.interface_digest(),
+                };
+                if project_callables
+                    .insert(declaration.clone(), symbol)
+                    .is_some()
+                {
+                    return Err(ProjectSemanticIndexError::DuplicateProjectCallable);
+                }
             }
-        }
-        for (name, callable) in &self.callables {
-            env = env
-                .with_function_signature(name.as_str(), callable.signature.clone())
-                .with_function_effects(name.as_str(), callable.effects.clone());
-        }
-        for (name, ty) in &self.types {
-            env = env.with_symbol(name.as_str(), ty.clone());
-        }
-        for (name, query) in &self.debug_queries {
-            if let Some((kind, path)) = debug_path_from_query_name(name.as_str()) {
-                env = env.with_debug_path(kind, path, query.signature().return_type().clone());
-            }
-        }
-        env
-    }
-}
-
-fn debug_path_from_query_name(name: &str) -> Option<(DebugPathKind, &str)> {
-    name.strip_prefix("state.")
-        .map(|path| (DebugPathKind::State, path))
-        .or_else(|| {
-            name.strip_prefix("observation.")
-                .map(|path| (DebugPathKind::Observation, path))
-        })
-        .filter(|(_, path)| !path.is_empty())
-}
-
-/// Builds the Agent-facing project semantic index for one checked HIR module.
-///
-/// The index is the stable entity snapshot Agent Script compiles against. It
-/// intentionally mirrors the source/HIR declarations instead of accepting
-/// ad-hoc CLI-only entity shims.
-pub fn project_semantic_index_from_hir(
-    module: &HirModule,
-    program_hash: ProgramHash,
-    document: &SourceDocument,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    let index = index_hir_module_symbols(
-        module,
-        ProjectSemanticIndex::new(program_hash),
-        document,
-        None,
-        None,
-    )?;
-    relations::index_project_symbol_dependency_relations(module, index)
-}
-
-/// Builds the final project-wide schema-v2 index from canonical checked project facts.
-pub fn project_semantic_index_from_checked_project(
-    project: &HirProject,
-    symbols: &ProjectSymbolTable,
-    typecheck: &TypeCheckReport,
-    program_hash: ProgramHash,
-    entries: &CheckedEntryCatalog,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    let mut index = ProjectSemanticIndex::new(program_hash);
-    for (module_path, module) in project.modules() {
-        let document = module.source_document().ok_or_else(|| {
-            ProjectSemanticIndexError::MissingProjectSource {
-                module: module_path.to_string(),
-            }
-        })?;
-        let checked_types = nominal::CheckedTypeProjection::new(document, typecheck);
-        index = index_hir_module_symbols(
-            module,
-            index,
-            document,
-            Some(project.package()),
-            Some(&checked_types),
-        )?;
-    }
-    for (_, module) in project.modules() {
-        index = relations::index_project_symbol_dependency_relations(module, index)?;
-    }
-    let (project_nominals, project_nominal_references) =
-        nominal::checked_project_nominals(symbols, typecheck)?;
-    index.project_nominals = project_nominals;
-    index.project_nominal_references = project_nominal_references;
-    Ok(index.with_checked_entry_catalog(entries))
-}
-
-fn index_hir_module_symbols(
-    module: &HirModule,
-    mut index: ProjectSemanticIndex,
-    document: &SourceDocument,
-    package: Option<&CallablePackageId>,
-    checked_types: Option<&nominal::CheckedTypeProjection<'_>>,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    for flow in module.flows() {
-        if let Some(id) = flow.id() {
-            index = index.with_entity(entities::entity_symbol(
-                id,
-                EntityKind::Flow,
-                None,
-                document,
-                "flow",
-            )?);
-        }
-        index = entities::index_flow_items(flow.body(), index, document)?;
-        index = relations::index_flow_item_relations(flow.id(), flow.body(), index)?;
-        if let Some(id) = flow.id() {
-            index = index.with_flow_control_summary(
-                relations::public_id_for_relation(id, "flow control summary")?,
-                flow_control::summarize_flow_control_items(flow.body()),
-            );
-        }
-    }
-    if let (Some(package), Some(checked_types)) = (package, checked_types) {
-        for function in module.functions() {
-            let declaration =
-                CallableDeclarationId::for_function(package, function).map_err(|error| {
-                    ProjectSemanticIndexError::InvalidCallableIdentity {
-                        name: function.qualified_name(),
-                        message: error.to_string(),
+            CheckedCallableDeclaration::Environment(declaration) => {
+                if !matches!(
+                    facts.record().id(),
+                    CallableCandidateId::Environment(candidate) if candidate == declaration
+                ) {
+                    return Err(ProjectSemanticIndexError::InvalidEnvironmentCallableIdentity);
+                }
+                let lowering = match facts.signature().validator() {
+                    CallableValidator::Agent(intrinsic) => {
+                        CallableLowering::AgentIntrinsic(*intrinsic)
                     }
-                })?;
-            index = index.with_project_callable(entities::project_function_symbol(
-                declaration,
-                function,
-                document,
-                checked_types,
-            )?);
-        }
-    }
-    for declaration in module.declarations() {
-        index = index_top_level_declaration(
-            declaration,
-            index,
-            document,
-            package,
-            module.module_path(),
-            checked_types,
-        )?;
-    }
-    Ok(index)
-}
-
-fn index_top_level_declaration(
-    declaration: &HirTopLevelDecl,
-    mut index: ProjectSemanticIndex,
-    document: &SourceDocument,
-    package: Option<&CallablePackageId>,
-    module: &CanonicalModulePath,
-    checked_types: Option<&nominal::CheckedTypeProjection<'_>>,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    match declaration {
-        HirTopLevelDecl::Source(source) => {
-            if let Some(id) = source.item().id() {
-                index = index.with_entity(entities::entity_symbol(
-                    id,
-                    EntityKind::Source,
-                    None,
-                    document,
-                    "source",
-                )?);
+                    _ => CallableLowering::HostCapability(declaration.clone()),
+                };
+                let projection = EnvironmentCallableLowering {
+                    checked: facts.id().clone(),
+                    lowering,
+                };
+                if environment_lowerings
+                    .insert(declaration.clone(), projection)
+                    .is_some()
+                {
+                    return Err(ProjectSemanticIndexError::DuplicateEnvironmentCallable);
+                }
             }
+            CheckedCallableDeclaration::Detached(_) | CheckedCallableDeclaration::Standard(_) => {}
         }
-        HirTopLevelDecl::EntityDecl(item) => {
-            index = index_view_callable(index, item, document, package, module, checked_types)?;
-            index = index.with_entity(entities::entity_symbol(
-                item.id(),
-                entities::entity_decl_kind(item.kind()),
-                None,
-                document,
-                entities::entity_decl_kind_label(item.kind()),
-            )?);
-            index = index_view_text_control_inputs(index, item, document)?;
-            if let Some(content) = item.content_body() {
-                index = relations::index_content_root_relations(item.id(), content.roots(), index)?;
-            }
-        }
-        HirTopLevelDecl::Entry(item) => {
-            index = index.with_entity(entities::entity_symbol(
-                item.id(),
-                EntityKind::Entry,
-                None,
-                document,
-                "entry",
-            )?);
-            index = relations::index_entry_relations(item.id(), item.items(), index)?;
-        }
-        HirTopLevelDecl::Test(item) => {
-            if let Some(id) = item.id().as_absolute() {
-                index = index.with_entity(entities::entity_symbol(
-                    id,
-                    EntityKind::Test,
-                    None,
-                    document,
-                    "test",
-                )?);
-            }
-        }
-        HirTopLevelDecl::Bench(item) => {
-            if let Some(id) = item.id().as_absolute() {
-                index = index.with_entity(entities::entity_symbol(
-                    id,
-                    EntityKind::Bench,
-                    None,
-                    document,
-                    "bench",
-                )?);
-            }
-        }
-        HirTopLevelDecl::Style(item) => {
-            index = index_view_style_entity(index, item, document)?;
-        }
-        HirTopLevelDecl::Trait(_)
-        | HirTopLevelDecl::Impl(_)
-        | HirTopLevelDecl::Enum(_)
-        | HirTopLevelDecl::ExternCapability(_)
-        | HirTopLevelDecl::Struct(_)
-        | HirTopLevelDecl::TypeAlias(_)
-        | HirTopLevelDecl::Proof(_) => {}
     }
-    Ok(index)
+    Ok((project_callables, environment_lowerings))
 }
 
-fn index_view_callable(
-    index: ProjectSemanticIndex,
-    item: &EntityDeclItem,
-    document: &SourceDocument,
-    package: Option<&CallablePackageId>,
-    module: &CanonicalModulePath,
-    checked_types: Option<&nominal::CheckedTypeProjection<'_>>,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    if item.kind() != EntityDeclKind::View {
-        return Ok(index);
-    }
-    let (Some(package), Some(checked_types)) = (package, checked_types) else {
-        return Ok(index);
-    };
-    let name = item.local_binding_name().ok_or_else(|| {
-        ProjectSemanticIndexError::InvalidCallableIdentity {
-            name: item.id().body().to_owned(),
-            message: "View declaration has no local binding name".to_owned(),
+const fn project_callable_kind(owner: CallableDeclarationOwner) -> Option<ProjectCallableKind> {
+    match owner {
+        CallableDeclarationOwner::Function => Some(ProjectCallableKind::Function),
+        CallableDeclarationOwner::View => Some(ProjectCallableKind::View),
+        CallableDeclarationOwner::TraitRequirement => Some(ProjectCallableKind::TraitRequirement),
+        CallableDeclarationOwner::TraitImplementation => {
+            Some(ProjectCallableKind::TraitImplementation)
         }
-    })?;
-    let callable = CallableDeclarationId::try_new(
-        package.clone(),
-        module.clone(),
-        CallableDeclarationOwner::View,
-        name,
-    )
-    .map_err(|error| ProjectSemanticIndexError::InvalidCallableIdentity {
-        name: name.to_owned(),
-        message: error.to_string(),
-    })?;
-    Ok(
-        index.with_project_callable(entities::project_view_callable_symbol(
-            callable,
-            item,
-            document,
-            checked_types,
-        )?),
-    )
-}
-
-fn index_view_style_entity(
-    index: ProjectSemanticIndex,
-    item: &HirStyleDecl,
-    document: &SourceDocument,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    index_view_resource_entity(index, item.id(), EntityKind::Style, document, "style")
-}
-
-fn index_view_resource_entity(
-    index: ProjectSemanticIndex,
-    id: &EntityRef,
-    kind: EntityKind,
-    document: &SourceDocument,
-    label: &'static str,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    Ok(index.with_entity(entities::entity_symbol(id, kind, None, document, label)?))
-}
-
-fn index_view_text_control_inputs(
-    mut index: ProjectSemanticIndex,
-    item: &EntityDeclItem,
-    document: &SourceDocument,
-) -> Result<ProjectSemanticIndex, ProjectSemanticIndexError> {
-    let Some(view) = item.view_body().and_then(|body| body.view()) else {
-        return Ok(index);
-    };
-    for input in view.text_control_inputs() {
-        let input = input.canonical_entity_ref();
-        index = index_view_resource_entity(index, &input, EntityKind::Input, document, "input")?;
+        CallableDeclarationOwner::InherentMethod => Some(ProjectCallableKind::InherentMethod),
+        CallableDeclarationOwner::ExternCapability
+        | CallableDeclarationOwner::Flow
+        | CallableDeclarationOwner::Predicate
+        | CallableDeclarationOwner::Proof => None,
     }
-    Ok(index)
 }
+
 impl Default for AgentCompilePolicy {
     fn default() -> Self {
         Self {

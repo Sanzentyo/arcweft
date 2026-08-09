@@ -3,7 +3,7 @@
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_retained_declaration_header;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
@@ -25,7 +25,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::ActionDeclarationItem, role);
     emit_retained_declaration_header(
         &mut parser,
@@ -36,7 +36,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_action_signature(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_action_signature(parser: &mut DocumentParser<'_, '_>) {
     parser.start(SyntaxKind::ActionSignature, SyntaxRole::ParameterGroup);
     if !parser.at("(") {
         let at = parser.current_offset();
@@ -68,7 +68,8 @@ fn emit_action_signature(parser: &mut ShadowDocumentParser<'_, '_>) {
         if parser.is_at_end() || parser.at(")") {
             break;
         }
-        let end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]);
+        let end =
+            find_top_level_boundary(parser, parser.cursor(), token_count(parser), &[",", ")"]);
         emit_action_parameter(parser, end, ordinal);
         bump_until(parser, end);
         ordinal = ordinal.saturating_add(1);
@@ -87,9 +88,9 @@ fn emit_action_signature(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_action_parameter(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
+fn emit_action_parameter(parser: &mut DocumentParser<'_, '_>, end: usize, ordinal: u16) {
     parser.start(SyntaxKind::Parameter, SyntaxRole::Parameter(ordinal));
-    let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]).min(end);
+    let colon = find_top_level_boundary(parser, parser.cursor(), end, &[":"]);
     let colon = (colon < end
         && parser
             .token_at(colon)
@@ -125,7 +126,7 @@ fn emit_action_parameter(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, 
     }
 
     parser.bump_trivia();
-    let default = find_top_level_boundary(parser, parser.cursor(), &["="]).min(end);
+    let default = find_top_level_boundary(parser, parser.cursor(), end, &["="]);
     let type_end = trimmed_end(parser, parser.cursor(), default);
     let type_start = parser.cursor();
     emit_type(parser, type_end, SyntaxRole::ParameterType);
@@ -158,11 +159,7 @@ fn emit_action_parameter(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, 
     parser.finish();
 }
 
-fn action_parameter_is_binding(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> bool {
+fn action_parameter_is_binding(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> bool {
     let significant = (start..end)
         .filter_map(|index| {
             let token = parser.token_at(index)?;
@@ -186,7 +183,7 @@ fn action_parameter_is_binding(
     )
 }
 
-fn emit_action_terminator_and_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_action_terminator_and_recovery(parser: &mut DocumentParser<'_, '_>) {
     parser.bump_trivia();
     if parser.at(";") {
         parser.bump();
@@ -234,7 +231,7 @@ fn emit_action_terminator_and_recovery(parser: &mut ShadowDocumentParser<'_, '_>
     while parser.bump().is_some() {}
 }
 
-fn token_range(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
+fn token_range(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
     let start = parser
         .token_at(start)
         .map_or(parser.current_offset(), |token| token.range().start());

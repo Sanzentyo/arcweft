@@ -3,18 +3,23 @@
 use std::{
     collections::{BTreeSet, HashMap},
     fmt::Write,
+    sync::Arc,
 };
 
-use arcweft_lang_hir::symbol::{
-    ProjectTypeTarget,
-    nominal::{ProjectNominalDeclarationId, ProjectNominalDeclarationKind},
+use arcweft_lang_hir::{
+    identity::TypeId,
+    leaf::{HirPath, HirPathRoot, HirPathSegment},
+    module::HirModule,
+    source_index::{HirSourcePresence, HirSourceQuery, HirSourceSite, HirTypeSourceRole},
+    symbol::{
+        ProjectTypeTarget,
+        nominal::{ProjectNominalDeclarationId, ProjectNominalDeclarationKind},
+    },
+    type_ref::HirTypeKind,
 };
 use arcweft_lang_sema::{
     env::nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
-    nominal::{
-        BuiltinTypeConstructor, ExternalNominalResolution, TypeArgumentExpectation,
-        TypeNameResolution,
-    },
+    nominal::BuiltinTypeConstructor,
     registration::{RegisteredExternalOwner, RegisteredExternalOwnerKind},
     types::{AcceptedNominalType, EntityKind, TypeKind},
 };
@@ -68,15 +73,18 @@ pub(crate) fn hover(
     offset: usize,
 ) -> Option<Hover> {
     let accepted = profile.accepted_environment()?;
+    let executable = accepted.executable()?;
+    let analysis = executable.final_analysis();
+    let index = executable.semantic_index();
     let project = exact_project(accepted.project(), document)?;
-    if let Some(cursor) = language_symbol_at(project, document, offset) {
+    if let Some(cursor) = language_symbol_at(project, analysis, document, offset) {
         return Some(language_nominal_hover(document, cursor));
     }
-    if let Some(cursor) = accepted_nominal_at(project, document, offset) {
+    if let Some(cursor) = accepted_nominal_at(project, analysis, document, offset) {
         return accepted_nominal_hover(&accepted, document, &cursor);
     }
-    let cursor = symbol_at(project, document, offset)?;
-    project_nominal_hover(project, document, cursor)
+    let cursor = symbol_at(project, index, document, offset)?;
+    project_nominal_hover(index, document, cursor)
 }
 
 fn language_nominal_hover(document: &DocumentSnapshot, cursor: LanguageNominalCursor) -> Hover {
@@ -110,7 +118,7 @@ fn accepted_nominal_hover(
     document: &DocumentSnapshot,
     cursor: &AcceptedNominalCursor,
 ) -> Option<Hover> {
-    let environment = accepted.world().environment();
+    let environment = accepted.registered_world()?.environment();
     let id = cursor.nominal.declaration();
     let record = environment
         .nominal_catalog()
@@ -154,13 +162,11 @@ fn accepted_nominal_hover(
 }
 
 fn project_nominal_hover(
-    project: &AcceptedProjectSnapshot,
+    index: &arcweft_lang_sema::project_index::ProjectSemanticIndex,
     document: &DocumentSnapshot,
     cursor: NominalCursor,
 ) -> Option<Hover> {
-    let record = project
-        .semantic_index()
-        .project_nominal(&cursor.declaration)?;
+    let record = index.project_nominal(&cursor.declaration)?;
     let declaration = record.declaration();
     let type_parameters = declaration
         .type_parameters()
@@ -228,12 +234,15 @@ pub(crate) fn definition(
     offset: usize,
 ) -> Option<GotoDefinitionResponse> {
     let accepted = profile.accepted_environment()?;
+    let executable = accepted.executable()?;
+    let analysis = executable.final_analysis();
+    let index = executable.semantic_index();
     let project = exact_project(accepted.project(), document)?;
-    if language_symbol_at(project, document, offset).is_some() {
+    if language_symbol_at(project, analysis, document, offset).is_some() {
         return None;
     }
-    if let Some(cursor) = accepted_nominal_at(project, document, offset) {
-        let environment = accepted.world().environment();
+    if let Some(cursor) = accepted_nominal_at(project, analysis, document, offset) {
+        let environment = accepted.registered_world()?.environment();
         let id = cursor.nominal.declaration();
         let source = environment
             .rust_metadata()
@@ -255,9 +264,8 @@ pub(crate) fn definition(
             })?;
         return location(project, source).map(GotoDefinitionResponse::Scalar);
     }
-    let cursor = symbol_at(project, document, offset)?;
-    let source = project
-        .semantic_index()
+    let cursor = symbol_at(project, index, document, offset)?;
+    let source = index
         .project_nominal(&cursor.declaration)?
         .declaration()
         .source()
@@ -271,12 +279,15 @@ pub(crate) fn references(
     offset: usize,
 ) -> Option<Vec<Location>> {
     let accepted = profile.accepted_environment()?;
+    let executable = accepted.executable()?;
+    let analysis = executable.final_analysis();
+    let index = executable.semantic_index();
+    let world = executable.registered_world();
     let project = exact_project(accepted.project(), document)?;
-    if language_symbol_at(project, document, offset).is_some() {
+    if language_symbol_at(project, analysis, document, offset).is_some() {
         return Some(Vec::new());
     }
-    let cursor = symbol_at(project, document, offset)?;
-    let index = project.semantic_index();
+    let cursor = symbol_at(project, index, document, offset)?;
     let mut spans = BTreeSet::new();
     spans.insert(
         index
@@ -293,8 +304,8 @@ pub(crate) fn references(
             .filter(|edge| edge.declaration() == &cursor.declaration)
             .map(|edge| edge.source().clone()),
     );
-    for module in accepted.world().symbols().modules() {
-        for binding in accepted.world().symbols().visible_type_bindings(module) {
+    for module in world.symbols().modules() {
+        for binding in world.symbols().visible_type_bindings(module) {
             if matches!(binding.target(), ProjectTypeTarget::Nominal(declaration) if declaration.id() == &cursor.declaration)
             {
                 spans.extend(binding.reference_sites().iter().cloned());
@@ -316,6 +327,9 @@ pub(crate) fn completions(
     let Some(accepted) = profile.accepted_environment() else {
         return Vec::new();
     };
+    let Some(world) = accepted.registered_world() else {
+        return Vec::new();
+    };
     let Some(project) = exact_project(accepted.project(), document) else {
         return Vec::new();
     };
@@ -325,9 +339,8 @@ pub(crate) fn completions(
     let Some(module) = project.module_key(source.document().identity()) else {
         return Vec::new();
     };
-    let environment = accepted.world().environment();
-    let mut items = accepted
-        .world()
+    let environment = world.environment();
+    let mut items = world
         .symbols()
         .visible_type_bindings(module.module())
         .map(|binding| match binding.target() {
@@ -345,7 +358,7 @@ pub(crate) fn completions(
             ProjectTypeTarget::External(external) => {
                 let detail = environment
                     .external_owner(
-                        accepted.world().symbols(),
+                        world.symbols(),
                         external.declaration(),
                         RegisteredExternalOwnerKind::Environment,
                     )
@@ -444,22 +457,28 @@ pub(crate) fn contextual_completions(
         return Vec::new();
     };
     let is_entity_family_slot = project
-        .typecheck()
-        .nominal_resolutions
-        .nodes()
-        .any(|(_, node)| {
-            let TypeNameResolution::Builtin(constructor) = node.outcome() else {
+        .hir_project()
+        .view()
+        .modules()
+        .filter(|(_, module)| module.provenance().source_identity() == identity)
+        .flat_map(|(_, module)| module.types().map(move |(owner, ty)| (module, owner, ty)))
+        .any(|(module, owner, ty)| {
+            let HirTypeKind::Generic(generic) = ty.kind() else {
                 return false;
             };
-            constructor.argument_expectation(0) == Some(TypeArgumentExpectation::EntityFamily)
-                && node
-                    .source()
-                    .project()
-                    .is_some_and(|source| span_contains_offset(source, identity, offset))
-                && !node
-                    .terminal_source()
-                    .and_then(|source| source.project())
-                    .is_some_and(|source| span_contains_offset(source, identity, offset))
+            if BuiltinTypeConstructor::from_hir_path(generic.base())
+                != Some(BuiltinTypeConstructor::Ref)
+            {
+                return false;
+            }
+            let Some(open) = type_source_span(module, owner, HirTypeSourceRole::GenericOpen) else {
+                return false;
+            };
+            let Some(close) = type_source_span(module, owner, HirTypeSourceRole::GenericClose)
+            else {
+                return false;
+            };
+            open.range().end() <= offset && offset <= close.range().start()
         });
     if !is_entity_family_slot {
         return Vec::new();
@@ -485,14 +504,15 @@ pub(crate) fn prepare_rename(
     offset: usize,
 ) -> Option<PrepareRenameResponse> {
     let accepted = profile.accepted_environment()?;
+    let executable = accepted.executable()?;
+    let analysis = executable.final_analysis();
+    let index = executable.semantic_index();
     let project = exact_project(accepted.project(), document)?;
-    if language_symbol_at(project, document, offset).is_some() {
+    if language_symbol_at(project, analysis, document, offset).is_some() {
         return None;
     }
-    let cursor = symbol_at(project, document, offset)?;
-    let record = project
-        .semantic_index()
-        .project_nominal(&cursor.declaration)?;
+    let cursor = symbol_at(project, index, document, offset)?;
+    let record = index.project_nominal(&cursor.declaration)?;
     Some(PrepareRenameResponse::RangeWithPlaceholder {
         range: document.line_index().range_from_byte_span(
             cursor.terminal_source.range().start(),
@@ -515,12 +535,15 @@ pub(crate) fn rename(
 ) -> Option<WorkspaceEdit> {
     let new_name = ModuleSegment::new(new_name).ok()?;
     let accepted = profile.accepted_environment()?;
+    let executable = accepted.executable()?;
+    let analysis = executable.final_analysis();
+    let index = executable.semantic_index();
+    let world = executable.registered_world();
     let project = exact_project(accepted.project(), document)?;
-    if language_symbol_at(project, document, offset).is_some() {
+    if language_symbol_at(project, analysis, document, offset).is_some() {
         return None;
     }
-    let cursor = symbol_at(project, document, offset)?;
-    let index = project.semantic_index();
+    let cursor = symbol_at(project, index, document, offset)?;
     if index.project_nominals().keys().any(|candidate| {
         candidate != &cursor.declaration
             && candidate.module() == cursor.declaration.module()
@@ -546,13 +569,20 @@ pub(crate) fn rename(
             edge.use_path()
                 .segments()
                 .last()
-                .is_some_and(|segment| segment.as_str() == cursor.declaration.name().as_str())
+                .is_some_and(|segment| match segment {
+                    HirPathSegment::Identifier(name) => {
+                        name.as_str() == cursor.declaration.name().as_str()
+                    }
+                    HirPathSegment::ProjectSymbol(name) => {
+                        name.as_str() == cursor.declaration.name().as_str()
+                    }
+                })
         })
     {
         edits.insert(edge.terminal_source().clone());
     }
-    for module in accepted.world().symbols().modules() {
-        for binding in accepted.world().symbols().visible_type_bindings(module) {
+    for module in world.symbols().modules() {
+        for binding in world.symbols().visible_type_bindings(module) {
             if matches!(binding.target(), ProjectTypeTarget::Nominal(declaration) if declaration.id() == &cursor.declaration)
             {
                 edits.extend(binding.reference_sites().iter().cloned());
@@ -588,12 +618,13 @@ fn exact_project<'a>(
     project
         .sources()
         .by_uri(document.uri())
-        .is_some_and(|source| source.document().text() == document.text())
+        .is_some_and(|source| Arc::ptr_eq(source.document(), document.source_document()))
         .then_some(project)
 }
 
 fn symbol_at(
     project: &AcceptedProjectSnapshot,
+    index: &arcweft_lang_sema::project_index::ProjectSemanticIndex,
     document: &DocumentSnapshot,
     offset: usize,
 ) -> Option<NominalCursor> {
@@ -602,8 +633,7 @@ fn symbol_at(
         .by_uri(document.uri())?
         .document()
         .identity();
-    if let Some(record) = project
-        .semantic_index()
+    if let Some(record) = index
         .project_nominals()
         .values()
         .find(|record| span_contains_offset(record.declaration().source().name(), identity, offset))
@@ -617,8 +647,7 @@ fn symbol_at(
             alias_trace: Box::new([]),
         });
     }
-    project
-        .semantic_index()
+    index
         .project_nominal_references()
         .iter()
         .filter(|edge| span_contains_offset(edge.source(), identity, offset))
@@ -640,6 +669,7 @@ fn symbol_at(
 
 fn language_symbol_at(
     project: &AcceptedProjectSnapshot,
+    analysis: &arcweft_lang_sema::final_analysis::FinalSemanticAnalysis,
     document: &DocumentSnapshot,
     offset: usize,
 ) -> Option<LanguageNominalCursor> {
@@ -648,39 +678,66 @@ fn language_symbol_at(
         .by_uri(document.uri())?
         .document()
         .identity();
-    project
-        .typecheck()
-        .nominal_resolutions
-        .nodes()
-        .filter_map(|(_, node)| {
-            let (owner, source) = match node.outcome() {
-                TypeNameResolution::Builtin(constructor)
-                    if BuiltinTypeConstructor::ENTITY_FAMILY_PROJECTIONS.contains(constructor) =>
-                {
-                    (
-                        LanguageNominalOwner::Builtin(*constructor),
-                        node.terminal_source()?.project()?,
-                    )
+    let mut cursors = Vec::new();
+    for (_, module) in project
+        .hir_project()
+        .view()
+        .modules()
+        .filter(|(_, module)| module.provenance().source_identity() == identity)
+    {
+        for (owner, node) in module.types() {
+            match node.kind() {
+                HirTypeKind::Generic(generic) => {
+                    let Some(constructor) = BuiltinTypeConstructor::from_hir_path(generic.base())
+                    else {
+                        continue;
+                    };
+                    if !BuiltinTypeConstructor::ENTITY_FAMILY_PROJECTIONS.contains(&constructor) {
+                        continue;
+                    }
+                    let Some(source) =
+                        type_source_span(module, owner, HirTypeSourceRole::GenericBase)
+                    else {
+                        continue;
+                    };
+                    if span_contains_offset(&source, identity, offset) {
+                        cursors.push(LanguageNominalCursor {
+                            owner: LanguageNominalOwner::Builtin(constructor),
+                            source,
+                            normalized: analysis.ty(owner).cloned(),
+                        });
+                    }
                 }
-                TypeNameResolution::EntityFamily(family) => (
-                    LanguageNominalOwner::EntityFamily(family.clone()),
-                    node.terminal_source()
-                        .and_then(|source| source.project())
-                        .or_else(|| node.source().project())?,
-                ),
-                _ => return None,
-            };
-            span_contains_offset(source, identity, offset).then(|| LanguageNominalCursor {
-                owner,
-                source: source.clone(),
-                normalized: node.recovered().cloned(),
-            })
-        })
+                HirTypeKind::Path(path) => {
+                    let Some(family) = entity_family_for_path(path) else {
+                        continue;
+                    };
+                    if !is_ref_entity_family_argument(module, owner) {
+                        continue;
+                    }
+                    let Some(source) = type_terminal_source_span(module, owner, path) else {
+                        continue;
+                    };
+                    if span_contains_offset(&source, identity, offset) {
+                        cursors.push(LanguageNominalCursor {
+                            owner: LanguageNominalOwner::EntityFamily(family),
+                            source,
+                            normalized: None,
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    cursors
+        .into_iter()
         .min_by_key(|cursor| cursor.source.range().end() - cursor.source.range().start())
 }
 
 fn accepted_nominal_at(
     project: &AcceptedProjectSnapshot,
+    analysis: &arcweft_lang_sema::final_analysis::FinalSemanticAnalysis,
     document: &DocumentSnapshot,
     offset: usize,
 ) -> Option<AcceptedNominalCursor> {
@@ -689,33 +746,102 @@ fn accepted_nominal_at(
         .by_uri(document.uri())?
         .document()
         .identity();
-    project
-        .typecheck()
-        .nominal_resolutions
-        .nodes()
-        .filter_map(|(_, node)| {
-            let (TypeNameResolution::Accepted(nominal)
-            | TypeNameResolution::External(ExternalNominalResolution::Accepted {
-                nominal, ..
-            })) = node.outcome()
-            else {
-                return None;
-            };
-            let source = node
-                .terminal_source()
-                .and_then(|source| source.project())
-                .filter(|source| span_contains_offset(source, identity, offset))
-                .or_else(|| {
-                    node.source()
-                        .project()
-                        .filter(|source| span_contains_offset(source, identity, offset))
-                })?;
-            Some(AcceptedNominalCursor {
+    let mut cursors = Vec::new();
+    for (owner, ty) in analysis.types() {
+        let TypeKind::AcceptedNominal(nominal) = ty else {
+            continue;
+        };
+        let Some((_, module)) = project
+            .hir_project()
+            .view()
+            .modules()
+            .find(|(_, module)| module.module_id() == owner.module())
+        else {
+            continue;
+        };
+        if module.provenance().source_identity() != identity {
+            continue;
+        }
+        let Ok(node) = module.resolve_type(owner) else {
+            continue;
+        };
+        let Some(source) = type_head_source_span(module, owner, node.kind()) else {
+            continue;
+        };
+        if span_contains_offset(&source, identity, offset) {
+            cursors.push(AcceptedNominalCursor {
                 nominal: nominal.clone(),
-                source: source.clone(),
-            })
-        })
+                source,
+            });
+        }
+    }
+    cursors
+        .into_iter()
         .min_by_key(|cursor| cursor.source.range().end() - cursor.source.range().start())
+}
+
+fn entity_family_for_path(path: &HirPath) -> Option<EntityKind> {
+    if path.root() != HirPathRoot::ImplicitCrate {
+        return None;
+    }
+    let [segment] = path.segments() else {
+        return None;
+    };
+    let name = match segment {
+        HirPathSegment::Identifier(name) => name.as_str(),
+        HirPathSegment::ProjectSymbol(name) => name.as_str(),
+    };
+    EntityKind::from_type_name(name)
+}
+
+fn is_ref_entity_family_argument(module: &HirModule, owner: TypeId) -> bool {
+    module.types().any(|(_, candidate)| {
+        let HirTypeKind::Generic(generic) = candidate.kind() else {
+            return false;
+        };
+        BuiltinTypeConstructor::from_hir_path(generic.base()) == Some(BuiltinTypeConstructor::Ref)
+            && generic.arguments() == [owner]
+    })
+}
+
+fn type_head_source_span(
+    module: &HirModule,
+    owner: TypeId,
+    kind: &HirTypeKind,
+) -> Option<SourceSpan> {
+    match kind {
+        HirTypeKind::Path(path) => type_terminal_source_span(module, owner, path),
+        HirTypeKind::Generic(_) => type_source_span(module, owner, HirTypeSourceRole::GenericBase),
+        HirTypeKind::TraitBound(_) => type_source_span(module, owner, HirTypeSourceRole::TraitBase),
+        _ => type_source_span(module, owner, HirTypeSourceRole::Whole),
+    }
+}
+
+fn type_terminal_source_span(
+    module: &HirModule,
+    owner: TypeId,
+    path: &HirPath,
+) -> Option<SourceSpan> {
+    let ordinal = u32::try_from(path.segments().len().checked_sub(1)?).ok()?;
+    type_source_span(module, owner, HirTypeSourceRole::PathSegment { ordinal })
+}
+
+fn type_source_span(
+    module: &HirModule,
+    owner: TypeId,
+    role: HirTypeSourceRole,
+) -> Option<SourceSpan> {
+    let lookup = module
+        .source_site(
+            module.provenance().source_identity(),
+            HirSourceQuery::Type { owner, role },
+        )
+        .ok()?;
+    match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(span)) => Some(span.clone()),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+        | HirSourcePresence::AbsentOptional => None,
+    }
 }
 
 fn span_contains_offset(
@@ -786,6 +912,8 @@ mod tests {
         AdapterManifest, AdapterNominalDeclaration, AdapterNominalPath, AdapterNominalPathPrefix,
         AdapterNominalPathSegment, AdapterNominalVisibility, AdapterRegistry,
     };
+    use arcweft_compiler::project::ProjectCompilationSession;
+    use arcweft_lang_syntax::incremental::SyntaxDatabase;
     use arcweft_launch::LaunchProfileSelection;
     use arcweft_project_loader::topology::{
         ProfileTopologyLoadRequest, ProfileTopologyOwnerId, load_profile_topology,
@@ -805,8 +933,11 @@ mod tests {
     use super::*;
     use crate::{
         diagnostics::{DocumentAnalysis, publish_diagnostics_from_analysis},
+        documents::AcceptedOpenDocument,
         positions::PositionEncoding,
-        profiles::{LspProfile, LspProfileResolver, register_loaded_environment},
+        profiles::{
+            LspProfile, LspProfileResolver, LspProfileTestHarness, register_loaded_environment,
+        },
     };
 
     const MAIN: &str = r"
@@ -866,17 +997,19 @@ entry agent @entry.agent.main {
         project.write("src/main.arcw", MAIN);
         project.write("src/models.arcw", MODELS);
         let main_path = project.path("src/main.arcw");
-        let profile =
-            LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-                .resolve_for_document_path(&main_path)
-                .expect("profile construction")
-                .publish_for_test();
+        let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+            RuntimeHostRunnerKind::Native,
+            Some("agent".to_owned()),
+        ))
+        .resolve_for_document_path(&main_path)
+        .expect("profile construction")
+        .publish_for_test();
         assert!(
             profile.diagnostics().is_empty(),
             "{:?}",
             profile.diagnostics()
         );
-        let document = open(&main_path, MAIN);
+        let document = open_accepted(&profile, &main_path, MAIN);
         let analysis = DocumentAnalysis::analyze_snapshot(&document, &profile);
         let published = publish_diagnostics_from_analysis(&document, &profile, &analysis);
         assert!(published.diagnostics.iter().all(|diagnostic| {
@@ -964,17 +1097,19 @@ entry agent @entry.agent.main {
         project.write("src/main.arcw", ALIAS_MAIN);
         project.write("src/models.arcw", ALIAS_MODELS);
         let main_path = project.path("src/main.arcw");
-        let profile =
-            LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-                .resolve_for_document_path(&main_path)
-                .expect("profile construction")
-                .publish_for_test();
+        let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+            RuntimeHostRunnerKind::Native,
+            Some("agent".to_owned()),
+        ))
+        .resolve_for_document_path(&main_path)
+        .expect("profile construction")
+        .publish_for_test();
         assert!(
             profile.diagnostics().is_empty(),
             "{TEST_ID}: accepted project diagnostics: {:?}",
             profile.diagnostics()
         );
-        let document = open(&main_path, ALIAS_MAIN);
+        let document = open_accepted(&profile, &main_path, ALIAS_MAIN);
         let offset = ALIAS_MAIN
             .find("value: ImportedAlias")
             .expect("TOOL-DEFINITION-ALIAS: imported alias type use")
@@ -1082,17 +1217,19 @@ entry agent @entry.agent.main {
         project.write_manifest();
         project.write("src/main.arcw", SOURCE);
         let main_path = project.path("src/main.arcw");
-        let profile =
-            LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-                .resolve_for_document_path(&main_path)
-                .expect("profile construction")
-                .publish_for_test();
+        let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+            RuntimeHostRunnerKind::Native,
+            Some("agent".to_owned()),
+        ))
+        .resolve_for_document_path(&main_path)
+        .expect("profile construction")
+        .publish_for_test();
         assert!(
             profile.diagnostics().is_empty(),
             "accepted project diagnostics: {:?}",
             profile.diagnostics()
         );
-        let document = open(&main_path, SOURCE);
+        let document = open_accepted(&profile, &main_path, SOURCE);
         let ref_offset = SOURCE.find("Ref<Flow>").expect("Ref use") + 1;
         let family_offset = SOURCE.find("Flow>").expect("Flow family") + 1;
 
@@ -1134,16 +1271,11 @@ entry agent @entry.agent.main {
         );
 
         let global = crate::features::completion::completions(&profile, Some(&document));
-        for constructor in ["Ref", "Speaker", "SpeakerPreset"] {
-            assert_eq!(
-                global
-                    .iter()
-                    .filter(|item| item.label == constructor)
-                    .count(),
-                1,
-                "{constructor} is published once from the typed builtin inventory"
-            );
-        }
+        assert_eq!(
+            global.iter().filter(|item| item.label == "Ref").count(),
+            1,
+            "Ref is published once from the typed builtin inventory"
+        );
         let contextual = crate::features::completion::completions_at(
             &profile,
             Some(&document),
@@ -1208,16 +1340,23 @@ adapter = "rust-nominal-tooling"
             file_uri(&manifest_path).to_string(),
         )
         .expect("workspace owner");
-        let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
-            &manifest_path,
-            owner,
-            LaunchProfileSelection::Explicit("agent"),
-            &[],
-            AdapterRegistry::from_manifests([adapter.clone()]),
-        ))
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let topology = load_profile_topology(
+            &mut syntax,
+            ProfileTopologyLoadRequest::new(
+                &manifest_path,
+                owner,
+                LaunchProfileSelection::Explicit("agent"),
+                &[],
+                AdapterRegistry::from_manifests([adapter.clone()]),
+            ),
+        )
         .expect("custom adapter topology");
-        let (candidate, _) = register_loaded_environment(&topology, &[], None)
-            .expect("registered custom adapter environment");
+        let mut compiler = ProjectCompilationSession::try_new().expect("project compiler session");
+        let (candidate, _, diagnostic) =
+            register_loaded_environment(&mut compiler, &topology, &[], None)
+                .expect("registered custom adapter environment");
+        assert!(diagnostic.is_none());
         let profile = LspProfile::new(adapter, RuntimeHostRunnerKind::Native);
         profile
             .state()
@@ -1225,7 +1364,7 @@ adapter = "rust-nominal-tooling"
             .expect("accepted custom adapter environment");
 
         let main_path = project.path("src/main.arcw");
-        let document = open(&main_path, ACCEPTED_RUST_NOMINAL_SOURCE);
+        let document = open_accepted(&profile, &main_path, ACCEPTED_RUST_NOMINAL_SOURCE);
         let offset = ACCEPTED_RUST_NOMINAL_SOURCE
             .find("Envelope<Rank>")
             .expect("generic Rust type")
@@ -1247,7 +1386,11 @@ adapter = "rust-nominal-tooling"
             offset,
         } = accepted_rust_nominal_tooling_fixture();
         let accepted = profile.accepted_environment().expect("accepted profile");
-        let cursor = accepted_nominal_at(accepted.project(), &document, offset)
+        let analysis = accepted
+            .executable()
+            .expect("accepted executable")
+            .final_analysis();
+        let cursor = accepted_nominal_at(accepted.project(), analysis, &document, offset)
             .expect("typed accepted nominal cursor");
         assert_eq!(
             cursor.nominal.declaration().owner().source_label(),
@@ -1288,7 +1431,8 @@ adapter = "rust-nominal-tooling"
             panic!("expected one accepted Rust metadata definition")
         };
         let metadata = accepted
-            .world()
+            .registered_world()
+            .expect("accepted executable world")
             .environment()
             .rust_metadata()
             .get(cursor.nominal.declaration())
@@ -1318,11 +1462,13 @@ adapter = "rust-nominal-tooling"
         project.write("src/main.arcw", MAIN);
         project.write("src/models.arcw", MODELS);
         let main_path = project.path("src/main.arcw");
-        let profile =
-            LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-                .resolve_for_document_path(&main_path)
-                .expect("profile construction")
-                .publish_for_test();
+        let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+            RuntimeHostRunnerKind::Native,
+            Some("agent".to_owned()),
+        ))
+        .resolve_for_document_path(&main_path)
+        .expect("profile construction")
+        .publish_for_test();
         assert!(
             profile.diagnostics().is_empty(),
             "{TEST_ID}: accepted project diagnostics: {:?}",
@@ -1378,17 +1524,45 @@ adapter = "rust-nominal-tooling"
 
     fn open(path: &Path, source: &str) -> DocumentSnapshot {
         let mut store = DocumentStore::default();
-        store.open(
-            DidOpenTextDocumentParams {
-                text_document: TextDocumentItem {
-                    uri: file_uri(path),
-                    language_id: "arcweft".to_owned(),
-                    version: 1,
-                    text: source.to_owned(),
+        store
+            .open(
+                DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri: file_uri(path),
+                        language_id: "arcweft".to_owned(),
+                        version: 1,
+                        text: source.to_owned(),
+                    },
                 },
-            },
-            PositionEncoding::Utf16,
-        )
+                PositionEncoding::Utf16,
+            )
+            .expect("document parse")
+    }
+
+    fn open_accepted(profile: &LspProfile, path: &Path, source: &str) -> DocumentSnapshot {
+        let uri = file_uri(path);
+        let accepted = profile.accepted_environment().expect("accepted profile");
+        let accepted_source = accepted
+            .project()
+            .sources()
+            .by_uri(&uri)
+            .expect("accepted source");
+        let authority = AcceptedOpenDocument::new(Arc::clone(accepted_source.document()), None);
+        let mut store = DocumentStore::default();
+        store
+            .open_with_authority(
+                DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem {
+                        uri,
+                        language_id: "arcweft".to_owned(),
+                        version: 1,
+                        text: source.to_owned(),
+                    },
+                },
+                PositionEncoding::Utf16,
+                Some(&authority),
+            )
+            .expect("accepted document open")
     }
 
     fn file_uri(path: &Path) -> Uri {

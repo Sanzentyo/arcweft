@@ -118,6 +118,11 @@ impl AttachedTypeRefNode {
         &self.path
     }
 
+    #[cfg(test)]
+    pub(crate) fn authored_for_test(&self) -> &AuthoredTypeRef {
+        &self.authored
+    }
+
     /// Semantic type payload selected by this node.
     ///
     /// # Panics

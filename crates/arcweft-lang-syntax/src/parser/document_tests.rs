@@ -1,6 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::{DocumentLexer, SyntaxKind, parse_shadow_document};
+use super::{DocumentLexer, SyntaxKind, parse_document};
 
 fn document(text: &str) -> SourceDocument {
     SourceDocument::try_new(
@@ -46,7 +46,7 @@ fn one_pass_lexer_classifies_current_token_families_losslessly() {
             .iter()
             .any(|token| token.kind == SyntaxKind::EntityReferenceToken)
     );
-    let built = parse_shadow_document(&document, crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document, crate::parser::ParseOptions::default()).unwrap();
     assert_eq!(built.green().to_string(), source);
     let stats = built.stats();
     assert_eq!(stats.accepted_source_bytes(), source.len());
@@ -126,8 +126,7 @@ fn shadow_root_keeps_non_declarations_as_generic_errors() {
         "let shown = true\n",
         "???\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -168,8 +167,7 @@ fn unterminated_non_dialogue_string_retains_typed_literal_recovery() {
             .any(|token| token.kind == SyntaxKind::UnterminatedStringToken)
     );
 
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     assert!(
         built
             .index()

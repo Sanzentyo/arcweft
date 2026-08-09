@@ -11,7 +11,7 @@ use crate::item::{
     HirCapabilityAssociatedType, HirCapabilityFunction, HirCapabilityMember,
     HirExternCapabilityItem, HirItem, HirItemIssue, HirItemKind,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 
 use super::super::{StagedHirModuleTransaction, require_limit};
 use super::{LoweredItemProjection, item_state, project_required_name};

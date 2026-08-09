@@ -280,6 +280,54 @@ fn ambiguous_postfix_retains_shared_target_and_distinct_synthetic_candidates() {
 }
 
 #[test]
+fn dialogue_candidate_projects_rich_text_sources_from_exact_outer_owner() {
+    let parsed = parsed_source(
+        "dialogue-candidate-rich-text-source",
+        &["alice[Hello[p]]".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+
+    let outer = owners[0];
+    let HirExprKind::PostfixBracket(postfix) = expression(&module, outer).kind() else {
+        panic!("end-position point tag retains E34 ambiguity");
+    };
+    let HirPostfixBracketCandidates::Ambiguous { dialogue, .. } = postfix.candidates() else {
+        panic!("Dialogue interpretation remains a typed candidate");
+    };
+    let HirExprKind::DialogueContentApplication(application) =
+        expression(&module, *dialogue).kind()
+    else {
+        panic!("Dialogue candidate publishes final E33 payload");
+    };
+    assert!(matches!(
+        application.content().tags(),
+        [tag]
+            if matches!(
+                tag.identity(),
+                HirRichTextTagIdentity::Builtin(HirBuiltinRichTextTag::Page)
+            )
+    ));
+
+    let lookup = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Expr {
+                owner: *dialogue,
+                role: HirExprSourceRole::RichTextTag {
+                    tag: 0,
+                    part: HirRichTextTagSourcePart::Whole,
+                },
+            },
+        )
+        .expect("candidate RichText role is projected through the exact candidate ExprId");
+    let HirSourcePresence::Present(HirSourceSite::Span(span)) = lookup.presence() else {
+        panic!("authored candidate RichText tag retains one span");
+    };
+    assert_eq!(&parsed.document().text()[span.range().as_range()], "[p]");
+}
+
+#[test]
 fn ambiguous_index_candidate_uses_preorder_synthetic_expression_ordinals() {
     let parsed = parsed_source(
         "dialogue-ambiguous-composite-index",
@@ -349,15 +397,15 @@ fn ambiguous_associated_call_keeps_candidate_expression_and_type_preorders() {
     let HirExprKind::Call(call) = expression(&module, call_id).kind() else {
         panic!("candidate index payload must retain its Call");
     };
-    let (receiver, member) = call
+    let (receiver, _, member) = call
         .callee()
         .associated_parts()
         .expect("explicit associated Call");
     assert_eq!(
-        member.resolved().map(|name| name.as_str()),
+        member.resolved().map(crate::leaf::HirName::as_str),
         Some("with_capacity")
     );
-    let receiver_id = receiver.type_id();
+    let receiver_id = receiver.type_id().expect("associated receiver type");
     let receiver_type = module
         .arenas()
         .types()
@@ -418,6 +466,10 @@ fn ambiguous_associated_call_keeps_candidate_expression_and_type_preorders() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test validates one complete nested associated-call type/value preorder across both ambiguity interpretations"
+)]
 fn nested_associated_call_keeps_receiver_types_before_argument_types() {
     let parsed = parsed_source(
         "dialogue-nested-associated-call-index",
@@ -440,11 +492,11 @@ fn nested_associated_call_keeps_receiver_types_before_argument_types() {
     let HirExprKind::Call(outer_call) = expression(&module, outer_call_id).kind() else {
         panic!("candidate index payload must retain its outer Call");
     };
-    let (outer_receiver, _) = outer_call
+    let (outer_receiver, _, _) = outer_call
         .callee()
         .associated_parts()
         .expect("outer associated Call");
-    let outer_receiver_id = outer_receiver.type_id();
+    let outer_receiver_id = outer_receiver.type_id().expect("outer receiver type");
     let HirTypeKind::Generic(outer_receiver_type) = module
         .arenas()
         .types()
@@ -471,11 +523,11 @@ fn nested_associated_call_keeps_receiver_types_before_argument_types() {
     let HirExprKind::Call(nested_call) = expression(&module, *nested_call_id).kind() else {
         panic!("outer argument must retain its nested Call");
     };
-    let (nested_receiver, _) = nested_call
+    let (nested_receiver, _, _) = nested_call
         .callee()
         .associated_parts()
         .expect("nested associated Call");
-    let nested_receiver_id = nested_receiver.type_id();
+    let nested_receiver_id = nested_receiver.type_id().expect("nested receiver type");
     let HirTypeKind::Generic(nested_receiver_type) = module
         .arenas()
         .types()
@@ -566,14 +618,17 @@ fn nested_e34_associated_call_keeps_one_global_candidate_type_preorder() {
     let HirExprKind::Call(nested_call) = expression(&module, nested_index.index()).kind() else {
         panic!("nested associated Call");
     };
-    let (nested_receiver, _) = nested_call
+    let (nested_receiver, _, _) = nested_call
         .callee()
         .associated_parts()
         .expect("nested associated receiver");
     let HirTypeKind::Generic(nested_receiver_type) = module
         .arenas()
         .types()
-        .resolve(module.slots(), nested_receiver.type_id())
+        .resolve(
+            module.slots(),
+            nested_receiver.type_id().expect("nested receiver type"),
+        )
         .expect("nested receiver type")
         .kind()
     else {
@@ -583,7 +638,10 @@ fn nested_e34_associated_call_keeps_one_global_candidate_type_preorder() {
         panic!("nested receiver type argument");
     };
 
-    for (ty, ordinal) in [(nested_receiver.type_id(), 0), (*nested_argument_type, 1)] {
+    for (ty, ordinal) in [
+        (nested_receiver.type_id().expect("nested receiver type"), 0),
+        (*nested_argument_type, 1),
+    ] {
         let metadata = module
             .slots()
             .resolve(ty)
@@ -812,7 +870,10 @@ fn record_literal_candidate_retains_missing_field_value_recovery_and_preorder() 
             .expect("RecordLiteral candidate inventory")
             .find(|(expression, _)| {
                 matches!(
-                    module.slots().resolve(*expression).map(|slot| slot.origin()),
+                    module
+                        .slots()
+                        .resolve(*expression)
+                        .map(crate::slot::HirSlotMetadata::origin),
                     Ok(HirOrigin::Synthetic(key))
                         if key.owner() == SyntheticOwner::Expr(owner)
                             && key.role()
@@ -831,6 +892,10 @@ fn record_literal_candidate_retains_missing_field_value_recovery_and_preorder() 
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is one closed nested Dialogue candidate ownership, source-role, and preorder acceptance scenario"
+)]
 fn nested_dialogue_interpretation_keeps_outer_owner_role_and_global_preorder() {
     let parsed = parsed_source("dialogue-nested-candidate-owner", &["x[#[y]]".into()]);
     let (module, owners, _) = lower_and_publish(&parsed);
@@ -1058,7 +1123,10 @@ fn ambiguous_candidate_exact_aggregate_descendant_limit_publishes() {
         .expect("candidate expression inventory")
         .filter(|(expression, _)| {
             matches!(
-                module.slots().resolve(*expression).map(|metadata| metadata.origin()),
+                module
+                    .slots()
+                    .resolve(*expression)
+                    .map(crate::slot::HirSlotMetadata::origin),
                 Ok(HirOrigin::Synthetic(key))
                     if key.owner() == SyntheticOwner::Expr(owner)
                         && matches!(
@@ -1131,7 +1199,10 @@ fn ambiguous_typed_candidate_exact_aggregate_descendant_limit_publishes() {
         .expect("typed candidate expression inventory")
         .filter(|(expression, _)| {
             matches!(
-                module.slots().resolve(*expression).map(|metadata| metadata.origin()),
+                module
+                    .slots()
+                    .resolve(*expression)
+                    .map(crate::slot::HirSlotMetadata::origin),
                 Ok(HirOrigin::Synthetic(key))
                     if key.owner() == SyntheticOwner::Expr(owner)
                         && matches!(

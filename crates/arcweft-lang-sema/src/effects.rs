@@ -1,5 +1,11 @@
 use std::{collections::BTreeSet, fmt, iter::FromIterator, str::FromStr};
 
+use arcweft_lang_hir::{
+    expr::{HirExprKind, HirSelectedMember},
+    identity::ExprId,
+    leaf::{HirPathRoot, HirPathSegment},
+    module::HirModule,
+};
 use thiserror::Error;
 
 /// Canonical identity for one Arcweft effect capability.
@@ -25,6 +31,21 @@ pub enum EffectIdError {
     InvalidScopeAtom { value: String, scope: String },
 }
 
+/// Invalid final-HIR projection of one authored effect capability.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub(crate) enum HirEffectProjectionError {
+    #[error("effect expression {owner:?} is absent from its accepted HIR module")]
+    InvalidOwner { owner: ExprId },
+    #[error("effect expression {owner:?} contains recovered path structure")]
+    Recovered { owner: ExprId },
+    #[error("effect expression {owner:?} uses an explicit project root")]
+    ExplicitRoot { owner: ExprId },
+    #[error("effect expression {owner:?} is not a path/select chain")]
+    Unsupported { owner: ExprId },
+    #[error(transparent)]
+    InvalidIdentity(#[from] EffectIdError),
+}
+
 /// Parse failure while constructing an effect set from source labels.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 #[error("invalid effect at index {index}: {source}")]
@@ -43,8 +64,26 @@ impl EffectId {
         value.as_ref().parse()
     }
 
+    /// Projects one final-HIR path/select chain into its canonical semantic
+    /// effect identity and returns every participating expression owner.
+    /// Source spelling is never reparsed and all consumers share this owner.
+    pub(crate) fn try_from_hir_expression(
+        module: &HirModule,
+        owner: ExprId,
+    ) -> Result<(Self, Vec<ExprId>), HirEffectProjectionError> {
+        let mut segments = Vec::new();
+        let mut owners = Vec::new();
+        collect_hir_effect_path(module, owner, &mut segments, &mut owners)?;
+        Ok((Self::parse(segments.join("."))?, owners))
+    }
+
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+
+    /// Returns whether this is the canonical direct-style suspension effect.
+    pub fn is_control_suspend(&self) -> bool {
+        self.0 == "control.suspend"
     }
 
     pub fn family(&self) -> &str {
@@ -76,6 +115,41 @@ impl EffectId {
             || (self.path() == required.path()
                 && (self.scope_count() == 0 || required.scope_count() == 0))
     }
+}
+
+fn collect_hir_effect_path(
+    module: &HirModule,
+    owner: ExprId,
+    segments: &mut Vec<String>,
+    owners: &mut Vec<ExprId>,
+) -> Result<(), HirEffectProjectionError> {
+    let expression = module
+        .resolve_expr(owner)
+        .map_err(|_| HirEffectProjectionError::InvalidOwner { owner })?;
+    match expression.kind() {
+        HirExprKind::Path(path) => {
+            let path = path
+                .as_resolved()
+                .ok_or(HirEffectProjectionError::Recovered { owner })?;
+            if path.root() != HirPathRoot::ImplicitCrate {
+                return Err(HirEffectProjectionError::ExplicitRoot { owner });
+            }
+            segments.extend(path.segments().iter().map(|segment| match segment {
+                HirPathSegment::Identifier(name) => name.as_str().to_owned(),
+                HirPathSegment::ProjectSymbol(name) => name.as_str().to_owned(),
+            }));
+        }
+        HirExprKind::Select(select) => {
+            collect_hir_effect_path(module, select.target(), segments, owners)?;
+            let HirSelectedMember::Name(name) = select.member() else {
+                return Err(HirEffectProjectionError::Recovered { owner });
+            };
+            segments.push(name.as_str().to_owned());
+        }
+        _ => return Err(HirEffectProjectionError::Unsupported { owner }),
+    }
+    owners.push(owner);
+    Ok(())
 }
 
 impl FromStr for EffectId {

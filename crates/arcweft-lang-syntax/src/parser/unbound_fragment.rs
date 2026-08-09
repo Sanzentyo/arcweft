@@ -1,10 +1,5 @@
 //! Source-free fragment parsing and explicit source attachment products.
 
-#![allow(
-    dead_code,
-    reason = "the private fragment contract precedes the atomic public parser switch"
-)]
-
 use core::marker::PhantomData;
 use std::sync::Arc;
 
@@ -23,7 +18,7 @@ use super::fragment::{ExpectedToken, ParseCompletion, ParseOptions};
 
 /// One source-free grammar diagnostic with fragment-relative ranges.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct FragmentDiagnostic {
+pub struct FragmentDiagnostic {
     code: &'static str,
     range: arcweft_source::SourceRange,
     related_range: Option<arcweft_source::SourceRange>,
@@ -31,19 +26,19 @@ pub(crate) struct FragmentDiagnostic {
 }
 
 impl FragmentDiagnostic {
-    pub(crate) const fn code(&self) -> &'static str {
+    pub const fn code(&self) -> &'static str {
         self.code
     }
 
-    pub(crate) const fn range(&self) -> arcweft_source::SourceRange {
+    pub const fn range(&self) -> arcweft_source::SourceRange {
         self.range
     }
 
-    pub(crate) const fn related_range(&self) -> Option<arcweft_source::SourceRange> {
+    pub const fn related_range(&self) -> Option<arcweft_source::SourceRange> {
         self.related_range
     }
 
-    pub(crate) fn message(&self) -> &str {
+    pub fn message(&self) -> &str {
         &self.message
     }
 }
@@ -101,7 +96,7 @@ mod sealed {
 }
 
 /// Sealed standalone-fragment family.
-pub(crate) trait FragmentKind: sealed::Sealed + Copy + 'static {
+pub trait FragmentKind: sealed::Sealed + Copy + 'static {
     type AstKind: AstKind;
 }
 
@@ -114,7 +109,7 @@ macro_rules! define_fragment_kinds {
     ($($marker:ident => ($grammar:ident, $root:ident, $expected:literal)),+ $(,)?) => {
         $(
             #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-            pub(crate) struct $marker;
+            pub struct $marker;
 
             impl sealed::Sealed for $marker {}
 
@@ -139,7 +134,7 @@ define_fragment_kinds! {
 
 /// Source-free fragment parse product with no syntax identity.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct UnboundFragment<K: FragmentKind> {
+pub struct UnboundFragment<K: FragmentKind> {
     text: Arc<str>,
     tree: FragmentTree,
     diagnostics: Arc<[FragmentDiagnostic]>,
@@ -148,15 +143,15 @@ pub(crate) struct UnboundFragment<K: FragmentKind> {
 }
 
 impl<K: FragmentKind> UnboundFragment<K> {
-    pub(crate) fn text(&self) -> &str {
+    pub fn text(&self) -> &str {
         &self.text
     }
 
-    pub(crate) fn diagnostics(&self) -> &[FragmentDiagnostic] {
+    pub fn diagnostics(&self) -> &[FragmentDiagnostic] {
         &self.diagnostics
     }
 
-    pub(crate) const fn completion(&self) -> &ParseCompletion {
+    pub const fn completion(&self) -> &ParseCompletion {
         &self.completion
     }
 
@@ -166,14 +161,14 @@ impl<K: FragmentKind> UnboundFragment<K> {
 }
 
 impl UnboundFragment<StatementFragment> {
-    pub(crate) fn root_kind(&self) -> Option<SyntaxKind> {
+    pub fn root_kind(&self) -> Option<SyntaxKind> {
         self.tree.primary_kind()
     }
 }
 
 /// Fragment attached to one fresh database-owned syntax lineage.
 #[derive(Clone)]
-pub(crate) struct AttachedFragment<K: FragmentKind> {
+pub struct AttachedFragment<K: FragmentKind> {
     snapshot: Arc<SyntaxSnapshotData>,
     root: AstNode<K::AstKind>,
     whole: SourceSpan,
@@ -192,15 +187,11 @@ impl<K: FragmentKind> AttachedFragment<K> {
         }
     }
 
-    pub(crate) fn snapshot_id(&self) -> &SyntaxSnapshotId {
+    pub fn snapshot_id(&self) -> &SyntaxSnapshotId {
         self.snapshot.snapshot_id()
     }
 
-    pub(crate) const fn syntax(&self) -> &Arc<SyntaxSnapshotData> {
-        &self.snapshot
-    }
-
-    pub(crate) fn root(&self) -> AstNode<K::AstKind> {
+    pub fn root(&self) -> AstNode<K::AstKind> {
         self.root.clone()
     }
 
@@ -208,33 +199,30 @@ impl<K: FragmentKind> AttachedFragment<K> {
     ///
     /// For a parenthesized expression this includes the ID-less grouping while
     /// `root()` returns the inner identity-bearing semantic expression.
-    pub(crate) const fn whole_source_span(&self) -> &SourceSpan {
+    pub const fn whole_source_span(&self) -> &SourceSpan {
         &self.whole
     }
 }
 
-pub(crate) fn parse_expression_fragment(
+pub fn parse_expression_fragment(
     text: &str,
     options: ParseOptions,
 ) -> UnboundFragment<ExpressionFragment> {
     parse_fragment_family(text, options)
 }
 
-pub(crate) fn parse_type_fragment(
-    text: &str,
-    options: ParseOptions,
-) -> UnboundFragment<TypeFragment> {
+pub fn parse_type_fragment(text: &str, options: ParseOptions) -> UnboundFragment<TypeFragment> {
     parse_fragment_family(text, options)
 }
 
-pub(crate) fn parse_pattern_fragment(
+pub fn parse_pattern_fragment(
     text: &str,
     options: ParseOptions,
 ) -> UnboundFragment<PatternFragment> {
     parse_fragment_family(text, options)
 }
 
-pub(crate) fn parse_statement_fragment(
+pub fn parse_statement_fragment(
     text: &str,
     options: ParseOptions,
 ) -> UnboundFragment<StatementFragment> {

@@ -1,5 +1,5 @@
 use arcweft_agent_protocol::{
-    ids::AgentResourceUri,
+    ids::{AgentProjectGraphSymbolId, AgentResourceUri},
     protocol::{AgentAction, AgentAssertionKind, AgentAttachment, AgentHostRequest},
 };
 use arcweft_core::{
@@ -87,8 +87,9 @@ pub(crate) fn agent_host_request_from_call(call: &RuntimeCall) -> Result<AgentHo
             let root = call
                 .args
                 .first()
-                .ok_or_else(|| "project_neighbors requires a root argument".to_owned())
-                .and_then(|arg| parse_public_id_arg(arg))?;
+                .and_then(|arg| parse_string_label(arg))
+                .ok_or_else(|| "project_neighbors requires a graph symbol ID string".to_owned())?;
+            let root = AgentProjectGraphSymbolId::new(root).map_err(|error| error.to_string())?;
             Ok(AgentHostRequest::ProjectGraphNeighborhood { root, depth: 1 })
         }
         other => Err(format!("unsupported Agent call `{other}`")),
@@ -102,7 +103,7 @@ pub(crate) fn agent_host_request_from_task(
         capability,
         operation,
         args,
-        ..
+        named_args,
     } = request
     else {
         return Err(format!("unsupported Agent task request `{request:?}`"));
@@ -113,7 +114,7 @@ pub(crate) fn agent_host_request_from_task(
             capability.0
         ));
     }
-    let args = RuntimeAgentArgs::new(args);
+    let args = RuntimeAgentArgs::new(args, named_args);
     match operation.as_str() {
         "observe" => args
             .observe_request()
@@ -164,8 +165,9 @@ pub(crate) fn agent_host_request_from_task(
             let root = args
                 .positional(0)
                 .or_else(|| args.named("root"))
-                .ok_or_else(|| "project_neighbors requires a root argument".to_owned())
-                .and_then(runtime_public_id)?;
+                .ok_or_else(|| "project_neighbors requires a graph symbol ID".to_owned())
+                .and_then(runtime_string)?;
+            let root = AgentProjectGraphSymbolId::new(root).map_err(|error| error.to_string())?;
             let depth = args.named("depth").map_or(Ok(1), runtime_u32)?;
             Ok(AgentHostRequest::ProjectGraphNeighborhood { root, depth })
         }

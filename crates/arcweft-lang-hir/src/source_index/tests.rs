@@ -169,7 +169,6 @@ fn parsed_type(document_id: &str, type_source: &str) -> (ParsedSource, AttachedT
         )
         .expect("attached type parsed source");
     let item = parsed
-        .tree()
         .items()
         .expect("attached source item inventory")
         .into_iter()
@@ -209,7 +208,6 @@ fn parsed_style(document_id: &str, style_source: &str) -> (ParsedSource, TypedIt
         )
         .expect("attached Style parsed source");
     let item = parsed
-        .tree()
         .items()
         .expect("attached Style item inventory")
         .into_iter()
@@ -283,7 +281,6 @@ fn parsed_statement_source(document_id: &str, source: &str) -> (ParsedSource, St
         )
         .expect("attached statement parsed source");
     let item = parsed
-        .tree()
         .items()
         .expect("attached function item inventory")
         .into_iter()
@@ -339,7 +336,7 @@ fn frozen_unsafe_statement(
     let module_scope = scopes
         .allocate_source(
             &mut slots,
-            parsed.tree().root().id(),
+            parsed.root_syntax().id(),
             HirSourceSite::Span(
                 parsed
                     .document()
@@ -492,7 +489,7 @@ fn frozen_root_path_type(
     let scope = scopes
         .allocate_source(
             &mut slots,
-            parsed.tree().root().id(),
+            parsed.root_syntax().id(),
             scope_site,
             HirScope::try_new(
                 owner_module,
@@ -672,7 +669,7 @@ fn frozen_typed_binding_pattern(
         )
     } else {
         (
-            parsed.tree().root().id(),
+            parsed.root_syntax().id(),
             HirSourceSite::Span(
                 parsed
                     .document()
@@ -1688,6 +1685,10 @@ fn style_item_components_use_the_same_prepared_revision_bound_index() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one source-role matrix proves family validation precedes foreign and stale source checks"
+)]
 fn style_item_resolution_and_invalid_role_paths_precede_source_checks() {
     let retained = document("arcw:/source-index/style-retained", "style theme {}\n");
     let foreign_source = document("arcw:/source-index/style-foreign", "style theme {}\n");
@@ -1883,6 +1884,10 @@ fn style_item_duplicate_rows_are_idempotent_and_conflicts_poison_the_transaction
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one attached Style manifest matrix verifies compact ordinals and exact existing child owners"
+)]
 fn attached_style_manifest_uses_compact_retained_ordinals_and_existing_child_owners() {
     let (parsed, item_node) = parsed_style(
         "style-complete-manifest",

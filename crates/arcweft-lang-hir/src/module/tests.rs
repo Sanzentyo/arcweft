@@ -19,7 +19,7 @@ use crate::identity::{
     SyntheticKey, SyntheticOwner, SyntheticRole,
 };
 use crate::item::HirDeclarationMemberIndexBuilder;
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::{SlotSnapshot, StagedSlotTransaction};
 use crate::source_index::{
@@ -170,6 +170,10 @@ enum RecoveryParentEvidence {
     Clean,
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the fixture atomically constructs the complete synthetic recovery-owner evidence matrix"
+)]
 fn recovery_fixture_with_parent(
     owner: HirModuleId,
     child_count: usize,
@@ -226,11 +230,7 @@ fn recovery_fixture_with_parent(
         scope,
         &child_site,
         child_count,
-        if matches!(parent_evidence, RecoveryParentEvidence::OneOver) {
-            1
-        } else {
-            0
-        },
+        u32::from(matches!(parent_evidence, RecoveryParentEvidence::OneOver)),
     );
     let parent_children = if matches!(parent_evidence, RecoveryParentEvidence::Orphan) {
         Box::default()
@@ -316,7 +316,6 @@ fn recovery_fixture_with_parent(
 
 fn first_statement(parsed: &ParsedSource) -> StatementNode {
     let item = parsed
-        .tree()
         .items()
         .expect("recovery fixture item inventory")
         .into_iter()
@@ -630,7 +629,7 @@ fn arena_bundle_requires_payload_coverage_for_every_prepared_live_slot() {
     let mut transaction = StagedSlotTransaction::new(owner, HirRevision::INITIAL);
     transaction
         .reserve_source::<ExprId>(
-            parsed.tree().root().id(),
+            parsed.root_syntax().id(),
             HirSourceSite::Span(parsed.document().span(SourceRange::new(0, 0)).unwrap()),
             false,
         )
@@ -792,7 +791,7 @@ fn recovery_diagnostic_rejects_wrong_typed_primary_owner_role_and_site() {
 }
 
 #[test]
-fn diagnostic_exact_limit_freezes_and_one_over_rolls_back_before_publication() {
+fn hir_diagnostic_limit_is_inclusive_and_atomic() {
     let maximum = HirLimit::Diagnostics.maximum();
     let fixture = recovery_fixture(module(15), maximum, false);
     let slots = Arc::clone(&fixture.slots);

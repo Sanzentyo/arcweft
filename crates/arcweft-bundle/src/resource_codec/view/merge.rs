@@ -980,9 +980,7 @@ mod tests {
         ViewResourceMergeError, ensure_u32_count,
     };
     use crate::resource_codec::view::model::{ViewProgramResource, ViewStyleResource};
-    use crate::resource_codec::{
-        ProductSourceRef, SectionCodecError, SourceMapSection, SourceRangeRef,
-    };
+    use crate::resource_codec::{SectionCodecError, SourceMapSection, SourceRangeRef};
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     #[test]
@@ -995,9 +993,11 @@ mod tests {
         .expect("source document");
         let source_map =
             SourceMapSection::try_from_documents(&[&document]).expect("source map section");
-        let source = ProductSourceRef::from_document(
-            source_map.documents().next().expect("source map document"),
-        );
+        let source = source_map
+            .documents()
+            .next()
+            .expect("source map document")
+            .product_source_ref();
         let source_refs = vec![source.clone()];
         let source_map_refs = vec![
             SourceRangeRef::try_for_source(&source_refs, &source, 0, 1).expect("source range"),

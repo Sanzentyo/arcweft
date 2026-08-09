@@ -195,9 +195,11 @@ arcweft-launch
   MCP `resources/read` / tool result 互換の Sans I/O JSON shape へ変換する。
   stdio、HTTP、auth、session lifecycle、renderer readback は持たない。
 - `arcweft-lang-syntax` は rowan-compatible な lossless CST と surface parser を所有する。`SyntaxKind`、`TokenKind`、green tree、`SyntaxNode`、source text / line index、error-tolerant `ParsedSource`、surface AST、expression/type/pattern parsing、syntax lint をここに集約する。HIR lowering、semantic checks、runtime-plan lowering は持たない。
-- `arcweft-lang-hir` は HIR 型と source-document-bound な
-  `lower_document_to_hir` を所有し、semantic passes、verifier、CLI、LSP
-  は exact source revision を保持したこの crate を HIR 入力境界にする。
+- `arcweft-lang-hir` は qualified arena ID、transactional `HirDatabase`、
+  attached `ParsedSource` からの final lowering、module-preserving
+  `HirProject` を所有する。semantic passes、verifier、compiler、CLI、LSP は
+  accepted project/viewを入力境界にし、detached loweringやflattened linked HIRを
+  構築しない。
 - `arcweft-lang-hir` は syntax/CST 由来の typed ID context も所有する。
   `arcweft-tooling`、CLI、LSP は dialogue ID や choice ID を独自 scan
   せず、この context から edit / hint / code action を作る。
@@ -248,16 +250,17 @@ arcweft-launch
   として所有する Sans I/O crate とする。ファイル探索、current directory、
   process 環境、network binding、adapter execution は CLI / player adapter 側の
   責務。
-- full-document parse の public authority は
-  `parse_document_with_source(Arc<SourceDocument>, ParseOptions)` だけとし、返る
-  `ParsedSource` が exact document revision、lossless CST、typed tree、diagnostics、
-  line index を一体で所有する。raw text だけを受け取り content hash から
-  document identity を捏造する facade は置かない。typed source model は
-  `TypedSyntaxTree` として CST / rowan `SyntaxNode` と区別する。内部の行単位
-  parser は短期 MVP であり、delimiter recovery、top-level punctuation /
-  keyword split、binding split、multi-token punctuation sequence split などの
-  構文走査は CST helper へ集約し、これ以上 `split_top_level` 型の ad hoc
-  parser を拡張しない。
+- full-document parse の public authority は、one-session
+  `SyntaxDatabase::parse_initial` / `reparse` が返す revision-bound
+  `incremental::ParsedSource` とする。`ParsedSource` は exact document lease、
+  lossless CST、attached typed handles、diagnostics、line index を一体で所有し、
+  compiler、project-loader、LSP はその同じ snapshot を借用する。detached
+  `TypedSyntaxTree`、whole-document parse facade、raw textからのdocument identity
+  捏造、range/source検索によるnode再発見は置かない。unbound expression/type/
+  pattern/statement fragmentsは、bound document APIと取り違えられない明示的な
+  fragment ownerを通す。delimiter recovery、top-level punctuation、keyword /
+  binding split、multi-token punctuation sequenceなどの構文走査はlossless
+  grammar/CST helperへ集約し、`split_top_level`型のad hoc parserを拡張しない。
 - Cranelift は `arcweft-lang-jit-cranelift` の native-only 最適化 backend に閉じ込める。`arcweft-core` に `jit-cranelift` feature や Cranelift 依存を置かない。
 - Wasmtime は `arcweft-wasm-wasmtime` の native plugin/activity sandbox 用 adapter であり、Arcweft runtime の主実行系ではない。WIT ABI は `arcweft-wasm-abi`、Wasm validation/generation/inspection は `arcweft-wasm-tools` が担当する。
 

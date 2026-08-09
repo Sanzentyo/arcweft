@@ -1,6 +1,5 @@
 use arcweft_lang_syntax::{
     ast::{
-        dialogue::DialogueTagKind,
         module_path::{CanonicalModulePath, ModulePathRoot},
         view::ViewBody,
     },
@@ -14,8 +13,7 @@ fn removed_module_path_accessors(root: ModulePathRoot, path: &CanonicalModulePat
     let _ = path.ancestors_inclusive();
 }
 
-fn removed_typed_accessors(tag: DialogueTagKind, expr: &Expr, view: &ViewBody) {
-    let _ = tag.is_point();
+fn removed_typed_accessors(expr: &Expr, view: &ViewBody) {
     let _ = expr.as_select();
     let _ = view.view_calls();
 }

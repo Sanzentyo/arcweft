@@ -1,16 +1,22 @@
 use arcweft_compiler::project::{
-    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompileStage, compile_project,
+    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompilationSession,
+    ProjectCompileStage, compile_project,
 };
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    incremental::{ParsedSource, SyntaxDatabase},
+    parser::ParseOptions,
+};
 use arcweft_launch::{LaunchProfileSelection, ProfileId, accepted::SourceBackedManifest};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use std::{path::PathBuf, sync::Arc};
+use arcweft_source::{
+    SourceDocument, SourceDocumentId, SourceName, SourceSetRevision, identity::SourceSnapshotId,
+};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 const DIALOGUE_SOURCE: &str = r#"
 pub view Mobile(dialogue: DialogueView) {
@@ -304,11 +310,24 @@ source = "main.arcw"
         arcweft_compiler::project::CompiledProject,
         arcweft_compiler::project::ProjectCompileError,
     > {
-        compile_project(
-            &self.project,
-            &self.context,
-            &RuntimePlanLowerOptions::default(),
-        )
+        let mut syntax = SyntaxDatabase::try_new().expect("dialogue test syntax database");
+        let parsed_sources: BTreeMap<CanonicalModulePath, ParsedSource> = self
+            .project
+            .modules()
+            .map(|source| {
+                let parsed = syntax
+                    .parse_initial(
+                        SourceSnapshotId::initial(source.document().display_name().clone()),
+                        Arc::clone(source.document()),
+                        ParseOptions::default(),
+                    )
+                    .expect("dialogue test attached source");
+                (source.module().clone(), parsed)
+            })
+            .collect();
+        let mut compiler =
+            ProjectCompilationSession::try_new().expect("dialogue test HIR database");
+        compile_project(&mut compiler, &self.project, &parsed_sources, &self.context)
     }
 }
 

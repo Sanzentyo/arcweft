@@ -34,9 +34,10 @@ use crate::identity::{
     ExprId, HirLimit, ItemId, LocalId, ScopeId, StmtId, SyntheticKey, SyntheticOwner, SyntheticRole,
 };
 use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirLoweringCheckpoint};
+use crate::proof_return::HirProofReturnSemanticClass;
 use crate::scope::{HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
-use crate::source_index::{HirExprSourceRole, HirSourceSite};
+use crate::source_index::{HirExprSourceRole, HirSourceSite, HirStmtRecoveryOperandSlot};
 use crate::stmt::{
     HirAssertionMode, HirConditionalElseBranch, HirContextualStmtBody, HirIfLetStmt, HirIfStmt,
     HirIncludeStmt, HirMatchStmt, HirScopeStmt, HirSourceLocaleIssue, HirSourceLocaleStmt,
@@ -256,7 +257,7 @@ impl StagedHirModuleTransaction<'_> {
         block: &AstNode<ProofBlockKind>,
         owner: ItemId,
         body_scope: ScopeId,
-        return_is_unit: bool,
+        return_semantic_class: HirProofReturnSemanticClass,
     ) -> Result<LoweredValueBlock, HirLowerFailure> {
         let statements = block
             .statements()
@@ -270,7 +271,7 @@ impl StagedHirModuleTransaction<'_> {
             owner: ValueBlockOwner::Item(owner),
             scope: body_scope,
             prefix_locals: Box::new([]),
-            omitted_tail: if return_is_unit {
+            omitted_tail: if return_semantic_class.admits_implicit_unit_tail() {
                 OmittedValueTail::ImplicitUnit
             } else {
                 OmittedValueTail::MissingRequired
@@ -382,20 +383,20 @@ impl StagedHirModuleTransaction<'_> {
             BlockTailNode::Omitted(omitted) => match omitted_tail {
                 OmittedValueTail::ImplicitUnit => match owner {
                     ValueBlockOwner::Expression(owner) => {
-                        self.lower_implicit_unit_tail(owner, scope, omitted.source_span())?
+                        self.lower_implicit_unit_tail(owner, scope, &omitted.source_span())?
                     }
                     ValueBlockOwner::Item(_) => {
-                        self.lower_implicit_unit_tail_for_scope(scope, omitted.source_span())?
+                        self.lower_implicit_unit_tail_for_scope(scope, &omitted.source_span())?
                     }
                 },
                 OmittedValueTail::MissingRequired => {
                     recovery.get_or_insert(HirRecoveryIssue::MissingRequiredTail);
                     match owner {
                         ValueBlockOwner::Expression(owner) => {
-                            self.lower_missing_required_tail(owner, scope, omitted.source_span())?
+                            self.lower_missing_required_tail(owner, scope, &omitted.source_span())?
                         }
                         ValueBlockOwner::Item(_) => self
-                            .lower_missing_required_tail_for_scope(scope, omitted.source_span())?,
+                            .lower_missing_required_tail_for_scope(scope, &omitted.source_span())?,
                     }
                 }
             },
@@ -495,6 +496,10 @@ impl StagedHirModuleTransaction<'_> {
         Ok(())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the closed statement family is one exhaustive typed lowering and source-staging transaction"
+    )]
     fn lower_attached_statement(
         &mut self,
         attached: &StatementNode,
@@ -508,6 +513,8 @@ impl StagedHirModuleTransaction<'_> {
             HirSourceSite::Span(attached.source_span()),
         )?;
         let owner = reservation.id();
+        self.control
+            .checkpoint(HirLoweringCheckpoint::ChildReserved)?;
         if !reservation.is_first_touch() {
             let retained = self
                 .arenas
@@ -549,9 +556,7 @@ impl StagedHirModuleTransaction<'_> {
                     }
                     AttachedAssertionMode::Recovered { .. } => HirAssertionMode::Recovered,
                 };
-                let recovery = if context.rejects_assertions() {
-                    Some(HirStmtRecoveryIssue::PredicateAssertionNotAllowed)
-                } else if matches!(mode, HirAssertionMode::Recovered) {
+                let recovery = if matches!(mode, HirAssertionMode::Recovered) {
                     Some(HirStmtRecoveryIssue::InvalidAssertionMode)
                 } else if conditions.is_empty() {
                     Some(HirStmtRecoveryIssue::MissingAssertionCondition)
@@ -609,16 +614,16 @@ impl StagedHirModuleTransaction<'_> {
                         .lower_missing_statement_expression(
                             owner,
                             scope,
-                            missing.range().start(),
-                            0,
-                            HirExprSourceRole::Operand,
+                            HirStmtRecoveryOperandSlot::LetInitializer {
+                                insertion: missing.range().start(),
+                            },
                         )?,
                     None => self.lower_missing_statement_expression(
                         owner,
                         scope,
-                        attached.range().end(),
-                        0,
-                        HirExprSourceRole::Operand,
+                        HirStmtRecoveryOperandSlot::LetInitializer {
+                            insertion: attached.range().end(),
+                        },
                     )?,
                 };
                 let initializer_poisoned = self.staged_expression_is_poisoned(initializer)?;
@@ -661,7 +666,7 @@ impl StagedHirModuleTransaction<'_> {
                 (kind, Box::<[LocalId]>::from([]), recovery)
             }
             SyntaxKind::ChoiceStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let statement = attached
                     .cast::<ChoiceStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -747,7 +752,7 @@ impl StagedHirModuleTransaction<'_> {
                 (kind, Box::<[LocalId]>::from([]), recovery)
             }
             SyntaxKind::SourceLocaleStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let statement = attached
                     .cast::<SourceLocaleStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
@@ -756,7 +761,7 @@ impl StagedHirModuleTransaction<'_> {
                 (kind, Box::<[LocalId]>::from([]), recovery)
             }
             SyntaxKind::ScopeStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let statement = attached
                     .cast::<ScopeStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
@@ -765,11 +770,11 @@ impl StagedHirModuleTransaction<'_> {
                 (kind, Box::<[LocalId]>::from([]), recovery)
             }
             SyntaxKind::IncludeStatement => {
-                self.require_thread_statement_context(context)?;
+                Self::require_thread_statement_context(context)?;
                 let statement = attached
                     .cast::<IncludeStatementKind>()
                     .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-                let (kind, recovery) = self.lower_attached_include_statement(&statement)?;
+                let (kind, recovery) = Self::lower_attached_include_statement(&statement)?;
                 (kind, Box::<[LocalId]>::from([]), recovery)
             }
             SyntaxKind::UnsafeLifetimeStatement => {
@@ -815,7 +820,6 @@ impl StagedHirModuleTransaction<'_> {
     }
 
     fn require_thread_statement_context(
-        &self,
         context: HirStatementContext,
     ) -> Result<(), HirLowerFailure> {
         if matches!(context, HirStatementContext::Thread) {
@@ -856,8 +860,10 @@ impl StagedHirModuleTransaction<'_> {
             HirScopeOwner::Stmt(owner),
             outer_scope,
         )?;
-        let body_recovery =
-            nested_thread_body_recovery(lowered.recovery, HirThreadStmtBodyRole::SourceLocale)?;
+        let body_recovery = nested_thread_body_recovery(
+            lowered.recovery.as_ref(),
+            HirThreadStmtBodyRole::SourceLocale,
+        )?;
         let body = HirContextualStmtBody::try_thread(lowered.body)
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let statement = HirSourceLocaleStmt::try_new(locale, body)
@@ -900,7 +906,7 @@ impl StagedHirModuleTransaction<'_> {
             outer_scope,
         )?;
         let body_recovery =
-            nested_thread_body_recovery(lowered.recovery, HirThreadStmtBodyRole::Scope)?;
+            nested_thread_body_recovery(lowered.recovery.as_ref(), HirThreadStmtBodyRole::Scope)?;
         let body = HirContextualStmtBody::try_thread(lowered.body)
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let statement = HirScopeStmt::try_new(name, body)
@@ -912,7 +918,6 @@ impl StagedHirModuleTransaction<'_> {
     }
 
     fn lower_attached_include_statement(
-        &mut self,
         attached: &AstNode<IncludeStatementKind>,
     ) -> Result<(HirStmtKind, Option<HirStmtRecoveryIssue>), HirLowerFailure> {
         let attached = attached
@@ -964,9 +969,9 @@ impl StagedHirModuleTransaction<'_> {
                 .lower_missing_statement_expression(
                     owner,
                     outer_scope,
-                    missing.range().start(),
-                    0,
-                    HirExprSourceRole::Scrutinee,
+                    HirStmtRecoveryOperandSlot::MatchScrutinee {
+                        insertion: missing.range().start(),
+                    },
                 )?,
         };
         let mut recovery = self.staged_expression_is_poisoned(scrutinee)?.then_some(
@@ -1098,7 +1103,7 @@ impl StagedHirModuleTransaction<'_> {
             }
             MatchStatementArmBodyNode::Missing(missing) => {
                 let expression =
-                    self.lower_missing_required_tail_for_scope(scope, missing.source_span())?;
+                    self.lower_missing_required_tail_for_scope(scope, &missing.source_span())?;
                 (HirStmtMatchArmBody::Expression(expression), true)
             }
             MatchStatementArmBodyNode::Block(block) => {
@@ -1154,15 +1159,13 @@ impl StagedHirModuleTransaction<'_> {
                 Some(self.lower_attached_expression(&guard, scope)?)
             }
             Some(MatchStatementExpressionNode::Missing(missing)) => {
-                let ordinal = arm_ordinal
-                    .checked_add(1)
-                    .ok_or(HirInvariantFailure::InvalidSlotCommit)?;
                 Some(self.lower_missing_statement_expression(
                     owner,
                     scope,
-                    missing.range().start(),
-                    ordinal,
-                    HirExprSourceRole::Guard,
+                    HirStmtRecoveryOperandSlot::MatchArmGuard {
+                        insertion: missing.range().start(),
+                        arm: arm_ordinal,
+                    },
                 )?)
             }
         };
@@ -1173,6 +1176,10 @@ impl StagedHirModuleTransaction<'_> {
         Ok((guard, poisoned))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "If and IfLet share one closed branch, scope, local, and recovery lowering matrix"
+    )]
     fn lower_attached_if_statement(
         &mut self,
         attached: &AstNode<IfStatementKind>,
@@ -1456,9 +1463,9 @@ impl StagedHirModuleTransaction<'_> {
                 let reason = self.lower_missing_statement_expression(
                     owner,
                     outer_scope,
-                    missing.range().start(),
-                    0,
-                    HirExprSourceRole::Operand,
+                    HirStmtRecoveryOperandSlot::UnsafeAuditReason {
+                        insertion: missing.range().start(),
+                    },
                 )?;
                 recovery.get_or_insert(HirStmtRecoveryIssue::RecoveredChild {
                     role: HirStmtChildRole::Reason,
@@ -1667,7 +1674,7 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         parent: ExprId,
         scope: ScopeId,
-        source: arcweft_source::SourceSpan,
+        source: &arcweft_source::SourceSpan,
     ) -> Result<ExprId, HirLowerFailure> {
         self.lower_implicit_unit_tail_for_owner(SyntheticOwner::Expr(parent), scope, source)
     }
@@ -1675,7 +1682,7 @@ impl StagedHirModuleTransaction<'_> {
     pub(super) fn lower_implicit_unit_tail_for_scope(
         &mut self,
         owner: ScopeId,
-        source: arcweft_source::SourceSpan,
+        source: &arcweft_source::SourceSpan,
     ) -> Result<ExprId, HirLowerFailure> {
         self.lower_implicit_unit_tail_for_owner(SyntheticOwner::Scope(owner), owner, source)
     }
@@ -1684,9 +1691,9 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         parent: SyntheticOwner,
         scope: ScopeId,
-        source: arcweft_source::SourceSpan,
+        source: &arcweft_source::SourceSpan,
     ) -> Result<ExprId, HirLowerFailure> {
-        let site = HirSourceSite::from_attached_span(self.request.source().document(), &source)
+        let site = HirSourceSite::from_attached_span(self.request.source().document(), source)
             .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
         if !matches!(site, HirSourceSite::Insertion(_)) {
             return Err(HirInvariantFailure::InvalidSourceSpan.into());
@@ -1713,7 +1720,7 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         parent: ExprId,
         scope: ScopeId,
-        source: arcweft_source::SourceSpan,
+        source: &arcweft_source::SourceSpan,
     ) -> Result<ExprId, HirLowerFailure> {
         self.lower_missing_required_tail_for_owner(SyntheticOwner::Expr(parent), scope, source)
     }
@@ -1721,7 +1728,7 @@ impl StagedHirModuleTransaction<'_> {
     pub(super) fn lower_missing_required_tail_for_scope(
         &mut self,
         owner: ScopeId,
-        source: arcweft_source::SourceSpan,
+        source: &arcweft_source::SourceSpan,
     ) -> Result<ExprId, HirLowerFailure> {
         self.lower_missing_required_tail_for_owner(SyntheticOwner::Scope(owner), owner, source)
     }
@@ -1730,9 +1737,9 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         parent: SyntheticOwner,
         scope: ScopeId,
-        source: arcweft_source::SourceSpan,
+        source: &arcweft_source::SourceSpan,
     ) -> Result<ExprId, HirLowerFailure> {
-        let site = HirSourceSite::from_attached_span(self.request.source().document(), &source)
+        let site = HirSourceSite::from_attached_span(self.request.source().document(), source)
             .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
         if !matches!(site, HirSourceSite::Insertion(_)) {
             return Err(HirInvariantFailure::InvalidSourceSpan.into());
@@ -1770,27 +1777,26 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         parent: StmtId,
         scope: ScopeId,
-        insertion: usize,
-        ordinal: u32,
-        role: HirExprSourceRole,
+        slot: HirStmtRecoveryOperandSlot,
     ) -> Result<ExprId, HirLowerFailure> {
         let insertion = crate::source_index::HirInsertionPoint::try_new(
             self.request.source().document(),
-            insertion,
+            slot.insertion(),
         )
         .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
         self.lower_missing_owned_expression(
             SyntheticOwner::Stmt(parent),
             scope,
             HirSourceSite::Insertion(insertion),
-            ordinal,
-            role,
+            slot.ordinal()
+                .ok_or(HirInvariantFailure::InvalidSlotCommit)?,
+            slot.source_role(),
         )
     }
 }
 
 fn nested_thread_body_recovery(
-    recovery: Option<HirThreadIssue>,
+    recovery: Option<&HirThreadIssue>,
     role: HirThreadStmtBodyRole,
 ) -> Result<Option<HirStmtRecoveryIssue>, HirLowerFailure> {
     let recovery = match recovery {
@@ -1803,7 +1809,7 @@ fn nested_thread_body_recovery(
         )),
         Some(HirThreadIssue::RecoveredBodyChild { ordinal }) => {
             Some(HirStmtRecoveryIssue::RecoveredChild {
-                role: HirStmtChildRole::BodyStatement { ordinal },
+                role: HirStmtChildRole::BodyStatement { ordinal: *ordinal },
             })
         }
         Some(

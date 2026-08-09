@@ -1,15 +1,18 @@
 use super::{
-    AgentActionSignature, AgentPublicId, AgentRagCandidate, AgentTraceRecord, BTreeMap, BTreeSet,
-    ChunkId, ChunkSourceKind, DebugChunk, DebugGraphEdge, DebugGraphSymbol, DebugSourceAnchor,
-    DebugSourceFile, EntitySymbol, Path, PathBuf, PrivacyClass, ProgramHash, ProjectCallableSymbol,
-    ProjectSemanticIndex, QualifiedName, RagQuery, SearchChannel, SearchHit, SemaPublicId,
-    SessionId, SourceAnchor, StableHash, agent_graph_edge_kind_counts,
-    agent_graph_symbol_has_dynamic_control, agent_graph_symbol_kind_counts,
-    agent_program_graph_summary, agent_trace_kind_name, fs, project_semantic_index_from_hir,
+    AgentPublicId, AgentRagCandidate, AgentTraceRecord, BTreeMap, BTreeSet, ChunkId,
+    ChunkSourceKind, DebugChunk, DebugGraphEdge, DebugGraphSymbol, DebugSourceAnchor,
+    DebugSourceFile, EntitySymbol, Path, PathBuf, PrivacyClass, ProjectCallableSymbol,
+    ProjectSemanticIndex, RagQuery, SearchChannel, SearchHit, SemaPublicId, SessionId,
+    SourceAnchor, StableHash, agent_graph_edge_kind_counts, agent_graph_symbol_has_dynamic_control,
+    agent_graph_symbol_kind_counts, agent_program_graph_summary, agent_trace_kind_name, fs,
 };
-use arcweft_lang_hir::lower::lower_document_to_hir;
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
-use std::sync::Arc;
+use arcweft_lang_hir::symbol::CallableDeclarationKey;
+use arcweft_lang_sema::callable::{
+    CallableCandidateId, CheckedCallableFacts, CheckedCallableLookupError,
+};
+use arcweft_lang_sema::env::TypeCheckEnv;
+use arcweft_lang_sema::project_index::ProjectEntityId;
+use arcweft_source::SourceSpan;
 
 pub(in crate::app::agent) struct AgentSourceRagIndex {
     pub(in crate::app::agent) seed: String,
@@ -85,28 +88,12 @@ pub(in crate::app::agent) fn is_arcw_path(path: &Path) -> bool {
 pub(in crate::app::agent) fn agent_source_rag_index(
     path: &Path,
 ) -> Result<AgentSourceRagIndex, String> {
-    let source = fs::read_to_string(path)
-        .map_err(|error| format!("agent rag query failed to read source: {error}"))?;
-    let document = Arc::new(
-        crate::app::project::source_document_for_path(path, source.clone())
-            .map_err(|code| format!("agent rag source document is invalid: {code:?}"))?,
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    if !parsed.errors().is_empty() {
-        return Err(format!(
-            "agent rag query source parse errors: {:?}",
-            parsed.errors()
-        ));
-    }
-    let hir = lower_document_to_hir(document.as_ref(), parsed.typed_tree())
-        .map_err(|errors| format!("agent rag query source HIR errors: {errors:?}"))?;
-    let source_hash = agent_content_hash(&source);
-    let project = project_semantic_index_from_hir(
-        &hir,
-        ProgramHash::new(source_hash.clone()),
-        document.as_ref(),
-    )
-    .map_err(|error| format!("agent rag query failed to build project index: {error}"))?;
+    let checked =
+        crate::app::project::load_and_check_with_env(path, &TypeCheckEnv::standard(), Vec::new())
+            .map_err(|code| format!("agent rag query failed to compile source: {code:?}"))?;
+    let source = checked.source_document.text();
+    let source_hash = agent_content_hash(source);
+    let project = checked.compiled.semantic_index();
     let source_file = DebugSourceFile {
         program_hash: StableHash::new(project.program_hash().as_str())
             .map_err(|error| format!("invalid source file program hash: {error}"))?,
@@ -119,19 +106,19 @@ pub(in crate::app::agent) fn agent_source_rag_index(
         metadata: BTreeMap::from([("extension".to_owned(), serde_json::json!("arcw"))]),
     };
     let source_key_prefix = agent_source_rag_key_prefix(path);
-    let mut candidates = agent_source_text_rag_candidates(path, &source, &source_key_prefix)?;
+    let mut candidates = agent_source_text_rag_candidates(path, source, &source_key_prefix)?;
     candidates.extend(agent_project_semantic_rag_candidates(
         path,
-        &project,
+        project,
         &source_key_prefix,
     )?);
-    let mut graph_symbols = agent_project_graph_symbols(&project, &source_key_prefix)?;
+    let mut graph_symbols = agent_project_graph_symbols(project, &source_key_prefix)?;
     graph_symbols.push(agent_source_file_graph_symbol(
         &source_file,
         &source_key_prefix,
     ));
     agent_attach_source_file_to_graph_symbols(&mut graph_symbols, &source_file);
-    let mut graph_edges = agent_project_graph_edges(&project, &source_key_prefix)?;
+    let mut graph_edges = agent_project_graph_edges(project, &source_key_prefix)?;
     graph_edges.push(agent_source_file_project_graph_edge(
         &source_file,
         &source_key_prefix,
@@ -438,9 +425,9 @@ pub(in crate::app::agent) fn agent_project_semantic_rag_candidates(
         )?);
     }
     for (declaration, callable) in project.project_callables() {
-        let name = QualifiedName::new(declaration.qualified_name());
         candidates.push(agent_project_callable_rag_candidate(
-            &name,
+            project,
+            declaration,
             callable,
             source_key_prefix,
         )?);
@@ -457,426 +444,81 @@ pub(in crate::app::agent) fn agent_project_semantic_rag_candidates(
 
 pub(in crate::app::agent) fn agent_project_graph_symbols(
     project: &ProjectSemanticIndex,
-    source_key_prefix: &str,
+    _source_key_prefix: &str,
 ) -> Result<Vec<DebugGraphSymbol>, String> {
     let program_hash = StableHash::new(project.program_hash().as_str())
         .map_err(|error| format!("invalid project graph program hash: {error}"))?;
-    let mut symbols = vec![agent_project_summary_graph_symbol(
-        project,
-        source_key_prefix,
-        &program_hash,
-    )?];
-    symbols.extend(
-        project
-            .entities()
-            .values()
-            .map(|entity| {
-                agent_project_entity_graph_symbol(entity, source_key_prefix, &program_hash, project)
+    arcweft_compiler::agent_project::agent_project_graph_from_project(project)
+        .map_err(|error| error.to_string())?
+        .symbols
+        .into_iter()
+        .map(|symbol| {
+            let semantic_hash = symbol
+                .semantic_hash
+                .map(StableHash::new)
+                .transpose()
+                .map_err(|error| format!("invalid project graph semantic hash: {error}"))?;
+            let mut metadata = BTreeMap::new();
+            if let Some(flow_control) = symbol.flow_control {
+                metadata.insert(
+                    "flow_control".to_owned(),
+                    serde_json::to_value(flow_control)
+                        .map_err(|error| format!("failed to project flow control: {error}"))?,
+                );
+            }
+            if let Some(project_summary) = symbol.project_summary {
+                metadata.insert(
+                    "project_summary".to_owned(),
+                    serde_json::to_value(project_summary)
+                        .map_err(|error| format!("failed to project project summary: {error}"))?,
+                );
+            }
+            Ok(DebugGraphSymbol {
+                symbol_id: symbol.symbol_id.to_string(),
+                program_hash: program_hash.clone(),
+                public_id: symbol.public_id,
+                qualified_name: symbol.qualified_name,
+                kind: symbol.kind,
+                type_json: None,
+                source_path: None,
+                source_content_hash: None,
+                start_byte: None,
+                end_byte: None,
+                semantic_hash,
+                summary: symbol.summary,
+                metadata,
             })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-    for entity in project.entities().values() {
-        symbols.extend(
-            entity
-                .agent_actions()
-                .iter()
-                .map(|action| {
-                    agent_project_action_graph_symbol(
-                        entity,
-                        action,
-                        source_key_prefix,
-                        &program_hash,
-                    )
-                })
-                .collect::<Result<Vec<_>, _>>()?,
-        );
-    }
-    symbols.extend(
-        project
-            .project_callables()
-            .iter()
-            .map(|(declaration, callable)| {
-                let name = QualifiedName::new(declaration.qualified_name());
-                agent_project_callable_graph_symbol(
-                    &name,
-                    callable,
-                    source_key_prefix,
-                    &program_hash,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-    symbols.extend(
-        project
-            .debug_queries()
-            .iter()
-            .map(|(name, query)| {
-                agent_project_debug_query_graph_symbol(
-                    name,
-                    query,
-                    source_key_prefix,
-                    &program_hash,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?,
-    );
-    Ok(symbols)
+        })
+        .collect()
 }
 
 pub(in crate::app::agent) fn agent_project_graph_edges(
     project: &ProjectSemanticIndex,
-    source_key_prefix: &str,
+    _source_key_prefix: &str,
 ) -> Result<Vec<DebugGraphEdge>, String> {
     let program_hash = StableHash::new(project.program_hash().as_str())
         .map_err(|error| format!("invalid project graph program hash: {error}"))?;
-    let summary_symbol_id = agent_project_summary_graph_symbol_id(source_key_prefix);
-    let mut edges = project
-        .entities()
-        .values()
-        .map(|entity| DebugGraphEdge {
-            program_hash: program_hash.clone(),
-            from_symbol_id: summary_symbol_id.clone(),
-            to_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
-            edge_kind: "contains_entity".to_owned(),
-            weight: 1.0,
-            metadata: BTreeMap::from([(
-                "entity_kind".to_owned(),
-                serde_json::json!(format!("{:?}", entity.ty().kind())),
-            )]),
-        })
-        .collect::<Vec<_>>();
-    for entity in project.entities().values() {
-        edges.extend(entity.agent_actions().iter().map(|action| DebugGraphEdge {
-            program_hash: program_hash.clone(),
-            from_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
-            to_symbol_id: agent_project_action_graph_symbol_id(
-                source_key_prefix,
-                entity.id(),
-                action.action().as_str(),
-            ),
-            edge_kind: "exposes_agent_action".to_owned(),
-            weight: 0.9,
-            metadata: BTreeMap::from([(
-                "action".to_owned(),
-                serde_json::json!(action.action().as_str()),
-            )]),
-        }));
-    }
-    edges.extend(
-        project
-            .project_callables()
-            .keys()
-            .map(|declaration| DebugGraphEdge {
+    Ok(
+        arcweft_compiler::agent_project::agent_project_graph_from_project(project)
+            .map_err(|error| error.to_string())?
+            .edges
+            .into_iter()
+            .map(|edge| DebugGraphEdge {
                 program_hash: program_hash.clone(),
-                from_symbol_id: summary_symbol_id.clone(),
-                to_symbol_id: agent_project_callable_graph_symbol_id(
-                    source_key_prefix,
-                    &format!(
-                        "{}:{}",
-                        declaration.owner().as_str(),
-                        declaration.qualified_name()
-                    ),
-                ),
-                edge_kind: "contains_callable".to_owned(),
-                weight: 0.85,
-                metadata: BTreeMap::new(),
-            }),
-    );
-    edges.extend(project.debug_queries().keys().map(|name| DebugGraphEdge {
-        program_hash: program_hash.clone(),
-        from_symbol_id: summary_symbol_id.clone(),
-        to_symbol_id: agent_project_debug_query_graph_symbol_id(source_key_prefix, name.as_str()),
-        edge_kind: "contains_debug_query".to_owned(),
-        weight: 0.8,
-        metadata: BTreeMap::new(),
-    }));
-    edges.extend(project.relations().iter().map(|relation| DebugGraphEdge {
-        program_hash: program_hash.clone(),
-        from_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, relation.from()),
-        to_symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, relation.to()),
-        edge_kind: relation.edge_kind().as_str().to_owned(),
-        weight: 0.95,
-        metadata: BTreeMap::new(),
-    }));
-    edges.extend(
-        project
-            .dependency_relations()
-            .iter()
-            .map(|relation| DebugGraphEdge {
-                program_hash: program_hash.clone(),
-                from_symbol_id: agent_project_graph_symbol_ref_id(
-                    source_key_prefix,
-                    relation.from(),
-                ),
-                to_symbol_id: agent_project_graph_symbol_ref_id(source_key_prefix, relation.to()),
-                edge_kind: relation.edge_kind().as_str().to_owned(),
+                from_symbol_id: edge.from_symbol_id.to_string(),
+                to_symbol_id: edge.to_symbol_id.to_string(),
+                edge_kind: edge.edge_kind,
                 weight: 0.9,
                 metadata: BTreeMap::new(),
-            }),
-    );
-    Ok(edges)
-}
-
-pub(in crate::app::agent) fn agent_project_summary_graph_symbol(
-    project: &ProjectSemanticIndex,
-    source_key_prefix: &str,
-    program_hash: &StableHash,
-) -> Result<DebugGraphSymbol, String> {
-    let entity_kind_counts = agent_project_entity_kind_counts(project);
-    let relation_kind_counts = agent_project_relation_kind_counts(project);
-    let dependency_edge_kind_counts = agent_project_dependency_edge_kind_counts(project);
-    let flow_control_counts = agent_project_flow_control_counts_json(project);
-    let agent_action_count = agent_project_action_count(project);
-    Ok(DebugGraphSymbol {
-        symbol_id: agent_project_summary_graph_symbol_id(source_key_prefix),
-        program_hash: program_hash.clone(),
-        public_id: None,
-        qualified_name: Some(format!("{source_key_prefix}.project")),
-        kind: "project_summary".to_owned(),
-        type_json: Some(serde_json::json!({
-            "schema_version": project.schema_version(),
-            "bundle_hash": project.bundle_hash().map(arcweft_lang_sema::project_index::BundleHash::as_str),
-        })),
-        source_path: None,
-        source_content_hash: None,
-        start_byte: None,
-        end_byte: None,
-        semantic_hash: Some(
-            StableHash::new(agent_content_hash(format!(
-                "{}:project_summary",
-                project.program_hash().as_str()
-            )))
-            .map_err(|error| format!("invalid graph project summary semantic hash: {error}"))?,
-        ),
-        summary: format!(
-            "Project semantic summary entities={} agent_actions={} project_callables={} relations={} dependency_edges={} dynamic_control_flows={} debug_queries={}",
-            project.entities().len(),
-            agent_action_count,
-            project.project_callables().len(),
-            project.relations().len(),
-            project.dependency_relations().len(),
-            agent_dynamic_control_flow_count(project),
-            project.debug_queries().len()
-        ),
-        metadata: BTreeMap::from([
-            (
-                "entity_count".to_owned(),
-                serde_json::json!(project.entities().len()),
-            ),
-            (
-                "project_callable_count".to_owned(),
-                serde_json::json!(project.project_callables().len()),
-            ),
-            (
-                "agent_action_count".to_owned(),
-                serde_json::json!(agent_action_count),
-            ),
-            (
-                "relation_count".to_owned(),
-                serde_json::json!(project.relations().len()),
-            ),
-            (
-                "dependency_edge_count".to_owned(),
-                serde_json::json!(project.dependency_relations().len()),
-            ),
-            (
-                "dynamic_control_flow_count".to_owned(),
-                serde_json::json!(agent_dynamic_control_flow_count(project)),
-            ),
-            (
-                "debug_query_count".to_owned(),
-                serde_json::json!(project.debug_queries().len()),
-            ),
-            (
-                "entity_kind_counts".to_owned(),
-                serde_json::json!(entity_kind_counts),
-            ),
-            (
-                "relation_kind_counts".to_owned(),
-                serde_json::json!(relation_kind_counts),
-            ),
-            (
-                "dependency_edge_kind_counts".to_owned(),
-                serde_json::json!(dependency_edge_kind_counts),
-            ),
-            ("flow_control_counts".to_owned(), flow_control_counts),
-        ]),
-    })
-}
-
-pub(in crate::app::agent) fn agent_project_entity_graph_symbol(
-    entity: &EntitySymbol,
-    source_key_prefix: &str,
-    program_hash: &StableHash,
-    project: &ProjectSemanticIndex,
-) -> Result<DebugGraphSymbol, String> {
-    let public_id = agent_public_id_from_sema(entity.id())?;
-    let source_anchor = debug_anchor_from_source_anchor(entity.source())?;
-    let flow_control = project_flow_control_summary_json(project.flow_control_summary(entity.id()));
-    Ok(DebugGraphSymbol {
-        symbol_id: agent_project_entity_graph_symbol_id(source_key_prefix, entity.id()),
-        program_hash: program_hash.clone(),
-        public_id: Some(public_id),
-        qualified_name: Some(entity.id().as_str().to_owned()),
-        kind: format!("{:?}", entity.ty().kind()),
-        type_json: Some(serde_json::json!({
-            "entity_kind": format!("{:?}", entity.ty().kind()),
-            "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
-            "flow_control": flow_control,
-        })),
-        source_path: None,
-        source_content_hash: None,
-        start_byte: source_anchor.as_ref().map(|anchor| anchor.start_byte),
-        end_byte: source_anchor.as_ref().map(|anchor| anchor.end_byte),
-        semantic_hash: Some(
-            StableHash::new(entity.semantic_hash().as_str())
-                .map_err(|error| format!("invalid graph entity semantic hash: {error}"))?,
-        ),
-        summary: format!(
-            "Project entity {} {:?}{}",
-            entity.id().as_str(),
-            entity.ty().kind(),
-            agent_flow_control_summary_text(project, entity.id())
-        ),
-        metadata: BTreeMap::from([
-            ("source".to_owned(), source_anchor_json(entity.source())),
-            ("flow_control".to_owned(), flow_control),
-            (
-                "agent_actions".to_owned(),
-                serde_json::json!(
-                    entity
-                        .agent_actions()
-                        .iter()
-                        .map(|action| action.action().as_str())
-                        .collect::<Vec<_>>()
-                ),
-            ),
-        ]),
-    })
-}
-
-pub(in crate::app::agent) fn agent_project_action_graph_symbol(
-    entity: &EntitySymbol,
-    action: &AgentActionSignature,
-    source_key_prefix: &str,
-    program_hash: &StableHash,
-) -> Result<DebugGraphSymbol, String> {
-    Ok(DebugGraphSymbol {
-        symbol_id: agent_project_action_graph_symbol_id(
-            source_key_prefix,
-            entity.id(),
-            action.action().as_str(),
-        ),
-        program_hash: program_hash.clone(),
-        public_id: None,
-        qualified_name: Some(format!(
-            "{}.{}",
-            entity.id().as_str(),
-            action.action().as_str()
-        )),
-        kind: "agent_action".to_owned(),
-        type_json: Some(serde_json::json!({
-            "entity": entity.id().as_str(),
-            "action": action.action().as_str(),
-            "params": action.params().iter().map(|param| serde_json::json!({
-                "name": param.name(),
-                "type": format!("{:?}", param.ty()),
-                "has_default": param.has_default(),
-            })).collect::<Vec<_>>(),
-            "return_type": format!("{:?}", action.return_type()),
-        })),
-        source_path: None,
-        source_content_hash: None,
-        start_byte: None,
-        end_byte: None,
-        semantic_hash: Some(
-            StableHash::new(agent_content_hash(format!(
-                "{}:{}",
-                entity.semantic_hash().as_str(),
-                action.action().as_str()
-            )))
-            .map_err(|error| format!("invalid graph action semantic hash: {error}"))?,
-        ),
-        summary: format!(
-            "Agent action {} on {}",
-            action.action().as_str(),
-            entity.id().as_str()
-        ),
-        metadata: BTreeMap::from([("entity".to_owned(), serde_json::json!(entity.id().as_str()))]),
-    })
-}
-
-pub(in crate::app::agent) fn agent_project_callable_graph_symbol(
-    name: &QualifiedName,
-    callable: &ProjectCallableSymbol,
-    source_key_prefix: &str,
-    program_hash: &StableHash,
-) -> Result<DebugGraphSymbol, String> {
-    let source_anchor = debug_anchor_from_source_anchor(callable.source())?;
-    let identity = format!(
-        "{}:{}",
-        callable.declaration().owner().as_str(),
-        name.as_str()
-    );
-    Ok(DebugGraphSymbol {
-        symbol_id: agent_project_callable_graph_symbol_id(source_key_prefix, &identity),
-        program_hash: program_hash.clone(),
-        public_id: None,
-        qualified_name: Some(name.as_str().to_owned()),
-        kind: format!("project_{}", callable.kind().as_str()),
-        type_json: Some(serde_json::json!({
-            "callable_kind": callable.kind().as_str(),
-            "signature": format!("{:?}", callable.signature()),
-        })),
-        source_path: None,
-        source_content_hash: None,
-        start_byte: source_anchor.as_ref().map(|anchor| anchor.start_byte),
-        end_byte: source_anchor.as_ref().map(|anchor| anchor.end_byte),
-        semantic_hash: Some(
-            StableHash::new(callable.semantic_hash().as_str())
-                .map_err(|error| format!("invalid graph callable semantic hash: {error}"))?,
-        ),
-        summary: format!(
-            "Project {} callable {}",
-            callable.kind().as_str(),
-            name.as_str()
-        ),
-        metadata: BTreeMap::from([("source".to_owned(), source_anchor_json(callable.source()))]),
-    })
-}
-
-pub(in crate::app::agent) fn agent_project_debug_query_graph_symbol(
-    name: &QualifiedName,
-    query: &arcweft_lang_sema::project_index::DebugQuerySymbol,
-    source_key_prefix: &str,
-    program_hash: &StableHash,
-) -> Result<DebugGraphSymbol, String> {
-    Ok(DebugGraphSymbol {
-        symbol_id: agent_project_debug_query_graph_symbol_id(source_key_prefix, name.as_str()),
-        program_hash: program_hash.clone(),
-        public_id: None,
-        qualified_name: Some(name.as_str().to_owned()),
-        kind: "debug_query".to_owned(),
-        type_json: Some(serde_json::json!({
-            "signature": format!("{:?}", query.signature()),
-        })),
-        source_path: None,
-        source_content_hash: None,
-        start_byte: None,
-        end_byte: None,
-        semantic_hash: Some(
-            StableHash::new(agent_content_hash(name.as_str()))
-                .map_err(|error| format!("invalid graph debug query semantic hash: {error}"))?,
-        ),
-        summary: format!("Project debug query {}", name.as_str()),
-        metadata: BTreeMap::new(),
-    })
+            })
+            .collect(),
+    )
 }
 
 pub(in crate::app::agent) fn agent_project_summary_graph_symbol_id(
-    source_key_prefix: &str,
+    _source_key_prefix: &str,
 ) -> String {
-    format!("{source_key_prefix}.project.summary")
+    "project:summary".to_owned()
 }
 
 pub(in crate::app::agent) fn agent_program_graph_symbol_id(program_hash: &StableHash) -> String {
@@ -885,55 +527,6 @@ pub(in crate::app::agent) fn agent_program_graph_symbol_id(program_hash: &Stable
 
 pub(in crate::app::agent) fn agent_source_file_graph_symbol_id(source_key_prefix: &str) -> String {
     format!("{source_key_prefix}.source_file")
-}
-
-pub(in crate::app::agent) fn agent_project_entity_graph_symbol_id(
-    source_key_prefix: &str,
-    id: &SemaPublicId,
-) -> String {
-    format!("{source_key_prefix}.project.entity.{}", id.as_str())
-}
-
-pub(in crate::app::agent) fn agent_project_action_graph_symbol_id(
-    source_key_prefix: &str,
-    entity_id: &SemaPublicId,
-    action: &str,
-) -> String {
-    format!(
-        "{source_key_prefix}.project.entity.{}.action.{action}",
-        entity_id.as_str()
-    )
-}
-
-pub(in crate::app::agent) fn agent_project_callable_graph_symbol_id(
-    source_key_prefix: &str,
-    name: &str,
-) -> String {
-    format!("{source_key_prefix}.project.callable.{name}")
-}
-
-pub(in crate::app::agent) fn agent_project_debug_query_graph_symbol_id(
-    source_key_prefix: &str,
-    name: &str,
-) -> String {
-    format!("{source_key_prefix}.project.debug_query.{name}")
-}
-
-pub(in crate::app::agent) fn agent_project_graph_symbol_ref_id(
-    source_key_prefix: &str,
-    symbol_ref: &arcweft_lang_sema::project_index::ProjectGraphSymbolRef,
-) -> String {
-    match symbol_ref {
-        arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Entity(id) => {
-            agent_project_entity_graph_symbol_id(source_key_prefix, id)
-        }
-        arcweft_lang_sema::project_index::ProjectGraphSymbolRef::Callable(name) => {
-            agent_project_callable_graph_symbol_id(
-                source_key_prefix,
-                &format!("function:{}", name.as_str()),
-            )
-        }
-    }
 }
 
 pub(in crate::app::agent) fn agent_dynamic_control_flow_count(
@@ -1030,7 +623,7 @@ pub(in crate::app::agent) fn agent_project_flow_control_counts_json(
 
 pub(in crate::app::agent) fn agent_flow_control_summary_text(
     project: &ProjectSemanticIndex,
-    flow_id: &SemaPublicId,
+    flow_id: &ProjectEntityId,
 ) -> String {
     let Some(summary) = project.flow_control_summary(flow_id) else {
         return String::new();
@@ -1300,7 +893,7 @@ pub(in crate::app::agent) fn agent_project_summary_rag_candidate(
         "bundle_hash": project.bundle_hash().map(arcweft_lang_sema::project_index::BundleHash::as_str),
         "counts": {
             "entities": project.entities().len(),
-            "callables": project.callables().len(),
+            "callables": project.checked_callables().records().len(),
             "project_callables": project.project_callables().len(),
             "agent_actions": agent_action_count,
             "relations": project.relations().len(),
@@ -1364,8 +957,10 @@ pub(in crate::app::agent) fn agent_project_entity_rag_candidate(
     source_key_prefix: &str,
     project: &ProjectSemanticIndex,
 ) -> Result<AgentRagCandidate, String> {
-    let entity_id = agent_public_id_from_sema(entity.id())?;
-    let flow_control = project_flow_control_summary_json(project.flow_control_summary(entity.id()));
+    let identity = entity.identity();
+    let identity_key = identity.canonical_key();
+    let entity_id = agent_public_id_from_sema(entity.public_id())?;
+    let flow_control = project_flow_control_summary_json(project.flow_control_summary(identity));
     let actions = entity
         .agent_actions()
         .iter()
@@ -1385,7 +980,8 @@ pub(in crate::app::agent) fn agent_project_entity_rag_candidate(
         .collect::<Vec<_>>();
     let body = serde_json::to_string_pretty(&serde_json::json!({
         "kind": "project_entity",
-        "id": entity.id().as_str(),
+        "identity": identity_key,
+        "public_id": entity.public_id().as_str(),
         "entity_kind": format!("{:?}", entity.ty().kind()),
         "value_type": entity.ty().value().map(|ty| format!("{ty:?}")),
         "source": source_anchor_json(entity.source()),
@@ -1403,13 +999,13 @@ pub(in crate::app::agent) fn agent_project_entity_rag_candidate(
     Ok(agent_rag_candidate(
         &format!(
             "{source_key_prefix}.project.entity.{}",
-            entity.id().as_str()
+            identity.canonical_key()
         ),
         &format!(
             "Project entity {} {:?}{}",
-            entity.id().as_str(),
+            entity.public_id().as_str(),
             entity.ty().kind(),
-            agent_flow_control_summary_text(project, entity.id())
+            agent_flow_control_summary_text(project, identity)
         ),
         ChunkSourceKind::Symbol,
         SearchChannel::Graph,
@@ -1428,22 +1024,23 @@ pub(in crate::app::agent) fn agent_project_entity_rag_candidate(
 }
 
 pub(in crate::app::agent) fn agent_project_callable_rag_candidate(
-    name: &QualifiedName,
+    project: &ProjectSemanticIndex,
+    declaration: &CallableDeclarationKey,
     callable: &ProjectCallableSymbol,
     source_key_prefix: &str,
 ) -> Result<AgentRagCandidate, String> {
-    let identity = format!(
-        "{}:{}",
-        callable.declaration().owner().as_str(),
-        name.as_str()
-    );
+    let facts = checked_project_callable(project, declaration, callable)?;
+    let name = declaration.qualified_name();
+    let source = facts.source().and_then(|source| source.signature());
+    let interface_digest = digest_hex(callable.interface_digest().as_bytes());
+    let declaration_digest = digest_hex(declaration.semantic_digest().as_bytes());
     let body = serde_json::to_string_pretty(&serde_json::json!({
         "kind": "project_callable",
         "name": name.as_str(),
         "callable_kind": callable.kind().as_str(),
-        "signature": format!("{:?}", callable.signature()),
-        "source": source_anchor_json(callable.source()),
-        "semantic_hash": callable.semantic_hash().as_str(),
+        "signature": format!("{:?}", facts.signature()),
+        "source": source_span_json(source),
+        "semantic_hash": interface_digest.as_str(),
     }))
     .map_err(|error| format!("failed to serialize project callable RAG chunk: {error}"))?;
     let mut metadata = BTreeMap::new();
@@ -1452,26 +1049,88 @@ pub(in crate::app::agent) fn agent_project_callable_rag_candidate(
         serde_json::Value::String(callable.kind().as_str().to_owned()),
     );
     Ok(agent_rag_candidate(
-        &format!("{source_key_prefix}.project.callable.{identity}"),
-        &format!(
-            "Project {} callable {}",
-            callable.kind().as_str(),
-            name.as_str()
-        ),
+        &format!("{source_key_prefix}.project.callable.v1.{declaration_digest}"),
+        &format!("Project {} callable {}", callable.kind().as_str(), name),
         ChunkSourceKind::Symbol,
         SearchChannel::Graph,
         body,
         AgentRagCandidateMeta {
             entity_ids: Vec::new(),
             privacy: PrivacyClass::Project,
-            source_anchor: debug_anchor_from_source_anchor(callable.source())?,
+            source_anchor: debug_anchor_from_source_span(source)?,
             semantic_hash: Some(
-                StableHash::new(callable.semantic_hash().as_str())
+                StableHash::new(interface_digest)
                     .map_err(|error| format!("invalid callable semantic hash: {error}"))?,
             ),
             metadata,
         },
     ))
+}
+
+fn checked_project_callable<'a>(
+    project: &'a ProjectSemanticIndex,
+    declaration: &CallableDeclarationKey,
+    callable: &ProjectCallableSymbol,
+) -> Result<&'a CheckedCallableFacts, String> {
+    let facts = project
+        .checked_callable(callable.checked())
+        .map_err(|reason| checked_callable_lookup_message(callable.checked(), &reason))?;
+    if callable.declaration() != declaration
+        || facts.id() != callable.checked()
+        || facts.interface_digest() != callable.interface_digest()
+        || !matches!(
+            facts.record().id(),
+            CallableCandidateId::Project(candidate) if candidate == declaration
+        )
+    {
+        return Err(format!(
+            "project callable {declaration:?} does not match checked callable {:?}",
+            callable.checked()
+        ));
+    }
+    Ok(facts)
+}
+
+fn checked_callable_lookup_message(
+    checked: &arcweft_lang_sema::callable::CheckedCallableId,
+    reason: &CheckedCallableLookupError,
+) -> String {
+    format!("checked callable {checked:?} lookup failed: {reason:?}")
+}
+
+fn debug_anchor_from_source_span(
+    span: Option<&SourceSpan>,
+) -> Result<Option<DebugSourceAnchor>, String> {
+    span.map(|span| {
+        Ok(DebugSourceAnchor {
+            path: span.source().id().as_str().to_owned(),
+            start_byte: u64::try_from(span.range().start())
+                .map_err(|_| "callable source start byte overflowed u64".to_owned())?,
+            end_byte: u64::try_from(span.range().end())
+                .map_err(|_| "callable source end byte overflowed u64".to_owned())?,
+        })
+    })
+    .transpose()
+}
+
+fn source_span_json(span: Option<&SourceSpan>) -> serde_json::Value {
+    span.map_or(serde_json::Value::Null, |span| {
+        serde_json::json!({
+            "document": span.source().id().as_str(),
+            "start_byte": span.range().start(),
+            "end_byte": span.range().end(),
+        })
+    })
+}
+
+fn digest_hex(digest: &[u8; 32]) -> String {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(64);
+    for byte in digest {
+        encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+        encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+    }
+    encoded
 }
 
 pub(in crate::app::agent) fn agent_project_debug_query_rag_candidate(

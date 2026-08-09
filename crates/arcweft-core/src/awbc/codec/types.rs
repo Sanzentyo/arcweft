@@ -10,7 +10,7 @@ use crate::awbc::schema::{
     AwbcResumePointId, AwbcRuntimeType, AwbcScopeId, AwbcSignature, AwbcSignatureId,
     AwbcSignedIntKind, AwbcSourceMapId, AwbcSourcePlanId, AwbcStreamPlanId, AwbcStringId,
     AwbcTableRange, AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind,
-    AwbcVariantCase,
+    AwbcVariantCase, AwbcVariantIdentity,
 };
 
 wire_id!(
@@ -138,6 +138,46 @@ impl Wire for AwbcVariantCase {
     }
 }
 
+impl Wire for AwbcVariantIdentity {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        match self {
+            Self::Nominal {
+                public_id,
+                semantic_identity,
+            } => {
+                writer.write_u8(0);
+                public_id.write_wire(writer)?;
+                semantic_identity.write_wire(writer)
+            }
+            Self::Option => {
+                writer.write_u8(1);
+                Ok(())
+            }
+            Self::Result => {
+                writer.write_u8(2);
+                Ok(())
+            }
+        }
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        let offset = reader.offset();
+        match reader.read_u8()? {
+            0 => Ok(Self::Nominal {
+                public_id: AwbcStringId::read_wire(reader)?,
+                semantic_identity: <[u8; 32]>::read_wire(reader)?,
+            }),
+            1 => Ok(Self::Option),
+            2 => Ok(Self::Result),
+            tag => Err(AwbcCodecError::UnknownTag {
+                kind: "variant identity",
+                tag,
+                offset,
+            }),
+        }
+    }
+}
+
 impl Wire for AwbcRuntimeType {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
@@ -170,9 +210,9 @@ impl Wire for AwbcRuntimeType {
                 public_id.write_wire(writer)?;
                 fields.write_wire(writer)?;
             }
-            Self::Variant { public_id, cases } => {
+            Self::Variant { owner, cases } => {
                 writer.write_u8(13);
-                public_id.write_wire(writer)?;
+                owner.write_wire(writer)?;
                 cases.write_wire(writer)?;
             }
             Self::MatrixF32 => writer.write_u8(14),
@@ -182,6 +222,18 @@ impl Wire for AwbcRuntimeType {
             Self::TaskHandle => writer.write_u8(18),
             Self::NeedHandle => writer.write_u8(19),
             Self::Dynamic => writer.write_u8(20),
+            Self::Choice(alternatives) => {
+                writer.write_u8(21);
+                alternatives.write_wire(writer)?;
+            }
+            Self::Nominal {
+                public_id,
+                semantic_identity,
+            } => {
+                writer.write_u8(22);
+                public_id.write_wire(writer)?;
+                semantic_identity.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -206,7 +258,7 @@ impl Wire for AwbcRuntimeType {
                 fields: Vec::<AwbcRecordField>::read_wire(reader)?,
             },
             13 => Self::Variant {
-                public_id: Option::<AwbcStringId>::read_wire(reader)?,
+                owner: AwbcVariantIdentity::read_wire(reader)?,
                 cases: Vec::<AwbcVariantCase>::read_wire(reader)?,
             },
             14 => Self::MatrixF32,
@@ -216,6 +268,11 @@ impl Wire for AwbcRuntimeType {
             18 => Self::TaskHandle,
             19 => Self::NeedHandle,
             20 => Self::Dynamic,
+            21 => Self::Choice(Vec::<AwbcTypeId>::read_wire(reader)?),
+            22 => Self::Nominal {
+                public_id: AwbcStringId::read_wire(reader)?,
+                semantic_identity: <[u8; 32]>::read_wire(reader)?,
+            },
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",

@@ -2,7 +2,9 @@ use super::super::bench::run_runtime_bench_steps_with_pure;
 use super::super::executor::RuntimeExecutorTemplate;
 use super::super::expectations::{RuntimeExpectationView, evaluate_runtime_expectation};
 use super::super::options::ScriptBenchOptions;
-use super::super::steps::{NativeRunSource, RuntimeStepRunConfig, run_runtime_steps};
+use super::super::steps::{
+    NativeRunHost, NativeRunSource, RuntimeStepRunConfig, run_runtime_steps,
+};
 use super::BenchRuntimeContext;
 use super::samples::{RuntimeBenchSamples, bench_goto_flow, validate_bench_section};
 use crate::app::jit::{
@@ -21,11 +23,9 @@ use arcweft_core::plan::{
     RuntimePureOutputType,
 };
 use arcweft_core::pure::RuntimePureCallBackend;
-use arcweft_lang_syntax::expr::{Expr, parse_expr};
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use arcweft_runtime_host::{NativeFileRoots, host_system_info, runtime_executor_stats};
-use arcweft_runtime_plan::pure::{PureHelperCandidate, PureHelperLowerError};
-use arcweft_test::{BenchSection, ScriptBench};
+use arcweft_test::{BenchSection, ScriptBench, ScriptCommand, ScriptExpectation};
 use std::path::Path;
 use std::process::ExitCode;
 use std::time::Instant;
@@ -72,7 +72,7 @@ fn validate_script_bench(bench: &ScriptBench) -> ScriptBenchRunSummary {
 pub(in crate::app) fn run_script_bench(
     bench: &ScriptBench,
     plan: &RuntimePlan,
-    pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
+    pure_helpers: &[RuntimePureHelper],
     source_path: &Path,
     options: &ScriptBenchOptions,
     runtime: BenchRuntimeContext<'_>,
@@ -130,10 +130,13 @@ fn bench_expectation_failures(
             "bench assertions require a runnable `measure { goto @flow.id }` section".to_owned(),
         ];
     };
-    let Ok(flow) = FlowRuntimeId::from_runtime_target_value(&flow) else {
-        return vec![format!(
-            "bench assertion `goto` target `{flow}` is not a valid flow runtime ID"
-        )];
+    let flow = match plan.resolve_flow_target_value(&flow) {
+        Ok(flow) => flow,
+        Err(error) => {
+            return vec![format!(
+                "bench assertion `goto` target `{flow}` cannot be resolved: {error}"
+            )];
+        }
     };
     let entry = match bench_entry_for_flow(plan, &flow) {
         Ok(entry) => entry,
@@ -142,7 +145,11 @@ fn bench_expectation_failures(
     let frames = run_runtime_steps(
         plan.clone(),
         &entry,
-        Some(NativeRunSource::new(source_path, runtime.file_roots)),
+        NativeRunHost {
+            source: Some(NativeRunSource::new(source_path, runtime.file_roots)),
+            policy: runtime.host_policy,
+            adapter_registrars: runtime.adapter_registrars,
+        },
         RuntimeStepRunConfig {
             steps: options.steps,
             mode: options.mode,
@@ -150,9 +157,8 @@ fn bench_expectation_failures(
             executor: options.executor,
             pure_config: runtime.pure_config,
         },
-        runtime.host_policy,
-        runtime.adapter_registrars,
         &options.values,
+        runtime.execution_diagnostics,
     );
     let Ok(frames) = frames else {
         return vec!["native adapter registration failed".to_owned()];
@@ -168,9 +174,9 @@ fn bench_assertion_failures(
     frames: &[RuntimeStepRunSummary],
     file_roots: &NativeFileRoots,
 ) -> Vec<String> {
-    match bench_assertion_text(section) {
-        Ok(text) => evaluate_runtime_expectation(
-            text,
+    match bench_assertion_expectation(section) {
+        Ok(expectation) => evaluate_runtime_expectation(
+            expectation,
             &RuntimeExpectationView::with_file_roots(frames, file_roots),
         )
         .err()
@@ -181,29 +187,19 @@ fn bench_assertion_failures(
     }
 }
 
-fn bench_assertion_text(section: &BenchSection) -> Result<&str, String> {
-    let rest = section
-        .text
-        .trim()
-        .strip_prefix("assert")
-        .map(str::trim_start)
-        .ok_or_else(|| format!("invalid assert section `{}`", section.text))?;
-    let Some(body) = rest
-        .strip_prefix('{')
-        .and_then(|value| value.strip_suffix('}'))
-    else {
-        return Err("bench assert must use `assert { expect.*(...) }`".to_owned());
+fn bench_assertion_expectation(section: &BenchSection) -> Result<&ScriptExpectation, String> {
+    let [ScriptCommand::Expectation { expectation }] = section.body.as_slice() else {
+        return Err(format!(
+            "bench assert must contain exactly one typed expectation; found `{}`",
+            section.text
+        ));
     };
-    let body = body.trim();
-    if body.is_empty() {
-        return Err("bench assert body must contain an expectation call".to_owned());
-    }
-    Ok(body)
+    Ok(expectation)
 }
 
 fn run_bench_pure_helper_section(
     section: &BenchSection,
-    pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
+    pure_helpers: &[RuntimePureHelper],
     options: &ScriptBenchOptions,
     pure_config: RuntimePureAcceleratorConfig,
     validated: ScriptBenchSectionRunSummary,
@@ -211,22 +207,9 @@ fn run_bench_pure_helper_section(
     let Some(helper_name) = bench_pure_helper_name(section) else {
         return validated;
     };
-    let candidates = match pure_helpers {
-        Ok(candidates) => candidates,
-        Err(errors) => {
-            return ScriptBenchSectionRunSummary::new(
-                &section.name,
-                "failed",
-                errors
-                    .iter()
-                    .map(|error| format!("pure helper lowering failed: {error}"))
-                    .collect(),
-            );
-        }
-    };
-    let Some(candidate) = candidates
+    let Some(candidate) = pure_helpers
         .iter()
-        .find(|candidate| candidate.name() == helper_name)
+        .find(|candidate| candidate.name == helper_name)
     else {
         return ScriptBenchSectionRunSummary::new(
             &section.name,
@@ -391,34 +374,16 @@ fn fill_runtime_flat_batch_inputs(
 }
 
 fn bench_pure_helper_name(section: &BenchSection) -> Option<String> {
-    let Expr::Call(call) = parse_expr(bench_measure_body(section)?).ok()? else {
+    let [ScriptCommand::Pure { helper }] = section.body.as_slice() else {
         return None;
     };
-    let Expr::Path(callee) = call.callee() else {
-        return None;
-    };
-    if callee != "pure" {
-        return None;
-    }
-    let [helper] = call.args() else {
-        return None;
-    };
-    match helper.value() {
-        Expr::Path(name) => Some(name.as_label().to_owned()),
-        _ => None,
-    }
-}
-
-fn bench_measure_body(section: &BenchSection) -> Option<&str> {
-    let rest = section.text.trim().strip_prefix("measure")?;
-    let open = rest.find('{')?;
-    rest[open + 1..].strip_suffix('}').map(str::trim)
+    Some(helper.clone())
 }
 
 fn run_bench_section(
     section: &BenchSection,
     plan: &RuntimePlan,
-    pure_helpers: &Result<Vec<PureHelperCandidate>, Vec<PureHelperLowerError>>,
+    pure_helpers: &[RuntimePureHelper],
     source_path: &Path,
     options: &ScriptBenchOptions,
     runtime: BenchRuntimeContext<'_>,
@@ -459,13 +424,16 @@ fn run_bench_flow_section(
     runtime: BenchRuntimeContext<'_>,
     validated: ScriptBenchSectionRunSummary,
 ) -> ScriptBenchSectionRunSummary {
-    let Ok(flow) = FlowRuntimeId::from_runtime_target_value(flow) else {
-        let mut summary = validated;
-        "failed".clone_into(&mut summary.status);
-        summary.diagnostics.push(format!(
-            "bench measure `goto` target `{flow}` is not a valid flow runtime ID"
-        ));
-        return summary;
+    let flow = match plan.resolve_flow_target_value(flow) {
+        Ok(flow) => flow,
+        Err(error) => {
+            let mut summary = validated;
+            "failed".clone_into(&mut summary.status);
+            summary.diagnostics.push(format!(
+                "bench measure `goto` target `{flow}` cannot be resolved: {error}"
+            ));
+            return summary;
+        }
     };
     let mut samples = RuntimeBenchSamples::with_capacity(options.iterations);
     let entry = match bench_entry_for_flow(plan, &flow) {

@@ -13,7 +13,7 @@ use arcweft_lang_syntax::patterns::{
     PatternVariantHeadSyntax, PatternVariantPayloadIssue, PatternVariantPayloadSyntax,
 };
 
-use super::{CandidateValidationCursor, source_index_has_typed_owner};
+use super::CandidateValidationCursor;
 use crate::expr::HirPoisonState;
 use crate::final_lowering::name_projection::{name, name_issue};
 use crate::final_lowering::pattern_lowering::binding_plan::{
@@ -98,7 +98,7 @@ impl CandidateValidationCursor<'_> {
         if metadata.origin() != &HirOrigin::Synthetic(key)
             || metadata.source_site() != &site
             || payload.scope() != scope
-            || source_index_has_typed_owner(self.index, SyntheticOwner::Pattern(owner))
+            || self.source_index_has_typed_owner(SyntheticOwner::Pattern(owner))
             || !self.expected.patterns.insert(owner)
         {
             return None;
@@ -556,7 +556,7 @@ impl CandidateValidationCursor<'_> {
             || payload.annotation() != annotation
             || payload.is_mutable_binding() != mutable
             || payload.is_poisoned() != poisoned
-            || source_index_has_typed_owner(self.index, SyntheticOwner::Local(expected))
+            || self.source_index_has_typed_owner(SyntheticOwner::Local(expected))
             || !self.expected.locals.insert(expected)
         {
             return Some(false);

@@ -12,7 +12,7 @@ use crate::arena::ArenaSnapshot;
 use crate::expr::HirExpr;
 use crate::identity::{ExprId, ScopeId, StmtId};
 use crate::slot::SlotSnapshot;
-use crate::source_index::HirExprSourceRole;
+use crate::source_index::HirStmtRecoveryOperandSlot;
 use crate::stmt::{
     HirSelectStmt, HirStmtChildRole, HirStmtKind, HirStmtPoisonState, HirStmtRecoveryIssue,
 };
@@ -29,10 +29,13 @@ enum RequiredOperandFamily {
 }
 
 impl RequiredOperandFamily {
-    const fn source_role(self) -> HirExprSourceRole {
+    const fn missing_slot(self, insertion: usize) -> HirStmtRecoveryOperandSlot {
         match self {
-            Self::Wait { .. } | Self::Close => HirExprSourceRole::Target,
-            Self::Return | Self::Yield | Self::Select => HirExprSourceRole::Operand,
+            Self::Return => HirStmtRecoveryOperandSlot::ReturnValue { insertion },
+            Self::Yield => HirStmtRecoveryOperandSlot::YieldExpression { insertion },
+            Self::Wait { .. } => HirStmtRecoveryOperandSlot::WaitTarget { insertion },
+            Self::Close => HirStmtRecoveryOperandSlot::CloseTarget { insertion },
+            Self::Select => HirStmtRecoveryOperandSlot::SelectOperand { insertion },
         }
     }
 
@@ -108,7 +111,7 @@ pub(super) fn required_operand_statement_evidence(
         owner,
         operand,
         scope,
-        family.source_role(),
+        family,
     ) {
         return None;
     }
@@ -144,7 +147,7 @@ fn required_statement_expression_matches(
     owner: ExprId,
     attached: RequiredStatementExpressionNode,
     scope: ScopeId,
-    role: HirExprSourceRole,
+    family: RequiredOperandFamily,
 ) -> bool {
     match attached {
         RequiredStatementExpressionNode::Expression(attached) => {
@@ -159,9 +162,7 @@ fn required_statement_expression_matches(
             statement,
             owner,
             scope,
-            missing.range().start(),
-            0,
-            role,
+            family.missing_slot(missing.range().start()),
         ),
     }
 }

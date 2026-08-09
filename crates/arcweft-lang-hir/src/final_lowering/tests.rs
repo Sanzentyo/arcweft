@@ -12,12 +12,13 @@ use crate::dialogue_application::{
 };
 use crate::identity::ScopeId;
 use crate::item::{HirFunctionBody, HirItemKind};
-use crate::lower::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
 use crate::module::HirModuleStatus;
 use crate::pattern::HirPatternResolver;
+use crate::proof_return::HirProofReturnSemanticFactSet;
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::HirSourceSite;
-use crate::symbol::CallablePackageId;
+use crate::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId};
 use crate::type_ref::HirTypeResolver;
 
 use super::{HirDatabase, StagedHirModuleTransaction};
@@ -73,19 +74,48 @@ fn stage<'source>(
     parsed: &'source ParsedSource,
     key: &HirModuleKey,
 ) -> StagedHirModuleTransaction<'source> {
-    database
-        .stage_final_hir(LoweringRequest::try_new(key.clone(), parsed).unwrap())
-        .unwrap()
+    super::stage_unpublished_module_for_invariant_test(
+        database,
+        LoweringRequest::try_new(key.clone(), parsed).unwrap(),
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .unwrap()
 }
 
-fn lower_attached_source(
+fn publish_attached_project(
     database: &mut HirDatabase,
     parsed: &ParsedSource,
     key: &HirModuleKey,
 ) -> crate::database::HirLowerOutput {
-    database
-        .lower_attached_source(LoweringRequest::try_new(key.clone(), parsed).unwrap())
-        .unwrap()
+    let world = ProjectSymbolWorldId::try_new(
+        key.package().clone(),
+        parsed.document().identity().id().clone(),
+        "final-lowering-test",
+    )
+    .unwrap();
+    let revision =
+        ProjectSymbolRevision::try_for_documents([parsed.document().identity()]).unwrap();
+    let transaction = database
+        .stage_proof_return_project(
+            [LoweringRequest::try_new(key.clone(), parsed).unwrap()],
+            world,
+            revision,
+            [parsed.document().identity()],
+            crate::lowering::HirLoweringControl::new(),
+        )
+        .unwrap();
+    let facts = HirProofReturnSemanticFactSet::try_new(
+        Arc::clone(transaction.generation()),
+        transaction.headers().cloned(),
+        [],
+    )
+    .expect("fixture has no authored Proof return headers");
+    let mut outputs = transaction
+        .publish_with_semantic_facts(database, facts)
+        .unwrap();
+    let output = outputs.pop().expect("one fixture module");
+    assert!(outputs.is_empty());
+    output
 }
 
 fn allocate_module_scope(
@@ -165,14 +195,14 @@ fn database_owned_entry_lowers_the_complete_attached_source_atomically() {
     let key = key(&initial);
     let mut database = HirDatabase::try_new().unwrap();
 
-    let first = lower_attached_source(&mut database, &initial, &key);
+    let first = publish_attached_project(&mut database, &initial, &key);
     assert_eq!(first.module().source_ordered_items().len(), 1);
     assert!(Arc::ptr_eq(
         first.module(),
         &database.current(&key).expect("first revision is current")
     ));
 
-    let second = lower_attached_source(&mut database, &revised, &key);
+    let second = publish_attached_project(&mut database, &revised, &key);
     assert_eq!(second.module().source_ordered_items().len(), 1);
     assert_eq!(
         second.module().snapshot_id().revision(),
@@ -187,6 +217,104 @@ fn database_owned_entry_lowers_the_complete_attached_source_atomically() {
         second.module(),
         &database.current(&key).expect("second revision is current")
     ));
+}
+
+#[test]
+fn hir_no_op_returns_exact_arc_and_no_invalidation() {
+    let (initial, _) =
+        parsed_revisions_with_source("arcweft-test://proof/final-lowering-no-op", "");
+    let key = key(&initial);
+    let mut database = HirDatabase::try_new().unwrap();
+    let accepted = publish_attached_project(&mut database, &initial, &key).into_module();
+    let before = database.test_state();
+    let world = ProjectSymbolWorldId::try_new(
+        key.package().clone(),
+        initial.document().identity().id().clone(),
+        "final-lowering-test",
+    )
+    .unwrap();
+    let revision =
+        ProjectSymbolRevision::try_for_documents([initial.document().identity()]).unwrap();
+    let transaction = database
+        .stage_proof_return_project(
+            [LoweringRequest::try_new(key.clone(), &initial).unwrap()],
+            world,
+            revision,
+            [initial.document().identity()],
+            crate::lowering::HirLoweringControl::new(),
+        )
+        .unwrap();
+    let facts = HirProofReturnSemanticFactSet::try_new(
+        Arc::clone(transaction.generation()),
+        transaction.headers().cloned(),
+        [],
+    )
+    .unwrap();
+    let modules = transaction
+        .publish_modules_with_semantic_facts(&mut database, facts)
+        .unwrap();
+
+    assert_eq!(modules.len(), 1);
+    assert!(Arc::ptr_eq(&modules[0], &accepted));
+    assert!(Arc::ptr_eq(&database.current(&key).unwrap(), &accepted));
+    assert_eq!(database.test_state(), before);
+}
+
+#[test]
+fn cross_syntax_database_lowering_is_rejected_atomically() {
+    let (accepted_source, _) = parsed_revisions_with_source(
+        "arcweft-test://proof/final-lowering-cross-syntax-database",
+        "fn ready() {}",
+    );
+    let (foreign_source, _) = parsed_revisions_with_source(
+        "arcweft-test://proof/final-lowering-cross-syntax-database",
+        "fn ready() {}",
+    );
+    let key = key(&accepted_source);
+    let mut database = HirDatabase::try_new().unwrap();
+    let accepted = publish_attached_project(&mut database, &accepted_source, &key).into_module();
+    let before = database.test_state();
+
+    let result = super::stage_unpublished_module_for_invariant_test(
+        &database,
+        LoweringRequest::try_new(key.clone(), &foreign_source).unwrap(),
+        crate::lowering::HirLoweringControl::new(),
+    );
+    assert!(matches!(
+        result,
+        Err(HirLowerFailure::WrongSyntaxDatabase { expected, actual })
+            if expected == accepted_source.snapshot_id().lineage().database()
+                && actual == foreign_source.snapshot_id().lineage().database()
+    ));
+    assert_eq!(database.test_state(), before);
+    assert!(Arc::ptr_eq(&database.current(&key).unwrap(), &accepted));
+}
+
+#[test]
+fn stale_syntax_snapshot_lowering_is_rejected_atomically() {
+    let (initial, revised) = parsed_revisions_with_source(
+        "arcweft-test://proof/final-lowering-stale-syntax-snapshot",
+        "fn ready() {}",
+    );
+    let key = key(&initial);
+    let mut database = HirDatabase::try_new().unwrap();
+    publish_attached_project(&mut database, &initial, &key);
+    let accepted = publish_attached_project(&mut database, &revised, &key).into_module();
+    let before = database.test_state();
+
+    let result = super::stage_unpublished_module_for_invariant_test(
+        &database,
+        LoweringRequest::try_new(key.clone(), &initial).unwrap(),
+        crate::lowering::HirLoweringControl::new(),
+    );
+    assert!(matches!(
+        result,
+        Err(HirLowerFailure::StaleSource { current, supplied })
+            if current == revised.snapshot_id().clone()
+                && supplied == initial.snapshot_id().clone()
+    ));
+    assert_eq!(database.test_state(), before);
+    assert!(Arc::ptr_eq(&database.current(&key).unwrap(), &accepted));
 }
 
 #[test]
@@ -261,9 +389,7 @@ fn transaction_resolvers_read_staged_and_retained_typed_payloads() {
     let mut database = HirDatabase::try_new().unwrap();
 
     let mut first = stage(&database, &initial, &key);
-    first
-        .lower_attached_source_file_items(&initial.tree())
-        .unwrap();
+    first.lower_parsed_source_items(&initial).unwrap();
     let owner = first.staged_source_ordered_items()[0];
     let (callable_scope, ty, pattern, expression) = {
         let (slots, arenas) = first.storage_mut();

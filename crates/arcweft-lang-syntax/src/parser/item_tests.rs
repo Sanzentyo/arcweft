@@ -3,14 +3,13 @@ use std::sync::Arc;
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::attachment::source_file::{AttachedDelimiterState, AttachedPathRoot};
 use crate::attachment::{
-    AttachedAttributeValue, AttachedOuterAttributeForm, AttachedOuterAttributeIssue, TypedItemNode,
+    AttachedAttributeValue, AttachedOuterAttributeForm, AttachedOuterAttributeIssue,
+    ProofTrustSyntax, TypedItemNode,
 };
-use crate::expressions::{
-    ExpressionComponentRole, SyntaxCallArgumentListTerminator, SyntaxCallArgumentProjection,
-};
+use crate::expressions::{SyntaxCallArgumentListTerminator, SyntaxCallArgumentProjection};
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::kinds::SyntaxKind;
 use crate::incremental::SyntaxDatabase;
@@ -35,7 +34,7 @@ fn attached_first_item(source: &str) -> TypedItemNode {
             crate::parser::ParseOptions::default(),
         )
         .unwrap();
-    let mut items = parsed.tree().items().unwrap();
+    let mut items = parsed.items().unwrap();
     assert_eq!(items.len(), 1, "fixture must retain one source item");
     items.remove(0)
 }
@@ -49,8 +48,7 @@ fn outer_attributes_own_dotted_paths_and_shared_ordinary_arguments_without_call_
         "#[link(Flow, @flow.main..., level = .soft)]\n",
         "proof attributes() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
     assert_eq!(built.green().to_string(), source);
     assert_eq!(
@@ -75,9 +73,17 @@ fn outer_attributes_own_dotted_paths_and_shared_ordinary_arguments_without_call_
     );
 
     let item = attached_first_item(source);
-    let prefix = item.attached_prefix().unwrap();
-    let [generated, derive, trusted, link] = prefix.attributes() else {
-        panic!("four attached attributes");
+    let TypedItemNode::Proof(proof) = &item else {
+        panic!("fixture item must be a Proof")
+    };
+    let proof = proof.semantics().unwrap();
+    let Some(ProofTrustSyntax::Trusted { reason, .. }) = proof.trust() else {
+        panic!("Proof-specific trust must consume verify.trusted")
+    };
+    assert_eq!(reason.as_str(), "external");
+    let prefix = proof.prefix();
+    let [generated, derive, link] = prefix.attributes() else {
+        panic!("three generic attached attributes");
     };
     for attribute in prefix.attributes() {
         assert!(matches!(
@@ -92,7 +98,7 @@ fn outer_attributes_own_dotted_paths_and_shared_ordinary_arguments_without_call_
             .path()
             .segments()
             .iter()
-            .map(|segment| segment.source_text())
+            .map(super::super::attachment::source_file::AttachedPathSegment::source_text)
             .collect::<Vec<_>>(),
         ["generated"]
     );
@@ -106,7 +112,7 @@ fn outer_attributes_own_dotted_paths_and_shared_ordinary_arguments_without_call_
             .path()
             .segments()
             .iter()
-            .map(|segment| segment.source_text())
+            .map(super::super::attachment::source_file::AttachedPathSegment::source_text)
             .collect::<Vec<_>>(),
         ["derive"]
     );
@@ -115,38 +121,6 @@ fn outer_attributes_own_dotted_paths_and_shared_ordinary_arguments_without_call_
         SyntaxCallArgumentProjection::Positional { .. }
     )));
     assert_eq!(derive.arguments().len(), 2);
-
-    assert_eq!(
-        trusted
-            .path()
-            .segments()
-            .iter()
-            .map(|segment| segment.source_text())
-            .collect::<Vec<_>>(),
-        ["verify", "trusted"]
-    );
-    let [reason] = trusted.arguments() else {
-        panic!("trusted reason argument");
-    };
-    assert!(matches!(
-        reason.projection(),
-        SyntaxCallArgumentProjection::Named { name, .. }
-            if name.as_ref().is_ok_and(|name| name.as_str() == "reason")
-    ));
-    assert!(matches!(
-        reason.value(),
-        AttachedAttributeValue::Authored(_)
-    ));
-    assert!(
-        trusted
-            .component(ExpressionComponentRole::CallArgumentListOpen)
-            .is_some()
-    );
-    assert!(
-        trusted
-            .component(ExpressionComponentRole::CallArgumentListClose)
-            .is_some()
-    );
 
     let [flow, spread, level] = link.arguments() else {
         panic!("mixed ordinary argument family");
@@ -175,8 +149,7 @@ fn removed_attribute_shapes_are_one_generic_recovery_without_expression_owners()
         "#[1 + 2]\n",
         "proof invalid_attributes() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     assert!(built.has_recovery());
     assert_eq!(built.green().to_string(), source);
     assert_eq!(
@@ -219,7 +192,7 @@ fn removed_attribute_shapes_are_one_generic_recovery_without_expression_owners()
                 .path()
                 .segments()
                 .iter()
-                .map(|segment| segment.source_text())
+                .map(super::super::attachment::source_file::AttachedPathSegment::source_text)
                 .collect::<Vec<_>>(),
             ["foo"]
         );
@@ -241,8 +214,7 @@ fn outer_attribute_delimiter_and_missing_value_recovery_remain_typed() {
         "#[baz(value)\n",
         "proof recovered_attributes() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     assert!(built.has_recovery());
     assert_eq!(built.green().to_string(), source);
 
@@ -279,6 +251,10 @@ fn outer_attribute_delimiter_and_missing_value_recovery_remain_typed() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the declaration-family inventory is one closed lossless-root matrix"
+)]
 fn every_current_top_level_declaration_family_has_one_lossless_root() {
     let cases = [
         (SyntaxKind::ModuleDeclaration, "mod story\n"),
@@ -330,8 +306,7 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
         (SyntaxKind::ErrorItem, "???\n"),
     ];
     let source = cases.iter().map(|(_, source)| *source).collect::<String>();
-    let built =
-        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -375,7 +350,7 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
         built
             .diagnostics()
             .iter()
-            .filter(|diagnostic| diagnostic.code() == "syntax.item.expected_declaration")
+            .filter(|diagnostic| diagnostic.code() == "syntax.parse")
             .count(),
         1,
         "{:?}",
@@ -396,7 +371,6 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             .unwrap_or_else(|error| panic!("{expected:?} attachment failed: {error:?}"));
         assert_eq!(
             parsed
-                .tree()
                 .items()
                 .unwrap()
                 .into_iter()
@@ -416,7 +390,7 @@ fn every_current_top_level_declaration_family_has_one_lossless_root() {
             crate::parser::ParseOptions::default(),
         )
         .unwrap();
-    let items = parsed.tree().items().unwrap();
+    let items = parsed.items().unwrap();
     assert!(matches!(
         items.as_slice(),
         [
@@ -472,8 +446,7 @@ fn removed_top_level_shapes_are_ordinary_error_items() {
         "asset bg_room {}\n",
         "let top = true\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()

@@ -1,17 +1,11 @@
-error[E0432]: unresolved imports `arcweft_compiler::error::ValidateHirError`, `arcweft_compiler::hir::resolve_hir_references`, `arcweft_compiler::hir::resolve_hir_references_with_env`, `arcweft_compiler::hir::typecheck_hir_with_env`, `arcweft_compiler::hir::validate_hir_with_env`, `arcweft_compiler::link::missing_entry_names`, `arcweft_compiler::lower::lower_source_pure_helper_candidate`, `arcweft_compiler::lower::lower_source_runtime_plan_with_options`, `arcweft_compiler::lower::lower_source_runtime_plan_with_stats_and_options`, `arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options`
+error[E0432]: unresolved imports `arcweft_compiler::error::ValidateHirError`, `arcweft_compiler::hir`, `arcweft_compiler::link::missing_entry_names`, `arcweft_compiler::lower::lower_source_pure_helper_candidate`, `arcweft_compiler::lower::lower_source_runtime_plan_with_options`, `arcweft_compiler::lower::lower_source_runtime_plan_with_stats_and_options`, `arcweft_compiler::lower::lower_source_runtime_plan_with_typecheck_and_options`
   --> tests/ui/removed_zero_consumer_compiler_facades.rs:2:5
    |
  2 |     error::ValidateHirError,
    |     ^^^^^^^^^^^^^^^^^^^^^^^ no `ValidateHirError` in `error`
  3 |     hir::{
- 4 |         resolve_hir_references, resolve_hir_references_with_env, typecheck_hir_with_env,
-   |         ^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^  ^^^^^^^^^^^^^^^^^^^^^^ no `typecheck_hir_with_env` in `hir`
-   |         |                       |
-   |         |                       no `resolve_hir_references_with_env` in `hir`
-   |         no `resolve_hir_references` in `hir`
- 5 |         validate_hir_with_env,
-   |         ^^^^^^^^^^^^^^^^^^^^^ no `validate_hir_with_env` in `hir`
- 6 |     },
+   |     ^^^ could not find `hir` in `arcweft_compiler`
+...
  7 |     link::missing_entry_names,
    |     ^^^^^^^^^^^^^^^^^^^^^^^^^ no `missing_entry_names` in `link`
  8 |     lower::{
@@ -23,29 +17,6 @@ error[E0432]: unresolved imports `arcweft_compiler::error::ValidateHirError`, `a
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `lower_source_runtime_plan_with_stats_and_options` in `lower`
 11 |         lower_source_runtime_plan_with_typecheck_and_options,
    |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `lower_source_runtime_plan_with_typecheck_and_options` in `lower`
-   |
-help: a similar name exists in the module
-   |
- 4 -         resolve_hir_references, resolve_hir_references_with_env, typecheck_hir_with_env,
- 4 +         validate_hir_references, resolve_hir_references_with_env, typecheck_hir_with_env,
-   |
-help: a similar name exists in the module
-   |
- 9 |         lower_source_pure_helper_candidates, lower_source_runtime_plan_with_options,
-   |                                           +
-help: a similar name exists in the module
-   |
- 9 -         lower_source_pure_helper_candidate, lower_source_runtime_plan_with_options,
- 9 +         lower_source_pure_helper_candidate, lower_runtime_plan_with_stats,
-   |
-help: a similar name exists in the module
-   |
-10 |         lower_source_runtime_plan_with_typecheck_stats_and_options,
-   |                                        ++++++++++
-help: a similar name exists in the module
-   |
-11 |         lower_source_runtime_plan_with_typecheck_stats_and_options,
-   |                                                  ++++++
 
 error[E0599]: no method named `all_domains` found for reference `&ReachabilityReport` in the current scope
   --> tests/ui/removed_zero_consumer_compiler_facades.rs:17:20

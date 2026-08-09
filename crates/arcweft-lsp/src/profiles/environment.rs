@@ -1,10 +1,12 @@
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_character::catalog::CharacterCatalog;
 use arcweft_compiler::project::{
-    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompileError, compile_project,
+    AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectCompilationSession,
+    ProjectCompileError, compile_project,
 };
 use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
 use arcweft_lang_sema::{env::TypeCheckEnv, registration::RegisteredTypeCheckEnv};
+use arcweft_lang_syntax::incremental::SyntaxDatabase;
 use arcweft_launch::{LaunchProfileSelection, ProfileId};
 use arcweft_project_loader::{
     environment::{ProfileRegistrationLoadRequest, load_profile_registration},
@@ -14,11 +16,11 @@ use arcweft_project_loader::{
     },
 };
 use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use std::{collections::BTreeSet, path::Path, sync::Arc};
 use thiserror::Error;
 
 use super::{
+    LspProfileDiagnostic, LspProfileDiagnosticKind,
     accepted_project::{
         AcceptedProjectSnapshot, AcceptedSourceAccess, AcceptedSourceDocumentSeed,
         AcceptedSourceLocator, AcceptedSourceOwnership,
@@ -86,12 +88,13 @@ pub(crate) struct RegisteredProfileCandidate {
     candidate: AcceptedProfileCandidate,
     characters: CharacterCatalog,
     topology: LoadedProfileTopology,
+    diagnostic: Option<LspProfileDiagnostic>,
 }
 
 /// One live editor overlay supplied to a complete profile build.
 ///
 /// The loader seed owns the bytes/path used by topology construction, while
-/// the protocol URI/version are rebound to the resulting accepted project
+/// the protocol URI/version are bound to the resulting accepted project
 /// before the publication candidate is constructed.
 #[derive(Clone, Debug)]
 pub(crate) struct ProfileRegistrationOverlay {
@@ -129,8 +132,14 @@ impl RegisteredProfileCandidate {
         &self.candidate
     }
 
-    pub(crate) const fn metadata(&self) -> (&CharacterCatalog, &LoadedProfileTopology) {
-        (&self.characters, &self.topology)
+    pub(crate) const fn metadata(
+        &self,
+    ) -> (
+        &CharacterCatalog,
+        &LoadedProfileTopology,
+        Option<&LspProfileDiagnostic>,
+    ) {
+        (&self.characters, &self.topology, self.diagnostic.as_ref())
     }
 
     pub(crate) fn into_parts(
@@ -139,8 +148,14 @@ impl RegisteredProfileCandidate {
         AcceptedProfileCandidate,
         CharacterCatalog,
         LoadedProfileTopology,
+        Option<LspProfileDiagnostic>,
     ) {
-        (self.candidate, self.characters, self.topology)
+        (
+            self.candidate,
+            self.characters,
+            self.topology,
+            self.diagnostic,
+        )
     }
 }
 
@@ -163,12 +178,16 @@ impl ProfileRegistrationOverlay {
 }
 
 pub(crate) fn register_profile_environment_with_overlays(
+    syntax: &mut SyntaxDatabase,
+    compiler: &mut ProjectCompilationSession,
     manifest_path: &Path,
     profile_id: &ProfileId,
     overlays: &[ProfileRegistrationOverlay],
     previous: Option<&RegisteredTypeCheckEnv>,
 ) -> Result<RegisteredProfileCandidate, RegisterProfileEnvironmentError> {
     register_profile_environment(
+        syntax,
+        compiler,
         manifest_path,
         LaunchProfileSelection::Explicit(profile_id.as_str()),
         overlays,
@@ -177,6 +196,8 @@ pub(crate) fn register_profile_environment_with_overlays(
 }
 
 pub(crate) fn register_profile_environment(
+    syntax: &mut SyntaxDatabase,
+    compiler: &mut ProjectCompilationSession,
     manifest_path: &Path,
     selection: LaunchProfileSelection<'_>,
     overlays: &[ProfileRegistrationOverlay],
@@ -189,27 +210,40 @@ pub(crate) fn register_profile_environment(
         .map(ProfileRegistrationOverlay::seed)
         .cloned()
         .collect::<Vec<_>>();
-    let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
-        manifest_path,
-        workspace_owner,
-        selection,
-        &overlay_seeds,
-        arcweft_adapter_context::standard::standard_registry(),
-    ))
+    let topology = load_profile_topology(
+        syntax,
+        ProfileTopologyLoadRequest::new(
+            manifest_path,
+            workspace_owner,
+            selection,
+            &overlay_seeds,
+            arcweft_adapter_context::standard::standard_registry(),
+        ),
+    )
     .map_err(|error| RegisterProfileEnvironmentError::Topology(Box::new(error)))?;
-    let (candidate, characters) = register_loaded_environment(&topology, overlays, previous)?;
+    let (candidate, characters, diagnostic) =
+        register_loaded_environment(compiler, &topology, overlays, previous)?;
     Ok(RegisteredProfileCandidate {
         candidate,
         characters,
         topology,
+        diagnostic,
     })
 }
 
 pub(crate) fn register_loaded_environment(
+    compiler: &mut ProjectCompilationSession,
     topology: &LoadedProfileTopology,
     overlays: &[ProfileRegistrationOverlay],
     previous: Option<&RegisteredTypeCheckEnv>,
-) -> Result<(AcceptedProfileCandidate, CharacterCatalog), RegisterProfileEnvironmentError> {
+) -> Result<
+    (
+        AcceptedProfileCandidate,
+        CharacterCatalog,
+        Option<LspProfileDiagnostic>,
+    ),
+    RegisterProfileEnvironmentError,
+> {
     let registration = load_profile_registration(&ProfileRegistrationLoadRequest::new(topology))
         .map_err(RegisterProfileEnvironmentError::RegistrationLoad)?;
     let (facts, file_documents) = registration.into_parts();
@@ -233,39 +267,44 @@ pub(crate) fn register_loaded_environment(
         previous.cloned().map(Arc::new),
         None,
     )
+    .with_command_policy(RuntimeCommandPolicy::deny_all(
+        RootExecutionLimits::engine_default(),
+    ))
     .with_accepted_launch_profile(accepted_launch);
     record_compiler_build();
-    let compiled = Arc::new(
-        compile_project(
-            topology.loaded_project().sources(),
-            &context,
-            &RuntimePlanLowerOptions::default()
-                .with_package_identity(topology.loaded_project().sources().package().id.as_str())
-                .with_command_policy(RuntimeCommandPolicy::deny_all(
-                    RootExecutionLimits::engine_default(),
-                )),
-        )
-        .map_err(|error| {
-            let details = error
-                .diagnostics()
-                .iter()
-                .map(|diagnostic| diagnostic.diagnostic().message())
-                .collect::<Vec<_>>()
-                .join("; ");
-            RegisterProfileEnvironmentError::Compile {
-                details,
-                source: Box::new(error),
-            }
-        })?,
+    let compile_result = compile_project(
+        compiler,
+        topology.loaded_project().sources(),
+        topology.loaded_project().module_parsed_source_map(),
+        &context,
     );
-    let world = compiled.registered_world_arc();
+    let (tooling, executable, diagnostic) = match compile_result {
+        Ok(project) => {
+            let project = Arc::new(project);
+            (Arc::clone(project.tooling_lease()), Some(project), None)
+        }
+        Err(error) => {
+            let details = project_compile_details(&error);
+            let Some(tooling) = error.tooling_lease().cloned() else {
+                return Err(RegisterProfileEnvironmentError::Compile {
+                    details,
+                    source: Box::new(error),
+                });
+            };
+            let diagnostic = LspProfileDiagnostic::new(
+                LspProfileDiagnosticKind::ProjectCompile,
+                format!(
+                    "project compilation failed during {}: {details}",
+                    error.stage()
+                ),
+            )
+            .with_project_compile_diagnostics(error.diagnostics().iter().cloned());
+            (tooling, None, Some(diagnostic))
+        }
+    };
     let project = Arc::new(
-        AcceptedProjectSnapshot::try_new(
-            Arc::clone(compiled.hir_project()),
-            world.as_ref(),
-            source_seeds,
-        )
-        .map_err(|error| RegisterProfileEnvironmentError::AcceptedProject(Box::new(error)))?,
+        AcceptedProjectSnapshot::try_new(Arc::clone(&tooling), executable.as_deref(), source_seeds)
+            .map_err(|error| RegisterProfileEnvironmentError::AcceptedProject(Box::new(error)))?,
     );
     let mut overlay_entries = Vec::with_capacity(overlays.len());
     for overlay in overlays {
@@ -285,12 +324,26 @@ pub(crate) fn register_loaded_environment(
         .map_err(RegisterProfileEnvironmentError::Overlay)?;
     let candidate = AcceptedProfileCandidate::try_new(
         accepted_profile_key(topology)?,
-        compiled,
+        executable,
         project,
         overlays,
     )
     .map_err(|error| RegisterProfileEnvironmentError::Candidate(Box::new(error)))?;
-    Ok((candidate, characters))
+    Ok((candidate, characters, diagnostic))
+}
+
+fn project_compile_details(error: &ProjectCompileError) -> String {
+    let details = error
+        .diagnostics()
+        .iter()
+        .map(|diagnostic| diagnostic.diagnostic().message())
+        .collect::<Vec<_>>()
+        .join("; ");
+    if details.is_empty() {
+        error.to_string()
+    } else {
+        details
+    }
 }
 
 fn registered_character_catalog(

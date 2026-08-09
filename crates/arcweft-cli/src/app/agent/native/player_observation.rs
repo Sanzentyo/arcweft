@@ -8,14 +8,14 @@ use super::{
     NativeAdapterRegistrar, NativeAgentRuntimeState, NativeTaskBridge, agent_action_targets,
     agent_action_targets_for_runtime_status, agent_action_targets_for_scroll_regions,
     agent_action_targets_for_semantics, agent_capture_time_millis,
-    agent_dialogue_prepared_text_objects, agent_mcp_project_context_from_hir,
+    agent_dialogue_prepared_text_objects, agent_mcp_project_context_from_project,
     agent_object_capture_refs, agent_object_id_color, agent_observe_capture_time_seconds,
     agent_observe_effective_steps, agent_observe_layout_scene_graph,
     agent_observe_report_capture_time_millis, agent_observed_layers, agent_observed_scroll_regions,
     agent_observed_views, agent_observed_virtual_lists, agent_overlay_svg,
     agent_view_prepared_text_objects, agent_view_prepared_text_root_id,
-    dedupe_agent_action_targets, hash_hex, load_and_check_selection,
-    native_host_policy_for_selection, report_path, resolve_source_selection,
+    dedupe_agent_action_targets, hash_hex, native_host_policy_for_selection, report_path,
+    resolve_source_selection,
 };
 use crate::app::bundle::compile_bundle_for_selection;
 use arcweft_agent_protocol::{
@@ -37,9 +37,9 @@ use arcweft_agent_protocol::{
 };
 use arcweft_bundle::BundleVirtualFileSpace;
 use arcweft_bundle::{BundleImageObject, BundleImageObjectParam, BundleImageObjectProxy};
-use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::EntryRuntimeId;
 use arcweft_core::task::TaskEvent;
+use arcweft_core::{effect::RuntimeAssertionFailure, engine::FlowFiberStatus};
 use arcweft_player_scene::fonts::PlayerFontSet;
 use arcweft_player_scene::frame::{
     PlayerFrameFit, PlayerFramePlannerState, PlayerFrameRequest, PlayerPreparedFrame,
@@ -51,7 +51,6 @@ use arcweft_presentation::{
     image::ImageObjectFit,
     semantic::SemanticRole,
 };
-use arcweft_render_text::{Milli, RichTextParam};
 use arcweft_render_wgpu::{
     geometry::{
         PreparedFrame, RenderImage, RenderPreferences, RenderTextInputControl, RenderViewport,
@@ -67,6 +66,8 @@ use arcweft_runtime_driver::{
     },
     task::HostTaskDispatch,
 };
+use arcweft_text_model::{Milli, RichTextParam};
+use arcweft_tooling::runtime_diagnostic::project_runtime_assertion_fault;
 use capture::capture_player_observation_frame;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -104,16 +105,6 @@ pub(super) fn native_player_runtime_state_for_options(
     adapter_registrars: &[NativeAdapterRegistrar],
 ) -> Result<NativeAgentRuntimeState, ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
-    let checked = load_and_check_selection(&selection, None)?;
-    let project_context = agent_mcp_project_context_from_hir(
-        &checked.hir,
-        selection.path(),
-        &checked.source_document,
-    )
-    .map_err(|error| {
-        eprintln!("error: failed to build native project context: {error}");
-        ExitCode::FAILURE
-    })?;
     let fonts = PlayerFontSet::bundled_default();
     let mut shared_capture = pollster::block_on(SharedOffscreenCapture::new(
         wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -131,6 +122,11 @@ pub(super) fn native_player_runtime_state_for_options(
     let mut phases = Vec::new();
     let compiled =
         compile_bundle_for_selection(&selection, vec![BundleVirtualFileSpace::Asset], &mut phases)?;
+    let project_context = agent_mcp_project_context_from_project(&compiled.semantic_index)
+        .map_err(|error| {
+            eprintln!("error: failed to build native project context: {error}");
+            ExitCode::FAILURE
+        })?;
     let images = BundleImageCatalog::from_bundle(&compiled.bundle).map_err(|error| {
         eprintln!("error: player-backed observe image catalog failed: {error}");
         ExitCode::FAILURE
@@ -177,6 +173,7 @@ pub(super) fn native_player_runtime_state_for_options(
         prepared_frame: None,
         source_path: selection.path().to_owned(),
         project_context,
+        execution_diagnostics: compiled.execution_diagnostics,
         shared_capture,
         host,
         task_events: Vec::new(),
@@ -252,6 +249,18 @@ fn advance_player_runtime(
         let finished = step.finished;
         let fx_diagnostics = &step.presentation.fx_diagnostics;
         diagnostics.extend(
+            step.assertion_failures
+                .iter()
+                .map(|failure| {
+                    agent_runtime_assertion_diagnostic(
+                        step.index,
+                        failure,
+                        &runtime.execution_diagnostics,
+                    )
+                })
+                .collect::<Result<Vec<_>, _>>()?,
+        );
+        diagnostics.extend(
             step.diagnostics
                 .iter()
                 .filter(|message| {
@@ -293,6 +302,28 @@ fn advance_player_runtime(
         step,
         diagnostics,
         task_request_count,
+    })
+}
+
+fn agent_runtime_assertion_diagnostic(
+    step: usize,
+    failure: &RuntimeAssertionFailure,
+    execution_diagnostics: &arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
+) -> Result<AgentDiagnostic, ExitCode> {
+    let fault = execution_diagnostics
+        .project_assertion_failure(failure.clone())
+        .map_err(|error| {
+            eprintln!("error: fresh Agent runtime assertion projection failed: {error}");
+            ExitCode::FAILURE
+        })?;
+    let diagnostic = project_runtime_assertion_fault(&fault);
+    Ok(AgentDiagnostic {
+        step,
+        severity: AgentDiagnosticSeverity::Error,
+        source: Some("runtime".to_owned()),
+        code: Some(diagnostic.code().to_owned()),
+        effect_id: None,
+        message: diagnostic.message().to_owned(),
     })
 }
 
@@ -483,7 +514,7 @@ fn player_observation_report(
             step.status_label,
             step.index,
             objects.len(),
-            step.diagnostics.len(),
+            diagnostics.len(),
             task_request_count,
             render_hash,
         )
@@ -900,7 +931,9 @@ fn bundle_image_proxies(
             layer: proxy.layer.clone(),
             depth: proxy.depth_milli,
             declaration: None,
+            schema: None,
             hit_test: proxy.hit_test,
+            fields: Vec::new(),
             params: proxy
                 .params
                 .iter()

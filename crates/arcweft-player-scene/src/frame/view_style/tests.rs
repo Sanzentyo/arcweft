@@ -20,15 +20,15 @@ use arcweft_presentation::hover::HoverPath;
 use arcweft_presentation::input::{InteractionTarget, PointerId};
 use arcweft_presentation::interaction::{FocusState, InteractionState};
 use arcweft_presentation::layer::LayerId;
-use arcweft_render_text::{
-    RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextStyle,
-};
 use arcweft_runtime_driver::display::BundlePresentationSnapshot;
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::SessionEnvironmentState;
 use arcweft_runtime_driver::view_runtime::{
     BundleViewInstancePath, BundleViewMountOutput, BundleViewStyleNode, BundleViewStyleNodeId,
     BundleViewStyleNodeKind, BundleViewTextOutput, BundleViewTextTarget, BundleViewTextValue,
+};
+use arcweft_text_model::{
+    RichTextDocument, RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextStyle,
 };
 use arcweft_view::style::{
     ComputedViewStyle, ComputedViewStyleBuilder, ComputedViewStyleRevision,

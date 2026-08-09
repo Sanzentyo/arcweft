@@ -9,10 +9,7 @@ use super::{
     HirRichTextCharge, validate_module,
 };
 use crate::identity::{ExprId, HirModuleId};
-use crate::leaf::HirName;
-use arcweft_lang_syntax::expressions::{
-    SyntaxDialogueContentIssue, SyntaxDialogueControl, SyntaxLineBreakKind,
-};
+use arcweft_lang_syntax::expressions::{SyntaxDialogueContentIssue, SyntaxLineBreakKind};
 
 /// Dialogue content owned one-to-one by an application expression.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -216,8 +213,6 @@ pub enum HirDialogueNodeKind {
     AuthoredEndTag(HirRichTextEndTag),
     InferredEndTag(HirRichTextEndTag),
     Interpolation(ExprId),
-    Control(HirDialogueControl),
-    Mark(HirName),
     LineBreak(HirLineBreakKind),
     Error(HirDialogueContentError),
 }
@@ -274,62 +269,6 @@ impl From<SyntaxLineBreakKind> for HirLineBreakKind {
             SyntaxLineBreakKind::Line => Self::Line,
             SyntaxLineBreakKind::Paragraph => Self::Paragraph,
             SyntaxLineBreakKind::Page => Self::Page,
-        }
-    }
-}
-
-/// Closed semantic dialogue control inventory.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum HirDialogueControl {
-    Wait,
-    Reset,
-    Clear,
-    Erase,
-    ClearMessage,
-    Speed,
-    Voice,
-    Face,
-    Pose,
-    Show,
-    Hide,
-    Move,
-    Scale,
-    Rotate,
-    Animation,
-    StageShake,
-    At,
-    Call,
-    Signal,
-    ConditionalIf,
-    ConditionalElse,
-    ConditionalEnd,
-}
-
-impl From<SyntaxDialogueControl> for HirDialogueControl {
-    fn from(value: SyntaxDialogueControl) -> Self {
-        match value {
-            SyntaxDialogueControl::Wait => Self::Wait,
-            SyntaxDialogueControl::Reset => Self::Reset,
-            SyntaxDialogueControl::Clear => Self::Clear,
-            SyntaxDialogueControl::Erase => Self::Erase,
-            SyntaxDialogueControl::ClearMessage => Self::ClearMessage,
-            SyntaxDialogueControl::Speed => Self::Speed,
-            SyntaxDialogueControl::Voice => Self::Voice,
-            SyntaxDialogueControl::Face => Self::Face,
-            SyntaxDialogueControl::Pose => Self::Pose,
-            SyntaxDialogueControl::Show => Self::Show,
-            SyntaxDialogueControl::Hide => Self::Hide,
-            SyntaxDialogueControl::Move => Self::Move,
-            SyntaxDialogueControl::Scale => Self::Scale,
-            SyntaxDialogueControl::Rotate => Self::Rotate,
-            SyntaxDialogueControl::Animation => Self::Animation,
-            SyntaxDialogueControl::StageShake => Self::StageShake,
-            SyntaxDialogueControl::At => Self::At,
-            SyntaxDialogueControl::Call => Self::Call,
-            SyntaxDialogueControl::Signal => Self::Signal,
-            SyntaxDialogueControl::ConditionalIf => Self::ConditionalIf,
-            SyntaxDialogueControl::ConditionalElse => Self::ConditionalElse,
-            SyntaxDialogueControl::ConditionalEnd => Self::ConditionalEnd,
         }
     }
 }
@@ -392,6 +331,14 @@ fn validate_content_ids(
             }
             HirDialogueNodeKind::InferredEndTag(tag) if !tag.is_inferred() => {
                 return Err(HirDialogueInvariantError::InvalidEndTagInference);
+            }
+            HirDialogueNodeKind::AuthoredEndTag(end) | HirDialogueNodeKind::InferredEndTag(end) => {
+                if let Some(tag) = end.paired_start()
+                    && (tag.content() != content
+                        || tags.get(tag.ordinal() as usize).map(HirRichTextTag::id) != Some(tag))
+                {
+                    return Err(HirDialogueInvariantError::InvalidTagReference);
+                }
             }
             _ => {}
         }

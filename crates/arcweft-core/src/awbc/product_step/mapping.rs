@@ -1,12 +1,12 @@
 use super::{AwbcProductStepExecutor, ProductStepError};
 use crate::awbc::schema::{
-    AwbcContentUnitId, AwbcEffectKind, AwbcEffectPlanId, AwbcProgram, AwbcResourceResidency,
-    AwbcStringId, AwbcTaskPlanId, AwbcTaskPolicy,
+    AwbcConstant, AwbcContentUnitId, AwbcEffectKind, AwbcEffectPlanId, AwbcProgram,
+    AwbcResourceResidency, AwbcStringId, AwbcTaskPlanId, AwbcTaskPolicy,
 };
 use crate::awbc::vm::constant_value;
 use crate::effect::{
-    LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
-    RuntimeEvent, RuntimeField, RuntimeLog, RuntimeWaitTarget,
+    LineEffectRequest, RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
+    RuntimeAssignment, RuntimeCall, RuntimeEvent, RuntimeField, RuntimeLog, RuntimeWaitTarget,
 };
 use crate::line_task::LineOutRequest;
 use crate::step::{
@@ -22,6 +22,7 @@ use crate::value::{
 use arcweft_interaction_model::audio::AudioCommand;
 
 pub(super) enum MappedEffect {
+    Omitted,
     Line(LineEffectRequest),
     Audio(AudioCommand),
     Unsupported(RuntimeDiagnostic),
@@ -86,6 +87,14 @@ impl AwbcEffectKind {
                     })
                 })
                 .collect()
+        };
+        let assertion_guard = |index: usize| -> Option<RuntimeAssertionGuardId> {
+            let id = *plan.static_args.get(index)?;
+            let AwbcConstant::Bytes(bytes) = program.constants.get(id.index())? else {
+                return None;
+            };
+            let bytes: [u8; 16] = bytes.as_slice().try_into().ok()?;
+            RuntimeAssertionGuardId::try_from_bytes(bytes).ok()
         };
         let mapped = match self {
             Self::RegisterHandle => LineEffectRequest::RegisterHandle {
@@ -216,23 +225,54 @@ impl AwbcEffectKind {
                     dynamic_string(1)
                 },
             },
-            Self::Assert => LineEffectRequest::Assert(RuntimeAssertion {
-                condition: if dynamic_args.is_empty() {
-                    string(0)
+            Self::Assert => {
+                let Some(guard) = assertion_guard(0) else {
+                    return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                        RuntimeDiagnosticCategory::Internal,
+                        "malformed AWBC assertion guard",
+                    ));
+                };
+                let profile = match string(3).as_str() {
+                    "always" => RuntimeAssertionProfile::Always,
+                    "debug_only" => RuntimeAssertionProfile::DebugOnly,
+                    _ => {
+                        return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Internal,
+                            "malformed AWBC assertion profile",
+                        ));
+                    }
+                };
+                if dynamic_args.is_empty() {
+                    LineEffectRequest::Assert(RuntimeAssertion::new(
+                        guard,
+                        string(1),
+                        string(2),
+                        profile,
+                    ))
                 } else {
-                    dynamic_string(0)
-                },
-                message: if dynamic_args.is_empty() {
-                    string(1)
-                } else {
-                    dynamic_string(1)
-                },
-                profile: if string(2) == "debug_only" {
-                    RuntimeAssertionProfile::DebugOnly
-                } else {
-                    RuntimeAssertionProfile::Always
-                },
-            }),
+                    let Some(condition_value) = dynamic_args.first() else {
+                        return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Type,
+                            "AWBC assertion condition must evaluate to Bool",
+                        ));
+                    };
+                    let RuntimeValue::Bool(condition) = condition_value else {
+                        return MappedEffect::Unsupported(RuntimeDiagnostic::categorized(
+                            RuntimeDiagnosticCategory::Type,
+                            "AWBC assertion condition must evaluate to Bool",
+                        ));
+                    };
+                    if *condition {
+                        return MappedEffect::Omitted;
+                    }
+                    LineEffectRequest::Assert(RuntimeAssertion::new(
+                        guard,
+                        runtime_value_label(condition_value),
+                        dynamic_string(1),
+                        profile,
+                    ))
+                }
+            }
             Self::Close => LineEffectRequest::Close(string(0)),
             Self::Select => LineEffectRequest::Select(string(0)),
             Self::Break => LineEffectRequest::Break {

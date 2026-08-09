@@ -3,7 +3,7 @@
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::{
     FixedParameterGrammar, emit_extra_parameter_group_recovery, emit_fixed_parameters_until,
     emit_flow_contract_clauses, emit_generic_parameters, emit_outer_prefixes, emit_return_type,
@@ -41,7 +41,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     let owner = parser.start_projected_owner(SyntaxKind::FlowItem, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -124,7 +124,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_flow_identity(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingFlowIdentity {
+fn emit_flow_identity(parser: &mut DocumentParser<'_, '_>) -> PendingFlowIdentity {
     let public_id = emit_flow_public_id(parser);
     if public_id.is_some() {
         parser.bump_trivia();
@@ -162,7 +162,7 @@ fn emit_flow_identity(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingFlowI
     }
 }
 
-fn emit_flow_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<FlowIdEmission> {
+fn emit_flow_public_id(parser: &mut DocumentParser<'_, '_>) -> Option<FlowIdEmission> {
     let token = parser
         .current()
         .filter(|token| token.kind() == SyntaxKind::EntityReferenceToken)?;
@@ -178,10 +178,8 @@ fn emit_flow_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<Flow
         && match syntax.value() {
             Ok(_) => syntax.normalized_for_family(&flow_family).1,
             Err(SyntaxIdRefIssue::MissingSuffix) if marker_family.is_some() => {
-                marker_family.as_ref().is_none_or(|family| {
-                    family.as_ref().is_none_or(|family| {
-                        family.as_str() == DeclarationIdentityFamily::Flow.prefix()
-                    })
+                marker_family.as_ref().is_some_and(|marker| {
+                    marker.matches_family(DeclarationIdentityFamily::Flow.prefix())
                 })
             }
             _ => false,
@@ -199,7 +197,9 @@ fn emit_flow_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<Flow
         }
     };
     let form = match marker_family {
-        Some(family) => PendingFlowPublicIdForm::DerivedFromEmptyMarker { family },
+        Some(marker) => PendingFlowPublicIdForm::DerivedFromEmptyMarker {
+            family: marker.into_family(),
+        },
         None => PendingFlowPublicIdForm::Authored,
     };
     let requires_name = matches!(form, PendingFlowPublicIdForm::DerivedFromEmptyMarker { .. });
@@ -251,7 +251,7 @@ fn emit_flow_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<Flow
 }
 
 fn emit_optional_flow_name(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
 ) -> Option<(SyntaxName, SourceRange)> {
     let token = parser
         .current()

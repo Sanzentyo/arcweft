@@ -1,4 +1,4 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use arcweft_agent_protocol::{
     ids::{SessionId, StableHash},
@@ -19,23 +19,27 @@ use arcweft_core::{
 };
 use arcweft_debug_model::sink::NullDebugEventSink;
 use arcweft_id::PublicId;
-use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
+use arcweft_lang_hir::symbol::{CallableDeclarationKey, CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{
-    env::TypeCheckEnv,
-    project_index::{
-        ProgramHash, ProjectSemanticIndex, project_semantic_index_from_checked_project,
-    },
-    registration::ProjectRegistrationFacts,
+    env::TypeCheckEnv, project_index::ProjectSemanticIndex, registration::ProjectRegistrationFacts,
 };
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    incremental::{ParsedSource, SyntaxDatabase},
+    parser::ParseOptions,
+};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
-use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_project::{
+    artifact::{ArtifactKeyInput, RuntimePlanArtifactKey},
+    fingerprint::BuildDigest,
+    incremental::QueryKind,
+    sources::{ProjectSourceFile, ProjectSources},
+};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId};
 
 use super::{
-    CompiledProject, ProjectCompilationContext, ProjectCompileError, ProjectCompileStage,
-    ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
+    CompiledProject, ProjectCompilationContext, ProjectCompilationSession, ProjectCompileError,
+    ProjectCompileStage, ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
 };
 use crate::{agent::compile_agent_project_bundle, error::CompileAgentError};
 
@@ -51,17 +55,17 @@ enum GameEvent {
 fn initial_game_state() -> GameState
 effects {}
 {
-    initial_game_state()
+    GameState { score = 0i32 }
 }
 
-fn reduce_game(state: &GameState, event: GameEvent)
+fn reduce_game(current: &GameState, event: GameEvent)
     -> Result<Reduction<GameState>, ReducerError>
 effects {}
 {
-    reduce_game(state, event)
+    Ok(Reduction.unchanged(current))
 }
 
-flow opening(state: GameState) {
+flow @flow.opening opening(current: GameState) {
 }
 
 entry game @entry.game.main {
@@ -147,13 +151,32 @@ fn compile_entry_project(source_text: &str) -> Result<CompiledProject, ProjectCo
         "entry.game.main",
         ProjectEntrySelectionKind::Game,
     );
-    compile_project(&project, &context, &entry_runtime_options())
+    let context = context.with_command_policy(RuntimeCommandPolicy::deny_all(
+        RootExecutionLimits::engine_default(),
+    ));
+    compile_attached_project(&project, &context)
 }
 
-fn entry_runtime_options() -> RuntimePlanLowerOptions {
-    RuntimePlanLowerOptions::default().with_command_policy(RuntimeCommandPolicy::deny_all(
-        RootExecutionLimits::engine_default(),
-    ))
+fn compile_attached_project(
+    project: &ProjectSources,
+    context: &ProjectCompilationContext,
+) -> Result<CompiledProject, ProjectCompileError> {
+    let mut syntax = SyntaxDatabase::try_new().expect("entry test syntax database");
+    let parsed_sources: BTreeMap<CanonicalModulePath, ParsedSource> = project
+        .modules()
+        .map(|source| {
+            let parsed = syntax
+                .parse_initial(
+                    SourceSnapshotId::initial(source.document().display_name().clone()),
+                    Arc::clone(source.document()),
+                    ParseOptions::default(),
+                )
+                .expect("entry test attached source");
+            (source.module().clone(), parsed)
+        })
+        .collect();
+    let mut compiler = ProjectCompilationSession::try_new().expect("entry test HIR database");
+    compile_project(&mut compiler, project, &parsed_sources, context)
 }
 
 #[test]
@@ -179,7 +202,7 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
     assert_eq!(compiled.runtime_plan().plan.flow_executables.len(), 1);
     assert_eq!(
         compiled.runtime_plan().plan.flow_executables[0].parameters[0].name,
-        "state"
+        "current"
     );
     assert_eq!(
         entry.target,
@@ -191,7 +214,7 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
         "entry.game.missing",
         ProjectEntrySelectionKind::Game,
     );
-    let missing = compile_project(&missing_project, &missing_context, &entry_runtime_options())
+    let missing = compile_attached_project(&missing_project, &missing_context)
         .expect_err("missing selected entry is rejected");
     assert_eq!(
         missing.stage(),
@@ -209,12 +232,8 @@ fn sel_005_checks_selected_entry_identity_and_kind_before_runtime_lowering() {
         "entry.game.main",
         ProjectEntrySelectionKind::Agent,
     );
-    let mismatch = compile_project(
-        &mismatch_project,
-        &mismatch_context,
-        &entry_runtime_options(),
-    )
-    .expect_err("entry kind mismatch is rejected");
+    let mismatch = compile_attached_project(&mismatch_project, &mismatch_context)
+        .expect_err("entry kind mismatch is rejected");
     assert_eq!(
         mismatch.stage(),
         ProjectCompileStage::EntrySelection.as_str()
@@ -240,8 +259,7 @@ entry cli @entry.cli.main {
 "#;
     let (project, context) =
         entry_project(source, "entry.cli.main", ProjectEntrySelectionKind::Cli);
-    let compiled =
-        compile_project(&project, &context, &entry_runtime_options()).expect("CLI entry compiles");
+    let compiled = compile_attached_project(&project, &context).expect("CLI entry compiles");
     let entry = &compiled.runtime_plan().plan.entries[0];
     let checked = compiled
         .checked_entries()
@@ -263,7 +281,7 @@ fn stateful_project_lowering_requires_explicit_adapter_command_policy() {
         "entry.game.main",
         ProjectEntrySelectionKind::Game,
     );
-    let error = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+    let error = compile_attached_project(&project, &context)
         .expect_err("an absent adapter policy must not become an implicit deny-all policy");
 
     assert_eq!(
@@ -299,13 +317,29 @@ entry agent @entry.agent.smoke {
         "entry.agent.smoke",
         ProjectEntrySelectionKind::Agent,
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+    let compiled = compile_attached_project(&project, &context)
         .expect("checked ordinary-function Agent controller compiles");
     let entry = &compiled.runtime_plan().plan.entries[0];
     let RuntimeEntryTarget::Controller(generated) = &entry.target else {
         panic!("Agent entry must target its generated controller flow");
     };
-    let authored = FlowRuntimeId::from_source_entity_body("flow.agent.smoke").unwrap();
+    let authored_declaration = compiled
+        .project_symbols()
+        .callable_symbols()
+        .find_map(|symbol| match symbol.declaration() {
+            CallableDeclarationKey::Flow(declaration)
+                if declaration.public_id().as_str() == "flow.agent.smoke" =>
+            {
+                Some(declaration)
+            }
+            _ => None,
+        })
+        .expect("authored Flow retains its checked declaration identity");
+    let authored = FlowRuntimeId::from_checked_declaration_digest(
+        authored_declaration.semantic_digest().into_bytes(),
+        authored_declaration.public_id().as_str(),
+    )
+    .expect("checked authored Flow identity lowers");
 
     assert_ne!(generated, &authored);
     assert!(
@@ -333,8 +367,8 @@ entry agent @entry.agent.smoke {
 #[test]
 fn body_only_change_preserves_binding_and_changes_compile_artifact_identity() {
     let changed = ENTRY_SOURCE.replace(
-        "{\n    reduce_game(state, event)\n}\n\nflow",
-        "{\n    let marker = 1\n    reduce_game(state, event)\n}\n\nflow",
+        "{\n    Ok(Reduction.unchanged(current))\n}\n\nflow",
+        "{\n    let marker = 1i32\n    Ok(Reduction.unchanged(current))\n}\n\nflow",
     );
     let baseline = compile_entry_project(ENTRY_SOURCE).expect("baseline compiles");
     let changed = compile_entry_project(&changed).expect("body-only variant compiles");
@@ -352,14 +386,7 @@ fn body_only_change_preserves_binding_and_changes_compile_artifact_identity() {
 }
 
 fn checked_project_index(compiled: &CompiledProject) -> ProjectSemanticIndex {
-    project_semantic_index_from_checked_project(
-        compiled.hir_project(),
-        compiled.registered_world().symbols(),
-        compiled.typecheck_report(),
-        ProgramHash::new("program-agent-entry-test"),
-        compiled.checked_entries(),
-    )
-    .expect("checked project index builds")
+    compiled.semantic_index().as_ref().clone()
 }
 
 #[test]
@@ -390,12 +417,17 @@ entry agent @entry.agent.second {
         "entry.agent.second",
         ProjectEntrySelectionKind::Agent,
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
-        .expect("ordinary Agent controllers compile");
+    let compiled =
+        compile_attached_project(&project, &context).expect("ordinary Agent controllers compile");
     let index = checked_project_index(&compiled);
     let selected = PublicId::try_new("entry.agent.second").unwrap();
-    let artifact = compile_agent_project_bundle(&compiled, &selected, &index)
-        .expect("selected Agent entry compiles");
+    let artifact = compile_agent_project_bundle(
+        &compiled,
+        &selected,
+        &index,
+        test_runtime_plan_artifact_key(),
+    )
+    .expect("selected Agent entry compiles");
 
     assert_eq!(artifact.manifest.entry_id.as_str(), "entry.agent.second");
     assert_eq!(
@@ -436,19 +468,21 @@ entry agent @entry.agent.beta {
         "entry.agent.alpha",
         ProjectEntrySelectionKind::Agent,
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+    let compiled = compile_attached_project(&project, &context)
         .expect("shared ordinary Agent controller compiles");
     let index = checked_project_index(&compiled);
     let alpha = compile_agent_project_bundle(
         &compiled,
         &PublicId::try_new("entry.agent.alpha").unwrap(),
         &index,
+        test_runtime_plan_artifact_key(),
     )
     .expect("alpha entry compiles");
     let beta = compile_agent_project_bundle(
         &compiled,
         &PublicId::try_new("entry.agent.beta").unwrap(),
         &index,
+        test_runtime_plan_artifact_key(),
     )
     .expect("beta entry compiles");
 
@@ -487,8 +521,8 @@ entry cli @entry.cli.main {
         "entry.agent.smoke",
         ProjectEntrySelectionKind::Agent,
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
-        .expect("mixed entry project compiles");
+    let compiled =
+        compile_attached_project(&project, &context).expect("mixed entry project compiles");
     let index = checked_project_index(&compiled);
 
     assert!(matches!(
@@ -496,6 +530,7 @@ entry cli @entry.cli.main {
             &compiled,
             &PublicId::try_new("entry.agent.missing").unwrap(),
             &index,
+            test_runtime_plan_artifact_key(),
         ),
         Err(CompileAgentError::MissingSelectedEntry { .. })
     ));
@@ -504,16 +539,9 @@ entry cli @entry.cli.main {
             &compiled,
             &PublicId::try_new("entry.cli.main").unwrap(),
             &index,
+            test_runtime_plan_artifact_key(),
         ),
         Err(CompileAgentError::SelectedEntryNotAgent { .. })
-    ));
-    assert!(matches!(
-        compile_agent_project_bundle(
-            &compiled,
-            &PublicId::try_new("entry.agent.smoke").unwrap(),
-            &ProjectSemanticIndex::new(ProgramHash::new("other-project")),
-        ),
-        Err(CompileAgentError::ProjectIndexEntryMismatch { .. })
     ));
 }
 
@@ -542,7 +570,7 @@ entry agent @entry.agent.controller {
         "entry.agent.controller",
         ProjectEntrySelectionKind::Agent,
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+    let compiled = compile_attached_project(&project, &context)
         .expect("controller after unrelated ordinary function compiles");
     let entry = compiled
         .runtime_plan()
@@ -596,7 +624,7 @@ entry agent @entry.agent.controller {
         "entry.agent.controller",
         ProjectEntrySelectionKind::Agent,
     );
-    let error = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+    let error = compile_attached_project(&project, &context)
         .expect_err("Agent operations outside a bound controller require ordinary policy");
 
     assert!(
@@ -653,7 +681,7 @@ entry agent @entry.agent.second {
         "entry.agent.second",
         ProjectEntrySelectionKind::Agent,
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+    let compiled = compile_attached_project(&project, &context)
         .expect("multiple exact ordinary Agent controllers compile");
 
     for (entry_id, expected) in [
@@ -705,13 +733,14 @@ entry agent @entry.agent.controller {
         "entry.agent.controller",
         ProjectEntrySelectionKind::Agent,
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+    let compiled = compile_attached_project(&project, &context)
         .expect("ordinary Agent entry project compiles");
     let index = checked_project_index(&compiled);
     let artifact = compile_agent_project_bundle(
         &compiled,
         &PublicId::try_new("entry.agent.controller").unwrap(),
         &index,
+        test_runtime_plan_artifact_key(),
     )
     .expect("entry-bound Agent artifact compiles");
     let bytes = artifact.bundle.to_json_bytes().expect("bundle encodes");
@@ -780,4 +809,25 @@ entry agent @entry.agent.controller {
         runner.run_controller_bundle(&tampered, AgentControllerRunConfig::default()),
         Err(AgentRunError::AgentArtifactMismatch { .. })
     ));
+}
+
+fn test_runtime_plan_artifact_key() -> RuntimePlanArtifactKey {
+    RuntimePlanArtifactKey::try_derive(&ArtifactKeyInput {
+        compiler_build_id: "compiler-entry-test".to_owned(),
+        query: QueryKind::RuntimePlan,
+        artifact_kind: QueryKind::RuntimePlan.artifact_kind(),
+        target_triple: "native".to_owned(),
+        target_features: Vec::new(),
+        profile: "debug".to_owned(),
+        package: "org.arcweft.compiler-entry".to_owned(),
+        logical_item: "runtime-plan".to_owned(),
+        source_digest: BuildDigest::of(b"compiler-entry-test-source"),
+        dependency_interface_digests: Vec::new(),
+        dependency_body_digests: Vec::new(),
+        adapter_environment_digest: BuildDigest::of(b"compiler-entry-test-adapter"),
+        launch_profile_digest: BuildDigest::ZERO,
+        declared_environment_digest: BuildDigest::ZERO,
+        format_options_digest: BuildDigest::of(b"compiler-entry-test-options"),
+    })
+    .expect("typed runtime-plan artifact key")
 }

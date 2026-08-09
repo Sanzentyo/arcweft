@@ -9,7 +9,7 @@ use crate::container::{BundleDigest, BundleSectionKind};
 use crate::patch::PatchCompatibility;
 use crate::{ArcweftBundle, BundleImageAsset, BundleImageObject, BundleVirtualFile};
 use arcweft_audio_core::graph::AudioGraph;
-use arcweft_render_text::LineDisplayCatalog;
+use arcweft_text_model::DialogueContentCatalog;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -37,14 +37,11 @@ pub struct ProductCatalogBudget {
     pub transcript_bytes: usize,
 }
 
-/// Required content catalog section.
-///
-/// The current product model has no lowered dialogue/content records in
-/// `ArcweftBundle`; this compact section is therefore an explicit empty content
-/// catalog, keeping the required AWFB section migrated without inventing
-/// unsupported entity/dialogue projections.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ContentCatalogSection;
+/// Required static dialogue-content catalog section.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct ContentCatalogSection {
+    pub dialogue_content: DialogueContentCatalog,
+}
 
 /// Optional asset catalog section for bundle virtual files and image assets.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
@@ -53,10 +50,9 @@ pub struct AssetCatalogSection {
     pub image_assets: Vec<BundleImageAsset>,
 }
 
-/// Optional display catalog section for render-text display data and image objects.
+/// Optional display catalog section for image objects.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DisplayCatalogSection {
-    pub display: LineDisplayCatalog,
     pub image_objects: Vec<BundleImageObject>,
 }
 
@@ -88,27 +84,49 @@ impl Default for ProductCatalogBudget {
 }
 
 impl ContentCatalogSection {
-    pub fn from_bundle(_bundle: &ArcweftBundle) -> Self {
-        Self
+    pub fn from_bundle(bundle: &ArcweftBundle) -> Self {
+        Self {
+            dialogue_content: bundle.dialogue_content.clone(),
+        }
     }
 
     pub fn encode_canonical_section(&self) -> Result<Vec<u8>, SectionCodecError> {
+        self.validate(ProductCatalogBudget::default())?;
         encode_family_section(
             ProductSectionCodecKind::ContentCatalog,
             "content_catalog",
             self,
-            [],
+            self.public_ids(),
             ProductCatalogBudget::default(),
         )
     }
 
     pub fn decode_canonical_section(bytes: &[u8]) -> Result<Self, SectionCodecError> {
-        decode_family_section(
+        let section: Self = decode_family_section(
             bytes,
             ProductSectionCodecKind::ContentCatalog,
             "content_catalog",
             ProductCatalogBudget::default(),
+        )?;
+        section.validate(ProductCatalogBudget::default())?;
+        Ok(section)
+    }
+
+    fn validate(&self, budget: ProductCatalogBudget) -> Result<(), SectionCodecError> {
+        check_budget(
+            self.dialogue_content.records().len(),
+            budget.common.records,
+            "dialogue_content_records",
         )
+    }
+
+    fn public_ids(&self) -> Vec<String> {
+        unique_strings(self.dialogue_content.records().iter().flat_map(|record| {
+            [
+                record.line().canonical_label(),
+                record.text_key().as_str().to_owned(),
+            ]
+        }))
     }
 }
 
@@ -199,7 +217,6 @@ impl AssetCatalogSection {
 impl DisplayCatalogSection {
     pub fn from_bundle(bundle: &ArcweftBundle) -> Self {
         let mut section = Self {
-            display: bundle.display.clone(),
             image_objects: bundle.image_objects.clone(),
         };
         section.canonicalize();

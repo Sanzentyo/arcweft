@@ -13,7 +13,7 @@ use crate::leaf::{
     HirName, HirPath, HirPathIssue, HirPathRecovery, HirPathRoot, HirPathSegment,
     HirProjectSymbolSegment,
 };
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure};
 
 use super::require_limit;
 
@@ -32,7 +32,9 @@ impl<'source> TypedPathSegment<'source> {
     ) -> Self {
         match kind {
             AttachedPathSegmentKind::Identifier => Self::Identifier(spelling),
-            AttachedPathSegmentKind::Keyword => Self::ProjectSymbol(spelling),
+            AttachedPathSegmentKind::Keyword | AttachedPathSegmentKind::ProjectSymbol => {
+                Self::ProjectSymbol(spelling)
+            }
             AttachedPathSegmentKind::Lifetime => Self::Invalid(spelling),
         }
     }
@@ -212,7 +214,7 @@ fn limit_overflow(limit: HirLimit) -> HirLowerFailure {
 mod tests {
     use crate::identity::HirLimit;
     use crate::leaf::{HirPathIssue, HirPathRoot, HirPathSegment};
-    use crate::lower::HirLowerFailure;
+    use crate::lowering::HirLowerFailure;
 
     use super::{TypedPathProjection, TypedPathSegment, project_typed_path};
 

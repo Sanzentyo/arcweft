@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_syntax::attachment::TypedSyntaxTree`
+ --> tests/ui/removed_typed_syntax_tree.rs:1:5
+  |
+1 | use arcweft_lang_syntax::attachment::TypedSyntaxTree;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `TypedSyntaxTree` in `attachment`

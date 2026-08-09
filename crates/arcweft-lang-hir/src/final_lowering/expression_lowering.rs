@@ -17,8 +17,9 @@ use arcweft_lang_syntax::attachment::{
 };
 use arcweft_lang_syntax::expressions::{
     ExpressionComponentRole, ExpressionProjection, SyntaxAssociatedCallSyntax,
-    SyntaxAwaitPropagation, SyntaxBinaryOperator, SyntaxBorrowKind,
-    SyntaxCallArgumentListTerminator, SyntaxCallArgumentProjection, SyntaxCallCalleeProjection,
+    SyntaxAssociatedReceiver, SyntaxAssociatedSeparator, SyntaxAwaitPropagation,
+    SyntaxBinaryOperator, SyntaxBorrowKind, SyntaxCallArgumentListTerminator,
+    SyntaxCallArgumentPart, SyntaxCallArgumentProjection, SyntaxCallCalleeProjection,
     SyntaxCallProjection, SyntaxCallTypeApplicationSpelling, SyntaxCallTypeApplicationTerminator,
     SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxComputationBlockKind,
     SyntaxExpressionSlot, SyntaxLifetimeRegistryPath, SyntaxLifetimeRegistryScope,
@@ -31,19 +32,19 @@ use arcweft_lang_syntax::name::SyntaxNameIssue;
 
 use crate::diagnostic::{HirRecoveryDiagnostic, HirRecoveryPrimary};
 use crate::expr::{
-    HirArrayRepeatExpr, HirAssociatedCallSyntax, HirAssociatedReceiver, HirAwaitExpr,
-    HirAwaitPropagation, HirBinaryExpr, HirBinaryOp, HirBorrowExpr, HirBorrowKind,
-    HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
-    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
-    HirCallTypeApplication, HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator,
-    HirCallTypeArgument, HirCallTypeArgumentOrdinal, HirCallValue, HirClosureExpr,
-    HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind, HirDereferenceExpr,
-    HirExpr, HirExprError, HirExprKind, HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr,
-    HirIfLetExpr, HirIndexExpr, HirMatchArm, HirMatchExpr, HirMatchRecoveryIssue,
-    HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState,
-    HirRangeExpr, HirRecordExpr, HirRecordField, HirRecordFieldIssue, HirRecordLiteralExpr,
-    HirRecoveredName, HirRecoveryIssue, HirRequiredTokenState, HirSelectExpr, HirSelectedMember,
-    HirTryExpr, HirTryForm, HirTupleExpr, HirUnaryExpr, HirUnaryOp, literal_recovery_issue,
+    HirArrayRepeatExpr, HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator,
+    HirAwaitExpr, HirAwaitPropagation, HirBinaryExpr, HirBinaryOp, HirBorrowExpr, HirBorrowKind,
+    HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator, HirCallBuildError,
+    HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr, HirCallTypeApplication,
+    HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator, HirCallTypeArgument,
+    HirCallTypeArgumentOrdinal, HirCallValue, HirClosureExpr, HirClosureParameter,
+    HirComputationBlockExpr, HirComputationBlockKind, HirDereferenceExpr, HirExpr, HirExprError,
+    HirExprKind, HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr, HirIfLetExpr,
+    HirIndexExpr, HirMatchArm, HirMatchExpr, HirMatchRecoveryIssue, HirNamedBlockExpr,
+    HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState, HirRangeExpr,
+    HirRecordExpr, HirRecordField, HirRecordFieldIssue, HirRecordLiteralExpr, HirRecoveredName,
+    HirRecoveryIssue, HirRequiredTokenState, HirSelectExpr, HirSelectedMember, HirTryExpr,
+    HirTryForm, HirTupleExpr, HirUnaryExpr, HirUnaryOp, literal_recovery_issue,
 };
 use crate::identity::{ExprId, HirLimit, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole};
 use crate::leaf::{
@@ -51,10 +52,11 @@ use crate::leaf::{
     HirLifetimeRegistryPath, HirLifetimeRegistryScope, HirNumericSequence,
     HirNumericSequenceElement, HirNumericSequenceRecovery, HirPathValue, HirShortVariantName,
 };
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirLoweringCheckpoint};
 use crate::scope::{CaptureAccess, HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::{
     HirExprSourceRole, HirMatchArmSourcePart, HirSourceQuery, HirSourceSite,
+    expression_component_role,
 };
 use crate::type_ref::HirTypeResolver;
 
@@ -66,6 +68,22 @@ use super::name_projection::{
 use super::path_projection::{TypedPathProjection, project_attached_path, project_type_path};
 use super::statement_lowering::OmittedValueTail;
 use super::{StagedHirModuleTransaction, require_limit};
+
+type LoweredRangeChildren = (Option<ExprId>, Option<ExprId>, Option<HirRecoveryIssue>);
+
+pub(super) fn lower_associated_separator(
+    separator: SyntaxAssociatedSeparator,
+) -> HirAssociatedSeparator {
+    let syntax = |syntax| match syntax {
+        SyntaxAssociatedCallSyntax::DotFallback => HirAssociatedCallSyntax::DotFallback,
+        SyntaxAssociatedCallSyntax::ExplicitDoubleColon => {
+            HirAssociatedCallSyntax::ExplicitDoubleColon
+        }
+    };
+    match separator {
+        SyntaxAssociatedSeparator::Present(value) => HirAssociatedSeparator::Present(syntax(value)),
+    }
+}
 
 impl StagedHirModuleTransaction<'_> {
     /// Lowers one attached E01-E11 expression through the transaction's sole
@@ -88,7 +106,7 @@ impl StagedHirModuleTransaction<'_> {
         scope: ScopeId,
     ) -> Result<ExprId, HirLowerFailure> {
         self.validate_attached_expression(attached, scope)?;
-        self.preflight_expression(attached)?;
+        Self::preflight_expression(attached)?;
         let whole = attached.whole_source_span();
         let reservation = self.arenas.expressions().reserve_source(
             &mut self.slots,
@@ -96,6 +114,8 @@ impl StagedHirModuleTransaction<'_> {
             HirSourceSite::Span(whole.clone()),
         )?;
         let owner = reservation.id();
+        self.control
+            .checkpoint(HirLoweringCheckpoint::ChildReserved)?;
         if !reservation.is_first_touch() {
             return self.validate_reused_expression(owner, scope);
         }
@@ -177,6 +197,10 @@ impl StagedHirModuleTransaction<'_> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "this is the exhaustive one-pass projection from every attached expression family into its final HIR payload"
+    )]
     fn project_expression(
         &mut self,
         attached: &AttachedExpressionNode,
@@ -422,7 +446,7 @@ impl StagedHirModuleTransaction<'_> {
                         let source = attached
                             .component(ExpressionComponentRole::ElseBranch)
                             .ok_or(HirInvariantFailure::InvalidSourceSpan)?;
-                        let else_branch = self.lower_implicit_unit_tail(owner, scope, source)?;
+                        let else_branch = self.lower_implicit_unit_tail(owner, scope, &source)?;
                         (*condition, *then_branch, else_branch)
                     }
                     _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
@@ -575,24 +599,7 @@ impl StagedHirModuleTransaction<'_> {
         ))
     }
 
-    fn preflight_expression(
-        &self,
-        attached: &AttachedExpressionNode,
-    ) -> Result<(), HirLowerFailure> {
-        for child in attached.children() {
-            if child.missing().is_some()
-                && !SyntheticRole::RecoveryOperand.accepts_ordinal(child.ordinal())
-            {
-                return Err(HirInvariantFailure::InvalidSlotCommit.into());
-            }
-        }
-        if let ExpressionProjection::DialogueContentApplication(application) = attached.projection()
-        {
-            return self.preflight_dialogue_content_application(attached, application);
-        }
-        if let ExpressionProjection::PostfixBracket(postfix) = attached.projection() {
-            return self.preflight_postfix_bracket(attached, postfix);
-        }
+    fn preflight_expression(attached: &AttachedExpressionNode) -> Result<(), HirLowerFailure> {
         if let ExpressionProjection::Call(call) = attached.projection() {
             match call {
                 SyntaxCallProjection::Parenthesized(call) => {
@@ -605,6 +612,23 @@ impl StagedHirModuleTransaction<'_> {
                     require_limit(HirLimit::CallArguments, 1)?;
                 }
             }
+        }
+        for child in attached.children() {
+            if expression_component_role(attached.projection(), child.component_role()).is_none()
+                || child.missing().is_some()
+                    && !SyntheticRole::RecoveryOperand.accepts_ordinal(child.ordinal())
+            {
+                return Err(HirInvariantFailure::InvalidSlotCommit.into());
+            }
+        }
+        if let ExpressionProjection::DialogueContentApplication(application) = attached.projection()
+        {
+            return Self::preflight_dialogue_content_application(attached, application);
+        }
+        if let ExpressionProjection::PostfixBracket(postfix) = attached.projection() {
+            return Self::preflight_postfix_bracket(attached, postfix);
+        }
+        if matches!(attached.projection(), ExpressionProjection::Call(_)) {
             return Ok(());
         }
         if let ExpressionProjection::Match(expression) = attached.projection() {
@@ -631,6 +655,10 @@ impl StagedHirModuleTransaction<'_> {
         )
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the call transaction validates and lowers one closed callee/type-argument/value-argument schema in source order"
+    )]
     fn lower_call_expression(
         &mut self,
         attached: &AttachedExpressionNode,
@@ -648,12 +676,14 @@ impl StagedHirModuleTransaction<'_> {
             } else {
                 HirCallChildPoison::Clean
             };
-            let callback_child = self.expression_child(attached, 1, callback.callback())?;
-            let argument_role = HirExprSourceRole::CallArgument {
-                argument: HirCallArgumentOrdinal::try_new(0)
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
-                part: crate::source_index::HirCallArgumentSourcePart::Value,
-            };
+            let callback_child = Self::expression_child(
+                attached,
+                ExpressionComponentRole::CallArgument {
+                    argument: 0,
+                    part: SyntaxCallArgumentPart::Value,
+                },
+                callback.callback(),
+            )?;
             let (value, argument_state) = if let Some(semantic) = callback_child
                 .authored_semantic()
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -666,8 +696,12 @@ impl StagedHirModuleTransaction<'_> {
                 };
                 (HirCallValue::Present { value }, state)
             } else {
-                let recovery =
-                    self.lower_missing_expression(owner, scope, callback_child, argument_role)?;
+                let recovery = self.lower_missing_expression(
+                    attached.projection(),
+                    owner,
+                    scope,
+                    callback_child,
+                )?;
                 (
                     HirCallValue::Missing { recovery },
                     HirCallChildPoison::Poisoned,
@@ -693,8 +727,7 @@ impl StagedHirModuleTransaction<'_> {
                 HirCallBuildError::LimitExceeded { limit, observed } => HirLowerFailure::Limit(
                     HirLimitError::with_maximum(limit, observed, limit.maximum()),
                 ),
-                HirCallBuildError::ChildStateShapeMismatch
-                | HirCallBuildError::ChildIdentityMismatch => {
+                HirCallBuildError::ChildStateShapeMismatch => {
                     HirInvariantFailure::InvalidArenaCommit.into()
                 }
             })?;
@@ -725,7 +758,7 @@ impl StagedHirModuleTransaction<'_> {
                 };
                 (HirCallCallee::value(callee), state)
             }
-            SyntaxCallCalleeProjection::UnresolvedDot { member } => {
+            SyntaxCallCalleeProjection::UnresolvedDot { separator, member } => {
                 let value_receiver = self.lower_call_value_receiver(attached, scope)?;
                 let value_state = if self.staged_expression_is_poisoned(value_receiver)? {
                     HirCallChildPoison::Poisoned
@@ -741,25 +774,29 @@ impl StagedHirModuleTransaction<'_> {
                     HirCallCallee::unresolved_dot(
                         value_receiver,
                         nominal_receiver,
+                        lower_associated_separator(*separator),
                         recovered_name(member)?,
                     ),
                     value_state,
                 )
             }
-            SyntaxCallCalleeProjection::Associated { syntax, member } => {
+            SyntaxCallCalleeProjection::Associated {
+                receiver,
+                separator,
+                member,
+            } => {
+                let SyntaxAssociatedReceiver::Present = receiver;
                 let receiver = self.lower_call_associated_receiver(
                     attached,
                     scope,
                     SyntaxCallTypeChildRole::AssociatedReceiver,
                 )?;
-                let syntax = match syntax {
-                    SyntaxAssociatedCallSyntax::DotFallback => HirAssociatedCallSyntax::DotFallback,
-                    SyntaxAssociatedCallSyntax::ExplicitDoubleColon => {
-                        HirAssociatedCallSyntax::ExplicitDoubleColon
-                    }
-                };
                 (
-                    HirCallCallee::associated(receiver, recovered_name(member)?, syntax),
+                    HirCallCallee::associated(
+                        receiver,
+                        lower_associated_separator(*separator),
+                        recovered_name(member)?,
+                    ),
                     HirCallChildPoison::Clean,
                 )
             }
@@ -841,17 +878,12 @@ impl StagedHirModuleTransaction<'_> {
         let mut arguments = Vec::with_capacity(call.arguments().len());
         let mut argument_states = Vec::with_capacity(call.arguments().len());
         for (index, source_argument) in call.arguments().iter().enumerate() {
-            let argument = HirCallArgumentOrdinal::try_new(index)
-                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-            let child_ordinal = u32::try_from(index)
-                .ok()
-                .and_then(|index| index.checked_add(1))
-                .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
-            let child = self.expression_child(attached, child_ordinal, source_argument.value())?;
-            let role = HirExprSourceRole::CallArgument {
-                argument,
-                part: crate::source_index::HirCallArgumentSourcePart::Value,
+            let component_role = ExpressionComponentRole::CallArgument {
+                argument: u16::try_from(index)
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+                part: SyntaxCallArgumentPart::Value,
             };
+            let child = Self::expression_child(attached, component_role, source_argument.value())?;
             let (value, child_state) = if let Some(semantic) = child
                 .authored_semantic()
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -864,7 +896,8 @@ impl StagedHirModuleTransaction<'_> {
                 };
                 (HirCallValue::Present { value }, state)
             } else {
-                let recovery = self.lower_missing_expression(owner, scope, child, role)?;
+                let recovery =
+                    self.lower_missing_expression(attached.projection(), owner, scope, child)?;
                 (
                     HirCallValue::Missing { recovery },
                     HirCallChildPoison::Poisoned,
@@ -930,8 +963,7 @@ impl StagedHirModuleTransaction<'_> {
             HirCallBuildError::LimitExceeded { limit, observed } => HirLowerFailure::Limit(
                 HirLimitError::with_maximum(limit, observed, limit.maximum()),
             ),
-            HirCallBuildError::ChildStateShapeMismatch
-            | HirCallBuildError::ChildIdentityMismatch => {
+            HirCallBuildError::ChildStateShapeMismatch => {
                 HirInvariantFailure::InvalidArenaCommit.into()
             }
         })?;
@@ -947,7 +979,25 @@ impl StagedHirModuleTransaction<'_> {
         attached: &AttachedExpressionNode,
         scope: ScopeId,
     ) -> Result<ExprId, HirLowerFailure> {
-        let callee_child = self.expression_child(attached, 0, SyntaxExpressionSlot::Authored)?;
+        let component_role = match attached.projection() {
+            ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(call)) => {
+                match call.callee() {
+                    SyntaxCallCalleeProjection::Ordinary => ExpressionComponentRole::CallCallee,
+                    SyntaxCallCalleeProjection::UnresolvedDot { .. } => {
+                        ExpressionComponentRole::CallAssociatedReceiver
+                    }
+                    SyntaxCallCalleeProjection::Associated { .. } => {
+                        return Err(HirInvariantFailure::InvalidArenaCommit.into());
+                    }
+                }
+            }
+            ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(_)) => {
+                ExpressionComponentRole::CallCallee
+            }
+            _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
+        };
+        let callee_child =
+            Self::expression_child(attached, component_role, SyntaxExpressionSlot::Authored)?;
         let callee = callee_child
             .authored_semantic()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -989,7 +1039,7 @@ impl StagedHirModuleTransaction<'_> {
         let mut children = Vec::with_capacity(attached.children().len());
         let mut recovery = None;
         for child in attached.children() {
-            let role = composite_child_role(attached.projection(), child.ordinal())
+            let role = expression_component_role(attached.projection(), child.component_role())
                 .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
             if let Some(semantic) = child
                 .authored_semantic()
@@ -1003,7 +1053,12 @@ impl StagedHirModuleTransaction<'_> {
                 }
                 children.push(lowered);
             } else {
-                children.push(self.lower_missing_expression(owner, scope, child, role)?);
+                children.push(self.lower_missing_expression(
+                    attached.projection(),
+                    owner,
+                    scope,
+                    child,
+                )?);
                 recovery.get_or_insert(HirRecoveryIssue::MissingOperand { role });
             }
         }
@@ -1077,12 +1132,11 @@ impl StagedHirModuleTransaction<'_> {
                 .ty()
                 .map(|attached_type| self.lower_attached_type(attached_type, closure_scope))
                 .transpose()?;
-            if let Some(ty) = ty {
-                if let HirPoisonState::Poisoned(issue) =
+            if let Some(ty) = ty
+                && let HirPoisonState::Poisoned(issue) =
                     self.arenas.types().resolve_staged(&self.slots, ty)?.state()
-                {
-                    recovery.get_or_insert_with(|| issue.clone());
-                }
+            {
+                recovery.get_or_insert_with(|| issue.clone());
             }
             parameters.push(
                 HirClosureParameter::try_new(lowered_pattern.owner, ty, closure_scope)
@@ -1095,20 +1149,20 @@ impl StagedHirModuleTransaction<'_> {
             .closure_result_type()
             .map(|attached_type| self.lower_attached_type(attached_type, closure_scope))
             .transpose()?;
-        if let Some(result_type) = result_type {
-            if let HirPoisonState::Poisoned(issue) = self
+        if let Some(result_type) = result_type
+            && let HirPoisonState::Poisoned(issue) = self
                 .arenas
                 .types()
                 .resolve_staged(&self.slots, result_type)?
                 .state()
-            {
-                recovery.get_or_insert_with(|| issue.clone());
-            }
+        {
+            recovery.get_or_insert_with(|| issue.clone());
         }
         self.close_scope_members(closure_scope, locals.into_boxed_slice())?;
 
         self.begin_closure_captures(owner, closure_scope)?;
-        let body_child = self.expression_child(attached, 0, projection.body())?;
+        let body_child =
+            Self::expression_child(attached, ExpressionComponentRole::Body, projection.body())?;
         let body = if let Some(semantic) = body_child
             .authored_semantic()
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
@@ -1124,7 +1178,7 @@ impl StagedHirModuleTransaction<'_> {
             body
         } else {
             recovery.get_or_insert(HirRecoveryIssue::MissingRequiredTail);
-            self.lower_missing_required_tail(owner, closure_scope, body_child.source_span())?
+            self.lower_missing_required_tail(owner, closure_scope, &body_child.source_span())?
         };
         let captures = self.finish_closure_captures(owner)?;
 
@@ -1140,6 +1194,10 @@ impl StagedHirModuleTransaction<'_> {
         ))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the IfLet lowering is one transactional scope-and-recovery operation whose precedence is source ordered"
+    )]
     fn lower_if_let_expression(
         &mut self,
         attached: &AttachedExpressionNode,
@@ -1178,8 +1236,10 @@ impl StagedHirModuleTransaction<'_> {
             HirPoisonState::Poisoned(issue) => Some(issue.clone()),
         };
 
-        let scrutinee_child = self.expression_child(attached, 0, *scrutinee)?;
+        let scrutinee_child =
+            Self::expression_child(attached, ExpressionComponentRole::Scrutinee, *scrutinee)?;
         let scrutinee = self.lower_if_let_operand(
+            attached.projection(),
             owner,
             scrutinee_child,
             outer_scope,
@@ -1187,8 +1247,10 @@ impl StagedHirModuleTransaction<'_> {
             &mut recovery,
         )?;
         let guard = if let Some(expected) = guard {
-            let child = self.expression_child(attached, 1, *expected)?;
+            let child =
+                Self::expression_child(attached, ExpressionComponentRole::Guard, *expected)?;
             Some(self.lower_if_let_operand(
+                attached.projection(),
                 owner,
                 child,
                 binding_scope,
@@ -1198,42 +1260,42 @@ impl StagedHirModuleTransaction<'_> {
         } else {
             None
         };
-        let then_child = self.expression_child(attached, 2, *then_branch)?;
+        let then_child =
+            Self::expression_child(attached, ExpressionComponentRole::ThenBranch, *then_branch)?;
         let then_branch = self.lower_if_let_operand(
+            attached.projection(),
             owner,
             then_child,
             binding_scope,
             HirExprSourceRole::ThenBranch,
             &mut recovery,
         )?;
-        let else_branch = match else_branch {
-            Some(expected) => {
-                let child = self.expression_child(attached, 3, *expected)?;
-                if let Some(semantic) = child
-                    .authored_semantic()
-                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
-                {
-                    let lowered = self.lower_attached_expression_inner(&semantic, outer_scope)?;
-                    if self.staged_expression_is_poisoned(lowered)? {
-                        recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
-                            HirExpressionRecoveryIssue::RecoveredChild {
-                                role: HirExprSourceRole::ElseBranch,
-                            },
-                        ));
-                    }
-                    lowered
-                } else {
-                    recovery.get_or_insert(HirRecoveryIssue::MissingRequiredTail);
-                    self.lower_missing_required_tail(owner, outer_scope, child.source_span())?
+        let else_branch = if let Some(expected) = else_branch {
+            let child =
+                Self::expression_child(attached, ExpressionComponentRole::ElseBranch, *expected)?;
+            if let Some(semantic) = child
+                .authored_semantic()
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?
+            {
+                let lowered = self.lower_attached_expression_inner(&semantic, outer_scope)?;
+                if self.staged_expression_is_poisoned(lowered)? {
+                    recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
+                        HirExpressionRecoveryIssue::RecoveredChild {
+                            role: HirExprSourceRole::ElseBranch,
+                        },
+                    ));
                 }
-            }
-            None => {
-                let source = attached
-                    .component(ExpressionComponentRole::ElseBranch)
-                    .ok_or(HirInvariantFailure::InvalidSourceSpan)?;
+                lowered
+            } else {
                 recovery.get_or_insert(HirRecoveryIssue::MissingRequiredTail);
-                self.lower_missing_required_tail(owner, outer_scope, source)?
+                self.lower_missing_required_tail(owner, outer_scope, &child.source_span())?
             }
+        } else {
+            let source = attached
+                .component(ExpressionComponentRole::ElseBranch)
+                .ok_or(HirInvariantFailure::InvalidSourceSpan)?;
+            recovery.get_or_insert(HirRecoveryIssue::MissingRequiredTail);
+            self.lower_missing_required_tail(owner, outer_scope, &source)?
         };
 
         self.close_scope_members(binding_scope, lowered_pattern.locals)?;
@@ -1250,6 +1312,10 @@ impl StagedHirModuleTransaction<'_> {
         ))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the Match lowering atomically owns scrutinee order plus every distinct arm scope, binding, guard, body, and recovery edge"
+    )]
     fn lower_match_expression(
         &mut self,
         attached: &AttachedExpressionNode,
@@ -1261,9 +1327,14 @@ impl StagedHirModuleTransaction<'_> {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
         }
 
-        let scrutinee_child = self.expression_child(attached, 0, projection.scrutinee())?;
+        let scrutinee_child = Self::expression_child(
+            attached,
+            ExpressionComponentRole::Scrutinee,
+            projection.scrutinee(),
+        )?;
         let mut recovery = None;
         let scrutinee = self.lower_if_let_operand(
+            attached.projection(),
             owner,
             scrutinee_child,
             outer_scope,
@@ -1380,7 +1451,7 @@ impl StagedHirModuleTransaction<'_> {
                     recovery.get_or_insert(HirRecoveryIssue::MissingRequiredTail);
                     self.lower_missing_required_tail_for_scope(
                         arm_scope,
-                        attached_value.source_span(),
+                        &attached_value.source_span(),
                     )?
                 }
             };
@@ -1496,16 +1567,15 @@ impl StagedHirModuleTransaction<'_> {
         }
     }
 
-    fn expression_child<'attached>(
-        &self,
-        attached: &'attached AttachedExpressionNode,
-        ordinal: u32,
+    fn expression_child(
+        attached: &AttachedExpressionNode,
+        component_role: ExpressionComponentRole,
         expected: arcweft_lang_syntax::expressions::SyntaxExpressionSlot,
-    ) -> Result<&'attached AttachedExpressionChild, HirLowerFailure> {
+    ) -> Result<&AttachedExpressionChild, HirLowerFailure> {
         let child = attached
             .children()
             .iter()
-            .find(|child| child.ordinal() == ordinal)
+            .find(|child| child.component_role() == component_role)
             .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
         if child.authored().is_some()
             == matches!(
@@ -1521,6 +1591,7 @@ impl StagedHirModuleTransaction<'_> {
 
     fn lower_if_let_operand(
         &mut self,
+        projection: &ExpressionProjection,
         owner: ExprId,
         child: &AttachedExpressionChild,
         scope: ScopeId,
@@ -1539,7 +1610,7 @@ impl StagedHirModuleTransaction<'_> {
             }
             Ok(lowered)
         } else {
-            let lowered = self.lower_missing_expression(owner, scope, child, role)?;
+            let lowered = self.lower_missing_expression(projection, owner, scope, child)?;
             recovery.get_or_insert(HirRecoveryIssue::MissingOperand { role });
             Ok(lowered)
         }
@@ -1550,7 +1621,7 @@ impl StagedHirModuleTransaction<'_> {
         attached: &AttachedExpressionNode,
         owner: ExprId,
         scope: ScopeId,
-    ) -> Result<(Option<ExprId>, Option<ExprId>, Option<HirRecoveryIssue>), HirLowerFailure> {
+    ) -> Result<LoweredRangeChildren, HirLowerFailure> {
         let ExpressionProjection::Range {
             start: expected_start,
             end: expected_end,
@@ -1563,7 +1634,7 @@ impl StagedHirModuleTransaction<'_> {
         let mut end = None;
         let mut recovery = None;
         for child in attached.children() {
-            let role = composite_child_role(attached.projection(), child.ordinal())
+            let role = expression_component_role(attached.projection(), child.component_role())
                 .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
             let lowered = if let Some(semantic) = child
                 .authored_semantic()
@@ -1577,13 +1648,14 @@ impl StagedHirModuleTransaction<'_> {
                 }
                 lowered
             } else {
-                let lowered = self.lower_missing_expression(owner, scope, child, role)?;
+                let lowered =
+                    self.lower_missing_expression(attached.projection(), owner, scope, child)?;
                 recovery.get_or_insert(HirRecoveryIssue::MissingOperand { role });
                 lowered
             };
-            let slot = match child.ordinal() {
-                0 => &mut start,
-                1 => &mut end,
+            let slot = match child.component_role() {
+                ExpressionComponentRole::RangeStart => &mut start,
+                ExpressionComponentRole::RangeEnd => &mut end,
                 _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
             };
             if slot.replace(lowered).is_some() {
@@ -1596,6 +1668,10 @@ impl StagedHirModuleTransaction<'_> {
         Ok((start, end, recovery))
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "record-field lowering is one closed source-order schema that jointly owns names, values, shorthand lookup, and recovery precedence"
+    )]
     fn lower_record_fields(
         &mut self,
         attached: &AttachedExpressionNode,
@@ -1614,11 +1690,13 @@ impl StagedHirModuleTransaction<'_> {
                     name: source_name,
                     value,
                 } => {
-                    let Some(child) = attached
-                        .children()
-                        .iter()
-                        .find(|child| child.ordinal() == field)
-                    else {
+                    let Some(child) = attached.children().iter().find(|child| {
+                        child.component_role() == ExpressionComponentRole::RecordField {
+                            field,
+                            part:
+                                arcweft_lang_syntax::expressions::ExpressionRecordFieldPart::Value,
+                        }
+                    }) else {
                         return Err(HirInvariantFailure::InvalidArenaCommit.into());
                     };
                     let field_name = match source_name {
@@ -1661,7 +1739,12 @@ impl StagedHirModuleTransaction<'_> {
                                 field,
                                 part: crate::source_index::HirRecordFieldSourcePart::Value,
                             };
-                            self.lower_missing_expression(owner, scope, child, role)?;
+                            self.lower_missing_expression(
+                                attached.projection(),
+                                owner,
+                                scope,
+                                child,
+                            )?;
                             recovery.get_or_insert(HirRecoveryIssue::MissingOperand { role });
                             fields.push(HirRecordField::invalid(HirRecordFieldIssue::MissingValue));
                         }
@@ -1822,10 +1905,10 @@ impl StagedHirModuleTransaction<'_> {
 
     fn lower_missing_expression(
         &mut self,
+        projection: &ExpressionProjection,
         parent: ExprId,
         scope: ScopeId,
         child: &AttachedExpressionChild,
-        role: HirExprSourceRole,
     ) -> Result<ExprId, HirLowerFailure> {
         if child.missing().is_none() {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
@@ -1838,6 +1921,8 @@ impl StagedHirModuleTransaction<'_> {
         if !matches!(site, HirSourceSite::Insertion(_)) {
             return Err(HirInvariantFailure::InvalidSourceSpan.into());
         }
+        let role = expression_component_role(projection, child.component_role())
+            .ok_or(HirInvariantFailure::InvalidArenaCommit)?;
         self.lower_missing_owned_expression(
             SyntheticOwner::Expr(parent),
             scope,
@@ -1870,13 +1955,15 @@ fn recovery_diagnostic_primary(
             ..
         }) => HirExprSourceRole::Content,
         _ => match state {
-            HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand { role }) => *role,
+            HirPoisonState::Poisoned(
+                HirRecoveryIssue::MissingOperand { role }
+                | HirRecoveryIssue::InvalidExpression(HirExpressionRecoveryIssue::RecoveredChild {
+                    role,
+                }),
+            ) => *role,
             HirPoisonState::Poisoned(HirRecoveryIssue::InvalidExpression(
                 HirExpressionRecoveryIssue::Generic(_),
             )) => HirExprSourceRole::Recovery,
-            HirPoisonState::Poisoned(HirRecoveryIssue::InvalidExpression(
-                HirExpressionRecoveryIssue::RecoveredChild { role },
-            )) => *role,
             _ => HirExprSourceRole::Whole,
         },
     };
@@ -1917,7 +2004,8 @@ fn recovery_diagnostic_primary(
             .children()
             .iter()
             .find(|child| {
-                composite_child_role(attached.projection(), child.ordinal()) == Some(role)
+                expression_component_role(attached.projection(), child.component_role())
+                    == Some(role)
             })
             .map(AttachedExpressionChild::source_span)
             .ok_or(HirInvariantFailure::InvalidSourceSpan)?,
@@ -1925,63 +2013,6 @@ fn recovery_diagnostic_primary(
     let site = HirSourceSite::from_attached_span(document, &source)
         .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
     Ok((role, site))
-}
-
-fn composite_child_role(
-    projection: &ExpressionProjection,
-    ordinal: u32,
-) -> Option<HirExprSourceRole> {
-    match projection {
-        ExpressionProjection::Tuple(_) | ExpressionProjection::BracketSequence(_) => {
-            Some(HirExprSourceRole::Element { ordinal })
-        }
-        ExpressionProjection::ArrayRepeat(_) if ordinal == 0 => {
-            Some(HirExprSourceRole::RepeatValue)
-        }
-        ExpressionProjection::ArrayRepeat(_) if ordinal == 1 => {
-            Some(HirExprSourceRole::RepeatLength)
-        }
-        ExpressionProjection::Select(_) if ordinal == 0 => Some(HirExprSourceRole::Target),
-        ExpressionProjection::Index(_) if ordinal == 0 => Some(HirExprSourceRole::Target),
-        ExpressionProjection::Index(_) if ordinal == 1 => Some(HirExprSourceRole::Index),
-        ExpressionProjection::DialogueContentApplication(_) if ordinal == 0 => {
-            Some(HirExprSourceRole::Target)
-        }
-        ExpressionProjection::PostfixBracket(_) if ordinal == 0 => Some(HirExprSourceRole::Target),
-        ExpressionProjection::Pipe(_) if ordinal == 0 => Some(HirExprSourceRole::LeftOperand),
-        ExpressionProjection::Pipe(_) if ordinal == 1 => Some(HirExprSourceRole::RightOperand),
-        ExpressionProjection::Range { .. } if ordinal == 0 => Some(HirExprSourceRole::RangeStart),
-        ExpressionProjection::Range { .. } if ordinal == 1 => Some(HirExprSourceRole::RangeEnd),
-        ExpressionProjection::Binary { .. } if ordinal == 0 => Some(HirExprSourceRole::LeftOperand),
-        ExpressionProjection::Binary { .. } if ordinal == 1 => {
-            Some(HirExprSourceRole::RightOperand)
-        }
-        ExpressionProjection::If { .. } if ordinal == 0 => Some(HirExprSourceRole::Condition),
-        ExpressionProjection::If { .. } if ordinal == 1 => Some(HirExprSourceRole::ThenBranch),
-        ExpressionProjection::If { .. } if ordinal == 2 => Some(HirExprSourceRole::ElseBranch),
-        ExpressionProjection::IfLet { .. } if ordinal == 0 => Some(HirExprSourceRole::Scrutinee),
-        ExpressionProjection::IfLet { .. } if ordinal == 1 => Some(HirExprSourceRole::Guard),
-        ExpressionProjection::IfLet { .. } if ordinal == 2 => Some(HirExprSourceRole::ThenBranch),
-        ExpressionProjection::IfLet { .. } if ordinal == 3 => Some(HirExprSourceRole::ElseBranch),
-        ExpressionProjection::Match(_) if ordinal == 0 => Some(HirExprSourceRole::Scrutinee),
-        ExpressionProjection::Closure(_) if ordinal == 0 => Some(HirExprSourceRole::Body),
-        ExpressionProjection::Record(_) | ExpressionProjection::RecordLiteral(_) => {
-            Some(HirExprSourceRole::RecordField {
-                field: ordinal,
-                part: crate::source_index::HirRecordFieldSourcePart::Value,
-            })
-        }
-        ExpressionProjection::Try { .. }
-        | ExpressionProjection::Await { .. }
-        | ExpressionProjection::Borrow { .. }
-        | ExpressionProjection::Dereference { .. }
-        | ExpressionProjection::Unary { .. }
-            if ordinal == 0 =>
-        {
-            Some(HirExprSourceRole::Operand)
-        }
-        _ => None,
-    }
 }
 
 const fn try_form(form: SyntaxTryForm) -> HirTryForm {

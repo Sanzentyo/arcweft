@@ -228,8 +228,6 @@ pub enum SyntaxDialogueNodeProjection {
     AuthoredEndTag(SyntaxRichTextEndTagProjection),
     InferredEndTag(SyntaxRichTextEndTagProjection),
     Interpolation(SyntaxExpressionSlot),
-    Control(SyntaxDialogueControl),
-    Mark(Result<SyntaxName, SyntaxNameIssue>),
     LineBreak(SyntaxLineBreakKind),
     Error(SyntaxDialogueContentIssue),
 }
@@ -238,9 +236,7 @@ impl SyntaxDialogueNodeProjection {
     pub const fn has_recovery(&self) -> bool {
         matches!(
             self,
-            Self::Interpolation(SyntaxExpressionSlot::Missing)
-                | Self::Mark(Err(_))
-                | Self::Error(_)
+            Self::Interpolation(SyntaxExpressionSlot::Missing) | Self::Error(_)
         ) || matches!(
             self,
             Self::AuthoredEndTag(end) | Self::InferredEndTag(end) if end.has_recovery()
@@ -345,7 +341,7 @@ impl SyntaxRichTextTagProjection {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum SyntaxRichTextTagIdentity {
     Builtin(SyntaxBuiltinRichTextTag),
-    Marker(Result<SyntaxName, SyntaxNameIssue>),
+    DotSelector(Result<SyntaxName, SyntaxNameIssue>),
     ProjectSymbol(SyntaxProjectSymbolPath),
     Invalid(SyntaxRichTextIssue),
 }
@@ -357,7 +353,7 @@ impl SyntaxRichTextTagIdentity {
             return Self::Builtin(builtin);
         }
         if let Some(marker) = source.strip_prefix('.') {
-            return Self::Marker(SyntaxName::try_new(marker));
+            return Self::DotSelector(SyntaxName::try_new(marker));
         }
 
         let (absolute, path) = source
@@ -374,7 +370,7 @@ impl SyntaxRichTextTagIdentity {
     pub(crate) fn opens_span(&self) -> bool {
         match self {
             Self::Builtin(builtin) => builtin.opens_span(),
-            Self::Marker(_) | Self::ProjectSymbol(_) => true,
+            Self::DotSelector(_) | Self::ProjectSymbol(_) => true,
             Self::Invalid(_) => false,
         }
     }
@@ -520,66 +516,6 @@ pub enum SyntaxLineBreakKind {
 }
 
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub enum SyntaxDialogueControl {
-    Wait,
-    Reset,
-    Clear,
-    Erase,
-    ClearMessage,
-    Speed,
-    Voice,
-    Face,
-    Pose,
-    Show,
-    Hide,
-    Move,
-    Scale,
-    Rotate,
-    Animation,
-    StageShake,
-    At,
-    Call,
-    Signal,
-    ConditionalIf,
-    ConditionalElse,
-    ConditionalEnd,
-}
-
-impl SyntaxDialogueControl {
-    /// Resolves the current grammar-owned spelling of a point or host control.
-    ///
-    /// Aliases are normalized here, before HIR. They are grammar spellings,
-    /// not compatibility identities and never survive as semantic strings.
-    pub(crate) const fn from_source_name(source: &str) -> Option<Self> {
-        match source.as_bytes() {
-            b"w" | b"l" | b"wait" => Some(Self::Wait),
-            b"reset" => Some(Self::Reset),
-            b"clear" => Some(Self::Clear),
-            b"er" => Some(Self::Erase),
-            b"cm" => Some(Self::ClearMessage),
-            b"speed" => Some(Self::Speed),
-            b"voice" => Some(Self::Voice),
-            b"face" => Some(Self::Face),
-            b"pose" => Some(Self::Pose),
-            b"show" => Some(Self::Show),
-            b"hide" => Some(Self::Hide),
-            b"move" => Some(Self::Move),
-            b"scale" => Some(Self::Scale),
-            b"rotate" => Some(Self::Rotate),
-            b"anim" => Some(Self::Animation),
-            b"shake" => Some(Self::StageShake),
-            b"at" => Some(Self::At),
-            b"call" | b"!" => Some(Self::Call),
-            b"signal" => Some(Self::Signal),
-            b"if" => Some(Self::ConditionalIf),
-            b"else" => Some(Self::ConditionalElse),
-            b"endif" => Some(Self::ConditionalEnd),
-            _ => None,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum SyntaxBuiltinRichTextTag {
     Page,
     LineWait,
@@ -588,6 +524,7 @@ pub enum SyntaxBuiltinRichTextTag {
     Clear,
     Reset,
     Speed,
+    Marker,
     DirectStyle(SyntaxRichTextDirectStyle),
     Style(SyntaxRichTextStyleSelector),
     Layout(SyntaxRichTextLayoutSelector),
@@ -609,6 +546,7 @@ impl SyntaxBuiltinRichTextTag {
             b"clear" | b"er" | b"cm" => Some(Self::Clear),
             b"reset" => Some(Self::Reset),
             b"speed" => Some(Self::Speed),
+            b"mark" => Some(Self::Marker),
             b"em" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Emphasis)),
             b"strong" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Strong)),
             b"i" | b"italic" => Some(Self::DirectStyle(SyntaxRichTextDirectStyle::Italic)),
@@ -1179,8 +1117,6 @@ pub enum SyntaxDialogueNodeSourcePart {
     RubyBase,
     RubyText,
     Interpolation,
-    Control,
-    Mark,
     LineBreak,
     Error,
 }

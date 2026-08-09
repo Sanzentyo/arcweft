@@ -1,0 +1,21 @@
+error[E0451]: fields `syntax`, `prefix`, `keyword`, `identity`, `signature`, `contracts`, `body` and `trailing_recovery` of struct `AttachedFlowDeclaration` are private
+  --> tests/ui/attached_flow_fields_private.rs:19:9
+   |
+18 |     AttachedFlowDeclaration {
+   |     ----------------------- in this type
+19 |         syntax,
+   |         ^^^^^^ private field
+20 |         prefix,
+   |         ^^^^^^ private field
+21 |         keyword,
+   |         ^^^^^^^ private field
+22 |         identity,
+   |         ^^^^^^^^ private field
+23 |         signature,
+   |         ^^^^^^^^^ private field
+24 |         contracts,
+   |         ^^^^^^^^^ private field
+25 |         body,
+   |         ^^^^ private field
+26 |         trailing_recovery,
+   |         ^^^^^^^^^^^^^^^^^ private field

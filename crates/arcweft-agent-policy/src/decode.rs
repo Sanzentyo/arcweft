@@ -1,7 +1,10 @@
 use crate::gate::AgentPolicyError;
-use arcweft_agent_protocol::resource::AgentResource;
+use arcweft_agent_protocol::resource::{
+    AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource, AgentResourceBody,
+};
 use arcweft_content_policy::RgbaImage;
 use arcweft_image::{ImageDecodeOptions, ImageFormat, decode_image_bytes};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum AgentImageEncoding {
@@ -57,6 +60,14 @@ pub(crate) struct DecodedAgentImage {
     pub(crate) input_encoding: AgentImageEncoding,
 }
 
+pub(crate) fn decode_agent_binary_body(
+    body: &AgentBinaryResourceBody,
+) -> Result<Vec<u8>, base64::DecodeError> {
+    match body.encoding {
+        AgentBinaryEncoding::Base64 => STANDARD.decode(&body.data),
+    }
+}
+
 pub(crate) fn decode_agent_image(
     resource: &AgentResource,
 ) -> Result<DecodedAgentImage, AgentPolicyError> {
@@ -64,10 +75,10 @@ pub(crate) fn decode_agent_image(
         .image
         .as_ref()
         .ok_or(AgentPolicyError::MissingImageMetadata)?;
-    let bytes = resource
-        .body
-        .decoded_bytes()?
-        .ok_or(AgentPolicyError::MissingImageBytes)?;
+    let AgentResourceBody::BytesBase64(body) = &resource.body else {
+        return Err(AgentPolicyError::MissingImageBytes);
+    };
+    let bytes = decode_agent_binary_body(body)?;
     match resource.mime_type.as_str() {
         "application/octet-stream" => {
             if metadata.pixel_format.as_deref() != Some("rgba8_unorm") {

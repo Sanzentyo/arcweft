@@ -78,13 +78,6 @@ fn encode_descriptor(encoder: &mut DescriptorEncoder, descriptor: &CharacterInve
     }
 }
 
-#[cfg(test)]
-pub(super) fn descriptor_canonical_len(descriptor: &CharacterInventoryDescriptorV1) -> usize {
-    let mut encoder = DescriptorEncoder::new();
-    encode_descriptor(&mut encoder, descriptor);
-    encoder.encoded_len
-}
-
 impl AcceptedNominalWorld {
     #[allow(
         clippy::result_large_err,
@@ -135,6 +128,29 @@ impl RegisteredTypeCheckEnv {
             .external_owner(symbols, declaration, expected)
     }
 
+    /// Returns the exact Character identity for one already-selected external
+    /// declaration.
+    ///
+    /// Project-symbol selection is deliberately owned by the caller so a
+    /// unified retained/external lookup can match its target exactly once.
+    /// This method remains the sole typed external-owner admission boundary.
+    #[allow(
+        clippy::result_large_err,
+        reason = "owner lookup errors retain both complete typed world identities and revisions"
+    )]
+    pub(crate) fn character_owner(
+        &self,
+        symbols: &ProjectSymbolTable,
+        declaration: ExternalDeclarationId,
+    ) -> Result<CharacterId, ExternalOwnerLookupError> {
+        match self.external_owner(symbols, declaration, RegisteredExternalOwnerKind::Character)? {
+            RegisteredExternalOwner::Character(owner) => Ok(owner.clone()),
+            RegisteredExternalOwner::Environment(_) => {
+                unreachable!("typed external-owner lookup enforces the requested kind")
+            }
+        }
+    }
+
     #[allow(
         clippy::result_large_err,
         reason = "resolution errors retain typed symbol, owner, world, revision, and source evidence"
@@ -153,9 +169,19 @@ impl RegisteredTypeCheckEnv {
                     actual: ProjectSymbolTargetId::Callable(symbol.declaration().clone()),
                 });
             }
+            ResolvedProjectSymbol::StructuralCallable(symbol) => {
+                return Err(RegisteredCharacterResolutionError::NotExternal {
+                    actual: ProjectSymbolTargetId::StructuralCallable(symbol.declaration().clone()),
+                });
+            }
             ResolvedProjectSymbol::Nominal(symbol) => {
                 return Err(RegisteredCharacterResolutionError::NotExternal {
                     actual: ProjectSymbolTargetId::Nominal(symbol.id().clone()),
+                });
+            }
+            ResolvedProjectSymbol::Retained(symbol) => {
+                return Err(RegisteredCharacterResolutionError::NotExternal {
+                    actual: ProjectSymbolTargetId::Retained(symbol.public_id().clone()),
                 });
             }
             ResolvedProjectSymbol::Module(module) => {
@@ -164,15 +190,8 @@ impl RegisteredTypeCheckEnv {
                 });
             }
         };
-        match self
-            .external_owner(symbols, declaration, RegisteredExternalOwnerKind::Character)
-            .map_err(RegisteredCharacterResolutionError::Owner)?
-        {
-            RegisteredExternalOwner::Character(owner) => Ok(owner.clone()),
-            RegisteredExternalOwner::Environment(_) => {
-                unreachable!("typed external-owner lookup enforces the requested kind")
-            }
-        }
+        self.character_owner(symbols, declaration)
+            .map_err(RegisteredCharacterResolutionError::Owner)
     }
 
     #[allow(

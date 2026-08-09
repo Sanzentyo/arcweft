@@ -10,6 +10,7 @@ repository.workspace = true
 arcweft-id = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
 arcweft-source = { workspace = true }
+blake3.workspace = true
 num-bigint.workspace = true
 thiserror.workspace = true
 

@@ -6,6 +6,7 @@
 //! reparsing source text.
 
 use crate::identity::{HirLimit, HirSnapshotId, ScopeId, SyntheticKey, SyntheticOwner, TypeId};
+use arcweft_id::{DeclarationIdentityFamily, PublicId};
 use arcweft_lang_syntax::cst::is_identifier;
 use thiserror::Error;
 
@@ -112,6 +113,38 @@ impl HirPath {
     pub fn segments(&self) -> &[HirPathSegment] {
         &self.segments
     }
+
+    /// Returns the spelling eligible for lexical-local resolution.
+    ///
+    /// Parser-classified keyword segments such as a method receiver remain
+    /// project-symbol-capable path leaves in final HIR.  Lexical resolution
+    /// therefore follows the complete typed segment family instead of
+    /// assuming that every local reference was classified as an identifier.
+    pub fn lexical_name(&self) -> Option<&str> {
+        if self.root != HirPathRoot::ImplicitCrate {
+            return None;
+        }
+        let [segment] = self.segments.as_ref() else {
+            return None;
+        };
+        Some(match segment {
+            HirPathSegment::Identifier(name) => name.as_str(),
+            HirPathSegment::ProjectSymbol(symbol) => symbol.as_str(),
+        })
+    }
+
+    /// Projects one dotted member path from an already validated receiver
+    /// path without reopening source text. The caller must still apply its
+    /// own path-work limit before publishing the projected path.
+    #[must_use]
+    pub fn with_terminal_member(&self, member: &HirName) -> Self {
+        let mut segments = self.segments.to_vec();
+        segments.push(HirPathSegment::Identifier(member.clone()));
+        Self {
+            root: self.root,
+            segments: segments.into_boxed_slice(),
+        }
+    }
 }
 
 /// Root semantics retained by a HIR path.
@@ -145,6 +178,7 @@ pub struct HirPathResolutionContext {
 }
 
 impl HirPathResolutionContext {
+    #[cfg(test)]
     pub(crate) fn new(snapshot: HirSnapshotId, owner_scope: ScopeId) -> Result<Self, HirPathIssue> {
         if owner_scope.module() != snapshot.module() {
             return Err(HirPathIssue::ForeignScope);
@@ -296,6 +330,31 @@ impl HirIdRef {
             Self::Relative(_) | Self::FamilyRelative(_) => None,
         }
     }
+
+    /// Resolves a declaration-owned public identity from an absolute or
+    /// zero-depth family-relative reference.
+    ///
+    /// This operation belongs to the typed ID boundary so consumers never
+    /// reconstruct declaration identities from display labels or source text.
+    pub fn declaration_public_id(&self, family: DeclarationIdentityFamily) -> Option<PublicId> {
+        let canonical = match self {
+            Self::Absolute(reference) => reference.as_str().to_owned(),
+            Self::FamilyRelative(relative)
+                if relative.family().as_str() == family.prefix()
+                    && relative.relative().parent_depth() == 0 =>
+            {
+                format!(
+                    "{}.{}",
+                    relative.family().as_str(),
+                    relative.relative().suffix().as_str()
+                )
+            }
+            Self::Relative(_) | Self::FamilyRelative(_) => return None,
+        };
+        let id = PublicId::try_new(canonical).ok()?;
+        family.validate_public_id(&id).ok()?;
+        Some(id)
+    }
 }
 
 /// Normalized absolute entity-reference body.
@@ -315,8 +374,14 @@ impl HirEntityReference {
         &self.0
     }
 
+    /// Iterates the normalized semantic ID segments without reparsing source
+    /// spelling.
+    pub fn segments(&self) -> impl DoubleEndedIterator<Item = &str> + Clone {
+        self.0.split('.')
+    }
+
     /// Returns the exact number of normalized dot-separated ID segments.
-    pub(crate) fn segment_count(&self) -> usize {
+    pub fn segment_count(&self) -> usize {
         self.0.split('.').count()
     }
 }
@@ -812,6 +877,46 @@ impl HirBigUint {
     pub fn is_zero(&self) -> bool {
         self.limbs_le.is_empty()
     }
+
+    /// Returns the canonical base-10 spelling of this semantic magnitude.
+    ///
+    /// The conversion is owned here so consumers never reconstruct numeric
+    /// meaning from source text or duplicate the base-2^32 representation.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if an internal base-conversion invariant is violated. Each
+    /// quotient and remainder is mathematically bounded to one `u32` limb.
+    pub fn to_decimal_string(&self) -> String {
+        let mut limbs = self.limbs_le.to_vec();
+        if limbs.is_empty() {
+            return "0".to_owned();
+        }
+        let mut chunks = Vec::new();
+        while !limbs.is_empty() {
+            let mut remainder = 0_u64;
+            for limb in limbs.iter_mut().rev() {
+                let dividend = (remainder << 32) | u64::from(*limb);
+                *limb = u32::try_from(dividend / 1_000_000_000)
+                    .expect("base-1e9 quotient fits one base-2^32 limb");
+                remainder = dividend % 1_000_000_000;
+            }
+            while limbs.last() == Some(&0) {
+                limbs.pop();
+            }
+            chunks.push(u32::try_from(remainder).expect("base-1e9 remainder fits u32"));
+        }
+        let mut chunks = chunks.into_iter().rev();
+        let mut label = chunks
+            .next()
+            .expect("non-zero magnitude produces one chunk")
+            .to_string();
+        for chunk in chunks {
+            use std::fmt::Write as _;
+            write!(&mut label, "{chunk:09}").expect("writing to String cannot fail");
+        }
+        label
+    }
 }
 
 /// Exact integer literal or typed integer-family recovery.
@@ -910,6 +1015,43 @@ impl HirDecimal {
     pub const fn exponent10(&self) -> i32 {
         self.exponent10
     }
+
+    /// Returns the canonical plain base-10 spelling of this semantic decimal.
+    ///
+    /// This deliberately reflects the normalized HIR value, not authored
+    /// separators, redundant zeros, or exponent spelling.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the platform cannot represent the already bounded
+    /// decimal scale or exponent as a `usize`.
+    pub fn to_decimal_string(&self) -> String {
+        let digits = self
+            .coefficient
+            .digits()
+            .iter()
+            .map(|digit| char::from(b'0' + *digit))
+            .collect::<String>();
+        if digits == "0" {
+            return digits;
+        }
+        let power = i64::from(self.exponent10) - i64::from(self.scale);
+        if power >= 0 {
+            let mut label = digits;
+            label.extend(std::iter::repeat_n(
+                '0',
+                usize::try_from(power).expect("bounded decimal exponent fits usize"),
+            ));
+            return label;
+        }
+        let fractional =
+            usize::try_from(power.unsigned_abs()).expect("bounded decimal exponent fits usize");
+        if fractional < digits.len() {
+            let split = digits.len() - fractional;
+            return format!("{}.{}", &digits[..split], &digits[split..]);
+        }
+        format!("0.{}{}", "0".repeat(fractional - digits.len()), digits)
+    }
 }
 
 /// Closed-constructor failure for one canonical decimal payload.
@@ -980,6 +1122,7 @@ pub struct CheckedFloatLiteral {
 }
 
 impl CheckedFloatLiteral {
+    #[cfg(test)]
     pub(crate) const fn new(bits: HirFloatBits) -> Self {
         Self { bits }
     }

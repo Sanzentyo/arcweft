@@ -4,9 +4,7 @@ use super::{
     uri::file_uri_from_path,
 };
 use arcweft_adapter_context::{manifest::AdapterManifest, standard};
-use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_character::catalog::CharacterCatalog;
-use arcweft_lang_sema::env::TypeCheckEnv;
 use arcweft_launch::resolve::ResolvedLaunchProfile;
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use arcweft_source::{SourceDocument, SourceDocumentIdentity};
@@ -81,6 +79,12 @@ impl LspProfile {
         self
     }
 
+    #[cfg(test)]
+    pub(crate) fn with_adapter_for_test(mut self, adapter: AdapterManifest) -> Self {
+        self.adapter = adapter;
+        self
+    }
+
     /// Adapter manifest selected for this profile.
     pub const fn adapter(&self) -> &AdapterManifest {
         &self.adapter
@@ -143,14 +147,9 @@ impl LspProfile {
             .build()
     }
 
-    /// Builds the semantic environment selected by this profile.
-    pub fn typecheck_env(&self) -> TypeCheckEnv {
-        AdapterSemanticRegistration::new(&self.adapter).declare_effects(TypeCheckEnv::standard())
-    }
-
-    pub(crate) fn replace_diagnostics(&mut self, diagnostic: LspProfileDiagnostic) {
+    pub(crate) fn set_diagnostic(&mut self, diagnostic: Option<LspProfileDiagnostic>) {
         self.diagnostics.clear();
-        self.diagnostics.push(diagnostic);
+        self.diagnostics.extend(diagnostic);
     }
 }
 

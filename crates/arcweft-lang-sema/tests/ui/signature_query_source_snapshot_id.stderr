@@ -1,7 +1,7 @@
 error[E0308]: mismatched types
-  --> tests/ui/signature_query_source_snapshot_id.rs:14:47
+  --> tests/ui/signature_query_source_snapshot_id.rs:16:47
    |
-14 |     let _ = SignatureQuery::production(world, snapshot, hir, 0, control);
+16 |     let _ = SignatureQuery::production(world, snapshot, hir, analysis, 0, control);
    |             --------------------------        ^^^^^^^^ expected `&SourceDocument`, found `&SourceSnapshotId`
    |             |
    |             arguments to this function are incorrect

@@ -1,5 +1,5 @@
-error[E0599]: no variant named `Assert` found for enum `arcweft_lang_syntax::ast::line_plan::LinePlanItem`
- --> tests/ui/removed_line_plan_assert.rs:4:26
+error[E0432]: unresolved import `arcweft_lang_syntax::ast::line_plan::LinePlanItem`
+ --> tests/ui/removed_line_plan_assert.rs:1:5
   |
-4 |     if let LinePlanItem::Assert { .. } = item {}
-  |                          ^^^^^^ variant not found in `arcweft_lang_syntax::ast::line_plan::LinePlanItem`
+1 | use arcweft_lang_syntax::ast::line_plan::LinePlanItem;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `LinePlanItem` in `ast::line_plan`

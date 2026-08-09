@@ -16,7 +16,7 @@ fn assert_inline_member_freeze_rejects(
     tamper: impl FnOnce(&mut StagedHirModuleTransaction<'_>, crate::identity::ItemId),
 ) {
     assert_inline_member_freeze_rejects_with_source(case, source, |_, transaction, owner| {
-        tamper(transaction, owner)
+        tamper(transaction, owner);
     });
 }
 
@@ -32,9 +32,7 @@ fn assert_inline_member_freeze_rejects_with_source(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     tamper(&parsed, &mut transaction, owner);
     assert!(
@@ -210,6 +208,10 @@ fn swap_scope_children(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical Trait/Impl test asserts the complete inline member, receiver, scope, and body matrix"
+)]
 fn trait_and_impl_lower_to_distinct_inline_members_and_one_scope_per_method() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-trait-impl-clean",
@@ -338,6 +340,10 @@ fn trait_and_impl_lower_to_distinct_inline_members_and_one_scope_per_method() {
     );
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the assertion receives the complete method owner/scope/payload expectation record"
+)]
 fn assert_method(
     module: &HirModule,
     owner: crate::identity::ItemId,
@@ -501,6 +507,10 @@ fn trait_receiver_kind_tampering_is_rejected_before_publication() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Trait freeze test exhausts member and callable-scope corruption cases"
+)]
 fn trait_freeze_rejects_member_and_callable_scope_corruption() {
     assert_inline_member_freeze_rejects(
         "member-reorder",
@@ -612,7 +622,7 @@ fn trait_freeze_rejects_member_and_callable_scope_corruption() {
         "trait ExtraScope { fn run(self) -> Self }\n",
         |parsed, transaction, owner| {
             let (callable_scope, source) = {
-                let items = parsed.tree().items().unwrap();
+                let items = parsed.items().unwrap();
                 let [TypedItemNode::Trait(node)] = items.as_slice() else {
                     panic!("one attached Trait")
                 };

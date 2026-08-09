@@ -28,7 +28,6 @@ pub(crate) const SIGNATURE_WORKER_COUNT: usize = 4;
 type SignatureExecutorJob = PreparedSignatureRequest;
 
 #[cfg(test)]
-#[derive(Debug)]
 enum SignatureExecutorJob {
     Request(Box<PreparedSignatureRequest>),
     Probe(ExecutorProbeJob),
@@ -65,13 +64,11 @@ impl std::fmt::Debug for ExecutorProbeJob {
     }
 }
 
-#[derive(Debug)]
 struct SignatureRequestExecutor {
     shared: Arc<SignatureExecutorShared>,
     workers: Mutex<Vec<JoinHandle<()>>>,
 }
 
-#[derive(Debug)]
 struct SignatureExecutorShared {
     queue: Mutex<SignatureExecutorQueue>,
     available: Condvar,
@@ -79,14 +76,12 @@ struct SignatureExecutorShared {
     responses: crossbeam_channel::Sender<Message>,
 }
 
-#[derive(Debug)]
 struct SignatureExecutorQueue {
     closed: bool,
     jobs: VecDeque<SignatureExecutorJob>,
 }
 
 /// Owns the only registry, deadline scheduler, and worker pool for one connection.
-#[derive(Debug)]
 pub(crate) struct SignatureRequestRuntime {
     registry: Arc<RequestRegistry>,
     executor: SignatureRequestExecutor,

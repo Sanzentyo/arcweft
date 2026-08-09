@@ -11,9 +11,10 @@ use arcweft_lang_syntax::attachment::{
     AttachedCandidateUnsafeBody,
 };
 use arcweft_lang_syntax::expressions::{
-    ExpressionComponentRole, ExpressionProjection, SyntaxCallArgumentPart,
-    SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeArgumentProjection,
-    SyntaxCallTypeChildRole, SyntaxExpressionSlot, SyntaxPostfixBracketProjection,
+    ExpressionComponentRole, ExpressionProjection, SyntaxAssociatedReceiver,
+    SyntaxCallArgumentPart, SyntaxCallCalleeProjection, SyntaxCallProjection,
+    SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxExpressionSlot,
+    SyntaxPostfixBracketProjection,
 };
 use arcweft_lang_syntax::grammar::{SyntaxKind, SyntaxRole};
 use arcweft_lang_syntax::incremental::ParsedSource;
@@ -30,9 +31,7 @@ use crate::identity::{ExprId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRo
 use crate::slot::{HirOrigin, SlotSnapshot};
 use crate::source_index::HirSourceSite;
 
-use super::{
-    CandidateTypeChild, CandidateValidationCursor, candidate_role_map, source_index_has_typed_owner,
-};
+use super::{CandidateTypeChild, CandidateValidationCursor, candidate_role_map};
 
 /// One exact candidate type expected from the recursive role-local preorder.
 pub(in crate::source_index) struct CandidateTypeExpectation {
@@ -199,6 +198,10 @@ impl CandidateTypeExpectationCursor<'_> {
         Some(())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive walk charges and validates type expectations for the closed candidate statement family"
+    )]
     fn walk_statement(&mut self, statement: AttachedCandidateStatement<'_>) -> Option<()> {
         match statement.kind() {
             SyntaxKind::AssertionStatement => {
@@ -460,7 +463,10 @@ impl CandidateTypeExpectationCursor<'_> {
                         walk_child(self, ExpressionComponentRole::CallAssociatedReceiver)?;
                         walk_type(self, SyntaxCallTypeChildRole::DotNominalReceiver)?;
                     }
-                    SyntaxCallCalleeProjection::Associated { .. } => {
+                    SyntaxCallCalleeProjection::Associated {
+                        receiver: SyntaxAssociatedReceiver::Present,
+                        ..
+                    } => {
                         walk_type(self, SyntaxCallTypeChildRole::AssociatedReceiver)?;
                     }
                 }
@@ -550,7 +556,7 @@ impl CandidateValidationCursor<'_> {
             || metadata.origin() != &HirOrigin::Synthetic(key)
             || metadata.source_site() != &expected.source_site
             || payload.scope() != scope
-            || source_index_has_typed_owner(self.index, SyntheticOwner::Type(id))
+            || self.source_index_has_typed_owner(SyntheticOwner::Type(id))
             || !self.expected.types.insert(id)
         {
             return None;

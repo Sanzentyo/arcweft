@@ -80,9 +80,7 @@ fn assert_activity_freeze_rejects(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     tamper(&mut transaction, owner);
     assert!(matches!(
@@ -95,6 +93,10 @@ fn assert_activity_freeze_rejects(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical Activity test asserts one closed owner/scope/member/source matrix"
+)]
 fn canonical_activity_freezes_exact_scopes_members_locals_contracts_and_sites() {
     let source = concat!(
         "pub activity TruckGame {\n",
@@ -442,7 +444,11 @@ fn activity_freeze_rejects_policy_direction_and_contract_scope_tampering() {
 }
 
 #[test]
-fn incremental_activity_preserves_reconciled_owners_and_retires_replaced_port_sources() {
+#[allow(
+    clippy::too_many_lines,
+    reason = "the incremental Activity test asserts one complete reconciliation and retirement matrix"
+)]
+fn incremental_activity_preserves_reconciled_owners_and_retires_removed_port_sources() {
     let name = SourceName::path("proof/activity-incremental.arcw");
     let document_id = "arcweft-test://proof/activity-incremental";
     let initial_source = concat!(
@@ -558,8 +564,8 @@ fn incremental_activity_preserves_reconciled_owners_and_retires_replaced_port_so
     let modified_alpha = local_named(&third, modified_first_activity, "alpha");
     let modified_beta = local_named(&third, modified_first_activity, "beta");
     let gamma = local_named(&third, modified_first_activity, "gamma");
-    assert_ne!(modified_alpha, alpha);
-    assert_ne!(modified_beta, beta);
+    assert_eq!(modified_alpha, alpha);
+    assert_eq!(modified_beta, beta);
     assert_ne!(modified_alpha, modified_beta);
     assert_ne!(modified_alpha, gamma);
     assert_ne!(modified_beta, gamma);
@@ -572,13 +578,13 @@ fn incremental_activity_preserves_reconciled_owners_and_retires_replaced_port_so
         assert_eq!(payload.generation(), LocalGeneration::try_new(1).unwrap());
         assert_source_backed_child(&third, local);
     }
-    for replaced in [alpha, beta] {
+    for retained in [alpha, beta] {
         assert!(
             third
                 .arenas()
                 .locals()
-                .resolve(third.slots(), replaced)
-                .is_err()
+                .resolve(third.slots(), retained)
+                .is_ok()
         );
     }
     assert!(
@@ -624,8 +630,8 @@ fn incremental_activity_preserves_reconciled_owners_and_retires_replaced_port_so
     assert_eq!(remaining_first_activity.scopes().callable(), first_scope);
     let remaining_alpha = local_named(&fourth, remaining_first_activity, "alpha");
     let remaining_gamma = local_named(&fourth, remaining_first_activity, "gamma");
-    assert_ne!(remaining_alpha, modified_alpha);
-    assert_ne!(remaining_gamma, gamma);
+    assert_eq!(remaining_alpha, modified_alpha);
+    assert_eq!(remaining_gamma, gamma);
     assert_ne!(remaining_alpha, remaining_gamma);
     for local in [remaining_gamma, remaining_alpha] {
         let payload = fourth
@@ -636,13 +642,20 @@ fn incremental_activity_preserves_reconciled_owners_and_retires_replaced_port_so
         assert_eq!(payload.generation(), LocalGeneration::try_new(1).unwrap());
         assert_source_backed_child(&fourth, local);
     }
-    for replaced in [modified_alpha, modified_beta, gamma] {
+    assert!(
+        fourth
+            .arenas()
+            .locals()
+            .resolve(fourth.slots(), modified_beta)
+            .is_err()
+    );
+    for retained in [modified_alpha, gamma] {
         assert!(
             fourth
                 .arenas()
                 .locals()
-                .resolve(fourth.slots(), replaced)
-                .is_err()
+                .resolve(fourth.slots(), retained)
+                .is_ok()
         );
     }
     assert!(

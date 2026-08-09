@@ -5,9 +5,9 @@ use arcweft_lang_syntax::attachment::{
     AttachedRequiredChoicePlanBody, AttachedSignalTrigger, AttachedTriggerPattern,
 };
 
-use crate::expr::{HirChoicePlan, HirChoicePlanItem};
+use crate::expr::{HirChoicePlan, HirChoicePlanError, HirChoicePlanItem};
 use crate::identity::{LocalId, PatternId, ScopeId};
-use crate::lower::HirLowerFailure;
+use crate::lowering::HirLowerFailure;
 use crate::scope::{HirPatternBindingPolicy, HirScopeOwner};
 use crate::stmt::HirTriggerPattern;
 
@@ -56,8 +56,15 @@ impl StagedHirModuleTransaction<'_> {
                     Ok(key) => name(key)?,
                     Err(issue) => {
                         require_attempted_name_limit(issue)?;
+                        // The assignment value is still a declared required
+                        // expression slot even though this recovered carrier
+                        // cannot retain it. Keep later recovery identities
+                        // independent of whether the key was accepted.
+                        state.skip_required_expression()?;
                         state.mark_recovered();
-                        return Ok(HirChoicePlanItem::Error);
+                        return Ok(HirChoicePlanItem::Error(
+                            HirChoicePlanError::InvalidAssignmentKey,
+                        ));
                     }
                 };
                 let value =
@@ -127,7 +134,9 @@ impl StagedHirModuleTransaction<'_> {
             }
             AttachedChoicePlanItem::Recovered(_) => {
                 state.mark_recovered();
-                Ok(HirChoicePlanItem::Error)
+                Ok(HirChoicePlanItem::Error(
+                    HirChoicePlanError::RecoveredSyntax,
+                ))
             }
         }
     }

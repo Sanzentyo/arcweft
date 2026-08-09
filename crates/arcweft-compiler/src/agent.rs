@@ -12,14 +12,19 @@ use arcweft_core::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntrySpec, RuntimeEntryTarget, RuntimePlan,
 };
 use arcweft_id::PublicId;
-use arcweft_lang_hir::model::HirFunction;
-use arcweft_lang_hir::symbol::CallableDeclarationId;
-use arcweft_lang_sema::effect_model::CallableId as EffectCallableId;
+use arcweft_lang_hir::{
+    item::{HirFunctionItem, HirItemKind},
+    source_index::HirCallableSourceOwner,
+    symbol::{CallableDeclarationKey, CallableDeclarationOwner},
+};
+use arcweft_lang_sema::callable::CheckedCallableFacts;
 use arcweft_lang_sema::entry::{CheckedAgentEntry, CheckedEntryKind};
 use arcweft_lang_sema::project_index::{
     ProjectEntryRoleKind, ProjectEntryRoleTarget, ProjectSemanticIndex,
 };
+use arcweft_project::artifact::RuntimePlanArtifactKey;
 use arcweft_runtime_plan::flow::RuntimePlanLowerStats;
+use std::sync::Arc;
 
 use crate::agent_project::agent_required_entities_from_project;
 use crate::effect_manifest;
@@ -37,6 +42,7 @@ pub fn compile_agent_project_bundle(
     compiled: &CompiledProject,
     selected_entry: &PublicId,
     project: &ProjectSemanticIndex,
+    runtime_plan_artifact_key: RuntimePlanArtifactKey,
 ) -> Result<CompiledAgentBundle, CompileAgentError> {
     let checked = compiled
         .checked_entries()
@@ -48,22 +54,21 @@ pub fn compile_agent_project_bundle(
         .ok_or_else(|| CompileAgentError::SelectedEntryNotAgent {
             entry: selected_entry.as_str().to_owned(),
         })?;
-    let controller = exact_controller_function(compiled, checked)?;
-    compile_checked_agent_bundle(compiled, checked, controller, project)
+    compile_checked_agent_bundle(compiled, checked, project, runtime_plan_artifact_key)
 }
 
 /// Core Agent artifact boundary after exact entry and controller selection.
 ///
-/// Callers must pass the accepted semantic entry and the exact ordinary HIR
-/// function named by its controller role. The boundary validates both against
-/// the compiled project before projecting the selected runtime artifact.
+/// The accepted semantic entry is revalidated against the exact ordinary HIR
+/// function owned by the compiled project before projecting the artifact.
 pub fn compile_checked_agent_bundle(
     compiled: &CompiledProject,
     checked: &CheckedAgentEntry,
-    controller: &HirFunction,
     project: &ProjectSemanticIndex,
+    runtime_plan_artifact_key: RuntimePlanArtifactKey,
 ) -> Result<CompiledAgentBundle, CompileAgentError> {
-    validate_checked_agent_inputs(compiled, checked, controller)?;
+    let execution_diagnostics = compiled.execution_diagnostic_context(runtime_plan_artifact_key)?;
+    let controller_facts = validate_checked_agent_inputs(compiled, checked)?;
     validate_project_index_entry(project, checked)?;
     let runtime_id = EntryRuntimeId::from_source_entity_body(checked.id().public_id().as_str())
         .map_err(|_| CompileAgentError::MissingRuntimeEntry {
@@ -113,7 +118,8 @@ pub fn compile_checked_agent_bundle(
     let pure_helpers = selected_plan.pure_helpers.len();
     let bytecode = BytecodeProgram::from_runtime_plan(selected_plan);
     let bytecode_stats = bytecode.stats();
-    let manifest = agent_artifact_manifest(compiled, checked, project, runtime_budget)?;
+    let manifest =
+        agent_artifact_manifest(compiled, checked, controller_facts, project, runtime_budget)?;
     let documents = agent_bundle_source_documents(compiled)?;
     let source_map = SourceMapSection::try_from_documents(&documents)?;
     let bundle = ArcweftBundle::try_new(
@@ -125,6 +131,7 @@ pub fn compile_checked_agent_bundle(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: execution_diagnostics.artifact(),
                 entry_flow: Some(controller_flow.public_label().into_string()),
                 flows: bytecode_stats.flows,
                 bytecode_instructions: bytecode_stats.instructions,
@@ -135,14 +142,15 @@ pub fn compile_checked_agent_bundle(
         },
         source_map,
         bytecode,
-        compiled.runtime_plan().line_display_catalog.clone(),
+        compiled.runtime_plan().dialogue_content_catalog.clone(),
     )?
     .with_agent_manifest(manifest.clone());
     Ok(CompiledAgentBundle {
         bundle,
         manifest,
-        hir: compiled.linked_hir().clone(),
-        typecheck_report: compiled.typecheck_report().clone(),
+        execution_diagnostics: Arc::new(execution_diagnostics),
+        hir_project: Arc::clone(compiled.hir_project()),
+        semantic_analysis: Arc::clone(compiled.final_analysis()),
         runtime_plan_stats: RuntimePlanLowerStats {
             pure_helpers,
             ..RuntimePlanLowerStats::default()
@@ -161,34 +169,24 @@ fn agent_bundle_source_documents(
             module: "crate".to_owned(),
         })?
         .hir()
-        .source_document()
-        .ok_or_else(|| CompileAgentError::MissingSourceDocument {
-            module: "crate".to_owned(),
-        })?;
+        .provenance()
+        .document();
     let mut documents = Vec::with_capacity(compiled.modules().len());
-    documents.push(root);
+    documents.push(root.as_ref());
     documents.extend(
         compiled
             .modules()
             .iter()
             .filter(|module| !module.module().is_crate_root())
-            .map(|module| {
-                module.hir().source_document().ok_or_else(|| {
-                    CompileAgentError::MissingSourceDocument {
-                        module: module.module().to_string(),
-                    }
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()?,
+            .map(|module| module.hir().provenance().document().as_ref()),
     );
     Ok(documents)
 }
 
-fn validate_checked_agent_inputs(
-    compiled: &CompiledProject,
+fn validate_checked_agent_inputs<'a>(
+    compiled: &'a CompiledProject,
     checked: &CheckedAgentEntry,
-    controller: &HirFunction,
-) -> Result<(), CompileAgentError> {
+) -> Result<&'a CheckedCallableFacts, CompileAgentError> {
     let Some(accepted) = compiled
         .checked_entries()
         .get_public(checked.id().public_id())
@@ -203,27 +201,15 @@ fn validate_checked_agent_inputs(
             entry: checked.id().to_string(),
         });
     }
-    let declaration = CallableDeclarationId::for_function(
-        checked.controller().declaration().package(),
-        controller,
-    )
-    .map_err(|_| CompileAgentError::ControllerDeclarationCardinality {
-        controller: checked.controller().declaration().to_string(),
-        matches: 0,
-    })?;
-    if declaration != *checked.controller().declaration() {
-        return Err(CompileAgentError::ControllerDeclarationCardinality {
+    exact_controller_function(compiled, checked)?;
+    let declaration = CallableDeclarationKey::Existing(checked.controller().declaration().clone());
+    compiled
+        .final_analysis()
+        .checked_callables()
+        .project_callable(&declaration)
+        .map_err(|_| CompileAgentError::MissingControllerSemanticFacts {
             controller: checked.controller().declaration().to_string(),
-            matches: 0,
-        });
-    }
-    let accepted = exact_controller_function(compiled, checked)?;
-    if accepted != controller {
-        return Err(CompileAgentError::ControllerFunctionMismatch {
-            controller: checked.controller().declaration().to_string(),
-        });
-    }
-    Ok(())
+        })
 }
 
 fn selected_agent_runtime_plan(
@@ -317,29 +303,48 @@ fn validate_project_index_entry(
 fn exact_controller_function<'a>(
     compiled: &'a CompiledProject,
     checked: &CheckedAgentEntry,
-) -> Result<&'a HirFunction, CompileAgentError> {
+) -> Result<&'a HirFunctionItem, CompileAgentError> {
     let declaration = checked.controller().declaration();
+    let declaration_key = CallableDeclarationKey::Existing(declaration.clone());
     if compiled.hir_project().package() != declaration.package() {
         return Err(CompileAgentError::ControllerDeclarationCardinality {
             controller: declaration.to_string(),
             matches: 0,
         });
     }
+    let Some(symbol) = compiled.project_symbols().callable(&declaration_key) else {
+        return Err(CompileAgentError::ControllerDeclarationCardinality {
+            controller: declaration.to_string(),
+            matches: 0,
+        });
+    };
     let Some(module) = compiled.hir_project().module(declaration.module()) else {
         return Err(CompileAgentError::ControllerDeclarationCardinality {
             controller: declaration.to_string(),
             matches: 0,
         });
     };
-    let mut matches = module.functions().iter().filter(|function| {
-        CallableDeclarationId::for_function(declaration.package(), function)
-            .is_ok_and(|candidate| candidate == *declaration)
-    });
-    match (matches.next(), matches.next()) {
-        (Some(controller), None) => Ok(controller),
-        (first, second) => Err(CompileAgentError::ControllerDeclarationCardinality {
+    if declaration.owner() != CallableDeclarationOwner::Function
+        || symbol.source_owner() != HirCallableSourceOwner::Item
+        || symbol.source_snapshot() != module.module().snapshot_id()
+    {
+        return Err(CompileAgentError::ControllerDeclarationCardinality {
             controller: declaration.to_string(),
-            matches: usize::from(first.is_some()) + usize::from(second.is_some()),
+            matches: 0,
+        });
+    }
+    let item = module
+        .module()
+        .resolve_item(symbol.source_item())
+        .map_err(|_| CompileAgentError::ControllerDeclarationCardinality {
+            controller: declaration.to_string(),
+            matches: 0,
+        })?;
+    match item.kind() {
+        HirItemKind::Function(controller) => Ok(controller),
+        _ => Err(CompileAgentError::ControllerDeclarationCardinality {
+            controller: declaration.to_string(),
+            matches: 0,
         }),
     }
 }
@@ -347,18 +352,12 @@ fn exact_controller_function<'a>(
 fn agent_artifact_manifest(
     compiled: &CompiledProject,
     checked: &CheckedAgentEntry,
+    controller_facts: &CheckedCallableFacts,
     project: &ProjectSemanticIndex,
     budget: AgentBudget,
 ) -> Result<AgentArtifactManifest, CompileAgentError> {
     let declaration = checked.controller().declaration();
-    let effect_id = EffectCallableId::project_function(declaration);
-    let closed_effect_rows = compiled
-        .typecheck_report()
-        .effects
-        .closed_effect_rows()
-        .map_err(effect_manifest::VerifiedEffectBuildError::from)?;
-    let verified_effects =
-        effect_manifest::build_verified_effect_summary(&effect_id, &closed_effect_rows)?;
+    let verified_effects = effect_manifest::build_verified_effect_summary(controller_facts)?;
     let declared_effects = verified_effects.inferred.clone();
     Ok(AgentArtifactManifest {
         schema_version: 1,

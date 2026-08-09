@@ -1,5 +1,7 @@
 //! Parser-owned semantic expression projections bound to attached identities.
 
+use std::collections::BTreeSet;
+
 mod candidate_block;
 mod candidate_control;
 mod candidate_path;
@@ -50,10 +52,11 @@ use super::{
 use crate::assertion::AssertionMode;
 use crate::expressions::{
     CandidateNodeIndex, ExpressionComponentRole, ExpressionProjection, ExpressionRecordFieldPart,
-    PendingCandidateGraph, PendingCandidateSemantic, SyntaxCallArgumentPart,
-    SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeApplicationComponentRole,
-    SyntaxCallTypeArgumentPart, SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole,
-    SyntaxClosureParameterPart, SyntaxExpressionSlot, SyntaxRecordField,
+    PendingCandidateGraph, PendingCandidateSemantic, SyntaxAssociatedReceiver,
+    SyntaxCallArgumentPart, SyntaxCallCalleeProjection, SyntaxCallProjection,
+    SyntaxCallTypeApplicationComponentRole, SyntaxCallTypeArgumentPart,
+    SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole, SyntaxClosureParameterPart,
+    SyntaxExpressionSlot, SyntaxRecordField,
 };
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
@@ -122,7 +125,36 @@ impl<'a> AttachedCandidateGraph<'a> {
     pub fn dialogue_content(
         self,
     ) -> Option<&'a crate::expressions::SyntaxDialogueContentProjection> {
-        self.dialogue.map(|candidate| candidate.content())
+        self.dialogue
+            .map(crate::expressions::SyntaxPostfixDialogueCandidate::content)
+    }
+
+    /// Exact source components retained by the Dialogue interpretation.
+    ///
+    /// The candidate has no independent syntax identity. Every returned span
+    /// remains attached to the source-backed outer postfix expression while
+    /// the component role describes the selected Dialogue interpretation.
+    pub fn dialogue_components(
+        self,
+    ) -> Option<impl ExactSizeIterator<Item = AttachedExpressionComponent> + 'a> {
+        let candidate = self.dialogue?;
+        Some(
+            candidate
+                .components()
+                .iter()
+                .map(move |component| AttachedExpressionComponent {
+                    role: component.role(),
+                    source: self.owner.syntax().source_span_for_range(component.range()),
+                }),
+        )
+    }
+
+    fn expression_roots(self) -> Vec<AttachedCandidateNode<'a>> {
+        let mut roots = Vec::new();
+        for root in self.graph.roots() {
+            collect_candidate_expression_roots(self.owner, self.graph, *root, &mut roots);
+        }
+        roots
     }
 
     /// Nested expression slots owned by this retained Dialogue candidate.
@@ -130,6 +162,9 @@ impl<'a> AttachedCandidateGraph<'a> {
     /// The typed content inventory supplies owner identity and slot state;
     /// candidate graph preorder supplies the unique attached expression node.
     /// Structural Dialogue wrappers never appear in the result.
+    /// # Panics
+    ///
+    /// Panics if a validated Dialogue component is absent from its candidate graph.
     pub fn dialogue_expression_slots(
         self,
     ) -> Option<impl ExactSizeIterator<Item = AttachedCandidateDialogueExpression<'a>> + 'a> {
@@ -139,92 +174,56 @@ impl<'a> AttachedCandidateGraph<'a> {
         else {
             return Some(Vec::new().into_iter());
         };
-        let component_source = |role| {
-            candidate
-                .components()
-                .iter()
-                .find(|component| component.role() == role)
-                .map(|component| component.range())
-                .expect("Dialogue candidate expression slots retain source components")
-        };
-        let mut expected = Vec::new();
-        for (ordinal, node) in content.nodes().iter().enumerate() {
-            let crate::expressions::SyntaxDialogueNodeProjection::Interpolation(slot) = node else {
-                continue;
-            };
-            let ordinal =
-                u32::try_from(ordinal).expect("Dialogue node counts are bounded by syntax limits");
-            let component_role = ExpressionComponentRole::DialogueNode {
-                ordinal,
-                part: crate::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
-            };
-            expected.push(CandidateDialogueExpressionSpec {
-                owner: AttachedCandidateDialogueOwner::Node { ordinal },
-                slot: *slot,
-                source: component_source(component_role),
-            });
+        let expected = dialogue_expression_specs(content);
+        for spec in &expected {
+            assert!(
+                candidate
+                    .components()
+                    .iter()
+                    .any(|component| component.role() == spec.component_role),
+                "Dialogue candidate expression slots retain typed source components"
+            );
         }
-        for (ordinal, tag) in content.tags().iter().enumerate() {
-            let slot = match tag.payload() {
-                crate::expressions::SyntaxRichTextTagPayloadProjection::FxCall(slot) => *slot,
-                crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(slot) => *slot,
-                crate::expressions::SyntaxRichTextTagPayloadProjection::Condition(slot) => *slot,
-                crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
-                | crate::expressions::SyntaxRichTextTagPayloadProjection::None => continue,
-            };
-            let ordinal =
-                u32::try_from(ordinal).expect("Rich-text tag counts are bounded by syntax limits");
-            let component_role = ExpressionComponentRole::RichTextTag {
-                tag: ordinal,
-                part: crate::expressions::SyntaxRichTextTagSourcePart::Payload,
-            };
-            expected.push(CandidateDialogueExpressionSpec {
-                owner: AttachedCandidateDialogueOwner::Tag { ordinal },
-                slot,
-                source: component_source(component_role),
-            });
-        }
-        expected.sort_by_key(|spec| (spec.source.start(), spec.source.end()));
 
+        let mut seen = BTreeSet::new();
         let bindings = self
-            .graph
-            .nodes()
-            .iter()
-            .enumerate()
-            .filter_map(|(position, node)| {
-                if !matches!(node.semantic(), PendingCandidateSemantic::Expression(_)) {
-                    return None;
-                }
-                let index = CandidateNodeIndex::try_new(position)
-                    .expect("candidate graph node counts are bounded by their local index");
-                let attached = AttachedCandidateNode::new(self.owner, self.graph, index);
-                if attached.nearest_expression_parent(index).is_some() {
-                    return None;
-                }
-                let owner = attached.nearest_dialogue_owner(index)?;
-                let spec = expected.iter().find(|spec| spec.owner == owner)?;
+            .expression_roots()
+            .into_iter()
+            .map(|attached| {
+                let owner = attached
+                    .nearest_dialogue_owner(attached.index)
+                    .expect("Dialogue expression roots retain one typed content owner edge");
+                let spec = expected
+                    .iter()
+                    .find(|spec| spec.owner == owner)
+                    .expect("Dialogue typed content inventory owns every expression edge");
                 assert!(
-                    source_contains(spec.source, node.source()),
-                    "Dialogue candidate owner payload must contain its expression node"
+                    seen.insert(owner),
+                    "Dialogue expression owner edges remain unique"
+                );
+                assert_eq!(
+                    attached.role(),
+                    spec.syntax_role,
+                    "Dialogue expression roots retain their typed owner relation"
                 );
                 assert!(
                     matches!(
-                        (spec.slot, node.kind()),
+                        (spec.slot, attached.kind()),
                         (SyntaxExpressionSlot::Missing, SyntaxKind::MissingExpression)
                     ) || spec.slot == SyntaxExpressionSlot::Authored
-                        && node.kind() != SyntaxKind::MissingExpression,
+                        && attached.kind() != SyntaxKind::MissingExpression,
                     "Dialogue candidate slot state must match its expression node"
                 );
-                Some(AttachedCandidateDialogueExpression {
+                AttachedCandidateDialogueExpression {
                     owner: spec.owner,
                     slot: spec.slot,
                     source: attached.source_span(),
                     node: attached,
-                })
+                }
             })
             .collect::<Vec<_>>();
         assert_eq!(
-            bindings.len(),
+            seen.len(),
             expected.len(),
             "Dialogue candidate must bind every typed expression slot exactly once"
         );
@@ -237,7 +236,7 @@ impl<'a> AttachedCandidateGraph<'a> {
 pub enum AttachedCandidateDialogueOwner {
     /// One Dialogue content node identified by its typed content ordinal.
     Node { ordinal: u32 },
-    /// One RichText tag identified by its typed content tag ordinal.
+    /// One `RichText` tag identified by its typed content tag ordinal.
     Tag { ordinal: u32 },
 }
 
@@ -276,7 +275,76 @@ impl<'a> AttachedCandidateDialogueExpression<'a> {
 struct CandidateDialogueExpressionSpec {
     owner: AttachedCandidateDialogueOwner,
     slot: SyntaxExpressionSlot,
-    source: SourceRange,
+    component_role: ExpressionComponentRole,
+    syntax_role: SyntaxRole,
+}
+
+fn dialogue_expression_specs(
+    content: &crate::expressions::SyntaxDialogueContent,
+) -> Vec<CandidateDialogueExpressionSpec> {
+    let mut specs = Vec::new();
+    for (ordinal, node) in content.nodes().iter().enumerate() {
+        let crate::expressions::SyntaxDialogueNodeProjection::Interpolation(slot) = node else {
+            continue;
+        };
+        let ordinal =
+            u32::try_from(ordinal).expect("Dialogue node counts are bounded by syntax limits");
+        specs.push(CandidateDialogueExpressionSpec {
+            owner: AttachedCandidateDialogueOwner::Node { ordinal },
+            slot: *slot,
+            component_role: ExpressionComponentRole::DialogueNode {
+                ordinal,
+                part: crate::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
+            },
+            syntax_role: SyntaxRole::Operand,
+        });
+    }
+    for (ordinal, tag) in content.tags().iter().enumerate() {
+        let (slot, syntax_role) = match tag.payload() {
+            crate::expressions::SyntaxRichTextTagPayloadProjection::FxCall(slot)
+            | crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(slot) => {
+                (*slot, SyntaxRole::Operand)
+            }
+            crate::expressions::SyntaxRichTextTagPayloadProjection::Condition(slot) => {
+                (*slot, SyntaxRole::Condition)
+            }
+            crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
+            | crate::expressions::SyntaxRichTextTagPayloadProjection::None => continue,
+        };
+        let ordinal =
+            u32::try_from(ordinal).expect("Rich-text tag counts are bounded by syntax limits");
+        specs.push(CandidateDialogueExpressionSpec {
+            owner: AttachedCandidateDialogueOwner::Tag { ordinal },
+            slot,
+            component_role: ExpressionComponentRole::RichTextTag {
+                tag: ordinal,
+                part: crate::expressions::SyntaxRichTextTagSourcePart::Payload,
+            },
+            syntax_role,
+        });
+    }
+    specs
+}
+
+fn collect_candidate_expression_roots<'a>(
+    owner: &'a ExprNode,
+    graph: &'a PendingCandidateGraph,
+    index: CandidateNodeIndex,
+    roots: &mut Vec<AttachedCandidateNode<'a>>,
+) {
+    let node = graph
+        .node(index)
+        .expect("candidate traversal follows retained typed child edges");
+    if ExpressionFamily::accepts(node.kind()) {
+        roots.push(AttachedCandidateNode::new(owner, graph, index));
+        return;
+    }
+    for child in graph
+        .children(index)
+        .expect("candidate traversal follows retained typed child edges")
+    {
+        collect_candidate_expression_roots(owner, graph, *child, roots);
+    }
 }
 
 /// One revision-bound node borrowed from a retained candidate graph.
@@ -324,6 +392,9 @@ impl<'a> AttachedCandidateNode<'a> {
     }
 
     /// Direct candidate-local children in authored order.
+    /// # Panics
+    ///
+    /// Panics if the validated candidate graph contains a dangling child edge.
     pub fn children(self) -> impl ExactSizeIterator<Item = Self> + 'a {
         self.graph
             .children(self.index)
@@ -337,6 +408,9 @@ impl<'a> AttachedCandidateNode<'a> {
     ///
     /// Each child keeps its candidate-local node view and receives the same
     /// stable grammar ordinal used by ordinary attached expression children.
+    /// # Panics
+    ///
+    /// Panics if the projection and retained semantic-child inventory disagree.
     pub fn semantic_expression_children(
         self,
     ) -> impl ExactSizeIterator<Item = AttachedCandidateExpressionChild<'a>> + 'a {
@@ -346,14 +420,16 @@ impl<'a> AttachedCandidateNode<'a> {
         let PendingCandidateSemantic::Expression(pending) = self.pending().semantic() else {
             unreachable!("expression projection is backed by expression semantics");
         };
-        let mut nodes = self.direct_semantic_expression_nodes();
-        let mut specs = candidate_semantic_child_specs(projection, pending.components());
+        let nodes = self.direct_semantic_expression_nodes();
+        let mut specs =
+            candidate_semantic_child_specs(self, projection, pending.components(), &nodes);
         if matches!(projection, ExpressionProjection::Error) && specs.is_empty() {
             specs.extend(nodes.first().map(|node| {
                 CandidateSemanticChildSpec {
                     ordinal: 0,
                     slot: SyntaxExpressionSlot::Authored,
                     component_role: ExpressionComponentRole::Recovery,
+                    syntax_role: node.role(),
                     source: pending
                         .components()
                         .iter()
@@ -362,14 +438,20 @@ impl<'a> AttachedCandidateNode<'a> {
                 }
             }));
         }
+        assert_eq!(
+            nodes.len(),
+            specs.len(),
+            "candidate expression projection must declare every semantic child"
+        );
         let children = specs
             .into_iter()
-            .map(|spec| {
-                let position = nodes
-                    .iter()
-                    .position(|node| source_contains(spec.source, node.pending().source()))
-                    .expect("candidate semantic slots retain one expression node");
-                let node = nodes.remove(position);
+            .zip(nodes)
+            .map(|(spec, node)| {
+                assert_eq!(
+                    node.role(),
+                    spec.syntax_role,
+                    "candidate semantic child retains its parser-owned typed edge"
+                );
                 let source = self.owner.syntax().source_span_for_range(spec.source);
                 match (spec.slot, node.kind(), node.expression_projection()) {
                     (SyntaxExpressionSlot::Missing, SyntaxKind::MissingExpression, _) => {
@@ -404,49 +486,35 @@ impl<'a> AttachedCandidateNode<'a> {
                 }
             })
             .collect::<Vec<_>>();
-        assert!(
-            nodes.is_empty(),
-            "candidate expression projection must declare every semantic child"
-        );
         children.into_iter()
     }
 
     fn direct_semantic_expression_nodes(self) -> Vec<Self> {
-        self.graph
-            .nodes()
-            .iter()
-            .enumerate()
-            .filter_map(|(position, node)| {
-                let candidate = CandidateNodeIndex::try_new(position)
-                    .expect("candidate graph node counts are bounded by their local index");
-                if candidate == self.index || !ExpressionFamily::accepts(node.kind()) {
-                    return None;
-                }
-                let mut parent = node.parent();
-                while let Some(index) = parent {
-                    let ancestor = self
-                        .graph
-                        .node(index)
-                        .expect("candidate parent edges stay inside their graph");
-                    if matches!(
-                        self.expression_projection(),
-                        Some(ExpressionProjection::Match(_))
-                    ) && ancestor.kind() == SyntaxKind::MatchArm
-                    {
-                        // MatchArm is a typed semantic scope boundary. Its
-                        // guard and value are read through `match_view()` and
-                        // must not be flattened into the outer Match scope.
-                        return None;
-                    }
-                    if matches!(ancestor.semantic(), PendingCandidateSemantic::Expression(_)) {
-                        return (index == self.index)
-                            .then(|| Self::new(self.owner, self.graph, candidate));
-                    }
-                    parent = ancestor.parent();
-                }
-                None
-            })
-            .collect()
+        let mut nodes = Vec::new();
+        for child in self.children() {
+            self.collect_direct_semantic_expression_nodes(child, &mut nodes);
+        }
+        nodes
+    }
+
+    fn collect_direct_semantic_expression_nodes(self, node: Self, nodes: &mut Vec<Self>) {
+        if matches!(
+            self.expression_projection(),
+            Some(ExpressionProjection::Match(_))
+        ) && node.kind() == SyntaxKind::MatchArm
+        {
+            // MatchArm is a typed semantic scope boundary. Its guard and value
+            // are read through `match_view()` and remain outside the Match
+            // expression's direct semantic-child inventory.
+            return;
+        }
+        if ExpressionFamily::accepts(node.kind()) {
+            nodes.push(node);
+            return;
+        }
+        for child in node.children() {
+            self.collect_direct_semantic_expression_nodes(child, nodes);
+        }
     }
 
     /// Exact source components retained by this expression payload.
@@ -467,6 +535,19 @@ impl<'a> AttachedCandidateNode<'a> {
         )
     }
 
+    fn require_expression_component(self, role: ExpressionComponentRole) {
+        let PendingCandidateSemantic::Expression(projection) = self.pending().semantic() else {
+            panic!("expression component lookups require expression semantics");
+        };
+        assert!(
+            projection
+                .components()
+                .iter()
+                .any(|component| component.role() == role),
+            "candidate Call type roots retain typed source components"
+        );
+    }
+
     /// Direct type roots semantically owned by this candidate Call.
     ///
     /// Structural `TypeArgument` and delimiter nodes are skipped. The returned
@@ -477,6 +558,10 @@ impl<'a> AttachedCandidateNode<'a> {
     ///
     /// Panics if the parser-owned candidate graph does not retain the exact
     /// type roots declared by its typed Call projection.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the closed Call type-root projection validates every typed receiver and argument edge together"
+    )]
     pub fn direct_semantic_type_roots(
         self,
     ) -> impl ExactSizeIterator<Item = AttachedCandidateTypeRoot<'a>> + 'a {
@@ -484,17 +569,6 @@ impl<'a> AttachedCandidateNode<'a> {
             self.expression_projection()
         else {
             return Vec::new().into_iter();
-        };
-        let PendingCandidateSemantic::Expression(pending) = self.pending().semantic() else {
-            unreachable!("Call projection is backed by expression semantics");
-        };
-        let component = |role| {
-            pending
-                .components()
-                .iter()
-                .find(|component| component.role() == role)
-                .map(|component| component.range())
-                .expect("candidate Call type roots retain source components")
         };
         let mut expected = Vec::new();
         match call.callee() {
@@ -513,19 +587,24 @@ impl<'a> AttachedCandidateNode<'a> {
                 else {
                     panic!("candidate unresolved-dot Call requires a nominal Path interpretation")
                 };
+                self.require_expression_component(ExpressionComponentRole::CallAssociatedReceiver);
                 expected.push((
                     SyntaxCallTypeChildRole::DotNominalReceiver,
-                    component(ExpressionComponentRole::CallAssociatedReceiver),
                     callee.index,
                     Some(receiver.node().index),
                 ));
             }
-            SyntaxCallCalleeProjection::Associated { .. } => expected.push((
-                SyntaxCallTypeChildRole::AssociatedReceiver,
-                component(ExpressionComponentRole::CallAssociatedReceiver),
-                self.index,
-                None,
-            )),
+            SyntaxCallCalleeProjection::Associated {
+                receiver: SyntaxAssociatedReceiver::Present,
+                ..
+            } => {
+                self.require_expression_component(ExpressionComponentRole::CallAssociatedReceiver);
+                expected.push((
+                    SyntaxCallTypeChildRole::AssociatedReceiver,
+                    self.index,
+                    None,
+                ));
+            }
         }
         if let Some(application) = call.explicit_type_application() {
             for (argument, projection) in application.arguments().iter().enumerate() {
@@ -534,14 +613,14 @@ impl<'a> AttachedCandidateNode<'a> {
                 }
                 let argument = u16::try_from(argument)
                     .expect("candidate Call type arguments are bounded by syntax limits");
+                self.require_expression_component(ExpressionComponentRole::CallTypeApplication(
+                    SyntaxCallTypeApplicationComponentRole::Argument {
+                        argument,
+                        part: SyntaxCallTypeArgumentPart::Type,
+                    },
+                ));
                 expected.push((
                     SyntaxCallTypeChildRole::ExplicitCallTypeArgument { ordinal: argument },
-                    component(ExpressionComponentRole::CallTypeApplication(
-                        SyntaxCallTypeApplicationComponentRole::Argument {
-                            argument,
-                            part: SyntaxCallTypeArgumentPart::Type,
-                        },
-                    )),
                     self.index,
                     None,
                 ));
@@ -562,17 +641,18 @@ impl<'a> AttachedCandidateNode<'a> {
                 let index = CandidateNodeIndex::try_new(position)
                     .expect("candidate graph node counts are bounded by their local index");
                 let semantic_parent = self.nearest_expression_or_type_parent(index)?;
-                let (role, _, _, _) = expected.iter().find(|(_, source, owner, exact)| {
-                    *owner == semantic_parent
-                        && exact.is_none_or(|expected| expected == index)
-                        && source_contains(*source, node.source())
-                })?;
-                let node = Self::new(self.owner, self.graph, index);
-                Some(AttachedCandidateTypeRoot {
-                    role: *role,
-                    source: node.source_span(),
-                    node,
-                })
+                expected
+                    .iter()
+                    .any(|(_, owner, exact)| {
+                        *owner == semantic_parent && exact.is_none_or(|expected| expected == index)
+                    })
+                    .then(|| {
+                        (
+                            semantic_parent,
+                            index,
+                            Self::new(self.owner, self.graph, index),
+                        )
+                    })
             })
             .collect::<Vec<_>>();
         assert_eq!(
@@ -580,13 +660,35 @@ impl<'a> AttachedCandidateNode<'a> {
             expected.len(),
             "candidate Call must retain every declared direct type root"
         );
-        roots.into_iter()
+        expected
+            .into_iter()
+            .zip(roots)
+            .map(|((role, owner, exact), (semantic_parent, index, node))| {
+                assert_eq!(
+                    semantic_parent, owner,
+                    "candidate Call type roots retain their typed semantic parent edge"
+                );
+                assert!(
+                    exact.is_none_or(|expected| expected == index),
+                    "candidate Call type roots retain their exact typed root edge"
+                );
+                AttachedCandidateTypeRoot {
+                    role,
+                    source: node.source_span(),
+                    node,
+                }
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
     }
 
     /// Direct semantic type children of this candidate type node.
     ///
     /// Child paths must extend the parent path by exactly one typed step and
     /// the nearest expression-or-type semantic ancestor must be this node.
+    /// # Panics
+    ///
+    /// Panics if a retained type child no longer resolves in its authored tree.
     pub fn direct_semantic_type_children(
         self,
     ) -> impl ExactSizeIterator<Item = AttachedCandidateTypeChild<'a>> + 'a {
@@ -645,21 +747,6 @@ impl<'a> AttachedCandidateNode<'a> {
         None
     }
 
-    fn nearest_expression_parent(
-        self,
-        candidate: CandidateNodeIndex,
-    ) -> Option<CandidateNodeIndex> {
-        let mut parent = self.graph.node(candidate)?.parent();
-        while let Some(index) = parent {
-            let ancestor = self.graph.node(index)?;
-            if matches!(ancestor.semantic(), PendingCandidateSemantic::Expression(_)) {
-                return Some(index);
-            }
-            parent = ancestor.parent();
-        }
-        None
-    }
-
     fn nearest_dialogue_owner(
         self,
         candidate: CandidateNodeIndex,
@@ -709,6 +796,9 @@ impl<'a> AttachedCandidateNode<'a> {
     }
 
     /// Type payload, when this is a type semantic node.
+    /// # Panics
+    ///
+    /// Panics if a validated type projection no longer resolves in its authored tree.
     pub fn type_projection(self) -> Option<AttachedCandidateTypeProjection<'a>> {
         let PendingCandidateSemantic::Type(projection) = self.pending().semantic() else {
             return None;
@@ -857,26 +947,55 @@ struct CandidateSemanticChildSpec {
     ordinal: u32,
     slot: SyntaxExpressionSlot,
     component_role: ExpressionComponentRole,
+    syntax_role: SyntaxRole,
     source: SourceRange,
 }
 
-fn candidate_semantic_child_specs(
-    projection: &ExpressionProjection,
-    components: &[crate::expressions::PendingExpressionComponent],
-) -> Vec<CandidateSemanticChildSpec> {
-    let source = |role| {
-        components
+#[derive(Clone, Copy)]
+struct CandidateSemanticSpecBuilder<'a> {
+    components: &'a [crate::expressions::PendingExpressionComponent],
+}
+
+impl CandidateSemanticSpecBuilder<'_> {
+    fn source(self, role: ExpressionComponentRole) -> SourceRange {
+        self.components
             .iter()
             .find(|component| component.role() == role)
             .map(|component| component.range())
             .expect("candidate expression slots retain exact source components")
-    };
-    let spec = |ordinal, slot, component_role| CandidateSemanticChildSpec {
-        ordinal,
-        slot,
-        component_role,
-        source: source(component_role),
-    };
+    }
+
+    fn spec(
+        self,
+        ordinal: u32,
+        slot: SyntaxExpressionSlot,
+        component_role: ExpressionComponentRole,
+        syntax_role: SyntaxRole,
+    ) -> CandidateSemanticChildSpec {
+        CandidateSemanticChildSpec {
+            ordinal,
+            slot,
+            component_role,
+            syntax_role,
+            source: self.source(component_role),
+        }
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "the wildcard-free expression-family child table is one auditable projection authority"
+)]
+fn candidate_semantic_child_specs(
+    owner: AttachedCandidateNode<'_>,
+    projection: &ExpressionProjection,
+    components: &[crate::expressions::PendingExpressionComponent],
+    nodes: &[AttachedCandidateNode<'_>],
+) -> Vec<CandidateSemanticChildSpec> {
+    let builder = CandidateSemanticSpecBuilder { components };
+    if let Some(children) = candidate_branch_child_specs(projection, builder) {
+        return children;
+    }
     match projection {
         ExpressionProjection::Tuple(slots) | ExpressionProjection::BracketSequence(slots) => slots
             .iter()
@@ -885,152 +1004,98 @@ fn candidate_semantic_child_specs(
             .map(|(ordinal, slot)| {
                 let ordinal = u32::try_from(ordinal)
                     .expect("candidate expression child counts are bounded by syntax limits");
-                spec(ordinal, slot, ExpressionComponentRole::Element { ordinal })
+                builder.spec(
+                    ordinal,
+                    slot,
+                    ExpressionComponentRole::Element { ordinal },
+                    SyntaxRole::Element(ordinal),
+                )
             })
             .collect(),
         ExpressionProjection::ArrayRepeat([value, length]) => vec![
-            spec(0, *value, ExpressionComponentRole::RepeatValue),
-            spec(1, *length, ExpressionComponentRole::RepeatLength),
-        ],
-        ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(callback)) => vec![
-            spec(
+            builder.spec(
                 0,
-                SyntaxExpressionSlot::Authored,
-                ExpressionComponentRole::CallCallee,
+                *value,
+                ExpressionComponentRole::RepeatValue,
+                SyntaxRole::Element(0),
             ),
-            spec(
+            builder.spec(
                 1,
-                callback.callback(),
-                ExpressionComponentRole::CallArgument {
-                    argument: 0,
-                    part: SyntaxCallArgumentPart::Value,
-                },
+                *length,
+                ExpressionComponentRole::RepeatLength,
+                SyntaxRole::Element(1),
             ),
         ],
-        ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(call)) => {
-            let mut children = Vec::with_capacity(call.arguments().len() + 1);
-            match call.callee() {
-                SyntaxCallCalleeProjection::Ordinary => children.push(spec(
-                    0,
-                    SyntaxExpressionSlot::Authored,
-                    ExpressionComponentRole::CallCallee,
-                )),
-                SyntaxCallCalleeProjection::UnresolvedDot { .. } => children.push(spec(
-                    0,
-                    SyntaxExpressionSlot::Authored,
-                    ExpressionComponentRole::CallAssociatedReceiver,
-                )),
-                SyntaxCallCalleeProjection::Associated { .. } => {}
-            }
-            children.extend(
-                call.arguments()
-                    .iter()
-                    .enumerate()
-                    .map(|(argument, value)| {
-                        let argument = u16::try_from(argument)
-                            .expect("candidate call arguments are bounded by syntax limits");
-                        spec(
-                            u32::from(argument) + 1,
-                            value.value(),
-                            ExpressionComponentRole::CallArgument {
-                                argument,
-                                part: SyntaxCallArgumentPart::Value,
-                            },
-                        )
-                    }),
-            );
-            children
-        }
-        ExpressionProjection::Select(_) => vec![spec(
-            0,
-            SyntaxExpressionSlot::Authored,
-            ExpressionComponentRole::Target,
-        )],
-        ExpressionProjection::Index(index) => vec![
-            spec(0, index.target(), ExpressionComponentRole::Target),
-            spec(1, index.index(), ExpressionComponentRole::Index),
-        ],
-        ExpressionProjection::DialogueContentApplication(application) => {
-            let mut children = vec![spec(
+        ExpressionProjection::Call(call) => candidate_call_child_specs(call, builder),
+        ExpressionProjection::Select(_) | ExpressionProjection::PostfixBracket(_) => {
+            vec![builder.spec(
                 0,
                 SyntaxExpressionSlot::Authored,
                 ExpressionComponentRole::Target,
-            )];
-            let crate::expressions::SyntaxDialogueContentProjection::Present(content) =
-                application.content()
-            else {
-                return children;
-            };
-            let mut nested = Vec::new();
-            for (ordinal, node) in content.nodes().iter().enumerate() {
-                let crate::expressions::SyntaxDialogueNodeProjection::Interpolation(slot) = node
-                else {
-                    continue;
-                };
-                let ordinal = u32::try_from(ordinal)
-                    .expect("dialogue node counts are bounded by syntax limits");
-                let role = ExpressionComponentRole::DialogueNode {
-                    ordinal,
-                    part: crate::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
-                };
-                nested.push((*slot, role, source(role)));
-            }
-            for (tag, projection) in content.tags().iter().enumerate() {
-                let slot = match projection.payload() {
-                    crate::expressions::SyntaxRichTextTagPayloadProjection::FxCall(slot)
-                    | crate::expressions::SyntaxRichTextTagPayloadProjection::DialogueCall(slot)
-                    | crate::expressions::SyntaxRichTextTagPayloadProjection::Condition(slot) => {
-                        *slot
-                    }
-                    crate::expressions::SyntaxRichTextTagPayloadProjection::Arguments
-                    | crate::expressions::SyntaxRichTextTagPayloadProjection::None => continue,
-                };
-                let tag =
-                    u32::try_from(tag).expect("rich-text tag counts are bounded by syntax limits");
-                let role = ExpressionComponentRole::RichTextTag {
-                    tag,
-                    part: crate::expressions::SyntaxRichTextTagSourcePart::Payload,
-                };
-                nested.push((slot, role, source(role)));
-            }
-            nested.sort_by_key(|(_, _, range)| (range.start(), range.end()));
-            children.extend(nested.into_iter().enumerate().map(
-                |(position, (slot, component_role, source))| {
-                    CandidateSemanticChildSpec {
-                        ordinal: u32::try_from(position)
-                            .expect("dialogue expression counts are bounded by syntax limits")
-                            + 1,
-                        slot,
-                        component_role,
-                        source,
-                    }
-                },
-            ));
-            children
+                SyntaxRole::Target,
+            )]
         }
-        ExpressionProjection::PostfixBracket(_) => vec![spec(
-            0,
-            SyntaxExpressionSlot::Authored,
-            ExpressionComponentRole::Target,
-        )],
-        ExpressionProjection::Pipe([left, right]) => vec![
-            spec(0, *left, ExpressionComponentRole::LeftOperand),
-            spec(1, *right, ExpressionComponentRole::RightOperand),
+        ExpressionProjection::Index(index) => vec![
+            builder.spec(
+                0,
+                index.target(),
+                ExpressionComponentRole::Target,
+                SyntaxRole::Target,
+            ),
+            builder.spec(
+                1,
+                index.index(),
+                ExpressionComponentRole::Index,
+                SyntaxRole::Argument(0),
+            ),
+        ],
+        ExpressionProjection::DialogueContentApplication(application) => {
+            candidate_dialogue_child_specs(owner, application, builder, nodes)
+        }
+        ExpressionProjection::Pipe([left, right])
+        | ExpressionProjection::Binary { left, right, .. } => vec![
+            builder.spec(
+                0,
+                *left,
+                ExpressionComponentRole::LeftOperand,
+                SyntaxRole::LeftOperand,
+            ),
+            builder.spec(
+                1,
+                *right,
+                ExpressionComponentRole::RightOperand,
+                SyntaxRole::RightOperand,
+            ),
         ],
         ExpressionProjection::Try { operand, .. }
         | ExpressionProjection::Await { operand, .. }
         | ExpressionProjection::Borrow { operand, .. }
         | ExpressionProjection::Dereference { operand }
         | ExpressionProjection::Unary { operand, .. } => {
-            vec![spec(0, *operand, ExpressionComponentRole::Operand)]
+            vec![builder.spec(
+                0,
+                *operand,
+                ExpressionComponentRole::Operand,
+                SyntaxRole::Operand,
+            )]
         }
         ExpressionProjection::Range { start, end, .. } => {
             let mut children = Vec::with_capacity(2);
             if let Some(start) = start {
-                children.push(spec(0, *start, ExpressionComponentRole::RangeStart));
+                children.push(builder.spec(
+                    0,
+                    *start,
+                    ExpressionComponentRole::RangeStart,
+                    SyntaxRole::LeftOperand,
+                ));
             }
             if let Some(end) = end {
-                children.push(spec(1, *end, ExpressionComponentRole::RangeEnd));
+                children.push(builder.spec(
+                    1,
+                    *end,
+                    ExpressionComponentRole::RangeEnd,
+                    SyntaxRole::RightOperand,
+                ));
             }
             children
         }
@@ -1042,59 +1107,35 @@ fn candidate_semantic_child_specs(
                     let slot = projection.value()?;
                     let field = u32::try_from(field)
                         .expect("candidate record fields are bounded by syntax limits");
-                    Some(spec(
+                    Some(builder.spec(
                         field,
                         slot,
                         ExpressionComponentRole::RecordField {
                             field,
                             part: ExpressionRecordFieldPart::Value,
                         },
+                        SyntaxRole::Initializer,
                     ))
                 })
                 .collect()
         }
-        ExpressionProjection::Binary { left, right, .. } => vec![
-            spec(0, *left, ExpressionComponentRole::LeftOperand),
-            spec(1, *right, ExpressionComponentRole::RightOperand),
-        ],
         ExpressionProjection::Closure(closure) => {
-            vec![spec(0, closure.body(), ExpressionComponentRole::Body)]
+            vec![builder.spec(
+                0,
+                closure.body(),
+                ExpressionComponentRole::Body,
+                SyntaxRole::Body,
+            )]
         }
-        ExpressionProjection::If {
-            condition,
-            then_branch,
-            else_branch,
-        } => {
-            let mut children = vec![
-                spec(0, *condition, ExpressionComponentRole::Condition),
-                spec(1, *then_branch, ExpressionComponentRole::ThenBranch),
-            ];
-            if let Some(else_branch) = else_branch {
-                children.push(spec(2, *else_branch, ExpressionComponentRole::ElseBranch));
-            }
-            children
-        }
-        ExpressionProjection::IfLet {
-            scrutinee,
-            guard,
-            then_branch,
-            else_branch,
-        } => {
-            let mut children = vec![spec(0, *scrutinee, ExpressionComponentRole::Scrutinee)];
-            if let Some(guard) = guard {
-                children.push(spec(1, *guard, ExpressionComponentRole::Guard));
-            }
-            children.push(spec(2, *then_branch, ExpressionComponentRole::ThenBranch));
-            if let Some(else_branch) = else_branch {
-                children.push(spec(3, *else_branch, ExpressionComponentRole::ElseBranch));
-            }
-            children
+        ExpressionProjection::If { .. } | ExpressionProjection::IfLet { .. } => {
+            unreachable!("branch projections return before generic candidate projection")
         }
         ExpressionProjection::Match(projection) => {
-            vec![spec(
+            vec![builder.spec(
                 0,
                 projection.scrutinee(),
                 ExpressionComponentRole::Scrutinee,
+                SyntaxRole::Scrutinee,
             )]
         }
         ExpressionProjection::Unit
@@ -1114,8 +1155,182 @@ fn candidate_semantic_child_specs(
     }
 }
 
-const fn source_contains(owner: SourceRange, nested: SourceRange) -> bool {
-    owner.start() <= nested.start() && nested.end() <= owner.end()
+fn candidate_branch_child_specs(
+    projection: &ExpressionProjection,
+    builder: CandidateSemanticSpecBuilder<'_>,
+) -> Option<Vec<CandidateSemanticChildSpec>> {
+    match projection {
+        ExpressionProjection::If {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            let mut children = vec![
+                builder.spec(
+                    0,
+                    *condition,
+                    ExpressionComponentRole::Condition,
+                    SyntaxRole::Condition,
+                ),
+                builder.spec(
+                    1,
+                    *then_branch,
+                    ExpressionComponentRole::ThenBranch,
+                    SyntaxRole::ThenBranch,
+                ),
+            ];
+            children.extend(else_branch.map(|slot| {
+                builder.spec(
+                    2,
+                    slot,
+                    ExpressionComponentRole::ElseBranch,
+                    SyntaxRole::ElseBranch,
+                )
+            }));
+            Some(children)
+        }
+        ExpressionProjection::IfLet {
+            scrutinee,
+            guard,
+            then_branch,
+            else_branch,
+        } => {
+            let mut children = vec![builder.spec(
+                0,
+                *scrutinee,
+                ExpressionComponentRole::Scrutinee,
+                SyntaxRole::Scrutinee,
+            )];
+            children.extend(guard.map(|slot| {
+                builder.spec(1, slot, ExpressionComponentRole::Guard, SyntaxRole::Guard)
+            }));
+            children.push(builder.spec(
+                2,
+                *then_branch,
+                ExpressionComponentRole::ThenBranch,
+                SyntaxRole::ThenBranch,
+            ));
+            children.extend(else_branch.map(|slot| {
+                builder.spec(
+                    3,
+                    slot,
+                    ExpressionComponentRole::ElseBranch,
+                    SyntaxRole::ElseBranch,
+                )
+            }));
+            Some(children)
+        }
+        _ => None,
+    }
+}
+
+fn candidate_call_child_specs(
+    call: &SyntaxCallProjection,
+    builder: CandidateSemanticSpecBuilder<'_>,
+) -> Vec<CandidateSemanticChildSpec> {
+    match call {
+        SyntaxCallProjection::CallbackBlock(callback) => vec![
+            builder.spec(
+                0,
+                SyntaxExpressionSlot::Authored,
+                ExpressionComponentRole::CallCallee,
+                SyntaxRole::Callee,
+            ),
+            builder.spec(
+                1,
+                callback.callback(),
+                ExpressionComponentRole::CallArgument {
+                    argument: 0,
+                    part: SyntaxCallArgumentPart::Value,
+                },
+                SyntaxRole::Argument(0),
+            ),
+        ],
+        SyntaxCallProjection::Parenthesized(call) => {
+            let mut children = Vec::with_capacity(call.arguments().len() + 1);
+            match call.callee() {
+                SyntaxCallCalleeProjection::Ordinary => children.push(builder.spec(
+                    0,
+                    SyntaxExpressionSlot::Authored,
+                    ExpressionComponentRole::CallCallee,
+                    SyntaxRole::Callee,
+                )),
+                SyntaxCallCalleeProjection::UnresolvedDot { .. } => children.push(builder.spec(
+                    0,
+                    SyntaxExpressionSlot::Authored,
+                    ExpressionComponentRole::CallAssociatedReceiver,
+                    SyntaxRole::Callee,
+                )),
+                SyntaxCallCalleeProjection::Associated { .. } => {}
+            }
+            children.extend(
+                call.arguments()
+                    .iter()
+                    .enumerate()
+                    .map(|(argument, value)| {
+                        let argument = u16::try_from(argument)
+                            .expect("candidate call arguments are bounded by syntax limits");
+                        builder.spec(
+                            u32::from(argument) + 1,
+                            value.value(),
+                            ExpressionComponentRole::CallArgument {
+                                argument,
+                                part: SyntaxCallArgumentPart::Value,
+                            },
+                            SyntaxRole::Operand,
+                        )
+                    }),
+            );
+            children
+        }
+    }
+}
+
+fn candidate_dialogue_child_specs(
+    owner: AttachedCandidateNode<'_>,
+    application: &crate::expressions::SyntaxDialogueApplicationProjection,
+    builder: CandidateSemanticSpecBuilder<'_>,
+    nodes: &[AttachedCandidateNode<'_>],
+) -> Vec<CandidateSemanticChildSpec> {
+    let mut children = vec![builder.spec(
+        0,
+        SyntaxExpressionSlot::Authored,
+        ExpressionComponentRole::Target,
+        SyntaxRole::Target,
+    )];
+    let crate::expressions::SyntaxDialogueContentProjection::Present(content) =
+        application.content()
+    else {
+        return children;
+    };
+    let expected = dialogue_expression_specs(content);
+    let mut seen = BTreeSet::new();
+    children.extend(nodes.iter().enumerate().skip(1).map(|(position, node)| {
+        let dialogue_owner = owner
+            .nearest_dialogue_owner(node.index)
+            .expect("Dialogue semantic children retain one typed content owner edge");
+        let spec = expected
+            .iter()
+            .find(|spec| spec.owner == dialogue_owner)
+            .expect("Dialogue typed content inventory owns every semantic child edge");
+        assert!(
+            seen.insert(dialogue_owner),
+            "Dialogue semantic child owner edges remain unique"
+        );
+        builder.spec(
+            u32::try_from(position)
+                .expect("dialogue expression counts are bounded by syntax limits"),
+            spec.slot,
+            spec.component_role,
+            spec.syntax_role,
+        )
+    }));
+    assert_eq!(
+        seen.len(),
+        expected.len(),
+        "Dialogue semantic children bind every typed expression slot exactly once"
+    );
+    children
 }
 
 /// Typed assertion payload retained by a candidate node.
@@ -1212,6 +1427,9 @@ impl<'a> AttachedCandidatePatternProjection<'a> {
         self.projection.path()
     }
 
+    /// # Panics
+    ///
+    /// Panics if the validated pattern path no longer resolves in its authored tree.
     pub fn value(self) -> &'a PatternSyntaxNode {
         self.projection
             .authored()
@@ -1260,6 +1478,7 @@ impl<'a> AttachedCandidatePathProjection<'a> {
                 kind: match segment.kind() {
                     PendingPathSegmentKind::Identifier => AttachedPathSegmentKind::Identifier,
                     PendingPathSegmentKind::Keyword => AttachedPathSegmentKind::Keyword,
+                    PendingPathSegmentKind::ProjectSymbol => AttachedPathSegmentKind::ProjectSymbol,
                     PendingPathSegmentKind::Lifetime => AttachedPathSegmentKind::Lifetime,
                 },
                 source: segment.source(),
@@ -1300,6 +1519,9 @@ impl<'a> AttachedCandidatePathSegment<'a> {
     }
 
     /// Exact parser-validated token spelling in the accepted outer revision.
+    /// # Panics
+    ///
+    /// Panics if a validated path segment lies outside its accepted expression.
     pub fn source_text(self) -> &'a str {
         let owner = self.owner.range();
         self.owner
@@ -1370,12 +1592,14 @@ pub enum AttachedExpressionChild {
     /// One authored expression identity, including a typed Error family.
     Authored {
         ordinal: u32,
+        component_role: ExpressionComponentRole,
         expression: ExprNode,
         source: SourceSpan,
     },
     /// One exact zero-width `MissingExpression` insertion.
     Missing {
         ordinal: u32,
+        component_role: ExpressionComponentRole,
         recovery: RecoveryNode,
     },
 }
@@ -1385,6 +1609,15 @@ impl AttachedExpressionChild {
     pub const fn ordinal(&self) -> u32 {
         match self {
             Self::Authored { ordinal, .. } | Self::Missing { ordinal, .. } => *ordinal,
+        }
+    }
+
+    /// Exact source-component relation declared by the expression projection.
+    pub const fn component_role(&self) -> ExpressionComponentRole {
+        match self {
+            Self::Authored { component_role, .. } | Self::Missing { component_role, .. } => {
+                *component_role
+            }
         }
     }
 
@@ -1540,6 +1773,9 @@ impl AttachedExpressionNode {
     }
 
     /// Parser-selected leaf semantic payload.
+    /// # Panics
+    ///
+    /// Panics if an attached expression has lost its parser-validated projection.
     pub fn projection(&self) -> &ExpressionProjection {
         self.syntax
             .syntax_handle()

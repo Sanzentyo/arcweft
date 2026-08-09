@@ -1,0 +1,13 @@
+error[E0451]: fields `callee`, `explicit_type_application`, `arguments` and `terminator` of struct `HirCallExpr` are private
+  --> tests/ui/final_call_fields_private.rs:13:9
+   |
+12 |     HirCallExpr {
+   |     ----------- in this type
+13 |         callee,
+   |         ^^^^^^ private field
+14 |         explicit_type_application,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^ private field
+15 |         arguments,
+   |         ^^^^^^^^^ private field
+16 |         terminator,
+   |         ^^^^^^^^^^ private field

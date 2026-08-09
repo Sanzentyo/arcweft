@@ -4,8 +4,8 @@ use super::{
 };
 use crate::awbc::fiber::FiberState;
 use crate::awbc::schema::{
-    AwbcChoiceId, AwbcContentUnitId, AwbcHostCallId, AwbcLineTaskGroupId, AwbcLineTaskNodeId,
-    AwbcSourcePlanId, AwbcStreamPlanId,
+    AwbcChoiceId, AwbcContentUnitId, AwbcFlowBinding, AwbcFunctionKind, AwbcHostCallId,
+    AwbcLineTaskGroupId, AwbcLineTaskNodeId, AwbcSourcePlanId, AwbcStreamPlanId,
 };
 use crate::observation::RuntimeObservationState;
 use crate::plan::ChoiceRuntimeOption;
@@ -21,6 +21,9 @@ pub struct AwbcProductExecutorSnapshot {
     pub fiber: FiberState,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub child_fibers: Vec<FiberState>,
+    /// Exact semantic identities for every live Flow function and retained
+    /// choice target. Dense function indices alone are not restore authority.
+    pub live_flow_bindings: Vec<AwbcFlowBinding>,
     #[serde(default)]
     pub entry_bound: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,6 +79,7 @@ impl AwbcProductStepExecutor {
         AwbcProductExecutorSnapshot {
             fiber: self.fiber.clone(),
             child_fibers: self.child_fibers.iter().cloned().collect(),
+            live_flow_bindings: self.live_flow_bindings(),
             entry_bound: self.entry_bound,
             active_dialogue: self.active_dialogue.as_ref().map(|active| {
                 AwbcProductActiveDialogueSnapshot {
@@ -165,6 +169,7 @@ impl AwbcProductStepExecutor {
                 }
             })?;
         }
+        self.validate_live_flow_bindings(snapshot)?;
         if let Some(active) = &snapshot.active_dialogue
             && (self
                 .program
@@ -185,12 +190,8 @@ impl AwbcProductStepExecutor {
                 message: "active dialogue snapshot references missing AWBC tables".to_owned(),
             });
         }
-        if let Some(active) = &snapshot.active_choice
-            && self.program.choices.get(active.choice.index()).is_none()
-        {
-            return Err(AwbcProductStepBuildError::RestoreSnapshot {
-                message: "active choice snapshot references missing AWBC choice".to_owned(),
-            });
+        if let Some(active) = &snapshot.active_choice {
+            self.validate_active_choice(active)?;
         }
         if let Some(pending) = &snapshot.pending_host_call
             && self.program.host_calls.get(pending.call.index()).is_none()
@@ -212,6 +213,154 @@ impl AwbcProductStepExecutor {
                 message: "executor snapshot references missing AWBC content or stream table"
                     .to_owned(),
             });
+        }
+        Ok(())
+    }
+
+    fn validate_active_choice(
+        &self,
+        active: &AwbcProductActiveChoiceSnapshot,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        let Some(choice) = self.program.choices.get(active.choice.index()) else {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "active choice snapshot references missing AWBC choice".to_owned(),
+            });
+        };
+        if active.options.len() != active.option_indices.len() {
+            return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                message: "active choice snapshot option and source-index counts differ".to_owned(),
+            });
+        }
+        let start = usize::try_from(choice.options.start).map_err(|_| {
+            AwbcProductStepBuildError::RestoreSnapshot {
+                message: "active choice source range start exceeds usize".to_owned(),
+            }
+        })?;
+        let end = usize::try_from(choice.options.checked_end().ok_or_else(|| {
+            AwbcProductStepBuildError::RestoreSnapshot {
+                message: "active choice source range overflows u32".to_owned(),
+            }
+        })?)
+        .map_err(|_| AwbcProductStepBuildError::RestoreSnapshot {
+            message: "active choice source range end exceeds usize".to_owned(),
+        })?;
+        let mut previous = None;
+        for (runtime_option, source_index) in active.options.iter().zip(&active.option_indices) {
+            if *source_index < start
+                || *source_index >= end
+                || previous.is_some_and(|previous| previous >= *source_index)
+            {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message:
+                        "active choice snapshot has an invalid or reordered source option index"
+                            .to_owned(),
+                });
+            }
+            let Some(source_option) = self.program.choice_options.get(*source_index) else {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "active choice snapshot references a missing source option".to_owned(),
+                });
+            };
+            if self.choice_runtime_option(source_option) != *runtime_option {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message:
+                        "active choice snapshot option does not match its exact typed source option"
+                            .to_owned(),
+                });
+            }
+            previous = Some(*source_index);
+        }
+        Ok(())
+    }
+
+    fn live_flow_bindings(&self) -> Vec<AwbcFlowBinding> {
+        let mut functions = self
+            .fiber
+            .frames
+            .iter()
+            .map(|frame| frame.function)
+            .chain(
+                self.child_fibers
+                    .iter()
+                    .flat_map(|fiber| fiber.frames.iter().map(|frame| frame.function)),
+            )
+            .collect::<BTreeSet<_>>();
+        if let Some(active) = &self.active_choice {
+            for target in active
+                .options
+                .iter()
+                .filter_map(|option| option.target.as_ref())
+            {
+                if let Some(function) = self.program.flow_function(target) {
+                    functions.insert(function);
+                }
+            }
+        }
+        self.program
+            .flow_bindings
+            .iter()
+            .filter(|binding| functions.contains(&binding.function))
+            .cloned()
+            .collect()
+    }
+
+    fn validate_live_flow_bindings(
+        &self,
+        snapshot: &AwbcProductExecutorSnapshot,
+    ) -> Result<(), AwbcProductStepBuildError> {
+        let mut flows = BTreeSet::new();
+        let mut functions = BTreeSet::new();
+        for binding in &snapshot.live_flow_bindings {
+            if !flows.insert(binding.flow.clone()) || !functions.insert(binding.function) {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: "snapshot repeats a live semantic Flow binding".to_owned(),
+                });
+            }
+            if self.program.flow_function(&binding.flow) != Some(binding.function) {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: format!(
+                        "snapshot Flow `{}` no longer owns AWBC function {}",
+                        binding.flow.canonical_label(),
+                        binding.function.0
+                    ),
+                });
+            }
+        }
+        for frame in snapshot
+            .fiber
+            .frames
+            .iter()
+            .chain(snapshot.child_fibers.iter().flat_map(|fiber| &fiber.frames))
+        {
+            let is_flow = self
+                .program
+                .functions
+                .get(frame.function.index())
+                .is_some_and(|function| function.kind == AwbcFunctionKind::Flow);
+            if is_flow && !functions.contains(&frame.function) {
+                return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                    message: format!(
+                        "snapshot Flow frame {} has no semantic identity evidence",
+                        frame.function.0
+                    ),
+                });
+            }
+        }
+        if let Some(active) = &snapshot.active_choice {
+            for target in active
+                .options
+                .iter()
+                .filter_map(|option| option.target.as_ref())
+            {
+                if !flows.contains(target) {
+                    return Err(AwbcProductStepBuildError::RestoreSnapshot {
+                        message: format!(
+                            "snapshot choice target `{}` has no semantic Flow binding evidence",
+                            target.canonical_label()
+                        ),
+                    });
+                }
+            }
         }
         Ok(())
     }

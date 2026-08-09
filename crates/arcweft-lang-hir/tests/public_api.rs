@@ -2,7 +2,6 @@
 fn removed_and_session_identity_public_api_contract() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/capability_policy_absent.rs");
-    cases.compile_fail("tests/ui/internal_lowering_modules_private.rs");
     cases.compile_fail("tests/ui/lower_to_hir_removed.rs");
     cases.compile_fail("tests/ui/standalone_hir_assertion_removed.rs");
     cases.compile_fail("tests/ui/removed_unused_hir_accessors.rs");
@@ -11,11 +10,32 @@ fn removed_and_session_identity_public_api_contract() {
     cases.compile_fail("tests/ui/removed_role_hir.rs");
     cases.compile_fail("tests/ui/removed_syntax_forwarding_facade.rs");
     cases.compile_fail("tests/ui/hir_module_fields_private.rs");
+    cases.compile_fail("tests/ui/no_linked_module.rs");
+    cases.compile_fail("tests/ui/no_append_module_body.rs");
+    cases.compile_fail("tests/ui/no_provisional_proof_types.rs");
     cases.compile_fail("tests/ui/raw_hir_id_view_slot_private.rs");
-    cases.compile_fail("tests/ui/session_identity_raw_constructor.rs");
-    cases.compile_fail("tests/ui/session_identity_serde.rs");
+    cases.compile_fail("tests/ui/hir_ids_have_no_raw_constructors.rs");
+    cases.compile_fail("tests/ui/hir_session_ids_are_not_serde.rs");
     cases.compile_fail("tests/ui/synthetic_key_construction_private.rs");
     cases.compile_fail("tests/ui/synthetic_identity_serde_absent.rs");
     cases.compile_fail("tests/ui/synthetic_identity_raw_projection_absent.rs");
     cases.compile_fail("tests/ui/synthetic_owner_syntax_variant_absent.rs");
+    cases.compile_fail("tests/ui/final_select_fields_private.rs");
+    cases.compile_fail("tests/ui/final_select_removed_api.rs");
+    cases.compile_fail("tests/ui/final_select_not_serde.rs");
+    cases.compile_fail("tests/ui/final_call_fields_private.rs");
+    cases.compile_fail("tests/ui/final_call_not_serde.rs");
+    cases.compile_fail("tests/ui/removed_detached_flow_constructor.rs");
+    cases.compile_fail("tests/ui/removed_detached_flow_item.rs");
+    cases.compile_fail("tests/ui/removed_syntax_contract_clause.rs");
+    cases.compile_fail("tests/ui/removed_old_hir_flow.rs");
+    cases.compile_fail("tests/ui/removed_old_hir_flow_item.rs");
+    cases.compile_fail("tests/ui/removed_old_hir_thread.rs");
+    cases.compile_fail("tests/ui/removed_legacy_hir_dialogue.rs");
+    cases.compile_fail("tests/ui/removed_legacy_speaker_content.rs");
+    cases.compile_fail("tests/ui/removed_flow_tail_accessor.rs");
+    cases.compile_fail("tests/ui/removed_flow_source_convenience.rs");
+    cases.compile_fail("tests/ui/final_thread_body_fields_private.rs");
+    cases.compile_fail("tests/ui/final_flow_not_serde.rs");
+    cases.compile_fail("tests/ui/removed_flow_compatibility_v2.rs");
 }

@@ -1,0 +1,74 @@
+error[E0599]: no method named `with_function` found for struct `TypeCheckEnv` in the current scope
+ --> tests/ui/typecheck_env_callable_mutation_removed.rs:9:33
+  |
+9 |     let _ = environment.clone().with_function("legacy", TypeKind::Unit);
+  |                                 ^^^^^^^^^^^^^ method not found in `TypeCheckEnv`
+
+error[E0599]: no method named `with_function_signature` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:12:10
+   |
+10 |       let _ = environment
+   |  _____________-
+11 | |         .clone()
+12 | |         .with_function_signature("legacy", FunctionSignature::return_only(TypeKind::Unit));
+   | |         -^^^^^^^^^^^^^^^^^^^^^^^ method not found in `TypeCheckEnv`
+   | |_________|
+   |
+
+error[E0599]: no method named `with_function_effects` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:15:10
+   |
+13 |       let _ = environment
+   |  _____________-
+14 | |         .clone()
+15 | |         .with_function_effects("legacy", [EffectCapability::new("legacy.effect")]);
+   | |         -^^^^^^^^^^^^^^^^^^^^^ method not found in `TypeCheckEnv`
+   | |_________|
+   |
+
+error[E0599]: no method named `with_method` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:18:10
+   |
+16 |       let _ = environment
+   |  _____________-
+17 | |         .clone()
+18 | |         .with_method(TypeKind::String, "legacy", TypeKind::Unit);
+   | |         -^^^^^^^^^^^ method not found in `TypeCheckEnv`
+   | |_________|
+   |
+
+error[E0599]: no method named `with_method_signature` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:19:33
+   |
+19 |     let _ = environment.clone().with_method_signature(
+   |             --------------------^^^^^^^^^^^^^^^^^^^^^ method not found in `TypeCheckEnv`
+
+error[E0599]: no method named `function_type` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:24:25
+   |
+24 |     let _ = environment.function_type("legacy");
+   |                         ^^^^^^^^^^^^^ method not found in `TypeCheckEnv`
+
+error[E0599]: no method named `function_signature` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:25:25
+   |
+25 |     let _ = environment.function_signature("legacy");
+   |                         ^^^^^^^^^^^^^^^^^^ method not found in `TypeCheckEnv`
+
+error[E0599]: no method named `function_effects` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:26:25
+   |
+26 |     let _ = environment.function_effects("legacy");
+   |                         ^^^^^^^^^^^^^^^^ method not found in `TypeCheckEnv`
+
+error[E0599]: no method named `method_type` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:27:25
+   |
+27 |     let _ = environment.method_type(&TypeKind::String, "legacy");
+   |                         ^^^^^^^^^^^ method not found in `TypeCheckEnv`
+
+error[E0599]: no method named `method_signature` found for struct `TypeCheckEnv` in the current scope
+  --> tests/ui/typecheck_env_callable_mutation_removed.rs:28:25
+   |
+28 |     let _ = environment.method_signature(&TypeKind::String, "legacy");
+   |                         ^^^^^^^^^^^^^^^^ method not found in `TypeCheckEnv`

@@ -1,7 +1,6 @@
 //! Shared syntax vocabulary for references and borrow expressions.
 
 use crate::ast::common::TextRange;
-use crate::expr::Expr;
 use crate::types::{LifetimeName, TypeRef};
 
 /// Mutability carried by a borrow expression or reference type.
@@ -152,74 +151,10 @@ const fn rebased_range(range: TextRange, base: usize) -> TextRange {
     TextRange::new(range.start() + base, range.end() + base)
 }
 
-/// Typed surface prefix-borrow expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct BorrowExpr {
-    kind: BorrowKind,
-    operand: Box<Expr>,
-    operator_range: TextRange,
-}
-
-impl BorrowExpr {
-    pub(crate) const fn new(
-        kind: BorrowKind,
-        operand: Box<Expr>,
-        operator_range: TextRange,
-    ) -> Self {
-        Self {
-            kind,
-            operand,
-            operator_range,
-        }
-    }
-
-    /// Returns shared or mutable borrow permission.
-    pub const fn kind(&self) -> BorrowKind {
-        self.kind
-    }
-
-    /// Returns the typed operand expression.
-    pub const fn operand(&self) -> &Expr {
-        &self.operand
-    }
-
-    /// Returns the range covering `&` and an optional `mut`.
-    pub const fn operator_range(&self) -> TextRange {
-        self.operator_range
-    }
-}
-
-/// Typed surface prefix-dereference expression.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct DerefExpr {
-    operand: Box<Expr>,
-    operator_range: TextRange,
-}
-
-impl DerefExpr {
-    pub(crate) const fn new(operand: Box<Expr>, operator_range: TextRange) -> Self {
-        Self {
-            operand,
-            operator_range,
-        }
-    }
-
-    /// Returns the typed operand expression.
-    pub const fn operand(&self) -> &Expr {
-        &self.operand
-    }
-
-    /// Returns the exact `*` operator range.
-    pub const fn operator_range(&self) -> TextRange {
-        self.operator_range
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{BorrowExpr, BorrowKind, DerefExpr, ReferenceType, RegionSyntax};
+    use super::{BorrowKind, ReferenceType, RegionSyntax};
     use crate::ast::common::TextRange;
-    use crate::expr::{DottedPath, Expr};
     use crate::types::TypeRef;
 
     #[test]
@@ -237,29 +172,13 @@ mod tests {
 
     #[test]
     fn reference_nodes_retain_typed_children_and_exact_ranges() {
-        let borrow = BorrowExpr {
-            kind: BorrowKind::Mutable,
-            operand: Box::new(Expr::Path(DottedPath::single("value"))),
-            operator_range: TextRange::new(2, 6),
-        };
-        assert_eq!(borrow.kind(), BorrowKind::Mutable);
-        assert!(matches!(borrow.operand(), Expr::Path(path) if path.as_str() == "value"));
-        assert_eq!(borrow.operator_range(), TextRange::new(2, 6));
-
-        let deref = DerefExpr {
-            operand: Box::new(Expr::Path(DottedPath::single("pointer"))),
-            operator_range: TextRange::new(9, 10),
-        };
-        assert!(matches!(deref.operand(), Expr::Path(path) if path.as_str() == "pointer"));
-        assert_eq!(deref.operator_range(), TextRange::new(9, 10));
-
         let reference = ReferenceType {
             kind: BorrowKind::Shared,
             region: RegionSyntax::Elided {
                 anchor: TextRange::new(1, 1),
             },
             referent: Box::new(
-                crate::types::parse_type_ref("State")
+                crate::types::parse_attached_type_for_test("State")
                     .expect("type path parses")
                     .into_value(),
             ),

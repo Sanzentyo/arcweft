@@ -14,7 +14,7 @@ use crate::attachment::{
     SyntaxSnapshotId, attach_typed_tree,
 };
 use crate::grammar::SyntaxKind;
-use crate::parser::{ParseOptions, parse_shadow_document};
+use crate::parser::{ParseOptions, parse_document};
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
     let document = Arc::new(
@@ -25,7 +25,7 @@ fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
         )
         .unwrap(),
     );
-    let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
     let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(211).unwrap());
     let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
     let snapshot = SyntaxSnapshotId::new(

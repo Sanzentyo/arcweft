@@ -18,10 +18,13 @@ fn resolves_project_profile_and_external_module_metadata() {
         "arcw.toml",
         &external_module_manifest(TRUCK_METADATA, "generated/truck.adapter.json"),
     );
-    project.write("src/main.arcw", "flow @.main main {}\n");
+    project.write("src/main.arcw", "flow @flow.main main {}\n");
     project.write("generated/truck.adapter.json", TRUCK_METADATA);
 
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
     let profile = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
         .expect("profile construction")
@@ -51,7 +54,10 @@ fn failed_rebuild_preserves_generation_and_cache() {
         &minimal_manifest("lsp-profile-failed-rebuild", "server", ""),
     );
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
     let first = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
         .expect("first profile construction")
@@ -85,7 +91,10 @@ fn profile_construction_does_not_publish_accepted_state() {
         &minimal_manifest("lsp-profile-construction-only", "server", ""),
     );
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
 
     let build = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
@@ -104,7 +113,10 @@ fn invalid_external_metadata_preserves_the_real_accepted_profile_state() {
     );
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
     project.write("generated/truck.adapter.json", TRUCK_METADATA);
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
     let first = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
         .expect("first profile construction")
@@ -129,7 +141,10 @@ fn invalid_external_metadata_preserves_the_real_accepted_profile_state() {
         .current()
         .expect("accepted environment is retained");
     assert!(Arc::ptr_eq(&retained, &accepted));
-    assert!(Arc::ptr_eq(retained.world(), accepted.world()));
+    assert!(Arc::ptr_eq(
+        retained.executable().expect("retained executable"),
+        accepted.executable().expect("accepted executable")
+    ));
     assert_eq!(retained.generation(), generation);
     assert_eq!(retained.signature_cache_snapshot_for_test(), cache);
 }
@@ -137,8 +152,9 @@ fn invalid_external_metadata_preserves_the_real_accepted_profile_state() {
 #[test]
 fn missing_manifest_is_reported_without_absolute_path() {
     let project = TestProject::new("lsp-profile-missing");
-    project.write("src/main.arcw", "flow @.main main {}\n");
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, None);
+    project.write("src/main.arcw", "flow @flow.main main {}\n");
+    let mut resolver =
+        LspProfileTestHarness::new(LspProfileResolver::new(RuntimeHostRunnerKind::Native, None));
 
     let diagnostic = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
@@ -188,7 +204,10 @@ compression = "none"
 "#;
     project.write("arcw.toml", manifest);
     project.write("src/main.arcw", "fn main() -> Unit { () }\n");
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
 
     let diagnostic = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
@@ -212,8 +231,11 @@ fn missing_external_module_metadata_diagnostic_keeps_profile_relative_resource()
         "arcw.toml",
         &external_module_manifest(TRUCK_METADATA, "generated/missing.adapter.json"),
     );
-    project.write("src/main.arcw", "flow @.main main {}\n");
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    project.write("src/main.arcw", "flow @flow.main main {}\n");
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
 
     let diagnostic = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
@@ -240,9 +262,12 @@ fn invalid_external_module_metadata_diagnostic_keeps_profile_relative_resource()
         "arcw.toml",
         &external_module_manifest(invalid, "generated/bad.adapter.json"),
     );
-    project.write("src/main.arcw", "flow @.main main {}\n");
+    project.write("src/main.arcw", "flow @flow.main main {}\n");
     project.write("generated/bad.adapter.json", invalid);
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
 
     let diagnostic = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))

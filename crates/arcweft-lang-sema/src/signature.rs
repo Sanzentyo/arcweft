@@ -7,33 +7,45 @@ use std::{
     time::Instant,
 };
 
-use arcweft_lang_hir::model::HirModule;
+use arcweft_lang_hir::{
+    identity::ExprId,
+    module::HirModule,
+    source_index::{HirExprSourceRole, HirSourcePresence, HirSourceQueryError, HirSourceSite},
+};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{SourceDocument, SourceDocumentIdentity, SourceSpan};
 use thiserror::Error;
 
 use crate::{
     callable::{
-        CallTargetFactError, CallableFamily, CallableQueryLimitError, PRODUCTION_CALLABLE_LIMITS,
-        PRODUCTION_SIGNATURE_LIMITS, ResolveCallError, ResolverWork, SemanticSignatureError,
-        SemanticSignatureHelp, SignatureLimitExceeded, SignatureQueryLimits, SignatureQueryStep,
-        SignatureQueryStepControl, SignatureQueryWorkMeter, SignatureWorkKind,
+        CallableFamily, CallableQueryLimitError, PRODUCTION_CALLABLE_LIMITS,
+        PRODUCTION_SIGNATURE_LIMITS, ResolveCallError, SemanticSignatureError,
+        SemanticSignatureHelp, SignatureLimitExceeded, SignatureQueryLimits,
+        SignatureQueryWorkMeter, SignatureWorkKind,
     },
-    checker::TypeExpressionId,
-    checker::module::{
-        SignatureFocusedAnalysis, analyze_registered_project_types_for_signature_call,
-    },
+    final_analysis::FinalSemanticAnalysis,
     registration::RegisteredSemanticWorld,
 };
 
 mod project;
 mod surface;
 
+pub(crate) use surface::FocusedCallSite;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum SignatureQueryStep {
+    SurfaceTraversal,
+}
+
+pub(crate) trait SignatureQueryStepControl {
+    fn check_signature_query_step(&self, step: SignatureQueryStep) -> Result<(), ResolveCallError>;
+}
+
 /// Immutable inputs for one native semantic signature query.
 pub struct SignatureQuery<'a> {
-    world: &'a RegisteredSemanticWorld,
     document: &'a SourceDocument,
     hir: &'a HirModule,
+    analysis: &'a FinalSemanticAnalysis,
     byte_offset: usize,
     limits: SignatureQueryLimits,
     control: SignatureQueryControl<'a>,
@@ -49,6 +61,7 @@ impl<'a> SignatureQuery<'a> {
         world: &'a RegisteredSemanticWorld,
         document: &'a SourceDocument,
         hir: &'a HirModule,
+        analysis: &'a FinalSemanticAnalysis,
         byte_offset: usize,
         limits: SignatureQueryLimits,
         control: SignatureQueryControl<'a>,
@@ -76,9 +89,7 @@ impl<'a> SignatureQuery<'a> {
         if !document.text().is_char_boundary(byte_offset) {
             return Err(SignaturePositionError::NotUtf8Boundary { byte_offset }.into());
         }
-        let Some(hir_identity) = hir.source_identity() else {
-            return Err(SignatureSemanticUnavailable::MissingSourceIdentity.into());
-        };
+        let hir_identity = hir.provenance().source_identity();
         if hir_identity != document.identity() {
             return Err(SignatureSemanticStale::HirDocumentIdentity {
                 expected: document.identity().clone(),
@@ -86,34 +97,30 @@ impl<'a> SignatureQuery<'a> {
             }
             .into());
         }
-        let Some(hir_document) = hir.source_document() else {
-            return Err(SignatureSemanticUnavailable::MissingSourceDocument.into());
-        };
-        if hir_document.identity() != document.identity() || hir_document.text() != document.text()
-        {
-            return Err(SignatureSemanticStale::HirDocumentBytes {
-                document: document.identity().clone(),
-            }
-            .into());
-        }
-        let Some(world_identity) = world.symbols().source_identity(hir.module_path()) else {
+        let module_path = hir.key().path();
+        let Some(world_identity) = world.symbols().source_identity(module_path) else {
             return Err(SignatureSemanticUnavailable::MissingProjectModule {
-                module: hir.module_path().clone(),
+                module: module_path.clone(),
             }
             .into());
         };
         if world_identity != document.identity() {
             return Err(SignatureSemanticStale::WorldDocumentIdentity {
-                module: hir.module_path().clone(),
+                module: module_path.clone(),
                 expected: document.identity().clone(),
                 actual: world_identity.clone(),
             }
             .into());
         }
+        analysis
+            .validate_module_generation(hir, world.symbols())
+            .map_err(|_| SignatureSemanticStale::AnalysisGeneration {
+                module: module_path.clone(),
+            })?;
         Ok(Self {
-            world,
             document,
             hir,
+            analysis,
             byte_offset,
             limits,
             control,
@@ -129,6 +136,7 @@ impl<'a> SignatureQuery<'a> {
         world: &'a RegisteredSemanticWorld,
         document: &'a SourceDocument,
         hir: &'a HirModule,
+        analysis: &'a FinalSemanticAnalysis,
         byte_offset: usize,
         control: SignatureQueryControl<'a>,
     ) -> Result<Self, SignatureQueryError> {
@@ -136,6 +144,7 @@ impl<'a> SignatureQuery<'a> {
             world,
             document,
             hir,
+            analysis,
             byte_offset,
             PRODUCTION_SIGNATURE_LIMITS,
             control,
@@ -183,19 +192,19 @@ impl<'a> SignatureQueryControl<'a> {
     }
 
     #[cfg(test)]
-    fn with_remaining_steps(mut self, remaining_steps: &'a Cell<usize>) -> Self {
+    pub(crate) fn with_remaining_steps(mut self, remaining_steps: &'a Cell<usize>) -> Self {
         self.remaining_steps = Some(remaining_steps);
         self
     }
 
     #[cfg(test)]
-    fn with_deadline_step(mut self, deadline_step: SignatureQueryStep) -> Self {
+    pub(crate) fn with_deadline_step(mut self, deadline_step: SignatureQueryStep) -> Self {
         self.deadline_step = Some(deadline_step);
         self
     }
 
     #[cfg(test)]
-    fn with_cancellation_step_after(
+    pub(crate) fn with_cancellation_step_after(
         mut self,
         cancellation_step: SignatureQueryStep,
         prior_occurrences: &'a Cell<usize>,
@@ -267,8 +276,7 @@ impl SignatureQueryStepControl for SignatureQueryControl<'_> {
 pub fn query_signature(
     request: SignatureQuery<'_>,
 ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
-    let mut work = ResolverWork::new(PRODUCTION_CALLABLE_LIMITS.max_query_work());
-    request.execute(&mut work)
+    request.execute()
 }
 
 impl SignatureQuery<'_> {
@@ -276,10 +284,7 @@ impl SignatureQuery<'_> {
         clippy::result_large_err,
         reason = "the one-shot query retains exact typed error evidence"
     )]
-    fn execute(
-        self,
-        work: &mut ResolverWork,
-    ) -> Result<SignatureQueryOutcome, SignatureQueryError> {
+    fn execute(self) -> Result<SignatureQueryOutcome, SignatureQueryError> {
         self.check_control()?;
         let mut signature_work = SignatureQueryWorkMeter::new(self.limits);
         let selection = surface::select_signature_surface(
@@ -300,78 +305,42 @@ impl SignatureQuery<'_> {
                 ))
             };
         };
-        let checked =
-            analyze_registered_project_types_for_signature_call(SignatureFocusedAnalysis {
-                module: self.hir,
-                registered: self.world,
-                site: site.clone(),
-                cancellation: self.control.cancelled,
-                work,
-                signature_work: &mut signature_work,
-                signature_control: &self.control,
-            })
-            .map_err(map_focused_error)?;
         self.check_control()?;
-        let facts = checked
-            .focused_call_target_facts()
-            .map_err(map_focused_error)?;
-        if facts.call_span() != site.call() {
+        let facts = self.analysis.call(site.expression()).ok_or_else(|| {
+            SignatureSemanticUnavailable::MissingCallableFacts {
+                call: Box::new(site.call().clone()),
+            }
+        })?;
+        let source = self
+            .hir
+            .source_site(self.document.identity(), facts.source_query())
+            .map_err(|error| SignatureSemanticUnavailable::SourceQuery {
+                owner: facts.expression(),
+                error: Box::new(error),
+            })?;
+        let HirSourcePresence::Present(HirSourceSite::Span(fact_span)) = source.presence() else {
+            return Err(SignatureSemanticUnavailable::MissingSourceComponent {
+                owner: facts.expression(),
+                role: HirExprSourceRole::Whole,
+            }
+            .into());
+        };
+        if fact_span != site.call() {
             return Err(SignatureSemanticUnavailable::MissingCallableFacts {
-                call: site.call().clone(),
+                call: Box::new(site.call().clone()),
             }
             .into());
         }
         project::project_signature_help(project::SignatureProjection {
-            world: self.world,
             document: self.document,
             control: self.control,
             site: &site,
             facts,
-            work,
+            checked: self.analysis.checked_callables(),
             callable_limits: &PRODUCTION_CALLABLE_LIMITS,
             signature_limits: &self.limits,
             signature_work: &mut signature_work,
         })
-    }
-}
-
-#[cfg(test)]
-fn execute_signature_query(
-    request: SignatureQuery<'_>,
-    work: &mut ResolverWork,
-) -> Result<SignatureQueryOutcome, SignatureQueryError> {
-    request.execute(work)
-}
-
-fn map_focused_error(error: CallTargetFactError) -> SignatureQueryError {
-    match error {
-        CallTargetFactError::Resolve { reason, .. } => match *reason {
-            ResolveCallError::Cancelled => SignatureQueryError::Cancelled,
-            ResolveCallError::DeadlineExceeded => SignatureQueryError::DeadlineExceeded,
-            ResolveCallError::Work(error) => error.into(),
-            ResolveCallError::SignatureLimit(error) => error.into(),
-            ResolveCallError::SignatureArithmeticOverflow { counter } => {
-                SignatureQueryError::ArithmeticOverflow { counter }
-            }
-            reason => SignatureQueryError::Resolve(reason),
-        },
-        CallTargetFactError::SignatureAccounting { reason } => {
-            map_signature_accounting_error(reason)
-        }
-        CallTargetFactError::Unavailable { reason, .. } => reason.into(),
-        CallTargetFactError::FocusedSourceUnavailable { document } => {
-            SignatureSemanticUnavailable::SourceOutsideAcceptedProject { document }.into()
-        }
-        CallTargetFactError::FocusedTargetMissing { call }
-        | CallTargetFactError::FocusedTargetDuplicate { call } => {
-            SignatureSemanticUnavailable::MissingCallableFacts { call }.into()
-        }
-        CallTargetFactError::DuplicateExpression { expression } => {
-            SignatureSemanticUnavailable::DuplicateCallableFacts { expression }.into()
-        }
-        CallTargetFactError::FocusedModeRequired => {
-            SignatureSemanticUnavailable::FocusedModeMismatch.into()
-        }
     }
 }
 
@@ -468,38 +437,40 @@ pub enum SignatureSemanticStale {
         expected: SourceDocumentIdentity,
         actual: SourceDocumentIdentity,
     },
-    #[error("signature HIR retained unequal bytes for the same document identity")]
-    HirDocumentBytes { document: SourceDocumentIdentity },
     #[error("signature semantic world maps the module to another source revision")]
     WorldDocumentIdentity {
         module: CanonicalModulePath,
         expected: SourceDocumentIdentity,
         actual: SourceDocumentIdentity,
     },
+    #[error("signature semantic analysis does not own the accepted generation for {module}")]
+    AnalysisGeneration { module: CanonicalModulePath },
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SignatureSemanticUnavailable {
-    #[error("signature HIR has no revision-bound source identity")]
-    MissingSourceIdentity,
-    #[error("signature HIR has no retained source document")]
-    MissingSourceDocument,
     #[error("signature semantic world has no module {module}")]
     MissingProjectModule { module: CanonicalModulePath },
     #[error("signature cursor selects equally specific typed call ranges")]
     AmbiguousCallRange {
-        document: SourceDocumentIdentity,
+        document: Box<SourceDocumentIdentity>,
         byte_offset: usize,
     },
-    #[error("signature source is outside the accepted project")]
-    SourceOutsideAcceptedProject { document: SourceDocumentIdentity },
     #[error("signature query has no checked facts for {call:?}")]
-    MissingCallableFacts { call: SourceSpan },
-    #[error("signature query retained duplicate facts for {expression:?}")]
-    DuplicateCallableFacts { expression: TypeExpressionId },
-    #[error("signature query invoked the focused checker in a non-focused mode")]
-    FocusedModeMismatch,
+    MissingCallableFacts { call: Box<SourceSpan> },
+    #[error("signature query has no accepted checked authority for {candidate:?}")]
+    MissingCallableAuthority {
+        candidate: Box<crate::callable::CallableCandidateId>,
+    },
+    #[error("signature HIR has no required source component {role:?} for {owner:?}")]
+    MissingSourceComponent {
+        owner: ExprId,
+        role: HirExprSourceRole,
+    },
+    #[error("signature HIR source query failed for {owner:?}")]
+    SourceQuery {
+        owner: ExprId,
+        #[source]
+        error: Box<HirSourceQueryError>,
+    },
 }
-
-#[cfg(test)]
-mod tests;

@@ -12,9 +12,9 @@ mod content;
 mod rich_text;
 
 pub use self::content::{
-    HirDialogueContent, HirDialogueContentError, HirDialogueContentId, HirDialogueControl,
-    HirDialogueIssue, HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirLineBreakKind,
-    HirRuby, HirTextFragment,
+    HirDialogueContent, HirDialogueContentError, HirDialogueContentId, HirDialogueIssue,
+    HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirLineBreakKind, HirRuby,
+    HirTextFragment,
 };
 pub use self::rich_text::{
     HirBuiltinRichTextFx, HirBuiltinRichTextTag, HirRichTextArgument, HirRichTextArgumentId,
@@ -132,6 +132,7 @@ pub struct HirDialogueCoordinate {
 }
 
 impl HirDialogueCoordinate {
+    #[cfg(test)]
     pub(crate) const fn new(
         kind: HirDialogueCoordinateKind,
         argument: HirCallArgumentOrdinal,
@@ -200,6 +201,7 @@ pub struct HirLinePlan {
 }
 
 impl HirLinePlan {
+    #[cfg(test)]
     pub(crate) fn try_new(
         root_scope: ScopeId,
         label: Option<HirName>,
@@ -474,10 +476,8 @@ pub(crate) enum HirDialogueExpressionExpectation {
 pub(crate) enum HirRichTextCharge {
     ContentTags { observed: usize },
     ContentArguments { observed: usize },
-    TagBodyEncodedBytes { observed: usize },
     TagArguments { observed: usize },
     ArgumentKeyBytes { observed: usize },
-    ArgumentValueEncodedBytes { observed: usize },
     ArgumentValueDecodedBytes { observed: usize },
 }
 

@@ -1251,7 +1251,8 @@ fn pure_backend_rejects_unregistered_effectful_calls() {
     let request = PureFunctionRequest::new(
         "effectful",
         RuntimeExpr::Call {
-            callee: RuntimeCallTarget::from_label("play_audio"),
+            callee: RuntimeCallTarget::try_from_label("play_audio")
+                .expect("typed callable identity"),
             args: Vec::new(),
         },
         [],

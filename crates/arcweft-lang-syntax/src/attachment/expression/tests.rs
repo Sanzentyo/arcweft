@@ -17,16 +17,16 @@ use crate::attachment::{
 use crate::expressions::{
     ExpressionComponentRole, ExpressionLiteralPart, ExpressionProjection,
     ExpressionRecordFieldPart, PendingExpressionComponent, PendingExpressionProjection,
-    SyntaxAssociatedCallSyntax, SyntaxCallArgumentPart, SyntaxCallCalleeProjection,
-    SyntaxCallProjection, SyntaxCallTypeArgumentProjection, SyntaxCallTypeChildRole,
-    SyntaxClosureSyntax, SyntaxComputationBlockKind, SyntaxExpressionSlot,
+    SyntaxAssociatedCallSyntax, SyntaxAssociatedSeparator, SyntaxCallArgumentPart,
+    SyntaxCallCalleeProjection, SyntaxCallProjection, SyntaxCallTypeArgumentProjection,
+    SyntaxCallTypeChildRole, SyntaxClosureSyntax, SyntaxComputationBlockKind, SyntaxExpressionSlot,
     SyntaxNumericSequenceRecovery, SyntaxPlaceholderKind, SyntaxRecordField, SyntaxSelectedMember,
 };
 use crate::grammar::build::{GrammarBuild, build_grammar};
 use crate::grammar::event::SyntaxEvent;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::name::SyntaxNameIssue;
-use crate::parser::{ParseOptions, parse_shadow_document};
+use crate::parser::{ParseOptions, parse_document};
 
 #[path = "tests/candidate_control.rs"]
 mod candidate_control;
@@ -81,7 +81,7 @@ fn attach_build(
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
     let document = document(text);
-    let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
     attach_build(document, &build).unwrap()
 }
 
@@ -107,12 +107,23 @@ fn attached_associated_calls_retain_the_parser_owned_type_receiver_once() {
     };
     assert!(matches!(
         dot_projection.callee(),
-        SyntaxCallCalleeProjection::UnresolvedDot { member: Ok(member) }
+        SyntaxCallCalleeProjection::UnresolvedDot { member: Ok(member), .. }
             if member.as_str() == "with_capacity"
     ));
     assert_eq!(dot.children().len(), 2);
     assert_eq!(dot.children()[0].ordinal(), 0);
     assert_eq!(dot.children()[1].ordinal(), 1);
+    assert_eq!(
+        dot.children()[0].component_role(),
+        ExpressionComponentRole::CallAssociatedReceiver
+    );
+    assert_eq!(
+        dot.children()[1].component_role(),
+        ExpressionComponentRole::CallArgument {
+            argument: 0,
+            part: SyntaxCallArgumentPart::Value,
+        }
+    );
     let receiver = dot.children()[0]
         .authored_semantic()
         .unwrap()
@@ -145,12 +156,22 @@ fn attached_associated_calls_retain_the_parser_owned_type_receiver_once() {
     assert!(matches!(
         explicit_projection.callee(),
         SyntaxCallCalleeProjection::Associated {
-            syntax: SyntaxAssociatedCallSyntax::ExplicitDoubleColon,
+            separator: SyntaxAssociatedSeparator::Present(
+                SyntaxAssociatedCallSyntax::ExplicitDoubleColon,
+            ),
             member: Ok(member),
+            ..
         } if member.as_str() == "with_capacity"
     ));
     assert_eq!(explicit.children().len(), 1);
     assert_eq!(explicit.children()[0].ordinal(), 1);
+    assert_eq!(
+        explicit.children()[0].component_role(),
+        ExpressionComponentRole::CallArgument {
+            argument: 0,
+            part: SyntaxCallArgumentPart::Value,
+        }
+    );
     let [explicit_type] = explicit.call_type_children() else {
         panic!("explicit Call owns one associated receiver type relation");
     };
@@ -168,6 +189,35 @@ fn attached_associated_calls_retain_the_parser_owned_type_receiver_once() {
 }
 
 #[test]
+fn attached_associated_call_recovery_requires_an_authored_separator() {
+    let invalid_receiver = expression("Bad<>::member(x)", SyntaxKind::CallExpression);
+    let [invalid_type] = invalid_receiver.call_type_children() else {
+        panic!("invalid receiver retains one poisoned type root");
+    };
+    assert_eq!(
+        invalid_type.role(),
+        SyntaxCallTypeChildRole::AssociatedReceiver
+    );
+    assert!(matches!(
+        invalid_type.node().value(),
+        crate::types::TypeRef::Recovery(_)
+    ));
+
+    for (source, missing) in [("Vec<I32>. (8)", true), ("Vec<I32>.9bad(8)", false)] {
+        let attached = expression(source, SyntaxKind::CallExpression);
+        let member = attached
+            .component(ExpressionComponentRole::CallAssociatedMember)
+            .expect("recovered member component")
+            .range();
+        assert_eq!(member.is_empty(), missing, "{source}");
+    }
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one closed call-type-application and recovery matrix is easier to audit together"
+)]
 fn attached_call_type_applications_retain_ordered_type_children_and_recovery() {
     let direct = expression("value.collect<Vec<I32>>()", SyntaxKind::CallExpression);
     let ExpressionProjection::Call(SyntaxCallProjection::Parenthesized(direct_call)) =
@@ -222,8 +272,11 @@ fn attached_call_type_applications_retain_ordered_type_children_and_recovery() {
     assert!(matches!(
         associated_call.callee(),
         SyntaxCallCalleeProjection::Associated {
-            syntax: SyntaxAssociatedCallSyntax::ExplicitDoubleColon,
+            separator: SyntaxAssociatedSeparator::Present(
+                SyntaxAssociatedCallSyntax::ExplicitDoubleColon,
+            ),
             member: Ok(member),
+            ..
         } if member.as_str() == "member"
     ));
     let [receiver, member_argument] = associated.call_type_children() else {
@@ -404,16 +457,16 @@ fn attached_composite_slots_preserve_authored_and_missing_ordinals() {
     assert_eq!(tuple.children().len(), 3);
     assert!(matches!(
         &tuple.children()[1],
-        AttachedExpressionChild::Missing { ordinal: 1, recovery }
+        AttachedExpressionChild::Missing {
+            ordinal: 1,
+            component_role: ExpressionComponentRole::Element { ordinal: 1 },
+            recovery,
+        }
             if recovery.source_span().range().is_empty()
     ));
     for child in tuple.children() {
         assert_eq!(
-            tuple
-                .component(ExpressionComponentRole::Element {
-                    ordinal: child.ordinal(),
-                })
-                .unwrap(),
+            tuple.component(child.component_role()).unwrap(),
             child.source_span()
         );
     }
@@ -484,13 +537,24 @@ fn attached_e20_e21_records_keep_path_fields_and_explicit_value_slots() {
         &record.children()[0],
         AttachedExpressionChild::Authored {
             ordinal: 0,
+            component_role: ExpressionComponentRole::RecordField {
+                field: 0,
+                part: ExpressionRecordFieldPart::Value,
+            },
             expression,
             ..
         } if expression.source_text() == "value"
     ));
     assert!(matches!(
         &record.children()[1],
-        AttachedExpressionChild::Missing { ordinal: 1, recovery }
+        AttachedExpressionChild::Missing {
+            ordinal: 1,
+            component_role: ExpressionComponentRole::RecordField {
+                field: 1,
+                part: ExpressionRecordFieldPart::Value,
+            },
+            recovery,
+        }
             if recovery.source_span().range().is_empty()
     ));
     for part in [
@@ -917,6 +981,10 @@ fn attached_e14_through_e17_keep_exact_semantic_children_and_recovery_slots() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one closed postfix ambiguity and revision-binding matrix is easier to audit together"
+)]
 fn ambiguous_postfix_candidates_expose_borrowed_revision_bound_graphs_only() {
     let ambiguous = expression("items[key]", SyntaxKind::PostfixBracketExpression);
     let cloned_lease = ambiguous.clone();
@@ -989,7 +1057,7 @@ fn ambiguous_postfix_candidates_expose_borrowed_revision_bound_graphs_only() {
     assert_eq!(
         children
             .iter()
-            .map(|child| child.ordinal())
+            .map(super::AttachedCandidateExpressionChild::ordinal)
             .collect::<Vec<_>>(),
         [0, 1]
     );
@@ -1187,6 +1255,10 @@ fn ambiguous_dialogue_candidate_retains_interpolation_and_tag_payload_expression
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one closed Dialogue content attachment matrix is easier to audit together"
+)]
 fn attached_dialogue_content_keeps_typed_nodes_and_nested_expression_identity() {
     let text = expression(
         "alice[こんにちは。]",
@@ -1219,6 +1291,19 @@ fn attached_dialogue_content_keeps_typed_nodes_and_nested_expression_identity() 
         SyntaxKind::DialogueContentApplicationExpression,
     );
     assert_eq!(interpolation.children().len(), 2);
+    assert_eq!(
+        interpolation.children()[1].component_role(),
+        ExpressionComponentRole::DialogueNode {
+            ordinal: 1,
+            part: crate::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
+        }
+    );
+    assert_eq!(
+        interpolation
+            .component(interpolation.children()[1].component_role())
+            .expect("interpolation source component"),
+        interpolation.children()[1].source_span()
+    );
     assert_eq!(
         interpolation.children()[1]
             .authored()
@@ -1257,12 +1342,47 @@ fn attached_dialogue_content_keeps_typed_nodes_and_nested_expression_identity() 
     );
     assert_eq!(call.children().len(), 2);
     assert_eq!(
+        call.children()[1].component_role(),
+        ExpressionComponentRole::RichTextTag {
+            tag: 0,
+            part: crate::expressions::SyntaxRichTextTagSourcePart::Payload,
+        }
+    );
+    assert_eq!(
         call.children()[1]
             .authored()
             .expect("dialogue-safe Call payload expression")
             .source_text(),
         "notify()"
     );
+
+    let interleaved = expression(
+        "alice[#[first][if condition]yes[endif]#[last]]",
+        SyntaxKind::DialogueContentApplicationExpression,
+    );
+    let nested = &interleaved.children()[1..];
+    assert_eq!(
+        nested
+            .iter()
+            .map(|child| child
+                .authored()
+                .expect("authored Dialogue child")
+                .source_text())
+            .collect::<Vec<_>>(),
+        ["first", "condition", "last"]
+    );
+    assert!(matches!(
+        nested[0].component_role(),
+        ExpressionComponentRole::DialogueNode { .. }
+    ));
+    assert!(matches!(
+        nested[1].component_role(),
+        ExpressionComponentRole::RichTextTag { .. }
+    ));
+    assert!(matches!(
+        nested[2].component_role(),
+        ExpressionComponentRole::DialogueNode { .. }
+    ));
 }
 
 #[test]
@@ -1406,14 +1526,22 @@ fn attached_e22_binary_keeps_operator_and_fixed_operand_ordinals() {
     let recovered = expression("left +", SyntaxKind::BinaryExpression);
     assert!(matches!(
         &recovered.children()[1],
-        AttachedExpressionChild::Missing { ordinal: 1, recovery }
+        AttachedExpressionChild::Missing {
+            ordinal: 1,
+            component_role: ExpressionComponentRole::RightOperand,
+            recovery,
+        }
             if recovery.source_span().range().is_empty()
     ));
 
     let missing_left = expression("+ right", SyntaxKind::BinaryExpression);
     assert!(matches!(
         &missing_left.children()[0],
-        AttachedExpressionChild::Missing { ordinal: 0, recovery }
+        AttachedExpressionChild::Missing {
+            ordinal: 0,
+            component_role: ExpressionComponentRole::LeftOperand,
+            recovery,
+        }
             if recovery.source_span().range().is_empty()
     ));
     assert_eq!(
@@ -1443,6 +1571,11 @@ fn attached_e35_error_retains_only_an_authored_recovery_prefix() {
         panic!("wrapped E35 recovery must retain one parsed prefix");
     };
     assert_eq!(prefix.ordinal(), 0);
+    assert_eq!(prefix.component_role(), ExpressionComponentRole::Recovery);
+    assert_eq!(
+        wrapped.component(prefix.component_role()).unwrap(),
+        prefix.source_span()
+    );
     let prefix = prefix
         .authored_semantic()
         .expect("wrapped E35 prefix access")
@@ -1544,7 +1677,7 @@ fn snapshot_rejects_invalid_component_and_unit_child_invariants() {
         AttachmentFailure::SnapshotInvariant
     );
 
-    let forged_group_component = [
+    let forged_group_component = vec![
         SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
         SyntaxEvent::expression_start(
             SyntaxKind::TupleExpression,

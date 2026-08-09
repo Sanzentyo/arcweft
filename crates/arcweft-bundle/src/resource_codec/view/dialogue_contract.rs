@@ -78,7 +78,7 @@ impl ViewProgramResource {
                 });
             }
             let expected_surface = match projection {
-                DialogueTextProjection::Speaker => ViewTextSurface::Text,
+                DialogueTextProjection::CharacterDisplayName => ViewTextSurface::Text,
                 DialogueTextProjection::Content => ViewTextSurface::RichText,
             };
             for block in blocks {

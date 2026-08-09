@@ -5,12 +5,10 @@
 
 pub mod agent_repl;
 pub mod code_actions;
-mod dialogue_content;
 pub mod edit;
 pub mod format;
 pub mod model;
-mod rich_text_canonicalization;
-pub mod style_environment;
+pub mod runtime_diagnostic;
 
 #[cfg(test)]
 mod tests;

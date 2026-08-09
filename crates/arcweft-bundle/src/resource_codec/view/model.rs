@@ -1,12 +1,13 @@
 use super::runtime_control_style::ViewRuntimeControlVisualStyle;
 use crate::container::BundleDigest;
-use crate::resource_codec::types::{CrossSectionRef, ProductSourceRef, SourceRangeRef};
+use crate::resource_codec::types::{CrossSectionRef, SourceRangeRef};
 use arcweft_presentation::appearance::{
     PresentationColor, PresentationEnvironmentOverrides, SystemColor, SystemPalette,
     SystemPaletteSet,
 };
 use arcweft_presentation::fx::{FxId, FxRuntimeType};
-use arcweft_render_text::{LineDisplayFrame, RichTextDocument};
+use arcweft_source::ProductSourceRef;
+use arcweft_text_model::{LineDisplayFrame, RichTextDocument};
 pub use arcweft_view::ViewProgramId;
 pub use arcweft_view::program::ViewElementKind;
 use arcweft_view::program::{ViewElementTextInputKind, ViewVirtualAxis};
@@ -960,7 +961,7 @@ pub enum ViewTextSourceKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DialogueTextProjection {
-    Speaker,
+    CharacterDisplayName,
     Content,
 }
 

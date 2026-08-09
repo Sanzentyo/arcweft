@@ -15,7 +15,7 @@ use crate::database::HirDatabase;
 use crate::diagnostic::{HirDiagnostic, HirRecoveryPrimary};
 use crate::identity::{HirLimit, HirTypedId};
 use crate::leaf::{HirPathRoot, HirPathSegment, HirTypeRegion, HirTypeRegionIssue};
-use crate::lower::{HirLimitError, HirModuleKey, LoweringRequest};
+use crate::lowering::{HirLimitError, HirModuleKey, LoweringRequest};
 use crate::module::{HirModule, HirModuleStatus};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::HirOrigin;
@@ -52,9 +52,31 @@ fn parsed_type(document_id: &str, type_source: &str) -> ParsedSource {
         .expect("attached type source parses")
 }
 
+fn parsed_alias_type(document_id: &str, type_source: &str) -> ParsedSource {
+    let name = SourceName::path(format!("proof/type-lowering/{document_id}.arcw"));
+    let document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!(
+                "arcweft-test://lang-hir/type-lowering/{document_id}.arcw"
+            ))
+            .expect("type-lowering document ID"),
+            name.clone(),
+            format!("type Values = {type_source}\n"),
+        )
+        .expect("type-alias source"),
+    );
+    SyntaxDatabase::try_new()
+        .expect("type-lowering syntax database")
+        .parse_initial(
+            SourceSnapshotId::initial(name),
+            document,
+            arcweft_lang_syntax::parser::ParseOptions::default(),
+        )
+        .expect("attached type-alias source parses")
+}
+
 fn attached_type(parsed: &ParsedSource) -> AttachedTypeRefNode {
     let item = parsed
-        .tree()
         .items()
         .expect("source item inventory")
         .into_iter()
@@ -71,6 +93,23 @@ fn attached_type(parsed: &ParsedSource) -> AttachedTypeRefNode {
         .expect("attached semantic type")
 }
 
+fn attached_alias_type(parsed: &ParsedSource) -> AttachedTypeRefNode {
+    let item = parsed
+        .items()
+        .expect("type-alias item inventory")
+        .into_iter()
+        .next()
+        .expect("type-alias declaration");
+    let TypedItemNode::TypeAlias(alias) = item else {
+        panic!("expected type-alias item family");
+    };
+    alias
+        .semantics()
+        .expect("attached type-alias declaration")
+        .target()
+        .clone()
+}
+
 fn module_key(parsed: &ParsedSource) -> HirModuleKey {
     HirModuleKey::new(
         CallablePackageId::try_new("proof-type-lowering-tests").expect("package ID"),
@@ -83,11 +122,12 @@ fn stage<'source>(
     database: &HirDatabase,
     parsed: &'source ParsedSource,
 ) -> StagedHirModuleTransaction<'source> {
-    database
-        .stage_final_hir(
-            LoweringRequest::try_new(module_key(parsed), parsed).expect("lowering request"),
-        )
-        .expect("staged HIR module")
+    super::super::stage_unpublished_module_for_invariant_test(
+        database,
+        LoweringRequest::try_new(module_key(parsed), parsed).expect("lowering request"),
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .expect("staged HIR module")
 }
 
 fn allocate_module_scope(
@@ -118,12 +158,19 @@ fn allocate_module_scope(
 }
 
 fn lower_and_publish(parsed: &ParsedSource) -> (Arc<HirModule>, TypeId) {
-    let mut database = HirDatabase::try_new().expect("HIR database");
     let attached = attached_type(parsed);
+    lower_attached_and_publish(parsed, &attached)
+}
+
+fn lower_attached_and_publish(
+    parsed: &ParsedSource,
+    attached: &AttachedTypeRefNode,
+) -> (Arc<HirModule>, TypeId) {
+    let mut database = HirDatabase::try_new().expect("HIR database");
     let mut transaction = stage(&database, parsed);
     let scope = allocate_module_scope(&mut transaction, parsed);
     let owner = transaction
-        .lower_attached_type(&attached, scope)
+        .lower_attached_type(attached, scope)
         .expect("attached type lowering");
     let module = transaction
         .finish(&mut database)
@@ -441,6 +488,10 @@ fn recovery_uses_the_exact_type_poison_and_recovery_source() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one named-region recovery matrix proves poison state and exact source authority together"
+)]
 fn invalid_named_regions_publish_known_reference_poison_and_exact_source_authority() {
     for (case, invalid_name) in [("leading-digit", "9"), ("unicode-digit", "a١")] {
         let type_source = format!("&'{invalid_name} mut Value");
@@ -828,11 +879,19 @@ fn assert_lowering_limit(document_id: &str, type_source: &str, expected: HirLimi
     let parsed = parsed_type(document_id, type_source);
     let attached = attached_type(&parsed);
     assert_eq!(attached.family(), AttachedTypeFamily::Path);
+    assert_attached_lowering_limit(&parsed, &attached, expected);
+}
+
+fn assert_attached_lowering_limit(
+    parsed: &ParsedSource,
+    attached: &AttachedTypeRefNode,
+    expected: HirLimit,
+) {
     let mut database = HirDatabase::try_new().expect("HIR database");
-    let mut transaction = stage(&database, &parsed);
-    let scope = allocate_module_scope(&mut transaction, &parsed);
+    let mut transaction = stage(&database, parsed);
+    let scope = allocate_module_scope(&mut transaction, parsed);
     let error = transaction
-        .lower_attached_type(&attached, scope)
+        .lower_attached_type(attached, scope)
         .expect_err("one-over limit must fail");
     let HirLowerFailure::Limit(error) = error else {
         panic!("expected {expected:?} limit, got {error:?}");
@@ -841,7 +900,7 @@ fn assert_lowering_limit(document_id: &str, type_source: &str, expected: HirLimi
     assert_eq!(error.maximum(), expected.maximum());
     assert!(error.observed() > error.maximum());
     assert!(transaction.finish(&mut database).is_err());
-    assert!(database.current(&module_key(&parsed)).is_none());
+    assert!(database.current(&module_key(parsed)).is_none());
 }
 
 #[test]
@@ -894,29 +953,14 @@ fn path_limits_accept_exact_values_and_rollback_one_over() {
 fn function_effect_names_accept_the_exact_byte_limit_and_rollback_one_over() {
     let maximum = HirLimit::NameBytes.maximum();
     let exact_effect = format!("E{}", "a".repeat(maximum - 1));
-    let authored = arcweft_lang_syntax::types::parse_type_ref(&format!(
-        "(Input, Context) -> Value effects {{ {exact_effect} }}"
-    ))
-    .expect("exact effect type");
-    let TypeRef::Function {
-        params, effects, ..
-    } = authored.value()
-    else {
+    let exact = format!("(Input, Context) -> Value effects {{ {exact_effect} }}");
+    let parsed = parsed_alias_type("function-effect-name-exact", &exact);
+    let attached = attached_alias_type(&parsed);
+    assert_eq!(attached.family(), AttachedTypeFamily::Function);
+    let (module, owner) = lower_attached_and_publish(&parsed, &attached);
+    let HirTypeKind::Function(function) = resolved_type(&module, owner).kind() else {
         panic!("exact effect fixture must remain a function type");
     };
-    let child_parsed = parsed_type("function-effect-name-child", "Value");
-    let (_, child) = lower_and_publish(&child_parsed);
-    let children = BTreeMap::from([
-        (TypeRefNodeStep::FunctionParameter(0), child),
-        (TypeRefNodeStep::FunctionParameter(1), child),
-        (TypeRefNodeStep::FunctionReturn, child),
-    ]);
-    let function = StagedHirModuleTransaction::project_function_type(
-        params.len(),
-        effects.as_ref(),
-        &children,
-    )
-    .expect("exact NameBytes effect");
     assert_eq!(
         function
             .effects()
@@ -929,30 +973,11 @@ fn function_effect_names_accept_the_exact_byte_limit_and_rollback_one_over() {
     );
 
     let one_over_effect = format!("E{}", "a".repeat(maximum));
-    let authored = arcweft_lang_syntax::types::parse_type_ref(&format!(
-        "(Input, Context) -> Value effects {{ {one_over_effect} }}"
-    ))
-    .expect("one-over effect type remains syntax-valid");
-    let database = HirDatabase::try_new().expect("HIR database");
-    let one_over = parsed_type("function-effect-name-one-over", "Value");
-    let mut transaction = stage(&database, &one_over);
-    let scope = allocate_module_scope(&mut transaction, &one_over);
-    let child = transaction
-        .lower_attached_type(&attached_type(&one_over), scope)
-        .expect("staged rollback witness");
-    let children = BTreeMap::from([
-        (TypeRefNodeStep::FunctionParameter(0), child),
-        (TypeRefNodeStep::FunctionParameter(1), child),
-        (TypeRefNodeStep::FunctionReturn, child),
-    ]);
-    assert_eq!(
-        transaction.project_type(child, authored.value(), &children),
-        Err(HirLowerFailure::Limit(HirLimitError::with_maximum(
-            HirLimit::NameBytes,
-            maximum + 1,
-            maximum,
-        )))
+    let one_over = parsed_alias_type(
+        "function-effect-name-one-over",
+        &format!("(Input, Context) -> Value effects {{ {one_over_effect} }}"),
     );
-    drop(transaction);
-    assert!(database.current(&module_key(&one_over)).is_none());
+    let attached = attached_alias_type(&one_over);
+    assert_eq!(attached.family(), AttachedTypeFamily::Function);
+    assert_attached_lowering_limit(&one_over, &attached, HirLimit::NameBytes);
 }

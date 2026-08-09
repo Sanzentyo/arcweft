@@ -7,11 +7,11 @@ use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::keyword_statement_projection::PendingKeywordStatementProjection;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::name::{SyntaxName, SyntaxNameIssue};
-use crate::parser::cursor::ShadowDocumentParser;
+use crate::parser::cursor::DocumentParser;
 use crate::parser::shadow_recovery::bump_until;
 
 pub(in crate::parser) fn emit_keyword_statement(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     kind: SyntaxKind,
@@ -56,7 +56,7 @@ pub(in crate::parser) fn emit_keyword_statement(
 }
 
 fn emit_optional_label(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
 ) -> Option<Result<SyntaxName, SyntaxNameIssue>> {
     if parser.cursor() >= end || parser.current_kind() != Some(SyntaxKind::LifetimeToken) {
@@ -73,7 +73,7 @@ fn emit_optional_label(
     Some(label)
 }
 
-fn emit_signal(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
+fn emit_signal(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
     let arrow = top_level_operator(parser, parser.cursor(), end, "<-");
     let target_end = arrow.unwrap_or(end);
     emit_item_expression(parser, target_end, SyntaxRole::Target, item_kind);
@@ -104,7 +104,7 @@ fn emit_signal(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, item_kind:
     emit_item_expression(parser, end, SyntaxRole::Initializer, item_kind);
 }
 
-fn emit_unexpected_continue_suffix(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_unexpected_continue_suffix(parser: &mut DocumentParser<'_, '_>, end: usize) {
     let start = parser.current_offset();
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
     bump_until(parser, end);

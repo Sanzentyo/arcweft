@@ -4,7 +4,7 @@ use arcweft_lang_syntax::attachment::node::{FunctionItemKind, PredicateItemKind,
 use arcweft_lang_syntax::attachment::{
     AstKind, AstNode, AttachedCallableContractClause, AttachedCallableParameterKind,
     AttachedFixedParameterGroup, AttachedFunctionBody, AttachedPredicateBody, AttachedProofBody,
-    SyntaxNodeHandle,
+    ProofTrustSyntax, SyntaxNodeHandle,
 };
 use arcweft_lang_syntax::grammar::SyntaxKind;
 use arcweft_source::SourceSpan;
@@ -14,19 +14,23 @@ use crate::identity::{
     HirLimit, ItemId, LocalId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole, TypeId,
 };
 use crate::item::{
-    HirCallableSignature, HirContractScopes, HirFunctionBody, HirFunctionItem,
-    HirFunctionParameterGroup, HirFunctionSignature, HirItem, HirItemIssue, HirItemKind,
-    HirParameter, HirParameterKind, HirPredicate, HirPredicateBody, HirProof, HirProofBody,
+    HirCallableSignature, HirContractOperandList, HirContractScopes, HirFunctionBody,
+    HirFunctionItem, HirFunctionParameterGroup, HirFunctionSignature, HirItem, HirItemIssue,
+    HirItemKind, HirParameter, HirParameterKind, HirPredicate, HirPredicateBody, HirProof,
+    HirProofBody, ProofTrust, TrustReason,
 };
 use crate::leaf::{HirName, HirPath, HirPathRoot, HirPathSegment};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
+use crate::proof_return::HirProofReturnSemanticClass;
 use crate::scope::{
     HirLocal, HirLocalKind, HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner,
 };
 use crate::source_index::HirSourceSite;
 use crate::type_ref::{HirType, HirTypeKind};
 
-use super::super::{LocalGenerationLedgerEntry, StagedHirModuleTransaction, require_limit};
+use super::super::{
+    LocalGenerationLedgerEntry, StagedHirModuleTransaction, StagedProofReturnHeader, require_limit,
+};
 use super::{LoweredItemProjection, item_state, project_required_name};
 
 pub(super) struct LoweredFunctionParameterGroups {
@@ -35,7 +39,107 @@ pub(super) struct LoweredFunctionParameterGroups {
     pub(super) recovery: bool,
 }
 
+struct LoweredProofParameters {
+    parameters: Box<[HirParameter]>,
+    missing_type: bool,
+    recovery: bool,
+}
+
 impl StagedHirModuleTransaction<'_> {
+    /// Reserves the accepted Proof scope and signature prefix needed by the
+    /// semantic return barrier. Body expressions/statements and synthetic
+    /// tails remain unallocated until the bound return fact is available.
+    pub(super) fn stage_authored_proof_return_header(
+        &mut self,
+        owner: ItemId,
+        scope: ScopeId,
+        node: &AstNode<ProofItemKind>,
+    ) -> Result<Option<StagedProofReturnHeader>, HirLowerFailure> {
+        let attached = node
+            .semantics()
+            .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let Some(authored) = attached.authored_return() else {
+            return Ok(None);
+        };
+
+        let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
+        let name = project_required_name(attached.name())?;
+        let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
+        let requires_site = self.attached_insertion_site(&attached.requires_scope_source_span())?;
+        let ensures_site = self.attached_insertion_site(&attached.ensures_scope_source_span())?;
+        let _contract_scopes =
+            self.allocate_item_contract_scopes(owner, callable_scope, requires_site, ensures_site)?;
+        let _body_scope = self.allocate_item_body_scope(
+            attached.body().syntax(),
+            owner,
+            callable_scope,
+            HirScopeKind::Proof,
+        )?;
+        let (generic_parameters, _generic_recovery) =
+            self.lower_generic_parameters(attached.generics(), callable_scope)?;
+        let _parameters =
+            self.lower_proof_parameters(attached.parameter_group(), callable_scope)?;
+        let return_type = self.lower_attached_type(authored.ty(), callable_scope)?;
+
+        Ok(Some(StagedProofReturnHeader {
+            item: owner,
+            return_type,
+            source: authored.ty().syntax().source_span(),
+            declaration_source: node.source_span(),
+            name_source: attached.name().syntax().source_span(),
+            name: name.value,
+            prefix: prefix.value,
+            generic_parameters,
+        }))
+    }
+
+    fn lower_proof_parameters(
+        &mut self,
+        parameter_group: &AttachedFixedParameterGroup,
+        callable_scope: ScopeId,
+    ) -> Result<LoweredProofParameters, HirLowerFailure> {
+        let mut recovery = parameter_group.has_recovery();
+        let mut missing_type = false;
+        let mut parameters = Vec::with_capacity(parameter_group.parameters().len());
+        let mut callable_locals = Vec::new();
+        for (position, parameter) in parameter_group.parameters().iter().enumerate() {
+            if usize::from(parameter.source_ordinal()) != position {
+                return Err(HirInvariantFailure::InvalidArenaCommit.into());
+            }
+            let ty = self.lower_attached_type(parameter.ty(), callable_scope)?;
+            let pattern = self.lower_attached_pattern_binding(
+                parameter.pattern(),
+                callable_scope,
+                HirPatternBindingPolicy::ProofParameter,
+            )?;
+            let type_poisoned = self.staged_type_is_poisoned(ty)?;
+            missing_type |=
+                type_poisoned && parameter.ty().syntax().kind() == SyntaxKind::MissingType;
+            recovery |= pattern.poisoned
+                || type_poisoned
+                || parameter.has_recovery()
+                || parameter.is_rest()
+                || parameter.default().is_some();
+            callable_locals.extend_from_slice(&pattern.locals);
+            parameters.push(
+                HirParameter::try_new(
+                    pattern.owner,
+                    ty,
+                    HirParameterKind::Fixed,
+                    None,
+                    pattern.locals,
+                )
+                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+            );
+        }
+        self.close_scope_members(callable_scope, callable_locals.into_boxed_slice())?;
+        Ok(LoweredProofParameters {
+            parameters: parameters.into_boxed_slice(),
+            missing_type,
+            recovery,
+        })
+    }
+
     pub(super) fn lower_function_parameter_groups(
         &mut self,
         groups: &[AttachedFixedParameterGroup],
@@ -253,6 +357,10 @@ impl StagedHirModuleTransaction<'_> {
             .map_err(|_| HirInvariantFailure::InvalidScopeParent.into())
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one transaction lowers and seals the complete Function owner graph"
+    )]
     pub(super) fn lower_function_declaration(
         &mut self,
         owner: ItemId,
@@ -265,8 +373,8 @@ impl StagedHirModuleTransaction<'_> {
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let name = project_required_name(attached.name())?;
         let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
-        let requires_site = self.attached_insertion_site(attached.requires_scope_source_span())?;
-        let ensures_site = self.attached_insertion_site(attached.ensures_scope_source_span())?;
+        let requires_site = self.attached_insertion_site(&attached.requires_scope_source_span())?;
+        let ensures_site = self.attached_insertion_site(&attached.ensures_scope_source_span())?;
         let contract_scopes =
             self.allocate_item_contract_scopes(owner, callable_scope, requires_site, ensures_site)?;
         let body_scope = match attached.body() {
@@ -303,6 +411,7 @@ impl StagedHirModuleTransaction<'_> {
             self.lower_where_clauses(attached.where_clauses(), callable_scope)?;
 
         let mut requires = Vec::new();
+        let mut effects = Vec::new();
         let mut contract_recovery = false;
         for (position, contract) in attached.contracts().iter().enumerate() {
             if usize::from(contract.source_ordinal()) != position {
@@ -311,11 +420,30 @@ impl StagedHirModuleTransaction<'_> {
             if !matches!(contract, AttachedCallableContractClause::Requires { .. }) {
                 continue;
             }
-            let condition =
-                self.lower_attached_expression(contract.condition(), contract_scopes.requires())?;
+            let condition = self.lower_attached_expression(
+                contract.condition().expect("requires condition"),
+                contract_scopes.requires(),
+            )?;
             contract_recovery |=
                 contract.has_recovery() || self.staged_expression_is_poisoned(condition)?;
             requires.push(condition);
+        }
+        for contract in attached.contracts() {
+            let AttachedCallableContractClause::Effects { operands, .. } = contract else {
+                continue;
+            };
+            let mut lowered = Vec::with_capacity(operands.len());
+            for operand in operands {
+                let expression =
+                    self.lower_attached_expression(operand, contract_scopes.requires())?;
+                contract_recovery |= self.staged_expression_is_poisoned(expression)?;
+                lowered.push(expression);
+            }
+            contract_recovery |= contract.has_recovery();
+            effects.push(
+                HirContractOperandList::try_new(owner.module(), lowered.into_boxed_slice())
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+            );
         }
         self.close_scope_members(contract_scopes.requires(), Box::<[LocalId]>::from([]))?;
 
@@ -325,7 +453,7 @@ impl StagedHirModuleTransaction<'_> {
                 self.allocate_postcondition_result_local(
                     contract_scopes.ensures(),
                     return_type,
-                    source,
+                    &source,
                 )
             })
             .transpose()?;
@@ -341,8 +469,10 @@ impl StagedHirModuleTransaction<'_> {
             if !matches!(contract, AttachedCallableContractClause::Ensures { .. }) {
                 continue;
             }
-            let condition =
-                self.lower_attached_expression(contract.condition(), contract_scopes.ensures())?;
+            let condition = self.lower_attached_expression(
+                contract.condition().expect("ensures condition"),
+                contract_scopes.ensures(),
+            )?;
             contract_recovery |=
                 contract.has_recovery() || self.staged_expression_is_poisoned(condition)?;
             ensures.push(condition);
@@ -366,7 +496,7 @@ impl StagedHirModuleTransaction<'_> {
             AttachedFunctionBody::Missing { missing, .. } => (
                 HirFunctionBody::Error(self.lower_missing_required_tail_for_scope(
                     callable_scope,
-                    missing.source_span(),
+                    &missing.source_span(),
                 )?),
                 Some(HirItemIssue::MissingBody),
             ),
@@ -379,6 +509,7 @@ impl StagedHirModuleTransaction<'_> {
             where_predicates,
             requires.into_boxed_slice(),
             ensures.into_boxed_slice(),
+            effects.into_boxed_slice(),
             return_type,
         )
         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
@@ -421,6 +552,10 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one transaction lowers and seals the complete Predicate owner graph"
+    )]
     pub(super) fn lower_predicate_declaration(
         &mut self,
         owner: ItemId,
@@ -433,8 +568,8 @@ impl StagedHirModuleTransaction<'_> {
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let name = project_required_name(attached.name())?;
         let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
-        let requires_site = self.attached_insertion_site(attached.requires_scope_source_span())?;
-        let ensures_site = self.attached_insertion_site(attached.ensures_scope_source_span())?;
+        let requires_site = self.attached_insertion_site(&attached.requires_scope_source_span())?;
+        let ensures_site = self.attached_insertion_site(&attached.ensures_scope_source_span())?;
         let contract_scopes =
             self.allocate_item_contract_scopes(owner, callable_scope, requires_site, ensures_site)?;
         let body_scope = self.allocate_item_body_scope(
@@ -486,7 +621,7 @@ impl StagedHirModuleTransaction<'_> {
         let return_type = self.lower_predicate_bool_return(
             owner,
             callable_scope,
-            attached.parameter_group().end_source_span(),
+            &attached.parameter_group().end_source_span(),
         )?;
         let (where_predicates, where_recovery) =
             self.lower_where_clauses(attached.where_clauses(), callable_scope)?;
@@ -500,8 +635,10 @@ impl StagedHirModuleTransaction<'_> {
             if !matches!(contract, AttachedCallableContractClause::Requires { .. }) {
                 continue;
             }
-            let condition =
-                self.lower_attached_expression(contract.condition(), contract_scopes.requires())?;
+            let condition = self.lower_attached_expression(
+                contract.condition().expect("requires condition"),
+                contract_scopes.requires(),
+            )?;
             contract_recovery |=
                 contract.has_recovery() || self.staged_expression_is_poisoned(condition)?;
             requires.push(condition);
@@ -514,7 +651,7 @@ impl StagedHirModuleTransaction<'_> {
                 self.allocate_postcondition_result_local(
                     contract_scopes.ensures(),
                     Some(return_type),
-                    source,
+                    &source,
                 )
             })
             .transpose()?;
@@ -530,8 +667,10 @@ impl StagedHirModuleTransaction<'_> {
             if !matches!(contract, AttachedCallableContractClause::Ensures { .. }) {
                 continue;
             }
-            let condition =
-                self.lower_attached_expression(contract.condition(), contract_scopes.ensures())?;
+            let condition = self.lower_attached_expression(
+                contract.condition().expect("ensures condition"),
+                contract_scopes.ensures(),
+            )?;
             contract_recovery |=
                 contract.has_recovery() || self.staged_expression_is_poisoned(condition)?;
             ensures.push(condition);
@@ -567,7 +706,7 @@ impl StagedHirModuleTransaction<'_> {
             }
             AttachedPredicateBody::Missing { missing, .. } => {
                 let expression =
-                    self.lower_missing_required_tail_for_scope(body_scope, missing.source_span())?;
+                    self.lower_missing_required_tail_for_scope(body_scope, &missing.source_span())?;
                 self.close_scope_members(body_scope, Box::new([]))?;
                 (
                     HirPredicateBody::Error {
@@ -623,6 +762,10 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one transaction lowers and seals the complete Proof owner graph"
+    )]
     pub(super) fn lower_proof_declaration(
         &mut self,
         owner: ItemId,
@@ -635,8 +778,8 @@ impl StagedHirModuleTransaction<'_> {
         let prefix = self.lower_item_prefix(attached.prefix(), scope)?;
         let name = project_required_name(attached.name())?;
         let callable_scope = self.allocate_item_callable_scope(node, owner, scope)?;
-        let requires_site = self.attached_insertion_site(attached.requires_scope_source_span())?;
-        let ensures_site = self.attached_insertion_site(attached.ensures_scope_source_span())?;
+        let requires_site = self.attached_insertion_site(&attached.requires_scope_source_span())?;
+        let ensures_site = self.attached_insertion_site(&attached.ensures_scope_source_span())?;
         let contract_scopes =
             self.allocate_item_contract_scopes(owner, callable_scope, requires_site, ensures_site)?;
         let body_scope = self.allocate_item_body_scope(
@@ -645,74 +788,58 @@ impl StagedHirModuleTransaction<'_> {
             callable_scope,
             HirScopeKind::Proof,
         )?;
-
         let (generic_parameters, generic_recovery) =
             self.lower_generic_parameters(attached.generics(), callable_scope)?;
+        let LoweredProofParameters {
+            parameters,
+            missing_type: parameter_missing_type,
+            recovery: parameter_recovery,
+        } = self.lower_proof_parameters(attached.parameter_group(), callable_scope)?;
 
-        let mut parameter_recovery = attached.parameter_group().has_recovery();
-        let mut parameter_missing_type = false;
-        let mut parameters = Vec::with_capacity(attached.parameter_group().parameters().len());
-        let mut callable_locals = Vec::new();
-        for (position, parameter) in attached.parameter_group().parameters().iter().enumerate() {
-            if usize::from(parameter.source_ordinal()) != position {
-                return Err(HirInvariantFailure::InvalidArenaCommit.into());
-            }
-            let ty = self.lower_attached_type(parameter.ty(), callable_scope)?;
-            let pattern = self.lower_attached_pattern_binding(
-                parameter.pattern(),
-                callable_scope,
-                HirPatternBindingPolicy::ProofParameter,
-            )?;
-            let type_poisoned = self.staged_type_is_poisoned(ty)?;
-            parameter_missing_type |=
-                type_poisoned && parameter.ty().syntax().kind() == SyntaxKind::MissingType;
-            parameter_recovery |= pattern.poisoned
-                || type_poisoned
-                || parameter.has_recovery()
-                || parameter.is_rest()
-                || parameter.default().is_some();
-            callable_locals.extend_from_slice(&pattern.locals);
-            parameters.push(
-                HirParameter::try_new(
-                    pattern.owner,
-                    ty,
-                    HirParameterKind::Fixed,
-                    None,
-                    pattern.locals,
-                )
-                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
-            );
-        }
-        self.close_scope_members(callable_scope, callable_locals.into_boxed_slice())?;
-
-        let (return_type, return_missing_type, return_recovery) = match attached.authored_return() {
-            Some(authored) => {
-                let ty = self.lower_attached_type(authored.ty(), callable_scope)?;
-                let poisoned = self.staged_type_is_poisoned(ty)?;
-                (
-                    ty,
-                    poisoned && authored.ty().syntax().kind() == SyntaxKind::MissingType,
-                    poisoned,
-                )
-            }
-            None => (
-                self.lower_proof_unit_return(
-                    owner,
-                    callable_scope,
-                    attached.implicit_return_source_span(),
-                )?,
-                false,
-                false,
-            ),
-        };
+        let (return_type, return_missing_type, mut return_recovery) =
+            match attached.authored_return() {
+                Some(authored) => {
+                    let ty = self.lower_attached_type(authored.ty(), callable_scope)?;
+                    let poisoned = self.staged_type_is_poisoned(ty)?;
+                    (
+                        ty,
+                        poisoned && authored.ty().syntax().kind() == SyntaxKind::MissingType,
+                        poisoned,
+                    )
+                }
+                None => (
+                    self.lower_proof_unit_return(
+                        owner,
+                        callable_scope,
+                        &attached.implicit_return_source_span(),
+                    )?,
+                    false,
+                    false,
+                ),
+            };
         let (where_predicates, where_recovery) =
             self.lower_where_clauses(attached.where_clauses(), callable_scope)?;
-        let return_is_unit = self
-            .arenas
-            .types()
-            .resolve_staged(&self.slots, return_type)?
-            .kind()
-            .is_unit();
+        let return_semantic_class = match attached.authored_return() {
+            Some(authored) => self.authored_proof_return_semantic_class(
+                owner,
+                return_type,
+                authored.ty().syntax().source_span(),
+            )?,
+            None => HirProofReturnSemanticClass::Unit,
+        };
+        return_recovery |= return_semantic_class.is_poisoned();
+        let trust = match attached.trust() {
+            Some(ProofTrustSyntax::Verified) => ProofTrust::Verified,
+            Some(ProofTrustSyntax::Trusted { reason, .. }) => ProofTrust::Trusted {
+                reason: TrustReason::try_new(Box::<str>::from(reason.as_str()))
+                    .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?,
+            },
+            None => ProofTrust::Recovery,
+        };
+
+        // Semantic classification is mandatory before body payloads and the
+        // selected tail role, but the accepted body ScopeId is part of the
+        // reserved header prefix and is already live here.
 
         let mut requires = Vec::new();
         let mut contract_recovery = false;
@@ -723,8 +850,10 @@ impl StagedHirModuleTransaction<'_> {
             if !matches!(contract, AttachedCallableContractClause::Requires { .. }) {
                 continue;
             }
-            let condition =
-                self.lower_attached_expression(contract.condition(), contract_scopes.requires())?;
+            let condition = self.lower_attached_expression(
+                contract.condition().expect("requires condition"),
+                contract_scopes.requires(),
+            )?;
             contract_recovery |=
                 contract.has_recovery() || self.staged_expression_is_poisoned(condition)?;
             requires.push(condition);
@@ -737,7 +866,7 @@ impl StagedHirModuleTransaction<'_> {
                 self.allocate_postcondition_result_local(
                     contract_scopes.ensures(),
                     Some(return_type),
-                    source,
+                    &source,
                 )
             })
             .transpose()?;
@@ -753,8 +882,10 @@ impl StagedHirModuleTransaction<'_> {
             if !matches!(contract, AttachedCallableContractClause::Ensures { .. }) {
                 continue;
             }
-            let condition =
-                self.lower_attached_expression(contract.condition(), contract_scopes.ensures())?;
+            let condition = self.lower_attached_expression(
+                contract.condition().expect("ensures condition"),
+                contract_scopes.ensures(),
+            )?;
             contract_recovery |=
                 contract.has_recovery() || self.staged_expression_is_poisoned(condition)?;
             ensures.push(condition);
@@ -776,8 +907,12 @@ impl StagedHirModuleTransaction<'_> {
                 )
             }
             AttachedProofBody::Block { block, .. } => {
-                let lowered =
-                    self.lower_attached_proof_block(block, owner, body_scope, return_is_unit)?;
+                let lowered = self.lower_attached_proof_block(
+                    block,
+                    owner,
+                    body_scope,
+                    return_semantic_class,
+                )?;
                 let issue = (attached.body().has_recovery() || lowered.recovery.is_some())
                     .then_some(HirItemIssue::Recovery);
                 (
@@ -791,7 +926,7 @@ impl StagedHirModuleTransaction<'_> {
             }
             AttachedProofBody::Missing { missing, .. } => {
                 let expression =
-                    self.lower_missing_required_tail_for_scope(body_scope, missing.source_span())?;
+                    self.lower_missing_required_tail_for_scope(body_scope, &missing.source_span())?;
                 self.close_scope_members(body_scope, Box::new([]))?;
                 (
                     HirProofBody::Error {
@@ -805,7 +940,7 @@ impl StagedHirModuleTransaction<'_> {
 
         let signature = HirCallableSignature::try_new(
             generic_parameters,
-            parameters.into_boxed_slice(),
+            parameters,
             where_predicates,
             requires.into_boxed_slice(),
             ensures.into_boxed_slice(),
@@ -822,9 +957,16 @@ impl StagedHirModuleTransaction<'_> {
                 None
             }
         };
-        let declaration =
-            HirProof::try_new(name.value, public_id, signature, body, contract_scopes)
-                .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+        let declaration = HirProof::try_new(
+            name.value,
+            public_id,
+            signature,
+            return_semantic_class,
+            trust,
+            body,
+            contract_scopes,
+        )
+        .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let issue = prefix
             .issue
             .or(name.issue)
@@ -840,6 +982,11 @@ impl StagedHirModuleTransaction<'_> {
             .or_else(|| parameter_recovery.then_some(HirItemIssue::MalformedHeader))
             .or_else(|| return_missing_type.then_some(HirItemIssue::MissingType))
             .or_else(|| return_recovery.then_some(HirItemIssue::MalformedHeader))
+            .or_else(|| {
+                attached
+                    .has_trust_recovery()
+                    .then_some(HirItemIssue::MalformedHeader)
+            })
             .or_else(|| where_recovery.then_some(HirItemIssue::MalformedHeader))
             .or_else(|| contract_recovery.then_some(HirItemIssue::Recovery))
             .or(body_issue)
@@ -908,7 +1055,7 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         owner: ItemId,
         scope: ScopeId,
-        source: SourceSpan,
+        source: &SourceSpan,
     ) -> Result<TypeId, HirLowerFailure> {
         let site = self.attached_insertion_site(source)?;
         let key = SyntheticKey::try_new(
@@ -923,7 +1070,7 @@ impl StagedHirModuleTransaction<'_> {
             .reserve_synthetic(&mut self.slots, key, site)?;
         let ty = reservation.id();
         let name =
-            HirName::try_new("Bool".into()).map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
+            HirName::try_new("bool".into()).map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         let path = HirPath::try_new(
             HirPathRoot::ImplicitCrate,
             Box::new([HirPathSegment::Identifier(name)]),
@@ -947,7 +1094,7 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         owner: ItemId,
         scope: ScopeId,
-        source: SourceSpan,
+        source: &SourceSpan,
     ) -> Result<TypeId, HirLowerFailure> {
         let site = self.attached_insertion_site(source)?;
         let key = SyntheticKey::try_new(
@@ -979,7 +1126,7 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         scope: ScopeId,
         annotation: Option<TypeId>,
-        source: SourceSpan,
+        source: &SourceSpan,
     ) -> Result<LocalId, HirLowerFailure> {
         let start = source.range().start();
         let site = self.attached_insertion_site(source)?;
@@ -1020,9 +1167,9 @@ impl StagedHirModuleTransaction<'_> {
 
     pub(super) fn attached_insertion_site(
         &self,
-        source: SourceSpan,
+        source: &SourceSpan,
     ) -> Result<HirSourceSite, HirLowerFailure> {
-        let site = HirSourceSite::from_attached_span(self.request.source().document(), &source)
+        let site = HirSourceSite::from_attached_span(self.request.source().document(), source)
             .map_err(|_| HirInvariantFailure::InvalidSourceSpan)?;
         if matches!(site, HirSourceSite::Insertion(_)) {
             Ok(site)

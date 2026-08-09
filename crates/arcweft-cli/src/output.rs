@@ -1,7 +1,7 @@
-use crate::app::project::CheckedModule;
+use crate::app::project::{CheckedModule, verify_compiled_project};
 use arcweft_core::aot::AotProgramStats;
 use arcweft_core::bytecode::BytecodeStats;
-use arcweft_core::effect::LineEffectRequest;
+use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
 use arcweft_core::engine::{FlowFiber, FlowStatusLabelStyle};
 use arcweft_core::line_task::{LineTaskGroup, LineTaskNode, LineTaskScope, LineTaskTrigger};
 use arcweft_core::plan::FlowEvent;
@@ -10,29 +10,25 @@ use arcweft_core::step::{RuntimePureCallStats, RuntimeStepResult, RuntimeStepSta
 use arcweft_core::stream::{RuntimeStreamEvent, StreamOp};
 use arcweft_core::task::TaskSpec;
 use arcweft_core::value::RuntimePayload;
-use arcweft_lang_sema::check::{
-    TypeCheckReport, TypeCheckStats, TypeJudgment, TypeJudgmentRule, TypeJudgmentSubject,
-};
-use arcweft_lang_syntax::cst::SyntaxParseStats;
-use arcweft_render_text::LineDisplaySpec;
+use arcweft_lang_sema::final_analysis::FinalSemanticAnalysis;
+use arcweft_lang_syntax::incremental::SyntaxParseStats;
 use arcweft_runtime_host::{
     HostSystemInfo, NativeTaskStats, RuntimeExecutorPureCompileStatsSummary,
     RuntimeExecutorPureConfigSummary, RuntimeExecutorStats,
 };
-use arcweft_runtime_plan::{
-    flow::{RuntimePlanLowerReport, RuntimePlanLowerStats},
-    line_task::LoweredLineTaskGroup,
-};
+use arcweft_runtime_plan::flow::{RuntimePlanLowerReport, RuntimePlanLowerStats};
 use arcweft_test::{ScriptBench, ScriptTest};
-use arcweft_verify::{
-    BackendKind, RuntimeTypeValidationStats, VerificationMode, VerificationPolicy,
-    verify_module_with_env,
+use arcweft_text_model::DialogueContentSpec;
+use arcweft_tooling::runtime_diagnostic::{
+    RuntimeAssertionDiagnosticIdentity, project_runtime_assertion_fault,
 };
+use arcweft_verify::{BackendKind, VerificationMode, VerificationPolicy};
+use std::process::ExitCode;
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimePlanReport {
     pub(crate) lines: Vec<RuntimeLinePlanSummary>,
-    pub(crate) line_display_catalog: Vec<LineDisplaySpec>,
+    pub(crate) dialogue_content_catalog: Vec<DialogueContentSpec>,
     pub(crate) streams: Vec<RuntimeStreamPlanSummary>,
     pub(crate) sources: Vec<RuntimeSourcePlanSummary>,
     pub(crate) verifier_diagnostics: usize,
@@ -67,9 +63,6 @@ pub(crate) struct RuntimeSourcePolicySummary {
 
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeLinePlanSummary {
-    pub(crate) flow_id: Option<String>,
-    pub(crate) line_id: Option<String>,
-    pub(crate) callee: String,
     pub(crate) child_tasks: usize,
     pub(crate) effects: usize,
     pub(crate) root: RuntimeNodeSummary,
@@ -78,7 +71,6 @@ pub(crate) struct RuntimeLinePlanSummary {
     pub(crate) out: usize,
     pub(crate) cancel_rules: usize,
     pub(crate) memo: usize,
-    pub(crate) assertions: usize,
 }
 
 #[derive(serde::Serialize)]
@@ -114,23 +106,24 @@ impl RuntimePlanReport {
     pub(crate) fn from_lowered(
         checked: &CheckedModule,
         runtime_report: &RuntimePlanLowerReport,
-    ) -> Self {
-        let verification = verify_module_with_env(
-            &checked.hir,
-            &checked.env,
+    ) -> Result<Self, ExitCode> {
+        let verification = verify_compiled_project(
+            &checked.compiled,
             VerificationPolicy {
                 mode: VerificationMode::Dev,
                 backend: BackendKind::Emit,
                 allow_trusted_proofs: true,
             },
-        );
-        Self {
+        )?;
+        Ok(Self {
             lines: checked
+                .runtime_plan()
+                .plan
                 .line_task_groups
                 .iter()
                 .map(RuntimeLinePlanSummary::from_lowered)
                 .collect(),
-            line_display_catalog: runtime_report.line_display_catalog.lines().to_vec(),
+            dialogue_content_catalog: runtime_report.dialogue_content_catalog.records().to_vec(),
             streams: runtime_report
                 .plan
                 .stream_plans
@@ -157,7 +150,7 @@ impl RuntimePlanReport {
                 .collect(),
             verifier_diagnostics: verification.diagnostics.len(),
             verifier_obligations: verification.obligations.len(),
-        }
+        })
     }
 }
 
@@ -191,13 +184,9 @@ fn source_policy_summary(policy: &SourcePolicy) -> RuntimeSourcePolicySummary {
 }
 
 impl RuntimeLinePlanSummary {
-    fn from_lowered(line: &LoweredLineTaskGroup) -> Self {
-        let group = line.group();
+    fn from_lowered(group: &LineTaskGroup) -> Self {
         let root = node_summary(&group.root.node);
         Self {
-            flow_id: line.flow_id().map(|id| id.body().to_owned()),
-            line_id: line.line_id().map(|id| id.body().to_owned()),
-            callee: line.callee().to_owned(),
             child_tasks: count_child_tasks(group),
             effects: count_effects(group),
             root,
@@ -206,7 +195,6 @@ impl RuntimeLinePlanSummary {
             out: group.out.len(),
             cancel_rules: group.cancel_rules.len(),
             memo: group.memo.len(),
-            assertions: group.assertions.len(),
         }
     }
 }
@@ -284,7 +272,7 @@ fn effect_label(effect: &LineEffectRequest) -> String {
         LineEffectRequest::Fail(_) => "fail".to_owned(),
         LineEffectRequest::Bail(_) => "bail".to_owned(),
         LineEffectRequest::Ensure { .. } => "ensure".to_owned(),
-        LineEffectRequest::Assert(assertion) => match assertion.profile {
+        LineEffectRequest::Assert(assertion) => match assertion.profile() {
             arcweft_core::effect::RuntimeAssertionProfile::Always => "assert".to_owned(),
             arcweft_core::effect::RuntimeAssertionProfile::DebugOnly => "debug_assert".to_owned(),
         },
@@ -333,18 +321,9 @@ pub(crate) struct VerifyTypesReport {
     pub(crate) syntax_warnings: usize,
     pub(crate) line_task_groups: usize,
     pub(crate) phases: Vec<RuntimeProfilePhase>,
-    pub(crate) typecheck: TypeCheckProfileStats,
-    pub(crate) borrow_check: BorrowCheckProfileStats,
-    pub(crate) runtime_type_validation: RuntimeTypeValidationReportSummary,
+    pub(crate) semantic: FinalSemanticProfileStats,
     pub(crate) verifier: VerifyTypesVerifierSummary,
     pub(crate) runtime: Option<VerifyTypesRuntimeSelfCheck>,
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct RuntimeTypeValidationReportSummary {
-    pub(crate) diagnostics: usize,
-    pub(crate) errors: usize,
-    pub(crate) stats: RuntimeTypeValidationProfileStats,
 }
 
 #[derive(serde::Serialize)]
@@ -379,10 +358,8 @@ pub(crate) struct ScriptBenchRunReport {
 #[derive(serde::Serialize)]
 pub(crate) struct RuntimeProfileCompiler {
     pub(crate) syntax: SyntaxProfileStats,
-    pub(crate) typecheck: TypeCheckProfileStats,
-    pub(crate) borrow_check: BorrowCheckProfileStats,
+    pub(crate) semantic: FinalSemanticProfileStats,
     pub(crate) runtime_plan: RuntimePlanProfileStats,
-    pub(crate) runtime_type_validation: RuntimeTypeValidationProfileStats,
     pub(crate) bytecode: BytecodeProfileStats,
     pub(crate) aot: AotProfileStats,
 }
@@ -430,201 +407,71 @@ impl From<RuntimePlanLowerStats> for RuntimePlanProfileStats {
 
 #[derive(Clone, Copy, serde::Serialize)]
 pub(crate) struct SyntaxProfileStats {
-    pub(crate) cst_lex_passes: usize,
-    pub(crate) punctuation_scans: usize,
-    pub(crate) punctuation_scan_bytes: usize,
-    pub(crate) line_owned_bytes: usize,
-    pub(crate) block_owned_bytes: usize,
-    pub(crate) raw_owned_bytes: usize,
-    pub(crate) wiki_scan_performed: usize,
-    pub(crate) dialogue_rescue_expr_parse_attempts: usize,
-    pub(crate) numeric_seq_summaries: usize,
+    pub(crate) accepted_source_bytes: usize,
+    pub(crate) lexer_tokens: usize,
+    pub(crate) grammar_events: usize,
+    pub(crate) top_level_items: usize,
+    pub(crate) statements: usize,
+    pub(crate) expressions: usize,
+    pub(crate) type_nodes: usize,
+    pub(crate) pattern_nodes: usize,
+    pub(crate) identity_bearing_nodes: usize,
+    pub(crate) diagnostic_identities: usize,
 }
 
 impl From<SyntaxParseStats> for SyntaxProfileStats {
     fn from(stats: SyntaxParseStats) -> Self {
         Self {
-            cst_lex_passes: stats.cst_lex_passes,
-            punctuation_scans: stats.punctuation_scans,
-            punctuation_scan_bytes: stats.punctuation_scan_bytes,
-            line_owned_bytes: stats.line_owned_bytes,
-            block_owned_bytes: stats.block_owned_bytes,
-            raw_owned_bytes: stats.raw_owned_bytes,
-            wiki_scan_performed: stats.wiki_scan_performed,
-            dialogue_rescue_expr_parse_attempts: stats.dialogue_rescue_expr_parse_attempts,
-            numeric_seq_summaries: stats.numeric_seq_summaries,
+            accepted_source_bytes: stats.accepted_source_bytes(),
+            lexer_tokens: stats.lexer_tokens(),
+            grammar_events: stats.grammar_events(),
+            top_level_items: stats.top_level_items(),
+            statements: stats.statements(),
+            expressions: stats.expressions(),
+            type_nodes: stats.type_nodes(),
+            pattern_nodes: stats.pattern_nodes(),
+            identity_bearing_nodes: stats.identity_bearing_nodes(),
+            diagnostic_identities: stats.diagnostic_identities(),
         }
     }
 }
 
-#[derive(Clone, serde::Serialize)]
-pub(crate) struct TypeCheckProfileStats {
-    pub(crate) flows: usize,
-    pub(crate) functions: usize,
-    pub(crate) declarations: usize,
-    pub(crate) statements: usize,
+#[derive(Clone, Copy, serde::Serialize)]
+pub(crate) struct FinalSemanticProfileStats {
+    pub(crate) types: usize,
+    pub(crate) locals: usize,
+    pub(crate) captures: usize,
     pub(crate) expressions: usize,
-    pub(crate) warnings: usize,
-    pub(crate) warning_samples: Vec<String>,
-    pub(crate) judgments: usize,
-    pub(crate) type_compatibility_checks: usize,
-    judgment_rules: TypeCheckJudgmentRuleStats,
-    judgment_samples: Vec<TypeCheckJudgmentSample>,
+    pub(crate) patterns: usize,
+    pub(crate) statements: usize,
+    pub(crate) items: usize,
+    pub(crate) calls: usize,
+    pub(crate) call_diagnostics: u64,
+    pub(crate) logical_argument_checks: u64,
+    pub(crate) resolver_invocations: u64,
+    pub(crate) candidate_argument_probes: u64,
+    pub(crate) selected_replay_argument_visits: u64,
+    pub(crate) retained_argument_fact_publications: u64,
 }
 
-impl From<&TypeCheckReport> for TypeCheckProfileStats {
-    fn from(report: &TypeCheckReport) -> Self {
-        let stats = &report.stats;
+impl From<&FinalSemanticAnalysis> for FinalSemanticProfileStats {
+    fn from(analysis: &FinalSemanticAnalysis) -> Self {
+        let work = analysis.work();
         Self {
-            flows: stats.flows,
-            functions: stats.functions,
-            declarations: stats.declarations,
-            statements: stats.statements,
-            expressions: stats.expressions,
-            warnings: report.warnings.len(),
-            warning_samples: report
-                .warnings
-                .iter()
-                .take(8)
-                .map(|warning| warning.message().to_owned())
-                .collect(),
-            judgments: stats.judgments,
-            type_compatibility_checks: stats.type_compatibility_checks,
-            judgment_rules: TypeCheckJudgmentRuleStats::from_stats(stats),
-            judgment_samples: report
-                .judgments
-                .iter()
-                .take(8)
-                .map(TypeCheckJudgmentSample::from)
-                .collect(),
-        }
-    }
-}
-
-#[derive(Clone, Default, serde::Serialize)]
-struct TypeCheckJudgmentRuleStats {
-    expr: usize,
-    expected: usize,
-    let_binding: usize,
-    #[serde(rename = "return")]
-    return_: usize,
-}
-
-impl TypeCheckJudgmentRuleStats {
-    const fn from_stats(stats: &TypeCheckStats) -> Self {
-        Self {
-            expr: stats.expr_judgments,
-            expected: stats.expected_judgments,
-            let_binding: stats.let_binding_judgments,
-            return_: stats.return_judgments,
-        }
-    }
-}
-
-#[derive(Clone, serde::Serialize)]
-struct TypeCheckJudgmentSample {
-    id: usize,
-    subject: String,
-    rule: &'static str,
-    ty: String,
-    expected: Option<String>,
-}
-
-impl From<&TypeJudgment> for TypeCheckJudgmentSample {
-    fn from(judgment: &TypeJudgment) -> Self {
-        Self {
-            id: judgment.id.index(),
-            subject: type_judgment_subject_label(&judgment.subject),
-            rule: type_judgment_rule_label(judgment.rule),
-            ty: format!("{:?}", judgment.ty),
-            expected: judgment
-                .expected_type()
-                .map(|expected| format!("{expected:?}")),
-        }
-    }
-}
-
-fn type_judgment_subject_label(subject: &TypeJudgmentSubject) -> String {
-    match subject {
-        TypeJudgmentSubject::Expr { id, kind } => format!("expr#{}:{kind}", id.index()),
-        TypeJudgmentSubject::LetBinding { pattern } => format!("let:{pattern}"),
-        TypeJudgmentSubject::Return { context } => format!("return:{context}"),
-    }
-}
-
-const fn type_judgment_rule_label(rule: TypeJudgmentRule) -> &'static str {
-    match rule {
-        TypeJudgmentRule::Expr => "expr",
-        TypeJudgmentRule::Expected => "expected",
-        TypeJudgmentRule::LetBinding => "let_binding",
-        TypeJudgmentRule::Return => "return",
-    }
-}
-
-#[derive(Clone, serde::Serialize)]
-pub(crate) struct BorrowCheckProfileStats {
-    binding_groups: usize,
-    bindings: usize,
-    state_snapshots: usize,
-    state_restores: usize,
-    state_merges: usize,
-    state_cloned_bindings: usize,
-    state_delta_entries: usize,
-    state_full_clones: usize,
-    state_merge_keys: usize,
-    boundary_checks: usize,
-    escape_checks: usize,
-    active_borrow_removes: usize,
-    max_active_borrows: usize,
-}
-
-impl From<&TypeCheckStats> for BorrowCheckProfileStats {
-    fn from(stats: &TypeCheckStats) -> Self {
-        Self {
-            binding_groups: stats.borrow_binding_groups,
-            bindings: stats.borrow_bindings,
-            state_snapshots: stats.borrow_state_snapshots,
-            state_restores: stats.borrow_state_restores,
-            state_merges: stats.borrow_state_merges,
-            state_cloned_bindings: stats.borrow_state_cloned_bindings,
-            state_delta_entries: stats.borrow_state_delta_entries,
-            state_full_clones: stats.borrow_state_full_clones,
-            state_merge_keys: stats.borrow_state_merge_keys,
-            boundary_checks: stats.borrow_boundary_checks,
-            escape_checks: stats.borrow_escape_checks,
-            active_borrow_removes: stats.active_borrow_removes,
-            max_active_borrows: stats.max_active_borrows,
-        }
-    }
-}
-
-#[derive(serde::Serialize)]
-pub(crate) struct RuntimeTypeValidationProfileStats {
-    flows: usize,
-    ops: usize,
-    expressions: usize,
-    conditions: usize,
-    guards: usize,
-    let_bindings: usize,
-    returns: usize,
-    route_targets: usize,
-    choice_targets: usize,
-    type_judgments: usize,
-}
-
-impl From<&RuntimeTypeValidationStats> for RuntimeTypeValidationProfileStats {
-    fn from(stats: &RuntimeTypeValidationStats) -> Self {
-        Self {
-            flows: stats.flows,
-            ops: stats.ops,
-            expressions: stats.expressions,
-            conditions: stats.conditions,
-            guards: stats.guards,
-            let_bindings: stats.let_bindings,
-            returns: stats.returns,
-            route_targets: stats.route_targets,
-            choice_targets: stats.choice_targets,
-            type_judgments: stats.type_judgments,
+            types: analysis.types().len(),
+            locals: analysis.locals().len(),
+            captures: analysis.captures().len(),
+            expressions: analysis.expressions().len(),
+            patterns: analysis.patterns().len(),
+            statements: analysis.statements().len(),
+            items: analysis.items().len(),
+            calls: analysis.calls().len(),
+            call_diagnostics: work.call_diagnostics(),
+            logical_argument_checks: work.logical_argument_checks(),
+            resolver_invocations: work.resolver_invocations(),
+            candidate_argument_probes: work.candidate_argument_probes(),
+            selected_replay_argument_visits: work.selected_replay_argument_visits(),
+            retained_argument_fact_publications: work.retained_argument_fact_publications(),
         }
     }
 }
@@ -1036,6 +883,12 @@ pub(crate) struct RuntimeStepRunSummary {
     pub(crate) fiber_status: String,
     pub(crate) stats: RuntimeStepStatsSummary,
     pub(crate) diagnostics: Vec<String>,
+    /// Typed runtime assertion failures are the sole assertion-presence
+    /// authority for CLI expectations and higher-level consumers.
+    pub(crate) assertion_failures: Vec<RuntimeAssertionFailure>,
+    /// Fresh-session presentation derived from the exact accepted runtime-plan
+    /// artifact and its retained assertion inventory.
+    pub(crate) assertion_diagnostics: Vec<RuntimeAssertionRunDiagnostic>,
     pub(crate) flow_events: Vec<String>,
     pub(crate) line_effects: Vec<String>,
     pub(crate) task_requests: Vec<String>,
@@ -1045,6 +898,40 @@ pub(crate) struct RuntimeStepRunSummary {
     pub(crate) source_close_requests: Vec<String>,
     pub(crate) source_states: Vec<RuntimeQueueStateSummary>,
     pub(crate) stream_states: Vec<RuntimeQueueStateSummary>,
+}
+
+#[derive(serde::Serialize)]
+pub(crate) struct RuntimeAssertionRunDiagnostic {
+    pub(crate) code: &'static str,
+    pub(crate) message: String,
+    pub(crate) identity: &'static str,
+    pub(crate) mode: &'static str,
+    pub(crate) condition_index: u8,
+}
+
+impl RuntimeAssertionRunDiagnostic {
+    fn from_session_failure(
+        context: &arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
+        failure: RuntimeAssertionFailure,
+    ) -> Result<Self, arcweft_runtime_plan::assertion_identity::RuntimeAssertionProjectionError>
+    {
+        let fault = context.project_assertion_failure(failure)?;
+        let diagnostic = project_runtime_assertion_fault(&fault);
+        let RuntimeAssertionDiagnosticIdentity::Session {
+            mode,
+            condition_index,
+        } = *diagnostic.identity()
+        else {
+            unreachable!("fresh assertion fault projection always has session identity")
+        };
+        Ok(Self {
+            code: diagnostic.code(),
+            message: diagnostic.message().to_owned(),
+            identity: "session",
+            mode: mode.as_str(),
+            condition_index,
+        })
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -1126,11 +1013,19 @@ pub(crate) struct RuntimeQueueStateSummary {
 }
 
 impl RuntimeStepRunSummary {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "runtime step reporting exhaustively consumes the closed event and task-request matrix"
+    )]
     pub(crate) fn from_result_and_task_requests(
         index: usize,
         result: RuntimeStepResult,
         fiber: &FlowFiber,
-    ) -> (Self, Vec<TaskSpec>) {
+        execution_diagnostics: &arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
+    ) -> Result<
+        (Self, Vec<TaskSpec>),
+        arcweft_runtime_plan::assertion_identity::RuntimeAssertionProjectionError,
+    > {
         let RuntimeStepResult {
             mut output,
             fiber_status,
@@ -1138,6 +1033,24 @@ impl RuntimeStepRunSummary {
             stats,
         } = result;
         let task_requests = std::mem::take(&mut output.requests.tasks);
+        let assertion_failures = output
+            .effects
+            .line
+            .iter()
+            .filter_map(|effect| match effect {
+                LineEffectRequest::Assert(assertion) => {
+                    Some(RuntimeAssertionFailure::new(assertion.clone()))
+                }
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let assertion_diagnostics = assertion_failures
+            .iter()
+            .cloned()
+            .map(|failure| {
+                RuntimeAssertionRunDiagnostic::from_session_failure(execution_diagnostics, failure)
+            })
+            .collect::<Result<Vec<_>, _>>()?;
         let summary = Self {
             index,
             stop_reason: format!("{stop_reason:?}"),
@@ -1148,6 +1061,8 @@ impl RuntimeStepRunSummary {
                 .into_iter()
                 .map(|diagnostic| diagnostic.message)
                 .collect(),
+            assertion_failures,
+            assertion_diagnostics,
             flow_events: output.flow_events.iter().map(flow_event_label).collect(),
             line_effects: output.effects.line.iter().map(effect_label).collect(),
             task_requests: task_requests.iter().map(task_request_label).collect(),
@@ -1227,7 +1142,7 @@ impl RuntimeStepRunSummary {
                 })
                 .collect(),
         };
-        (summary, task_requests)
+        Ok((summary, task_requests))
     }
 }
 

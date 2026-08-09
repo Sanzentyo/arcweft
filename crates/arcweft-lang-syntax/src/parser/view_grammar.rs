@@ -3,7 +3,7 @@
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_retained_declaration_header;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
@@ -11,14 +11,18 @@ use super::path::emit_path;
 use super::pattern::emit_pattern;
 use super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
-    emit_required_punctuation, expected, find_matching_close, find_statement_terminator,
-    find_top_level_boundary, first_significant, token_count, trimmed_end,
+    emit_required_punctuation, expected, find_matching_close, find_matching_close_before,
+    find_statement_terminator, find_top_level_boundary, first_significant, token_count,
+    trimmed_end,
 };
 use super::type_ref::emit_type;
 use crate::grammar::budget::GrammarBudget;
-use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+use crate::grammar::event::{PendingSyntaxDiagnostic, PendingSyntaxSuggestion, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
-use crate::grammar::view_projection::{PendingViewExportProjection, PendingViewRequiredKeyword};
+use crate::grammar::view_projection::{
+    PendingViewExportProjection, PendingViewFragmentProjection, PendingViewPartLocalName,
+    PendingViewPartModifierProjection, PendingViewRequiredKeyword,
+};
 
 pub(super) fn emit_declaration(
     source: &str,
@@ -27,7 +31,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::ViewDeclarationItem, role);
     emit_retained_declaration_header(
         &mut parser,
@@ -42,7 +46,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_view_signature(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_view_signature(parser: &mut DocumentParser<'_, '_>) {
     if !parser.at("(") {
         emit_missing_parameter_group(parser);
         return;
@@ -56,7 +60,8 @@ fn emit_view_signature(parser: &mut ShadowDocumentParser<'_, '_>) {
         if parser.is_at_end() || parser.at(")") {
             break;
         }
-        let parameter_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]);
+        let parameter_end =
+            find_top_level_boundary(parser, parser.cursor(), token_count(parser), &[",", ")"]);
         emit_view_parameter(parser, parameter_end, ordinal);
         bump_until(parser, parameter_end);
         if parser.budget_failed() {
@@ -79,7 +84,7 @@ fn emit_view_signature(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_missing_parameter_group(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_parameter_group(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::FixedParameterGroup, SyntaxRole::ParameterGroup);
     emit_missing_delimiter(parser, SyntaxKind::OpenParenNode, SyntaxRole::OpenDelimiter);
@@ -98,13 +103,9 @@ fn emit_missing_parameter_group(parser: &mut ShadowDocumentParser<'_, '_>) {
     )));
 }
 
-fn emit_view_parameter(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    parameter_end: usize,
-    ordinal: u16,
-) {
+fn emit_view_parameter(parser: &mut DocumentParser<'_, '_>, parameter_end: usize, ordinal: u16) {
     parser.start(SyntaxKind::Parameter, SyntaxRole::Parameter(ordinal));
-    let colon = find_top_level_boundary(parser, parser.cursor(), &[":"]).min(parameter_end);
+    let colon = find_top_level_boundary(parser, parser.cursor(), parameter_end, &[":"]);
     let colon = (colon < parameter_end
         && parser
             .token_at(colon)
@@ -138,7 +139,7 @@ fn emit_view_parameter(
         return;
     }
     parser.bump_trivia();
-    let default = find_top_level_boundary(parser, parser.cursor(), &["="]).min(parameter_end);
+    let default = find_top_level_boundary(parser, parser.cursor(), parameter_end, &["="]);
     let type_end = trimmed_end(parser, parser.cursor(), default);
     emit_type(parser, type_end, SyntaxRole::ParameterType);
     bump_until(parser, default);
@@ -154,7 +155,7 @@ fn emit_view_parameter(
     parser.finish();
 }
 
-fn emit_missing_parameter_type(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_parameter_type(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     emit_type(parser, parser.cursor(), SyntaxRole::ParameterType);
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
@@ -164,7 +165,7 @@ fn emit_missing_parameter_type(parser: &mut ShadowDocumentParser<'_, '_>) {
     )));
 }
 
-fn parameter_is_binding(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> bool {
+fn parameter_is_binding(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> bool {
     let significant = (start..end)
         .filter_map(|index| {
             let token = parser.token_at(index)?;
@@ -177,12 +178,12 @@ fn parameter_is_binding(parser: &ShadowDocumentParser<'_, '_>, start: usize, end
     )
 }
 
-fn reject_view_header_extensions(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
+fn reject_view_header_extensions(parser: &mut DocumentParser<'_, '_>) -> bool {
     if parser.at("{") || parser.is_at_end() {
         return false;
     }
     let return_type = parser.at("->");
-    let body = find_top_level_boundary(parser, parser.cursor(), &["{"]);
+    let body = find_top_level_boundary(parser, parser.cursor(), token_count(parser), &["{"]);
     let start = parser.current_offset();
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
     bump_until(parser, body);
@@ -203,7 +204,7 @@ fn reject_view_header_extensions(parser: &mut ShadowDocumentParser<'_, '_>) -> b
     true
 }
 
-fn emit_view_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_view_body(parser: &mut DocumentParser<'_, '_>) {
     if !parser.at("{") {
         emit_missing_body(parser);
         return;
@@ -225,7 +226,7 @@ fn emit_view_body(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_missing_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_body(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
     parser.push(SyntaxEvent::MissingToken {
@@ -240,7 +241,7 @@ fn emit_missing_body(parser: &mut ShadowDocumentParser<'_, '_>) {
     )));
 }
 
-fn emit_leading_exports(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize) {
+fn emit_leading_exports(parser: &mut DocumentParser<'_, '_>, body_end: usize) {
     parser.bump_trivia();
     if !parser.at("export") {
         return;
@@ -268,7 +269,7 @@ fn emit_leading_exports(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usi
 }
 
 fn emit_export(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
     ordinal: u16,
     misplaced: bool,
@@ -294,14 +295,19 @@ fn emit_export(
         ))
     };
     parser.bump_trivia();
-    let alias = find_top_level_boundary(parser, parser.cursor(), &["as"]).min(entry_end);
+    let alias = find_top_level_boundary(parser, parser.cursor(), entry_end, &["as"]);
+    let authored_alias = alias < entry_end;
     emit_required_path(
         parser,
         alias,
         SyntaxRole::Target,
         "syntax.view.export_missing_local",
     );
-    bump_until(parser, alias);
+    if authored_alias {
+        bump_until(parser, alias);
+    } else {
+        parser.bump_trivia();
+    }
     let alias_keyword = if parser.at("as") {
         let source = parser.current().expect("as keyword").range();
         parser.bump();
@@ -311,8 +317,8 @@ fn emit_export(
             parser,
             SyntaxRole::Alias,
             "as",
-            "syntax.view.export_missing_as",
-            "View export requires `as` before its public part name",
+            "view::export_part_missing_as",
+            "View part export needs `as` before its public name",
         ))
     };
     parser.bump_trivia();
@@ -338,7 +344,7 @@ fn emit_export(
 }
 
 fn emit_required_path(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     code: &'static str,
@@ -363,8 +369,10 @@ fn emit_required_path(
     }
 }
 
-fn emit_view_fragment(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize) {
-    parser.start(SyntaxKind::ViewFragment, SyntaxRole::Tail);
+fn emit_view_fragment(parser: &mut DocumentParser<'_, '_>, body_end: usize) {
+    let fragment_start = parser.cursor();
+    let projection = project_view_fragment(parser, fragment_start, body_end);
+    let owner = parser.start_projected_owner(SyntaxKind::ViewFragment, SyntaxRole::Tail);
     let mut ordinal = 0_u32;
     let mut misplaced_export_ordinal = 0_u16;
     while parser.cursor() < body_end {
@@ -374,12 +382,7 @@ fn emit_view_fragment(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize
         }
         let entry_end = view_value_end(parser, parser.cursor(), body_end);
         let is_value = !parser.at("export");
-        if !is_value {
-            emit_export(parser, entry_end, misplaced_export_ordinal, true);
-            misplaced_export_ordinal = misplaced_export_ordinal
-                .checked_add(1)
-                .expect("View export budget is below the role index range");
-        } else {
+        if is_value {
             let value_start = parser.cursor();
             let event_start = parser.event_position();
             emit_expression(parser, entry_end, SyntaxRole::Element(ordinal));
@@ -390,6 +393,11 @@ fn emit_view_fragment(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize
                     "View body values must use the typed View expression grammar",
                 )));
             }
+        } else {
+            emit_export(parser, entry_end, misplaced_export_ordinal, true);
+            misplaced_export_ordinal = misplaced_export_ordinal
+                .checked_add(1)
+                .expect("View export budget is below the role index range");
         }
         bump_until(parser, entry_end);
         if parser.at(";") || parser.current_kind() == Some(SyntaxKind::NewlineToken) {
@@ -405,10 +413,103 @@ fn emit_view_fragment(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize
                 .expect("View fragment role index exhausted");
         }
     }
+    parser.set_view_fragment_projection(owner, projection);
     parser.finish();
 }
 
-fn view_value_end(parser: &ShadowDocumentParser<'_, '_>, start: usize, body_end: usize) -> usize {
+fn project_view_fragment(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> PendingViewFragmentProjection {
+    let mut part_modifiers = Vec::new();
+    let mut cursor = start;
+    while let Some(dot_index) = first_significant(parser, cursor, end) {
+        cursor = dot_index.saturating_add(1);
+        let Some(dot) = parser.token_at(dot_index) else {
+            break;
+        };
+        if parser.text_of(dot) != "." {
+            continue;
+        }
+        let Some(name_index) = first_significant(parser, cursor, end) else {
+            break;
+        };
+        let Some(name) = parser.token_at(name_index) else {
+            break;
+        };
+        if parser.text_of(name) != "part" {
+            continue;
+        }
+        let Some(open_index) = first_significant(parser, name_index.saturating_add(1), end) else {
+            break;
+        };
+        let Some(open) = parser.token_at(open_index) else {
+            break;
+        };
+        if parser.text_of(open) != "(" {
+            continue;
+        }
+        let close_index =
+            find_matching_close_before(parser, open_index.saturating_add(1), end, "(");
+        let local_end = close_index.unwrap_or(end);
+        let local_name =
+            project_view_part_local_name(parser, open.range().end(), open_index + 1, local_end);
+        let close = close_index.and_then(|index| parser.token_at(index).map(LexToken::range));
+        let whole_end = close.map_or_else(
+            || token_range(parser, open_index, end).end(),
+            arcweft_source::SourceRange::end,
+        );
+        part_modifiers.push(PendingViewPartModifierProjection::new(
+            SourceRange::new(dot.range().start(), whole_end),
+            dot.range(),
+            name.range(),
+            open.range(),
+            local_name,
+            close,
+        ));
+        let Some(close_index) = close_index else {
+            break;
+        };
+        cursor = close_index.saturating_add(1);
+    }
+    PendingViewFragmentProjection::new(part_modifiers.into_boxed_slice())
+}
+
+fn project_view_part_local_name(
+    parser: &DocumentParser<'_, '_>,
+    missing_at: usize,
+    start: usize,
+    end: usize,
+) -> PendingViewPartLocalName {
+    let significant = (start..end)
+        .filter(|index| {
+            parser
+                .token_at(*index)
+                .is_some_and(|token| !is_trivia(token.kind()))
+        })
+        .collect::<Vec<_>>();
+    if significant.is_empty() {
+        return PendingViewPartLocalName::Missing(SourceRange::new(missing_at, missing_at));
+    }
+    let valid = significant.iter().enumerate().all(|(ordinal, index)| {
+        parser.token_at(*index).is_some_and(|token| {
+            if ordinal % 2 == 0 {
+                token.kind() == SyntaxKind::IdentifierToken
+            } else {
+                parser.text_of(token) == "."
+            }
+        })
+    }) && significant.len() % 2 == 1;
+    let source = token_range(parser, start, end);
+    if valid {
+        PendingViewPartLocalName::Present(source)
+    } else {
+        PendingViewPartLocalName::Invalid(source)
+    }
+}
+
+fn view_value_end(parser: &DocumentParser<'_, '_>, start: usize, body_end: usize) -> usize {
     let mut cursor = start;
     loop {
         let end =
@@ -429,7 +530,7 @@ fn view_value_end(parser: &ShadowDocumentParser<'_, '_>, start: usize, body_end:
 }
 
 fn emit_missing_keyword(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
     spelling: &'static str,
     code: &'static str,
@@ -446,15 +547,22 @@ fn emit_missing_keyword(
         at,
     });
     parser.finish();
-    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-        code,
-        SourceRange::new(at, at),
-        message,
-    )));
+    let primary = parser
+        .current()
+        .map_or(SourceRange::new(at, at), LexToken::range);
+    let diagnostic = PendingSyntaxDiagnostic::new(code, primary, message);
+    let diagnostic = if spelling == "as" {
+        diagnostic
+            .with_expected(["as public_name"])
+            .with_suggestions([PendingSyntaxSuggestion::new("use as public_name syntax")])
+    } else {
+        diagnostic
+    };
+    parser.push(SyntaxEvent::Diagnostic(diagnostic));
     SourceRange::new(at, at)
 }
 
-fn token_range(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
+fn token_range(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
     let first = (start..end).find_map(|index| {
         parser
             .token_at(index)
@@ -485,7 +593,7 @@ const fn is_trivia(kind: SyntaxKind) -> bool {
     )
 }
 
-fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>, recovery_ordinal: u32) {
+fn emit_trailing_recovery(parser: &mut DocumentParser<'_, '_>, recovery_ordinal: u32) {
     parser.bump_trivia();
     if parser.is_at_end() {
         return;

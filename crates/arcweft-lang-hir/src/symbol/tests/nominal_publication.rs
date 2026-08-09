@@ -22,11 +22,13 @@ fn nominal_publication_matrix_rejects_family_specific_duplicates() {
 
     for (test_id, source) in cases {
         let (document, project) = project(source);
-        let report =
-            ProjectSymbolTable::link(&project, &declarations(&document, Vec::new(), test_id))
-                .expect_err(&format!(
-                    "{test_id}: conflicting nominal declarations must not publish"
-                ));
+        let report = ProjectSymbolTable::link(
+            project.view(),
+            &declarations(&document, Vec::new(), test_id),
+        )
+        .expect_err(&format!(
+            "{test_id}: conflicting nominal declarations must not publish"
+        ));
         assert!(
             report.diagnostics().iter().any(|diagnostic| matches!(
                 diagnostic,
@@ -61,7 +63,7 @@ fn nominal_publication_matrix_preserves_nominal_visibility_boundaries() {
         ("glob_consumer", "use crate.glob_origin.*\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "PUB-nominal-visibility"),
     )
     .unwrap_or_else(|error| panic!("PUB-VIS-PUBLIC-POSITIVE: fixture must link: {error:?}"))
@@ -71,7 +73,7 @@ fn nominal_publication_matrix_preserves_nominal_visibility_boundaries() {
         .unwrap_or_else(|_| panic!("PUB-VIS-PRIVATE-OWNER: reference span must exist"));
     let resolve = |test_id: &str, module: &str, name: &str| {
         table
-            .resolve_type_target(&module_path(module), &type_path(name), source.clone())
+            .resolve_hir_type_target(&module_path(module), &type_path(name), source.clone())
             .unwrap_or_else(|error| panic!("{test_id}: `{name}` must resolve: {error:?}"))
     };
 
@@ -122,7 +124,7 @@ fn nominal_publication_matrix_preserves_nominal_visibility_boundaries() {
     );
     assert!(
         matches!(
-            table.resolve_type_target(
+            table.resolve_hir_type_target(
                 &module_path("glob_consumer"),
                 &type_path("PrivateGlob"),
                 source,
@@ -171,10 +173,11 @@ fn nominal_publication_matrix_rejects_missing_names_and_invalid_publication() {
 
     for (test_id, sources, code) in cases {
         let (documents, project) = project_modules(&sources);
-        let report = ProjectSymbolTable::link(&project, &empty_declarations(&documents, test_id))
-            .expect_err(&format!(
-                "{test_id}: invalid publication must not produce a symbol table"
-            ));
+        let report =
+            ProjectSymbolTable::link(project.view(), &empty_declarations(&documents, test_id))
+                .expect_err(&format!(
+                    "{test_id}: invalid publication must not produce a symbol table"
+                ));
         assert!(
             report
                 .diagnostics()
@@ -195,13 +198,15 @@ fn nominal_publication_diagnostics_are_independent_of_module_construction_order(
         ("right", ""),
     ];
     let (documents, project) = project_modules(&sources);
-    let original = ProjectSymbolTable::link(&project, &empty_declarations(&documents, TEST_ID))
-        .expect_err("both missing imports reject publication");
+    let original =
+        ProjectSymbolTable::link(project.view(), &empty_declarations(&documents, TEST_ID))
+            .expect_err("both missing imports reject publication");
 
     let reversed_sources = [sources[2], sources[1], sources[0]];
     let (documents, project) = project_modules(&reversed_sources);
-    let reordered = ProjectSymbolTable::link(&project, &empty_declarations(&documents, TEST_ID))
-        .expect_err("module construction order cannot change typed publication errors");
+    let reordered =
+        ProjectSymbolTable::link(project.view(), &empty_declarations(&documents, TEST_ID))
+            .expect_err("module construction order cannot change typed publication errors");
 
     assert_eq!(
         original, reordered,
@@ -213,7 +218,7 @@ fn nominal_publication_diagnostics_are_independent_of_module_construction_order(
 fn nominal_publication_matrix_rejects_external_and_module_name_collisions() {
     let (document, project) = project("enum Thing { One }\n");
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &declarations(
             &document,
             vec![external_seed(
@@ -235,7 +240,7 @@ fn nominal_publication_matrix_rejects_external_and_module_name_collisions() {
 
     let (documents, project) = project_modules(&[("", "type Thing = i32\n"), ("Thing", "")]);
     let report = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "PUB-CROSS-MODULE"),
     )
     .expect_err("PUB-CROSS-MODULE: child module and nominal collision must not publish");
@@ -253,18 +258,20 @@ fn nominal_publication_rejects_callable_collisions_atomically() {
     const TEST_ID: &str = "PUB-CROSS-CALLABLE";
     let (document, project) = project(concat!("fn Thing() -> Unit { () }\n", "struct Thing {}\n",));
 
-    let report = ProjectSymbolTable::link(&project, &declarations(&document, Vec::new(), TEST_ID))
-        .expect_err("a callable and nominal cannot share the direct project symbol namespace");
+    let report = ProjectSymbolTable::link(
+        project.view(),
+        &declarations(&document, Vec::new(), TEST_ID),
+    )
+    .expect_err("a callable and nominal cannot share the direct project symbol namespace");
 
     assert!(
         report.diagnostics().iter().any(|diagnostic| matches!(
             diagnostic,
             ProjectSymbolLinkError::DuplicateDeclaration {
                 name,
-                first,
-                duplicate,
+                sites,
                 ..
-            } if name == "Thing" && first != duplicate
+            } if name == "Thing" && sites.len() == 2 && sites[0] != sites[1]
         )),
         "{TEST_ID}: collision is a source-related typed diagnostic: {report:?}",
     );
@@ -285,7 +292,7 @@ fn nominal_publication_rejects_named_import_of_an_ambiguous_glob_binding() {
         ("middle", "pub use crate.left.*\npub use crate.right.*\n"),
     ]);
 
-    let report = ProjectSymbolTable::link(&project, &empty_declarations(&documents, TEST_ID))
+    let report = ProjectSymbolTable::link(project.view(), &empty_declarations(&documents, TEST_ID))
         .expect_err("a named import cannot select an ambiguous glob binding");
 
     assert!(

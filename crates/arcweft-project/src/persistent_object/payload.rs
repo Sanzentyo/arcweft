@@ -38,23 +38,22 @@ pub struct ParsedSyntaxObject {
 /// Path-free syntax parser counters and source dimensions.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SyntaxStatsObject {
-    pub bytes: u64,
-    pub lines: u64,
-    pub cst_lex_passes: u64,
-    pub punctuation_scans: u64,
-    pub punctuation_scan_bytes: u64,
-    pub line_owned_bytes: u64,
-    pub block_owned_bytes: u64,
-    pub raw_owned_bytes: u64,
-    pub wiki_scan_performed: u64,
-    pub dialogue_rescue_expr_parse_attempts: u64,
-    pub numeric_seq_summaries: u64,
+    pub accepted_source_bytes: u64,
+    pub lexer_tokens: u64,
+    pub grammar_events: u64,
+    pub top_level_items: u64,
+    pub statements: u64,
+    pub expressions: u64,
+    pub type_nodes: u64,
+    pub pattern_nodes: u64,
+    pub identity_bearing_nodes: u64,
+    pub diagnostic_identities: u64,
 }
 
 /// Compact deterministic parse evidence for later cache validation.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ParsedSyntaxEvidenceObject {
-    pub root_kind: String,
+    pub root_kind: u32,
     pub cst_shape_digest: BuildDigest,
     pub line_index_digest: BuildDigest,
     pub cst_node_count: u64,
@@ -63,7 +62,6 @@ pub struct ParsedSyntaxEvidenceObject {
     pub typed_attribute_count: u64,
     pub typed_use_count: u64,
     pub typed_item_count: u64,
-    pub wiki_link_count: u64,
 }
 
 /// Deterministic HIR-body exact fact payload.

@@ -1,6 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::kinds::SyntaxKind;
 
@@ -41,8 +41,7 @@ impl Threshold for Score {
     }
 }
 ";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::TraitItem), 2);
@@ -69,8 +68,7 @@ fn trait_receivers_use_binding_patterns_without_inventing_parameter_types() {
     fn exclusive(&mut self) -> Self
 }
 ";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::FunctionItem), 4);
@@ -89,8 +87,7 @@ fn member_prefixes_and_semicolon_separators_keep_distinct_typed_members() {
     type Item; fn current(&self) -> Self::Item;
 }
 ";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::DocBlock), 1);
@@ -110,8 +107,7 @@ fn missing_impl_associated_target_is_typed_without_losing_the_next_item() {
         "}\n",
         "proof next() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ImplItem), 1);
@@ -139,8 +135,7 @@ fn invalid_member_recovers_at_the_next_member_line() {
     fn current(self) -> Self::Item
 }
 ";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ErrorItem), 1);
@@ -162,8 +157,7 @@ fn unclosed_impl_synchronizes_before_the_following_declaration() {
         "proof next() = ()\n",
     );
     let next = source.find("proof next").unwrap();
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ImplItem), 1);
@@ -183,8 +177,7 @@ fn associated_type_and_method_tails_are_typed_recovery_nodes() {
         "    fn current(self) -> T { self } unexpected\n",
         "}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::ErrorNode), 2);

@@ -10,6 +10,7 @@ use crate::patch::PatchCompatibility;
 use crate::{ArcweftBundle, BundleAdapterHostCall, BundleAdapterManifest, BundleManifest};
 use arcweft_core::awbc::schema::{
     AwbcEntryKind, AwbcEntryTarget, AwbcFunctionKind, AwbcProgram, AwbcRuntimeType,
+    AwbcVariantIdentity,
 };
 use arcweft_core::bytecode::BytecodeRuntimeLayout;
 use serde::{Deserialize, Serialize};
@@ -80,6 +81,8 @@ pub enum RuntimeValueKind {
     Sequence,
     Record,
     Variant,
+    Choice,
+    Nominal,
     Matrix,
     Tensor,
     TaskHandle,
@@ -946,6 +949,8 @@ impl RuntimeValueKind {
             Self::TaskHandle => 115,
             Self::NeedHandle => 116,
             Self::Dynamic => 117,
+            Self::Choice => 118,
+            Self::Nominal => 119,
         }
     }
 
@@ -968,6 +973,8 @@ impl RuntimeValueKind {
             115 => Some(Self::TaskHandle),
             116 => Some(Self::NeedHandle),
             117 => Some(Self::Dynamic),
+            118 => Some(Self::Choice),
+            119 => Some(Self::Nominal),
             _ => None,
         }
     }
@@ -1064,9 +1071,9 @@ fn runtime_type_declaration(
         value_kind: runtime_value_kind(ty),
         layout_digest: serde_digest(ty)?,
         compatibility: match ty {
-            AwbcRuntimeType::Record { .. } | AwbcRuntimeType::Variant { .. } => {
-                TypeCompatibilityLabel::RestartRequired
-            }
+            AwbcRuntimeType::Record { .. }
+            | AwbcRuntimeType::Variant { .. }
+            | AwbcRuntimeType::Nominal { .. } => TypeCompatibilityLabel::RestartRequired,
             _ => TypeCompatibilityLabel::CodeCompatible,
         },
     })
@@ -1074,8 +1081,18 @@ fn runtime_type_declaration(
 
 fn runtime_type_public_id(program: &AwbcProgram, ty: &AwbcRuntimeType) -> Option<String> {
     match ty {
-        AwbcRuntimeType::Record { public_id, .. } | AwbcRuntimeType::Variant { public_id, .. } => {
+        AwbcRuntimeType::Record { public_id, .. } => {
             public_id.and_then(|id| program.strings.get(id.index()).cloned())
+        }
+        AwbcRuntimeType::Variant { owner, .. } => match owner {
+            AwbcVariantIdentity::Nominal { public_id, .. } => {
+                program.strings.get(public_id.index()).cloned()
+            }
+            AwbcVariantIdentity::Option => Some("Option".to_owned()),
+            AwbcVariantIdentity::Result => Some("Result".to_owned()),
+        },
+        AwbcRuntimeType::Nominal { public_id, .. } => {
+            program.strings.get(public_id.index()).cloned()
         }
         _ => None,
     }
@@ -1095,6 +1112,8 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeType::Sequence(_) => RuntimeValueKind::Sequence,
         AwbcRuntimeType::Record { .. } => RuntimeValueKind::Record,
         AwbcRuntimeType::Variant { .. } => RuntimeValueKind::Variant,
+        AwbcRuntimeType::Choice(_) => RuntimeValueKind::Choice,
+        AwbcRuntimeType::Nominal { .. } => RuntimeValueKind::Nominal,
         AwbcRuntimeType::MatrixF32 | AwbcRuntimeType::MatrixF64 => RuntimeValueKind::Matrix,
         AwbcRuntimeType::TensorF32 | AwbcRuntimeType::TensorF64 => RuntimeValueKind::Tensor,
         AwbcRuntimeType::TaskHandle => RuntimeValueKind::TaskHandle,

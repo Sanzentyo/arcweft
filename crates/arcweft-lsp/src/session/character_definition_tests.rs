@@ -15,10 +15,15 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+const CHARACTER_REFERENCE_SOURCE: &str = "flow @flow.main main {\n    let hero = show(@character.akane)\n}\n\
+entry server @entry.server.main {\n    goto @flow.main\n}\n";
+const CHARACTER_MEMBER_SOURCE: &str = "flow @flow.main main {\n    let hero = show(@character.akane, look = .normal)\n}\n\
+entry server @entry.server.main {\n    goto @flow.main\n}\n";
+
 #[test]
 fn character_definition_cache_hit_replays_identical_shared_work() {
     let project = CharacterDefinitionProject::new("character-cache-receipt");
-    let source = "flow @flow.main main {\n    let hero = @character.akane\n}\n";
+    let source = CHARACTER_REFERENCE_SOURCE;
     project.write_project(source, character_manifest());
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(
@@ -102,7 +107,7 @@ fn character_definition_cache_hit_replays_identical_shared_work() {
 #[test]
 fn character_owner_definition_returns_exact_manifest_location_link() {
     let project = CharacterDefinitionProject::new("character-owner-link");
-    let source = "flow @flow.main main {\n    let hero = @character.akane\n}\n";
+    let source = CHARACTER_REFERENCE_SOURCE;
     let manifest = character_manifest();
     project.write_project(source, manifest);
     let uri = file_uri(&project.path("src/main.arcw"));
@@ -142,7 +147,7 @@ fn character_owner_definition_returns_exact_manifest_location_link() {
 #[test]
 fn character_definition_rejects_changed_target_without_partial_location() {
     let project = CharacterDefinitionProject::new("character-stale-target");
-    let source = "flow @flow.main main {\n    let hero = @character.akane\n}\n";
+    let source = CHARACTER_REFERENCE_SOURCE;
     let manifest = character_manifest();
     project.write_project(source, manifest);
     let uri = file_uri(&project.path("src/main.arcw"));
@@ -172,7 +177,7 @@ fn character_definition_rejects_changed_target_without_partial_location() {
 #[test]
 fn stale_target_request_schedules_a_complete_profile_rebuild() {
     let project = CharacterDefinitionProject::new("character-stale-rebuild");
-    let source = "flow @flow.main main {\n    let hero = @character.akane\n}\n";
+    let source = CHARACTER_REFERENCE_SOURCE;
     let manifest = character_manifest();
     project.write_project(source, manifest);
     let uri = file_uri(&project.path("src/main.arcw"));
@@ -220,7 +225,7 @@ fn stale_target_request_schedules_a_complete_profile_rebuild() {
 #[test]
 fn valid_open_manifest_overlay_rebuilds_one_complete_definition_generation() {
     let project = CharacterDefinitionProject::new("character-manifest-overlay");
-    let source = "flow @flow.main main {\n    let hero = @character.akane\n}\n";
+    let source = CHARACTER_REFERENCE_SOURCE;
     let disk_manifest = character_manifest();
     project.write_project(source, disk_manifest);
     let source_uri = file_uri(&project.path("src/main.arcw"));
@@ -265,7 +270,7 @@ fn valid_open_manifest_overlay_rebuilds_one_complete_definition_generation() {
 #[test]
 fn invalid_manifest_overlay_preserves_the_last_accepted_generation() {
     let project = CharacterDefinitionProject::new("character-invalid-overlay");
-    let source = "flow @flow.main main {\n    let hero = @character.akane\n}\n";
+    let source = CHARACTER_REFERENCE_SOURCE;
     let disk_manifest = character_manifest();
     project.write_project(source, disk_manifest);
     let source_uri = file_uri(&project.path("src/main.arcw"));
@@ -303,7 +308,7 @@ fn invalid_manifest_overlay_preserves_the_last_accepted_generation() {
 #[test]
 fn closing_manifest_overlay_rebuilds_remaining_profiles_from_disk() {
     let project = CharacterDefinitionProject::new("character-overlay-close");
-    let source = "flow @flow.main main {\n    let hero = @character.akane\n}\n";
+    let source = CHARACTER_REFERENCE_SOURCE;
     let disk_manifest = character_manifest();
     project.write_project(source, disk_manifest);
     let source_uri = file_uri(&project.path("src/main.arcw"));
@@ -347,7 +352,7 @@ fn closing_manifest_overlay_rebuilds_remaining_profiles_from_disk() {
 #[test]
 fn globally_unique_local_member_resolves_through_typed_member_index() {
     let project = CharacterDefinitionProject::new("character-local-member");
-    let source = "flow @flow.main main {\n    let look = .normal\n}\n";
+    let source = CHARACTER_MEMBER_SOURCE;
     let manifest = character_manifest();
     project.write_project(source, manifest);
     let uri = file_uri(&project.path("src/main.arcw"));
@@ -525,8 +530,8 @@ visibility = "package"
 demand = "required"
 
 [profiles.game]
-kind = "game"
-entry = "@entry.game.main"
+kind = "server"
+entry = "@entry.server.main"
 source = "src/main.arcw"
 
 [profiles.game.content.characters]

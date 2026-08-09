@@ -1,6 +1,7 @@
 //! Private typed identity construction for runtime assertion lowering.
 
 use arcweft_core::effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile};
+use arcweft_core::plan::FlowRuntimeId;
 use arcweft_lang_hir::symbol::{CallableDeclarationId, CallablePackageId};
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 
@@ -85,6 +86,42 @@ pub(crate) fn derive_runtime_assertion_guard(
         profile,
     )
     .derive()
+}
+
+/// Derives an assertion guard for a structural Flow without fabricating an
+/// ordinary callable declaration identity.
+pub(crate) fn derive_runtime_flow_assertion_guard(
+    package: &CallablePackageId,
+    module: &CanonicalModulePath,
+    flow: &FlowRuntimeId,
+    assertion_ordinal: u32,
+    condition: AssertionConditionIndex,
+    profile: RuntimeAssertionProfile,
+) -> RuntimeAssertionGuardId {
+    let mut hasher = blake3::Hasher::new_derive_key(RUNTIME_ASSERTION_GUARD_CONTEXT);
+    hasher.update(&RUNTIME_ASSERTION_GUARD_SCHEMA.to_le_bytes());
+    hash_text(&mut hasher, package.as_str());
+    hash_module(&mut hasher, module);
+    hash_text(&mut hasher, "structural-flow");
+    hash_len(&mut hasher, flow.path().segments().len());
+    for segment in flow.path().segments() {
+        hash_text(&mut hasher, segment.as_str());
+    }
+    hasher.update(&assertion_ordinal.to_le_bytes());
+    hasher.update(&[condition.get()]);
+    hasher.update(&[match profile {
+        RuntimeAssertionProfile::Always => 0,
+        RuntimeAssertionProfile::DebugOnly => 1,
+    }]);
+
+    let digest = hasher.finalize();
+    let mut bytes = [0_u8; 16];
+    bytes.copy_from_slice(&digest.as_bytes()[..16]);
+    if bytes == [0; 16] {
+        bytes[15] = 1;
+    }
+    RuntimeAssertionGuardId::try_from_bytes(bytes)
+        .expect("runtime Flow assertion guard derivation replaces the reserved zero value")
 }
 
 fn hash_callable(hasher: &mut blake3::Hasher, callable: &CallableDeclarationId) {

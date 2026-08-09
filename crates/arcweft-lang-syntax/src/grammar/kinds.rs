@@ -186,7 +186,6 @@ define_syntax_kinds! {
     ReturnStatement,
     OutStatement,
     GotoStatement,
-    ThreadStatement,
     DeferBlockStatement,
     DeferStatement,
     YieldStatement,
@@ -609,7 +608,6 @@ impl SyntaxKind {
             | Self::ReturnStatement
             | Self::OutStatement
             | Self::GotoStatement
-            | Self::ThreadStatement
             | Self::DeferBlockStatement
             | Self::DeferStatement
             | Self::YieldStatement
@@ -819,7 +817,6 @@ impl SyntaxKind {
             | Self::ReturnStatement
             | Self::OutStatement
             | Self::GotoStatement
-            | Self::ThreadStatement
             | Self::DeferBlockStatement
             | Self::DeferStatement
             | Self::YieldStatement
@@ -879,7 +876,75 @@ impl SyntaxKind {
             | Self::MarkTriggerPattern
             | Self::SelectTriggerPattern
             | Self::TaskTriggerPattern
-            | Self::ScopeTriggerPattern => Some(AstTag::DeclarationPart),
+            | Self::ScopeTriggerPattern
+            | Self::Visibility
+            | Self::DeclarationHeader
+            | Self::DeclarationPublicId
+            | Self::SurfaceAlias
+            | Self::GenericParameterGroup
+            | Self::GenericParameter
+            | Self::LifetimeParameter
+            | Self::TypeParameter
+            | Self::FixedParameterGroup
+            | Self::Parameter
+            | Self::WhereClause
+            | Self::WherePredicate
+            | Self::ReturnType
+            | Self::RequiresClause
+            | Self::EnsuresClause
+            | Self::InvariantClause
+            | Self::AssumeClause
+            | Self::ReadsClause
+            | Self::EffectsClause
+            | Self::NoEffectClause
+            | Self::ModifiesClause
+            | Self::DecreasesClause
+            | Self::ResourceFieldInitializer
+            | Self::CharacterDisplayNameMember
+            | Self::ViewExportBlock
+            | Self::ViewExportDeclaration
+            | Self::ViewFragment
+            | Self::ActionSignature
+            | Self::ActivityModeMember
+            | Self::ActivityLifecycleMember
+            | Self::ActivityInputBlock
+            | Self::ActivityOutputBlock
+            | Self::ActivityPort
+            | Self::ActivityContractBlock
+            | Self::SignalObservableType
+            | Self::MetricKind
+            | Self::MetricUnitMember
+            | Self::MetricLabelsBlock
+            | Self::MetricLabel
+            | Self::MetricBucketsMember
+            | Self::LayerKindNode
+            | Self::LayerMember
+            | Self::LayerPolicyValue
+            | Self::RetainedReference
+            | Self::StyleTokenDeclaration
+            | Self::StyleRule
+            | Self::StyleSelector
+            | Self::StyleSelectorSequence
+            | Self::StylePropertyDeclaration
+            | Self::StyleEnvironmentBlock
+            | Self::StyleEnvironmentCondition
+            | Self::StyleEnvironmentClause
+            | Self::EntryRoleBinding
+            | Self::EntryGoto
+            | Self::EntryRoute
+            | Self::EntryRouteBinding
+            | Self::EntryOption
+            | Self::PostfixBracketPayload
+            | Self::DialogueContent
+            | Self::DialogueText
+            | Self::DialogueRaw
+            | Self::DialogueEscape
+            | Self::DialogueRuby
+            | Self::DialogueInterpolation
+            | Self::DialogueControl
+            | Self::DialogueMark
+            | Self::DialogueLineBreak
+            | Self::DialogueError => Some(AstTag::DeclarationPart),
             Self::LiteralExpression
             | Self::EntityReferenceExpression
             | Self::LifetimePathExpression
@@ -1008,74 +1073,6 @@ impl SyntaxKind {
             | Self::MissingDeclarationId
             | Self::MissingMemberValue
             | Self::ErrorNode => Some(AstTag::Recovery),
-            Self::Visibility
-            | Self::DeclarationHeader
-            | Self::DeclarationPublicId
-            | Self::SurfaceAlias
-            | Self::GenericParameterGroup
-            | Self::GenericParameter
-            | Self::LifetimeParameter
-            | Self::TypeParameter
-            | Self::FixedParameterGroup
-            | Self::Parameter
-            | Self::WhereClause
-            | Self::WherePredicate
-            | Self::ReturnType
-            | Self::RequiresClause
-            | Self::EnsuresClause
-            | Self::InvariantClause
-            | Self::AssumeClause
-            | Self::ReadsClause
-            | Self::EffectsClause
-            | Self::NoEffectClause
-            | Self::ModifiesClause
-            | Self::DecreasesClause
-            | Self::ResourceFieldInitializer
-            | Self::CharacterDisplayNameMember
-            | Self::ViewExportBlock
-            | Self::ViewExportDeclaration
-            | Self::ViewFragment
-            | Self::ActionSignature
-            | Self::ActivityModeMember
-            | Self::ActivityLifecycleMember
-            | Self::ActivityInputBlock
-            | Self::ActivityOutputBlock
-            | Self::ActivityPort
-            | Self::ActivityContractBlock
-            | Self::SignalObservableType
-            | Self::MetricKind
-            | Self::MetricUnitMember
-            | Self::MetricLabelsBlock
-            | Self::MetricLabel
-            | Self::MetricBucketsMember
-            | Self::LayerKindNode
-            | Self::LayerMember
-            | Self::LayerPolicyValue
-            | Self::RetainedReference
-            | Self::StyleTokenDeclaration
-            | Self::StyleRule
-            | Self::StyleSelector
-            | Self::StyleSelectorSequence
-            | Self::StylePropertyDeclaration
-            | Self::StyleEnvironmentBlock
-            | Self::StyleEnvironmentCondition
-            | Self::StyleEnvironmentClause
-            | Self::EntryRoleBinding
-            | Self::EntryGoto
-            | Self::EntryRoute
-            | Self::EntryRouteBinding
-            | Self::EntryOption
-            | Self::PostfixBracketPayload
-            | Self::DialogueContent
-            | Self::DialogueText
-            | Self::DialogueRaw
-            | Self::DialogueEscape
-            | Self::DialogueRuby
-            | Self::DialogueInterpolation
-            | Self::DialogueControl
-            | Self::DialogueMark
-            | Self::DialogueLineBreak
-            | Self::DialogueError => Some(AstTag::DeclarationPart),
             Self::ItemList
             | Self::StatementList
             | Self::ExpressionList
@@ -1177,7 +1174,6 @@ impl SyntaxKind {
                 | Self::ReturnStatement
                 | Self::OutStatement
                 | Self::GotoStatement
-                | Self::ThreadStatement
                 | Self::DeferBlockStatement
                 | Self::DeferStatement
                 | Self::YieldStatement

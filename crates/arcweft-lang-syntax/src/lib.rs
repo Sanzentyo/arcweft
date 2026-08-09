@@ -7,9 +7,7 @@
 pub mod assertion;
 pub mod ast;
 pub mod attachment;
-mod cache_facts;
 pub mod cst;
-pub mod expr;
 pub mod expressions;
 pub mod grammar;
 pub mod id_ref;
@@ -18,12 +16,7 @@ pub mod lint;
 pub mod literal;
 pub mod name;
 pub mod parser;
-pub mod pattern;
 pub mod patterns;
 pub mod reference;
-pub mod source;
 pub mod text;
 pub mod types;
-
-#[cfg(test)]
-mod tests;

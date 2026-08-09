@@ -7,9 +7,12 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, S
 
 use super::{
     HirProject, HirProjectError, HirProjectExecutionError, HirProjectModule, HirProjectModuleError,
+    exported_parts, styles,
 };
 use crate::database::HirDatabase;
-use crate::lower::{HirModuleKey, LoweringRequest};
+use crate::final_lowering::stage_unpublished_module_for_invariant_test;
+use crate::item::{HirDeclarationMemberKind, HirItemKind};
+use crate::lowering::{HirModuleKey, LoweringRequest};
 use crate::module::HirModule;
 use crate::symbol::CallablePackageId;
 
@@ -50,12 +53,13 @@ fn lower(
         path.clone(),
         parsed.document().identity().id().clone(),
     );
-    let mut transaction = database
-        .stage_final_hir(LoweringRequest::try_new(key, parsed).unwrap())
-        .unwrap();
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    let mut transaction = stage_unpublished_module_for_invariant_test(
+        database,
+        LoweringRequest::try_new(key, parsed).unwrap(),
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .unwrap();
+    transaction.lower_parsed_source_items(parsed).unwrap();
     transaction.finish(database).unwrap().into_module()
 }
 
@@ -65,18 +69,177 @@ fn bind(
     path: &CanonicalModulePath,
     module: Arc<HirModule>,
 ) -> HirProjectModule {
-    HirProjectModule::try_new(
-        database,
-        package,
-        path,
-        module.provenance().source_identity(),
-        Arc::clone(&module),
-    )
-    .unwrap()
+    let source_identity = module.provenance().source_identity().clone();
+    HirProjectModule::try_new(database, package, path, &source_identity, module).unwrap()
+}
+
+fn root_module_fixture(
+    label: &str,
+) -> (
+    HirDatabase,
+    CallablePackageId,
+    CanonicalModulePath,
+    Arc<HirModule>,
+) {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        &format!("arcweft-test://proof/final-project/{label}"),
+        &format!("{label}.arcw"),
+        "fn accepted() {}\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &package, &root_path);
+    (database, package, root_path, module)
 }
 
 #[test]
-fn project_preserves_exact_module_leases_and_item_ids_in_canonical_order() {
+fn project_module_rejects_package_mismatch() {
+    let (database, package, root_path, module) = root_module_fixture("wrong-package");
+    let wrong_package = CallablePackageId::try_new("another-package").unwrap();
+    let retained = Arc::clone(&module);
+    assert!(matches!(
+        HirProjectModule::try_new(
+            &database,
+            &wrong_package,
+            &root_path,
+            module.provenance().source_identity(),
+            Arc::clone(&module),
+        ),
+        Err(HirProjectModuleError::WrongPackage {
+            expected,
+            actual,
+        }) if expected == wrong_package && actual == package
+    ));
+    assert!(Arc::ptr_eq(&module, &retained));
+}
+
+#[test]
+fn project_module_rejects_path_mismatch() {
+    let (database, package, root_path, module) = root_module_fixture("wrong-path");
+    let child_path = root_path.join(ModuleSegment::new("child").unwrap());
+    let retained = Arc::clone(&module);
+    assert!(matches!(
+        HirProjectModule::try_new(
+            &database,
+            &package,
+            &child_path,
+            module.provenance().source_identity(),
+            Arc::clone(&module),
+        ),
+        Err(HirProjectModuleError::WrongPath {
+            expected,
+            actual,
+        }) if expected == child_path && actual == root_path
+    ));
+    assert!(Arc::ptr_eq(&module, &retained));
+}
+
+#[test]
+fn project_module_rejects_source_mismatch() {
+    let (database, package, root_path, module) = root_module_fixture("wrong-source");
+    let expected = source_document(
+        "arcweft-test://proof/final-project/wrong-source",
+        "wrong-source.arcw",
+        "fn changed() {}\n",
+    )
+    .identity()
+    .clone();
+    let actual = module.provenance().source_identity().clone();
+    let retained = Arc::clone(&module);
+    assert_eq!(
+        HirProjectModule::try_new(
+            &database,
+            &package,
+            &root_path,
+            &expected,
+            Arc::clone(&module),
+        )
+        .err(),
+        Some(HirProjectModuleError::WrongSource {
+            module: root_path,
+            expected,
+            actual,
+        })
+    );
+    assert!(Arc::ptr_eq(&module, &retained));
+}
+
+#[test]
+fn project_requires_canonical_root_module() {
+    let (mut database, package, root_path, _) = root_module_fixture("missing-root-seed");
+    let child_path = root_path.join(ModuleSegment::new("child").unwrap());
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let child_source = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/missing-root-child",
+        "missing-root-child.arcw",
+        "fn child() {}\n",
+    );
+    let child = lower(&mut database, &child_source, &package, &child_path);
+    assert_eq!(
+        HirProject::try_new(
+            &database,
+            package.clone(),
+            [bind(&database, &package, &child_path, child)],
+        )
+        .err(),
+        Some(HirProjectError::MissingRootModule)
+    );
+}
+
+#[test]
+fn project_rejects_duplicate_path_and_source() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let child_path = root_path.join(ModuleSegment::new("child").unwrap());
+    let mut syntax = SyntaxDatabase::try_new().unwrap();
+    let parsed = parse_initial(
+        &mut syntax,
+        "arcweft-test://proof/final-project/duplicate-owner",
+        "duplicate-owner.arcw",
+        "fn shared() {}\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let root = lower(&mut database, &parsed, &package, &root_path);
+    let child = lower(&mut database, &parsed, &package, &child_path);
+
+    assert_eq!(
+        HirProject::try_new(
+            &database,
+            package.clone(),
+            [
+                bind(&database, &package, &root_path, Arc::clone(&root)),
+                bind(&database, &package, &root_path, Arc::clone(&root)),
+            ],
+        )
+        .err(),
+        Some(HirProjectError::DuplicateModule {
+            module: root_path.clone(),
+        })
+    );
+    assert_eq!(
+        HirProject::try_new(
+            &database,
+            package.clone(),
+            [
+                bind(&database, &package, &root_path, root),
+                bind(&database, &package, &child_path, child),
+            ],
+        )
+        .err(),
+        Some(HirProjectError::DuplicateSourceDocument {
+            document: parsed.document().identity().id().clone(),
+            first: root_path,
+            second: child_path,
+        })
+    );
+}
+
+#[test]
+fn ordered_project_iteration_preserves_module_ids() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();
     let child_path = root_path.join(ModuleSegment::new("child").unwrap());
@@ -125,7 +288,7 @@ fn project_preserves_exact_module_leases_and_item_ids_in_canonical_order() {
         project
             .view()
             .modules()
-            .map(|module| module.path().clone())
+            .map(|(path, _)| path.clone())
             .collect::<Vec<_>>(),
         [root_path.clone(), child_path.clone()]
     );
@@ -144,7 +307,7 @@ fn project_preserves_exact_module_leases_and_item_ids_in_canonical_order() {
     for (projected, expected) in project.view().items().take(2).zip(root_items) {
         assert_eq!(projected.id(), expected);
         assert!(std::ptr::eq(
-            projected.item().unwrap(),
+            projected.item(),
             root.resolve_item(expected).unwrap(),
         ));
     }
@@ -312,6 +475,10 @@ fn accepted_project_generation_remains_bound_to_its_original_exact_arc() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one project-admission matrix covers duplicates, limits, stale leases, and mixed databases"
+)]
 fn project_rejects_duplicates_limit_and_mixed_database() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();
@@ -451,7 +618,7 @@ fn project_rejects_duplicates_limit_and_mixed_database() {
 }
 
 #[test]
-fn recovered_project_remains_visible_but_has_no_executable_view() {
+fn project_view_allows_recovered_but_executable_view_rejects_first_canonical() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();
     let first_recovered_path = root_path.join(ModuleSegment::new("a_recovered").unwrap());
@@ -505,7 +672,7 @@ fn recovered_project_remains_visible_but_has_no_executable_view() {
         project
             .view()
             .modules()
-            .map(|module| module.path().clone())
+            .map(|(path, _)| path.clone())
             .collect::<Vec<_>>(),
         [root_path, first_recovered_path.clone(), last_recovered_path,]
     );
@@ -517,4 +684,104 @@ fn recovered_project_remains_visible_but_has_no_executable_view() {
             snapshot: first_snapshot,
         })
     );
+}
+
+fn project_with_view_exports_and_styles() -> (
+    HirProject,
+    Arc<HirModule>,
+    Arc<HirModule>,
+    CanonicalModulePath,
+    CanonicalModulePath,
+) {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let child_path = root_path.join(ModuleSegment::new("child").unwrap());
+    let mut root_syntax = SyntaxDatabase::try_new().unwrap();
+    let root_source = parse_initial(
+        &mut root_syntax,
+        "arcweft-test://proof/final-project/projections-root",
+        "root.arcw",
+        concat!(
+            "pub view Root() {\n",
+            "    export part panel as public.panel\n",
+            "}\n",
+            "pub style root_theme {}\n",
+        ),
+    );
+    let mut child_syntax = SyntaxDatabase::try_new().unwrap();
+    let child_source = parse_initial(
+        &mut child_syntax,
+        "arcweft-test://proof/final-project/projections-child",
+        "child.arcw",
+        concat!(
+            "pub view Child() {\n",
+            "    export part content as public.content\n",
+            "}\n",
+            "pub style child_theme {}\n",
+        ),
+    );
+    assert!(root_source.diagnostics().is_empty());
+    assert!(child_source.diagnostics().is_empty());
+
+    let mut database = HirDatabase::try_new().unwrap();
+    let root = lower(&mut database, &root_source, &package, &root_path);
+    let child = lower(&mut database, &child_source, &package, &child_path);
+    let project = HirProject::try_new(
+        &database,
+        package.clone(),
+        [
+            bind(&database, &package, &child_path, Arc::clone(&child)),
+            bind(&database, &package, &root_path, Arc::clone(&root)),
+        ],
+    )
+    .unwrap();
+    (project, root, child, root_path, child_path)
+}
+
+#[test]
+fn exported_parts_iterate_without_flattening() {
+    let (project, root, child, root_path, child_path) = project_with_view_exports_and_styles();
+    let root_item = root.source_ordered_items()[0];
+    let child_item = child.source_ordered_items()[0];
+    let projected = exported_parts(project.view()).collect::<Vec<_>>();
+
+    assert_eq!(projected.len(), 2);
+    assert_eq!(projected[0].module_path(), &root_path);
+    assert_eq!(projected[0].item(), root_item);
+    assert_eq!(projected[0].member().item(), root_item);
+    assert_eq!(projected[0].member().ordinal(), 0);
+    assert_eq!(projected[1].module_path(), &child_path);
+    assert_eq!(projected[1].item(), child_item);
+    assert_eq!(projected[1].member().item(), child_item);
+    assert_eq!(projected[1].member().ordinal(), 0);
+
+    for (module, part) in [(&root, projected[0]), (&child, projected[1])] {
+        let member = module.declaration_members().resolve(part.member()).unwrap();
+        let HirDeclarationMemberKind::ViewExport(expected) = member.kind() else {
+            panic!("projected View member changed family")
+        };
+        assert!(std::ptr::eq(part.part(), expected));
+    }
+}
+
+#[test]
+fn styles_iterate_without_flattening() {
+    let (project, root, child, root_path, child_path) = project_with_view_exports_and_styles();
+    let root_item = root.source_ordered_items()[1];
+    let child_item = child.source_ordered_items()[1];
+    let projected = styles(project.view()).collect::<Vec<_>>();
+
+    assert_eq!(projected.len(), 2);
+    assert_eq!(projected[0].module_path(), &root_path);
+    assert_eq!(projected[0].item(), root_item);
+    assert_eq!(projected[1].module_path(), &child_path);
+    assert_eq!(projected[1].item(), child_item);
+
+    for (module, style) in [(&root, projected[0]), (&child, projected[1])] {
+        let item = module.resolve_item(style.item()).unwrap();
+        let HirItemKind::Style(expected) = item.kind() else {
+            panic!("projected Style item changed family")
+        };
+        assert!(std::ptr::eq(style.style(), expected));
+    }
 }

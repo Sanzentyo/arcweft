@@ -21,7 +21,7 @@ pub use dialogue::{
     SyntaxBracketTerminator, SyntaxBuiltinRichTextFx, SyntaxBuiltinRichTextTag,
     SyntaxCandidateQuality, SyntaxDialogueApplicationForm, SyntaxDialogueApplicationProjection,
     SyntaxDialogueConfigurationArgumentPart, SyntaxDialogueContent, SyntaxDialogueContentIssue,
-    SyntaxDialogueContentProjection, SyntaxDialogueContentRecoveryBoundary, SyntaxDialogueControl,
+    SyntaxDialogueContentProjection, SyntaxDialogueContentRecoveryBoundary,
     SyntaxDialogueNodeProjection, SyntaxDialogueNodeSourcePart, SyntaxIndexProjection,
     SyntaxLineBreakKind, SyntaxPostfixBoundaryToken, SyntaxPostfixBracketProjection,
     SyntaxPostfixBracketRecoveryBoundary, SyntaxPostfixCandidateFailure,
@@ -172,18 +172,19 @@ impl ExpressionProjection {
             Self::Literal(literal) => literal.value().issue().is_some(),
             Self::EntityReference(reference) => reference.value().is_err(),
             Self::LifetimePath(path) => path.has_recovery(),
-            Self::ShortVariant(name) => name.is_err(),
+            Self::ShortVariant(name) | Self::NamedBlock(name) => name.is_err(),
             Self::Tuple(slots) | Self::BracketSequence(slots) => {
                 slots.iter().copied().any(SyntaxExpressionSlot::is_missing)
             }
             Self::NumericBracketSequence(sequence) => sequence.has_recovery(),
-            Self::ArrayRepeat(slots) => slots.iter().copied().any(SyntaxExpressionSlot::is_missing),
+            Self::ArrayRepeat(slots) | Self::Pipe(slots) => {
+                slots.iter().copied().any(SyntaxExpressionSlot::is_missing)
+            }
             Self::Call(call) => call.has_recovery(),
             Self::Select(member) => matches!(member, SyntaxSelectedMember::Missing),
             Self::Index(index) => index.has_recovery(),
             Self::DialogueContentApplication(application) => application.has_recovery(),
             Self::PostfixBracket(postfix) => postfix.has_recovery(),
-            Self::Pipe(slots) => slots.iter().copied().any(SyntaxExpressionSlot::is_missing),
             Self::Try { operand, .. }
             | Self::Await { operand, .. }
             | Self::Borrow { operand, .. }
@@ -231,7 +232,6 @@ impl ExpressionProjection {
                 closure.body().is_missing()
                     || closure.syntax().terminator() == SyntaxClosureTerminator::RecoveredMissing
             }
-            Self::NamedBlock(name) => name.is_err(),
             Self::Thread(thread) => thread.has_recovery(),
             Self::Unit
             | Self::Path
@@ -344,13 +344,14 @@ impl SyntaxParenthesizedCallProjection {
     }
 
     pub(crate) fn unresolved_dot(
+        separator: SyntaxAssociatedSeparator,
         member: Result<SyntaxName, SyntaxNameIssue>,
         explicit_type_application: Option<SyntaxCallTypeApplicationProjection>,
         arguments: Vec<SyntaxCallArgumentProjection>,
         terminator: SyntaxCallArgumentListTerminator,
     ) -> Self {
         Self {
-            callee: SyntaxCallCalleeProjection::UnresolvedDot { member },
+            callee: SyntaxCallCalleeProjection::UnresolvedDot { separator, member },
             explicit_type_application,
             arguments: arguments.into_boxed_slice(),
             terminator,
@@ -358,14 +359,19 @@ impl SyntaxParenthesizedCallProjection {
     }
 
     pub(crate) fn associated(
-        syntax: SyntaxAssociatedCallSyntax,
+        receiver: SyntaxAssociatedReceiver,
+        separator: SyntaxAssociatedSeparator,
         member: Result<SyntaxName, SyntaxNameIssue>,
         explicit_type_application: Option<SyntaxCallTypeApplicationProjection>,
         arguments: Vec<SyntaxCallArgumentProjection>,
         terminator: SyntaxCallArgumentListTerminator,
     ) -> Self {
         Self {
-            callee: SyntaxCallCalleeProjection::Associated { syntax, member },
+            callee: SyntaxCallCalleeProjection::Associated {
+                receiver,
+                separator,
+                member,
+            },
             explicit_type_application,
             arguments: arguments.into_boxed_slice(),
             terminator,
@@ -410,10 +416,12 @@ impl SyntaxParenthesizedCallProjection {
 pub enum SyntaxCallCalleeProjection {
     Ordinary,
     UnresolvedDot {
+        separator: SyntaxAssociatedSeparator,
         member: Result<SyntaxName, SyntaxNameIssue>,
     },
     Associated {
-        syntax: SyntaxAssociatedCallSyntax,
+        receiver: SyntaxAssociatedReceiver,
+        separator: SyntaxAssociatedSeparator,
         member: Result<SyntaxName, SyntaxNameIssue>,
     },
 }
@@ -422,7 +430,27 @@ impl SyntaxCallCalleeProjection {
     fn has_recovery(&self) -> bool {
         match self {
             Self::Ordinary => false,
-            Self::UnresolvedDot { member } | Self::Associated { member, .. } => member.is_err(),
+            Self::UnresolvedDot { member, .. } | Self::Associated { member, .. } => member.is_err(),
+        }
+    }
+}
+
+/// Source-level associated receiver presence before typed lowering.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SyntaxAssociatedReceiver {
+    Present,
+}
+
+/// Exact authored or recovered separator state of one associated Call.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum SyntaxAssociatedSeparator {
+    Present(SyntaxAssociatedCallSyntax),
+}
+
+impl SyntaxAssociatedSeparator {
+    pub const fn intended(self) -> SyntaxAssociatedCallSyntax {
+        match self {
+            Self::Present(syntax) => syntax,
         }
     }
 }

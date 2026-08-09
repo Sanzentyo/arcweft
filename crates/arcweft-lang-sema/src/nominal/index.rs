@@ -1,50 +1,43 @@
-//! Immutable project-wide index of accepted nominal-resolution facts.
+//! Immutable project-wide index of accepted final-HIR nominal-resolution facts.
 
 use std::collections::{BTreeMap, HashMap};
 
-use arcweft_lang_syntax::types::TypeRefNodePath;
+use arcweft_lang_hir::identity::TypeId;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
 
 use crate::types::TypeKind;
 
 use super::{
-    NominalAggregationLimits, NominalTypeDiagnostic, ResolvedTypeNode, TypeResolutionReport,
+    NominalAggregationLimits, NominalTypeDiagnostic, ResolvedTypeNode, ResolvedTypeRefOutcome,
+    TypeResolutionReport,
 };
 
-/// Exact address of one structural node inside an accepted authored type.
-#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+/// Exact final-HIR address of one node in an accepted resolution graph.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct NominalTypeNodeKey {
-    root: SourceSpan,
-    node: TypeRefNodePath,
+    root: TypeId,
+    node: TypeId,
 }
 
 /// Failure to combine one otherwise valid per-reference report into a project index.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NominalResolutionIndexError {
-    /// The same accepted root was resolved under two incompatible lexical contexts.
-    ConflictingRoot { root: SourceSpan },
+    /// The same final-HIR root was resolved under incompatible lexical contexts.
+    ConflictingRoot { root: TypeId },
+    /// A deliberately detached report cannot enter an accepted project index.
+    DetachedReport { root: TypeId },
     /// The bounded project-wide resolution-work budget was exhausted.
     WorkLimit {
         attempted: u64,
         maximum: u64,
-        root: SourceSpan,
-    },
-    /// A resolver node lost the accepted source evidence required by this index.
-    DetachedNode {
-        root: SourceSpan,
-        node: TypeRefNodePath,
+        root: TypeId,
     },
 }
 
 /// Accepted nominal facts retained by one type-check transaction.
-///
-/// Roots are keyed by their exact revision-bound source span. Structural node
-/// facts additionally retain their typed path within that root, avoiding both
-/// display parsing and ambiguous range-only lookup for nested parenthesized
-/// forms.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct NominalResolutionIndex {
-    reports: BTreeMap<SourceSpan, TypeResolutionReport>,
+    reports: BTreeMap<TypeId, TypeResolutionReport>,
     nodes: BTreeMap<NominalTypeNodeKey, ResolvedTypeNode>,
     diagnostics: Vec<NominalTypeDiagnostic>,
     omitted_diagnostics: u64,
@@ -53,21 +46,20 @@ pub struct NominalResolutionIndex {
 }
 
 impl NominalTypeNodeKey {
-    pub const fn new(root: SourceSpan, node: TypeRefNodePath) -> Self {
+    pub const fn new(root: TypeId, node: TypeId) -> Self {
         Self { root, node }
     }
 
-    pub const fn root(&self) -> &SourceSpan {
-        &self.root
+    pub const fn root(self) -> TypeId {
+        self.root
     }
 
-    pub const fn node(&self) -> &TypeRefNodePath {
-        &self.node
+    pub const fn node(self) -> TypeId {
+        self.node
     }
 }
 
 impl NominalResolutionIndex {
-    /// Empty index using the fixed production aggregation budget.
     pub fn production() -> Self {
         Self::with_limits(NominalAggregationLimits::PRODUCTION)
     }
@@ -83,53 +75,51 @@ impl NominalResolutionIndex {
         }
     }
 
-    /// Returns the complete report for one exact accepted authored root.
-    pub fn report(&self, root: &SourceSpan) -> Option<&TypeResolutionReport> {
-        self.reports.get(root)
+    /// Returns the complete report for one exact final-HIR root.
+    pub fn report(&self, root: TypeId) -> Option<&TypeResolutionReport> {
+        self.reports.get(&root)
     }
 
-    /// Returns the semantic type recovered for one exact accepted authored root.
-    pub fn recovered_type(&self, root: &SourceSpan) -> Option<&TypeKind> {
+    /// Returns the semantic type recovered for one exact final-HIR root.
+    pub fn recovered_type(&self, root: TypeId) -> Option<&TypeKind> {
         self.report(root)
             .map(|report| report.outcome().product().recovered())
     }
 
-    /// Returns one typed structural-node fact without reconstructing a path.
-    pub fn node(&self, root: &SourceSpan, node: &TypeRefNodePath) -> Option<&ResolvedTypeNode> {
-        self.nodes
-            .get(&NominalTypeNodeKey::new(root.clone(), node.clone()))
+    /// Returns one typed node fact without source-range reconstruction.
+    pub fn node(&self, root: TypeId, node: TypeId) -> Option<&ResolvedTypeNode> {
+        self.nodes.get(&NominalTypeNodeKey::new(root, node))
     }
 
-    /// Accepted roots in deterministic source order.
-    pub fn roots(&self) -> impl ExactSizeIterator<Item = &SourceSpan> {
-        self.reports.keys()
+    pub fn roots(&self) -> impl ExactSizeIterator<Item = TypeId> + '_ {
+        self.reports.keys().copied()
     }
 
-    /// Structural facts in deterministic root/path order.
-    pub fn nodes(&self) -> impl ExactSizeIterator<Item = (&NominalTypeNodeKey, &ResolvedTypeNode)> {
-        self.nodes.iter()
+    pub fn nodes(&self) -> impl ExactSizeIterator<Item = (NominalTypeNodeKey, &ResolvedTypeNode)> {
+        self.nodes.iter().map(|(key, node)| (*key, node))
     }
 
-    /// Bounded, deterministic project diagnostic inventory.
     pub fn diagnostics(&self) -> &[NominalTypeDiagnostic] {
         &self.diagnostics
     }
 
-    /// Diagnostics omitted by per-reference, per-document, or project caps.
     pub const fn omitted_diagnostics(&self) -> u64 {
         self.omitted_diagnostics
     }
 
-    /// Resolver work retained by the accepted transaction.
     pub const fn work_charged(&self) -> u64 {
         self.work_charged
     }
 
+    /// Publishes one accepted report under the exact root retained by the report itself.
     pub(crate) fn record(
         &mut self,
-        root: SourceSpan,
         report: TypeResolutionReport,
     ) -> Result<(), NominalResolutionIndexError> {
+        let root = report.outcome().product().root();
+        if matches!(report.outcome(), ResolvedTypeRefOutcome::Detached(_)) {
+            return Err(NominalResolutionIndexError::DetachedReport { root });
+        }
         if let Some(existing) = self.reports.get(&root) {
             return if existing == &report {
                 Ok(())
@@ -152,19 +142,8 @@ impl NominalResolutionIndex {
             .product()
             .nodes()
             .iter()
-            .map(|node| {
-                if node.source().project().is_none() {
-                    return Err(NominalResolutionIndexError::DetachedNode {
-                        root: root.clone(),
-                        node: node.node().clone(),
-                    });
-                }
-                Ok((
-                    NominalTypeNodeKey::new(root.clone(), node.node().clone()),
-                    node.clone(),
-                ))
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+            .map(|node| (NominalTypeNodeKey::new(root, node.node()), node.clone()))
+            .collect::<Vec<_>>();
 
         self.work_charged = attempted;
         self.nodes.extend(node_facts);
@@ -223,140 +202,5 @@ impl NominalResolutionIndex {
 impl Default for NominalResolutionIndex {
     fn default() -> Self {
         Self::production()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use std::sync::Arc;
-
-    use arcweft_lang_syntax::{ast::common::TextRange, types::TypeRefNodePath};
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
-
-    use crate::types::{TypeKind, TypePoisonId};
-
-    use super::{
-        NominalResolutionIndex, NominalResolutionIndexError, NominalTypeDiagnostic,
-        ResolvedTypeNode, TypeResolutionReport,
-    };
-    use crate::nominal::{
-        BuiltinTypeConstructor, NominalTypeDiagnosticKind, ResolvedTypeProduct,
-        ResolvedTypeRefOutcome, TypeNameResolution, TypeSourceEvidence,
-    };
-
-    fn document(name: &str, references: usize) -> Arc<SourceDocument> {
-        Arc::new(
-            SourceDocument::try_new(
-                SourceDocumentId::try_new(format!("arcweft-project://nominal-index/{name}.arcw"))
-                    .expect("document ID"),
-                SourceName::path(format!("{name}.arcw")),
-                "Self ".repeat(references),
-            )
-            .expect("source document"),
-        )
-    }
-
-    fn recorded_report(root: &SourceSpan, local: TextRange, work: u64) -> TypeResolutionReport {
-        let source = TypeSourceEvidence::accepted(local, root.clone());
-        let poison = TypePoisonId::from_index(0);
-        let diagnostic = NominalTypeDiagnostic::new(
-            poison,
-            NominalTypeDiagnosticKind::SelfUnavailable,
-            source.clone(),
-            [],
-            0,
-        );
-        let node = ResolvedTypeNode::new(
-            TypeRefNodePath::root(),
-            source,
-            None,
-            None,
-            Some(TypeKind::I32),
-            TypeNameResolution::Builtin(BuiltinTypeConstructor::I32),
-        );
-        TypeResolutionReport::new(
-            ResolvedTypeRefOutcome::Complete(ResolvedTypeProduct::new(TypeKind::I32, [node], [])),
-            [diagnostic],
-            [],
-            0,
-            work,
-        )
-    }
-
-    fn root(document: &SourceDocument, index: usize) -> SourceSpan {
-        let start = index * 5;
-        document
-            .span(SourceRange::new(start, start + 4))
-            .expect("reference range is within the generated document")
-    }
-
-    #[test]
-    fn production_diagnostic_caps_are_inclusive_and_report_omissions() {
-        let document_cap =
-            usize::from(super::NominalAggregationLimits::PRODUCTION.diagnostics_per_document());
-        let document_source = document("document-cap", document_cap + 1);
-        let mut index = NominalResolutionIndex::production();
-        for position in 0..=document_cap {
-            let root = root(&document_source, position);
-            index
-                .record(
-                    root.clone(),
-                    recorded_report(&root, TextRange::new(0, 4), 1),
-                )
-                .expect("diagnostic reports remain recordable");
-        }
-        assert_eq!(index.diagnostics().len(), document_cap);
-        assert_eq!(index.omitted_diagnostics(), 1);
-
-        let project_cap =
-            usize::from(super::NominalAggregationLimits::PRODUCTION.diagnostics_per_project());
-        let mut index = NominalResolutionIndex::production();
-        let mut recorded = 0;
-        let per_document = document_cap;
-        while recorded <= project_cap {
-            let count = (project_cap + 1 - recorded).min(per_document);
-            let document = document(&format!("project-cap-{recorded}"), count);
-            for position in 0..count {
-                let root = root(&document, position);
-                index
-                    .record(
-                        root.clone(),
-                        recorded_report(&root, TextRange::new(0, 4), 1),
-                    )
-                    .expect("diagnostic reports remain recordable");
-                recorded += 1;
-            }
-        }
-        assert_eq!(index.diagnostics().len(), project_cap);
-        assert_eq!(index.omitted_diagnostics(), 1);
-    }
-
-    #[test]
-    fn production_work_cap_is_inclusive_and_rejects_one_over_with_typed_counts() {
-        let maximum = super::NominalAggregationLimits::PRODUCTION.work_per_project();
-        let document = document("work-cap", 2);
-        let first = root(&document, 0);
-        let mut index = NominalResolutionIndex::production();
-        index
-            .record(
-                first.clone(),
-                recorded_report(&first, TextRange::new(0, 4), maximum),
-            )
-            .expect("the exact project work limit is accepted");
-        assert_eq!(index.work_charged(), maximum);
-
-        let second = root(&document, 1);
-        assert!(matches!(
-            index.record(
-                second.clone(),
-                recorded_report(&second, TextRange::new(5, 9), 1),
-            ),
-            Err(NominalResolutionIndexError::WorkLimit {
-                attempted,
-                maximum: actual_maximum,
-                root,
-            }) if attempted == maximum + 1 && actual_maximum == maximum && root == second
-        ));
-        assert_eq!(index.work_charged(), maximum);
     }
 }

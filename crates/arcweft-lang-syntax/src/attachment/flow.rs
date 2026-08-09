@@ -481,7 +481,7 @@ pub enum AttachedFlowContractClause {
 
 impl AttachedFlowContractClause {
     fn from_syntax(
-        syntax: SyntaxNodeHandle,
+        syntax: &SyntaxNodeHandle,
         expected_ordinal: u16,
     ) -> Result<Self, SyntaxAccessError> {
         if syntax.role() != SyntaxRole::ContractClause(expected_ordinal) {
@@ -495,44 +495,44 @@ impl AttachedFlowContractClause {
             return Err(SyntaxAccessError::InvalidFlowContractProjection { id: syntax.id() });
         }
         let keyword = syntax.source_span_for_range(projection.clause_keyword());
-        let mode = attached_mode(&syntax, projection.mode());
+        let mode = attached_mode(syntax, projection.mode());
 
         match syntax.kind() {
             SyntaxKind::RequiresClause => Ok(Self::Requires {
                 syntax: syntax.cast()?,
                 source_ordinal: expected_ordinal,
                 keyword,
-                condition: scalar_condition(&syntax, mode)?,
+                condition: scalar_condition(syntax, mode)?,
             }),
             SyntaxKind::EnsuresClause => Ok(Self::Ensures {
                 syntax: syntax.cast()?,
                 source_ordinal: expected_ordinal,
                 keyword,
-                condition: scalar_condition(&syntax, mode)?,
+                condition: scalar_condition(syntax, mode)?,
             }),
             SyntaxKind::InvariantClause => Ok(Self::Invariant {
                 syntax: syntax.cast()?,
                 source_ordinal: expected_ordinal,
                 keyword,
-                condition: scalar_condition(&syntax, mode)?,
+                condition: scalar_condition(syntax, mode)?,
             }),
             SyntaxKind::AssumeClause => Ok(Self::Assume {
                 syntax: syntax.cast()?,
                 source_ordinal: expected_ordinal,
                 keyword,
-                expression: scalar_expression(&syntax)?,
+                expression: scalar_expression(syntax)?,
             }),
             SyntaxKind::ReadsClause => Ok(Self::Reads {
                 syntax: syntax.cast()?,
                 source_ordinal: expected_ordinal,
                 keyword,
-                operands: list_payload(&syntax)?,
+                operands: list_payload(syntax)?,
             }),
             SyntaxKind::EffectsClause => Ok(Self::Effects {
                 syntax: syntax.cast()?,
                 source_ordinal: expected_ordinal,
                 keyword,
-                operands: list_payload(&syntax)?,
+                operands: list_payload(syntax)?,
             }),
             SyntaxKind::NoEffectClause => Ok(Self::NoEffect {
                 syntax: syntax.cast()?,
@@ -543,19 +543,19 @@ impl AttachedFlowContractClause {
                         SyntaxAccessError::InvalidFlowContractProjection { id: syntax.id() },
                     )?,
                 ),
-                expression: scalar_expression(&syntax)?,
+                expression: scalar_expression(syntax)?,
             }),
             SyntaxKind::ModifiesClause => Ok(Self::Modifies {
                 syntax: syntax.cast()?,
                 source_ordinal: expected_ordinal,
                 keyword,
-                operands: list_payload(&syntax)?,
+                operands: list_payload(syntax)?,
             }),
             SyntaxKind::DecreasesClause => Ok(Self::Decreases {
                 syntax: syntax.cast()?,
                 source_ordinal: expected_ordinal,
                 keyword,
-                expression: scalar_expression(&syntax)?,
+                expression: scalar_expression(syntax)?,
             }),
             _ => Err(SyntaxAccessError::InvalidFlowContractShape { id: syntax.id() }),
         }
@@ -695,7 +695,10 @@ impl AstNode<FlowItemKind> {
             return Err(SyntaxAccessError::InvalidFlowDeclarationProjection { id: self.id() });
         }
         let identity = attach_flow_identity(&self.syntax(), pending.identity())?;
-        let (signature, trailing_recovery) = attach_flow_signature(self, &pending)?;
+        let AttachedFlowSignatureParts {
+            signature,
+            trailing_recovery,
+        } = attach_flow_signature(self, &pending)?;
         let contracts = self.contract_clauses()?.into_boxed_slice();
         let body = attach_flow_body(self)?;
         let signature_end = pending.signature_end().start();
@@ -728,7 +731,7 @@ impl AstNode<FlowItemKind> {
             .map(|(ordinal, syntax)| {
                 let ordinal = u16::try_from(ordinal)
                     .map_err(|_| SyntaxAccessError::InvalidFlowContractShape { id: self.id() })?;
-                AttachedFlowContractClause::from_syntax(syntax, ordinal)
+                AttachedFlowContractClause::from_syntax(&syntax, ordinal)
             })
             .collect()
     }
@@ -865,10 +868,15 @@ fn attach_flow_public_id(
     })
 }
 
+struct AttachedFlowSignatureParts {
+    signature: AttachedFlowSignature,
+    trailing_recovery: Box<[AstNode<ErrorNodeKind>]>,
+}
+
 fn attach_flow_signature(
     owner: &AstNode<FlowItemKind>,
     pending: &PendingFlowDeclarationProjection,
-) -> Result<(AttachedFlowSignature, Box<[AstNode<ErrorNodeKind>]>), SyntaxAccessError> {
+) -> Result<AttachedFlowSignatureParts, SyntaxAccessError> {
     let generics = super::nominal::optional_generics(&owner.syntax())?;
     let parameters = owner
         .syntax()
@@ -958,8 +966,8 @@ fn attach_flow_signature(
     }) {
         return Err(invalid_flow(&owner.syntax()));
     }
-    Ok((
-        AttachedFlowSignature {
+    Ok(AttachedFlowSignatureParts {
+        signature: AttachedFlowSignature {
             generics,
             parameters,
             result,
@@ -967,8 +975,8 @@ fn attach_flow_signature(
             recovery: signature_recovery.into_boxed_slice(),
             end,
         },
-        trailing_recovery.into_boxed_slice(),
-    ))
+        trailing_recovery: trailing_recovery.into_boxed_slice(),
+    })
 }
 
 fn attach_flow_body(
@@ -994,7 +1002,7 @@ fn attach_flow_body(
         SyntaxKind::Block => {
             let block = body.cast::<BlockKind>()?;
             Ok(AttachedRequiredFlowBody::Present(
-                AttachedFlowStatementBody::from_block(syntax, block)
+                AttachedFlowStatementBody::from_block(syntax, &block)
                     .map_err(|_| invalid_flow(&owner.syntax()))?,
             ))
         }

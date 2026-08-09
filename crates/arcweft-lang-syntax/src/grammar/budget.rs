@@ -1,9 +1,4 @@
-//! Inclusive allocation budgets for the staged full-source grammar.
-
-#![allow(
-    dead_code,
-    reason = "the shadow grammar remains crate-private until the atomic syntax switch"
-)]
+//! Inclusive allocation budgets for the accepted full-source grammar.
 
 use std::collections::BTreeSet;
 
@@ -83,7 +78,7 @@ struct DiagnosticKey {
 
 /// Immutable work accounting committed with one accepted grammar snapshot.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct SyntaxParseStats {
+pub struct SyntaxParseStats {
     accepted_source_bytes: usize,
     lexer_tokens: usize,
     grammar_events: usize,
@@ -103,17 +98,45 @@ pub(crate) struct GrammarParserDepths {
     prefixes: usize,
 }
 
-impl GrammarParserDepths {
-    pub(crate) const fn owners(self) -> usize {
-        self.owners
-    }
-
-    pub(crate) const fn prefixes(self) -> usize {
-        self.prefixes
-    }
-}
-
 impl SyntaxParseStats {
+    /// Zero work, used only as the identity when aggregating already accepted
+    /// module publications.
+    pub const ZERO: Self = Self {
+        accepted_source_bytes: 0,
+        lexer_tokens: 0,
+        grammar_events: 0,
+        top_level_items: 0,
+        statements: 0,
+        expressions: 0,
+        type_nodes: 0,
+        pattern_nodes: 0,
+        identity_bearing_nodes: 0,
+        diagnostic_identities: 0,
+    };
+
+    /// Adds two accepted work records without silently wrapping any physical
+    /// counter.
+    pub fn checked_add(self, other: Self) -> Option<Self> {
+        Some(Self {
+            accepted_source_bytes: self
+                .accepted_source_bytes
+                .checked_add(other.accepted_source_bytes)?,
+            lexer_tokens: self.lexer_tokens.checked_add(other.lexer_tokens)?,
+            grammar_events: self.grammar_events.checked_add(other.grammar_events)?,
+            top_level_items: self.top_level_items.checked_add(other.top_level_items)?,
+            statements: self.statements.checked_add(other.statements)?,
+            expressions: self.expressions.checked_add(other.expressions)?,
+            type_nodes: self.type_nodes.checked_add(other.type_nodes)?,
+            pattern_nodes: self.pattern_nodes.checked_add(other.pattern_nodes)?,
+            identity_bearing_nodes: self
+                .identity_bearing_nodes
+                .checked_add(other.identity_bearing_nodes)?,
+            diagnostic_identities: self
+                .diagnostic_identities
+                .checked_add(other.diagnostic_identities)?,
+        })
+    }
+
     /// Confirms that committed source/diagnostic owners match this work record.
     pub(crate) const fn matches_publication(
         self,
@@ -124,48 +147,63 @@ impl SyntaxParseStats {
             && self.diagnostic_identities == diagnostic_identities
     }
 
-    pub(crate) const fn accepted_source_bytes(self) -> usize {
+    pub const fn accepted_source_bytes(self) -> usize {
         self.accepted_source_bytes
     }
 
-    pub(crate) const fn lexer_tokens(self) -> usize {
+    pub const fn lexer_tokens(self) -> usize {
         self.lexer_tokens
     }
 
-    pub(crate) const fn grammar_events(self) -> usize {
+    pub const fn grammar_events(self) -> usize {
         self.grammar_events
     }
 
-    pub(crate) const fn top_level_items(self) -> usize {
+    pub const fn top_level_items(self) -> usize {
         self.top_level_items
     }
 
-    pub(crate) const fn statements(self) -> usize {
+    pub const fn statements(self) -> usize {
         self.statements
     }
 
-    pub(crate) const fn expressions(self) -> usize {
+    pub const fn expressions(self) -> usize {
         self.expressions
     }
 
-    pub(crate) const fn type_nodes(self) -> usize {
+    pub const fn type_nodes(self) -> usize {
         self.type_nodes
     }
 
-    pub(crate) const fn pattern_nodes(self) -> usize {
+    pub const fn pattern_nodes(self) -> usize {
         self.pattern_nodes
     }
 
-    pub(crate) const fn identity_bearing_nodes(self) -> usize {
+    pub const fn identity_bearing_nodes(self) -> usize {
         self.identity_bearing_nodes
     }
 
-    pub(crate) const fn diagnostic_identities(self) -> usize {
+    pub const fn diagnostic_identities(self) -> usize {
         self.diagnostic_identities
     }
 }
 
 impl GrammarBudget {
+    #[cfg(test)]
+    pub(crate) fn with_test_global_count(limit: SyntaxLimit, already_charged: usize) -> Self {
+        assert!(already_charged <= limit.maximum());
+        let mut budget = Self::default();
+        match limit {
+            SyntaxLimit::Statements => budget.statements = already_charged,
+            SyntaxLimit::Expressions => budget.expressions = already_charged,
+            SyntaxLimit::TypeNodes => budget.type_nodes = already_charged,
+            SyntaxLimit::PatternNodes => budget.pattern_nodes = already_charged,
+            SyntaxLimit::IdentityBearingNodes => budget.identity_nodes = already_charged,
+            _ => panic!("{limit:?} is not a global grammar-node budget"),
+        }
+        budget
+    }
+
     /// Control depths preserved by one parser-local candidate transaction.
     ///
     /// Work counters deliberately do not roll back: both bounded
@@ -335,6 +373,14 @@ impl GrammarBudget {
     }
 
     fn charge_start(&mut self, kind: SyntaxKind, role: SyntaxRole) -> Result<(), SyntaxLimit> {
+        self.charge_node_shape(kind)?;
+        self.validate_style_nesting(kind)?;
+        self.charge_declaration_member(kind, role)?;
+        self.charge_specialized_declaration_shape(kind, role)?;
+        self.charge_generic_contract_or_parameter(kind)
+    }
+
+    fn charge_node_shape(&mut self, kind: SyntaxKind) -> Result<(), SyntaxLimit> {
         if kind.identity_class() == IdentityClass::IdentityBearing {
             charge(&mut self.identity_nodes, SyntaxLimit::IdentityBearingNodes)?;
         }
@@ -353,9 +399,14 @@ impl GrammarBudget {
         if kind.is_item() && !self.stack.iter().any(|frame| frame.kind.is_item()) {
             charge(&mut self.top_level_items, SyntaxLimit::TopLevelItems)?;
         }
+        Ok(())
+    }
 
-        self.validate_style_nesting(kind)?;
-        self.charge_declaration_member(kind, role)?;
+    fn charge_specialized_declaration_shape(
+        &mut self,
+        kind: SyntaxKind,
+        role: SyntaxRole,
+    ) -> Result<(), SyntaxLimit> {
         match kind {
             SyntaxKind::FixedParameterGroup => {
                 let frame = self.declaration_frame_mut()?;
@@ -399,7 +450,13 @@ impl GrammarBudget {
             let frame = self.declaration_frame_mut()?;
             charge(&mut frame.metric_buckets, SyntaxLimit::MetricBuckets)?;
         }
+        Ok(())
+    }
 
+    fn charge_generic_contract_or_parameter(
+        &mut self,
+        kind: SyntaxKind,
+    ) -> Result<(), SyntaxLimit> {
         match kind {
             SyntaxKind::GenericParameter => {
                 let frame = self.declaration_frame_mut()?;
@@ -446,7 +503,6 @@ impl GrammarBudget {
             }
             _ => {}
         }
-
         Ok(())
     }
 

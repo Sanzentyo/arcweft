@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-render-text = { workspace = true }
+arcweft-text-model = { workspace = true }
 
 blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }

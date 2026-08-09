@@ -2,7 +2,7 @@
 
 /// Source component of one source-ordered Flow parameter.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirFlowParameterSourcePart {
+pub enum HirFlowParameterSourcePart {
     Whole,
     Pattern,
     Colon,
@@ -11,7 +11,7 @@ pub(crate) enum HirFlowParameterSourcePart {
 
 /// Source component of the optional authored Flow return wrapper.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirFlowReturnSourcePart {
+pub enum HirFlowReturnSourcePart {
     Whole,
     Arrow,
     Type,
@@ -19,7 +19,7 @@ pub(crate) enum HirFlowReturnSourcePart {
 
 /// Source component of one heterogeneous Flow contract clause.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirFlowContractSourcePart {
+pub enum HirFlowContractSourcePart {
     Whole,
     ClauseKeyword,
     NoEffectKeyword,
@@ -36,7 +36,7 @@ pub(crate) enum HirFlowContractSourcePart {
 /// are validated against the final Flow payload before source identity is
 /// checked.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirFlowSourceRole {
+pub enum HirFlowSourceRole {
     Whole,
     Keyword,
     Visibility,

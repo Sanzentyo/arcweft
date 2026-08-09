@@ -3,10 +3,11 @@ use super::wire::{Reader, Wire, Writer, wire_enum};
 use crate::awbc::schema::{
     AwbcBlockId, AwbcCallableExecutable, AwbcCodeLocation, AwbcContentUnit, AwbcContentUnitId,
     AwbcDigest, AwbcDisplayMapEntry, AwbcDisplayMapId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFlowExecutable, AwbcFunctionId, AwbcHeader, AwbcInstructionId, AwbcLineTaskGroupId,
-    AwbcProgram, AwbcRegisterId, AwbcResourceId, AwbcResourceRef, AwbcResourceResidency,
-    AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource, AwbcSignatureId,
-    AwbcSourceMapEntry, AwbcSourceMapId, AwbcStringId, AwbcTraitMethod, AwbcTraitReceiverMode,
+    AwbcFlowBinding, AwbcFlowExecutable, AwbcFunctionId, AwbcHeader, AwbcInstructionId,
+    AwbcLineTaskGroupId, AwbcProgram, AwbcRegisterId, AwbcResourceId, AwbcResourceRef,
+    AwbcResourceResidency, AwbcResumePointId, AwbcRoute, AwbcRouteBinding, AwbcRouteBindingSource,
+    AwbcSignatureId, AwbcSourceMapEntry, AwbcSourceMapId, AwbcStringId, AwbcTraitMethod,
+    AwbcTraitReceiverMode,
 };
 use crate::entry::{
     AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
@@ -53,6 +54,7 @@ impl Wire for AwbcProgram {
         writer.write_table(&self.source_map)?;
         writer.write_table(&self.resources)?;
         writer.write_table(&self.callable_executables)?;
+        writer.write_table(&self.flow_bindings)?;
         writer.write_table(&self.flow_executables)?;
         writer.write_table(&self.entries)
     }
@@ -92,6 +94,7 @@ impl Wire for AwbcProgram {
             resources: reader.read_table("resources", budget.resources)?,
             callable_executables: reader
                 .read_table("callable_executables", budget.callable_executables)?,
+            flow_bindings: reader.read_table("flow_bindings", budget.flow_bindings)?,
             flow_executables: reader.read_table("flow_executables", budget.flow_executables)?,
             entries: reader.read_table("entries", budget.entries)?,
         })
@@ -278,6 +281,20 @@ impl Wire for AwbcCallableExecutable {
     }
 }
 
+impl Wire for AwbcFlowBinding {
+    fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
+        self.flow.write_wire(writer)?;
+        self.function.write_wire(writer)
+    }
+
+    fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
+        Ok(Self {
+            flow: FlowRuntimeId::read_wire(reader)?,
+            function: AwbcFunctionId::read_wire(reader)?,
+        })
+    }
+}
+
 impl Wire for AwbcFlowExecutable {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         self.metadata.write_wire(writer)?;
@@ -382,16 +399,20 @@ impl Wire for RuntimeCommandTargetId {
 
 impl Wire for FlowRuntimeId {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
-        self.canonical_label().write_wire(writer)
+        self.canonical_label().write_wire(writer)?;
+        self.public_label().into_string().write_wire(writer)
     }
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         let offset = reader.offset();
-        let value = String::read_wire(reader)?;
-        Self::from_runtime_contract(&value).map_err(|error| AwbcCodecError::InvalidMetadata {
-            kind: "flow runtime identity",
-            message: error.to_string(),
-            offset,
+        let identity = String::read_wire(reader)?;
+        let public_id = String::read_wire(reader)?;
+        Self::from_runtime_contract(&identity, &public_id).map_err(|error| {
+            AwbcCodecError::InvalidMetadata {
+                kind: "flow runtime identity",
+                message: error.to_string(),
+                offset,
+            }
         })
     }
 }

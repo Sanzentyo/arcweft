@@ -32,6 +32,119 @@ impl TypeParameterSubstitutions {
     pub(crate) fn apply(&self, ty: &TypeKind) -> TypeKind {
         ty.substitute_type_parameters(&self.bindings)
     }
+
+    /// Applies the known bindings only when the resulting type is concrete.
+    ///
+    /// Contextual expression checking must not treat an unbound declaration
+    /// parameter as a value type. Once every parameter in the shape is bound,
+    /// however, the specialized declaration type is the authoritative expected
+    /// type for literals and other context-sensitive expressions.
+    pub(crate) fn apply_resolved(&self, ty: &TypeKind) -> Option<TypeKind> {
+        let applied = self.apply(ty);
+        (!contains_generic_parameter(&applied)).then_some(applied)
+    }
+}
+
+fn contains_generic_parameter(ty: &TypeKind) -> bool {
+    match ty {
+        TypeKind::GenericParam(_) => true,
+        TypeKind::Range(inner)
+        | TypeKind::Probe(inner)
+        | TypeKind::Vec(inner)
+        | TypeKind::Slice(inner)
+        | TypeKind::Seq(inner)
+        | TypeKind::Option(inner)
+        | TypeKind::ThreadHandle(inner)
+        | TypeKind::Shared(inner)
+        | TypeKind::BorrowRef { inner, .. } => contains_generic_parameter(inner),
+        TypeKind::IteratorState { item, .. } | TypeKind::Array { item, .. } => {
+            contains_generic_parameter(item)
+        }
+        TypeKind::Ref(entity) => entity.value().is_some_and(contains_generic_parameter),
+        TypeKind::Map { key, value, .. } => {
+            contains_generic_parameter(key) || contains_generic_parameter(value)
+        }
+        TypeKind::Need { ready, error } => {
+            contains_generic_parameter(ready) || contains_generic_parameter(error)
+        }
+        TypeKind::Stream { item, error } | TypeKind::Source { item, error } => {
+            contains_generic_parameter(item) || contains_generic_parameter(error)
+        }
+        TypeKind::Result { ok, error } => {
+            contains_generic_parameter(ok) || contains_generic_parameter(error)
+        }
+        TypeKind::Function {
+            params,
+            return_type,
+            ..
+        } => {
+            params.iter().any(contains_generic_parameter) || contains_generic_parameter(return_type)
+        }
+        TypeKind::ProjectNominal(nominal) => {
+            nominal.arguments().iter().any(contains_generic_parameter)
+        }
+        TypeKind::AcceptedNominal(nominal) => {
+            nominal.arguments().iter().any(contains_generic_parameter)
+        }
+        TypeKind::OpenNominal(nominal) => {
+            nominal.arguments().iter().any(contains_generic_parameter)
+        }
+        TypeKind::Projection { subject, .. } => contains_generic_parameter(subject),
+        TypeKind::Tuple(items) | TypeKind::Choice(items) => {
+            items.iter().any(contains_generic_parameter)
+        }
+        TypeKind::Bool
+        | TypeKind::I8
+        | TypeKind::I16
+        | TypeKind::I32
+        | TypeKind::I64
+        | TypeKind::I128
+        | TypeKind::ISize
+        | TypeKind::U8
+        | TypeKind::U16
+        | TypeKind::U32
+        | TypeKind::U64
+        | TypeKind::U128
+        | TypeKind::USize
+        | TypeKind::F32
+        | TypeKind::F64
+        | TypeKind::String
+        | TypeKind::Char
+        | TypeKind::Bytes
+        | TypeKind::TextCluster
+        | TypeKind::Duration
+        | TypeKind::DisplayText
+        | TypeKind::DebugStatePath
+        | TypeKind::ObservationFieldPath
+        | TypeKind::Predicate
+        | TypeKind::Observation
+        | TypeKind::ObservedObject
+        | TypeKind::AgentBBox
+        | TypeKind::ActionName
+        | TypeKind::ActionTarget
+        | TypeKind::ActionResult
+        | TypeKind::AgentValue
+        | TypeKind::DataFormat
+        | TypeKind::DataShape
+        | TypeKind::AgentEntityMetadata
+        | TypeKind::AgentSourceAnchor
+        | TypeKind::AgentProjectGraphNeighborhood
+        | TypeKind::AgentProjectGraphSymbol
+        | TypeKind::AgentProjectGraphEdge
+        | TypeKind::CaptureTarget
+        | TypeKind::CaptureRef
+        | TypeKind::AgentResource
+        | TypeKind::AgentResourceBody
+        | TypeKind::RagContextPack
+        | TypeKind::Handle { .. }
+        | TypeKind::Error(_)
+        | TypeKind::CharacterPatch(_)
+        | TypeKind::FocusPatch
+        | TypeKind::CharacterNominal(_)
+        | TypeKind::Named(_)
+        | TypeKind::Unit
+        | TypeKind::Never => false,
+    }
 }
 
 impl TypeKind {
@@ -494,6 +607,25 @@ mod tests {
         assert_eq!(
             substitutions.apply(&TypeKind::GenericParam(error.clone())),
             TypeKind::GenericParam(error)
+        );
+    }
+
+    #[test]
+    fn resolved_application_only_exposes_concrete_expected_types() {
+        let owner = GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(13));
+        let item = GenericTypeParameterId::new(owner, 0);
+        let declared = TypeKind::Option(Box::new(TypeKind::GenericParam(item.clone())));
+        let mut substitutions = TypeParameterSubstitutions::default();
+
+        assert_eq!(
+            substitutions.apply_resolved(&TypeKind::I64),
+            Some(TypeKind::I64)
+        );
+        assert_eq!(substitutions.apply_resolved(&declared), None);
+        assert!(substitutions.observe(&TypeKind::GenericParam(item), &TypeKind::I64));
+        assert_eq!(
+            substitutions.apply_resolved(&declared),
+            Some(TypeKind::Option(Box::new(TypeKind::I64)))
         );
     }
 }

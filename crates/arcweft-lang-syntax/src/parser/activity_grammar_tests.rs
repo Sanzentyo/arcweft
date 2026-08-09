@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuild, GrammarBuildError, UnattachedGrammarEntry};
 use crate::grammar::kinds::{ActivityPolicySyntaxValue, SyntaxKind, SyntaxRole};
 use crate::incremental::SyntaxLimit;
@@ -17,7 +17,7 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+    parse_document(&document(source), crate::parser::ParseOptions::default())
         .expect("Activity grammar builds")
 }
 
@@ -82,7 +82,7 @@ fn canonical_activity_owns_abstract_ports_policies_and_contracts() {
 #[test]
 fn activity_declaration_member_limit_counts_recovery_entries_transactionally() {
     let exact = activity_with_unknown_entries(SyntaxLimit::DeclarationMembers.maximum());
-    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&exact), crate::parser::ParseOptions::default())
         .expect("exact Activity declaration-member limit builds");
     assert_eq!(
         count_kind(&built, SyntaxKind::ErrorDeclarationMember),
@@ -91,13 +91,13 @@ fn activity_declaration_member_limit_counts_recovery_entries_transactionally() {
 
     let one_over = activity_with_unknown_entries(SyntaxLimit::DeclarationMembers.maximum() + 1);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::DeclarationMembers
         ))
     ));
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("activity Ready {}\n"),
             crate::parser::ParseOptions::default()
         )
@@ -117,7 +117,7 @@ fn activity_with_unknown_entries(count: usize) -> String {
 #[test]
 fn activity_port_limit_is_shared_across_input_and_output_sections() {
     let exact = activity_with_ports(128, 128);
-    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&exact), crate::parser::ParseOptions::default())
         .expect("exact combined Activity port limit builds");
     assert_eq!(
         count_kind(&built, SyntaxKind::ActivityPort),
@@ -126,11 +126,11 @@ fn activity_port_limit_is_shared_across_input_and_output_sections() {
 
     let one_over = activity_with_ports(128, 129);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(SyntaxLimit::ActivityPorts))
     ));
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("activity Retry { input { ready: Input } }\n"),
             crate::parser::ParseOptions::default()
         )
@@ -154,20 +154,20 @@ fn activity_with_ports(inputs: usize, outputs: usize) -> String {
 #[test]
 fn activity_contract_limit_is_shared_across_requires_and_ensures() {
     let exact = activity_with_contracts(32, 32);
-    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&exact), crate::parser::ParseOptions::default())
         .expect("exact combined Activity contract limit builds");
     assert_eq!(count_kind(&built, SyntaxKind::RequiresClause), 32);
     assert_eq!(count_kind(&built, SyntaxKind::EnsuresClause), 32);
 
     let one_over = activity_with_contracts(32, 33);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::ContractClauses
         ))
     ));
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("activity Retry { contract { requires true } }\n"),
             crate::parser::ParseOptions::default()
         )

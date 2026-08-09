@@ -18,7 +18,7 @@ fn production_document_limit_accepts_exact_and_rejects_one_over() {
         "arcweft-project://accepted/production-document-root.arcw",
         "fn main() -> Unit { () }\n",
     );
-    let (hir, world) = project_and_world(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
+    let compiled = compiled_project(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
     let mut seeds = Vec::with_capacity(maximum + 1);
     seeds.push(seed(
         Arc::clone(&root),
@@ -31,8 +31,12 @@ fn production_document_limit_accepts_exact_and_rejects_one_over() {
         ))
     }));
 
-    let exact = AcceptedProjectSnapshot::try_new(Arc::clone(&hir), world.as_ref(), seeds.clone())
-        .expect("4,096 accepted documents are inclusive");
+    let exact = AcceptedProjectSnapshot::try_new(
+        Arc::clone(compiled.tooling_lease()),
+        Some(compiled.as_ref()),
+        seeds.clone(),
+    )
+    .expect("4,096 accepted documents are inclusive");
     assert_eq!(
         exact.footprint().documents(),
         CharacterRegistrationLimits::PRODUCTION.documents()
@@ -43,7 +47,11 @@ fn production_document_limit_accepts_exact_and_rejects_one_over() {
         "this source is rejected before any HIR parse or lower",
     )));
     assert!(matches!(
-        AcceptedProjectSnapshot::try_new(hir, world.as_ref(), seeds),
+        AcceptedProjectSnapshot::try_new(
+            Arc::clone(compiled.tooling_lease()),
+            Some(compiled.as_ref()),
+            seeds,
+        ),
         Err(AcceptedProjectSnapshotError::Limit {
             kind: AcceptedProjectLimitKind::Documents,
             observed,
@@ -61,15 +69,15 @@ fn production_source_byte_limit_accepts_exact_and_rejects_one_over() {
         "arcweft-project://accepted/production-byte-root.arcw",
         "fn main() -> Unit { () }\n",
     );
-    let (hir, world) = project_and_world(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
+    let compiled = compiled_project(&[(CanonicalModulePath::crate_root(), Arc::clone(&root))]);
     let generated_len = maximum - root.text().len();
     let exact_generated = document(
         "arcweft-generated://accepted/production-byte-padding.arcw",
         &"x".repeat(generated_len),
     );
     let exact = AcceptedProjectSnapshot::try_new(
-        Arc::clone(&hir),
-        world.as_ref(),
+        Arc::clone(compiled.tooling_lease()),
+        Some(compiled.as_ref()),
         vec![
             seed(
                 Arc::clone(&root),
@@ -90,8 +98,8 @@ fn production_source_byte_limit_accepts_exact_and_rejects_one_over() {
     );
     assert!(matches!(
         AcceptedProjectSnapshot::try_new(
-            hir,
-            world.as_ref(),
+            Arc::clone(compiled.tooling_lease()),
+            Some(compiled.as_ref()),
             vec![
                 seed(root, "file:///accepted/production-byte-root.arcw"),
                 unavailable_seed(one_over_generated),

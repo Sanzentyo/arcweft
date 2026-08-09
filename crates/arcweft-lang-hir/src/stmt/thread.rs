@@ -878,7 +878,7 @@ pub enum HirAwaitPropagation {
     PropagateError,
 }
 
-/// Closed semantic family of one AwaitWith branch.
+/// Closed semantic family of one `AwaitWith` branch.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirAwaitWithBranchKind {
     Pending,
@@ -888,7 +888,7 @@ pub enum HirAwaitWithBranchKind {
     Recovered,
 }
 
-/// One source-ordered AwaitWith branch and its branch-local bindings.
+/// One source-ordered `AwaitWith` branch and its branch-local bindings.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirAwaitWithBranch {
     kind: HirAwaitWithBranchKind,
@@ -954,7 +954,7 @@ impl HirAwaitWithBranch {
     }
 }
 
-/// Statement-form AwaitWith payload.
+/// Statement-form `AwaitWith` payload.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirAwaitWithStmt {
     operand: ExprId,

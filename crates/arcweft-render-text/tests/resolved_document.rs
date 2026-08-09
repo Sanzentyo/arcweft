@@ -1,16 +1,21 @@
-use arcweft_core::plan::RuntimeLineId;
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_character::id::CharacterId;
+use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId, value::RuntimeExpr};
+use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::TextKey;
 use arcweft_render_text::{
-    DialogueHostEvent, LanguageTag, LineDisplaySpec, Milli, ResolvedTextDocument, ResolvedTextRun,
-    ResolvedTextRunSource, ResolvedTextStyle, RichTextControl, RichTextDocument,
-    RichTextInlineDirection, RichTextLayout, RichTextNode, RichTextPresentation,
-    RichTextPresentationStyle, RichTextRange, RichTextRubyPosition, RichTextStyle,
-    RichTextWritingMode, RuntimeLineContext, TextColor, TextDocumentRevision, TextFontFamily,
-    TextResolveError, TextStyleCascade, TextWeight,
+    LanguageTag, ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
+    RuntimeLineContext, TextColor, TextDocumentRevision, TextFontFamily, TextResolveError,
+    TextStyleCascade, TextWeight, resolve_document, resolve_frame, resolve_stage_document,
 };
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::{
+    CharacterDialoguePresentationConfig, DialogueContentSpec, DialogueHostEvent,
+    DialoguePresentationCharacter, Milli, RichTextColor, RichTextControl, RichTextDocument,
+    RichTextFontFamily, RichTextInlineDirection, RichTextLayout, RichTextNode,
+    RichTextPresentation, RichTextPresentationStyle, RichTextRange, RichTextRubyPosition,
+    RichTextStyle, RichTextWritingMode,
+};
+use arcweft_view::ViewId;
 use std::collections::BTreeMap;
 
 #[test]
@@ -29,44 +34,50 @@ fn style() -> ResolvedTextStyle {
         .expect("valid test style")
 }
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
+fn source_ref() -> ProductSourceRef {
+    let source = SourceDocument::try_new(
         SourceDocumentId::try_new("render-text-resolved-document-test").expect("document ID"),
         SourceName::Memory,
-        "test manifest",
+        "resolved document test",
     )
     .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.render-text-resolved-document-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
+    ProductSourceRef::try_for_identity(source.identity()).expect("product source identity")
+}
+
+fn context() -> RuntimeLineContext {
+    RuntimeLineContext::new(
+        Vec::new(),
+        DialoguePresentationCharacter {
+            id: CharacterId::try_new("character.narrator").expect("character identity"),
+            display_name: "Narrator".to_owned(),
+        },
+        CharacterDialoguePresentationConfig {
+            view: ViewId::try_new("view.resolved-document.test").expect("View identity"),
+            voice: None,
+            look: None,
+            stage: None,
+            portrait: None,
+            focus: None,
+            cleanup: None,
+            source_locale: None,
+            hooks: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            custom: BTreeMap::new(),
+            config_digest: RuntimeValueDigest::ZERO,
+        },
+        Vec::new(),
+        Vec::new(),
     )
 }
 
-fn line(nodes: Vec<RichTextNode>) -> LineDisplaySpec {
-    LineDisplaySpec {
-        line: RuntimeLineId::canonical("resolved.document.test").expect("canonical test line"),
-        callee: "narrator".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_view::ViewId::try_new("view.resolved-document.test").unwrap(),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(nodes),
-    }
+fn line(nodes: Vec<RichTextNode>) -> DialogueContentSpec {
+    DialogueContentSpec::new(
+        RuntimeLineId::canonical("resolved.document.test").expect("canonical test line"),
+        TextKey::try_new("text.resolved.document.test").expect("text key"),
+        RichTextDocument::new(nodes),
+        Vec::new(),
+        source_ref(),
+    )
 }
 
 #[test]
@@ -169,23 +180,24 @@ fn document_rejects_noncontiguous_and_inexact_source_ranges() {
 
 #[test]
 fn stage_resolution_borrows_the_frame_slice_and_retains_full_source_ranges() {
-    let frame = line(vec![
-        RichTextNode::Text {
-            text: "夢".to_owned(),
-        },
-        RichTextNode::Control {
-            control: RichTextControl::Page,
-        },
-        RichTextNode::Text {
-            text: "続き".to_owned(),
-        },
-    ])
-    .resolve_frame(&RuntimeLineContext::default())
+    let frame = resolve_frame(
+        &line(vec![
+            RichTextNode::Text {
+                text: "夢".to_owned(),
+            },
+            RichTextNode::Control {
+                control: RichTextControl::Page,
+            },
+            RichTextNode::Text {
+                text: "続き".to_owned(),
+            },
+        ]),
+        &context(),
+    )
     .expect("frame resolves");
     let stage = frame.stage(1).expect("second stage");
 
-    let document = frame
-        .resolve_stage_document(stage, &TextStyleCascade::default())
+    let document = resolve_stage_document(&frame, stage, &TextStyleCascade::default())
         .expect("stage resolves");
 
     assert_eq!(document.text(), "続き");
@@ -215,9 +227,7 @@ fn document_projection_rebases_runs_and_ruby_without_cloning_text() {
             text: "前".to_owned(),
         },
         RichTextNode::StyleStart {
-            style: RichTextStyle::Strong {
-                attrs: String::new(),
-            },
+            style: RichTextStyle::Strong,
         },
         RichTextNode::Ruby {
             base: "漢字".to_owned(),
@@ -227,9 +237,8 @@ fn document_projection_rebases_runs_and_ruby_without_cloning_text() {
             text: "後".to_owned(),
         },
     ]);
-    let document = source
-        .resolve_document(&TextStyleCascade::default())
-        .expect("document resolves");
+    let document =
+        resolve_document(&source, &TextStyleCascade::default()).expect("document resolves");
     let prefix = "前".len();
 
     let projected = document
@@ -263,9 +272,7 @@ fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
     };
     let document = RichTextDocument::new(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::Strong {
-                attrs: String::new(),
-            },
+            style: RichTextStyle::Strong,
         },
         RichTextNode::StyleStart {
             style: RichTextStyle::Layout {
@@ -277,7 +284,6 @@ fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
                 presentation: RichTextPresentationStyle {
                     opacity: Some(Milli(625)),
                     layer: Some("dialogue".to_owned()),
-                    params: BTreeMap::new(),
                     z_index: Some(3),
                 },
             },
@@ -288,8 +294,7 @@ fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
         },
     ]);
 
-    let resolved = document
-        .resolve_document(&TextStyleCascade::new(style()))
+    let resolved = resolve_document(&document, &TextStyleCascade::new(style()))
         .expect("static document resolves");
 
     assert_eq!(resolved.text(), "漢字");
@@ -331,21 +336,31 @@ fn direct_rich_text_resolution_preserves_ruby_style_and_presentation() {
 fn cascade_applies_closed_color_and_font_values_without_losing_presentation() {
     let document = RichTextDocument::new(vec![
         RichTextNode::StyleStart {
-            style: RichTextStyle::from_tag("font", "monospace"),
+            style: RichTextStyle::Font {
+                family: RichTextFontFamily::Monospace,
+            },
         },
         RichTextNode::StyleStart {
-            style: RichTextStyle::from_tag("color", "#123456"),
+            style: RichTextStyle::Color {
+                value: RichTextColor::Rgba8 {
+                    value: [0x12, 0x34, 0x56, 0xff],
+                },
+            },
         },
         RichTextNode::StyleStart {
-            style: RichTextStyle::from_tag("opacity", "0.5"),
+            style: RichTextStyle::Presentation {
+                presentation: RichTextPresentationStyle {
+                    opacity: Some(Milli(500)),
+                    ..RichTextPresentationStyle::default()
+                },
+            },
         },
         RichTextNode::Text {
             text: "styled".to_owned(),
         },
     ]);
 
-    let resolved = document
-        .resolve_document(&TextStyleCascade::default())
+    let resolved = resolve_document(&document, &TextStyleCascade::default())
         .expect("styled document resolves");
     let run = &resolved.runs()[0];
 
@@ -378,9 +393,8 @@ fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
         },
     ]);
 
-    let resolved = document
-        .resolve_document(&TextStyleCascade::default())
-        .expect("nested layout resolves");
+    let resolved =
+        resolve_document(&document, &TextStyleCascade::default()).expect("nested layout resolves");
     let run = &resolved.runs()[0];
 
     assert_eq!(run.style().writing_mode(), RichTextWritingMode::VerticalRl);
@@ -396,14 +410,13 @@ fn nested_ruby_layout_does_not_reset_the_inherited_vertical_flow() {
 #[test]
 fn direct_document_rejects_dynamic_nodes() {
     let document = RichTextDocument::new(vec![RichTextNode::HostEvent {
-        event: DialogueHostEvent::Conditional {
-            name: "if".to_owned(),
-            attrs: "flag".to_owned(),
+        event: DialogueHostEvent::ConditionalStart {
+            condition: RuntimeExpr::Local("flag".to_owned()),
         },
     }]);
 
     assert!(matches!(
-        document.resolve_document(&TextStyleCascade::default()),
+        resolve_document(&document, &TextStyleCascade::default()),
         Err(TextResolveError::DynamicNode { node_index: 0 })
     ));
 }
@@ -418,7 +431,7 @@ fn direct_document_rejects_public_node_mutation_that_would_stale_the_borrowed_te
     };
 
     assert!(matches!(
-        document.resolve_document(&TextStyleCascade::default()),
+        resolve_document(&document, &TextStyleCascade::default()),
         Err(TextResolveError::SourceTextMismatch {
             node_index: 0,
             start: 0,
@@ -432,8 +445,7 @@ fn style_resolution_rejects_zero_sized_authored_text() {
     let document = RichTextDocument::new(vec![
         RichTextNode::StyleStart {
             style: RichTextStyle::Size {
-                points: Some(0),
-                raw: "0".to_owned(),
+                milli_points: Milli(0),
             },
         },
         RichTextNode::Text {
@@ -442,7 +454,7 @@ fn style_resolution_rejects_zero_sized_authored_text() {
     ]);
 
     assert!(matches!(
-        document.resolve_document(&TextStyleCascade::default()),
+        resolve_document(&document, &TextStyleCascade::default()),
         Err(TextResolveError::ZeroFontSize)
     ));
 }
@@ -458,12 +470,10 @@ fn source_revision_changes_when_ruby_text_changes_without_base_text_changes() {
         ruby: "kanji".to_owned(),
     }]);
 
-    let first_revision = first
-        .resolve_document(&TextStyleCascade::default())
+    let first_revision = resolve_document(&first, &TextStyleCascade::default())
         .expect("first document resolves")
         .revision();
-    let second_revision = second
-        .resolve_document(&TextStyleCascade::default())
+    let second_revision = resolve_document(&second, &TextStyleCascade::default())
         .expect("second document resolves")
         .revision();
 

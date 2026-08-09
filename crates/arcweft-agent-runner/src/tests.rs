@@ -6,10 +6,10 @@ use crate::{
     label_parse::parse_capture_format,
     policy::{RuntimeAgentCapability, RuntimeAgentPolicy},
     runner::AgentRunner,
-    runtime_args::AGENT_NAMED_ARGS_VARIANT,
     runtime_payload::{
-        runtime_payload_from_response, runtime_project_graph_symbol_payload,
-        runtime_rag_context_payload, runtime_resource_payload,
+        project_graph_neighborhood, runtime_payload_from_response,
+        runtime_project_graph_symbol_payload, runtime_rag_context_payload,
+        runtime_resource_payload,
     },
     runtime_value::{runtime_field, runtime_record_get, runtime_record_string},
     session::{AgentSession, NoopRagService, ReplayAgentSession, ReplayAgentSessionError},
@@ -23,7 +23,9 @@ use arcweft_agent_protocol::{
         RequiredEntitySourcePosition,
     },
     ids::StableHash,
-    ids::{AgentResourceUri, AgentRunId, CallableId, PublicId, SessionId},
+    ids::{
+        AgentProjectGraphSymbolId, AgentResourceUri, AgentRunId, CallableId, PublicId, SessionId,
+    },
     predicate::{CompareOp, DebugStatePath, ObservationFieldPath, Predicate, Probe},
     protocol::{
         AgentAction, AgentAssertionKind, AgentAssertionRequest, AgentHostRequest,
@@ -41,7 +43,10 @@ use arcweft_bundle::resource_codec::SourceMapSection;
 use arcweft_bundle::{ArcweftBundle, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::{
     bytecode::BytecodeProgram,
-    effect::{LineEffectRequest, RuntimeCall},
+    effect::{
+        LineEffectRequest, RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
+        RuntimeCall,
+    },
     engine::{FlowExit, FlowFiberStatus},
     entry::{
         AgentBudget, AgentPolicyHash, CallableContractHash, EntryBindingIdentity, FlowContractHash,
@@ -63,34 +68,18 @@ use arcweft_debug_model::{
     event::{DebugEvent, DebugEventKind},
     sink::{DebugEventSink, NullDebugEventSink},
 };
-use arcweft_dialogue::DialogueProfileRevision;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::DialogueContentCatalog;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
 
-fn flow_id(value: &str) -> FlowRuntimeId {
-    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
 }
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("agent-runner-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.agent-runner-test").expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
+fn flow_id(value: &str) -> FlowRuntimeId {
+    FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
 }
 
 fn agent_entry_id(agent_id: &str) -> EntryRuntimeId {
@@ -160,11 +149,15 @@ struct RecordingDebugSink {
     events: Vec<DebugEvent>,
 }
 
+fn graph_symbol_id(value: &str) -> AgentProjectGraphSymbolId {
+    AgentProjectGraphSymbolId::new(value).expect("test graph symbol ID is valid")
+}
+
 fn project_neighbors_test_graph() -> AgentProjectGraph {
     AgentProjectGraph {
         symbols: vec![
             AgentProjectGraphSymbol {
-                symbol_id: "project:summary".to_owned(),
+                symbol_id: graph_symbol_id("project:summary"),
                 public_id: None,
                 qualified_name: Some("project".to_owned()),
                 kind: "project_summary".to_owned(),
@@ -182,7 +175,7 @@ fn project_neighbors_test_graph() -> AgentProjectGraph {
                 summary: "Project".to_owned(),
             },
             AgentProjectGraphSymbol {
-                symbol_id: "project:entity:flow.opening".to_owned(),
+                symbol_id: graph_symbol_id("project:entity:flow.opening"),
                 public_id: Some(PublicId::new("flow.opening").expect("valid id")),
                 qualified_name: None,
                 kind: "flow".to_owned(),
@@ -202,8 +195,8 @@ fn project_neighbors_test_graph() -> AgentProjectGraph {
             },
         ],
         edges: vec![AgentProjectGraphEdge {
-            from_symbol_id: "project:summary".to_owned(),
-            to_symbol_id: "project:entity:flow.opening".to_owned(),
+            from_symbol_id: graph_symbol_id("project:summary"),
+            to_symbol_id: graph_symbol_id("project:entity:flow.opening"),
             edge_kind: "contains_entity".to_owned(),
         }],
     }
@@ -528,6 +521,26 @@ fn observe_checkpoint_program() -> BytecodeProgram {
     )
 }
 
+fn runtime_assertion_program() -> BytecodeProgram {
+    agent_controller_program(
+        RuntimeFlow {
+            id: flow_id("agent.runtime_assertion"),
+            ops: vec![
+                FlowOp::Effect(LineEffectRequest::Assert(RuntimeAssertion::new(
+                    RuntimeAssertionGuardId::try_from_bytes([0x61; 16])
+                        .expect("fixture runtime assertion guard"),
+                    "ready".to_owned(),
+                    "runtime condition failed".to_owned(),
+                    RuntimeAssertionProfile::Always,
+                ))),
+                FlowOp::Return("done".to_owned()),
+            ],
+        },
+        "agent.runtime_assertion",
+        AgentBudget::default(),
+    )
+}
+
 fn observe_checkpoint_bundle() -> ArcweftBundle {
     let program = observe_checkpoint_program();
     agent_controller_test_bundle(
@@ -568,7 +581,7 @@ fn agent_controller_test_bundle(
         panic!("test Agent entry targets a controller");
     };
     let roles = entry.roles.agent().expect("test Agent roles exist");
-    let display = arcweft_render_text::LineDisplayCatalog::new(test_dialogue_revision());
+    let dialogue_content = DialogueContentCatalog::new();
     let declared_effects = effects
         .iter()
         .copied()
@@ -589,6 +602,7 @@ fn agent_controller_test_bundle(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some(controller_flow.public_label().into_string()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -599,7 +613,7 @@ fn agent_controller_test_bundle(
         },
         source_map(source_label, source_text),
         program.clone(),
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_agent_manifest(AgentArtifactManifest {
@@ -767,19 +781,13 @@ fn project_neighbors_binding_program() -> BytecodeProgram {
                             "agent",
                             "project_neighbors",
                             [
-                                HostTaskArgTemplate::positional(RuntimeExpr::EntityRef(
-                                    "flow.opening".to_owned(),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
+                                    RuntimeValue::String("project:entity:flow.opening".to_owned()),
                                 )),
-                                HostTaskArgTemplate::positional(RuntimeExpr::Variant {
-                                    path: Some("agent".to_owned()),
-                                    name: AGENT_NAMED_ARGS_VARIANT.to_owned(),
-                                    payload: Some(Box::new(RuntimeExpr::Record(vec![
-                                        RuntimeFieldExpr {
-                                            name: "depth".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::u32(1)),
-                                        },
-                                    ]))),
-                                }),
+                                HostTaskArgTemplate::named(
+                                    "depth",
+                                    RuntimeExpr::Value(RuntimeValue::u32(1)),
+                                ),
                             ],
                         ),
                     ),
@@ -845,26 +853,20 @@ fn wait_binding_program() -> BytecodeProgram {
                                         value: RuntimeExpr::Value(RuntimeValue::Bool(true)),
                                     },
                                 ])),
-                                HostTaskArgTemplate::positional(RuntimeExpr::Variant {
-                                    path: Some("agent".to_owned()),
-                                    name: "named_args".to_owned(),
-                                    payload: Some(Box::new(RuntimeExpr::Record(vec![
-                                        RuntimeFieldExpr {
-                                            name: "timeout".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::Duration(
-                                                LogicalDuration::from_nanos(5_000_000),
-                                            )),
-                                        },
-                                        RuntimeFieldExpr {
-                                            name: "stable_frames".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::u32(2)),
-                                        },
-                                        RuntimeFieldExpr {
-                                            name: "poll_frames".to_owned(),
-                                            value: RuntimeExpr::Value(RuntimeValue::u32(1)),
-                                        },
-                                    ]))),
-                                }),
+                                HostTaskArgTemplate::named(
+                                    "timeout",
+                                    RuntimeExpr::Value(RuntimeValue::Duration(
+                                        LogicalDuration::from_nanos(5_000_000),
+                                    )),
+                                ),
+                                HostTaskArgTemplate::named(
+                                    "stable_frames",
+                                    RuntimeExpr::Value(RuntimeValue::u32(2)),
+                                ),
+                                HostTaskArgTemplate::named(
+                                    "poll_frames",
+                                    RuntimeExpr::Value(RuntimeValue::u32(1)),
+                                ),
                             ],
                         ),
                     ),
@@ -1606,6 +1608,36 @@ fn controller_bytecode_dispatches_effect_calls_to_runner_host_boundary() {
 }
 
 #[test]
+fn controller_runtime_assertion_uses_typed_failure_report_not_agent_expect_request() {
+    let mut runner = AgentRunner::new(
+        TestSession::default(),
+        RecordingDebugSink::default(),
+        NoopRagService,
+        RuntimeAgentPolicy::default(),
+        AgentRunnerConfig::new(SessionId::new("session.test").expect("valid session id")),
+    );
+    let program = runtime_assertion_program();
+    let entry = program.entries[0].id.clone();
+
+    let report = runner
+        .run_controller_bytecode(program, &entry, AgentControllerRunConfig::default())
+        .expect("runtime assertion remains a typed runtime report");
+
+    assert_eq!(report.host_calls, 0);
+    assert!(report.responses.is_empty());
+    assert_eq!(report.assertion_failures.len(), 1);
+    assert_eq!(
+        report.assertion_failures[0].assertion().message(),
+        "runtime condition failed"
+    );
+    assert!(matches!(
+        report.final_status,
+        Some(FlowFiberStatus::Done(_))
+    ));
+    assert!(runner.debug_mut().events.is_empty());
+}
+
+#[test]
 fn controller_bundle_runs_through_bytecode_host_boundary() {
     let session = TestSession {
         observations: vec![observation(1, true)],
@@ -2013,7 +2045,7 @@ fn controller_bytecode_resumes_project_graph_neighborhood_fields() {
     assert!(matches!(
         &report.responses[0],
         AgentHostResponse::ProjectGraphNeighborhood(neighborhood)
-            if neighborhood.root.as_str() == "flow.opening"
+            if neighborhood.root.as_str() == "project:entity:flow.opening"
                 && neighborhood.symbols.len() == 2
                 && neighborhood.edges.len() == 1
                 && neighborhood.edges[0].edge_kind == "contains_entity"
@@ -2068,6 +2100,43 @@ fn controller_bytecode_resumes_project_graph_neighborhood_fields() {
         report.final_status,
         Some(FlowFiberStatus::Done(FlowExit::Return(_)))
     ));
+}
+
+#[test]
+fn project_graph_neighborhood_uses_exact_symbol_identity_when_public_labels_match() {
+    let public_id = PublicId::new("flow.opening").expect("shared public label");
+    let first = AgentProjectGraphSymbol {
+        symbol_id: graph_symbol_id("flow:1111111111111111"),
+        public_id: Some(public_id.clone()),
+        qualified_name: None,
+        kind: "flow".to_owned(),
+        semantic_hash: Some("hir:flow:first".to_owned()),
+        flow_control: None,
+        project_summary: None,
+        summary: "First opening".to_owned(),
+    };
+    let second = AgentProjectGraphSymbol {
+        symbol_id: graph_symbol_id("flow:2222222222222222"),
+        public_id: Some(public_id),
+        qualified_name: None,
+        kind: "flow".to_owned(),
+        semantic_hash: Some("hir:flow:second".to_owned()),
+        flow_control: None,
+        project_summary: None,
+        summary: "Second opening".to_owned(),
+    };
+    let graph = AgentProjectGraph {
+        symbols: vec![first.clone(), second],
+        edges: Vec::new(),
+    };
+
+    let neighborhood = project_graph_neighborhood(&graph, &first.symbol_id, 1)
+        .expect("exact graph identity resolves");
+
+    assert_eq!(neighborhood.root, first.symbol_id);
+    assert_eq!(neighborhood.symbols, vec![first]);
+    assert!(neighborhood.edges.is_empty());
+    assert!(project_graph_neighborhood(&graph, &graph_symbol_id("flow.opening"), 1).is_none());
 }
 
 #[test]

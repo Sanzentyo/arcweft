@@ -1,0 +1,95 @@
+error[E0423]: expected value, found struct `ItemId`
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:22:13
+   |
+22 |     let _ = ItemId;
+   |             ^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: expected value, found struct `ScopeId`
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:23:13
+   |
+23 |     let _ = ScopeId;
+   |             ^^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: expected value, found struct `LocalId`
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:24:13
+   |
+24 |     let _ = LocalId;
+   |             ^^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: expected value, found struct `ExprId`
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:25:13
+   |
+25 |     let _ = ExprId;
+   |             ^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: expected value, found struct `StmtId`
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:26:13
+   |
+26 |     let _ = StmtId;
+   |             ^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: expected value, found struct `TypeId`
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:27:13
+   |
+27 |     let _ = TypeId;
+   |             ^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: expected value, found struct `PatternId`
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:28:13
+   |
+28 |     let _ = PatternId;
+   |             ^^^^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: expected value, found struct `CaptureId`
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:29:13
+   |
+29 |     let _ = CaptureId;
+   |             ^^^^^^^^^ constructor is not visible here due to private fields
+
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:17:13
+   |
+17 |     let _ = HirDatabaseId(NonZeroU64::MIN);
+   |             ^^^^^^^^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> src/identity.rs
+   |
+   | pub struct HirDatabaseId(NonZeroU64);
+   |                          ^^^^^^^^^^ private field
+
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:18:13
+   |
+18 |     let _ = HirRevision(NonZeroU32::MIN);
+   |             ^^^^^^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> src/identity.rs
+   |
+   | pub struct HirRevision(NonZeroU32);
+   |                        ^^^^^^^^^^ private field
+
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:19:13
+   |
+19 |     let _ = LocalGeneration(NonZeroU32::MIN);
+   |             ^^^^^^^^^^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> src/identity.rs
+   |
+   | pub struct LocalGeneration(NonZeroU32);
+   |                            ^^^^^^^^^^ private field
+
+error[E0423]: cannot initialize a tuple struct which contains private fields
+  --> tests/ui/hir_ids_have_no_raw_constructors.rs:20:13
+   |
+20 |     let _ = SourceGeneration(NonZeroU32::MIN);
+   |             ^^^^^^^^^^^^^^^^
+   |
+note: constructor is not visible here due to private fields
+  --> $WORKSPACE/crates/arcweft-source/src/identity.rs
+   |
+   | pub struct SourceGeneration(NonZeroU32);
+   |                             ^^^^^^^^^^ private field

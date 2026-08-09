@@ -135,35 +135,35 @@ fn member_matches(
             AttachedLayerEntry::Phase(attached),
         ) => {
             member_metadata_matches(payload, attached)
-                && phase_value_matches(payload.value(), attached.value())
+                && phase_value_matches(*payload.value(), attached.value())
         }
         (
             HirDeclarationMemberKind::LayerPolicy(HirLayerPolicyMember::Input(payload)),
             AttachedLayerEntry::Input(attached),
         ) => {
             member_metadata_matches(payload, attached)
-                && input_value_matches(payload.value(), attached.value())
+                && input_value_matches(*payload.value(), attached.value())
         }
         (
             HirDeclarationMemberKind::LayerPolicy(HirLayerPolicyMember::HitTest(payload)),
             AttachedLayerEntry::HitTest(attached),
         ) => {
             member_metadata_matches(payload, attached)
-                && hit_test_value_matches(payload.value(), attached.value())
+                && hit_test_value_matches(*payload.value(), attached.value())
         }
         (
             HirDeclarationMemberKind::LayerPolicy(HirLayerPolicyMember::Capture(payload)),
             AttachedLayerEntry::Capture(attached),
         ) => {
             member_metadata_matches(payload, attached)
-                && capture_value_matches(payload.value(), attached.value())
+                && capture_value_matches(*payload.value(), attached.value())
         }
         (
             HirDeclarationMemberKind::LayerPolicy(HirLayerPolicyMember::Accessibility(payload)),
             AttachedLayerEntry::Accessibility(attached),
         ) => {
             member_metadata_matches(payload, attached)
-                && accessibility_value_matches(payload.value(), attached.value())
+                && accessibility_value_matches(*payload.value(), attached.value())
         }
         (
             HirDeclarationMemberKind::LayerExpression(HirLayerExpressionMember::Z(payload)),
@@ -268,7 +268,7 @@ fn expression_value_matches(
 }
 
 fn phase_value_matches(
-    retained: &HirLayerMemberValue<HirRenderPhase>,
+    retained: HirLayerMemberValue<HirRenderPhase>,
     attached: &AttachedLayerPolicy,
 ) -> bool {
     let expected = match attached {
@@ -288,11 +288,11 @@ fn phase_value_matches(
         AttachedLayerPolicy::Missing(_) => return matches!(retained, HirLayerMemberValue::Missing),
         _ => return false,
     };
-    matches!(retained, HirLayerMemberValue::Present(actual) if *actual == expected)
+    matches!(retained, HirLayerMemberValue::Present(actual) if actual == expected)
 }
 
 fn input_value_matches(
-    retained: &HirLayerMemberValue<HirInputPolicy>,
+    retained: HirLayerMemberValue<HirInputPolicy>,
     attached: &AttachedLayerPolicy,
 ) -> bool {
     let expected = match attached {
@@ -307,11 +307,11 @@ fn input_value_matches(
         AttachedLayerPolicy::Missing(_) => return matches!(retained, HirLayerMemberValue::Missing),
         _ => return false,
     };
-    matches!(retained, HirLayerMemberValue::Present(actual) if *actual == expected)
+    matches!(retained, HirLayerMemberValue::Present(actual) if actual == expected)
 }
 
 fn hit_test_value_matches(
-    retained: &HirLayerMemberValue<HirHitTestPolicy>,
+    retained: HirLayerMemberValue<HirHitTestPolicy>,
     attached: &AttachedLayerPolicy,
 ) -> bool {
     let expected = match attached {
@@ -325,11 +325,11 @@ fn hit_test_value_matches(
         AttachedLayerPolicy::Missing(_) => return matches!(retained, HirLayerMemberValue::Missing),
         _ => return false,
     };
-    matches!(retained, HirLayerMemberValue::Present(actual) if *actual == expected)
+    matches!(retained, HirLayerMemberValue::Present(actual) if actual == expected)
 }
 
 fn capture_value_matches(
-    retained: &HirLayerMemberValue<HirCapturePolicy>,
+    retained: HirLayerMemberValue<HirCapturePolicy>,
     attached: &AttachedLayerPolicy,
 ) -> bool {
     let expected = match attached {
@@ -344,11 +344,11 @@ fn capture_value_matches(
         AttachedLayerPolicy::Missing(_) => return matches!(retained, HirLayerMemberValue::Missing),
         _ => return false,
     };
-    matches!(retained, HirLayerMemberValue::Present(actual) if *actual == expected)
+    matches!(retained, HirLayerMemberValue::Present(actual) if actual == expected)
 }
 
 fn accessibility_value_matches(
-    retained: &HirLayerMemberValue<HirAccessibilityPolicy>,
+    retained: HirLayerMemberValue<HirAccessibilityPolicy>,
     attached: &AttachedLayerPolicy,
 ) -> bool {
     let expected = match attached {
@@ -361,7 +361,7 @@ fn accessibility_value_matches(
         AttachedLayerPolicy::Missing(_) => return matches!(retained, HirLayerMemberValue::Missing),
         _ => return false,
     };
-    matches!(retained, HirLayerMemberValue::Present(actual) if *actual == expected)
+    matches!(retained, HirLayerMemberValue::Present(actual) if actual == expected)
 }
 
 const fn layer_kind(kind: &AttachedLayerKind) -> HirLayerKind {
@@ -385,11 +385,11 @@ const fn layer_kind(kind: &AttachedLayerKind) -> HirLayerKind {
     }
 }
 
-fn next_member<'a>(
+fn next_member(
     owner: ItemId,
-    retained: &'a [HirDeclarationMember],
+    retained: &[HirDeclarationMember],
     position: usize,
-) -> Option<(HirDeclarationMemberId, &'a HirDeclarationMember)> {
+) -> Option<(HirDeclarationMemberId, &HirDeclarationMember)> {
     let ordinal = u32::try_from(position).ok()?;
     Some((
         HirDeclarationMemberId::new(owner, ordinal),

@@ -2,15 +2,15 @@ use super::{
     AwaitManyInFlight, AwaitManyState, AwaitManyTarget, AwaitState, AwaitTarget, AwbcContentUnitId,
     AwbcFrameSlotRole, AwbcFunctionId, AwbcHostCallId, AwbcHostCallMode, AwbcProductStepExecutor,
     AwbcResumePointId, AwbcSourceEventKind, AwbcSourcePlanId, AwbcTaskPlanId, AwbcTrapCode,
-    ChoiceRuntimeOption, ChoiceState, DialogueState, FiberStatus, FiberSuspensionReason,
-    FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState,
+    ChoiceRuntimeOption, ChoiceState, DialogueState, FiberAwaitTarget, FiberStatus,
+    FiberSuspensionReason, FiberTerminalValue, FiberTrap, FlowExit, FlowFiberStatus, HostCallState,
     HostTaskRequestTemplate, LogicalDuration, MappedEffect, NeedId, ProductStepError,
     RuntimeBinding, RuntimeDiagnostic, RuntimeDiagnosticCategory, RuntimeHostCallId,
     RuntimeHostCallMode, RuntimeHostCallTarget, RuntimePayload, RuntimeSourceEvent,
     RuntimeStepMode, RuntimeStepOptions, RuntimeStepOutput, RuntimeStepStopReason, RuntimeValue,
-    SourceEventKind, SourceId, SourceRuntimeState, TaskId, flow_id_from_awbc_public_id,
-    has_host_requests, has_visible_output, line_id_from_awbc_public_id,
-    runtime_sequence_from_literal_values, runtime_value_label, source_diagnostic, source_id_for,
+    SourceEventKind, SourceId, SourceRuntimeState, TaskId, has_host_requests, has_visible_output,
+    line_id_from_awbc_public_id, runtime_sequence_from_literal_values, runtime_value_label,
+    source_diagnostic, source_id_for,
 };
 use crate::source::SourcePolicy;
 
@@ -454,19 +454,25 @@ impl AwbcProductStepExecutor {
                     resume: None,
                 })
             }
-            FiberSuspensionReason::Await { task, .. } => {
-                let task = TaskId(runtime_value_label(task));
-                let plan = self.task_plan_for_id(&task.0);
-                FlowFiberStatus::Waiting(AwaitState {
-                    binding: None,
-                    target: AwaitTarget::new(
-                        plan.map_or_else(|| NeedId(task.0.clone()), |plan| self.task_need_id(plan)),
-                        task,
-                        HostTaskRequestTemplate::new("awbc", "await", []),
-                    ),
-                    resume: None,
-                })
-            }
+            FiberSuspensionReason::Await { target, .. } => match target {
+                FiberAwaitTarget::Task(task) => {
+                    let task = TaskId(runtime_value_label(task));
+                    let plan = self.task_plan_for_id(&task.0);
+                    FlowFiberStatus::Waiting(AwaitState {
+                        binding: None,
+                        target: AwaitTarget::new(
+                            plan.map_or_else(
+                                || NeedId(task.0.clone()),
+                                |plan| self.task_need_id(plan),
+                            ),
+                            task,
+                            HostTaskRequestTemplate::new("awbc", "await", []),
+                        ),
+                        resume: None,
+                    })
+                }
+                FiberAwaitTarget::Need(need) => FlowFiberStatus::NeedWaiting(need.clone()),
+            },
             FiberSuspensionReason::AwaitMany(state) => {
                 let target = AwaitManyTarget::new(
                     self.task_need_id(state.plan),
@@ -575,9 +581,10 @@ impl AwbcProductStepExecutor {
                 .cloned()
                 .unwrap_or_else(|| "choice".to_owned()),
             target: option.target.map(|target| {
-                let public_id = self.function_public_id(target);
-                flow_id_from_awbc_public_id(&public_id)
-                    .expect("AWBC function public ID should be a valid runtime flow ID")
+                self.program
+                    .flow_identity(target)
+                    .cloned()
+                    .expect("verified AWBC choice target must own a typed Flow binding")
             }),
             out,
             effects,
@@ -593,14 +600,19 @@ impl AwbcProductStepExecutor {
             .unwrap_or_else(|| format!("awbc.content.{}", content.0))
     }
 
-    pub(super) fn function_public_id(&self, function: AwbcFunctionId) -> String {
+    pub(super) fn flow_identity_for_function(
+        &self,
+        function: AwbcFunctionId,
+    ) -> Result<crate::plan::FlowRuntimeId, ProductStepError> {
         self.program
-            .functions
-            .get(function.index())
-            .and_then(|function| function.public_id)
-            .and_then(|id| self.program.strings.get(id.index()))
+            .flow_identity(function)
             .cloned()
-            .unwrap_or_else(|| format!("awbc.function.{}", function.0))
+            .ok_or_else(|| {
+                ProductStepError::Internal(format!(
+                    "AWBC Flow function {} has no typed semantic binding",
+                    function.0
+                ))
+            })
     }
 
     pub(super) fn task_plan_for_id(&self, task: &str) -> Option<AwbcTaskPlanId> {

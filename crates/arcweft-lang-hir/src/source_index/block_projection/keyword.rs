@@ -17,12 +17,16 @@ use crate::final_lowering::name_projection::{name, name_issue};
 use crate::identity::{ExprId, ScopeId, StmtId};
 use crate::leaf::HirName;
 use crate::slot::SlotSnapshot;
-use crate::source_index::HirExprSourceRole;
+use crate::source_index::HirStmtRecoveryOperandSlot;
 use crate::stmt::{HirStmtChildRole, HirStmtKind, HirStmtPoisonState, HirStmtRecoveryIssue};
 
 use super::{StatementEvidence, missing_statement_expression_matches, source_expression_matches};
 
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exhaustive keyword-statement matrix proves every operand, scope, source role, and recovery shape"
+)]
 pub(super) fn keyword_statement_evidence(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -44,8 +48,7 @@ pub(super) fn keyword_statement_evidence(
                 *value,
                 source.value(),
                 scope,
-                0,
-                HirExprSourceRole::Operand,
+                |insertion| HirStmtRecoveryOperandSlot::OutValue { insertion },
             );
             let value_recovery = expression_is_poisoned(slots, expressions, *value).then_some(
                 HirStmtRecoveryIssue::RecoveredChild {
@@ -71,8 +74,7 @@ pub(super) fn keyword_statement_evidence(
                 *target,
                 source.target(),
                 scope,
-                0,
-                HirExprSourceRole::Target,
+                |insertion| HirStmtRecoveryOperandSlot::GotoTarget { insertion },
             );
             let recovery = expression_is_poisoned(slots, expressions, *target).then_some(
                 HirStmtRecoveryIssue::RecoveredChild {
@@ -101,8 +103,7 @@ pub(super) fn keyword_statement_evidence(
                 *expression,
                 source.expression(),
                 scope,
-                0,
-                HirExprSourceRole::Operand,
+                |insertion| HirStmtRecoveryOperandSlot::DeferExpression { insertion },
             );
             let recovery = expression_is_poisoned(slots, expressions, *expression).then_some(
                 HirStmtRecoveryIssue::RecoveredChild {
@@ -125,8 +126,7 @@ pub(super) fn keyword_statement_evidence(
                 *target,
                 source.target(),
                 scope,
-                0,
-                HirExprSourceRole::Target,
+                |insertion| HirStmtRecoveryOperandSlot::SignalTarget { insertion },
             );
             let value_matches = required_expression_matches(
                 parsed,
@@ -136,8 +136,7 @@ pub(super) fn keyword_statement_evidence(
                 *value,
                 source.value(),
                 scope,
-                1,
-                HirExprSourceRole::Operand,
+                |insertion| HirStmtRecoveryOperandSlot::SignalValue { insertion },
             );
             let recovery = if expression_is_poisoned(slots, expressions, *target) {
                 Some(HirStmtRecoveryIssue::RecoveredChild {
@@ -210,8 +209,7 @@ fn required_expression_matches(
     owner: ExprId,
     source: &RequiredStatementExpressionNode,
     scope: ScopeId,
-    ordinal: u32,
-    role: HirExprSourceRole,
+    missing_slot: impl FnOnce(usize) -> HirStmtRecoveryOperandSlot,
 ) -> bool {
     match source {
         RequiredStatementExpressionNode::Expression(source) => {
@@ -226,9 +224,7 @@ fn required_expression_matches(
             statement,
             owner,
             scope,
-            missing.range().start(),
-            ordinal,
-            role,
+            missing_slot(missing.range().start()),
         ),
     }
 }

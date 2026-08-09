@@ -643,7 +643,7 @@ fn attach_trait_body(
                 .map(|(ordinal, syntax)| {
                     let ordinal = u16::try_from(ordinal)
                         .map_err(|_| SyntaxAccessError::InvalidItemProjection { id: owner.id() })?;
-                    attach_trait_member(syntax, ordinal)
+                    attach_trait_member(&syntax, ordinal)
                 })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice(),
@@ -668,7 +668,7 @@ fn attach_impl_body(owner: &AstNode<ImplItemKind>) -> Result<AttachedImplBody, S
                 .map(|(ordinal, syntax)| {
                     let ordinal = u16::try_from(ordinal)
                         .map_err(|_| SyntaxAccessError::InvalidItemProjection { id: owner.id() })?;
-                    attach_impl_member(syntax, ordinal)
+                    attach_impl_member(&syntax, ordinal)
                 })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice(),
@@ -691,10 +691,10 @@ fn direct_member_nodes(owner: &SyntaxNodeHandle) -> Vec<SyntaxNodeHandle> {
 }
 
 fn attach_trait_member(
-    syntax: SyntaxNodeHandle,
+    syntax: &SyntaxNodeHandle,
     source_ordinal: u16,
 ) -> Result<AttachedTraitMember, SyntaxAccessError> {
-    validate_member_role(&syntax, source_ordinal)?;
+    validate_member_role(syntax, source_ordinal)?;
     match syntax.kind() {
         SyntaxKind::TypeAliasItem => {
             let syntax = syntax.cast::<TypeAliasItemKind>()?;
@@ -732,10 +732,10 @@ fn attach_trait_member(
 }
 
 fn attach_impl_member(
-    syntax: SyntaxNodeHandle,
+    syntax: &SyntaxNodeHandle,
     source_ordinal: u16,
 ) -> Result<AttachedImplMember, SyntaxAccessError> {
-    validate_member_role(&syntax, source_ordinal)?;
+    validate_member_role(syntax, source_ordinal)?;
     match syntax.kind() {
         SyntaxKind::TypeAliasItem => {
             let syntax = syntax.cast::<TypeAliasItemKind>()?;

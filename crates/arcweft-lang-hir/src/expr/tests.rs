@@ -1,24 +1,26 @@
 use super::{
-    HirArrayRepeatExpr, HirAssociatedCallSyntax, HirAssociatedReceiver, HirAwaitExpr,
-    HirAwaitPropagation, HirBinaryExpr, HirBinaryOp, HirBlockExpr, HirBorrowExpr, HirBorrowKind,
-    HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
-    HirCallBuildError, HirCallCallee, HirCallChildPoison, HirCallChildStates, HirCallExpr,
-    HirCallIssue, HirCallTypeApplication, HirChoiceBody, HirChoiceExpr, HirChoiceItem,
-    HirClosureExpr, HirClosureParameter, HirComputationBlockExpr, HirComputationBlockKind,
-    HirDereferenceExpr, HirExpr, HirExprInvariantError, HirExprKind, HirExpressionRecoveryIssue,
-    HirGenericExprIssue, HirIfExpr, HirIfLetExpr, HirIndexExpr, HirMatchArm, HirMatchExpr,
-    HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr, HirPlaceholderKind, HirPoisonState,
-    HirRangeExpr, HirRecordExpr, HirRecordField, HirRecordLiteralExpr, HirRecoveredName,
-    HirRecoveryIssue, HirSelectExpr, HirSelectedMember, HirThreadBody, HirThreadBodyInvariantError,
-    HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem, HirThreadMode, HirTryExpr, HirTryForm,
-    HirTupleExpr, HirUnaryExpr, HirUnaryOp,
+    HirArrayRepeatExpr, HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator,
+    HirAwaitExpr, HirAwaitPropagation, HirBinaryExpr, HirBinaryOp, HirBlockExpr, HirBorrowExpr,
+    HirBorrowKind, HirBracketSequenceExpr, HirCallArgument, HirCallArgumentListTerminator,
+    HirCallArgumentOrdinal, HirCallBuildError, HirCallCallee, HirCallChildPoison,
+    HirCallChildStates, HirCallExpr, HirCallIssue, HirCallTypeApplication, HirChoiceBody,
+    HirChoiceExpr, HirChoiceItem, HirClosureExpr, HirClosureParameter, HirComputationBlockExpr,
+    HirComputationBlockKind, HirDereferenceExpr, HirExpr, HirExprInvariantError, HirExprKind,
+    HirExpressionRecoveryIssue, HirGenericExprIssue, HirIfExpr, HirIfLetExpr, HirIndexExpr,
+    HirMatchArm, HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName, HirPipeExpr,
+    HirPlaceholderKind, HirPoisonState, HirRangeExpr, HirRecordExpr, HirRecordField,
+    HirRecordLiteralExpr, HirRecoveredName, HirRecoveryIssue, HirSelectExpr, HirSelectedMember,
+    HirThreadBody, HirThreadBodyInvariantError, HirThreadBodyOwner, HirThreadExpr,
+    HirThreadFlowItem, HirThreadMode, HirTryExpr, HirTryForm, HirTupleExpr, HirUnaryExpr,
+    HirUnaryOp,
 };
 use crate::dialogue_application::{
-    HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId, HirDialogueCoordinate,
-    HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind, HirPostfixBracket,
-    HirPostfixBracketCandidates, HirPostfixCandidateFailure, HirPostfixCandidateFailureKind,
-    HirRichTextArgument, HirRichTextArgumentId, HirRichTextTag, HirRichTextTagId,
-    HirRichTextTagIdentity, HirRichTextTagPayload, HirRichTextValue, HirTextFragment,
+    HirBuiltinRichTextTag, HirDialogueContent, HirDialogueContentApplication, HirDialogueContentId,
+    HirDialogueCoordinate, HirDialogueNode, HirDialogueNodeId, HirDialogueNodeKind,
+    HirPostfixBracket, HirPostfixBracketCandidates, HirPostfixCandidateFailure,
+    HirPostfixCandidateFailureKind, HirRichTextArgument, HirRichTextArgumentId,
+    HirRichTextDirectStyle, HirRichTextTag, HirRichTextTagId, HirRichTextTagIdentity,
+    HirRichTextTagPayload, HirRichTextValue, HirTextFragment,
 };
 use crate::identity::{
     ExprId, HirDatabaseId, HirLimit, HirModuleId, HirTypedId, ItemId, LocalId, PatternId, RawHirId,
@@ -123,7 +125,24 @@ fn expression_owner_rejects_a_foreign_child_before_arena_publication() {
 }
 
 #[test]
-fn call_constructor_enforces_limit_ordering_and_module_identity() {
+fn direct_child_inventory_is_source_independent_for_synthetic_chain() {
+    let module = module(2);
+    let source = id::<ExprId>(module, 1);
+    let iterator = id::<ExprId>(module, 2);
+
+    let into_iterator = HirExprKind::ForSynthetic(super::HirForSyntheticExpr::iterator(source));
+    let next_value = HirExprKind::ForSynthetic(super::HirForSyntheticExpr::next_value(iterator));
+
+    assert_eq!(into_iterator.direct_expression_children(), [source]);
+    assert_eq!(next_value.direct_expression_children(), [iterator]);
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Call constructor test exhausts ordering, duplicate, spread, poison, and module-identity rows"
+)]
+fn call_constructor_enforces_ordering_while_expression_owner_enforces_module_identity() {
     let owner_module = module(3);
     let foreign_module = module(4);
     let callee = id::<ExprId>(owner_module, 1);
@@ -156,7 +175,7 @@ fn call_constructor_enforces_limit_ordering_and_module_identity() {
                 &[],
             ))
             .as_ref(),
-        &[positional_issue.clone()]
+        std::slice::from_ref(&positional_issue)
     );
     assert_eq!(
         positional_state,
@@ -227,22 +246,28 @@ fn call_constructor_enforces_limit_ordering_and_module_identity() {
                 &[],
             ))
             .as_ref(),
-        &[spread_issue.clone()]
+        std::slice::from_ref(&spread_issue)
     );
     assert_eq!(
         spread_state,
         HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(spread_issue))
     );
+    let (foreign_call, foreign_state) = HirCallExpr::try_new(
+        HirCallCallee::value(callee),
+        HirCallTypeApplication::absent(),
+        Box::new([HirCallArgument::positional(foreign)]),
+        HirCallArgumentListTerminator::Closed,
+        HirCallChildStates::new(HirCallChildPoison::Clean, &[HirCallChildPoison::Clean], &[]),
+        false,
+    )
+    .expect("Call payload construction remains independent of its arena owner");
+    assert_eq!(foreign_state, HirPoisonState::Clean);
     assert_eq!(
-        HirCallExpr::try_new(
-            HirCallCallee::value(callee),
-            HirCallTypeApplication::absent(),
-            Box::new([HirCallArgument::positional(foreign)]),
-            HirCallArgumentListTerminator::Closed,
-            HirCallChildStates::new(HirCallChildPoison::Clean, &[HirCallChildPoison::Clean], &[],),
-            false,
-        ),
-        Err(HirCallBuildError::ChildIdentityMismatch)
+        HirExpr::try_new(scope, HirExprKind::Call(foreign_call), foreign_state),
+        Err(HirExprInvariantError::ForeignChild {
+            expected: owner_module,
+            actual: foreign_module,
+        })
     );
 }
 
@@ -271,7 +296,7 @@ fn call_constructor_retains_present_poisoned_arguments_and_rejects_clean_missing
             &[],
         ))
         .as_ref(),
-        &[issue.clone()]
+        std::slice::from_ref(&issue)
     );
     assert_eq!(
         state,
@@ -357,8 +382,8 @@ fn associated_call_retains_the_typed_receiver_and_authored_separator_family() {
     let call = clean_call(
         HirCallCallee::associated(
             HirAssociatedReceiver::resolved(root),
+            HirAssociatedSeparator::Present(HirAssociatedCallSyntax::DotFallback),
             HirRecoveredName::Valid(name("with_capacity")),
-            HirAssociatedCallSyntax::DotFallback,
         ),
         Box::new([HirCallArgument::positional(argument)]),
     );
@@ -366,17 +391,20 @@ fn associated_call_retains_the_typed_receiver_and_authored_separator_family() {
     let HirCallCallee::Associated {
         receiver,
         member,
-        syntax,
+        separator,
     } = call.callee()
     else {
         panic!("associated type callee");
     };
-    assert_eq!(receiver.type_id(), root);
+    assert_eq!(receiver.type_id(), Some(root));
     assert_eq!(
         member.resolved().map(HirName::as_str),
         Some("with_capacity")
     );
-    assert_eq!(*syntax, HirAssociatedCallSyntax::DotFallback);
+    assert_eq!(
+        *separator,
+        HirAssociatedSeparator::Present(HirAssociatedCallSyntax::DotFallback)
+    );
     assert_eq!(call.arguments()[0].value(), argument);
 }
 
@@ -452,8 +480,7 @@ fn thread_body_preserves_source_order_and_rejects_foreign_flow_items() {
         ]),
     )
     .expect("same-module body");
-    let thread =
-        HirThreadExpr::try_new(None, HirThreadMode::Attached, body).expect("same-module thread");
+    let thread = HirThreadExpr::new(None, HirThreadMode::Attached, body);
     assert_eq!(thread.name(), None);
     assert_eq!(thread.mode(), HirThreadMode::Attached);
     assert_eq!(thread.scope(), scope);
@@ -600,6 +627,10 @@ fn expression_owner_requires_poison_for_recovery_payload() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the leaf recovery test exhausts every retained leaf payload and exact shared issue"
+)]
 fn expression_leaf_recovery_requires_the_exact_shared_issue() {
     let owner_module = module(131);
     let scope = id::<ScopeId>(owner_module, 1);
@@ -864,7 +895,7 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
         HirClosureParameter::try_new(pattern, None, scope).expect("test closure parameter");
     let match_arm = HirMatchArm::try_new(scope, pattern, None, second, Box::new([local]))
         .expect("test match arm");
-    let thread = HirThreadExpr::try_new(
+    let thread = HirThreadExpr::new(
         None,
         HirThreadMode::Attached,
         HirThreadBody::try_new(
@@ -873,8 +904,7 @@ fn expression_source_roles_cover_the_closed_thirty_six_family_matrix() {
             Box::new([HirThreadFlowItem::Statement(statement)]),
         )
         .expect("test thread body"),
-    )
-    .expect("test thread");
+    );
     let content =
         HirDialogueContent::try_new(HirDialogueContentId::new(owner), Box::new([]), Box::new([]))
             .expect("empty dialogue content");
@@ -1151,6 +1181,7 @@ fn expression_source_roles_reject_wrong_parts_and_exact_one_over_ordinals() {
         HirDialogueContentApplication::try_new(owner, first, content, None, coordinates)
             .expect("dialogue coordinates"),
     );
+    assert_eq!(dialogue.direct_expression_children(), [first, second]);
     let coordinate = HirCallArgumentOrdinal::try_new(1).expect("coordinate ordinal");
     assert_eq!(
         dialogue.validate_source_role(
@@ -1198,6 +1229,7 @@ fn expression_source_roles_reject_wrong_parts_and_exact_one_over_ordinals() {
         HirCallCallee::value(first),
         Box::new([HirCallArgument::positional(second)]),
     ));
+    assert_eq!(call.direct_expression_children(), [first, second]);
     assert_eq!(
         call.validate_source_role(owner, HirExprSourceRole::CallAssociatedReceiver),
         Err(HirSourceQueryError::ExprRoleNotApplicable {
@@ -1220,8 +1252,8 @@ fn expression_source_roles_reject_wrong_parts_and_exact_one_over_ordinals() {
     let associated_call = HirExprKind::Call(clean_call(
         HirCallCallee::associated(
             HirAssociatedReceiver::resolved(id::<TypeId>(module, 4)),
+            HirAssociatedSeparator::Present(HirAssociatedCallSyntax::DotFallback),
             HirRecoveredName::Valid(name("with_capacity")),
-            HirAssociatedCallSyntax::DotFallback,
         ),
         Box::new([]),
     ));
@@ -1298,7 +1330,9 @@ fn dialogue_and_rich_text_source_roles_validate_nested_typed_ordinals() {
     );
     let tag = HirRichTextTag::try_new(
         tag_id,
-        HirRichTextTagIdentity::Marker(name("voice")),
+        HirRichTextTagIdentity::Builtin(HirBuiltinRichTextTag::DirectStyle(
+            HirRichTextDirectStyle::Color,
+        )),
         Box::new([argument]),
         HirRichTextTagPayload::Arguments,
     )

@@ -17,7 +17,7 @@ use crate::attachment::{
     SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
 };
 use crate::grammar::kinds::SyntaxKind;
-use crate::parser::{ParseOptions, parse_shadow_document};
+use crate::parser::{ParseOptions, parse_document};
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
     let document = Arc::new(
@@ -28,7 +28,7 @@ fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
         )
         .unwrap(),
     );
-    let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
     let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(191).unwrap());
     let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
     let snapshot = SyntaxSnapshotId::new(
@@ -102,13 +102,13 @@ fn source_attachment_preserves_header_policy_and_handler_inventory() {
     };
     let AttachedSourceBackpressurePolicy::Bounded {
         capacity, overflow, ..
-    } = policy
+    } = policy.as_ref()
     else {
         panic!("bounded policy")
     };
     assert!(capacity.value().is_some());
     assert!(matches!(
-        overflow,
+        overflow.as_ref(),
         AttachedSourceOverflowPolicy::DropOldest(_)
     ));
     assert!(matches!(
@@ -264,12 +264,12 @@ fn source_policy_missing_and_unknown_values_never_gain_valid_defaults() {
     ));
     let declaration = source(&snapshot).semantics().unwrap();
     let members = declaration.body().members();
+    let AttachedSourceMember::Backpressure { policy, .. } = &members[0] else {
+        panic!("backpressure member")
+    };
     assert!(matches!(
-        &members[0],
-        AttachedSourceMember::Backpressure {
-            policy: AttachedSourceBackpressurePolicy::Unknown { .. },
-            ..
-        }
+        policy.as_ref(),
+        AttachedSourceBackpressurePolicy::Unknown { .. }
     ));
     assert!(matches!(
         &members[1],
@@ -304,7 +304,7 @@ fn bounded_policy_keeps_a_recovered_capacity_under_the_typed_call_owner() {
         capacity,
         overflow,
         ..
-    } = policy
+    } = policy.as_ref()
     else {
         panic!("typed bounded policy")
     };
@@ -314,7 +314,7 @@ fn bounded_policy_keeps_a_recovered_capacity_under_the_typed_call_owner() {
         Some(AttachedSourceExpression::Recovered(_))
     ));
     assert!(matches!(
-        overflow,
+        overflow.as_ref(),
         AttachedSourceOverflowPolicy::DropOldest(_)
     ));
     assert!(declaration.has_recovery());

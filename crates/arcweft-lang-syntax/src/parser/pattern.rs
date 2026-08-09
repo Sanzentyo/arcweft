@@ -2,7 +2,7 @@
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::path::emit_path;
 use super::pattern_projection::{
     PatternProjectionTransaction, binding_syntax, empty_range, is_trivia, name_syntax,
@@ -26,11 +26,7 @@ use crate::patterns::{
     PatternVariantPayloadIssue, PatternVariantPayloadSyntax, PatternVariantSyntax,
 };
 
-pub(super) fn emit_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    role: SyntaxRole,
-) {
+pub(super) fn emit_pattern(parser: &mut DocumentParser<'_, '_>, end: usize, role: SyntaxRole) {
     let mut transaction = PatternProjectionTransaction::new(parser);
     let root_path = PatternNodePath::root();
     let root = emit_pattern_node(parser, end, role, &mut transaction, &root_path);
@@ -43,7 +39,7 @@ pub(super) fn emit_pattern(
 /// the complete receiver source and the exact `self` binding, but never gains a
 /// fabricated type or a borrow-only Pattern family.
 pub(super) fn emit_method_receiver_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     receiver: &PendingMethodReceiverProjection,
@@ -110,7 +106,7 @@ pub(super) fn emit_method_receiver_pattern(
 }
 
 fn emit_pattern_node(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -119,22 +115,12 @@ fn emit_pattern_node(
     let end = trimmed_end(parser, parser.cursor(), end);
     if parser.cursor() >= end {
         let at = parser.current_offset();
-        transaction.start_node(
+        return emit_missing_pattern_node(
             parser,
-            SyntaxKind::MissingPattern,
             role,
+            transaction,
             path,
             SourceRange::new(at, at),
-        );
-        transaction.component(
-            path,
-            PatternComponentRole::Recovery,
-            SourceRange::new(at, at),
-        );
-        parser.finish();
-        return PatternSyntaxNode::new(
-            PatternSyntaxKind::Error,
-            PatternSyntaxState::from_issues(vec![PatternRecoveryIssue::MissingPattern]),
         );
     }
 
@@ -179,7 +165,7 @@ fn emit_pattern_node(
 }
 
 fn emit_or_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -194,7 +180,7 @@ fn emit_or_pattern(
         if parser.cursor() >= end {
             break;
         }
-        let alternative_end = find_top_level_boundary(parser, parser.cursor(), &["|"]).min(end);
+        let alternative_end = find_top_level_boundary(parser, parser.cursor(), end, &["|"]);
         transaction.component(
             path,
             PatternComponentRole::Element { ordinal },
@@ -213,20 +199,24 @@ fn emit_or_pattern(
             .expect("grammar limits fit Pattern element ordinals");
         if parser.at("|") {
             parser.bump();
-            parser.bump_trivia();
-            if parser.cursor() >= end {
-                let missing = empty_range(parser);
+            if trimmed_end(parser, parser.cursor(), end) == parser.cursor() {
+                // Emit the recovery node before consuming trailing trivia so
+                // its parser event and typed source projection share the
+                // exact insertion boundary immediately after `|`.
+                let at = parser.current_offset();
+                let missing = SourceRange::new(at, at);
                 transaction.component(path, PatternComponentRole::Element { ordinal }, missing);
-                alternatives.push(emit_pattern_node(
+                alternatives.push(emit_missing_pattern_node(
                     parser,
-                    end,
                     SyntaxRole::Element(ordinal),
                     transaction,
                     &path.child(PatternNodeStep::Element(ordinal)),
+                    missing,
                 ));
                 issues.push(PatternRecoveryIssue::MissingOrAlternative { ordinal });
                 break;
             }
+            parser.bump_trivia();
         } else {
             break;
         }
@@ -238,8 +228,24 @@ fn emit_or_pattern(
     )
 }
 
+fn emit_missing_pattern_node(
+    parser: &mut DocumentParser<'_, '_>,
+    role: SyntaxRole,
+    transaction: &mut PatternProjectionTransaction,
+    path: &PatternNodePath,
+    source: SourceRange,
+) -> PatternSyntaxNode {
+    transaction.start_node(parser, SyntaxKind::MissingPattern, role, path, source);
+    transaction.component(path, PatternComponentRole::Recovery, source);
+    parser.finish();
+    PatternSyntaxNode::new(
+        PatternSyntaxKind::Error,
+        PatternSyntaxState::from_issues(vec![PatternRecoveryIssue::MissingPattern]),
+    )
+}
+
 fn emit_whole_binding_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     rest: usize,
     end: usize,
     role: SyntaxRole,
@@ -286,7 +292,7 @@ fn emit_whole_binding_pattern(
 }
 
 fn emit_variant_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -340,7 +346,7 @@ fn emit_variant_pattern(
 }
 
 fn emit_record_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -378,7 +384,7 @@ fn emit_record_pattern(
 }
 
 fn emit_variant_tuple_payload(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
@@ -434,7 +440,7 @@ fn emit_variant_tuple_payload(
 }
 
 fn emit_variant_record_payload(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
@@ -478,7 +484,7 @@ fn emit_variant_record_payload(
 }
 
 fn emit_tuple_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -520,7 +526,7 @@ fn emit_tuple_pattern(
 }
 
 fn emit_sequence_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -551,7 +557,7 @@ fn emit_sequence_pattern(
         if parser.cursor() >= close || parser.at("]") {
             break;
         }
-        let element_end = find_top_level_boundary(parser, parser.cursor(), &[",", "]"]).min(close);
+        let element_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", "]"]);
         if parser.at("..") {
             if matches!(rest, PatternSequenceRestSyntax::Absent) {
                 let (projected, rest_issues) =
@@ -617,7 +623,7 @@ struct RecordFieldsResult {
 }
 
 fn emit_record_fields(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     transaction: &mut PatternProjectionTransaction,
     owner: &PatternNodePath,
@@ -637,7 +643,7 @@ fn emit_record_fields(
         if parser.cursor() >= close || parser.at("}") {
             break;
         }
-        let field_end = find_top_level_boundary(parser, parser.cursor(), &[",", "}"]).min(close);
+        let field_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", "}"]);
         if parser.at("..") {
             let role_ordinal =
                 u16::try_from(ordinal).expect("grammar limits fit record-field role ordinals");
@@ -686,7 +692,7 @@ fn emit_record_fields(
 }
 
 fn emit_record_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     field: u32,
     transaction: &mut PatternProjectionTransaction,
@@ -710,7 +716,7 @@ fn emit_record_field(
 }
 
 fn emit_explicit_record_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     field: u32,
     colon: usize,
@@ -799,7 +805,7 @@ fn emit_explicit_record_field(
 }
 
 fn emit_shorthand_record_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     field: u32,
     whole: SourceRange,
@@ -836,7 +842,7 @@ fn emit_shorthand_record_field(
 }
 
 fn emit_pattern_list(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     delimiter: &str,
     transaction: &mut PatternProjectionTransaction,
@@ -850,7 +856,7 @@ fn emit_pattern_list(
             break;
         }
         let element_end =
-            find_top_level_boundary(parser, parser.cursor(), &[",", delimiter]).min(close);
+            find_top_level_boundary(parser, parser.cursor(), close, &[",", delimiter]);
         transaction.component(
             owner,
             PatternComponentRole::Element { ordinal },
@@ -877,7 +883,7 @@ fn emit_pattern_list(
 }
 
 fn emit_binding_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -908,7 +914,7 @@ fn emit_binding_pattern(
 }
 
 fn emit_mutable_binding_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -943,7 +949,7 @@ fn emit_mutable_binding_pattern(
     )
 }
 
-fn emit_rest_pattern(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, role: SyntaxRole) {
+fn emit_rest_pattern(parser: &mut DocumentParser<'_, '_>, end: usize, role: SyntaxRole) {
     parser.start(SyntaxKind::RestPattern, role);
     parser.bump();
     parser.bump_trivia();
@@ -956,7 +962,7 @@ fn emit_rest_pattern(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, role
 }
 
 fn emit_invalid_rest_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -990,7 +996,7 @@ fn emit_invalid_rest_pattern(
 }
 
 fn emit_discard_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -1010,7 +1016,7 @@ fn emit_discard_pattern(
 }
 
 fn emit_literal_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -1035,7 +1041,7 @@ fn emit_literal_pattern(
 }
 
 fn emit_entity_reference_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -1062,7 +1068,7 @@ fn emit_entity_reference_pattern(
 }
 
 fn emit_error_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     transaction: &mut PatternProjectionTransaction,
@@ -1090,7 +1096,7 @@ fn emit_error_pattern(
 }
 
 fn emit_typed_binding_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     colon: usize,
     end: usize,
     role: SyntaxRole,
@@ -1141,7 +1147,7 @@ fn emit_typed_binding_pattern(
 }
 
 fn start_pattern(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     kind: SyntaxKind,
     role: SyntaxRole,
@@ -1157,11 +1163,7 @@ fn start_pattern(
     );
 }
 
-fn typed_binding_colon(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> Option<usize> {
+fn typed_binding_colon(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Option<usize> {
     let first = first_significant(parser, start, end)?;
     matches!(
         parser.token_at(first).map(super::lexer::LexToken::kind),
@@ -1171,11 +1173,7 @@ fn typed_binding_colon(
     .flatten()
 }
 
-fn whole_binding_rest(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> Option<usize> {
+fn whole_binding_rest(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> Option<usize> {
     let first = first_significant(parser, start, end)?;
     let token = parser.token_at(first)?;
     if token.kind() != SyntaxKind::IdentifierToken {
@@ -1190,7 +1188,7 @@ fn whole_binding_rest(
     .then_some(rest)
 }
 
-fn is_variant_pattern(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> bool {
+fn is_variant_pattern(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> bool {
     if token_text(parser, start) == Some(".") {
         return true;
     }
@@ -1204,7 +1202,7 @@ fn is_variant_pattern(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: 
 }
 
 fn has_adjacent_variant_separator(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> bool {
@@ -1254,12 +1252,12 @@ impl BareExpectedTypeVariantGrammar {
 }
 
 fn boundary(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
     spellings: &[&str],
 ) -> Option<usize> {
-    let found = find_top_level_boundary(parser, start, spellings);
+    let found = find_top_level_boundary(parser, start, end, spellings);
     (found < end).then_some(found)
 }
 

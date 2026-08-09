@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_hir::model`
+ --> tests/ui/removed_old_hir_thread.rs:1:23
+  |
+1 | use arcweft_lang_hir::model::HirThread;
+  |                       ^^^^^ could not find `model` in `arcweft_lang_hir`

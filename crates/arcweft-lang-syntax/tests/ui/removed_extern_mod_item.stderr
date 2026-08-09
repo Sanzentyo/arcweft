@@ -1,5 +1,5 @@
-error[E0599]: no variant, associated function, or constant named `ExternMod` found for enum `arcweft_lang_syntax::ast::items::Item` in the current scope
- --> tests/ui/removed_extern_mod_item.rs:4:19
+error[E0432]: unresolved import `arcweft_lang_syntax::ast::items`
+ --> tests/ui/removed_extern_mod_item.rs:1:31
   |
-4 |     let _ = Item::ExternMod;
-  |                   ^^^^^^^^^ variant, associated function, or constant not found in `arcweft_lang_syntax::ast::items::Item`
+1 | use arcweft_lang_syntax::ast::items::Item;
+  |                               ^^^^^ could not find `items` in `ast`

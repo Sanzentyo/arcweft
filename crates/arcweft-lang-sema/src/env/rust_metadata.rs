@@ -633,7 +633,9 @@ fn hash_len(hasher: &mut blake3::Hasher, value: usize) {
 
 #[cfg(test)]
 mod tests {
-    use arcweft_lang_syntax::types::{TypeRef, parse_type_ref};
+    use arcweft_lang_syntax::ast::module_path::ModulePathRoot;
+    use arcweft_lang_syntax::ast::symbol_path::{ProjectSymbolPath, ProjectSymbolSegment};
+    use arcweft_lang_syntax::types::TypePath;
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
     use super::*;
@@ -751,15 +753,18 @@ mod tests {
     }
 
     fn accepted_id(package: &str, name: &str) -> AcceptedNominalId {
-        let parsed = parse_type_ref(name).expect("accepted nominal path");
-        let TypeRef::Path(path) = parsed.value() else {
-            panic!("test nominal identity is a path")
-        };
+        let path = TypePath::from(
+            ProjectSymbolPath::new(
+                ModulePathRoot::ImplicitCrate,
+                [ProjectSymbolSegment::try_new(name).expect("accepted nominal segment")],
+            )
+            .expect("accepted nominal path"),
+        );
         AcceptedNominalId::new(
             AcceptedNominalOwnerId::RustPackage(
                 RustPackageId::try_new(package).expect("package owner"),
             ),
-            path.clone(),
+            path,
         )
     }
 

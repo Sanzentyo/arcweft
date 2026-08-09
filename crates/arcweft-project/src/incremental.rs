@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use std::fmt::Display;
 
 /// Version namespace for persistent Arcweft cache records.
-pub const CACHE_SCHEMA_VERSION: u32 = 1;
+pub const CACHE_SCHEMA_VERSION: u32 = 2;
 
 /// Compiler-owned demand level for a module or compile unit.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]

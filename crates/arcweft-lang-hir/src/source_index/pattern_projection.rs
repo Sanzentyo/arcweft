@@ -121,6 +121,10 @@ impl From<PatternComponentRole> for HirPatternSourceRole {
 impl StagedHirSourceIndex {
     /// Projects one final pattern owner's complete role manifest directly from
     /// the exact attached Pattern grammar transaction.
+    #[allow(
+        clippy::result_large_err,
+        reason = "pattern staging failures retain the complete typed owner, source component, and syntax evidence"
+    )]
     pub(crate) fn stage_attached_pattern(
         &mut self,
         parsed: &ParsedSource,

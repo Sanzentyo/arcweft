@@ -3,11 +3,11 @@ use arcweft_bundle::resource_codec::view::{
     ViewProgramInstruction, ViewSemanticTarget,
 };
 use arcweft_bundle::resource_codec::{
-    ProductSourceRef, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
-    ViewDefinitionResource, ViewInstructionSpan, ViewProductValidationError,
-    ViewProductValidationLimits, ViewProgramResource,
+    SourceMapSection, SourceRangeRef, ValidatedViewProduct, ViewDefinitionResource,
+    ViewInstructionSpan, ViewProductValidationError, ViewProductValidationLimits,
+    ViewProgramResource,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::{ViewId, ViewPartLocalName, ViewPartName};
 
 #[test]
@@ -122,7 +122,7 @@ fn complete_product_rejects_cross_source_and_uncontained_export_ranges() {
     ]);
     let source_refs = source_map
         .documents()
-        .map(ProductSourceRef::from_document)
+        .map(arcweft_bundle::resource_codec::SourceMapDocument::product_source_ref)
         .collect::<Vec<_>>();
     let left = source_refs
         .iter()
@@ -284,7 +284,7 @@ fn ranged_program(label: &str, text: &str) -> (SourceMapSection, ViewProgramReso
     let source_map = source_map(&[(label, text)]);
     let source_refs = source_map
         .documents()
-        .map(ProductSourceRef::from_document)
+        .map(arcweft_bundle::resource_codec::SourceMapDocument::product_source_ref)
         .collect::<Vec<_>>();
     let source = source_refs[0].clone();
     let end = u32::try_from(text.len()).expect("test source length");

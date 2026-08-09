@@ -6,12 +6,12 @@ use super::{
 };
 use arcweft_agent_protocol::rich_text::{AgentRichTextElementKind, AgentRichTextElementRef};
 use arcweft_glyphon::{PreparedGlyph, PreparedGlyphSource, PreparedTextItem};
-use arcweft_render_text::RichTextRange;
 use arcweft_render_wgpu::geometry::PreparedTextOwner;
 use arcweft_render_wgpu::offscreen::{
     CaptureAttachment, CaptureCropPolicy, CaptureRegion, CaptureRequest, CaptureScope,
     PreparedTextSelection, PreparedTextSelectionError,
 };
+use arcweft_text_model::RichTextRange;
 use num_traits::ToPrimitive;
 use thiserror::Error;
 
@@ -397,7 +397,7 @@ fn player_text_element_paint_order(
     let Some(local_end) = reference.range.end.checked_sub(owner.source_origin) else {
         return 0;
     };
-    let local_range = arcweft_render_text::RichTextRange::new(local_start, local_end);
+    let local_range = RichTextRange::new(local_start, local_end);
     match reference.kind {
         arcweft_agent_protocol::rich_text::AgentRichTextElementKind::GlyphCluster => item
             .layout
@@ -442,7 +442,7 @@ fn player_prepared_text_selection_is_visible(
 
 fn glyph_is_cluster_member(
     glyph: &arcweft_text_layout::TextLayoutGlyph,
-    cluster_range: arcweft_render_text::RichTextRange,
+    cluster_range: RichTextRange,
     cluster_index: usize,
 ) -> bool {
     usize::try_from(glyph.cluster_index).ok() == Some(cluster_index)

@@ -1,8 +1,8 @@
 use arcweft_core::audio::RuntimeAudioCommand;
 use arcweft_core::effect::{
-    LineEffectRequest, RuntimeAssertion, RuntimeAssertionProfile, RuntimeAssignment, RuntimeCall,
-    RuntimeEffectExpr, RuntimeEffectFieldExpr, RuntimeEvent, RuntimeField, RuntimeLog,
-    RuntimeWaitTarget,
+    LineEffectRequest, RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
+    RuntimeAssignment, RuntimeCall, RuntimeEffectExpr, RuntimeEffectFieldExpr, RuntimeEvent,
+    RuntimeField, RuntimeLog, RuntimeWaitTarget,
 };
 use arcweft_core::engine::{FlowFiber, FlowFiberStatus};
 use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
@@ -34,37 +34,14 @@ use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEnv, RuntimeExpr,
     RuntimeExprMatchArm, RuntimePayload, RuntimeSeq, RuntimeValue,
 };
-use arcweft_dialogue::DialogueProfileRevision;
 use arcweft_interaction_model::{
     audio::{AudioCommand, AudioDispatchId, AudioMillis, GainDbMilli},
     id::Identifier,
     input::{InputEpoch, InputEventKind, InputSequence, InteractionTarget, RoutedInputEvent},
     payload::InteractionPayload,
 };
-use arcweft_render_text::LineDisplayCatalog;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-plan-parity-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-plan-parity-test").expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
-}
+use arcweft_text_model::DialogueContentCatalog;
 
 #[derive(Debug)]
 struct ParityStep {
@@ -135,8 +112,8 @@ fn run_parity_with_options(
     inputs: Vec<RuntimeStepInput>,
 ) -> Vec<ParityStep> {
     let plan = with_parity_entry(plan);
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
-    let awbc = AwbcLowerer::new(&plan, &display, "awbc_product_parity.arcw")
+    let dialogue_content = DialogueContentCatalog::new();
+    let awbc = AwbcLowerer::new(&plan, &dialogue_content, "awbc_product_parity.arcw")
         .lower()
         .expect("runtime plan lowers to AWBC")
         .program;
@@ -385,11 +362,12 @@ fn non_control_effect_table() -> Vec<LineEffectRequest> {
             condition: "ready".to_owned(),
             message: "must be ready".to_owned(),
         },
-        LineEffectRequest::Assert(RuntimeAssertion {
-            condition: "debug_flag".to_owned(),
-            message: "asserted".to_owned(),
-            profile: RuntimeAssertionProfile::Always,
-        }),
+        LineEffectRequest::Assert(RuntimeAssertion::new(
+            RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("nonzero assertion guard"),
+            "debug_flag".to_owned(),
+            "asserted".to_owned(),
+            RuntimeAssertionProfile::Always,
+        )),
         LineEffectRequest::Close("panel.main".to_owned()),
         LineEffectRequest::Select("choice.primary".to_owned()),
         LineEffectRequest::Break {
@@ -645,6 +623,122 @@ fn awbc_product_parity_match_guard_false_continues_to_next_arm() {
     assert_eq!(
         steps[0].structured.output.effects.line,
         vec![call("effect.fallback")]
+    );
+}
+
+#[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the parity case keeps scrutinee evaluation and arm-scope invariants in one structured/AWBC comparison"
+)]
+fn awbc_product_parity_match_scrutinee_is_once_and_arm_bindings_are_scoped() {
+    let initial_state = RuntimeValue::Record(vec![arcweft_core::value::RuntimeFieldValue {
+        name: "count".to_owned(),
+        value: RuntimeValue::i64(0),
+    }]);
+    let incremented_count = RuntimeExpr::Binary {
+        lhs: Box::new(RuntimeExpr::Field {
+            target: Box::new(RuntimeExpr::Local("state".to_owned())),
+            field: "count".to_owned(),
+        }),
+        op: RuntimeBinaryOp::Add,
+        rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
+    };
+    let scrutinee = RuntimeExpr::AssignField {
+        target: Box::new(RuntimeExpr::Local("state".to_owned())),
+        field: "count".to_owned(),
+        expr: Box::new(incremented_count),
+        body: Box::new(RuntimeExpr::Value(RuntimeValue::Bool(true))),
+    };
+    let count_is_one = RuntimeExpr::Binary {
+        lhs: Box::new(RuntimeExpr::Field {
+            target: Box::new(RuntimeExpr::Local("state".to_owned())),
+            field: "count".to_owned(),
+        }),
+        op: RuntimeBinaryOp::Eq,
+        rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
+    };
+    let outer_bindings_survive = RuntimeExpr::Binary {
+        lhs: Box::new(RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("rejected".to_owned())),
+            op: RuntimeBinaryOp::Eq,
+            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::String(
+                "outer-rejected".to_owned(),
+            ))),
+        }),
+        op: RuntimeBinaryOp::And,
+        rhs: Box::new(RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local("selected".to_owned())),
+            op: RuntimeBinaryOp::Eq,
+            rhs: Box::new(RuntimeExpr::Value(RuntimeValue::String(
+                "outer-selected".to_owned(),
+            ))),
+        }),
+    };
+    let post_match_invariants = RuntimeExpr::Binary {
+        lhs: Box::new(count_is_one),
+        op: RuntimeBinaryOp::And,
+        rhs: Box::new(outer_bindings_survive),
+    };
+    let plan = flow(vec![
+        FlowOp::Match {
+            scrutinee,
+            arms: vec![
+                RuntimeMatchArm {
+                    pattern: RuntimePattern::Ident("rejected".to_owned()),
+                    guard: Some(RuntimeExpr::Value(RuntimeValue::Bool(false))),
+                    ops: vec![FlowOp::Return("rejected-arm-ran".to_owned())],
+                },
+                RuntimeMatchArm {
+                    pattern: RuntimePattern::Ident("selected".to_owned()),
+                    guard: None,
+                    ops: vec![FlowOp::Noop],
+                },
+            ],
+        },
+        FlowOp::If {
+            condition: post_match_invariants,
+            then_ops: vec![FlowOp::Return("match-scope-ok".to_owned())],
+            else_ops: vec![FlowOp::Return("match-scope-broken".to_owned())],
+        },
+    ]);
+    let steps = run_parity_with_root_bindings(
+        plan,
+        &[
+            binding("state", initial_state),
+            binding(
+                "rejected",
+                RuntimeValue::String("outer-rejected".to_owned()),
+            ),
+            binding(
+                "selected",
+                RuntimeValue::String("outer-selected".to_owned()),
+            ),
+        ],
+        vec![RuntimeStepInput::default()],
+    );
+
+    let expected_state = RuntimeValue::Record(vec![arcweft_core::value::RuntimeFieldValue {
+        name: "count".to_owned(),
+        value: RuntimeValue::i64(1),
+    }]);
+    for fiber in [&steps[0].structured_fiber, &steps[0].awbc_fiber] {
+        assert_eq!(fiber.env.get("state"), Some(&expected_state));
+        assert_eq!(
+            fiber.env.get("rejected"),
+            Some(&RuntimeValue::String("outer-rejected".to_owned()))
+        );
+        assert_eq!(
+            fiber.env.get("selected"),
+            Some(&RuntimeValue::String("outer-selected".to_owned()))
+        );
+    }
+    assert_step_boundary_eq(&steps[0]);
+    assert_eq!(
+        steps[0].structured.output.flow_events,
+        vec![FlowEvent::Return {
+            value: "match-scope-ok".to_owned(),
+        }]
     );
 }
 
@@ -1521,7 +1615,7 @@ fn awbc_product_parity_stream_for_next_binds_source_item() {
     );
     let awbc = AwbcLowerer::new(
         &plan,
-        &LineDisplayCatalog::new(test_dialogue_revision()),
+        &DialogueContentCatalog::new(),
         "stream-for-next.arcw",
     )
     .lower()

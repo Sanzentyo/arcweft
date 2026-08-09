@@ -1,5 +1,7 @@
-use arcweft_core::plan::RuntimeLineId;
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_character::id::CharacterId;
+use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::TextKey;
 use arcweft_presentation::{
     fx::{
         Angle, FiniteF32, FxApplication, FxApplicationResolver, FxColor, FxContextSlot,
@@ -10,35 +12,53 @@ use arcweft_presentation::{
     },
     hit::HitRect,
 };
-use arcweft_render_text::{
-    LineDisplaySpec, RichTextControl, RichTextDocument, RichTextLayout, RichTextNode,
-    RichTextStyle, RichTextWritingMode, RuntimeLineContext, TextWeight,
+use arcweft_render_text::{RuntimeLineContext, TextWeight, resolve_frame};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::{
+    CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
+    LineDisplayFrame, RichTextControl, RichTextDocument, RichTextLayout, RichTextNode,
+    RichTextSpanKind, RichTextStyle, RichTextWritingMode,
 };
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use std::collections::BTreeMap;
 
 use super::*;
 
 const TEST_FONT: &[u8] = include_bytes!("../../../../../web/assets/noto-sans-jp-vf.ttf");
 
-fn dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
+fn test_source_ref() -> ProductSourceRef {
+    let source = SourceDocument::try_new(
         SourceDocumentId::try_new("render-wgpu-dialogue-prepared-test").expect("document ID"),
         SourceName::Memory,
-        "test manifest",
+        "dialogue prepared test",
     )
     .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.render-wgpu-dialogue-prepared-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
+    ProductSourceRef::try_for_identity(source.identity()).expect("product source reference")
+}
+
+fn runtime_line_context() -> RuntimeLineContext {
+    RuntimeLineContext::new(
+        Vec::new(),
+        DialoguePresentationCharacter {
+            id: CharacterId::try_new("character.narrator").expect("character identity"),
+            display_name: "Narrator".to_owned(),
+        },
+        CharacterDialoguePresentationConfig {
+            view: arcweft_view::ViewId::try_new_engine_owned("std.view.dialogue")
+                .expect("standard dialogue View id"),
+            voice: None,
+            look: None,
+            stage: None,
+            portrait: None,
+            focus: None,
+            cleanup: None,
+            source_locale: None,
+            hooks: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            custom: BTreeMap::new(),
+            config_digest: RuntimeValueDigest::ZERO,
+        },
+        Vec::new(),
+        Vec::new(),
     )
 }
 
@@ -301,7 +321,7 @@ fn typed_fx_application_changes_layout_style_and_post_layout_transform() {
             text: "typed".to_owned(),
         },
         RichTextNode::StyleEnd {
-            name: "fx".to_owned(),
+            span: RichTextSpanKind::Fx,
         },
     ]);
     let (item, _, diagnostics) = prepare(&frame, 0, false, true, &resolver);
@@ -394,7 +414,7 @@ fn typed_shader_and_mask_resolve_glyph_and_post_process_passes() {
             text: "source".to_owned(),
         },
         RichTextNode::StyleEnd {
-            name: "fx".to_owned(),
+            span: RichTextSpanKind::Fx,
         },
     ]);
 
@@ -458,7 +478,7 @@ fn stage_local_fx_time_reaches_dialogue_prepared_glyph_mask() {
             text: "時".to_owned(),
         },
         RichTextNode::StyleEnd {
-            name: "fx".to_owned(),
+            span: RichTextSpanKind::Fx,
         },
     ]);
     let at_stage_start = TestFxResolver {
@@ -543,7 +563,7 @@ fn missing_typed_shader_is_a_typed_diagnostic() {
 }
 
 fn prepare(
-    frame: &arcweft_render_text::LineDisplayFrame,
+    frame: &LineDisplayFrame,
     visual_time_millis: u64,
     reduce_motion: bool,
     reveal_complete: bool,
@@ -572,27 +592,15 @@ fn prepare(
     (item, complete, diagnostics)
 }
 
-fn frame(nodes: Vec<RichTextNode>) -> arcweft_render_text::LineDisplayFrame {
-    LineDisplaySpec {
-        line: RuntimeLineId::canonical("prepared.dialogue.test").expect("line id"),
-        callee: "narrator".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_view::ViewId::try_new_engine_owned("std.view.dialogue")
-            .expect("standard dialogue View id"),
-        profile_style: None,
-        dialogue_revision: dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(nodes),
-    }
-    .resolve_frame(&RuntimeLineContext::default())
-    .expect("frame resolves")
+fn frame(nodes: Vec<RichTextNode>) -> LineDisplayFrame {
+    let spec = DialogueContentSpec::new(
+        RuntimeLineId::canonical("prepared.dialogue.test").expect("line id"),
+        TextKey::try_new("text.prepared.dialogue.test").expect("text key"),
+        RichTextDocument::new(nodes),
+        Vec::new(),
+        test_source_ref(),
+    );
+    resolve_frame(&spec, &runtime_line_context()).expect("frame resolves")
 }
 
 const fn viewport() -> RenderViewport {

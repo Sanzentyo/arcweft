@@ -165,7 +165,7 @@ impl BundleSession {
                 bundle
                     .source_display_name()
                     .clone_into(&mut self.source_label);
-                self.display = bundle.display.clone();
+                self.dialogue_content = bundle.dialogue_content.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
                 self.action_buttons.clone_from(&next_runtime.action_buttons);

@@ -5,6 +5,10 @@ arcweft-bundle = { path = "../crates/arcweft-bundle" }
 arcweft-core = { path = "../crates/arcweft-core" }
 arcweft-render-text = { path = "../crates/arcweft-render-text" }
 arcweft-source = { path = "../crates/arcweft-source" }
+# Current nightly rejects zune-core's disabled-log statement macro in an
+# expression position. Enable the upstream logging macro through feature
+# unification; the generator itself still emits no log output.
+zune-jpeg = { version = "0.5.15", features = ["log"] }
 ---
 
 use arcweft_bundle::resource_codec::SourceMapSection;
@@ -18,9 +22,9 @@ use arcweft_bundle::resource_codec::view::{
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary};
 use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
-    AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-    AwbcStringId, AwbcTableRange, AwbcTerminator,
+    AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags,
+    AwbcFunctionId, AwbcFunctionKind, AwbcProgram, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator,
 };
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_render_text::LineDisplayCatalog;
@@ -28,6 +32,11 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::env;
 use std::fs;
 use std::path::PathBuf;
+
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
+}
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let out = output_path()?;
@@ -53,7 +62,9 @@ fn output_path() -> Result<PathBuf, String> {
                 out = PathBuf::from(value);
             }
             "--help" | "-h" => {
-                println!("usage: cargo +nightly -Zscript tools/build-web-ime-player-rendered-fixture.rs --out web/ime-player-rendered.awfb");
+                println!(
+                    "usage: cargo +nightly -Zscript tools/build-web-ime-player-rendered-fixture.rs --out web/ime-player-rendered.awfb"
+                );
                 std::process::exit(0);
             }
             other => return Err(format!("unknown argument `{other}`")),
@@ -88,6 +99,7 @@ fn minimal_bundle() -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("entry.main".to_owned()),
                 flows: 1,
                 bytecode_instructions: 0,
@@ -113,9 +125,21 @@ fn view_program() -> ViewProgramResource {
         state_schema_hashes: Vec::new(),
         exported_parts: Vec::new(),
         semantic_targets: vec![
-            semantic("target.jp_text_field", "input.jp_text_field", "text.label.jp_text_field"),
-            semantic("target.long_latin_area", "input.long_latin_area", "text.label.long_latin_area"),
-            semantic("target.secret_secure_field", "input.secret_secure_field", "text.label.secret_secure_field"),
+            semantic(
+                "target.jp_text_field",
+                "input.jp_text_field",
+                "text.label.jp_text_field",
+            ),
+            semantic(
+                "target.long_latin_area",
+                "input.long_latin_area",
+                "text.label.long_latin_area",
+            ),
+            semantic(
+                "target.secret_secure_field",
+                "input.secret_secure_field",
+                "text.label.secret_secure_field",
+            ),
         ],
         layout_bounds: vec![
             text_control_layout("input.jp_text_field", 48, 48, 420, 48),
@@ -152,7 +176,10 @@ fn semantic_layout(
     width: u32,
     height: u32,
 ) -> ViewLayoutBoundsResource {
-    ViewLayoutBoundsResource::semantic_target(public_id, ViewLogicalRect::from_px(x, y, width, height))
+    ViewLayoutBoundsResource::semantic_target(
+        public_id,
+        ViewLogicalRect::from_px(x, y, width, height),
+    )
 }
 
 fn semantic(public_id: &str, target: &str, label_text_source: &str) -> ViewSemanticTarget {
@@ -175,7 +202,10 @@ fn view_text() -> ViewTextResource {
                 "text.value.long_latin_area",
                 "Long Latin text wraps through the renderer; 日本語の語句も同じ Arcweft frameで表示する。",
             ),
-            literal("text.placeholder.long_latin_area", "Long text and Japanese text"),
+            literal(
+                "text.placeholder.long_latin_area",
+                "Long text and Japanese text",
+            ),
             literal("text.label.long_latin_area", "Long TextArea"),
             literal("text.value.secret_secure_field", "arcweft-secret-1234"),
             literal("text.placeholder.secret_secure_field", "secret"),
@@ -258,7 +288,11 @@ fn input_option(
         autocorrect: TextAssistPolicy::PlatformDefault,
         spellcheck: TextAssistPolicy::PlatformDefault,
         capitalization: TextCapitalization::None,
-        enter_key: if kind.is_multiline() { EnterKeyHint::Enter } else { EnterKeyHint::Done },
+        enter_key: if kind.is_multiline() {
+            EnterKeyHint::Enter
+        } else {
+            EnterKeyHint::Done
+        },
         multiline: kind.is_multiline(),
         selection_policy: ViewTextSelectionPolicy::Enabled,
         shortcut_policy: ViewTextShortcutPolicy::Enabled,
@@ -292,6 +326,14 @@ fn minimal_awbc_program() -> AwbcProgram {
             blocks: AwbcTableRange::new(0, 1),
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+        }],
+        flow_bindings: vec![AwbcFlowBinding {
+            flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                [0x31; 32],
+                "flow.main",
+            )
+            .expect("fixture checked Flow identity"),
+            function: AwbcFunctionId(0),
         }],
         blocks: vec![AwbcBlock {
             owner: AwbcFunctionId(0),

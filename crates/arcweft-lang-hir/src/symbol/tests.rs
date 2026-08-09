@@ -1,5 +1,5 @@
 use std::{
-    collections::hash_map::DefaultHasher,
+    collections::{BTreeMap, hash_map::DefaultHasher},
     fmt::Write as _,
     hash::{Hash, Hasher},
     sync::Arc,
@@ -11,22 +11,29 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
-    parser::{ParseOptions, parse_document_with_source},
-    types::{TypePath, TypeRef, TypeRefNodePath, parse_type_ref},
+    incremental::{ParsedSource, SyntaxDatabase},
+    parser::ParseOptions,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
+use arcweft_source::{
+    SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange, SourceSpan,
+    identity::SourceSnapshotId,
+};
 
 use crate::{
-    lower::lower_document_to_hir,
-    project::{HirProject, HirProjectError, HirProjectModule},
+    database::HirDatabase,
+    leaf::{HirEntityReference, HirIdRef, HirName, HirPath, HirPathRoot, HirPathSegment},
+    lowering::{HirModuleKey, LoweringRequest},
+    project::{HirProject, HirProjectModule},
+    proof_return::HirProofReturnSemanticFactSet,
 };
 
 use super::{
-    CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectDirectBindingError,
+    CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId, ExternalDeclarationSeed,
+    FlowPublicationKind, ProjectDirectBinding, ProjectDirectBindingError,
     ProjectExternalDeclarations, ProjectSymbolDiagnosticCode, ProjectSymbolLinkError,
     ProjectSymbolResolutionError, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolTargetId,
     ProjectSymbolWorldId, ProjectTypeLookupError, ProjectTypeTarget, ProjectValueLookup,
-    ProjectValueLookupError, ResolvedProjectSymbol,
+    ProjectValueLookupError, ProofArtifactId, ResolvedProjectSymbol,
     nominal::{
         ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId,
         ProjectNominalDeclarationKind,
@@ -36,28 +43,68 @@ use super::{
 const PACKAGE: &str = "project-symbol-tests";
 
 fn project(source: &str) -> (Arc<SourceDocument>, HirProject) {
+    let package = CallablePackageId::try_new(PACKAGE).expect("test package");
+    let path = CanonicalModulePath::crate_root();
+    let source_name = SourceName::path("src/main.arcw");
     let document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new("arcweft-project://project-symbol-tests/src/main.arcw")
                 .expect("document id"),
-            SourceName::path("src/main.arcw"),
+            source_name.clone(),
             source,
         )
         .expect("source document"),
     );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
-    let project = HirProject::new(
-        PACKAGE,
-        [HirProjectModule::try_new(
-            CanonicalModulePath::crate_root(),
-            document.identity().clone(),
-            hir,
+    let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(source_name),
+            Arc::clone(&document),
+            ParseOptions::default(),
         )
-        .expect("root module binding")],
+        .expect("attached source");
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = HirModuleKey::new(
+        package.clone(),
+        path.clone(),
+        document.identity().id().clone(),
+    );
+    let world = ProjectSymbolWorldId::try_new(
+        package.clone(),
+        document.identity().id().clone(),
+        "project-symbol-test",
     )
-    .expect("HIR project");
+    .expect("symbol world");
+    let revision =
+        ProjectSymbolRevision::try_for_documents([document.identity()]).expect("symbol revision");
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let transaction = database
+        .stage_proof_return_project(
+            [LoweringRequest::try_new(key, &parsed).expect("lowering request")],
+            world,
+            revision,
+            [document.identity()],
+            crate::lowering::HirLoweringControl::new(),
+        )
+        .expect("staged HIR project");
+    let facts = HirProofReturnSemanticFactSet::try_new(
+        Arc::clone(transaction.generation()),
+        transaction.headers().cloned(),
+        [],
+    )
+    .expect("symbol fixture has no authored Proof returns");
+    let mut outputs = transaction
+        .publish_with_semantic_facts(&mut database, facts)
+        .expect("published HIR project");
+    let hir = outputs.pop().expect("one fixture module").into_module();
+    assert!(outputs.is_empty());
+    let module = HirProjectModule::try_new(&database, &package, &path, document.identity(), hir)
+        .expect("root module binding");
+    let project = HirProject::try_new(&database, package, [module]).expect("HIR project");
     (document, project)
 }
 
@@ -70,9 +117,11 @@ fn module_path(path: &str) -> CanonicalModulePath {
     )
 }
 
-fn project_modules(sources: &[(&str, &str)]) -> (Vec<Arc<SourceDocument>>, HirProject) {
-    let mut documents = Vec::with_capacity(sources.len());
-    let modules = sources
+pub(super) fn project_modules(sources: &[(&str, &str)]) -> (Vec<Arc<SourceDocument>>, HirProject) {
+    let package = CallablePackageId::try_new(PACKAGE).expect("test package");
+    let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let staged = sources
         .iter()
         .map(|(path, source)| {
             let file = if path.is_empty() {
@@ -80,29 +129,93 @@ fn project_modules(sources: &[(&str, &str)]) -> (Vec<Arc<SourceDocument>>, HirPr
             } else {
                 path.replace('.', "/")
             };
+            let source_name = SourceName::path(format!("src/{file}.arcw"));
             let document = Arc::new(
                 SourceDocument::try_new(
                     SourceDocumentId::try_new(format!(
                         "arcweft-project://project-symbol-tests/src/{file}.arcw"
                     ))
                     .expect("document id"),
-                    SourceName::path(format!("src/{file}.arcw")),
+                    source_name.clone(),
                     *source,
                 )
                 .expect("source document"),
             );
-            let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-            assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-            let hir =
-                lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered module HIR");
-            let module =
-                HirProjectModule::try_new(module_path(path), document.identity().clone(), hir)
-                    .expect("fixture module binding");
-            documents.push(document);
-            module
+            let parsed = syntax
+                .parse_initial(
+                    SourceSnapshotId::initial(source_name),
+                    Arc::clone(&document),
+                    ParseOptions::default(),
+                )
+                .expect("attached source");
+            assert!(
+                parsed.diagnostics().is_empty(),
+                "{:?}",
+                parsed.diagnostics()
+            );
+            (module_path(path), document, parsed)
+        })
+        .collect::<Vec<(CanonicalModulePath, Arc<SourceDocument>, ParsedSource)>>();
+    let root_document = staged
+        .iter()
+        .find(|(path, _, _)| path == &CanonicalModulePath::crate_root())
+        .map(|(_, document, _)| document)
+        .expect("root fixture module");
+    let world = ProjectSymbolWorldId::try_new(
+        package.clone(),
+        root_document.identity().id().clone(),
+        "project-symbol-test",
+    )
+    .expect("symbol world");
+    let revision = ProjectSymbolRevision::try_for_documents(
+        staged.iter().map(|(_, document, _)| document.identity()),
+    )
+    .expect("symbol revision");
+    let transaction = database
+        .stage_proof_return_project(
+            staged.iter().map(|(path, document, parsed)| {
+                LoweringRequest::try_new(
+                    HirModuleKey::new(
+                        package.clone(),
+                        path.clone(),
+                        document.identity().id().clone(),
+                    ),
+                    parsed,
+                )
+                .expect("lowering request")
+            }),
+            world,
+            revision,
+            staged.iter().map(|(_, document, _)| document.identity()),
+            crate::lowering::HirLoweringControl::new(),
+        )
+        .expect("staged multi-module HIR project");
+    let facts = HirProofReturnSemanticFactSet::try_new(
+        Arc::clone(transaction.generation()),
+        transaction.headers().cloned(),
+        [],
+    )
+    .expect("symbol fixtures have no authored Proof returns");
+    let published = transaction
+        .publish_with_semantic_facts(&mut database, facts)
+        .expect("published multi-module HIR project")
+        .into_iter()
+        .map(|output| (output.module().key().path().clone(), output.into_module()))
+        .collect::<BTreeMap<_, _>>();
+    let modules = staged
+        .iter()
+        .map(|(path, document, _)| {
+            let hir = Arc::clone(&published[path]);
+            HirProjectModule::try_new(&database, &package, path, document.identity(), hir)
+                .expect("fixture module binding")
         })
         .collect::<Vec<_>>();
-    let project = HirProject::new(PACKAGE, modules).expect("multi-module HIR project");
+    let documents = staged
+        .into_iter()
+        .map(|(_, document, _)| document)
+        .collect();
+    let project =
+        HirProject::try_new(&database, package, modules).expect("multi-module HIR project");
     (documents, project)
 }
 
@@ -161,21 +274,98 @@ fn binding_path<const N: usize>(segments: [&str; N]) -> ProjectSymbolPath {
     .expect("test project binding path is non-empty")
 }
 
-fn type_path(source: &str) -> TypePath {
-    let authored = parse_type_ref(source).expect("valid test type path");
-    let TypeRef::Path(path) = authored.value() else {
-        panic!("`{source}` must parse as a plain type path");
+fn type_path(source: &str) -> HirPath {
+    let mut segments = source.split('.').peekable();
+    let root = match segments.peek().copied() {
+        Some("crate") => {
+            segments.next();
+            HirPathRoot::Crate
+        }
+        Some("self") => {
+            segments.next();
+            HirPathRoot::SelfModule
+        }
+        Some("super") => {
+            let mut depth = 0;
+            while matches!(segments.peek().copied(), Some("super")) {
+                segments.next();
+                depth += 1;
+            }
+            HirPathRoot::Super { depth }
+        }
+        _ => HirPathRoot::ImplicitCrate,
     };
-    path.clone()
+    let segments = segments
+        .map(|segment| {
+            HirPathSegment::Identifier(
+                HirName::try_new(segment.into()).expect("valid test HIR path segment"),
+            )
+        })
+        .collect::<Vec<_>>()
+        .into_boxed_slice();
+    HirPath::try_new(root, segments).expect("valid non-empty test HIR path")
+}
+
+fn symbol_path(source: &str) -> SymbolPath {
+    let mut segments = source.split('.').peekable();
+    let root = match segments.peek().copied() {
+        Some("crate") => {
+            segments.next();
+            ModulePathRoot::Crate
+        }
+        Some("self") => {
+            segments.next();
+            ModulePathRoot::SelfModule
+        }
+        Some("super") => {
+            let mut depth = 0;
+            while matches!(segments.peek().copied(), Some("super")) {
+                segments.next();
+                depth += 1;
+            }
+            ModulePathRoot::Super(depth)
+        }
+        _ => ModulePathRoot::ImplicitCrate,
+    };
+    let mut segments = segments.collect::<Vec<_>>();
+    let leaf = segments.pop().expect("test symbol path has a leaf");
+    let modules = segments
+        .into_iter()
+        .map(|segment| ModuleSegment::new(segment).expect("valid test module segment"))
+        .collect();
+    SymbolPath::try_new(root, modules, leaf).expect("valid test symbol path")
 }
 
 fn assert_nominal_source_records(
+    project: &HirProject,
     model_source: &str,
     model_document: &SourceDocument,
     record: &ProjectNominalDeclaration,
     choice: &ProjectNominalDeclaration,
     alias: &ProjectNominalDeclaration,
 ) {
+    let module = project
+        .module(record.id().module())
+        .expect("nominal owner module")
+        .module();
+    let type_span = |owner| {
+        let lookup = module
+            .source_site(
+                model_document.identity(),
+                crate::source_index::HirSourceQuery::Type {
+                    owner,
+                    role: crate::source_index::HirTypeSourceRole::Whole,
+                },
+            )
+            .expect("type source role");
+        let crate::source_index::HirSourcePresence::Present(
+            crate::source_index::HirSourceSite::Span(span),
+        ) = lookup.presence()
+        else {
+            panic!("authored nominal types retain exact source spans")
+        };
+        span.clone()
+    };
     let alias_target = "Result<T, Missing>";
     let alias_target_start = model_source
         .rfind(alias_target)
@@ -184,12 +374,7 @@ fn assert_nominal_source_records(
         panic!("Alias body must retain its parsed target")
     };
     assert_eq!(
-        target
-            .spans()
-            .source_at(&TypeRefNodePath::root())
-            .expect("alias root type source")
-            .whole()
-            .range(),
+        type_span(*target).range(),
         SourceRange::new(alias_target_start, alias_target_start + alias_target.len())
     );
 
@@ -218,16 +403,10 @@ fn assert_nominal_source_records(
     let field_start = model_source.find(field_text).expect("field source");
     assert_eq!(
         fields[0].source().whole().range(),
-        SourceRange::new(field_start, field_start + field_text.len())
+        SourceRange::new(field_start, field_start + field_text.len() + 1)
     );
     assert_eq!(
-        fields[0]
-            .ty()
-            .spans()
-            .source_at(&TypeRefNodePath::root())
-            .expect("field root type source")
-            .whole()
-            .range(),
+        type_span(fields[0].ty()).range(),
         SourceRange::new(
             field_start + "value: ".len(),
             field_start + field_text.len(),
@@ -307,7 +486,7 @@ fn declarations(
     ProjectExternalDeclarations::try_new(world, revision, seeds).expect("external declarations")
 }
 
-fn empty_declarations(
+pub(super) fn empty_declarations(
     documents: &[Arc<SourceDocument>],
     profile: &str,
 ) -> ProjectExternalDeclarations {
@@ -367,15 +546,6 @@ fn nominal_alias_declarations(count: usize) -> String {
     })
 }
 
-fn nominal_struct_fields(count: usize) -> String {
-    let mut source = String::from("struct FieldLimit {\n");
-    for index in 0..count {
-        writeln!(source, "    field{index}: i32,").expect("writing to a String cannot fail");
-    }
-    source.push_str("}\n");
-    source
-}
-
 fn nominal_type_parameters(count: usize) -> String {
     let parameters = (0..count)
         .map(|index| format!("T{index}"))
@@ -404,8 +574,16 @@ fn nominal_type_node_fields(one_over: bool) -> String {
 }
 
 fn grouped_missing_import(count: usize) -> String {
-    let names = (0..count).map(|_| "target").collect::<Vec<_>>().join(", ");
-    format!("use crate.origin.{{{names}}}\n")
+    let per_declaration = crate::identity::HirLimit::DeclarationMembers.maximum();
+    let mut source = String::new();
+    let mut remaining = count;
+    while remaining > 0 {
+        let chunk = remaining.min(per_declaration);
+        let names = (0..chunk).map(|_| "target").collect::<Vec<_>>().join(", ");
+        writeln!(source, "use crate.origin.{{{names}}}").expect("writing to a String cannot fail");
+        remaining -= chunk;
+    }
+    source
 }
 
 type NominalLookupRow<'a> = (
@@ -579,13 +757,9 @@ fn resolve_nominal_lookup_rows<'a>(
 ) -> Vec<(&'static str, ProjectNominalDeclarationId)> {
     rows.into_iter()
         .map(|(test_id, module, spelling, kind)| {
-            let authored = parse_type_ref(spelling)
-                .unwrap_or_else(|error| panic!("{test_id}: `{spelling}` must parse: {error:?}"));
-            let TypeRef::Path(path) = authored.value() else {
-                panic!("{test_id}: `{spelling}` must remain a typed path");
-            };
+            let path = type_path(spelling);
             let target = table
-                .resolve_type_target(module, path, source.clone())
+                .resolve_hir_type_target(module, &path, source.clone())
                 .unwrap_or_else(|error| panic!("{test_id}: `{spelling}` must resolve: {error:?}"));
             let ProjectTypeTarget::Nominal(declaration) = target else {
                 panic!("{test_id}: `{spelling}` must resolve to a nominal declaration");
@@ -683,10 +857,7 @@ fn assert_nominal_world_and_revision_variation(documents: &[Arc<SourceDocument>]
 
 fn assert_inaccessible_parent_import_rejected() {
     let (documents, project) = project_modules(&[
-        (
-            "",
-            "use crate.left.*\nuse crate.right.*\nfn callable() -> Unit { () }\n",
-        ),
+        ("", "use crate.left.*\nuse crate.right.*\n"),
         ("left", "pub struct Common {}\nstruct Hidden {}\n"),
         ("right", "pub enum Common { Value }\n"),
         ("left.child", "use super.Hidden\n"),
@@ -700,7 +871,7 @@ fn assert_inaccessible_parent_import_rejected() {
         )],
         "p0-nominal-lookup-failures",
     );
-    let report = ProjectSymbolTable::link(&project, &declarations)
+    let report = ProjectSymbolTable::link(project.view(), &declarations)
         .expect_err("RES-INACCESS-SUPER: private parent import must reject linking");
     assert!(
         report.diagnostics().iter().any(|diagnostic| matches!(

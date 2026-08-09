@@ -7,7 +7,7 @@ use arcweft_source::SourceSpan;
 use arcweft_verify_lsp::LspPositionMapper;
 use lsp_types::{PrepareRenameResponse, TextEdit, Uri, WorkspaceEdit};
 
-use super::{EntryToolSymbol, callable_source, entry_declaration, source_text, symbol_at};
+use super::{EntryToolSymbol, callable_symbol, entry_declaration, source_text, symbol_at};
 use crate::{
     documents::{DocumentSnapshot, DocumentStore},
     positions::{LineIndex, PositionEncoding},
@@ -19,7 +19,9 @@ pub(crate) fn prepare_rename(
     document: &DocumentSnapshot,
     offset: usize,
 ) -> Option<PrepareRenameResponse> {
-    let cursor = symbol_at(profile, document, offset)?;
+    let accepted = profile.accepted_environment()?;
+    let index = accepted.executable()?.semantic_index();
+    let cursor = symbol_at(profile, document, offset, index)?;
     if !matches!(
         cursor.symbol,
         EntryToolSymbol::Callable(_) | EntryToolSymbol::Entry(_)
@@ -47,8 +49,9 @@ pub(crate) fn rename(
     new_name: &str,
 ) -> Option<WorkspaceEdit> {
     let accepted = profile.accepted_environment()?;
+    let index = accepted.executable()?.semantic_index();
     let project = accepted.project();
-    let cursor = symbol_at(profile, document, offset)?;
+    let cursor = symbol_at(profile, document, offset, index)?;
     let encoding = document.line_index().position_encoding();
     let mut changes = HashMap::<Uri, Vec<TextEdit>>::new();
     match &cursor.symbol {
@@ -56,7 +59,7 @@ pub(crate) fn rename(
             if !is_identifier(new_name) {
                 return None;
             }
-            let source = callable_source(project.hir_project(), declaration)?;
+            let source = callable_symbol(project, declaration)?;
             push_source_edit(
                 project,
                 &mut changes,
@@ -64,12 +67,11 @@ pub(crate) fn rename(
                 new_name,
                 encoding,
             )?;
-            for edge in project.semantic_index().entry_role_edges() {
-                if edge
-                    .target()
-                    .callable()
-                    .is_some_and(|(candidate, _)| candidate == declaration)
-                    && source_text(project, edge.source()) == Some(declaration.name())
+            for edge in index.entry_role_edges() {
+                if edge.target().callable().is_some_and(|(candidate, _)| {
+                    &arcweft_lang_hir::symbol::CallableDeclarationKey::Existing(candidate.clone())
+                        == declaration
+                }) && source_text(project, edge.source()) == Some(declaration.name())
                 {
                     push_source_edit(project, &mut changes, edge.source(), new_name, encoding)?;
                 }

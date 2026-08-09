@@ -8,22 +8,25 @@ mod table;
 mod tests;
 
 pub use error::{
-    ProjectSymbolDiagnosticCode, ProjectSymbolLinkError, ProjectSymbolLinkReport,
-    ProjectSymbolResolutionError,
+    ProjectEntityReferenceLookupError, ProjectSymbolDiagnosticCode, ProjectSymbolLinkError,
+    ProjectSymbolLinkReport, ProjectSymbolResolutionError,
 };
 pub use identity::{
-    CallableDeclarationId, CallableDeclarationIdError, CallableDeclarationOwner, CallablePackageId,
-    CallablePackageIdError, CallableSymbol, ExternalDeclarationId, ExternalDeclarationSeed,
-    ExternalDeclarationSeedError, ExternalDeclarationSeedId, ExternalSymbol, ProjectDeclarationId,
+    CallableDeclarationDigest, CallableDeclarationId, CallableDeclarationIdError,
+    CallableDeclarationKey, CallableDeclarationOwner, CallablePackageId, CallablePackageIdError,
+    CallableSymbol, ExternalDeclarationId, ExternalDeclarationSeed, ExternalDeclarationSeedError,
+    ExternalDeclarationSeedId, ExternalSymbol, FlowDeclarationId, FlowPublicationKind,
+    ImplDeclarationId, ImplMethodDeclarationId, ImplMethodKind, ProjectDeclarationId,
     ProjectDirectBinding, ProjectDirectBindingError, ProjectExternalDeclarations,
-    ProjectExternalDeclarationsError, ProjectSymbol, ProjectSymbolRevision, ProjectSymbolWorldId,
-    ProjectSymbolWorldIdError,
+    ProjectExternalDeclarationsError, ProjectRetainedSymbol, ProjectSymbol, ProjectSymbolRevision,
+    ProjectSymbolWorldId, ProjectSymbolWorldIdError, ProofArtifactId, ProofArtifactIdentityError,
+    TraitDeclarationId, TraitMethodRequirementId,
 };
 pub use table::{
-    ProjectSymbolBindingCollision, ProjectSymbolLimitKind, ProjectSymbolLimits,
-    ProjectSymbolLinkOutput, ProjectSymbolTable, ProjectSymbolTargetId, ProjectTypeCandidate,
-    ProjectTypeLookupError, ProjectTypeTarget, ProjectValueLookup, ProjectValueLookupError,
-    ResolvedProjectSymbol, VisibleProjectTypeBinding,
+    ProjectHirSymbolLookupError, ProjectSymbolBindingCollision, ProjectSymbolLimitKind,
+    ProjectSymbolLimits, ProjectSymbolLinkOutput, ProjectSymbolTable, ProjectSymbolTargetId,
+    ProjectTypeCandidate, ProjectTypeLookupError, ProjectTypeTarget, ProjectValueLookup,
+    ProjectValueLookupError, ResolvedProjectSymbol, VisibleProjectTypeBinding,
 };
 
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;

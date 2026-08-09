@@ -29,7 +29,7 @@ use crate::identity::{
 #[cfg(test)]
 use crate::item::HirDeclarationMemberIndexBuilder;
 use crate::item::{HirDeclarationMember, HirDeclarationMemberIndex, HirItem, HirItemKind};
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
 use crate::pattern::HirPattern;
 use crate::scope::{HirCapture, HirLocal, HirLocalKind, HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::{HirOrigin, HirSlotError, HirSlotMetadata, SlotSnapshot};
@@ -37,8 +37,8 @@ use crate::source_index::{
     HirExprSourceRole, HirItemSourceRole, HirLocalSourceRole, HirPatternSourceRole,
     HirResolvedSourceRole, HirScopeSourceRole, HirSourceIndex, HirSourceIndexLookupError,
     HirSourceLookup, HirSourceOwnerStatus, HirSourcePresence, HirSourceQuery, HirSourceQueryError,
-    HirStmtSourceRole, HirThreadBodySourceRole, HirThreadFlowItemSourcePart, HirTypeSourceRole,
-    ItemValidationArenas,
+    HirStmtSourceRole, HirTestBenchSourceRole, HirThreadBodySourceRole,
+    HirThreadFlowItemSourcePart, HirTypeSourceRole, ItemValidationArenas,
 };
 use crate::stmt::HirStmt;
 use crate::type_ref::HirType;
@@ -192,6 +192,10 @@ impl HirModuleArenas {
             && validate_arena_poison(&self.captures, slots, |_| false)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one closed validation pass proves root, parent, local, timeline, and capture scope-graph invariants together"
+    )]
     fn validates_scope_graph(&self, slots: &SlotSnapshot) -> bool {
         let Ok(scope_entries) = self.scopes.try_iter_prepared(slots) else {
             return false;
@@ -344,7 +348,7 @@ impl HirModuleArenas {
         source_ordered_items: &[ItemId],
         parsed: &ParsedSource,
     ) -> bool {
-        let Ok(entries) = parsed.tree().entries() else {
+        let Ok(entries) = parsed.entries() else {
             return false;
         };
         let mut authored_positions = BTreeMap::new();
@@ -446,6 +450,10 @@ pub struct HirModule {
 }
 
 impl HirModule {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the constructor atomically validates every owner of the immutable published module schema"
+    )]
     pub(crate) fn try_new(
         snapshot: HirSnapshotId,
         key: HirModuleKey,
@@ -613,17 +621,22 @@ impl HirModule {
         &self.arenas
     }
 
+    #[cfg(test)]
     pub(crate) const fn source_components(&self) -> &HirSourceIndex {
         &self.source_components
     }
 
-    pub(crate) const fn declaration_members(&self) -> &HirDeclarationMemberIndex {
+    pub const fn declaration_members(&self) -> &HirDeclarationMemberIndex {
         &self.declaration_members
     }
 
     /// Resolves one typed source role through the module's sole immutable
     /// source-role manifest.
-    pub(crate) fn source_site(
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "the public lookup boundary consumes one typed query value and never retains a borrowed caller carrier"
+    )]
+    pub fn source_site(
         &self,
         expected_source: &SourceDocumentIdentity,
         query: HirSourceQuery,
@@ -642,6 +655,10 @@ impl HirModule {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive dispatcher validates the complete typed source-role family before projection"
+    )]
     fn resolve_source_role(
         &self,
         query: &HirSourceQuery,
@@ -655,12 +672,31 @@ impl HirModule {
                     .resolve(&self.slots, *owner)
                     .expect("published item slot has its validated payload");
                 match (payload.kind(), role) {
+                    (kind, HirItemSourceRole::Declaration(declaration_role)) => {
+                        kind.validate_declaration_source_role(*owner, *declaration_role)?;
+                    }
+                    (kind, HirItemSourceRole::Entry(entry_part)) => {
+                        kind.validate_entry_source_part(*owner, *entry_part)?;
+                    }
+                    (kind, HirItemSourceRole::Callable(callable_role)) => {
+                        kind.validate_callable_source_role(*owner, *callable_role)?;
+                    }
+                    (HirItemKind::Use(declaration), HirItemSourceRole::Use(use_role)) => {
+                        declaration.validate_use_source_role(*owner, *use_role)?;
+                    }
+                    (
+                        HirItemKind::Test(_) | HirItemKind::Bench(_),
+                        HirItemSourceRole::TestBench(HirTestBenchSourceRole::Whole),
+                    ) => {}
                     (HirItemKind::Flow(flow), HirItemSourceRole::Flow(flow_role)) => {
                         self.source_components
                             .validate_flow_source_role(flow, *owner, *flow_role)?;
                     }
                     (HirItemKind::Style(style), HirItemSourceRole::Style(style_role)) => {
                         style.validate_source_role(*owner, style_role)?;
+                    }
+                    (HirItemKind::View(view), HirItemSourceRole::View(view_role)) => {
+                        view.validate_source_role(*owner, *view_role)?;
                     }
                     _ => return Err(HirSourceQueryError::role_not_applicable(query)),
                 }
@@ -1350,16 +1386,17 @@ fn recovery_child_covered_parent(
     arenas
         .expressions
         .resolve_prepared(slots, parent)
-        .is_ok_and(|payload| match (key.role(), payload.state()) {
-            (
-                SyntheticRole::RecoveryOperand,
-                HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand { .. }),
+        .is_ok_and(|payload| {
+            matches!(
+                (key.role(), payload.state()),
+                (
+                    SyntheticRole::RecoveryOperand,
+                    HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand { .. }),
+                ) | (
+                    SyntheticRole::MissingRequiredTail,
+                    HirPoisonState::Poisoned(HirRecoveryIssue::MissingRequiredTail),
+                )
             )
-            | (
-                SyntheticRole::MissingRequiredTail,
-                HirPoisonState::Poisoned(HirRecoveryIssue::MissingRequiredTail),
-            ) => true,
-            _ => false,
         })
         .then_some(SyntheticOwner::Expr(parent))
 }
@@ -1473,6 +1510,10 @@ fn recovery_primary_is_owner_whole(primary: HirRecoveryPrimary, owner: Synthetic
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exhaustive predicate keeps every source-query variant aligned with its typed owner validation"
+)]
 fn recovery_query_applies(
     slots: &SlotSnapshot,
     arenas: &HirModuleArenas,
@@ -1483,6 +1524,19 @@ fn recovery_query_applies(
             .items
             .resolve_prepared(slots, *owner)
             .is_ok_and(|payload| match (payload.kind(), role) {
+                (kind, HirItemSourceRole::Declaration(declaration_role)) => kind
+                    .validate_declaration_source_role(*owner, *declaration_role)
+                    .is_ok(),
+                (kind, HirItemSourceRole::Callable(callable_role)) => kind
+                    .validate_callable_source_role(*owner, *callable_role)
+                    .is_ok(),
+                (HirItemKind::Use(declaration), HirItemSourceRole::Use(use_role)) => declaration
+                    .validate_use_source_role(*owner, *use_role)
+                    .is_ok(),
+                (
+                    HirItemKind::Test(_) | HirItemKind::Bench(_),
+                    HirItemSourceRole::TestBench(HirTestBenchSourceRole::Whole),
+                ) => true,
                 (HirItemKind::Flow(flow), HirItemSourceRole::Flow(flow_role)) => {
                     flow.validate_source_role(*owner, *flow_role).is_ok()
                 }
@@ -1559,8 +1613,9 @@ fn recovery_query_applies(
             };
             match role {
                 HirLocalSourceRole::Whole => true,
-                HirLocalSourceRole::Name => local.kind() != HirLocalKind::PostconditionResult,
-                HirLocalSourceRole::Type => local.kind() != HirLocalKind::PostconditionResult,
+                HirLocalSourceRole::Name | HirLocalSourceRole::Type => {
+                    local.kind() != HirLocalKind::PostconditionResult
+                }
                 HirLocalSourceRole::Pattern => {
                     local.kind() != HirLocalKind::PostconditionResult && local.pattern().is_some()
                 }
@@ -1586,6 +1641,10 @@ fn recovery_query_applies(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exhaustive relational projection keeps scope, local, and thread-body source roles under one validated owner lookup"
+)]
 fn resolve_prepared_relational_source_role<'a>(
     slots: &'a SlotSnapshot,
     arenas: &'a HirModuleArenas,

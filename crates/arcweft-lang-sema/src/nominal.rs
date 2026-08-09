@@ -7,19 +7,20 @@ mod input;
 mod limits;
 mod model;
 mod resolver;
-mod shapes;
-#[cfg(test)]
-mod shapes_tests;
 
+pub use cache::{
+    CheckedTypeReferenceCache, CheckedTypeReferenceCacheKey, HirTypeStructuralDigest,
+    NominalResolverSchemaVersion,
+};
 pub use diagnostic::{
     NominalDiagnosticRelated, NominalRelatedMessage, NominalTypeDiagnostic,
     NominalTypeDiagnosticCode, NominalTypeDiagnosticKind, TypePoisonOrigin, TypePoisonRecord,
 };
 pub use index::{NominalResolutionIndex, NominalResolutionIndexError, NominalTypeNodeKey};
 pub use input::{
-    AuthoredTypeInput, GenericTypeBinding, GenericTypeScope, GenericTypeScopeError,
-    GenericTypeScopeFingerprint, SelfTypeScope, SelfTypeScopeFingerprint, TypeResolutionInput,
-    TypeResolutionInputError, TypeResolutionWorld,
+    GenericTypeBinding, GenericTypeScope, GenericTypeScopeError, GenericTypeScopeFingerprint,
+    SelfTypeScope, SelfTypeScopeFingerprint, TypeResolutionInput, TypeResolutionInputError,
+    TypeResolutionModule, TypeResolutionProject, TypeResolutionWorld,
 };
 pub use limits::{
     AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits,
@@ -27,8 +28,6 @@ pub use limits::{
     NominalAggregationLimitsError, NominalResolutionLimitKind, NominalResolutionLimits,
     NominalResolutionLimitsError,
 };
-#[cfg(test)]
-pub(crate) use model::AssociatedReceiverFailure;
 pub(crate) use model::ResolvedAssociatedTypeReceiver;
 pub use model::{
     AliasExpansionFact, BuiltinTypeConstructor, DetachedNominalEvidence, DetachedNominalReason,
@@ -39,11 +38,3 @@ pub use model::{
     TypeSourceEvidence,
 };
 pub use resolver::resolve_type_ref;
-pub(crate) use shapes::ProjectNominalShapeCatalog;
-
-#[cfg(test)]
-mod resolver_tests;
-pub use cache::{
-    AuthoredTypeRefStructuralDigest, CheckedTypeReferenceCache, CheckedTypeReferenceCacheKey,
-    NominalResolverSchemaVersion,
-};

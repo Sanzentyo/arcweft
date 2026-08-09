@@ -1,59 +1,91 @@
-//! Sans I/O verification model for Arcweft HIR.
+//! Sans-I/O verification over the accepted final-HIR project generation.
 //!
-//! This crate turns structured HIR into proof obligations, diagnostics, and
-//! solver-neutral proof problems. It does not read files, spawn processes, or
-//! depend on a concrete runtime backend; those responsibilities belong to CLI
-//! and solver adapter crates.
+//! Verification consumes one executable [`HirExecutableProjectView`], its
+//! exact [`ProjectSymbolTable`], and the matching [`FinalSemanticAnalysis`].
+//! It never lowers syntax, links or clones HIR modules, reparses source text,
+//! or rebuilds semantic facts from presentation labels.
 
-use crate::smt::{SmtCheck, SmtError, SmtOutcome, SmtProblem};
-use arcweft_compiler::lower::lower_source_line_tasks;
-use arcweft_lang_hir::model::{
-    HirAwait, HirChoice, HirFlowItem, HirFor, HirFunction, HirIf, HirIfLet, HirLoop, HirMatch,
-    HirModule, HirScope, HirScopeExpr, HirSelect, HirTopLevelDecl, HirWhile, HirWhileLet,
-};
-use arcweft_lang_sema::{
-    env::TypeCheckEnv,
-    semantic::{
-        SemanticDiagnostic, SemanticDischarge, SemanticMode, SemanticObligation,
-        SemanticObligationKind, SemanticPolicy, SemanticProofTrust, SemanticReport,
-        SemanticSeverity, analyze_semantics,
+use std::collections::BTreeMap;
+
+use arcweft_lang_hir::{
+    identity::{ExprId, ItemId, StmtId},
+    item::{HirItemKind, HirPredicateBody, HirProofBody},
+    leaf::{HirIdRef, HirIdRefValue},
+    module::HirModule,
+    project::HirExecutableProjectView,
+    source_index::{
+        HirDeclarationSourceRole, HirItemSourceRole, HirSourcePresence, HirSourceQuery,
+        HirSourceQueryError, HirSourceSite, HirStmtSourceRole,
+    },
+    stmt::{HirAssertionMode, HirStmtKind},
+    symbol::{
+        CallableDeclarationKey, CallableDeclarationOwner, ProjectSymbolTable, ProofArtifactId,
+        ProofArtifactIdentityError,
     },
 };
-use arcweft_lang_syntax::{
-    ast::{
-        choice::{ChoiceBlock, ChoicePlanItem},
-        common::TextRange,
-        flow::{AwaitWith, FlowItem, ScopeExprBlock, Stmt, ThreadBlock, WaitTarget},
-        ids::{EntityRefSyntax, IdRef},
-        line_plan::{LinePlan, LinePlanItem, TriggerPattern},
-    },
-    expr::{CallArg, Expr, LifetimeKey, LifetimeScopeKind},
+use arcweft_lang_sema::final_analysis::{
+    CheckedAssertionDisposition, CheckedItemRole, CheckedStatementRole, FinalSemanticAnalysis,
+    FinalSemanticAnalysisError,
 };
+use arcweft_lang_syntax::assertion::AssertionMode;
 use arcweft_source::{
     Diagnostic as SourceDiagnostic, DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel,
-    DiagnosticSeverity, DiagnosticSuggestion, SourceDocument, SourceEdit, SourceRange,
+    DiagnosticSeverity, DiagnosticSuggestion, SourceDocument, SourceDocumentIdentity, SourceEdit,
+    SourceRange,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use thiserror::Error;
 
-mod assertion;
-mod contract_smt;
+use crate::insertion::{VerifierInsertionInventory, proof_stub_edit};
+use crate::smt::{SmtCheck, SmtError, SmtOutcome, SmtProblem};
+
+mod call_witness;
 mod insertion;
-pub mod runtime_type;
 pub mod smt;
 
-use insertion::{VerifierInsertionInventory, proof_stub_edit};
+pub use call_witness::ProofCallWitnessProjection;
 pub use insertion::{VerifierInsertionPolicy, VerifierInsertionTarget};
-pub use runtime_type::{
-    RuntimeTypeDiagnostic, RuntimeTypeValidationReport, RuntimeTypeValidationStats,
-    validate_runtime_plan_types,
-};
 
-/// Stable source span used by verifier diagnostics and Agent/LSP tooling.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+/// Revision-bound source span used by verifier diagnostics and edit actions.
+///
+/// This is a transport projection of `arcweft_source::SourceSpan`. The exact
+/// document identity is mandatory so a consumer cannot apply offsets to a
+/// different document or source revision.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SourceSpan {
+    pub source: SourceDocumentIdentity,
     pub start: usize,
     pub end: usize,
+}
+
+impl SourceSpan {
+    pub fn from_exact(span: &arcweft_source::SourceSpan) -> Self {
+        let range = span.range();
+        Self {
+            source: span.source().clone(),
+            start: range.start(),
+            end: range.end(),
+        }
+    }
+
+    fn from_site(site: &HirSourceSite) -> Self {
+        match site {
+            HirSourceSite::Span(span) => Self::from_exact(span),
+            HirSourceSite::Insertion(insertion) => Self {
+                source: insertion.source_identity().clone(),
+                start: insertion.offset(),
+                end: insertion.offset(),
+            },
+        }
+    }
+
+    pub fn validate_for(&self, document: &SourceDocument) -> bool {
+        &self.source == document.identity()
+            && self.start <= self.end
+            && self.end <= document.text().len()
+            && document.text().is_char_boundary(self.start)
+            && document.text().is_char_boundary(self.end)
+    }
 }
 
 /// Tool-facing diagnostic severity.
@@ -69,12 +101,9 @@ pub enum Severity {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum VerificationMode {
-    /// Collect everything, but keep incomplete formal work as warnings.
     #[default]
     Dev,
-    /// Require formal proof for non-trivial verifier obligations.
     Test,
-    /// Release policy: reject audited unsafe and missing formal proof.
     Release,
 }
 
@@ -82,12 +111,9 @@ pub enum VerificationMode {
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BackendKind {
-    /// Emit obligations and SMT-LIB without solving.
     #[default]
     Emit,
-    /// Pure-Rust `OxiZ` adapter.
     Oxiz,
-    /// External Z3 process adapter.
     Z3,
 }
 
@@ -119,7 +145,7 @@ impl Default for VerificationPolicy {
     }
 }
 
-/// Verification obligation families understood by Phase 1.5 tooling.
+/// Verification obligation families understood by verifier tooling.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ProofObligationKind {
@@ -135,29 +161,10 @@ pub enum ProofObligationKind {
     ProofBody,
     TrustedProof,
     TrustedAssumption,
-    RawSyntax,
     RuntimeConflict,
 }
 
 impl ProofObligationKind {
-    const fn is_semantic_owned(self) -> bool {
-        matches!(
-            self,
-            Self::LifetimePromotion
-                | Self::UnsafeLifetimeAudit
-                | Self::MustDropDischarge
-                | Self::ThreadCapture
-                | Self::ThreadJoinTyping
-                | Self::UpperLifetimeWrite
-                | Self::EffectCapability
-                | Self::ProofBody
-                | Self::TrustedProof
-                | Self::TrustedAssumption
-                | Self::RawSyntax
-                | Self::RuntimeConflict
-        )
-    }
-
     pub(crate) const fn owns_proof_insertion_span(self) -> bool {
         matches!(
             self,
@@ -172,8 +179,7 @@ impl ProofObligationKind {
     }
 
     fn actions(self, obligation: &ProofObligation) -> Vec<ToolAction> {
-        let discharge = &obligation.discharge;
-        if !discharge.is_missing() {
+        if !obligation.discharge.is_missing() {
             return Vec::new();
         }
         match self {
@@ -189,10 +195,7 @@ impl ProofObligationKind {
                 ToolAction::show_obligation(),
             ],
             Self::UnsafeLifetimeAudit => vec![ToolAction::generate_unsafe_audit()],
-            Self::TrustedProof
-            | Self::TrustedAssumption
-            | Self::RawSyntax
-            | Self::RuntimeConflict => Vec::new(),
+            Self::TrustedProof | Self::TrustedAssumption | Self::RuntimeConflict => Vec::new(),
         }
     }
 }
@@ -231,7 +234,7 @@ impl ProofDischarge {
     }
 }
 
-/// One proof obligation produced by semantic analysis.
+/// One proof obligation derived from typed HIR and exact semantic facts.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProofObligation {
     pub id: String,
@@ -243,6 +246,12 @@ pub struct ProofObligation {
     pub insertion_target: Option<VerifierInsertionTarget>,
     pub discharge: ProofDischarge,
     pub smt: Option<SmtProblem>,
+    /// Session-only proof identity. Serialized labels never replace it.
+    #[serde(skip)]
+    pub proof_artifact: Option<ProofArtifactId>,
+    /// Session-only statement identity for assertion and unsafe-audit rows.
+    #[serde(skip)]
+    pub statement: Option<StmtId>,
 }
 
 impl ProofObligation {
@@ -251,7 +260,7 @@ impl ProofObligation {
     }
 }
 
-/// JSON diagnostic shared by CLI, LSP, and future Agent tools.
+/// JSON diagnostic shared by CLI, LSP, and Agent tooling.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct VerificationDiagnostic {
     pub id: String,
@@ -275,7 +284,6 @@ pub struct ToolAction {
     pub command: Option<ToolActionCommand>,
 }
 
-/// Action kind for verifier-assisted edits or navigation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolActionKind {
@@ -286,7 +294,6 @@ pub enum ToolActionKind {
     NavigateToUnsafeAudit,
 }
 
-/// Optional source rewrite attached to an otherwise stable verifier action.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ToolActionSourceEdit {
     pub span: SourceSpan,
@@ -294,7 +301,6 @@ pub struct ToolActionSourceEdit {
     pub applicability: ToolActionApplicability,
 }
 
-/// Applicability of verifier-provided source edits.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ToolActionApplicability {
@@ -304,7 +310,6 @@ pub enum ToolActionApplicability {
     Unspecified,
 }
 
-/// Host/tool command attached to a verifier action.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ToolActionCommand {
     pub id: String,
@@ -312,7 +317,7 @@ pub struct ToolActionCommand {
 }
 
 impl ToolAction {
-    pub(crate) fn generate_proof_stub(obligation: &ProofObligation) -> Self {
+    fn generate_proof_stub(obligation: &ProofObligation) -> Self {
         let mut action = Self {
             id: "action.generate_proof_stub".to_owned(),
             label: "Generate proof stub".to_owned(),
@@ -329,7 +334,7 @@ impl ToolAction {
         action
     }
 
-    pub(crate) fn show_obligation() -> Self {
+    fn show_obligation() -> Self {
         Self {
             id: "action.show_obligation".to_owned(),
             label: "Show proof obligation".to_owned(),
@@ -342,7 +347,7 @@ impl ToolAction {
         }
     }
 
-    pub(crate) fn generate_unsafe_audit() -> Self {
+    fn generate_unsafe_audit() -> Self {
         Self {
             id: "action.generate_unsafe_audit".to_owned(),
             label: "Generate unsafe lifetime audit metadata".to_owned(),
@@ -382,6 +387,9 @@ impl ToolAction {
 
     pub fn diagnostic_suggestion(&self, document: &SourceDocument) -> Option<DiagnosticSuggestion> {
         let edit = self.source_edit.as_ref()?;
+        if !edit.span.validate_for(document) {
+            return None;
+        }
         let span = document
             .span(SourceRange::new(edit.span.start, edit.span.end))
             .ok()?;
@@ -405,8 +413,8 @@ impl ToolAction {
 }
 
 impl ToolActionSourceEdit {
-    pub const fn span(&self) -> SourceSpan {
-        self.span
+    pub const fn span(&self) -> &SourceSpan {
+        &self.span
     }
 
     pub fn replacement(&self) -> &str {
@@ -460,11 +468,12 @@ impl VerificationDiagnostic {
     pub fn source_diagnostic(&self, document: &SourceDocument) -> SourceDiagnostic {
         let mut diagnostic = SourceDiagnostic::new(self.severity.into(), self.message.clone())
             .with_code(self.id.clone());
-        if let Some(span) = self.source
-            && let Ok(span) = document.span(SourceRange::new(span.start, span.end))
+        if let Some(span) = &self.source
+            && span.validate_for(document)
+            && let Ok(exact) = document.span(SourceRange::new(span.start, span.end))
         {
             diagnostic = diagnostic.with_label(DiagnosticLabel::primary(
-                span,
+                exact,
                 Some("verifier diagnostic".to_owned()),
             ));
         }
@@ -487,6 +496,9 @@ impl VerificationDiagnostic {
 }
 
 /// Proof item summary carried into manifests and LSP hovers.
+///
+/// `id` is presentation only. [`VerificationReport::proof_artifacts`] is the
+/// sole identity inventory used for semantic joins.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ProofSummary {
     pub id: String,
@@ -496,24 +508,26 @@ pub struct ProofSummary {
     pub trusted_dependencies: Vec<String>,
 }
 
-/// Typed proof trust metadata carried into release review manifests.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum ProofTrustSummary {
+    Pending,
     Verified,
     Trusted { reason: String },
 }
 
-/// Unsafe lifetime audit metadata carried into manifests.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct UnsafeAuditSummary {
     pub id: String,
     pub source: Option<SourceSpan>,
     pub has_reason: bool,
     pub has_safety_doc: bool,
+    /// Typed owner used for all in-process joins.
+    #[serde(skip)]
+    pub statement: Option<StmtId>,
 }
 
-/// Full verifier report. This is the canonical tool-facing schema.
+/// Complete verifier report for one accepted project generation.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 pub struct VerificationReport {
     pub policy: VerificationPolicy,
@@ -522,9 +536,14 @@ pub struct VerificationReport {
     pub solver_checks: Vec<SolverCheck>,
     pub proofs: Vec<ProofSummary>,
     pub unsafe_audits: Vec<UnsafeAuditSummary>,
+    /// Session-only identities matching `proofs` in the same source order.
+    #[serde(skip)]
+    pub proof_artifacts: Vec<ProofArtifactId>,
+    /// Session-only, bounded Call evidence projected from complete semantic facts.
+    #[serde(skip)]
+    pub call_witnesses: Vec<ProofCallWitnessProjection>,
 }
 
-/// Result of checking one proof obligation with a solver backend.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SolverCheck {
     pub obligation: String,
@@ -538,39 +557,428 @@ pub struct SolverCheck {
     pub required: bool,
 }
 
-/// Verifies an HIR module according to the selected policy.
-pub fn verify_module(module: &HirModule, policy: VerificationPolicy) -> VerificationReport {
-    verify_module_with_env(module, &TypeCheckEnv::new(), policy)
+/// Rejection of a verifier input before any report is published.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum VerificationInputError {
+    #[error(transparent)]
+    SemanticGeneration(#[from] FinalSemanticAnalysisError),
+    #[error(transparent)]
+    SourceQuery(#[from] HirSourceQueryError),
+    #[error(transparent)]
+    ProofIdentity(#[from] ProofArtifactIdentityError),
+    #[error("final semantic analysis is missing item fact for {owner:?}")]
+    MissingItemFact { owner: ItemId },
+    #[error("final semantic analysis is missing statement fact for {owner:?}")]
+    MissingStatementFact { owner: StmtId },
+    #[error("final semantic item fact disagrees with HIR item {owner:?}")]
+    ItemRoleMismatch { owner: ItemId },
+    #[error("final semantic statement fact disagrees with HIR statement {owner:?}")]
+    StatementRoleMismatch { owner: StmtId },
+    #[error("final semantic expression fact is missing for {owner:?}")]
+    MissingExpressionFact { owner: ExprId },
+    #[error("proof item {owner:?} is absent from the registered callable authority")]
+    MissingProofSymbol { owner: ItemId },
+    #[error("typed HIR source role for {owner:?} has no present source site")]
+    MissingSourceSite { owner: VerificationOwner },
 }
 
-/// Verifies an HIR module with the same type-check environment used by the caller.
-pub fn verify_module_with_env(
-    module: &HirModule,
-    env: &TypeCheckEnv,
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum VerificationOwner {
+    Item(ItemId),
+    Statement(StmtId),
+}
+
+/// Verifies one exact accepted final-HIR generation.
+pub fn verify_project(
+    project: HirExecutableProjectView<'_>,
+    symbols: &ProjectSymbolTable,
+    semantics: &FinalSemanticAnalysis,
     policy: VerificationPolicy,
-) -> VerificationReport {
-    let insertion_inventory = VerifierInsertionInventory::from_module(module);
-    let mut collector = ObligationCollector::new(policy, insertion_inventory);
-    collector.collect_module(module);
-    let semantic_report = analyze_semantics(
-        module,
-        env,
-        SemanticPolicy {
-            mode: semantic_mode(policy.mode),
-            allow_trusted_proofs: policy.allow_trusted_proofs,
+) -> Result<VerificationReport, VerificationInputError> {
+    semantics.validate_generation(project, symbols)?;
+    let insertion = VerifierInsertionInventory::from_project(project);
+    let mut verifier = ProjectVerifier {
+        project,
+        symbols,
+        semantics,
+        insertion,
+        report: VerificationReport {
+            policy,
+            ..VerificationReport::default()
         },
-    );
-    let mut report = collector.finish();
-    merge_semantic_report(&mut report, semantic_report, insertion_inventory);
-    contract_smt::collect_function_contract_obligations(module, &mut report);
-    report
-        .diagnostics
-        .sort_by(|left, right| left.id.cmp(&right.id));
-    report
+    };
+    verifier.verify()?;
+    Ok(verifier.finish())
+}
+
+struct ProjectVerifier<'project, 'catalog> {
+    project: HirExecutableProjectView<'project>,
+    symbols: &'catalog ProjectSymbolTable,
+    semantics: &'catalog FinalSemanticAnalysis,
+    insertion: VerifierInsertionInventory,
+    report: VerificationReport,
+}
+
+impl ProjectVerifier<'_, '_> {
+    fn verify(&mut self) -> Result<(), VerificationInputError> {
+        for item in self.project.items() {
+            let owner = item.id();
+            let checked = self
+                .semantics
+                .item(owner)
+                .ok_or(VerificationInputError::MissingItemFact { owner })?;
+            if checked.role().family() != item.item().kind().family() {
+                return Err(VerificationInputError::ItemRoleMismatch { owner });
+            }
+            match item.item().kind() {
+                HirItemKind::Predicate(predicate) => {
+                    self.validate_predicate(item.module(), predicate)?;
+                }
+                HirItemKind::Proof(proof) => {
+                    if !matches!(checked.role(), CheckedItemRole::Proof) {
+                        return Err(VerificationInputError::ItemRoleMismatch { owner });
+                    }
+                    self.collect_proof(item.module(), owner, proof)?;
+                }
+                _ => {}
+            }
+        }
+        for (_, module) in self.project.modules() {
+            for (owner, statement) in module.statements() {
+                self.collect_statement(module, owner, statement.kind())?;
+            }
+        }
+        Ok(())
+    }
+
+    fn validate_predicate(
+        &self,
+        module: &HirModule,
+        predicate: &arcweft_lang_hir::item::HirPredicate,
+    ) -> Result<(), VerificationInputError> {
+        self.validate_expressions(predicate.requires())?;
+        self.validate_expressions(predicate.ensures())?;
+        match predicate.body() {
+            HirPredicateBody::Expression { expression, .. } => {
+                self.validate_expression(*expression)
+            }
+            HirPredicateBody::Block {
+                statements, tail, ..
+            } => {
+                self.validate_statements(module, statements)?;
+                self.validate_expression(*tail)
+            }
+            HirPredicateBody::Error { expression, .. } => {
+                Err(VerificationInputError::MissingExpressionFact { owner: *expression })
+            }
+        }
+    }
+
+    fn collect_proof(
+        &mut self,
+        module: &HirModule,
+        owner: ItemId,
+        proof: &arcweft_lang_hir::item::HirProof,
+    ) -> Result<(), VerificationInputError> {
+        self.validate_expressions(proof.requires())?;
+        self.validate_expressions(proof.ensures())?;
+        match proof.body() {
+            HirProofBody::Expression { expression, .. } => {
+                self.validate_expression(*expression)?;
+            }
+            HirProofBody::Block {
+                statements, tail, ..
+            } => {
+                self.validate_statements(module, statements)?;
+                self.validate_expression(*tail)?;
+            }
+            HirProofBody::Error { expression, .. } => {
+                return Err(VerificationInputError::MissingExpressionFact { owner: *expression });
+            }
+        }
+
+        let symbol = self
+            .symbols
+            .callable_symbols()
+            .find(|symbol| {
+                symbol.source_item() == owner && symbol.owner() == CallableDeclarationOwner::Proof
+            })
+            .ok_or(VerificationInputError::MissingProofSymbol { owner })?;
+        let CallableDeclarationKey::Existing(declaration) = symbol.declaration() else {
+            return Err(VerificationInputError::MissingProofSymbol { owner });
+        };
+        let artifact = self
+            .symbols
+            .proof_artifact(self.project.project_view(), declaration)?;
+        let source = item_source(module, owner)?;
+        let label = declaration.qualified_name();
+        let obligation_id = format!("proof.{label}.body");
+        let obligation = ProofObligation {
+            id: obligation_id.clone(),
+            kind: ProofObligationKind::ProofBody,
+            message: format!("proof `{label}` awaits typed proof discharge"),
+            subject: Some(label.clone()),
+            source: Some(source.clone()),
+            insertion_target: self
+                .insertion
+                .proof_target_for_kind(module.module_id(), ProofObligationKind::ProofBody),
+            discharge: ProofDischarge::Missing,
+            smt: None,
+            proof_artifact: Some(artifact.clone()),
+            statement: None,
+        };
+        self.report.diagnostics.push(missing_obligation_diagnostic(
+            &obligation,
+            self.report.policy.mode,
+        ));
+        self.report.obligations.push(obligation);
+        self.report.proofs.push(ProofSummary {
+            id: label,
+            source,
+            trust: ProofTrustSummary::Pending,
+            trusted_dependencies: Vec::new(),
+        });
+        self.report.proof_artifacts.push(artifact);
+        Ok(())
+    }
+
+    fn collect_statement(
+        &mut self,
+        module: &HirModule,
+        owner: StmtId,
+        statement: &HirStmtKind,
+    ) -> Result<(), VerificationInputError> {
+        let checked = self
+            .semantics
+            .statement(owner)
+            .ok_or(VerificationInputError::MissingStatementFact { owner })?;
+        match statement {
+            HirStmtKind::Assertion { mode, conditions } => {
+                let CheckedStatementRole::Assertion(disposition) = checked.role() else {
+                    return Err(VerificationInputError::StatementRoleMismatch { owner });
+                };
+                self.validate_expressions(conditions)?;
+                let HirAssertionMode::Resolved(AssertionMode::Prove) = mode else {
+                    return Ok(());
+                };
+                if !matches!(disposition, CheckedAssertionDisposition::PendingProof) {
+                    return Err(VerificationInputError::StatementRoleMismatch { owner });
+                }
+                let source = statement_source(module, owner)?;
+                for (index, _) in conditions.iter().enumerate() {
+                    let obligation = ProofObligation {
+                        id: format!("assertion.{owner:?}.condition.{index}"),
+                        kind: ProofObligationKind::AssertionProof,
+                        message: format!(
+                            "assert.prove condition {index} requires compile-time discharge"
+                        ),
+                        subject: Some(format!("condition.{index}")),
+                        source: Some(source.clone()),
+                        insertion_target: None,
+                        discharge: ProofDischarge::Missing,
+                        smt: None,
+                        proof_artifact: None,
+                        statement: Some(owner),
+                    };
+                    self.report
+                        .diagnostics
+                        .push(unresolved_prove_diagnostic(&obligation));
+                    self.report.obligations.push(obligation);
+                }
+            }
+            HirStmtKind::UnsafeLifetime { audit, .. } => {
+                if !matches!(checked.role(), CheckedStatementRole::UnsafeAudit) {
+                    return Err(VerificationInputError::StatementRoleMismatch { owner });
+                }
+                let source = statement_source(module, owner)?;
+                let id = id_ref_label(audit.id());
+                let complete = audit.reason().is_some() && audit.has_safety_doc();
+                self.report.unsafe_audits.push(UnsafeAuditSummary {
+                    id: id.clone(),
+                    source: Some(source.clone()),
+                    has_reason: audit.reason().is_some(),
+                    has_safety_doc: audit.has_safety_doc(),
+                    statement: Some(owner),
+                });
+                if !complete {
+                    let obligation = ProofObligation {
+                        id: format!("unsafe_audit.{owner:?}"),
+                        kind: ProofObligationKind::UnsafeLifetimeAudit,
+                        message: format!(
+                            "unsafe lifetime audit `{id}` requires reason and SAFETY documentation"
+                        ),
+                        subject: Some(id),
+                        source: Some(source),
+                        insertion_target: None,
+                        discharge: ProofDischarge::Missing,
+                        smt: None,
+                        proof_artifact: None,
+                        statement: Some(owner),
+                    };
+                    self.report.diagnostics.push(missing_obligation_diagnostic(
+                        &obligation,
+                        self.report.policy.mode,
+                    ));
+                    self.report.obligations.push(obligation);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn validate_statements(
+        &self,
+        module: &HirModule,
+        statements: &[StmtId],
+    ) -> Result<(), VerificationInputError> {
+        for &owner in statements {
+            module
+                .resolve_stmt(owner)
+                .map_err(|_| VerificationInputError::MissingStatementFact { owner })?;
+            self.semantics
+                .statement(owner)
+                .ok_or(VerificationInputError::MissingStatementFact { owner })?;
+        }
+        Ok(())
+    }
+
+    fn validate_expressions(&self, expressions: &[ExprId]) -> Result<(), VerificationInputError> {
+        for &owner in expressions {
+            self.validate_expression(owner)?;
+        }
+        Ok(())
+    }
+
+    fn validate_expression(&self, owner: ExprId) -> Result<(), VerificationInputError> {
+        self.semantics
+            .expression(owner)
+            .map(|_| ())
+            .ok_or(VerificationInputError::MissingExpressionFact { owner })
+    }
+
+    fn finish(mut self) -> VerificationReport {
+        self.report.call_witnesses = self
+            .semantics
+            .calls()
+            .map(|(_, facts)| ProofCallWitnessProjection::from_facts(facts))
+            .collect();
+        self.report.diagnostics.sort_by(|left, right| {
+            source_sort_key(left.source.as_ref())
+                .cmp(&source_sort_key(right.source.as_ref()))
+                .then_with(|| left.id.cmp(&right.id))
+                .then_with(|| left.message.cmp(&right.message))
+        });
+        self.report
+    }
+}
+
+fn item_source(module: &HirModule, owner: ItemId) -> Result<SourceSpan, VerificationInputError> {
+    source_lookup(
+        module,
+        HirSourceQuery::Item {
+            owner,
+            role: HirItemSourceRole::Declaration(HirDeclarationSourceRole::Whole),
+        },
+        VerificationOwner::Item(owner),
+    )
+}
+
+fn statement_source(
+    module: &HirModule,
+    owner: StmtId,
+) -> Result<SourceSpan, VerificationInputError> {
+    source_lookup(
+        module,
+        HirSourceQuery::Stmt {
+            owner,
+            role: HirStmtSourceRole::Whole,
+        },
+        VerificationOwner::Statement(owner),
+    )
+}
+
+fn source_lookup(
+    module: &HirModule,
+    query: HirSourceQuery,
+    owner: VerificationOwner,
+) -> Result<SourceSpan, VerificationInputError> {
+    let lookup = module.source_site(module.provenance().source_identity(), query)?;
+    match lookup.presence() {
+        HirSourcePresence::Present(site) => Ok(SourceSpan::from_site(site)),
+        HirSourcePresence::AbsentOptional => {
+            Err(VerificationInputError::MissingSourceSite { owner })
+        }
+    }
+}
+
+fn missing_obligation_diagnostic(
+    obligation: &ProofObligation,
+    mode: VerificationMode,
+) -> VerificationDiagnostic {
+    VerificationDiagnostic {
+        id: format!("verify.pending.{}", obligation.id),
+        severity: match mode {
+            VerificationMode::Dev => Severity::Warning,
+            VerificationMode::Test | VerificationMode::Release => Severity::Error,
+        },
+        message: obligation.message.clone(),
+        source: obligation.source.clone(),
+        obligation: Some(obligation.id.clone()),
+        related_ids: obligation.subject.iter().cloned().collect(),
+        actions: obligation.actions(),
+    }
+}
+
+fn unresolved_prove_diagnostic(obligation: &ProofObligation) -> VerificationDiagnostic {
+    VerificationDiagnostic {
+        id: "verify.proof.unresolved".to_owned(),
+        severity: Severity::Error,
+        message: obligation.message.clone(),
+        source: obligation.source.clone(),
+        obligation: Some(obligation.id.clone()),
+        related_ids: obligation.subject.iter().cloned().collect(),
+        actions: obligation.actions(),
+    }
+}
+
+fn source_sort_key(source: Option<&SourceSpan>) -> (&str, usize, usize) {
+    source.map_or(("", 0, 0), |source| {
+        (source.source.id().as_str(), source.start, source.end)
+    })
+}
+
+fn id_ref_label(value: &HirIdRefValue) -> String {
+    match value.as_resolved() {
+        Some(HirIdRef::Absolute(reference)) => reference.as_str().to_owned(),
+        Some(HirIdRef::Relative(relative)) => format!(
+            "relative:{}:{}",
+            relative.parent_depth(),
+            relative.suffix().as_str()
+        ),
+        Some(HirIdRef::FamilyRelative(relative)) => format!(
+            "{}:relative:{}:{}",
+            relative.family().as_str(),
+            relative.relative().parent_depth(),
+            relative.relative().suffix().as_str()
+        ),
+        None => "recovered-audit".to_owned(),
+    }
 }
 
 impl VerificationReport {
-    /// Returns every proof whose evidence is directly or transitively trusted.
+    /// Returns final-HIR-identity-ordered bounded Call evidence for this generation.
+    pub fn call_witnesses(&self) -> &[ProofCallWitnessProjection] {
+        &self.call_witnesses
+    }
+
+    /// Returns bounded Proof evidence for one exact final-HIR Call identity.
+    pub fn call_witness(&self, expression: ExprId) -> Option<&ProofCallWitnessProjection> {
+        self.call_witnesses
+            .iter()
+            .find(|projection| projection.expression() == expression)
+    }
+
     pub fn trusted_proofs(&self) -> impl Iterator<Item = &ProofSummary> {
         self.proofs
             .iter()
@@ -580,6 +988,12 @@ impl VerificationReport {
     pub fn source_diagnostics(&self, document: &SourceDocument) -> Vec<SourceDiagnostic> {
         self.diagnostics
             .iter()
+            .filter(|diagnostic| {
+                diagnostic
+                    .source
+                    .as_ref()
+                    .is_none_or(|source| &source.source == document.identity())
+            })
             .map(|diagnostic| diagnostic.source_diagnostic(document))
             .collect()
     }
@@ -593,13 +1007,10 @@ impl VerificationReport {
     pub fn has_missing_unsafe_audit_metadata(&self) -> bool {
         self.obligations.iter().any(|obligation| {
             obligation.kind == ProofObligationKind::UnsafeLifetimeAudit
-                && matches!(&obligation.discharge, ProofDischarge::Missing)
+                && obligation.discharge.is_missing()
         })
     }
 
-    /// Runtime-producing flows must not proceed with an unaudited unsafe
-    /// lifetime block even when the caller selected a dev verifier policy where
-    /// ordinary proof obligations are advisory warnings.
     pub fn has_blocking_runtime_safety_gaps(&self) -> bool {
         self.has_errors() || self.has_missing_unsafe_audit_metadata()
     }
@@ -667,7 +1078,7 @@ impl VerificationReport {
             .obligations
             .iter()
             .find(|item| item.id == obligation)
-            .is_some_and(|item| matches!(item.discharge, ProofDischarge::Missing))
+            .is_some_and(|item| item.discharge.is_missing())
     }
 }
 
@@ -696,1210 +1107,3 @@ impl SolverCheck {
         )
     }
 }
-
-fn merge_semantic_report(
-    report: &mut VerificationReport,
-    semantic: SemanticReport,
-    insertion_inventory: VerifierInsertionInventory,
-) {
-    let insertion_context = SemanticInsertionContext::new(insertion_inventory);
-    remove_collector_semantic_obligations(report);
-
-    for proof in semantic.proofs {
-        let summary = ProofSummary {
-            id: proof.id,
-            source: SourceSpan {
-                start: proof.source.start,
-                end: proof.source.end,
-            },
-            trust: match proof.trust {
-                SemanticProofTrust::Verified => ProofTrustSummary::Verified,
-                SemanticProofTrust::Trusted { reason } => ProofTrustSummary::Trusted { reason },
-            },
-            trusted_dependencies: proof.trusted_dependencies,
-        };
-        if let Some(existing) = report
-            .proofs
-            .iter_mut()
-            .find(|existing| existing.id == summary.id)
-        {
-            *existing = summary;
-        } else {
-            report.proofs.push(summary);
-        }
-    }
-    for audit in semantic.unsafe_audits {
-        if !report
-            .unsafe_audits
-            .iter()
-            .any(|existing| existing.id == audit.id)
-        {
-            report.unsafe_audits.push(UnsafeAuditSummary {
-                id: audit.id,
-                source: audit.source.map(|source| SourceSpan {
-                    start: source.start,
-                    end: source.end,
-                }),
-                has_reason: audit.has_reason,
-                has_safety_doc: audit.has_safety_doc,
-            });
-        }
-    }
-    let mut id_map = BTreeMap::new();
-    for obligation in semantic.obligations {
-        let (semantic_id, verification_id) =
-            merge_semantic_obligation(report, obligation, &insertion_context);
-        id_map.insert(semantic_id, verification_id);
-    }
-    for diagnostic in semantic.diagnostics {
-        merge_semantic_diagnostic(report, diagnostic, &id_map);
-    }
-    report
-        .diagnostics
-        .sort_by(|left, right| left.id.cmp(&right.id));
-}
-
-fn remove_collector_semantic_obligations(report: &mut VerificationReport) {
-    let removed: BTreeSet<String> = report
-        .obligations
-        .iter()
-        .filter(|obligation| obligation.kind.is_semantic_owned())
-        .map(|obligation| obligation.id.clone())
-        .collect();
-    if removed.is_empty() {
-        return;
-    }
-    report
-        .obligations
-        .retain(|obligation| !removed.contains(&obligation.id));
-    report.diagnostics.retain(|diagnostic| {
-        diagnostic
-            .obligation
-            .as_ref()
-            .is_none_or(|id| !removed.contains(id))
-    });
-}
-
-fn merge_semantic_obligation(
-    report: &mut VerificationReport,
-    obligation: SemanticObligation,
-    insertion_context: &SemanticInsertionContext,
-) -> (String, String) {
-    let semantic_id = obligation.id.clone();
-    let kind = proof_kind(obligation.kind);
-    if let Some(existing) = report.obligations.iter().find(|existing| {
-        existing.kind == kind
-            && existing.subject == obligation.subject
-            && existing.message == obligation.message
-    }) {
-        return (semantic_id, existing.id.clone());
-    }
-    let id = format!("obligation.{:04}", report.obligations.len() + 1);
-    let verification_id = id.clone();
-    let discharge = proof_discharge(obligation.discharge);
-    let subject = obligation.subject;
-    let insertion_target = insertion_context.target_for(kind);
-    report.obligations.push(ProofObligation {
-        id,
-        kind,
-        message: obligation.message,
-        subject,
-        source: obligation.source.map(|source| SourceSpan {
-            start: source.start,
-            end: source.end,
-        }),
-        insertion_target,
-        discharge,
-        smt: None,
-    });
-
-    (semantic_id, verification_id)
-}
-
-struct SemanticInsertionContext {
-    proof_inventory: VerifierInsertionInventory,
-}
-
-impl SemanticInsertionContext {
-    const fn new(proof_inventory: VerifierInsertionInventory) -> Self {
-        Self { proof_inventory }
-    }
-
-    fn target_for(&self, kind: ProofObligationKind) -> Option<VerifierInsertionTarget> {
-        self.proof_inventory.proof_target_for_kind(kind)
-    }
-}
-
-fn merge_semantic_diagnostic(
-    report: &mut VerificationReport,
-    diagnostic: SemanticDiagnostic,
-    id_map: &BTreeMap<String, String>,
-) {
-    if report
-        .diagnostics
-        .iter()
-        .any(|existing| existing.message == diagnostic.message)
-    {
-        return;
-    }
-    let obligation = diagnostic
-        .obligation
-        .and_then(|id| id_map.get(&id).cloned());
-    let actions = obligation
-        .as_ref()
-        .and_then(|id| report.obligations.iter().find(|item| &item.id == id))
-        .map_or_else(Vec::new, ProofObligation::actions);
-    report.diagnostics.push(VerificationDiagnostic {
-        id: format!("diagnostic.{}", diagnostic.id),
-        severity: severity(diagnostic.severity),
-        message: diagnostic.message,
-        source: diagnostic.source.map(|source| SourceSpan {
-            start: source.start,
-            end: source.end,
-        }),
-        obligation,
-        related_ids: diagnostic.related_ids,
-        actions,
-    });
-}
-
-fn semantic_mode(mode: VerificationMode) -> SemanticMode {
-    match mode {
-        VerificationMode::Dev => SemanticMode::Dev,
-        VerificationMode::Test => SemanticMode::Test,
-        VerificationMode::Release => SemanticMode::Release,
-    }
-}
-
-fn proof_kind(kind: SemanticObligationKind) -> ProofObligationKind {
-    match kind {
-        SemanticObligationKind::LifetimePromotion => ProofObligationKind::LifetimePromotion,
-        SemanticObligationKind::UnsafeLifetimeAudit => ProofObligationKind::UnsafeLifetimeAudit,
-        SemanticObligationKind::MustDropDischarge => ProofObligationKind::MustDropDischarge,
-        SemanticObligationKind::ThreadCapture => ProofObligationKind::ThreadCapture,
-        SemanticObligationKind::ThreadJoinTyping => ProofObligationKind::ThreadJoinTyping,
-        SemanticObligationKind::UpperLifetimeWrite => ProofObligationKind::UpperLifetimeWrite,
-        SemanticObligationKind::EffectCapability => ProofObligationKind::EffectCapability,
-        SemanticObligationKind::ProofBody => ProofObligationKind::ProofBody,
-        SemanticObligationKind::TrustedProof => ProofObligationKind::TrustedProof,
-        SemanticObligationKind::TrustedAssumption => ProofObligationKind::TrustedAssumption,
-        SemanticObligationKind::RawSyntax => ProofObligationKind::RawSyntax,
-        SemanticObligationKind::RuntimeConflict => ProofObligationKind::RuntimeConflict,
-    }
-}
-
-fn proof_discharge(discharge: SemanticDischarge) -> ProofDischarge {
-    match discharge {
-        SemanticDischarge::Automatic => ProofDischarge::Automatic,
-        SemanticDischarge::FormalProof { id } => ProofDischarge::FormalProof { id },
-        SemanticDischarge::AuditedUnsafe { id } => ProofDischarge::AuditedUnsafe { id },
-        SemanticDischarge::TrustedProof {
-            id,
-            trusted_dependencies,
-        } => ProofDischarge::TrustedProof {
-            id,
-            trusted_dependencies,
-        },
-        SemanticDischarge::Missing => ProofDischarge::Missing,
-    }
-}
-
-fn severity(severity: SemanticSeverity) -> Severity {
-    match severity {
-        SemanticSeverity::Info => Severity::Info,
-        SemanticSeverity::Warning => Severity::Warning,
-        SemanticSeverity::Error => Severity::Error,
-    }
-}
-
-struct ObligationCollector {
-    policy: VerificationPolicy,
-    report: VerificationReport,
-    next_obligation: usize,
-    insertion_inventory: VerifierInsertionInventory,
-    unsafe_stack: Vec<String>,
-    known_proofs: BTreeSet<String>,
-    lifetime_reads: Vec<LifetimeKey>,
-    lifetime_drops: HashSet<LifetimeKey>,
-}
-
-impl ObligationCollector {
-    fn new(policy: VerificationPolicy, insertion_inventory: VerifierInsertionInventory) -> Self {
-        Self {
-            policy,
-            report: VerificationReport {
-                policy,
-                ..VerificationReport::default()
-            },
-            next_obligation: 0,
-            insertion_inventory,
-            unsafe_stack: Vec::new(),
-            known_proofs: BTreeSet::new(),
-            lifetime_reads: Vec::new(),
-            lifetime_drops: HashSet::new(),
-        }
-    }
-
-    fn collect_module(&mut self, module: &HirModule) {
-        self.collect_declarations(module);
-        for flow in module.flows() {
-            self.collect_flow_items(flow.body());
-        }
-        for function in module.functions() {
-            self.collect_function(function);
-        }
-        self.collect_must_drop_obligations();
-        self.collect_runtime_plan_obligations(module);
-    }
-
-    fn collect_runtime_plan_obligations(&mut self, module: &HirModule) {
-        if let Err(errors) = lower_source_line_tasks(module) {
-            for error in errors {
-                self.add_obligation(
-                    ProofObligationKind::RuntimeConflict,
-                    format!("runtime plan conflict: {}", error.message()),
-                    None,
-                    &ProofDischarge::Missing,
-                );
-            }
-        }
-    }
-
-    fn collect_declarations(&mut self, module: &HirModule) {
-        for declaration in module.declarations() {
-            match declaration {
-                HirTopLevelDecl::Proof(proof) => {
-                    let id = id_ref_label(proof.id(), "proof");
-                    self.known_proofs.insert(id);
-                }
-                HirTopLevelDecl::Source(source) => {
-                    self.collect_stmts(source.item().body_statements());
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn collect_function(&mut self, function: &HirFunction) {
-        self.collect_stmts(function.statements());
-        if let Some(value) = function.value() {
-            self.collect_expr(value.expr());
-        }
-    }
-
-    fn collect_flow_items(&mut self, items: &[HirFlowItem]) {
-        for item in items {
-            self.collect_flow_item(item);
-        }
-    }
-
-    fn collect_flow_item(&mut self, item: &HirFlowItem) {
-        match item {
-            HirFlowItem::Stmt(stmt) => self.collect_stmt(stmt),
-            HirFlowItem::Dialogue(dialogue) => {
-                for arg in dialogue.args() {
-                    self.collect_expr(arg.value());
-                }
-                if let Some(plan) = dialogue.plan() {
-                    self.collect_line_plan(plan);
-                }
-            }
-            HirFlowItem::Choice(choice) | HirFlowItem::LetChoice { choice, .. } => {
-                self.collect_choice(choice);
-            }
-            HirFlowItem::LetScope { scope, .. } => self.collect_scope_expr(scope),
-            HirFlowItem::LetLoop { block, .. } | HirFlowItem::Loop(block) => {
-                self.collect_loop(block);
-            }
-            HirFlowItem::LetAwait { await_with, .. } | HirFlowItem::Await(await_with) => {
-                self.collect_await(await_with);
-            }
-            HirFlowItem::If(block) => self.collect_if(block),
-            HirFlowItem::IfLet(block) => self.collect_if_let(block),
-            HirFlowItem::Match(block) => self.collect_match(block),
-            HirFlowItem::While(block) => self.collect_while(block),
-            HirFlowItem::WhileLet(block) => self.collect_while_let(block),
-            HirFlowItem::For(block) => self.collect_for(block),
-            HirFlowItem::Select(block) => self.collect_select(block),
-            HirFlowItem::SourceLocale(block) => self.collect_flow_items(block.body()),
-            HirFlowItem::Scope(block) => self.collect_scope(block),
-            HirFlowItem::Thread(thread) => self.collect_flow_items(thread.body()),
-            HirFlowItem::Include(_) => {}
-        }
-    }
-
-    fn collect_choice(&mut self, choice: &HirChoice) {
-        for option in choice.options() {
-            if let Some(condition) = option.condition() {
-                self.collect_expr(condition);
-            }
-            if let Some(value) = option.value() {
-                self.collect_expr(value);
-            }
-        }
-        if let Some(plan) = choice.plan() {
-            for item in plan.items() {
-                self.collect_choice_plan_item(item);
-            }
-        }
-    }
-
-    fn collect_choice_plan_item(&mut self, item: &ChoicePlanItem) {
-        match item {
-            ChoicePlanItem::Option { value, .. } => {
-                self.collect_expr(value);
-            }
-            ChoicePlanItem::Timeout { duration, body } => {
-                self.collect_expr(duration);
-                self.collect_stmts(body);
-            }
-            ChoicePlanItem::Cancel { trigger, body } => {
-                self.collect_trigger(trigger);
-                self.collect_stmts(body);
-            }
-            ChoicePlanItem::OnSelect { body, .. } => {
-                self.collect_stmts(body);
-            }
-            ChoicePlanItem::Raw(raw) => {
-                self.add_raw_obligation(
-                    format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
-                    raw.range().map(|range| format!("{range:?}")),
-                );
-            }
-        }
-    }
-
-    fn collect_line_plan(&mut self, plan: &LinePlan) {
-        for item in plan.items() {
-            self.collect_line_plan_item(item);
-        }
-    }
-
-    fn collect_line_plan_item(&mut self, item: &LinePlanItem) {
-        match item {
-            LinePlanItem::Init(stmts) => self.collect_stmts(stmts),
-            LinePlanItem::StartGroup(items) | LinePlanItem::TogetherGroup(items) => {
-                for item in items {
-                    self.collect_line_plan_item(item);
-                }
-            }
-            LinePlanItem::Thread(thread) => self.collect_thread(thread),
-            LinePlanItem::On { body, .. } => self.collect_stmts(body),
-            LinePlanItem::Option { value, .. }
-            | LinePlanItem::Let { expr: value, .. }
-            | LinePlanItem::Out(value)
-            | LinePlanItem::Expr(value) => self.collect_expr(value),
-            LinePlanItem::TimelineAssert(assertion) => {
-                self.collect_expr(assertion.condition());
-            }
-            LinePlanItem::Stmt(stmt) => self.collect_stmt(stmt),
-            LinePlanItem::CancelRule(rule) => self.collect_stmts(rule.action()),
-            LinePlanItem::TimedCue { anchor, body } => {
-                self.collect_expr(anchor);
-                self.collect_expr(body);
-            }
-            LinePlanItem::Raw(raw) => {
-                self.add_raw_obligation(
-                    format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
-                    raw.range().map(|range| format!("{range:?}")),
-                );
-            }
-        }
-    }
-
-    fn collect_stmt(&mut self, stmt: &Stmt) {
-        match stmt {
-            Stmt::Assertion(assertion) => self.collect_assertion(assertion),
-            Stmt::LetElse {
-                expr, else_body, ..
-            } => {
-                self.collect_expr(expr.expr());
-                self.collect_stmts(else_body);
-            }
-            Stmt::LetChoice { choice, .. } => self.collect_choice_syntax(choice),
-            Stmt::LetScope { scope, .. } => self.collect_scope_expr_syntax(scope),
-            Stmt::LetLoop { block, .. } => self.collect_flow_items_syntax(block.body()),
-            Stmt::LetAwait { await_with, .. } => self.collect_await_syntax(await_with),
-            Stmt::LetActionReceive { action, .. } => self.collect_expr(action.expr()),
-            Stmt::Let { expr, .. } | Stmt::Return { expr, .. } | Stmt::Expr { expr, .. } => {
-                self.collect_expr(expr);
-            }
-            Stmt::Out { expr, .. }
-            | Stmt::Defer { expr, .. }
-            | Stmt::Goto(expr)
-            | Stmt::Yield(expr)
-            | Stmt::Close(expr)
-            | Stmt::Select(expr) => {
-                self.collect_expr(expr.expr());
-            }
-            Stmt::Assign { target, expr } => {
-                self.collect_expr(target.expr());
-                self.collect_expr(expr.expr());
-            }
-            Stmt::Thread(thread) => self.collect_thread(thread),
-            Stmt::DeferBlock { statements, .. } => self.collect_stmts(statements),
-            Stmt::Signal {
-                target: condition,
-                value: message,
-            } => {
-                self.collect_expr(condition.expr());
-                self.collect_expr(message.expr());
-            }
-            Stmt::LifetimeSet { target, expr } => {
-                self.collect_lifetime_write(target.expr());
-                self.collect_expr(expr.expr());
-            }
-            Stmt::Wait(target) => self.collect_wait(target),
-            Stmt::On { trigger, body } => {
-                self.collect_trigger(trigger);
-                self.collect_stmts(body);
-            }
-            Stmt::UnsafeLifetime {
-                id,
-                reason,
-                has_safety_doc,
-                body,
-            } => self.collect_unsafe_lifetime(id, reason.as_ref(), *has_safety_doc, body),
-            Stmt::If {
-                condition,
-                body,
-                else_body,
-            } => self.collect_if_stmt(condition.expr(), body, else_body),
-            Stmt::While { condition, body } => {
-                self.collect_expr(condition.expr());
-                self.collect_stmts(body);
-            }
-            Stmt::Loop { body } => self.collect_stmts(body),
-            Stmt::WhileLet {
-                expr, guard, body, ..
-            } => {
-                self.collect_expr(expr.expr());
-                if let Some(guard) = guard {
-                    self.collect_expr(guard.expr());
-                }
-                self.collect_stmts(body);
-            }
-            Stmt::For { source, body, .. } => {
-                self.collect_expr(source.expr());
-                self.collect_stmts(body);
-            }
-            Stmt::Match { expr, arms } => {
-                self.collect_expr(expr.expr());
-                for arm in arms {
-                    if let Some(guard) = arm.guard() {
-                        self.collect_expr(guard);
-                    }
-                    self.collect_stmts(arm.body());
-                }
-            }
-            Stmt::Break {
-                expr: Some(expr), ..
-            } => self.collect_expr(expr.expr()),
-            Stmt::Break { expr: None, .. } | Stmt::Continue { .. } => {}
-            Stmt::Raw(raw) => self.add_raw_obligation(
-                format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
-                raw.range().map(|range| format!("{range:?}")),
-            ),
-        }
-    }
-
-    fn collect_if_stmt(&mut self, condition: &Expr, body: &[Stmt], else_body: &[Stmt]) {
-        self.collect_expr(condition);
-        self.collect_stmts(body);
-        self.collect_stmts(else_body);
-    }
-
-    fn collect_stmts(&mut self, stmts: &[Stmt]) {
-        for stmt in stmts {
-            self.collect_stmt(stmt);
-        }
-    }
-
-    fn collect_syntax_flow_items(&mut self, items: &[FlowItem]) {
-        for item in items {
-            match item {
-                FlowItem::Stmt(stmt) => self.collect_stmt(stmt),
-                FlowItem::Choice(choice) => self.collect_choice_syntax(choice),
-                FlowItem::If(block) => {
-                    self.collect_expr(block.condition());
-                    self.collect_syntax_flow_items(block.body());
-                    self.collect_syntax_flow_items(block.else_body());
-                }
-                FlowItem::IfLet(block) => {
-                    self.collect_expr(block.expr());
-                    if let Some(guard) = block.guard() {
-                        self.collect_expr(guard);
-                    }
-                    self.collect_syntax_flow_items(block.body());
-                    self.collect_syntax_flow_items(block.else_body());
-                }
-                FlowItem::Match(block) => {
-                    self.collect_expr(block.expr());
-                    for arm in block.arms() {
-                        if let Some(guard) = arm.guard() {
-                            self.collect_expr(guard);
-                        }
-                        self.collect_syntax_flow_items(arm.body());
-                    }
-                }
-                FlowItem::Loop(block) => self.collect_syntax_flow_items(block.body()),
-                FlowItem::While(block) => {
-                    self.collect_expr(block.condition());
-                    self.collect_syntax_flow_items(block.body());
-                }
-                FlowItem::WhileLet(block) => {
-                    self.collect_expr(block.expr());
-                    if let Some(guard) = block.guard() {
-                        self.collect_expr(guard);
-                    }
-                    self.collect_syntax_flow_items(block.body());
-                }
-                FlowItem::For(block) => {
-                    self.collect_expr(block.source());
-                    self.collect_syntax_flow_items(block.body());
-                }
-                FlowItem::Select(block) => {
-                    for branch in block.branches() {
-                        self.collect_syntax_flow_items(branch.body());
-                    }
-                }
-                FlowItem::SourceLocale(block) => self.collect_syntax_flow_items(block.body()),
-                FlowItem::Scope(block) => self.collect_syntax_flow_items(block.body()),
-                FlowItem::AwaitWith(await_with) => self.collect_await_syntax(await_with),
-                FlowItem::SpeakerLine(_)
-                | FlowItem::ContentCall(_)
-                | FlowItem::Include(_)
-                | FlowItem::Raw(_) => {}
-            }
-        }
-    }
-
-    #[expect(
-        clippy::too_many_lines,
-        reason = "expression traversal mirrors the public Expr enum so verifier coverage is auditable"
-    )]
-    fn collect_expr(&mut self, expr: &Expr) {
-        match expr {
-            Expr::Literal(_)
-            | Expr::Path(_)
-            | Expr::ShortVariant(_)
-            | Expr::Placeholder(_)
-            | Expr::NumericBracketSeq(_)
-            | Expr::Raw(_) => {
-                if let Expr::Raw(raw) = expr {
-                    self.add_raw_obligation(format!("raw expression: {raw}"), None);
-                }
-            }
-            Expr::EntityRef(_) => {}
-            Expr::LifetimePath { key, .. } => {
-                self.lifetime_reads.push(key.clone());
-            }
-            Expr::Tuple(items) | Expr::BracketSeq(items) => {
-                for item in items {
-                    self.collect_expr(item);
-                }
-            }
-            Expr::ArrayRepeat { value, len } => {
-                self.collect_expr(value);
-                self.collect_expr(len);
-            }
-            Expr::Call(call) => {
-                self.collect_call(call.callee(), call.args());
-            }
-            Expr::Select(select) => self.collect_expr(select.target()),
-            Expr::DialogueCall { callee, plan, .. } => {
-                self.collect_expr(callee);
-                if let Some(plan) = plan {
-                    self.collect_line_plan(plan);
-                }
-            }
-            Expr::Index { target, index } => {
-                self.collect_expr(target);
-                self.collect_expr(index);
-            }
-            Expr::Pipe { lhs, rhs } => {
-                self.collect_lifetime_drop_pipe(lhs, rhs);
-                self.collect_expr(lhs);
-                self.collect_expr(rhs);
-            }
-            Expr::Try(try_expr) => self.collect_expr(try_expr.operand()),
-            Expr::Unary { expr, .. } => self.collect_expr(expr),
-            Expr::Await(awaited) => self.collect_expr(awaited.operand()),
-            Expr::Borrow(borrow) => self.collect_expr(borrow.operand()),
-            Expr::Deref(deref) => self.collect_expr(deref.operand()),
-            Expr::Thread { block } => self.collect_thread(block),
-            Expr::Range { start, end, .. } => {
-                if let Some(start) = start {
-                    self.collect_expr(start);
-                }
-                if let Some(end) = end {
-                    self.collect_expr(end);
-                }
-            }
-            Expr::Record { fields, .. } | Expr::RecordLiteral(fields) => {
-                for (_, value) in fields {
-                    self.collect_expr(value);
-                }
-            }
-            Expr::Binary { lhs, rhs, .. } => {
-                self.collect_expr(lhs);
-                self.collect_expr(rhs);
-            }
-            Expr::Closure { body, .. } => self.collect_expr(body),
-            Expr::Block { statements, value }
-            | Expr::ComputationBlock {
-                statements, value, ..
-            }
-            | Expr::NamedBlock {
-                statements, value, ..
-            } => {
-                self.collect_stmts(statements);
-                if let Some(value) = value {
-                    self.collect_expr(value);
-                }
-            }
-            Expr::If {
-                condition,
-                then_branch,
-                else_branch,
-            } => {
-                self.collect_expr(condition);
-                self.collect_expr(then_branch);
-                if let Some(else_branch) = else_branch {
-                    self.collect_expr(else_branch);
-                }
-            }
-            Expr::IfLet {
-                expr,
-                guard,
-                then_branch,
-                else_branch,
-                ..
-            } => {
-                self.collect_expr(expr);
-                if let Some(guard) = guard {
-                    self.collect_expr(guard);
-                }
-                self.collect_expr(then_branch);
-                if let Some(else_branch) = else_branch {
-                    self.collect_expr(else_branch);
-                }
-            }
-            Expr::Match { scrutinee, arms } => {
-                self.collect_expr(scrutinee);
-                for arm in arms {
-                    if let Some(guard) = arm.guard() {
-                        self.collect_expr(guard);
-                    }
-                    self.collect_expr(arm.value());
-                }
-            }
-        }
-    }
-
-    fn collect_call(&mut self, callee: &Expr, args: &[CallArg]) {
-        if let Expr::Path(name) = callee {
-            match name.as_str() {
-                "promote" => self.add_promote_obligation(args, false),
-                "promote_unchecked" => self.add_promote_obligation(args, true),
-                "drop" | "drop_optional" | "on_drop" => self.collect_drop_args(args),
-                "assume" => self.add_assume_obligation(args),
-                _ => {}
-            }
-        }
-        if let Expr::Select(select) = callee {
-            match select.member().as_str() {
-                "promote" => self.add_promote_obligation(args, false),
-                "promote_unchecked" => self.add_promote_obligation(args, true),
-                "drop" | "drop_optional" | "on_drop" => {
-                    if let Expr::LifetimePath { key, .. } = select.target() {
-                        self.lifetime_drops.insert(key.clone());
-                    }
-                }
-                _ => {}
-            }
-        }
-        self.collect_expr(callee);
-        for arg in args {
-            self.collect_expr(arg.value());
-        }
-    }
-
-    fn add_promote_obligation(&mut self, args: &[CallArg], unchecked: bool) {
-        let proof = proof_arg(args);
-        let target = args.first().and_then(|arg| lifetime_label_arg(arg.value()));
-        let discharge = if unchecked {
-            self.unsafe_stack
-                .last()
-                .cloned()
-                .map_or(ProofDischarge::Missing, |id| {
-                    ProofDischarge::AuditedUnsafe { id }
-                })
-        } else if let Some(id) = proof {
-            ProofDischarge::FormalProof { id }
-        } else {
-            ProofDischarge::Missing
-        };
-        let message = target.as_ref().map_or_else(
-            || "lifetime promotion requires proof or audit".to_owned(),
-            |target| format!("lifetime promotion to `{target}` requires proof or audit"),
-        );
-        self.add_obligation(
-            ProofObligationKind::LifetimePromotion,
-            message,
-            target,
-            &discharge,
-        );
-    }
-
-    fn add_assume_obligation(&mut self, args: &[CallArg]) {
-        let discharge = proof_arg(args)
-            .filter(|id| self.known_proofs.contains(id))
-            .map_or(ProofDischarge::Missing, |id| ProofDischarge::FormalProof {
-                id,
-            });
-        self.add_obligation(
-            ProofObligationKind::TrustedAssumption,
-            "assume requires a proof dependency".to_owned(),
-            None,
-            &discharge,
-        );
-    }
-
-    fn collect_thread(&mut self, thread: &ThreadBlock) {
-        let discharge = if thread.is_detached() {
-            ProofDischarge::Missing
-        } else {
-            ProofDischarge::Automatic
-        };
-        self.add_obligation(
-            ProofObligationKind::ThreadCapture,
-            "thread capture must not move borrowed or MustDrop state across its scope".to_owned(),
-            thread.name().map(str::to_owned),
-            &discharge,
-        );
-        self.collect_syntax_flow_items(thread.body());
-    }
-
-    fn collect_unsafe_lifetime(
-        &mut self,
-        id: &IdRef,
-        reason: Option<&Expr>,
-        has_safety_doc: bool,
-        body: &[Stmt],
-    ) {
-        let id = id_ref_label(id, "unsafe");
-        if let Some(reason) = reason {
-            self.collect_expr(reason);
-        }
-        self.report.unsafe_audits.push(UnsafeAuditSummary {
-            id: id.clone(),
-            source: None,
-            has_reason: reason.is_some(),
-            has_safety_doc,
-        });
-        let discharge = if reason.is_some() && has_safety_doc {
-            ProofDischarge::AuditedUnsafe { id: id.clone() }
-        } else {
-            ProofDischarge::Missing
-        };
-        self.add_obligation_with_insertion(
-            ProofObligationKind::UnsafeLifetimeAudit,
-            format!("unsafe lifetime audit `{id}` must include reason and SAFETY docs"),
-            Some(id.clone()),
-            &discharge,
-            None,
-        );
-        self.unsafe_stack.push(id);
-        self.collect_stmts(body);
-        self.unsafe_stack.pop();
-    }
-
-    fn collect_lifetime_write(&mut self, target: &Expr) {
-        if let Expr::LifetimePath { key, .. } = target
-            && is_upper_lifetime(key.scope())
-        {
-            self.add_obligation(
-                ProofObligationKind::UpperLifetimeWrite,
-                format!(
-                    "upper lifetime write to `{}` needs effect capability or proof",
-                    key.as_dotted()
-                ),
-                Some(key.as_dotted()),
-                &ProofDischarge::Missing,
-            );
-        }
-        self.collect_expr(target);
-    }
-
-    fn collect_lifetime_drop_pipe(&mut self, lhs: &Expr, rhs: &Expr) {
-        let Expr::LifetimePath { key, .. } = lhs else {
-            return;
-        };
-        if is_drop_expr(rhs) {
-            self.lifetime_drops.insert(key.clone());
-        }
-    }
-
-    fn collect_drop_args(&mut self, args: &[CallArg]) {
-        for arg in args {
-            if let Expr::LifetimePath { key, .. } = arg.value() {
-                self.lifetime_drops.insert(key.clone());
-            }
-        }
-    }
-
-    fn collect_must_drop_obligations(&mut self) {
-        let reads = std::mem::take(&mut self.lifetime_reads);
-        for key in reads {
-            if is_must_drop_key(&key) && !self.lifetime_drops.contains(&key) {
-                self.add_obligation(
-                    ProofObligationKind::MustDropDischarge,
-                    format!(
-                        "MustDrop lifetime value `{}` must be explicitly dropped or transferred",
-                        key.as_dotted()
-                    ),
-                    Some(key.as_dotted()),
-                    &ProofDischarge::Missing,
-                );
-            }
-        }
-    }
-
-    fn collect_wait(&mut self, target: &WaitTarget) {
-        match target {
-            WaitTarget::Duration(expr) | WaitTarget::Expr(expr) => self.collect_expr(expr.expr()),
-        }
-    }
-
-    fn collect_trigger(&mut self, trigger: &TriggerPattern) {
-        match trigger {
-            TriggerPattern::Signal { target, .. }
-            | TriggerPattern::Timeout(target)
-            | TriggerPattern::Expr(target) => {
-                self.collect_expr(target);
-            }
-            TriggerPattern::Input(_)
-            | TriggerPattern::Event(_)
-            | TriggerPattern::Mark(_)
-            | TriggerPattern::Select(_)
-            | TriggerPattern::Task(_)
-            | TriggerPattern::Scope(_) => {}
-        }
-    }
-
-    fn collect_scope_expr(&mut self, scope: &HirScopeExpr) {
-        self.collect_stmts(scope.statements());
-        if let Some(value) = scope.value() {
-            self.collect_expr(value);
-        }
-    }
-
-    fn collect_scope_expr_syntax(&mut self, scope: &ScopeExprBlock) {
-        self.collect_stmts(scope.statements());
-        if let Some(value) = scope.value() {
-            self.collect_expr(value);
-        }
-    }
-
-    fn collect_choice_syntax(&mut self, choice: &ChoiceBlock) {
-        for option in choice.options() {
-            if let Some(condition) = option.condition() {
-                self.collect_expr(condition);
-            }
-            if let Some(value) = option.value() {
-                self.collect_expr(value);
-            }
-        }
-    }
-
-    fn collect_await_syntax(&mut self, await_with: &AwaitWith) {
-        self.collect_expr(await_with.expr());
-        for branch in await_with.branches() {
-            self.collect_flow_items_syntax(branch.body());
-        }
-    }
-
-    fn collect_flow_items_syntax(&mut self, items: &[FlowItem]) {
-        for item in items {
-            match item {
-                FlowItem::Stmt(stmt) => self.collect_stmt(stmt),
-                FlowItem::Raw(raw) => {
-                    self.add_raw_obligation(
-                        format!("raw {:?} recovery node: {}", raw.family(), raw.source()),
-                        raw.range().map(|range| format!("{range:?}")),
-                    );
-                }
-                _ => {}
-            }
-        }
-    }
-
-    fn collect_loop(&mut self, block: &HirLoop) {
-        self.collect_flow_items(block.body());
-    }
-
-    fn collect_if(&mut self, block: &HirIf) {
-        self.collect_expr(block.condition());
-        self.collect_flow_items(block.body());
-    }
-
-    fn collect_if_let(&mut self, block: &HirIfLet) {
-        self.collect_expr(block.expr());
-        if let Some(guard) = block.guard() {
-            self.collect_expr(guard);
-        }
-        self.collect_flow_items(block.body());
-    }
-
-    fn collect_match(&mut self, block: &HirMatch) {
-        self.collect_expr(block.expr());
-        for arm in block.arms() {
-            if let Some(guard) = arm.guard() {
-                self.collect_expr(guard);
-            }
-            self.collect_flow_items(arm.body());
-        }
-    }
-
-    fn collect_while(&mut self, block: &HirWhile) {
-        self.collect_expr(block.condition());
-        self.collect_flow_items(block.body());
-    }
-
-    fn collect_while_let(&mut self, block: &HirWhileLet) {
-        self.collect_expr(block.expr());
-        if let Some(guard) = block.guard() {
-            self.collect_expr(guard);
-        }
-        self.collect_flow_items(block.body());
-    }
-
-    fn collect_for(&mut self, block: &HirFor) {
-        self.collect_expr(block.source());
-        self.collect_flow_items(block.body());
-    }
-
-    fn collect_select(&mut self, block: &HirSelect) {
-        for branch in block.branches() {
-            self.collect_flow_items(branch.body());
-        }
-    }
-
-    fn collect_await(&mut self, await_with: &HirAwait) {
-        self.collect_expr(await_with.expr());
-        for branch in await_with.branches() {
-            self.collect_flow_items(branch.body());
-        }
-    }
-
-    fn collect_scope(&mut self, block: &HirScope) {
-        self.collect_flow_items(block.body());
-    }
-
-    fn add_raw_obligation(&mut self, message: String, subject: Option<String>) {
-        self.add_obligation(
-            ProofObligationKind::RawSyntax,
-            message,
-            subject,
-            &ProofDischarge::Missing,
-        );
-    }
-
-    fn add_obligation(
-        &mut self,
-        kind: ProofObligationKind,
-        message: String,
-        subject: Option<String>,
-        discharge: &ProofDischarge,
-    ) {
-        let insertion_target = self.insertion_inventory.proof_target_for_kind(kind);
-        self.add_obligation_with_insertion(kind, message, subject, discharge, insertion_target);
-    }
-
-    fn add_obligation_with_insertion(
-        &mut self,
-        kind: ProofObligationKind,
-        message: String,
-        subject: Option<String>,
-        discharge: &ProofDischarge,
-        insertion_target: Option<VerifierInsertionTarget>,
-    ) {
-        self.record_obligation(
-            kind,
-            message,
-            subject,
-            discharge,
-            insertion_target,
-            None,
-            None,
-        );
-    }
-
-    #[expect(
-        clippy::too_many_arguments,
-        reason = "one verifier record atomically owns its typed kind, source, discharge, insertion, and diagnostic identity"
-    )]
-    fn record_obligation(
-        &mut self,
-        kind: ProofObligationKind,
-        message: String,
-        subject: Option<String>,
-        discharge: &ProofDischarge,
-        insertion_target: Option<VerifierInsertionTarget>,
-        source: Option<SourceSpan>,
-        diagnostic_id: Option<&'static str>,
-    ) {
-        self.next_obligation += 1;
-        let id = format!("obligation.{:04}", self.next_obligation);
-        let obligation = ProofObligation {
-            id: id.clone(),
-            kind,
-            message: message.clone(),
-            subject: subject.clone(),
-            source,
-            insertion_target,
-            discharge: discharge.clone(),
-            smt: None,
-        };
-        let actions = obligation.actions();
-        self.report.obligations.push(obligation);
-        let severity = self.severity_for(kind, discharge);
-        if severity != Severity::Info || *discharge == ProofDischarge::Missing {
-            self.report.diagnostics.push(VerificationDiagnostic {
-                id: diagnostic_id.map_or_else(|| format!("diagnostic.{id}"), str::to_owned),
-                severity,
-                message,
-                source,
-                obligation: Some(id),
-                related_ids: subject.into_iter().collect(),
-                actions,
-            });
-        }
-    }
-
-    fn severity_for(&self, kind: ProofObligationKind, discharge: &ProofDischarge) -> Severity {
-        if matches!(
-            discharge,
-            ProofDischarge::Automatic
-                | ProofDischarge::FormalProof { .. }
-                | ProofDischarge::Solver { .. }
-        ) {
-            return Severity::Info;
-        }
-        if matches!(
-            kind,
-            ProofObligationKind::RawSyntax | ProofObligationKind::RuntimeConflict
-        ) {
-            return Severity::Error;
-        }
-        if matches!(discharge, ProofDischarge::TrustedProof { .. })
-            || kind == ProofObligationKind::TrustedProof
-        {
-            return if self.policy.allow_trusted_proofs {
-                Severity::Warning
-            } else {
-                Severity::Error
-            };
-        }
-        match self.policy.mode {
-            VerificationMode::Dev => Severity::Warning,
-            VerificationMode::Test
-                if matches!(
-                    (kind, discharge),
-                    (
-                        ProofObligationKind::UnsafeLifetimeAudit,
-                        ProofDischarge::AuditedUnsafe { .. }
-                    )
-                ) =>
-            {
-                Severity::Warning
-            }
-            VerificationMode::Test | VerificationMode::Release => Severity::Error,
-        }
-    }
-
-    fn finish(mut self) -> VerificationReport {
-        self.report
-            .diagnostics
-            .sort_by(|left, right| left.id.cmp(&right.id));
-        self.report
-    }
-}
-
-fn span_from_range(range: &TextRange) -> SourceSpan {
-    SourceSpan {
-        start: range.start(),
-        end: range.end(),
-    }
-}
-
-fn id_ref_label(id: &IdRef, default_family: &str) -> String {
-    match id {
-        IdRef::Absolute(entity) => entity.body().to_owned(),
-        IdRef::Relative(relative) => format!("{default_family}.{}", relative.suffix()),
-        IdRef::FamilyRelative(relative) => {
-            format!("{}.{}", relative.family(), relative.relative().suffix())
-        }
-    }
-}
-
-fn proof_arg(args: &[CallArg]) -> Option<String> {
-    named_entity_arg(args, "proof")
-}
-
-fn named_entity_arg(args: &[CallArg], name: &str) -> Option<String> {
-    args.iter().find_map(|arg| match arg {
-        CallArg::Named {
-            name: arg_name,
-            value,
-        } if arg_name == name => match value.as_ref() {
-            Expr::EntityRef(entity) => entity_label(entity),
-            Expr::Path(path) => Some(path.as_label().to_owned()),
-            Expr::ShortVariant(name) => Some(format!(".{name}")),
-            _ => None,
-        },
-        _ => None,
-    })
-}
-
-fn entity_label(entity: &EntityRefSyntax) -> Option<String> {
-    entity
-        .as_absolute()
-        .map(|absolute| absolute.body().to_owned())
-        .or_else(|| Some(entity.body().to_owned()))
-}
-
-fn lifetime_label_arg(expr: &Expr) -> Option<String> {
-    match expr {
-        Expr::Path(path) if path.starts_with('\'') => Some(path.as_label().to_owned()),
-        Expr::LifetimePath { key, .. } => Some(format!("'{}", key.as_dotted())),
-        _ => None,
-    }
-}
-
-fn is_upper_lifetime(scope: &LifetimeScopeKind) -> bool {
-    matches!(
-        scope,
-        LifetimeScopeKind::Flow
-            | LifetimeScopeKind::Session
-            | LifetimeScopeKind::Global
-            | LifetimeScopeKind::Persistent
-    )
-}
-
-fn is_must_drop_key(key: &LifetimeKey) -> bool {
-    key.scope() == &LifetimeScopeKind::Line
-        && key.path().first().is_some_and(|part| part == "focus")
-}
-
-fn is_drop_expr(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Call(call)
-            if matches!(call.callee(), Expr::Path(path) if matches!(path.as_str(), "drop" | "drop_optional" | "on_drop"))
-    )
-}
-
-#[cfg(test)]
-mod tests;

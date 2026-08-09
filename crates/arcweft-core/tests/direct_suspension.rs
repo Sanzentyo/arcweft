@@ -1,24 +1,25 @@
 use arcweft_core::{
     awbc::{
         fiber::{
-            FiberCursor, FiberResumeTarget, FiberScope, FiberScopeCleanup, FiberState,
-            FiberStateError, FiberStatus, FiberSuspension, FiberSuspensionReason,
+            FiberAwaitTarget, FiberCursor, FiberResumeTarget, FiberScope, FiberScopeCleanup,
+            FiberState, FiberStateError, FiberStatus, FiberSuspension, FiberSuspensionReason,
             FiberTerminalValue,
         },
         schema::{
             AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
             AwbcEffectPlanId, AwbcEffectSetId, AwbcEntry, AwbcEntryId, AwbcEntryKind,
-            AwbcEntryTarget, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole,
-            AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcInstruction,
-            AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType,
-            AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId, AwbcStringId,
-            AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+            AwbcEntryTarget, AwbcFlowBinding, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
+            AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
+            AwbcInstruction, AwbcProgram, AwbcRegisterId, AwbcResumePoint, AwbcResumePointId,
+            AwbcRuntimeType, AwbcSafePointKind, AwbcScopeId, AwbcSignature, AwbcSignatureId,
+            AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
         },
         verify::{AwbcVerifyBudget, AwbcVerifyContext},
         vm::{self, VmExit, VmObservation, VmStepOptions},
     },
     entry::{EntryBindingIdentity, RuntimeEntryRoles},
-    plan::EntryRuntimeId,
+    plan::{EntryRuntimeId, FlowRuntimeId},
+    task::NeedId,
     value::RuntimeValue,
 };
 
@@ -75,7 +76,7 @@ fn direct_call_reaches_need_await_on_the_same_fiber() {
     assert!(matches!(
         suspended.exit,
         VmExit::Suspended(FiberSuspensionReason::Await {
-            task: RuntimeValue::String(ref need),
+            target: FiberAwaitTarget::Need(NeedId(ref need)),
             binding: None,
         }) if need == "need.profile"
     ));
@@ -430,7 +431,7 @@ fn suspended_three_frame_fiber(program: &AwbcProgram) -> FiberState {
         .suspend(FiberSuspension {
             resume: FiberResumeTarget::Declared(AWAIT_RESUME),
             reason: FiberSuspensionReason::Await {
-                task: need[0].clone(),
+                target: FiberAwaitTarget::Need(NeedId("need.profile".to_owned())),
                 binding: None,
             },
         })
@@ -583,6 +584,11 @@ fn direct_suspension_program() -> AwbcProgram {
         signatures: direct_suspension_signatures(need_ty),
         frame_layouts: vec![need_frame_layout(need_ty), need_frame_layout(need_ty)],
         functions: direct_suspension_functions(),
+        flow_bindings: vec![AwbcFlowBinding {
+            flow: FlowRuntimeId::from_checked_declaration_digest([0xa6; 32], "flow.main")
+                .expect("test checked Flow identity"),
+            function: CALLER,
+        }],
         blocks: direct_suspension_blocks(),
         resume_points: direct_suspension_resume_points(),
         effect_plans: direct_suspension_effect_plans(),
@@ -661,7 +667,7 @@ fn direct_suspension_blocks() -> Vec<AwbcBlock> {
             owner: CALLEE,
             instructions: AwbcTableRange::new(0, 0),
             terminator: AwbcTerminator::Await {
-                task: NEED_REGISTER,
+                handle: NEED_REGISTER,
                 binding: None,
                 resume: AWAIT_RESUME,
             },

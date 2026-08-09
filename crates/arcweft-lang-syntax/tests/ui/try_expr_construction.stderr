@@ -1,10 +1,5 @@
-error[E0624]: associated function `new` is private
- --> tests/ui/try_expr_construction.rs:9:30
+error[E0432]: unresolved import `arcweft_lang_syntax::expr`
+ --> tests/ui/try_expr_construction.rs:1:26
   |
-9 |     let _try_expr = TryExpr::new(Box::new(operand), source);
-  |                              ^^^ private associated function
-  |
- ::: src/expr.rs
-  |
-  |     pub(crate) const fn new(operand: Box<Expr>, source: TryExprSource) -> Self {
-  |     -------------------------------------------------------------------------- private associated function defined here
+1 | use arcweft_lang_syntax::expr::TryExpr;
+  |                          ^^^^ could not find `expr` in `arcweft_lang_syntax`

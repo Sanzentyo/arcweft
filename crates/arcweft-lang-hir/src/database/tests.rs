@@ -13,7 +13,7 @@ use crate::item::{
     HirDeclarationMemberIndexBuilder, HirItem, HirItemKind, HirItemPrefix, HirModuleDeclaration,
 };
 use crate::leaf::{HirName, HirPath, HirPathRoot, HirPathSegment, HirPathValue};
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
 use crate::module::{HirModule, HirModuleArenaParts, HirModuleArenas, HirModuleStatus};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::{PreparedSlotCommit, StagedSlotTransaction};
@@ -120,7 +120,7 @@ fn parsed_source_with_trivia_revision() -> (ParsedSource, ParsedSource) {
             arcweft_lang_syntax::parser::ParseOptions::default(),
         )
         .unwrap();
-    assert_eq!(initial.tree().root().id(), trivia.tree().root().id());
+    assert_eq!(initial.root_syntax().id(), trivia.root_syntax().id());
     assert_ne!(initial.document().identity(), trivia.document().identity());
     (initial, trivia)
 }
@@ -153,7 +153,6 @@ fn stage_item_module(
         None => StagedArena::new(),
     };
     let attached_item = parsed
-        .tree()
         .entries()
         .unwrap()
         .into_iter()
@@ -299,30 +298,6 @@ fn successful_revision_publish_retains_both_exact_arc_leases() {
         &second,
         &database.snapshot(second.snapshot_id()).unwrap()
     ));
-}
-
-#[test]
-fn lower_output_is_the_only_typed_invalidation_publication() {
-    let mut database = HirDatabase::try_new().unwrap();
-    let key = module_key("arcw:/proof/database-output");
-    let module = stage_and_commit(&mut database, &key);
-    let output = database.unchanged(&key).unwrap();
-    let invalidations = output.invalidations().clone();
-
-    assert!(Arc::ptr_eq(output.module(), &module));
-    assert_eq!(output.invalidations(), &invalidations);
-    assert_eq!(invalidations.module(), module.module_id());
-    assert_eq!(invalidations.previous(), Some(module.snapshot_id()));
-    assert_eq!(invalidations.current(), module.snapshot_id());
-    assert!(invalidations.changed_items().is_empty());
-    assert!(invalidations.retired_items().is_empty());
-    assert!(!invalidations.symbol_revision_changed());
-    assert!(!invalidations.executable_status_changed());
-    assert!(invalidations.is_empty());
-
-    let (published, published_invalidations) = output.into_parts();
-    assert!(Arc::ptr_eq(&published, &module));
-    assert_eq!(published_invalidations, invalidations);
 }
 
 #[test]
@@ -657,7 +632,7 @@ fn non_item_arena_change_does_not_fabricate_item_invalidations() {
     scopes
         .allocate_source(
             &mut slots,
-            parsed.tree().root().id(),
+            parsed.root_syntax().id(),
             HirSourceSite::Span(parsed.document().span(SourceRange::new(0, 0)).unwrap()),
             HirScope::try_new(
                 plan.module_id(),
@@ -781,7 +756,8 @@ fn mismatched_validated_snapshot_publishes_nothing() {
 }
 
 #[test]
-fn module_limit_and_identity_exhaustion_are_atomic() {
+fn module_limit_is_inclusive_and_atomic() {
+    assert_eq!(HirLimit::ModulesPerDatabase.maximum(), 65_536);
     let first_key = module_key("arcw:/proof/database-limit-first");
     let second_key = module_key("arcw:/proof/database-limit-second");
     let mut limited = HirDatabase::with_test_module_limit(1);
@@ -798,7 +774,12 @@ fn module_limit_and_identity_exhaustion_are_atomic() {
         ))
     );
     assert!(Arc::ptr_eq(&first, &limited.current(&first_key).unwrap()));
+}
 
+#[test]
+fn module_identity_exhaustion_is_atomic() {
+    let first_key = module_key("arcw:/proof/database-exhaustion-first");
+    let second_key = module_key("arcw:/proof/database-exhaustion-second");
     let mut exhausted = HirDatabase::try_new().unwrap();
     exhausted.seed_next_module_slot(NonZeroU32::new(u32::MAX).unwrap());
     let last = stage_and_commit(&mut exhausted, &first_key);
@@ -810,7 +791,7 @@ fn module_limit_and_identity_exhaustion_are_atomic() {
 }
 
 #[test]
-fn revision_exhaustion_keeps_the_exact_current_lease() {
+fn revision_exhaustion_is_atomic() {
     let mut database = HirDatabase::try_new().unwrap();
     let key = module_key("arcw:/proof/database-revision-exhaustion");
     let initial = stage_and_commit(&mut database, &key);
@@ -836,7 +817,7 @@ fn revision_exhaustion_keeps_the_exact_current_lease() {
 }
 
 #[test]
-fn invalidation_epoch_exhaustion_keeps_the_exact_current_lease() {
+fn cache_epoch_exhaustion_is_atomic() {
     let mut database = HirDatabase::try_new().unwrap();
     let key = module_key("arcw:/proof/database-epoch-exhaustion");
     let initial = stage_and_commit(&mut database, &key);

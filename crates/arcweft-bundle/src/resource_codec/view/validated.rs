@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use arcweft_source::{SourceRevision, SourceSetRevision};
+use arcweft_source::{ProductSourceId, ProductSourceRef, SourceRevision, SourceSetRevision};
 use arcweft_view::{
     AcceptedViewProgramRevision, ViewIdentityError, ViewProgramId,
     style::{
@@ -13,8 +13,7 @@ use arcweft_view::{
 use thiserror::Error;
 
 use crate::resource_codec::{
-    ProductSourceId, ProductSourceRef, ProductSourceRefIndex, SectionCodecError, SourceMapSection,
-    SourceRangeRef,
+    ProductSourceRefIndex, SectionCodecError, SourceMapSection, SourceRangeRef,
 };
 
 use super::{

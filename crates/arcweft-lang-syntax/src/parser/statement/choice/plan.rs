@@ -2,7 +2,7 @@
 
 use arcweft_source::SourceRange;
 
-use super::super::super::cursor::ShadowDocumentParser;
+use super::super::super::cursor::DocumentParser;
 use super::super::super::expression::emit_expression;
 use super::super::super::pattern::emit_pattern;
 use super::super::super::shadow_recovery::{
@@ -23,7 +23,7 @@ use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
 pub(super) fn emit_choice_plan(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     suite_owner_start: usize,
@@ -96,11 +96,7 @@ pub(super) fn emit_choice_plan(
     parser.finish();
 }
 
-fn emit_choice_plan_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    item_kind: SyntaxKind,
-) {
+fn emit_choice_plan_body(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
     parser.start(SyntaxKind::ChoicePlanBody, SyntaxRole::Body);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
     let close = find_matching_close_before(parser, parser.cursor(), end, "{").unwrap_or(end);
@@ -135,7 +131,7 @@ fn emit_choice_plan_body(
 }
 
 fn emit_indented_choice_plan_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     interval: IndentedSuiteInterval,
     item_kind: SyntaxKind,
 ) {
@@ -205,7 +201,7 @@ fn is_choice_plan_item_head(kind: Option<SyntaxKind>, spelling: Option<&str>) ->
 }
 
 fn emit_choice_plan_item(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -228,7 +224,7 @@ fn emit_choice_plan_item(
 }
 
 fn emit_assignment(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -279,7 +275,7 @@ fn emit_assignment(
 }
 
 fn emit_timeout(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -313,7 +309,7 @@ fn emit_timeout(
 }
 
 fn emit_cancel(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -362,7 +358,7 @@ fn emit_cancel(
 }
 
 fn emit_on_select(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -413,7 +409,7 @@ fn emit_on_select(
 }
 
 fn emit_required_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     missing_code: &'static str,
@@ -428,7 +424,7 @@ fn emit_required_expression(
 
 #[allow(clippy::too_many_arguments)]
 fn emit_required_action_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     body: Option<(usize, usize)>,
     item_kind: SyntaxKind,
     missing_code: &'static str,
@@ -450,14 +446,14 @@ fn emit_required_action_body(
 }
 
 fn trailing_body_interval(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<(usize, usize)> {
     trailing_braced_body_interval(parser, start, trimmed_end(parser, start, end))
 }
 
-fn emit_action_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_action_trailing_recovery(parser: &mut DocumentParser<'_, '_>, end: usize) {
     if let Some(trailing) = first_significant(parser, parser.cursor(), end) {
         bump_until(parser, trailing);
         emit_recovery(
@@ -471,7 +467,7 @@ fn emit_action_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>, end:
 }
 
 fn emit_zero_width_recovery(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     code: &'static str,
     message: &'static str,
 ) {
@@ -485,7 +481,7 @@ fn emit_zero_width_recovery(
     )));
 }
 
-fn finish_plan_body(parser: &mut ShadowDocumentParser<'_, '_>, close: usize) {
+fn finish_plan_body(parser: &mut DocumentParser<'_, '_>, close: usize) {
     if parser.cursor() == close && parser.at("}") {
         super::super::super::shadow_recovery::emit_close_delimiter(
             parser,

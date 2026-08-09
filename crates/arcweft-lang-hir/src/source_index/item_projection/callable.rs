@@ -14,7 +14,9 @@ use crate::identity::{
     ExprId, ItemId, LocalGeneration, LocalId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole,
     TypeId,
 };
-use crate::item::{HirFunctionParameterGroup, HirParameter, HirParameterKind};
+use crate::item::{
+    HirContractOperandList, HirFunctionParameterGroup, HirParameter, HirParameterKind,
+};
 use crate::scope::{HirLocalKind, HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::{HirOrigin, SlotSnapshot};
 use crate::source_index::HirSourceSite;
@@ -292,6 +294,11 @@ pub(super) fn function_parameter_groups_match(
     )
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "one parameter projection validates surface policy, typed patterns, locals, scope, source order, and recovery together"
+)]
 pub(super) fn parameters_match<'a, 'b>(
     attached: impl IntoIterator<Item = &'a AttachedCallableParameter>,
     group_has_recovery: bool,
@@ -434,10 +441,15 @@ pub(super) fn parameters_match<'a, 'b>(
     })
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the contract validator compares one exact attached clause list with all typed require, ensure, effect, and scope owners"
+)]
 pub(super) fn contracts_match(
     attached: &[AttachedCallableContractClause],
     retained_requires: &[ExprId],
     retained_ensures: &[ExprId],
+    retained_effects: &[HirContractOperandList],
     requires_scope: ScopeId,
     ensures_scope: ScopeId,
     slots: &SlotSnapshot,
@@ -445,40 +457,72 @@ pub(super) fn contracts_match(
 ) -> Option<bool> {
     let mut requires_position = 0_usize;
     let mut ensures_position = 0_usize;
+    let mut effects_position = 0_usize;
     let mut recovered = false;
     for (source_position, clause) in attached.iter().enumerate() {
         if usize::from(clause.source_ordinal()) != source_position {
             return None;
         }
-        let (retained, scope, family_position) = match clause {
+        let (retained, scope, family_position, condition) = match clause {
             AttachedCallableContractClause::Requires { .. } => {
                 let retained = *retained_requires.get(requires_position)?;
                 let family_position = requires_position;
                 requires_position += 1;
-                (retained, requires_scope, family_position)
+                (
+                    retained,
+                    requires_scope,
+                    family_position,
+                    clause.condition().expect("requires condition"),
+                )
             }
             AttachedCallableContractClause::Ensures { .. } => {
                 let retained = *retained_ensures.get(ensures_position)?;
                 let family_position = ensures_position;
                 ensures_position += 1;
-                (retained, ensures_scope, family_position)
+                (
+                    retained,
+                    ensures_scope,
+                    family_position,
+                    clause.condition().expect("ensures condition"),
+                )
+            }
+            AttachedCallableContractClause::Effects { operands, .. } => {
+                let retained = retained_effects.get(effects_position)?;
+                let family_position = effects_position;
+                effects_position += 1;
+                if usize::from(clause.family_ordinal()) != family_position
+                    || retained.operands().len() != operands.len()
+                {
+                    return None;
+                }
+                for (retained, attached) in retained.operands().iter().zip(operands) {
+                    if !source_expression_matches(
+                        slots,
+                        arenas.expressions,
+                        *retained,
+                        attached,
+                        requires_scope,
+                    ) {
+                        return None;
+                    }
+                    recovered |=
+                        attached.projection().has_recovery() || slot_is_poisoned(slots, *retained);
+                }
+                recovered |= clause.has_recovery();
+                continue;
             }
         };
         if usize::from(clause.family_ordinal()) != family_position
-            || !source_expression_matches(
-                slots,
-                arenas.expressions,
-                retained,
-                clause.condition(),
-                scope,
-            )
+            || !source_expression_matches(slots, arenas.expressions, retained, condition, scope)
         {
             return None;
         }
         recovered |= clause.has_recovery() || slot_is_poisoned(slots, retained);
     }
-    (requires_position == retained_requires.len() && ensures_position == retained_ensures.len())
-        .then_some(recovered)
+    (requires_position == retained_requires.len()
+        && ensures_position == retained_ensures.len()
+        && effects_position == retained_effects.len())
+    .then_some(recovered)
 }
 
 pub(super) fn postcondition_result_matches(
@@ -585,6 +629,10 @@ pub(super) fn direct_children_are_exact(
     source_ordered_children == backlinked_children
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the body-scope validator compares one exact item, callable/body scope pair, syntax owner, source site, and arena context"
+)]
 pub(super) fn item_body_scope_matches(
     owner: ItemId,
     callable_scope: ScopeId,
@@ -607,6 +655,11 @@ pub(super) fn item_body_scope_matches(
     )
 }
 
+#[allow(
+    clippy::needless_pass_by_value,
+    clippy::too_many_arguments,
+    reason = "the body-scope validator consumes one exact typed source site with the complete owner and arena context"
+)]
 pub(super) fn item_body_scope_matches_at_site(
     owner: ItemId,
     callable_scope: ScopeId,

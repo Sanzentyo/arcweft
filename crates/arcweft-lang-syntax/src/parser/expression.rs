@@ -1,10 +1,12 @@
 //! Private Pratt expression grammar over the shared document cursor.
 
+mod call_arguments;
 mod composite;
 mod control;
 mod operators;
 mod postfix_bracket;
 
+pub(super) use call_arguments::emit_parenthesized_call_tail;
 pub(in crate::parser) use composite::expression_slot;
 
 use self::operators::{binary_binding_power, is_postfix_operator, syntax_binary_operator};
@@ -12,7 +14,7 @@ use self::postfix_bracket::emit_postfix_bracket;
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::lexer::{
     LiteralLexemePart, typed_entity_reference, typed_lifetime_registry_path, typed_literal,
 };
@@ -27,7 +29,8 @@ use super::type_ref::{
 use crate::expressions::{
     ExpressionComponentRole, ExpressionLiteralPart, ExpressionProjection,
     PendingExpressionComponent, PendingExpressionProjection, SyntaxAssociatedCallSyntax,
-    SyntaxAwaitPropagation, SyntaxBorrowKind, SyntaxCallArgumentListTerminator,
+    SyntaxAssociatedReceiver, SyntaxAssociatedSeparator, SyntaxAwaitPropagation,
+    SyntaxBinaryOperator, SyntaxBorrowKind, SyntaxCallArgumentListTerminator,
     SyntaxCallArgumentPart, SyntaxCallArgumentProjection, SyntaxCallProjection,
     SyntaxCallTypeApplicationComponentRole, SyntaxCallTypeApplicationProjection,
     SyntaxCallTypeApplicationSpelling, SyntaxCallTypeApplicationTerminator,
@@ -56,16 +59,12 @@ pub(super) struct CompletedNode {
     pub(super) start_event: usize,
 }
 
-pub(super) fn emit_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    role: SyntaxRole,
-) {
+pub(super) fn emit_expression(parser: &mut DocumentParser<'_, '_>, end: usize, role: SyntaxRole) {
     let _ = emit_expression_node(parser, end, role);
 }
 
 pub(super) fn emit_expression_node(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -105,10 +104,7 @@ pub(super) fn emit_expression_node(
     completed
 }
 
-fn emit_missing_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    role: SyntaxRole,
-) -> CompletedNode {
+fn emit_missing_expression(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
     let start_event = parser.event_position();
     parser.start(SyntaxKind::MissingExpression, role);
     parser.finish();
@@ -116,7 +112,7 @@ fn emit_missing_expression(
 }
 
 pub(super) fn completed_slot(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     expression: CompletedNode,
 ) -> SyntaxExpressionSlot {
     if parser.completed_kind(expression.start_event) == Some(SyntaxKind::MissingExpression) {
@@ -129,7 +125,7 @@ pub(super) fn completed_slot(
 /// Emits one owner-provided named plan section through the shared expression
 /// block grammar without teaching ordinary expression dispatch owner names.
 pub(super) fn emit_named_plan_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) {
@@ -137,7 +133,7 @@ pub(super) fn emit_named_plan_block(
 }
 
 pub(super) fn expression_is_call(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> bool {
@@ -174,7 +170,7 @@ pub(super) fn expression_is_call(
 }
 
 fn parse_binding_power(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     minimum: u8,
     role: SyntaxRole,
@@ -215,9 +211,6 @@ fn parse_binding_power(
             break;
         }
 
-        let left_range = parser
-            .completed_range(left.start_event)
-            .expect("completed left expression retains one exact source range");
         let operator_range = parser
             .token_at(operator_index)
             .expect("binary dispatch retains its operator token")
@@ -228,81 +221,108 @@ fn parse_binding_power(
                 end,
                 left,
                 role,
-                operator_index,
-                operator_range,
-                right_power,
-                operator == "..=",
+                InfixRangeOperator {
+                    index: operator_index,
+                    range: operator_range,
+                    right_power,
+                    inclusive: operator == "..=",
+                },
             );
             continue;
         }
-        bump_until(parser, operator_index);
-        let owner = if matches!(
-            kind,
-            SyntaxKind::PipeExpression | SyntaxKind::BinaryExpression
-        ) {
-            parser.insert_projected_start(left.start_event, kind, role)
-        } else {
-            parser.insert_start(left.start_event, kind, role);
-            None
-        };
-        parser.set_start_role(left.start_event + 1, SyntaxRole::LeftOperand);
-        parser.bump();
-        parser.bump_trivia();
-        let right = if parser.cursor() < end {
-            parse_binding_power(parser, end, right_power, SyntaxRole::RightOperand)
-        } else {
-            emit_missing_expression(parser, SyntaxRole::RightOperand)
-        };
-        if matches!(
-            kind,
-            SyntaxKind::PipeExpression | SyntaxKind::BinaryExpression
-        ) {
-            let right_range = parser
-                .completed_range(right.start_event)
-                .expect("completed right expression retains one exact source range");
-            let right_slot = completed_slot(parser, right);
-            let projection = if kind == SyntaxKind::PipeExpression {
-                ExpressionProjection::Pipe([SyntaxExpressionSlot::Authored, right_slot])
-            } else {
-                ExpressionProjection::Binary {
-                    left: SyntaxExpressionSlot::Authored,
-                    operator: syntax_binary_operator(operator)
-                        .expect("binary binding-power dispatch uses the closed operator set"),
-                    right: right_slot,
-                }
-            };
-            parser.set_expression_projection(
-                owner,
-                PendingExpressionProjection::new(
-                    projection,
-                    vec![
-                        PendingExpressionComponent::new(
-                            ExpressionComponentRole::LeftOperand,
-                            left_range,
-                        ),
-                        PendingExpressionComponent::new(
-                            ExpressionComponentRole::Operator,
-                            operator_range,
-                        ),
-                        PendingExpressionComponent::new(
-                            ExpressionComponentRole::RightOperand,
-                            right_range,
-                        ),
-                    ],
-                ),
-            );
-        }
-        parser.finish();
-        left = CompletedNode {
-            start_event: left.start_event,
-        };
+        left = emit_binary_expression(
+            parser,
+            end,
+            left,
+            role,
+            InfixBinaryOperator {
+                index: operator_index,
+                range: operator_range,
+                right_power,
+                kind,
+                operator: syntax_binary_operator(operator),
+            },
+        );
     }
 
     left
 }
 
+fn emit_binary_expression(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    left: CompletedNode,
+    role: SyntaxRole,
+    operator: InfixBinaryOperator,
+) -> CompletedNode {
+    let left_range = parser
+        .completed_range(left.start_event)
+        .expect("completed left expression retains one exact source range");
+    bump_until(parser, operator.index);
+    let projected = matches!(
+        operator.kind,
+        SyntaxKind::PipeExpression | SyntaxKind::BinaryExpression
+    );
+    let owner = if projected {
+        parser.insert_projected_start(left.start_event, operator.kind, role)
+    } else {
+        parser.insert_start(left.start_event, operator.kind, role);
+        None
+    };
+    parser.set_start_role(left.start_event + 1, SyntaxRole::LeftOperand);
+    parser.bump();
+    parser.bump_trivia_before(end);
+    let right = if parser.cursor() < end {
+        parse_binding_power(parser, end, operator.right_power, SyntaxRole::RightOperand)
+    } else {
+        emit_missing_expression(parser, SyntaxRole::RightOperand)
+    };
+    if projected {
+        emit_binary_projection(parser, owner, operator, left_range, right);
+    }
+    parser.finish();
+    CompletedNode {
+        start_event: left.start_event,
+    }
+}
+
+fn emit_binary_projection(
+    parser: &mut DocumentParser<'_, '_>,
+    owner: Option<usize>,
+    operator: InfixBinaryOperator,
+    left_range: SourceRange,
+    right: CompletedNode,
+) {
+    let right_range = parser
+        .completed_range(right.start_event)
+        .expect("completed right expression retains one exact source range");
+    let right_slot = completed_slot(parser, right);
+    let projection = if operator.kind == SyntaxKind::PipeExpression {
+        ExpressionProjection::Pipe([SyntaxExpressionSlot::Authored, right_slot])
+    } else {
+        ExpressionProjection::Binary {
+            left: SyntaxExpressionSlot::Authored,
+            operator: operator
+                .operator
+                .expect("binary binding-power dispatch uses the closed operator set"),
+            right: right_slot,
+        }
+    };
+    parser.set_expression_projection(
+        owner,
+        PendingExpressionProjection::new(
+            projection,
+            vec![
+                PendingExpressionComponent::new(ExpressionComponentRole::LeftOperand, left_range),
+                PendingExpressionComponent::new(ExpressionComponentRole::Operator, operator.range),
+                PendingExpressionComponent::new(ExpressionComponentRole::RightOperand, right_range),
+            ],
+        ),
+    );
+}
+
 fn parse_prefix(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -321,6 +341,21 @@ fn parse_prefix(
     if matches!(
         token.kind(),
         SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
+    ) && !matches!(
+        text,
+        "choice"
+            | "try"
+            | "await"
+            | "thread"
+            | "result"
+            | "task"
+            | "seq"
+            | "stream"
+            | "scope"
+            | "if"
+            | "match"
+            | "true"
+            | "false"
     ) && let Some(call) = emit_associated_call(parser, end, role)
     {
         return call;
@@ -386,7 +421,7 @@ fn parse_prefix(
 }
 
 fn emit_prefix_operand(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     kind: SyntaxKind,
     role: SyntaxRole,
@@ -408,7 +443,7 @@ fn emit_prefix_operand(
     };
     let owner = parser.start_projected_owner(kind, role);
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     let mut borrow_kind = SyntaxBorrowKind::Shared;
     if accepts_mutability && parser.at("mut") {
         let mutable = parser
@@ -418,7 +453,7 @@ fn emit_prefix_operand(
         operator_range = SourceRange::new(operator_range.start(), mutable.end());
         borrow_kind = SyntaxBorrowKind::Mutable;
         parser.bump();
-        parser.bump_trivia();
+        parser.bump_trivia_before(end);
     }
     let operand = if parser.cursor() < end {
         parse_binding_power(parser, end, 90, SyntaxRole::Operand)
@@ -470,34 +505,48 @@ fn emit_prefix_operand(
     CompletedNode { start_event }
 }
 
+#[derive(Clone, Copy)]
+struct InfixBinaryOperator {
+    index: usize,
+    range: SourceRange,
+    right_power: u8,
+    kind: SyntaxKind,
+    operator: Option<SyntaxBinaryOperator>,
+}
+
+#[derive(Clone, Copy)]
+struct InfixRangeOperator {
+    index: usize,
+    range: SourceRange,
+    right_power: u8,
+    inclusive: bool,
+}
+
 fn emit_infix_range(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,
     role: SyntaxRole,
-    operator_index: usize,
-    operator_range: SourceRange,
-    right_power: u8,
-    inclusive: bool,
+    operator: InfixRangeOperator,
 ) -> CompletedNode {
     let left_range = parser
         .completed_range(left.start_event)
         .expect("completed range start retains one exact source range");
-    bump_until(parser, operator_index);
+    bump_until(parser, operator.index);
     let owner = parser.insert_projected_start(left.start_event, SyntaxKind::RangeExpression, role);
     parser.set_start_role(left.start_event + 1, SyntaxRole::LeftOperand);
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     let right = (parser.cursor() < end)
-        .then(|| parse_binding_power(parser, end, right_power, SyntaxRole::RightOperand));
+        .then(|| parse_binding_power(parser, end, operator.right_power, SyntaxRole::RightOperand));
     let mut components = vec![PendingExpressionComponent::new(
         ExpressionComponentRole::RangeStart,
         left_range,
     )];
-    if inclusive {
+    if operator.inclusive {
         components.push(PendingExpressionComponent::new(
             ExpressionComponentRole::RangeInclusiveMarker,
-            operator_range,
+            operator.range,
         ));
     }
     let end_slot = right.map(|right| {
@@ -516,7 +565,7 @@ fn emit_infix_range(
             ExpressionProjection::Range {
                 start: Some(SyntaxExpressionSlot::Authored),
                 end: end_slot,
-                inclusive,
+                inclusive: operator.inclusive,
             },
             components,
         ),
@@ -528,7 +577,7 @@ fn emit_infix_range(
 }
 
 fn emit_prefix_range(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     inclusive: bool,
@@ -544,7 +593,7 @@ fn emit_prefix_range(
         .range();
     let owner = parser.start_projected_owner(SyntaxKind::RangeExpression, role);
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     let end_expression = (parser.cursor() < end)
         .then(|| parse_binding_power(parser, end, 12, SyntaxRole::RightOperand));
     if parser.budget_failed() {
@@ -586,7 +635,7 @@ fn emit_prefix_range(
 }
 
 fn emit_missing_left_binary(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     operator: &str,
@@ -607,7 +656,7 @@ fn emit_missing_left_binary(
         .completed_range(left.start_event)
         .expect("missing binary left operand retains one insertion");
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     let right = if parser.cursor() < end {
         parse_binding_power(parser, end, right_power, SyntaxRole::RightOperand)
     } else {
@@ -643,7 +692,7 @@ enum PropagatingAwait {
 }
 
 fn propagating_await_spelling(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
 ) -> Option<PropagatingAwait> {
     match parser.current_text()? {
@@ -661,7 +710,7 @@ fn propagating_await_spelling(
 }
 
 fn emit_propagating_await(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     spelling: PropagatingAwait,
@@ -677,7 +726,7 @@ fn emit_propagating_await(
         .expect("propagating await retains its first operator token")
         .range()
         .start();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     match spelling {
         PropagatingAwait::TryAwait => debug_assert!(parser.at("await")),
         PropagatingAwait::AwaitQuestion => debug_assert!(parser.at("?")),
@@ -687,7 +736,7 @@ fn emit_propagating_await(
         .expect("propagating await retains its second operator token")
         .range()
         .end();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     let operand = if parser.cursor() < end {
         parse_binding_power(parser, end, 90, SyntaxRole::Operand)
     } else {
@@ -723,7 +772,7 @@ fn emit_propagating_await(
 }
 
 fn emit_short_variant(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -734,7 +783,7 @@ fn emit_short_variant(
         .expect("short-variant dispatch retains its leading marker")
         .range();
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
     let (name, name_range) = if parser.cursor() < end
         && matches!(
             parser.current_kind(),
@@ -776,7 +825,7 @@ fn emit_short_variant(
 }
 
 fn emit_path_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -796,10 +845,7 @@ fn emit_path_expression(
     CompletedNode { start_event }
 }
 
-pub(super) fn emit_literal(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    role: SyntaxRole,
-) -> CompletedNode {
+pub(super) fn emit_literal(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
     let start_event = parser.event_position();
     let token = parser
         .current()
@@ -832,7 +878,7 @@ pub(super) fn emit_literal(
 }
 
 pub(super) fn emit_entity_reference(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
 ) -> (CompletedNode, crate::id_ref::SyntaxIdRefSyntax) {
     let start_event = parser.event_position();
@@ -862,10 +908,7 @@ pub(super) fn emit_entity_reference(
     (CompletedNode { start_event }, retained)
 }
 
-fn emit_lifetime_path(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    role: SyntaxRole,
-) -> CompletedNode {
+fn emit_lifetime_path(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
     let start_event = parser.event_position();
     let token = parser
         .current()
@@ -883,7 +926,7 @@ fn emit_lifetime_path(
     CompletedNode { start_event }
 }
 
-fn emit_placeholder(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
+fn emit_placeholder(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
     let start_event = parser.event_position();
     let token = parser
         .current()
@@ -909,7 +952,7 @@ fn emit_placeholder(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole)
     CompletedNode { start_event }
 }
 
-fn emit_error(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
+fn emit_error(parser: &mut DocumentParser<'_, '_>, role: SyntaxRole) -> CompletedNode {
     let start_event = parser.event_position();
     let token = parser
         .current()
@@ -931,7 +974,7 @@ fn emit_error(parser: &mut ShadowDocumentParser<'_, '_>, role: SyntaxRole) -> Co
 }
 
 fn emit_callback_block_call(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,
     role: SyntaxRole,
@@ -941,7 +984,61 @@ fn emit_callback_block_call(
         .expect("callback Call callee retains one exact source range");
     let owner = parser.insert_projected_start(left.start_event, SyntaxKind::CallExpression, role);
     parser.set_start_role(left.start_event + 1, SyntaxRole::Callee);
+    let callback = emit_callback_closure(parser, end);
+    let terminal_call_role = match callback.call_terminator {
+        SyntaxCallArgumentListTerminator::Closed => ExpressionComponentRole::CallArgumentListClose,
+        SyntaxCallArgumentListTerminator::RecoveredMissing => {
+            ExpressionComponentRole::CallArgumentListRecoveryEnd
+        }
+    };
+    parser.set_expression_projection(
+        owner,
+        PendingExpressionProjection::new(
+            ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(
+                SyntaxCallbackBlockCallProjection::new(callback.slot, callback.call_terminator),
+            )),
+            vec![
+                PendingExpressionComponent::new(ExpressionComponentRole::CallCallee, callee_range),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgumentListOpen,
+                    callback.open,
+                ),
+                PendingExpressionComponent::new(terminal_call_role, callback.terminal_range),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgument {
+                        argument: 0,
+                        part: SyntaxCallArgumentPart::Whole,
+                    },
+                    callback.range,
+                ),
+                PendingExpressionComponent::new(
+                    ExpressionComponentRole::CallArgument {
+                        argument: 0,
+                        part: SyntaxCallArgumentPart::Value,
+                    },
+                    callback.range,
+                ),
+            ],
+        ),
+    );
+    parser.finish();
+    CompletedNode {
+        start_event: left.start_event,
+    }
+}
 
+struct EmittedCallbackClosure {
+    slot: SyntaxExpressionSlot,
+    range: SourceRange,
+    open: SourceRange,
+    call_terminator: SyntaxCallArgumentListTerminator,
+    terminal_range: SourceRange,
+}
+
+fn emit_callback_closure(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+) -> EmittedCallbackClosure {
     let callback_start = parser.event_position();
     let closure =
         parser.start_projected_owner(SyntaxKind::ClosureExpression, SyntaxRole::Argument(0));
@@ -954,33 +1051,8 @@ fn emit_callback_block_call(
         .expect("callback Call retains its opening brace")
         .range();
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
-    parser.bump_trivia();
-
-    let arrow = find_top_level_boundary(parser, parser.cursor(), &["=>", "}"]).min(close);
-    let explicit_header = arrow < close
-        && parser
-            .token_at(arrow)
-            .is_some_and(|token| parser.text_of(token) == "=>");
-    parser.start(SyntaxKind::ParameterList, SyntaxRole::Element(0));
-    let (parameters, mut closure_components) = if explicit_header {
-        composite::emit_closure_parameters_until(parser, arrow)
-    } else {
-        (Vec::new(), Vec::new())
-    };
-    parser.finish();
-    if explicit_header {
-        bump_until(parser, arrow);
-        let fat_arrow = parser
-            .bump()
-            .expect("callback header retains its fat arrow")
-            .range();
-        closure_components.push(PendingExpressionComponent::new(
-            ExpressionComponentRole::ClosureFatArrow,
-            fat_arrow,
-        ));
-        parser.bump_trivia();
-    }
-
+    parser.bump_trivia_before(close);
+    let (parameters, mut components, explicit_header) = emit_callback_closure_header(parser, close);
     let (body, _) = expression_slot(parser, close);
     let body_expression = if find_statement_terminator(parser, parser.cursor(), close).is_some() {
         control::emit_unbraced_block_expression(parser, close, SyntaxRole::Body)
@@ -991,41 +1063,10 @@ fn emit_callback_block_call(
     let body_range = parser
         .completed_range(body_expression.start_event)
         .expect("callback Closure retains one exact body source range");
-    let (closure_terminator, call_terminator, terminal_role, terminal_range) =
-        if parser.cursor() == close && parser.at("}") {
-            let range = parser
-                .current()
-                .expect("callback Call retains its closing brace")
-                .range();
-            emit_close_delimiter(
-                parser,
-                SyntaxKind::CloseBraceNode,
-                "}",
-                "syntax.expression.missing_callback_close",
-            );
-            (
-                SyntaxClosureTerminator::Closed,
-                SyntaxCallArgumentListTerminator::Closed,
-                ExpressionComponentRole::ClosureCloseDelimiter,
-                range,
-            )
-        } else {
-            let at = parser.current_offset();
-            emit_missing_delimiter(
-                parser,
-                SyntaxKind::CloseBraceNode,
-                SyntaxRole::CloseDelimiter,
-            );
-            (
-                SyntaxClosureTerminator::RecoveredMissing,
-                SyntaxCallArgumentListTerminator::RecoveredMissing,
-                ExpressionComponentRole::ClosureRecoveryEnd,
-                SourceRange::new(at, at),
-            )
-        };
-    closure_components.extend([
+    let terminal = emit_callback_closure_terminator(parser, close);
+    components.extend([
         PendingExpressionComponent::new(ExpressionComponentRole::ClosureOpenDelimiter, open),
-        PendingExpressionComponent::new(terminal_role, terminal_range),
+        PendingExpressionComponent::new(terminal.role, terminal.range),
         PendingExpressionComponent::new(ExpressionComponentRole::Body, body_range),
     ]);
     parser.set_expression_projection(
@@ -1037,67 +1078,109 @@ fn emit_callback_block_call(
                 body,
                 SyntaxClosureSyntax::CallbackBlock {
                     explicit_header,
-                    terminator: closure_terminator,
+                    terminator: terminal.closure,
                 },
             )),
-            closure_components,
+            components,
         ),
     );
     parser.finish();
-
     let callback = CompletedNode {
         start_event: callback_start,
     };
-    let callback_range = parser
+    let range = parser
         .completed_range(callback.start_event)
         .expect("callback Closure retains one exact source range");
-    let terminal_call_role = match call_terminator {
-        SyntaxCallArgumentListTerminator::Closed => ExpressionComponentRole::CallArgumentListClose,
-        SyntaxCallArgumentListTerminator::RecoveredMissing => {
-            ExpressionComponentRole::CallArgumentListRecoveryEnd
-        }
+    EmittedCallbackClosure {
+        slot: completed_slot(parser, callback),
+        range,
+        open,
+        call_terminator: terminal.call,
+        terminal_range: terminal.range,
+    }
+}
+
+fn emit_callback_closure_header(
+    parser: &mut DocumentParser<'_, '_>,
+    close: usize,
+) -> (
+    Vec<crate::expressions::SyntaxClosureParameterProjection>,
+    Vec<PendingExpressionComponent>,
+    bool,
+) {
+    let arrow = find_top_level_boundary(parser, parser.cursor(), close, &["=>", "}"]);
+    let explicit = arrow < close
+        && parser
+            .token_at(arrow)
+            .is_some_and(|token| parser.text_of(token) == "=>");
+    parser.start(SyntaxKind::ParameterList, SyntaxRole::Element(0));
+    let (parameters, mut components) = if explicit {
+        composite::emit_closure_parameters_until(parser, arrow)
+    } else {
+        (Vec::new(), Vec::new())
     };
-    parser.set_expression_projection(
-        owner,
-        PendingExpressionProjection::new(
-            ExpressionProjection::Call(SyntaxCallProjection::CallbackBlock(
-                SyntaxCallbackBlockCallProjection::new(
-                    completed_slot(parser, callback),
-                    call_terminator,
-                ),
-            )),
-            vec![
-                PendingExpressionComponent::new(ExpressionComponentRole::CallCallee, callee_range),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgumentListOpen,
-                    open,
-                ),
-                PendingExpressionComponent::new(terminal_call_role, terminal_range),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgument {
-                        argument: 0,
-                        part: SyntaxCallArgumentPart::Whole,
-                    },
-                    callback_range,
-                ),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgument {
-                        argument: 0,
-                        part: SyntaxCallArgumentPart::Value,
-                    },
-                    callback_range,
-                ),
-            ],
-        ),
-    );
     parser.finish();
-    CompletedNode {
-        start_event: left.start_event,
+    if explicit {
+        bump_until(parser, arrow);
+        let fat_arrow = parser
+            .bump()
+            .expect("callback header retains its fat arrow")
+            .range();
+        components.push(PendingExpressionComponent::new(
+            ExpressionComponentRole::ClosureFatArrow,
+            fat_arrow,
+        ));
+        parser.bump_trivia_before(close);
+    }
+    (parameters, components, explicit)
+}
+
+struct EmittedCallbackTerminator {
+    closure: SyntaxClosureTerminator,
+    call: SyntaxCallArgumentListTerminator,
+    role: ExpressionComponentRole,
+    range: SourceRange,
+}
+
+fn emit_callback_closure_terminator(
+    parser: &mut DocumentParser<'_, '_>,
+    close: usize,
+) -> EmittedCallbackTerminator {
+    if parser.cursor() == close && parser.at("}") {
+        let range = parser
+            .current()
+            .expect("callback Call retains its closing brace")
+            .range();
+        emit_close_delimiter(
+            parser,
+            SyntaxKind::CloseBraceNode,
+            "}",
+            "syntax.expression.missing_callback_close",
+        );
+        EmittedCallbackTerminator {
+            closure: SyntaxClosureTerminator::Closed,
+            call: SyntaxCallArgumentListTerminator::Closed,
+            role: ExpressionComponentRole::ClosureCloseDelimiter,
+            range,
+        }
+    } else {
+        let at = parser.current_offset();
+        emit_missing_delimiter(
+            parser,
+            SyntaxKind::CloseBraceNode,
+            SyntaxRole::CloseDelimiter,
+        );
+        EmittedCallbackTerminator {
+            closure: SyntaxClosureTerminator::RecoveredMissing,
+            call: SyntaxCallArgumentListTerminator::RecoveredMissing,
+            role: ExpressionComponentRole::ClosureRecoveryEnd,
+            range: SourceRange::new(at, at),
+        }
     }
 }
 
 fn emit_postfix(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,
     role: SyntaxRole,
@@ -1164,8 +1247,23 @@ struct PreparedCallTypeApplication {
     call_open: usize,
 }
 
+#[derive(Clone, Copy)]
+struct PreparedCallTypeApplicationHead {
+    start: usize,
+    spelling: SyntaxCallTypeApplicationSpelling,
+    turbofish_separator: Option<usize>,
+    open: usize,
+}
+
+#[derive(Clone, Copy)]
+struct PreparedCallTypeApplicationTail {
+    content_end: usize,
+    terminator: PreparedCallTypeTerminator,
+    call_open: usize,
+}
+
 fn prepare_terminal_call_type_application(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,
     start: usize,
@@ -1188,11 +1286,22 @@ fn prepare_terminal_call_type_application(
 }
 
 fn prepare_call_type_application(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
     start: usize,
     spelling: SyntaxCallTypeApplicationSpelling,
 ) -> Option<PreparedCallTypeApplication> {
+    let head = prepare_call_type_application_head(parser, end, start, spelling)?;
+    let tail = prepare_call_type_application_tail(parser, end, head)?;
+    Some(prepare_call_type_application_payload(parser, head, tail))
+}
+
+fn prepare_call_type_application_head(
+    parser: &DocumentParser<'_, '_>,
+    end: usize,
+    start: usize,
+    spelling: SyntaxCallTypeApplicationSpelling,
+) -> Option<PreparedCallTypeApplicationHead> {
     let (turbofish_separator, open) = match spelling {
         SyntaxCallTypeApplicationSpelling::DirectAngle => (None, start),
         SyntaxCallTypeApplicationSpelling::Turbofish => {
@@ -1218,13 +1327,25 @@ fn prepare_call_type_application(
     {
         return None;
     }
+    Some(PreparedCallTypeApplicationHead {
+        start,
+        spelling,
+        turbofish_separator,
+        open,
+    })
+}
 
+fn prepare_call_type_application_tail(
+    parser: &DocumentParser<'_, '_>,
+    end: usize,
+    head: PreparedCallTypeApplicationHead,
+) -> Option<PreparedCallTypeApplicationTail> {
     let mut angle_depth = 1_usize;
     let mut paren_depth = 0_usize;
     let mut bracket_depth = 0_usize;
     let mut brace_depth = 0_usize;
     let mut missing_close_candidates = Vec::new();
-    for index in open + 1..end {
+    for index in head.open + 1..end {
         let Some(token) = parser.token_at(index) else {
             break;
         };
@@ -1245,16 +1366,11 @@ fn prepare_call_type_application(
                 })
             {
                 let call_open = next_significant_index(parser, index + 1, end)?;
-                return prepare_call_type_application_payload(
-                    parser,
-                    start,
-                    spelling,
-                    turbofish_separator,
-                    open,
-                    index,
-                    PreparedCallTypeTerminator::InvalidPresent { index },
+                return Some(PreparedCallTypeApplicationTail {
+                    content_end: index,
+                    terminator: PreparedCallTypeTerminator::InvalidPresent { index },
                     call_open,
-                );
+                });
             }
         }
         match text {
@@ -1269,16 +1385,11 @@ fn prepare_call_type_application(
                     {
                         return None;
                     }
-                    return prepare_call_type_application_payload(
-                        parser,
-                        start,
-                        spelling,
-                        turbofish_separator,
-                        open,
-                        index,
-                        PreparedCallTypeTerminator::Closed { index },
+                    return Some(PreparedCallTypeApplicationTail {
+                        content_end: index,
+                        terminator: PreparedCallTypeTerminator::Closed { index },
                         call_open,
-                    );
+                    });
                 }
             }
             "(" => paren_depth = paren_depth.saturating_add(1),
@@ -1292,36 +1403,26 @@ fn prepare_call_type_application(
     }
 
     let call_open = missing_close_candidates.into_iter().next_back()?;
-    prepare_call_type_application_payload(
-        parser,
-        start,
-        spelling,
-        turbofish_separator,
-        open,
+    Some(PreparedCallTypeApplicationTail {
+        content_end: call_open,
+        terminator: PreparedCallTypeTerminator::RecoveredMissing { call_open },
         call_open,
-        PreparedCallTypeTerminator::RecoveredMissing { call_open },
-        call_open,
-    )
+    })
 }
 
 fn prepare_call_type_application_payload(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    spelling: SyntaxCallTypeApplicationSpelling,
-    turbofish_separator: Option<usize>,
-    open: usize,
-    content_end: usize,
-    terminator: PreparedCallTypeTerminator,
-    call_open: usize,
-) -> Option<PreparedCallTypeApplication> {
-    let separators = top_level_type_argument_separators(parser, open + 1, content_end);
+    parser: &DocumentParser<'_, '_>,
+    head: PreparedCallTypeApplicationHead,
+    tail: PreparedCallTypeApplicationTail,
+) -> PreparedCallTypeApplication {
+    let separators = top_level_type_argument_separators(parser, head.open + 1, tail.content_end);
     let trailing_separator = separators.last().is_some_and(|separator| {
-        next_significant_index(parser, separator + 1, content_end).is_none()
+        next_significant_index(parser, separator + 1, tail.content_end).is_none()
     });
     let mut bounds = Vec::with_capacity(separators.len() + 2);
-    bounds.push(open + 1);
+    bounds.push(head.open + 1);
     bounds.extend(separators.iter().map(|separator| separator + 1));
-    bounds.push(content_end);
+    bounds.push(tail.content_end);
     let slot_count = if trailing_separator {
         bounds.len().saturating_sub(2)
     } else {
@@ -1333,13 +1434,13 @@ fn prepare_call_type_application_payload(
         let raw_end = if slot < separators.len() {
             separators[slot]
         } else {
-            content_end
+            tail.content_end
         };
         arguments.push(prepare_call_type_argument(parser, raw_start, raw_end));
     }
     if arguments.is_empty() {
         let at = parser
-            .token_at(open)
+            .token_at(head.open)
             .expect("prepared type application retains its opening angle")
             .range()
             .end();
@@ -1347,21 +1448,21 @@ fn prepare_call_type_application_payload(
             insertion: SourceRange::new(at, at),
         });
     }
-    Some(PreparedCallTypeApplication {
-        start,
-        spelling,
-        turbofish_separator,
-        open,
+    PreparedCallTypeApplication {
+        start: head.start,
+        spelling: head.spelling,
+        turbofish_separator: head.turbofish_separator,
+        open: head.open,
         arguments,
         separators,
         trailing_separator,
-        terminator,
-        call_open,
-    })
+        terminator: tail.terminator,
+        call_open: tail.call_open,
+    }
 }
 
 fn prepare_call_type_argument(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     raw_start: usize,
     raw_end: usize,
 ) -> PreparedCallTypeArgument {
@@ -1395,7 +1496,7 @@ fn prepare_call_type_argument(
 }
 
 fn top_level_type_argument_separators(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Vec<usize> {
@@ -1432,7 +1533,7 @@ fn top_level_type_argument_separators(
 }
 
 fn next_significant_index(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<usize> {
@@ -1454,7 +1555,7 @@ fn is_expression_trivia(kind: SyntaxKind) -> bool {
 }
 
 fn emit_typed_call(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,
     role: SyntaxRole,
@@ -1498,14 +1599,73 @@ struct EmittedCallTypeApplication {
 }
 
 fn emit_call_type_application(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     prepared: PreparedCallTypeApplication,
 ) -> (EmittedCallTypeApplication, Vec<PendingExpressionComponent>) {
-    let open_range = parser
+    let ranges = call_type_application_ranges(parser, &prepared);
+    let mut components = vec![PendingExpressionComponent::new(
+        ExpressionComponentRole::CallTypeApplication(SyntaxCallTypeApplicationComponentRole::Whole),
+        ranges.whole,
+    )];
+    let projections = prepared
+        .arguments
+        .iter()
+        .map(PreparedCallTypeArgument::projection)
+        .collect::<Vec<_>>();
+    emit_call_type_application_head(parser, &prepared, ranges.open, &mut components);
+    emit_call_type_arguments(
+        parser,
+        prepared.arguments,
+        &prepared.separators,
+        projections.len(),
+        &mut components,
+    );
+    emit_call_type_trailing_separator(
+        parser,
+        prepared.trailing_separator,
+        &prepared.separators,
+        &mut components,
+    );
+    emit_empty_call_type_insertion(
+        &projections,
+        &prepared.separators,
+        ranges.open,
+        &mut components,
+    );
+    let terminator = emit_call_type_terminator(
+        parser,
+        prepared.terminator,
+        ranges.terminator,
+        &mut components,
+    );
+    (
+        EmittedCallTypeApplication {
+            projection: SyntaxCallTypeApplicationProjection::new(
+                prepared.spelling,
+                projections,
+                terminator,
+            ),
+            call_open: prepared.call_open,
+        },
+        components,
+    )
+}
+
+struct CallTypeApplicationRanges {
+    open: SourceRange,
+    terminator: SourceRange,
+    whole: SourceRange,
+}
+
+fn call_type_application_ranges(
+    parser: &DocumentParser<'_, '_>,
+    prepared: &PreparedCallTypeApplication,
+) -> CallTypeApplicationRanges {
+    let open = parser
         .token_at(prepared.open)
         .expect("prepared type application retains its opening angle")
         .range();
-    let terminator_range = match prepared.terminator {
+    let terminator = match prepared.terminator {
         PreparedCallTypeTerminator::Closed { index }
         | PreparedCallTypeTerminator::InvalidPresent { index } => parser
             .token_at(index)
@@ -1523,11 +1683,19 @@ fn emit_call_type_application(
         .expect("prepared type application retains its first token")
         .range()
         .start();
-    let whole = SourceRange::new(whole_start, terminator_range.end());
-    let mut components = vec![PendingExpressionComponent::new(
-        ExpressionComponentRole::CallTypeApplication(SyntaxCallTypeApplicationComponentRole::Whole),
-        whole,
-    )];
+    CallTypeApplicationRanges {
+        open,
+        terminator,
+        whole: SourceRange::new(whole_start, terminator.end()),
+    }
+}
+
+fn emit_call_type_application_head(
+    parser: &mut DocumentParser<'_, '_>,
+    prepared: &PreparedCallTypeApplication,
+    open_range: SourceRange,
+    components: &mut Vec<PendingExpressionComponent>,
+) {
     if let Some(separator) = prepared.turbofish_separator {
         bump_until(parser, separator);
         let range = parser
@@ -1550,29 +1718,20 @@ fn emit_call_type_application(
         ),
         open_range,
     ));
+}
 
-    let projections = prepared
-        .arguments
-        .iter()
-        .map(PreparedCallTypeArgument::projection)
-        .collect::<Vec<_>>();
-    for (ordinal, argument) in prepared.arguments.into_iter().enumerate() {
+fn emit_call_type_arguments(
+    parser: &mut DocumentParser<'_, '_>,
+    arguments: Vec<PreparedCallTypeArgument>,
+    separators: &[usize],
+    argument_count: usize,
+    components: &mut Vec<PendingExpressionComponent>,
+) {
+    for (ordinal, argument) in arguments.into_iter().enumerate() {
         let ordinal = u16::try_from(ordinal)
             .expect("document grammar budget bounds Call type argument ordinals");
         let range = argument.range();
-        match argument {
-            PreparedCallTypeArgument::Present(prepared) => {
-                bump_until(parser, prepared.start());
-                let _ = emit_prepared_type(parser, SyntaxRole::Type, prepared);
-            }
-            PreparedCallTypeArgument::InvalidPresent {
-                start, end, error, ..
-            } => {
-                bump_until(parser, start);
-                let _ = emit_recovered_type(parser, SyntaxRole::Type, start, end, error);
-            }
-            PreparedCallTypeArgument::Missing { .. } => {}
-        }
+        emit_call_type_argument(parser, argument);
         for part in [
             SyntaxCallTypeArgumentPart::Whole,
             SyntaxCallTypeArgumentPart::Type,
@@ -1587,43 +1746,87 @@ fn emit_call_type_application(
                 range,
             ));
         }
-        if usize::from(ordinal) + 1 < projections.len() {
-            let separator = prepared.separators[usize::from(ordinal)];
-            bump_until(parser, separator);
-            let range = parser
-                .bump()
-                .expect("prepared type argument separator remains attached")
-                .range();
-            components.push(PendingExpressionComponent::new(
-                ExpressionComponentRole::CallTypeApplication(
-                    SyntaxCallTypeApplicationComponentRole::Separator {
-                        following: ordinal + 1,
-                    },
-                ),
-                range,
-            ));
+        if usize::from(ordinal) + 1 < argument_count {
+            emit_call_type_separator(parser, separators, ordinal, components);
         }
     }
-    if prepared.trailing_separator {
-        let separator = *prepared
-            .separators
-            .last()
-            .expect("trailing separator state retains one comma");
-        bump_until(parser, separator);
-        let range = parser
-            .bump()
-            .expect("prepared trailing type separator remains attached")
-            .range();
-        components.push(PendingExpressionComponent::new(
-            ExpressionComponentRole::CallTypeApplication(
-                SyntaxCallTypeApplicationComponentRole::TrailingSeparator,
-            ),
-            range,
-        ));
+}
+
+fn emit_call_type_argument(
+    parser: &mut DocumentParser<'_, '_>,
+    argument: PreparedCallTypeArgument,
+) {
+    match argument {
+        PreparedCallTypeArgument::Present(prepared) => {
+            bump_until(parser, prepared.start());
+            let _ = emit_prepared_type(parser, SyntaxRole::Type, prepared);
+        }
+        PreparedCallTypeArgument::InvalidPresent {
+            start, end, error, ..
+        } => {
+            bump_until(parser, start);
+            let _ = emit_recovered_type(parser, SyntaxRole::Type, start, end, &error);
+        }
+        PreparedCallTypeArgument::Missing { .. } => {}
     }
+}
+
+fn emit_call_type_separator(
+    parser: &mut DocumentParser<'_, '_>,
+    separators: &[usize],
+    ordinal: u16,
+    components: &mut Vec<PendingExpressionComponent>,
+) {
+    let separator = separators[usize::from(ordinal)];
+    bump_until(parser, separator);
+    let range = parser
+        .bump()
+        .expect("prepared type argument separator remains attached")
+        .range();
+    components.push(PendingExpressionComponent::new(
+        ExpressionComponentRole::CallTypeApplication(
+            SyntaxCallTypeApplicationComponentRole::Separator {
+                following: ordinal + 1,
+            },
+        ),
+        range,
+    ));
+}
+
+fn emit_call_type_trailing_separator(
+    parser: &mut DocumentParser<'_, '_>,
+    trailing_separator: bool,
+    separators: &[usize],
+    components: &mut Vec<PendingExpressionComponent>,
+) {
+    if !trailing_separator {
+        return;
+    }
+    let separator = *separators
+        .last()
+        .expect("trailing separator state retains one comma");
+    bump_until(parser, separator);
+    let range = parser
+        .bump()
+        .expect("prepared trailing type separator remains attached")
+        .range();
+    components.push(PendingExpressionComponent::new(
+        ExpressionComponentRole::CallTypeApplication(
+            SyntaxCallTypeApplicationComponentRole::TrailingSeparator,
+        ),
+        range,
+    ));
+}
+
+fn emit_empty_call_type_insertion(
+    projections: &[SyntaxCallTypeArgumentProjection],
+    separators: &[usize],
+    open_range: SourceRange,
+    components: &mut Vec<PendingExpressionComponent>,
+) {
     if projections.len() == 1
         && matches!(projections[0], SyntaxCallTypeArgumentProjection::Missing)
-        && prepared.separators.is_empty()
+        && separators.is_empty()
     {
         components.push(PendingExpressionComponent::new(
             ExpressionComponentRole::CallTypeApplication(
@@ -1632,7 +1835,15 @@ fn emit_call_type_application(
             SourceRange::new(open_range.end(), open_range.end()),
         ));
     }
-    let terminator = match prepared.terminator {
+}
+
+fn emit_call_type_terminator(
+    parser: &mut DocumentParser<'_, '_>,
+    terminator: PreparedCallTypeTerminator,
+    terminator_range: SourceRange,
+    components: &mut Vec<PendingExpressionComponent>,
+) -> SyntaxCallTypeApplicationTerminator {
+    match terminator {
         PreparedCallTypeTerminator::Closed { index } => {
             bump_until(parser, index);
             emit_close_delimiter(
@@ -1678,30 +1889,27 @@ fn emit_call_type_application(
             ));
             SyntaxCallTypeApplicationTerminator::InvalidPresent
         }
-    };
-    (
-        EmittedCallTypeApplication {
-            projection: SyntaxCallTypeApplicationProjection::new(
-                prepared.spelling,
-                projections,
-                terminator,
-            ),
-            call_open: prepared.call_open,
-        },
-        components,
-    )
+    }
 }
 
 fn emit_call(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,
     role: SyntaxRole,
 ) -> CompletedNode {
+    if parser.budget_failed() {
+        bump_until(parser, end);
+        return left;
+    }
     let callee_range = parser
         .completed_range(left.start_event)
         .expect("completed Call callee retains one exact source range");
     let owner = parser.insert_projected_start(left.start_event, SyntaxKind::CallExpression, role);
+    if parser.budget_failed() {
+        bump_until(parser, end);
+        return left;
+    }
     parser.set_start_role(left.start_event + 1, SyntaxRole::Callee);
     let tail = emit_parenthesized_call_tail(parser, end);
     let mut components = vec![PendingExpressionComponent::new(
@@ -1725,57 +1933,97 @@ fn emit_call(
 }
 
 struct PreparedAssociatedCall {
-    receiver: PreparedTypeProjection,
-    separator: usize,
-    member: usize,
+    receiver: PreparedAssociatedReceiver,
+    separator: PreparedAssociatedSeparator,
+    member: PreparedAssociatedMember,
     type_application: Option<PreparedCallTypeApplication>,
     call_open: usize,
+}
+
+enum PreparedAssociatedReceiver {
+    Present(PreparedTypeProjection),
+    InvalidPresent {
+        start: usize,
+        end: usize,
+        error: crate::types::TypeParseError,
+        range: SourceRange,
+    },
+}
+
+impl PreparedAssociatedReceiver {
+    fn range(&self) -> SourceRange {
+        match self {
+            Self::Present(prepared) => {
+                let range = prepared.whole();
+                SourceRange::new(range.start(), range.end())
+            }
+            Self::InvalidPresent { range, .. } => *range,
+        }
+    }
+
+    const fn projection() -> SyntaxAssociatedReceiver {
+        SyntaxAssociatedReceiver::Present
+    }
+}
+
+#[derive(Clone, Copy)]
+struct PreparedAssociatedSeparator {
+    index: usize,
     syntax: SyntaxAssociatedCallSyntax,
 }
 
+impl PreparedAssociatedSeparator {
+    const fn projection(self) -> SyntaxAssociatedSeparator {
+        SyntaxAssociatedSeparator::Present(self.syntax)
+    }
+}
+
+enum PreparedAssociatedMember {
+    Present {
+        index: usize,
+        range: SourceRange,
+        name: Result<SyntaxName, SyntaxNameIssue>,
+    },
+    Missing {
+        insertion: SourceRange,
+    },
+}
+
 fn emit_associated_call(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> Option<CompletedNode> {
     let prepared = prepare_associated_call(parser, end)?;
     let start_event = parser.event_position();
     let owner = parser.start_projected_owner(SyntaxKind::CallExpression, role);
-    let receiver_range = SourceRange::new(
-        prepared.receiver.whole().start(),
-        prepared.receiver.whole().end(),
-    );
+    let receiver_range = prepared.receiver.range();
+    let receiver_projection = PreparedAssociatedReceiver::projection();
+    let separator_projection = prepared.separator.projection();
+    let unresolved_dot = matches!(&prepared.receiver, PreparedAssociatedReceiver::Present(_))
+        && prepared.separator.syntax == SyntaxAssociatedCallSyntax::DotFallback
+        && matches!(
+            &prepared.member,
+            PreparedAssociatedMember::Present { name: Ok(_), .. }
+        );
 
-    match prepared.syntax {
-        SyntaxAssociatedCallSyntax::DotFallback => {
-            let value =
-                parser.start_projected_owner(SyntaxKind::PathExpression, SyntaxRole::Callee);
-            let _ = emit_prepared_type(parser, SyntaxRole::Type, prepared.receiver);
-            parser.set_expression_projection(
-                value,
-                PendingExpressionProjection::new(ExpressionProjection::Path, Vec::new()),
-            );
-            parser.finish();
-        }
-        SyntaxAssociatedCallSyntax::ExplicitDoubleColon => {
-            let _ = emit_prepared_type(parser, SyntaxRole::Type, prepared.receiver);
-        }
+    if unresolved_dot {
+        let value = parser.start_projected_owner(SyntaxKind::PathExpression, SyntaxRole::Callee);
+        let PreparedAssociatedReceiver::Present(receiver) = prepared.receiver else {
+            unreachable!("unresolved dot retains one valid nominal receiver")
+        };
+        let _ = emit_prepared_type(parser, SyntaxRole::Type, receiver);
+        parser.set_expression_projection(
+            value,
+            PendingExpressionProjection::new(ExpressionProjection::Path, Vec::new()),
+        );
+        parser.finish();
+    } else {
+        emit_associated_receiver(parser, prepared.receiver);
     }
 
-    bump_until(parser, prepared.separator);
-    let separator_range = parser
-        .bump()
-        .expect("associated Call retains its separator token")
-        .range();
-    bump_until(parser, prepared.member);
-    let member_token = parser
-        .current()
-        .expect("associated Call retains its member token");
-    let member_range = member_token.range();
-    let member = SyntaxName::try_new(parser.text_of(member_token));
-    parser.start(SyntaxKind::NameReference, SyntaxRole::Name);
-    parser.bump();
-    parser.finish();
+    let separator_range = emit_associated_separator(parser, prepared.separator);
+    let (member, member_range) = emit_associated_member(parser, prepared.member);
     let (type_application, type_components) = if let Some(application) = prepared.type_application {
         bump_until(parser, application.start);
         let (application, components) = emit_call_type_application(parser, application);
@@ -1802,24 +2050,23 @@ fn emit_associated_call(
     ];
     components.extend(type_components);
     components.extend(tail.components);
-    let projection = match prepared.syntax {
-        SyntaxAssociatedCallSyntax::DotFallback => {
-            SyntaxParenthesizedCallProjection::unresolved_dot(
-                member,
-                type_application,
-                tail.arguments,
-                tail.terminator,
-            )
-        }
-        SyntaxAssociatedCallSyntax::ExplicitDoubleColon => {
-            SyntaxParenthesizedCallProjection::associated(
-                SyntaxAssociatedCallSyntax::ExplicitDoubleColon,
-                member,
-                type_application,
-                tail.arguments,
-                tail.terminator,
-            )
-        }
+    let projection = if unresolved_dot {
+        SyntaxParenthesizedCallProjection::unresolved_dot(
+            separator_projection,
+            member,
+            type_application,
+            tail.arguments,
+            tail.terminator,
+        )
+    } else {
+        SyntaxParenthesizedCallProjection::associated(
+            receiver_projection,
+            separator_projection,
+            member,
+            type_application,
+            tail.arguments,
+            tail.terminator,
+        )
     };
     parser.set_expression_projection(
         owner,
@@ -1832,12 +2079,59 @@ fn emit_associated_call(
     Some(CompletedNode { start_event })
 }
 
+fn emit_associated_receiver(
+    parser: &mut DocumentParser<'_, '_>,
+    receiver: PreparedAssociatedReceiver,
+) {
+    match receiver {
+        PreparedAssociatedReceiver::Present(receiver) => {
+            let _ = emit_prepared_type(parser, SyntaxRole::Type, receiver);
+        }
+        PreparedAssociatedReceiver::InvalidPresent {
+            start, end, error, ..
+        } => {
+            bump_until(parser, start);
+            let _ = emit_recovered_type(parser, SyntaxRole::Type, start, end, &error);
+        }
+    }
+}
+
+fn emit_associated_separator(
+    parser: &mut DocumentParser<'_, '_>,
+    separator: PreparedAssociatedSeparator,
+) -> SourceRange {
+    bump_until(parser, separator.index);
+    parser
+        .bump()
+        .expect("associated Call retains its separator token")
+        .range()
+}
+
+fn emit_associated_member(
+    parser: &mut DocumentParser<'_, '_>,
+    member: PreparedAssociatedMember,
+) -> (Result<SyntaxName, SyntaxNameIssue>, SourceRange) {
+    match member {
+        PreparedAssociatedMember::Present { index, range, name } => {
+            bump_until(parser, index);
+            parser.start(SyntaxKind::NameReference, SyntaxRole::Name);
+            parser.bump();
+            parser.finish();
+            (name, range)
+        }
+        PreparedAssociatedMember::Missing { insertion } => {
+            (Err(SyntaxNameIssue::Missing), insertion)
+        }
+    }
+}
+
 fn prepare_associated_call(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
 ) -> Option<PreparedAssociatedCall> {
     let start = parser.cursor();
-    for call_open in start..end {
+    let call_open = find_top_level_boundary(parser, start, end, &["("]);
+    for call_open in [call_open] {
         if parser
             .token_at(call_open)
             .is_none_or(|token| parser.text_of(token) != "(")
@@ -1848,46 +2142,94 @@ fn prepare_associated_call(
         let terminal_start = type_application
             .as_ref()
             .map_or(call_open, |application| application.start);
-        let member = previous_significant(parser, start, terminal_start)?;
-        let member_token = parser.token_at(member)?;
-        if !matches!(
-            member_token.kind(),
-            SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken
-        ) {
-            continue;
-        }
-        let separator = previous_significant(parser, start, member)?;
-        let syntax = match parser
-            .token_at(separator)
-            .map(|token| parser.text_of(token))
-        {
-            Some(".") => SyntaxAssociatedCallSyntax::DotFallback,
-            Some("::") => SyntaxAssociatedCallSyntax::ExplicitDoubleColon,
-            _ => continue,
-        };
-        let Ok(receiver) = prepare_type(parser, start, separator) else {
+        let Some(tail) = previous_significant(parser, start, terminal_start) else {
             continue;
         };
-        if receiver.authored().value().nominal_path().is_none()
-            || matches!(syntax, SyntaxAssociatedCallSyntax::ExplicitDoubleColon)
-                && !matches!(receiver.authored().value(), TypeRef::Generic { .. })
+        let tail_text = parser.token_at(tail).map(|token| parser.text_of(token))?;
+        let (member, separator_start, separator_syntax) = if matches!(tail_text, "." | "::") {
+            let insertion = parser
+                .offset_at_token_boundary(terminal_start)
+                .map(|at| SourceRange::new(at, at))?;
+            let syntax = if tail_text == "::" {
+                SyntaxAssociatedCallSyntax::ExplicitDoubleColon
+            } else {
+                SyntaxAssociatedCallSyntax::DotFallback
+            };
+            (
+                PreparedAssociatedMember::Missing { insertion },
+                tail,
+                syntax,
+            )
+        } else {
+            let member_token = parser.token_at(tail)?;
+            let member = PreparedAssociatedMember::Present {
+                index: tail,
+                range: member_token.range(),
+                name: SyntaxName::try_new(parser.text_of(member_token)),
+            };
+            let separator = previous_significant(parser, start, tail);
+            match separator.and_then(|index| {
+                parser
+                    .token_at(index)
+                    .map(|token| (index, parser.text_of(token), token.range()))
+            }) {
+                Some((index, "::", _)) => (
+                    member,
+                    index,
+                    SyntaxAssociatedCallSyntax::ExplicitDoubleColon,
+                ),
+                Some((index, ".", _)) => (member, index, SyntaxAssociatedCallSyntax::DotFallback),
+                _ => continue,
+            }
+        };
+        let receiver_end = trimmed_end(parser, start, separator_start);
+        if receiver_end <= start {
+            continue;
+        }
+        let receiver = match prepare_type(parser, start, receiver_end) {
+            Ok(receiver) if receiver.authored().value().nominal_path().is_some() => {
+                PreparedAssociatedReceiver::Present(receiver)
+            }
+            Err(error) if separator_syntax == SyntaxAssociatedCallSyntax::ExplicitDoubleColon => {
+                let range = SourceRange::new(
+                    parser.offset_at_token_boundary(start)?,
+                    parser.offset_at_token_boundary(receiver_end)?,
+                );
+                PreparedAssociatedReceiver::InvalidPresent {
+                    start,
+                    end: receiver_end,
+                    error,
+                    range,
+                }
+            }
+            Ok(_) | Err(_) => continue,
+        };
+        if separator_syntax == SyntaxAssociatedCallSyntax::ExplicitDoubleColon
+            && matches!(
+                &receiver,
+                PreparedAssociatedReceiver::Present(receiver)
+                    if !matches!(receiver.authored().value(), TypeRef::Generic { .. })
+            )
         {
             continue;
         }
+        let separator = PreparedAssociatedSeparator {
+            index: separator_start,
+            syntax: separator_syntax,
+        };
         return Some(PreparedAssociatedCall {
             receiver,
             separator,
             member,
             type_application,
             call_open,
-            syntax,
         });
     }
     None
 }
 
 fn terminal_type_application_before_call(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
     start: usize,
     call_open: usize,
@@ -1917,7 +2259,7 @@ fn terminal_type_application_before_call(
 }
 
 fn previous_significant(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     before: usize,
 ) -> Option<usize> {
@@ -1934,253 +2276,8 @@ fn previous_significant(
     })
 }
 
-pub(super) struct EmittedParenthesizedCallTail {
-    arguments: Vec<SyntaxCallArgumentProjection>,
-    terminator: SyntaxCallArgumentListTerminator,
-    components: Vec<PendingExpressionComponent>,
-}
-
-impl EmittedParenthesizedCallTail {
-    pub(super) fn into_parts(
-        self,
-    ) -> (
-        Vec<SyntaxCallArgumentProjection>,
-        SyntaxCallArgumentListTerminator,
-        Vec<PendingExpressionComponent>,
-    ) {
-        (self.arguments, self.terminator, self.components)
-    }
-}
-
-pub(super) fn emit_parenthesized_call_tail(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-) -> EmittedParenthesizedCallTail {
-    let open = parser
-        .current()
-        .expect("postfix Call dispatch retains the opening parenthesis")
-        .range();
-    emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
-    parser.start(SyntaxKind::ArgumentList, SyntaxRole::Element(0));
-    let mut arguments = Vec::new();
-    let mut argument_components = Vec::new();
-    let mut separators = Vec::new();
-    loop {
-        parser.bump_trivia();
-        if parser.cursor() >= end || parser.at(")") {
-            break;
-        }
-        let ordinal = u16::try_from(arguments.len())
-            .expect("document grammar budget keeps Call argument ordinals in u16");
-        let argument_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(end);
-        let argument = emit_call_argument(parser, argument_end, ordinal);
-        arguments.push(argument.projection);
-        argument_components.extend(argument.components);
-        if parser.at(",") {
-            separators.push(
-                parser
-                    .bump()
-                    .expect("Call separator dispatch retains one comma")
-                    .range(),
-            );
-        } else {
-            break;
-        }
-    }
-    parser.finish();
-    let (terminator, terminator_role, terminator_range) = if parser.at(")") {
-        (
-            SyntaxCallArgumentListTerminator::Closed,
-            ExpressionComponentRole::CallArgumentListClose,
-            parser
-                .current()
-                .expect("closed Call retains one closing parenthesis")
-                .range(),
-        )
-    } else {
-        let at = parser.current_offset();
-        (
-            SyntaxCallArgumentListTerminator::RecoveredMissing,
-            ExpressionComponentRole::CallArgumentListRecoveryEnd,
-            SourceRange::new(at, at),
-        )
-    };
-    emit_close_delimiter(
-        parser,
-        SyntaxKind::CloseParenNode,
-        ")",
-        "syntax.expression.missing_call_close",
-    );
-    let mut components = vec![PendingExpressionComponent::new(
-        ExpressionComponentRole::CallArgumentListOpen,
-        open,
-    )];
-    components.append(&mut argument_components);
-    for (after, separator) in separators.into_iter().enumerate() {
-        if after + 1 < arguments.len() {
-            components.push(PendingExpressionComponent::new(
-                ExpressionComponentRole::CallArgumentSeparator {
-                    following: u16::try_from(after + 1)
-                        .expect("Call argument separator ordinal fits u16"),
-                },
-                separator,
-            ));
-        } else {
-            components.push(PendingExpressionComponent::new(
-                ExpressionComponentRole::CallArgumentTrailingSeparator,
-                separator,
-            ));
-        }
-    }
-    if arguments.is_empty() {
-        components.push(PendingExpressionComponent::new(
-            ExpressionComponentRole::CallArgumentListEmptyInsertion,
-            SourceRange::new(open.end(), open.end()),
-        ));
-    }
-    components.push(PendingExpressionComponent::new(
-        terminator_role,
-        terminator_range,
-    ));
-    EmittedParenthesizedCallTail {
-        arguments,
-        terminator,
-        components,
-    }
-}
-
-struct EmittedCallArgument {
-    projection: SyntaxCallArgumentProjection,
-    components: Vec<PendingExpressionComponent>,
-}
-
-fn emit_call_argument(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    ordinal: u16,
-) -> EmittedCallArgument {
-    let start_event = parser.event_position();
-    parser.start(SyntaxKind::CallArgument, SyntaxRole::Argument(ordinal));
-    let assignment = find_top_level_boundary(parser, parser.cursor(), &["="]).min(end);
-    let (projection, mut components) = if assignment < end {
-        let name_start = parser.current_offset();
-        let name_end_index = trimmed_end(parser, parser.cursor(), assignment);
-        let name_end = parser
-            .offset_at_token_boundary(name_end_index)
-            .expect("Call name end remains at a token boundary");
-        let name_range = SourceRange::new(name_start, name_end);
-        let source_name = SyntaxName::try_new(&parser.source()[name_range.as_range()]);
-        parser.start(SyntaxKind::NameReference, SyntaxRole::Name);
-        bump_until(parser, name_end_index);
-        parser.finish();
-        bump_until(parser, assignment);
-        let equals = parser
-            .bump()
-            .expect("named Call argument retains one equals token")
-            .range();
-        parser.bump_trivia();
-        let value = emit_expression_node(parser, end, SyntaxRole::Operand);
-        let value_range = parser
-            .completed_range(value.start_event)
-            .expect("named Call value retains one exact source range");
-        (
-            SyntaxCallArgumentProjection::Named {
-                name: source_name,
-                equals: SyntaxRequiredTokenState::Present,
-                value: completed_slot(parser, value),
-            },
-            vec![
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgument {
-                        argument: ordinal,
-                        part: SyntaxCallArgumentPart::Name,
-                    },
-                    name_range,
-                ),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgument {
-                        argument: ordinal,
-                        part: SyntaxCallArgumentPart::Equals,
-                    },
-                    equals,
-                ),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgument {
-                        argument: ordinal,
-                        part: SyntaxCallArgumentPart::Value,
-                    },
-                    value_range,
-                ),
-            ],
-        )
-    } else {
-        let spread = find_top_level_boundary(parser, parser.cursor(), &["..."]).min(end);
-        let value = emit_expression_node(parser, spread, SyntaxRole::Operand);
-        let value_range = parser
-            .completed_range(value.start_event)
-            .expect("Call argument value retains one exact source range");
-        let value_slot = completed_slot(parser, value);
-        bump_until(parser, spread);
-        if parser.at("...") {
-            let ellipsis = parser
-                .bump()
-                .expect("spread Call argument retains one ellipsis token")
-                .range();
-            (
-                SyntaxCallArgumentProjection::Spread {
-                    value: value_slot,
-                    ellipsis: SyntaxRequiredTokenState::Present,
-                },
-                vec![
-                    PendingExpressionComponent::new(
-                        ExpressionComponentRole::CallArgument {
-                            argument: ordinal,
-                            part: SyntaxCallArgumentPart::Value,
-                        },
-                        value_range,
-                    ),
-                    PendingExpressionComponent::new(
-                        ExpressionComponentRole::CallArgument {
-                            argument: ordinal,
-                            part: SyntaxCallArgumentPart::Spread,
-                        },
-                        ellipsis,
-                    ),
-                ],
-            )
-        } else {
-            (
-                SyntaxCallArgumentProjection::Positional { value: value_slot },
-                vec![PendingExpressionComponent::new(
-                    ExpressionComponentRole::CallArgument {
-                        argument: ordinal,
-                        part: SyntaxCallArgumentPart::Value,
-                    },
-                    value_range,
-                )],
-            )
-        }
-    };
-    bump_until(parser, end);
-    parser.finish();
-    let whole = parser
-        .completed_range(start_event)
-        .expect("Call argument retains one exact whole range");
-    components.push(PendingExpressionComponent::new(
-        ExpressionComponentRole::CallArgument {
-            argument: ordinal,
-            part: SyntaxCallArgumentPart::Whole,
-        },
-        whole,
-    ));
-    EmittedCallArgument {
-        projection,
-        components,
-    }
-}
-
 fn emit_select(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,
     role: SyntaxRole,
@@ -2238,7 +2335,7 @@ fn emit_select(
 }
 
 fn emit_try(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     left: CompletedNode,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -2250,7 +2347,7 @@ fn emit_try(
             let at = parser.current_offset();
             arcweft_source::SourceRange::new(at, at)
         },
-        |token| token.range(),
+        super::lexer::LexToken::range,
     );
     let owner = parser.insert_projected_start(left.start_event, SyntaxKind::TryExpression, role);
     parser.set_start_role(left.start_event + 1, SyntaxRole::Operand);

@@ -47,6 +47,10 @@ struct StyleManifest {
 }
 
 impl StyleManifest {
+    #[allow(
+        clippy::result_large_err,
+        reason = "Style manifest insertion preserves complete typed query and source evidence"
+    )]
     fn insert(
         &mut self,
         parsed: &ParsedSource,
@@ -77,6 +81,10 @@ impl StyleManifest {
         Ok(())
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "required Style rows preserve complete typed query and source evidence"
+    )]
     fn required(
         &mut self,
         parsed: &ParsedSource,
@@ -93,6 +101,10 @@ impl StyleManifest {
         )
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "optional Style rows preserve complete typed query and source evidence"
+    )]
     fn optional(
         &mut self,
         parsed: &ParsedSource,
@@ -120,6 +132,10 @@ impl StagedHirSourceIndex {
     /// Expression initializers and token type annotations are deliberately
     /// absent: their existing expression/type manifests remain their sole
     /// source authorities.
+    #[allow(
+        clippy::result_large_err,
+        reason = "Style staging preserves complete typed owner and manifest evidence"
+    )]
     pub(crate) fn stage_attached_style(
         &mut self,
         parsed: &ParsedSource,
@@ -170,6 +186,10 @@ pub(super) fn payload_matches(
         && exact_style_manifest(index, parsed, owner, attached)
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Style manifest rejection preserves complete typed owner and source evidence"
+)]
 fn style_manifest(
     parsed: &ParsedSource,
     owner: ItemId,
@@ -202,6 +222,10 @@ fn style_manifest(
     Ok(manifest)
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Style body rejection preserves complete typed ordinal and source evidence"
+)]
 fn project_body_manifest(
     manifest: &mut StyleManifest,
     parsed: &ParsedSource,
@@ -250,6 +274,10 @@ fn project_body_manifest(
     Ok(())
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Style ordinal overflow retains the exact typed owner evidence"
+)]
 fn next_body_ordinal(owner: ItemId, ordinal: u32) -> Result<u32, HirSourceCommitInvariantError> {
     ordinal.checked_add(1).ok_or(
         HirSourceCommitInvariantError::AttachedPayloadStateMismatch {
@@ -258,6 +286,10 @@ fn next_body_ordinal(owner: ItemId, ordinal: u32) -> Result<u32, HirSourceCommit
     )
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Style token rejection preserves complete typed ordinal and source evidence"
+)]
 fn project_token_manifest(
     manifest: &mut StyleManifest,
     parsed: &ParsedSource,
@@ -286,6 +318,10 @@ fn project_token_manifest(
     Ok(())
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Style rule rejection preserves complete typed ordinal and source evidence"
+)]
 fn project_rule_manifest(
     manifest: &mut StyleManifest,
     parsed: &ParsedSource,
@@ -381,6 +417,10 @@ fn project_rule_manifest(
     Ok(())
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Style environment rejection preserves complete typed ordinal and source evidence"
+)]
 fn project_environment_manifest(
     manifest: &mut StyleManifest,
     parsed: &ParsedSource,
@@ -466,6 +506,10 @@ fn project_environment_manifest(
     )
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Style semantic ordinal overflow retains the exact typed owner evidence"
+)]
 fn semantic_ordinal(owner: ItemId, index: usize) -> Result<u32, HirSourceCommitInvariantError> {
     u32::try_from(index).map_err(
         |_| HirSourceCommitInvariantError::AttachedPayloadStateMismatch {

@@ -22,6 +22,10 @@ use super::{
     source_matches, type_is_poisoned,
 };
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one Metric projection validates header, members, retained ordinals, source roles, and poison state together"
+)]
 pub(super) fn payload_matches(
     owner: ItemId,
     attached: &AttachedMetricDeclaration,
@@ -176,11 +180,11 @@ pub(super) fn payload_matches(
         && item.state() == &expected_state
 }
 
-fn next_member<'a>(
+fn next_member(
     owner: ItemId,
-    retained: &'a [HirDeclarationMember],
+    retained: &[HirDeclarationMember],
     position: usize,
-) -> Option<(HirDeclarationMemberId, &'a HirDeclarationMember)> {
+) -> Option<(HirDeclarationMemberId, &HirDeclarationMember)> {
     let ordinal = u32::try_from(position).ok()?;
     Some((
         HirDeclarationMemberId::new(owner, ordinal),

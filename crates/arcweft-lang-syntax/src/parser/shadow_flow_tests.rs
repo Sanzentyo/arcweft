@@ -1,6 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuildError, UnattachedGrammarEntry};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::incremental::SyntaxLimit;
@@ -21,8 +21,7 @@ fn kind_count(entries: &[UnattachedGrammarEntry], kind: SyntaxKind) -> usize {
 #[test]
 fn flow_receiver_shape_requires_a_typed_pattern_annotation() {
     let source = "flow invalid(self) {}\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let pattern = entries
         .iter()
@@ -54,8 +53,7 @@ ensures result.is_ok()
     return next
 }
 ";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     for expected in [
@@ -106,8 +104,7 @@ assume external_ok
 decreases state.remaining
 {}
 ";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let contracts = built
         .index()
         .entries()
@@ -143,8 +140,7 @@ fn flow_contract_modes_are_closed_tokens_not_name_references() {
         "invariant debug true\n",
         "{}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::RequiresClause), 1);
@@ -164,10 +160,32 @@ fn flow_contract_modes_are_closed_tokens_not_name_references() {
 }
 
 #[test]
+fn debug_assertion_mode_keeps_its_exact_name_owner() {
+    let source = "flow checks() { assert.debug(true) }\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let entries = built.index().entries();
+
+    let assertion = entries
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::AssertionStatement)
+        .expect("typed assertion statement");
+    assert_eq!(
+        assertion.assertion_projection().and_then(
+            super::super::grammar::assertion_projection::PendingAssertionProjection::mode
+        ),
+        Some(crate::assertion::AssertionMode::Debug)
+    );
+    assert!(entries.iter().any(|entry| {
+        entry.kind() == SyntaxKind::NameReference && entry.role() == SyntaxRole::Name
+    }));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn missing_flow_contract_list_does_not_consume_the_flow_body() {
     let source = "flow missing_effects()\neffects\n{}\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::EffectsClause), 1);
@@ -195,8 +213,7 @@ fn unclosed_flow_contract_list_stops_before_the_next_clause_and_body() {
         "requires state.ready\n",
         "{}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::EffectsClause), 1);
@@ -228,8 +245,7 @@ fn every_flow_contract_list_family_uses_the_same_unclosed_list_boundary() {
         let source =
             format!("flow unclosed_{keyword}()\n{keyword} {{ state.value\nrequires ready\n{{}}\n");
         let built =
-            parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
-                .unwrap();
+            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
 
         assert_eq!(kind_count(built.index().entries(), kind), 1, "{keyword}");
         assert_eq!(
@@ -255,8 +271,7 @@ fn every_flow_contract_list_family_uses_the_same_unclosed_list_boundary() {
 #[test]
 fn unclosed_flow_contract_list_stops_before_the_flow_body() {
     let source = "flow body_boundary()\nreads { state.value\n{ return }\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
 
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::ReadsClause),
@@ -288,8 +303,7 @@ fn contract_list_recovery_waits_for_nested_multiline_delimiters() {
         "requires ready\n",
         "{}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
 
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::CallExpression),
@@ -318,8 +332,7 @@ fn closed_multiline_flow_contract_list_needs_no_recovery() {
         "requires ready\n",
         "{}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
 
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::EffectsClause),
@@ -337,8 +350,7 @@ fn closed_multiline_flow_contract_list_needs_no_recovery() {
 #[test]
 fn missing_no_effect_operand_preserves_both_keywords_and_the_flow_body() {
     let source = "flow missing_no_effect()\nensures no_effect\n{}\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::NoEffectClause), 1);
@@ -365,8 +377,7 @@ fn flow_identity_forms_distinguish_authored_and_implicit_names() {
         "flow @flow.other {}\n",
         "flow @flow.generated generated {}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::FlowItem), 3);
@@ -382,8 +393,7 @@ fn curried_flow_group_is_recovery_and_does_not_hide_the_following_item() {
         "flow invalid(first: Int)(second: Int) -> Int { return first }\n",
         "proof next() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::FlowItem), 1);
@@ -406,8 +416,7 @@ fn curried_flow_group_is_recovery_and_does_not_hide_the_following_item() {
 #[test]
 fn missing_flow_identity_and_body_recover_before_the_following_item() {
     let source = "flow\nproof next() = ()\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::FlowItem), 1);
@@ -432,8 +441,7 @@ fn missing_flow_identity_and_body_recover_before_the_following_item() {
 #[test]
 fn flow_parameter_default_is_typed_recovery_and_preserves_the_body() {
     let source = "flow invalid(value: Int = make_value()) { return value }\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::FlowItem), 1);
@@ -454,8 +462,7 @@ fn unclosed_second_flow_parameter_group_stops_before_contract_and_body() {
         "requires first.ready\n",
         "{}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::FixedParameterGroup), 2);
@@ -482,8 +489,7 @@ fn closed_flow_groups_do_not_treat_nested_arrows_or_default_blocks_as_boundaries
         "flow first(callback: ((Int) -> Int), value: Int = make { nested() }) {}\n",
         "flow second(ok: Int)(callback: ((Int) -> Int), value: Int = make { nested() }) {}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::FlowItem), 2);
@@ -504,7 +510,7 @@ fn closed_flow_groups_do_not_treat_nested_arrows_or_default_blocks_as_boundaries
 fn flow_fixed_parameter_limit_is_inclusive_transactional_and_ignores_rejected_groups() {
     let limit = SyntaxLimit::FixedParameters;
     let accepted = flow_with_parameters(limit.maximum());
-    let built = parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&accepted), crate::parser::ParseOptions::default())
         .expect("the exact Flow parameter limit must build");
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::Parameter),
@@ -514,12 +520,11 @@ fn flow_fixed_parameter_limit_is_inclusive_transactional_and_ignores_rejected_gr
 
     let rejected = flow_with_parameters(limit.maximum() + 1);
     assert_eq!(
-        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default())
-            .unwrap_err(),
+        parse_document(&document(&rejected), crate::parser::ParseOptions::default()).unwrap_err(),
         GrammarBuildError::LimitExceeded(limit)
     );
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("flow ready(value: Int) {}\n"),
             crate::parser::ParseOptions::default(),
         )
@@ -531,7 +536,7 @@ fn flow_fixed_parameter_limit_is_inclusive_transactional_and_ignores_rejected_gr
         "flow recovered(ok: Int)({}) {{}}\n",
         flow_parameter_list(limit.maximum() + 1)
     );
-    let recovered = parse_shadow_document(
+    let recovered = parse_document(
         &document(&rejected_group),
         crate::parser::ParseOptions::default(),
     )
@@ -569,8 +574,7 @@ fn loop_family_missing_bodies_retain_typed_heads_and_zero_width_body_recovery() 
         "    for in\n",
         "}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     for kind in [
@@ -606,8 +610,7 @@ fn loop_family_missing_bodies_retain_typed_heads_and_zero_width_body_recovery() 
 #[test]
 fn loop_family_unclosed_body_uses_current_grammar_close_recovery() {
     let source = "flow unclosed {\n    while ready {\n        return unit\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
 
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::WhileStatement),

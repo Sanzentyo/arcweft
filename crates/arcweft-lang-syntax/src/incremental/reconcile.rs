@@ -308,9 +308,21 @@ fn child_role_partitions_are_unambiguous(old: &GrammarShapeNode, new: &GrammarSh
         counts
     }
 
+    // A replacement bridge may add or remove siblings inside one existing
+    // semantic partition. The recursive matcher still selects the one best
+    // original by full shape, stable LCS, distance, and old ID; every extra
+    // copy is allocated fresh. A role appearing on only one side instead
+    // changes the parent's semantic partition and must not bridge (notably a
+    // cross-parent statement move between blocks). Requiring at most one
+    // changed multiplicity keeps the replacement owner unique as well.
     let old_counts = counts(old);
     let new_counts = counts(new);
-    old_counts == new_counts && old_counts.values().all(|count| *count <= 1)
+    old_counts.keys().eq(new_counts.keys())
+        && old_counts
+            .iter()
+            .filter(|&(role, count)| new_counts.get(role) != Some(count))
+            .count()
+            <= 1
 }
 
 fn allocate_grammar_subtree(

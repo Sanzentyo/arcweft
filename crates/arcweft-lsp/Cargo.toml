@@ -5,6 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
+autotests = false
 
 [dependencies]
 arcweft-adapter-context = { workspace = true }
@@ -50,6 +51,14 @@ path = "src/lib.rs"
 [[bin]]
 name = "arcweft-lsp"
 path = "src/main.rs"
+
+[[test]]
+name = "dependency_direction"
+path = "tests/dependency_direction.rs"
+
+[[test]]
+name = "public_api"
+path = "tests/public_api.rs"
 
 [lints]
 workspace = true

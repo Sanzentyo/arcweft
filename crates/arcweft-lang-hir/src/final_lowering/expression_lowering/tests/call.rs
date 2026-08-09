@@ -1,4 +1,6 @@
 use super::*;
+
+use crate::expr::HirCallArgumentOrdinal;
 use crate::expr::{
     HirAssociatedCallSyntax, HirAssociatedReceiver, HirCallArgument, HirCallArgumentListTerminator,
     HirCallCallee, HirCallIssue, HirCallTypeApplication, HirCallTypeApplicationSpelling,
@@ -21,6 +23,361 @@ fn positional_call(argument_count: usize) -> String {
     }
     source.push(')');
     source
+}
+
+fn call_source_site(
+    module: &HirModule,
+    parsed: &ParsedSource,
+    owner: ExprId,
+    role: HirExprSourceRole,
+) -> HirSourceSite {
+    match module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Expr { owner, role },
+        )
+        .expect("committed Call source query")
+        .presence()
+    {
+        HirSourcePresence::Present(site) => site.clone(),
+        HirSourcePresence::AbsentOptional => panic!("required Call cursor source is absent"),
+    }
+}
+
+fn call_site_start(site: &HirSourceSite) -> usize {
+    match site {
+        HirSourceSite::Span(span) => span.range().start(),
+        HirSourceSite::Insertion(insertion) => insertion.offset(),
+    }
+}
+
+fn call_site_end(site: &HirSourceSite) -> usize {
+    match site {
+        HirSourceSite::Span(span) => span.range().end(),
+        HirSourceSite::Insertion(insertion) => insertion.offset(),
+    }
+}
+
+#[test]
+fn t_cursor_r04_r05_r08_r09_r13_r14_use_the_committed_argument_manifest() {
+    let parsed = parsed_source(
+        "call-argument-active-slot-matrix",
+        &["f(a, b)".into(), "f(a,)".into(), "f(a)".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let source = parsed.document().identity();
+
+    let open = call_source_site(
+        &module,
+        &parsed,
+        owners[0],
+        HirExprSourceRole::CallArgumentListOpen,
+    );
+    for cursor in call_site_start(&open)..call_site_end(&open) {
+        assert_eq!(
+            module
+                .call_active_argument_slot(source, owners[0], cursor)
+                .expect("T-CURSOR-R04 query"),
+            None,
+            "T-CURSOR-R04 opening-token byte {cursor} must remain outside",
+        );
+    }
+    assert_eq!(
+        module
+            .call_active_argument_slot(source, owners[0], call_site_end(&open))
+            .expect("T-CURSOR-R05 query"),
+        Some(0),
+        "T-CURSOR-R05",
+    );
+
+    let comma = call_source_site(
+        &module,
+        &parsed,
+        owners[0],
+        HirExprSourceRole::CallArgumentSeparator {
+            following: HirCallArgumentOrdinal::try_new(1).expect("second argument ordinal"),
+        },
+    );
+    assert_eq!(
+        module
+            .call_active_argument_slot(source, owners[0], call_site_start(&comma))
+            .expect("T-CURSOR-R08 query"),
+        Some(1),
+        "T-CURSOR-R08",
+    );
+    assert_eq!(
+        module
+            .call_active_argument_slot(source, owners[0], call_site_end(&comma))
+            .expect("T-CURSOR-R09 query"),
+        Some(1),
+        "T-CURSOR-R09",
+    );
+
+    let trailing = call_source_site(
+        &module,
+        &parsed,
+        owners[1],
+        HirExprSourceRole::CallArgumentTrailingSeparator,
+    );
+    assert_eq!(
+        module
+            .call_active_argument_slot(source, owners[1], call_site_start(&trailing))
+            .expect("T-CURSOR-R13 query"),
+        Some(1),
+        "T-CURSOR-R13 one-past slot",
+    );
+
+    let close = call_source_site(
+        &module,
+        &parsed,
+        owners[2],
+        HirExprSourceRole::CallArgumentListClose,
+    );
+    assert_eq!(
+        module
+            .call_active_argument_slot(source, owners[2], call_site_start(&close))
+            .expect("T-CURSOR-R14 query"),
+        Some(0),
+        "T-CURSOR-R14",
+    );
+}
+
+#[test]
+fn t_cursor_c_empty_missing_and_out_use_structural_terminators() {
+    let parsed = parsed_source(
+        "call-argument-active-slot-recovery",
+        &["f()".into(), "f(a)".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let source = parsed.document().identity();
+
+    let empty_open = call_source_site(
+        &module,
+        &parsed,
+        owners[0],
+        HirExprSourceRole::CallArgumentListOpen,
+    );
+    let empty_close = call_source_site(
+        &module,
+        &parsed,
+        owners[0],
+        HirExprSourceRole::CallArgumentListClose,
+    );
+    assert_eq!(call_site_end(&empty_open), call_site_start(&empty_close));
+    assert_eq!(
+        module
+            .call_active_argument_slot(source, owners[0], call_site_end(&empty_open))
+            .expect("T-CURSOR-C-EMPTY query"),
+        Some(0),
+        "T-CURSOR-C-EMPTY",
+    );
+
+    let missing = parsed_source("call-argument-active-slot-missing-close", &["f(a".into()]);
+    let (missing_module, missing_owners, _) = lower_and_publish(&missing);
+    let recovery_end = call_source_site(
+        &missing_module,
+        &missing,
+        missing_owners[0],
+        HirExprSourceRole::CallArgumentListRecoveryEnd,
+    );
+    assert_eq!(
+        missing_module
+            .call_active_argument_slot(
+                missing.document().identity(),
+                missing_owners[0],
+                call_site_start(&recovery_end),
+            )
+            .expect("T-CURSOR-C-MISSING query"),
+        Some(0),
+        "T-CURSOR-C-MISSING",
+    );
+
+    let close = call_source_site(
+        &module,
+        &parsed,
+        owners[1],
+        HirExprSourceRole::CallArgumentListClose,
+    );
+    assert_eq!(
+        module
+            .call_active_argument_slot(source, owners[1], call_site_end(&close))
+            .expect("T-CURSOR-C-OUT query"),
+        None,
+        "T-CURSOR-C-OUT",
+    );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is the closed type-application cursor acceptance matrix and asserts cross-arena ordering in one fixture"
+)]
+fn t_cursor_type_application_rows_use_the_independent_committed_type_manifest() {
+    let parsed = parsed_source(
+        "call-type-active-slot-matrix",
+        &[
+            "value.collect<T>()".into(),
+            "foo::<T>()".into(),
+            "foo::<T, U>()".into(),
+            "foo::<T,>()".into(),
+            "foo::<>()".into(),
+        ],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    let source = parsed.document().identity();
+    let type_role = |role| HirExprSourceRole::CallTypeApplication(role);
+
+    let direct_open = call_source_site(
+        &module,
+        &parsed,
+        owners[0],
+        type_role(HirCallTypeApplicationSourceRole::OpenAngle),
+    );
+    for cursor in call_site_start(&direct_open)..call_site_end(&direct_open) {
+        assert_eq!(
+            module
+                .call_active_type_argument_slot(source, owners[0], cursor)
+                .expect("T-CURSOR-T-DIRECT-OPEN query"),
+            None,
+            "T-CURSOR-T-DIRECT-OPEN byte {cursor}",
+        );
+    }
+    assert_eq!(
+        module
+            .call_active_type_argument_slot(source, owners[0], call_site_end(&direct_open))
+            .expect("T-CURSOR-T-DIRECT-S0 query"),
+        Some(0),
+        "T-CURSOR-T-DIRECT-S0",
+    );
+
+    let turbofish = call_source_site(
+        &module,
+        &parsed,
+        owners[1],
+        type_role(HirCallTypeApplicationSourceRole::TurbofishSeparator),
+    );
+    for cursor in call_site_start(&turbofish)..call_site_end(&turbofish) {
+        assert_eq!(
+            module
+                .call_active_type_argument_slot(source, owners[1], cursor)
+                .expect("T-CURSOR-T-TURBO-PREFIX query"),
+            None,
+            "T-CURSOR-T-TURBO-PREFIX byte {cursor}",
+        );
+    }
+
+    let comma = call_source_site(
+        &module,
+        &parsed,
+        owners[2],
+        type_role(HirCallTypeApplicationSourceRole::Separator {
+            following: HirCallTypeArgumentOrdinal::try_new(1)
+                .expect("second type argument ordinal"),
+        }),
+    );
+    assert_eq!(
+        module
+            .call_active_type_argument_slot(source, owners[2], call_site_start(&comma))
+            .expect("T-CURSOR-T-COMMA query"),
+        Some(1),
+        "T-CURSOR-T-COMMA",
+    );
+
+    let trailing = call_source_site(
+        &module,
+        &parsed,
+        owners[3],
+        type_role(HirCallTypeApplicationSourceRole::TrailingSeparator),
+    );
+    assert_eq!(
+        module
+            .call_active_type_argument_slot(source, owners[3], call_site_start(&trailing))
+            .expect("T-CURSOR-T-TRAIL query"),
+        Some(1),
+        "T-CURSOR-T-TRAIL one-past slot",
+    );
+
+    let close = call_source_site(
+        &module,
+        &parsed,
+        owners[1],
+        type_role(HirCallTypeApplicationSourceRole::CloseAngle),
+    );
+    assert_eq!(
+        module
+            .call_active_type_argument_slot(source, owners[1], call_site_start(&close))
+            .expect("T-CURSOR-T-CLOSE query"),
+        Some(0),
+        "T-CURSOR-T-CLOSE",
+    );
+
+    let empty_open = call_source_site(
+        &module,
+        &parsed,
+        owners[4],
+        type_role(HirCallTypeApplicationSourceRole::OpenAngle),
+    );
+    let empty_close = call_source_site(
+        &module,
+        &parsed,
+        owners[4],
+        type_role(HirCallTypeApplicationSourceRole::CloseAngle),
+    );
+    assert_eq!(call_site_end(&empty_open), call_site_start(&empty_close));
+    assert_eq!(
+        module
+            .call_active_type_argument_slot(source, owners[4], call_site_end(&empty_open))
+            .expect("T-CURSOR-T-EMPTY query"),
+        Some(0),
+        "T-CURSOR-T-EMPTY",
+    );
+
+    let missing = parsed_source("call-type-active-slot-missing-close", &["foo::<T()".into()]);
+    let (missing_module, missing_owners, _) = lower_and_publish(&missing);
+    let recovery_end = call_source_site(
+        &missing_module,
+        &missing,
+        missing_owners[0],
+        type_role(HirCallTypeApplicationSourceRole::RecoveryEnd),
+    );
+    assert_eq!(
+        missing_module
+            .call_active_type_argument_slot(
+                missing.document().identity(),
+                missing_owners[0],
+                call_site_start(&recovery_end),
+            )
+            .expect("T-CURSOR-T-MISSING-CLOSE query"),
+        Some(0),
+        "T-CURSOR-T-MISSING-CLOSE",
+    );
+    assert_eq!(
+        module
+            .call_active_type_argument_slot(source, owners[1], call_site_end(&close))
+            .expect("T-CURSOR-T-OUT query"),
+        None,
+        "T-CURSOR-T-OUT",
+    );
+
+    let argument_open = call_source_site(
+        &module,
+        &parsed,
+        owners[1],
+        HirExprSourceRole::CallArgumentListOpen,
+    );
+    assert_eq!(
+        module
+            .call_active_argument_slot(source, owners[1], call_site_end(&argument_open))
+            .expect("ordinary argument slot query"),
+        Some(0),
+    );
+    assert_eq!(
+        module
+            .call_active_type_argument_slot(source, owners[1], call_site_end(&argument_open))
+            .expect("independent type-argument slot query"),
+        None,
+        "type-application cursor must remain independent from ordinary arguments",
+    );
 }
 
 #[test]
@@ -232,6 +589,37 @@ fn attached_e12_call_publishes_one_typed_argument_inventory_and_exact_sources() 
 }
 
 #[test]
+fn qualified_value_path_remains_the_ordinary_call_callee_authority() {
+    let parsed = parsed_source(
+        "call-qualified-value-path",
+        &["pkg::service::invoke(x)".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+
+    let HirExprKind::Call(call) = expression(&module, owners[0]).kind() else {
+        panic!("qualified ordinary Call");
+    };
+    let HirCallCallee::Value { value } = call.callee() else {
+        panic!("qualified value path must not become an associated type callee");
+    };
+    assert!(matches!(
+        expression(&module, *value).kind(),
+        HirExprKind::Path(HirPathValue::Resolved(path))
+            if matches!(
+                path.segments(),
+                [
+                    HirPathSegment::Identifier(package),
+                    HirPathSegment::Identifier(service),
+                    HirPathSegment::Identifier(invoke),
+                ] if package.as_str() == "pkg"
+                    && service.as_str() == "service"
+                    && invoke.as_str() == "invoke"
+            )
+    ));
+}
+
+#[test]
 fn attached_e12_associated_calls_publish_one_revision_bound_receiver_authority() {
     let parsed = parsed_source(
         "call-associated-matrix",
@@ -253,6 +641,7 @@ fn attached_e12_associated_calls_publish_one_revision_bound_receiver_authority()
                     value_receiver,
                     nominal_receiver,
                     member: HirRecoveredName::Valid(member),
+                    ..
                 },
                 false,
             ) => {
@@ -268,7 +657,8 @@ fn attached_e12_associated_calls_publish_one_revision_bound_receiver_authority()
                 HirCallCallee::Associated {
                     receiver,
                     member: HirRecoveredName::Valid(member),
-                    syntax: HirAssociatedCallSyntax::ExplicitDoubleColon,
+                    separator:
+                        HirAssociatedSeparator::Present(HirAssociatedCallSyntax::ExplicitDoubleColon),
                 },
                 true,
             ) => {
@@ -320,6 +710,107 @@ fn attached_e12_associated_calls_publish_one_revision_bound_receiver_authority()
             ));
         }
     }
+}
+
+#[test]
+fn attached_e12_admitted_associated_recovery_lowers_exact_typed_states_and_source_sites() {
+    let parsed = parsed_source(
+        "call-associated-recovery-matrix",
+        &[
+            "Bad<>::member(x)".into(),
+            "Vec.with_capacity(8)".into(),
+            "Vec<I32>. (8)".into(),
+            "Vec<I32>.9bad(8)".into(),
+        ],
+    );
+    let (module, owners, _attached) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+
+    let calls = owners
+        .iter()
+        .map(|owner| {
+            let expression = expression(&module, *owner);
+            let HirExprKind::Call(call) = expression.kind() else {
+                panic!("associated recovery E12 Call");
+            };
+            (expression, call)
+        })
+        .collect::<Vec<_>>();
+
+    let HirCallCallee::Associated {
+        receiver: HirAssociatedReceiver::InvalidPresent { poisoned },
+        ..
+    } = calls[0].1.callee()
+    else {
+        panic!("invalid receiver retains one poisoned TypeId");
+    };
+    assert!(
+        module
+            .arenas()
+            .types()
+            .resolve(module.slots(), *poisoned)
+            .expect("invalid associated receiver type")
+            .is_poisoned()
+    );
+    assert_eq!(
+        calls[0].0.state(),
+        &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(
+            HirCallIssue::InvalidAssociatedReceiver,
+        ))
+    );
+
+    assert!(matches!(
+        calls[1].1.callee(),
+        HirCallCallee::UnresolvedDot {
+            nominal_receiver: HirAssociatedReceiver::Resolved { .. },
+            separator: HirAssociatedSeparator::Present(HirAssociatedCallSyntax::DotFallback),
+            member: HirRecoveredName::Valid(member),
+            ..
+        } if member.as_str() == "with_capacity"
+    ));
+    assert_eq!(calls[1].0.state(), &HirPoisonState::Clean);
+
+    assert!(matches!(
+        calls[2].1.callee(),
+        HirCallCallee::Associated {
+            member: HirRecoveredName::Missing,
+            ..
+        }
+    ));
+    assert_eq!(
+        calls[2].0.state(),
+        &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(
+            HirCallIssue::MissingAssociatedMember,
+        ))
+    );
+
+    assert!(matches!(
+        calls[3].1.callee(),
+        HirCallCallee::Associated {
+            member: HirRecoveredName::InvalidPresent,
+            ..
+        }
+    ));
+    assert_eq!(
+        calls[3].0.state(),
+        &HirPoisonState::Poisoned(HirRecoveryIssue::InvalidCall(
+            HirCallIssue::InvalidAssociatedMember,
+        ))
+    );
+
+    assert!(matches!(
+        module
+            .source_site(
+                parsed.document().identity(),
+                HirSourceQuery::Expr {
+                    owner: owners[2],
+                    role: HirExprSourceRole::CallAssociatedMember,
+                },
+            )
+            .expect("associated member recovery source query")
+            .presence(),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+    ));
 }
 
 #[test]

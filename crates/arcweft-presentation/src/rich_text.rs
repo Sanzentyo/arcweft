@@ -1,27 +1,14 @@
 //! Renderer-independent rich-text tag and built-in effect vocabulary.
 
 mod authoring_schema;
+mod builtin_schema;
 
 pub use authoring_schema::{
     RichTextDirectStyle, RichTextDirectStyleProperty, RichTextLayoutProperty,
     RichTextLayoutSelector, RichTextObjectProperty, RichTextObjectSelector, RichTextStyleProperty,
     RichTextStyleSelector, RichTextTransformProperty, RichTextTransformSelector,
 };
-
-/// Canonical family of an inferred dot-selector rich-text tag.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RichTextTagFamily {
-    /// Presentation style such as italic or opacity.
-    Style,
-    /// Writing-mode or ruby layout.
-    Layout,
-    /// Post-layout visual transform.
-    Transform,
-    /// Registry-extensible visual effect.
-    Effect,
-    /// Zero-width line marker.
-    Marker,
-}
+pub use builtin_schema::BuiltinPropertyDisposition;
 
 /// Arcweft-owned rich-text effects with closed executable definitions.
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
@@ -78,10 +65,6 @@ pub enum BuiltinRichTextFxProperty {
     Target,
     /// Resource or registry identity.
     Id,
-    /// Registry identity alias used by the open host-event surface.
-    Effect,
-    /// Registry identity alias used by the open host-event surface.
-    Name,
     /// Amplitude.
     Amp,
     /// Amount.
@@ -90,30 +73,20 @@ pub enum BuiltinRichTextFxProperty {
     Period,
     /// Sampling speed.
     Speed,
-    /// Frequency alias.
-    Freq,
     /// Direction vector.
     Dir,
-    /// Symbolic axis.
-    Axis,
     /// Deterministic seed.
     Seed,
     /// Arc radius.
     Radius,
-    /// Start offset or delay alias.
+    /// Arc start angle.
     Start,
     /// Ordinal step.
     Step,
     /// Rotation angle.
     Angle,
-    /// Transform origin.
-    Origin,
     /// Motion function.
     Function,
-    /// Motion curve alias.
-    Curve,
-    /// Scale amplitude alias.
-    Scale,
     /// Explicit scale amplitude.
     ScaleAmp,
     /// Characters per second.
@@ -124,8 +97,6 @@ pub enum BuiltinRichTextFxProperty {
     Cursor,
     /// Cursor alpha.
     CursorAlpha,
-    /// Cursor opacity alias.
-    CursorOpacity,
     /// Shader color uniform.
     Color,
 }
@@ -139,9 +110,6 @@ pub struct BuiltinRichTextFxPropertySchema {
 const COMMON_FX_PROPERTIES: &[BuiltinRichTextFxProperty] = &[
     BuiltinRichTextFxProperty::Phase,
     BuiltinRichTextFxProperty::Target,
-    BuiltinRichTextFxProperty::Id,
-    BuiltinRichTextFxProperty::Effect,
-    BuiltinRichTextFxProperty::Name,
 ];
 
 const TRANSFORM_AND_POST_PHASES: &[BuiltinRichTextFxPhase] = &[
@@ -210,12 +178,6 @@ impl BuiltinRichTextFx {
         }
     }
 
-    /// Rich-text family used by syntax, tooling, and lowering.
-    #[must_use]
-    pub const fn family(self) -> RichTextTagFamily {
-        RichTextTagFamily::Effect
-    }
-
     /// Default phase when the author omits `phase`.
     #[must_use]
     pub const fn default_phase(self) -> BuiltinRichTextFxPhase {
@@ -254,68 +216,41 @@ impl BuiltinRichTextFx {
     #[must_use]
     pub fn property_schema(self) -> BuiltinRichTextFxPropertySchema {
         let specific = match self {
-            Self::Wave => &[
+            Self::Wave | Self::Shake | Self::Jitter => &[
                 BuiltinRichTextFxProperty::Amp,
-                BuiltinRichTextFxProperty::Amount,
-                BuiltinRichTextFxProperty::Period,
-                BuiltinRichTextFxProperty::Speed,
-                BuiltinRichTextFxProperty::Freq,
-                BuiltinRichTextFxProperty::Dir,
-                BuiltinRichTextFxProperty::Axis,
-                BuiltinRichTextFxProperty::Seed,
-            ][..],
-            Self::Shake | Self::Jitter => &[
-                BuiltinRichTextFxProperty::Amp,
-                BuiltinRichTextFxProperty::Amount,
                 BuiltinRichTextFxProperty::Period,
                 BuiltinRichTextFxProperty::Speed,
                 BuiltinRichTextFxProperty::Dir,
-                BuiltinRichTextFxProperty::Axis,
                 BuiltinRichTextFxProperty::Seed,
             ][..],
             Self::Arc => &[
                 BuiltinRichTextFxProperty::Radius,
-                BuiltinRichTextFxProperty::Amp,
                 BuiltinRichTextFxProperty::Amount,
                 BuiltinRichTextFxProperty::Start,
                 BuiltinRichTextFxProperty::Step,
-                BuiltinRichTextFxProperty::Seed,
             ][..],
             Self::Spin => &[
                 BuiltinRichTextFxProperty::Angle,
-                BuiltinRichTextFxProperty::Amp,
                 BuiltinRichTextFxProperty::Amount,
                 BuiltinRichTextFxProperty::Speed,
-                BuiltinRichTextFxProperty::Origin,
-                BuiltinRichTextFxProperty::Seed,
             ][..],
             Self::Pulse => &[
                 BuiltinRichTextFxProperty::Amp,
                 BuiltinRichTextFxProperty::Amount,
-                BuiltinRichTextFxProperty::Speed,
-                BuiltinRichTextFxProperty::Origin,
-                BuiltinRichTextFxProperty::Seed,
             ][..],
             Self::Motion => &[
                 BuiltinRichTextFxProperty::Function,
-                BuiltinRichTextFxProperty::Curve,
                 BuiltinRichTextFxProperty::Speed,
                 BuiltinRichTextFxProperty::Amp,
-                BuiltinRichTextFxProperty::Radius,
                 BuiltinRichTextFxProperty::Amount,
                 BuiltinRichTextFxProperty::Angle,
-                BuiltinRichTextFxProperty::Scale,
                 BuiltinRichTextFxProperty::ScaleAmp,
-                BuiltinRichTextFxProperty::Seed,
             ][..],
             Self::Typewriter => &[
                 BuiltinRichTextFxProperty::Cps,
                 BuiltinRichTextFxProperty::Delay,
-                BuiltinRichTextFxProperty::Start,
                 BuiltinRichTextFxProperty::Cursor,
                 BuiltinRichTextFxProperty::CursorAlpha,
-                BuiltinRichTextFxProperty::CursorOpacity,
-                BuiltinRichTextFxProperty::Seed,
             ][..],
             Self::Sparkle => &[
                 BuiltinRichTextFxProperty::Amp,
@@ -324,6 +259,7 @@ impl BuiltinRichTextFx {
                 BuiltinRichTextFxProperty::Seed,
             ][..],
             Self::Shader => &[
+                BuiltinRichTextFxProperty::Id,
                 BuiltinRichTextFxProperty::Amount,
                 BuiltinRichTextFxProperty::Dir,
                 BuiltinRichTextFxProperty::Color,
@@ -370,9 +306,8 @@ impl BuiltinRichTextFxPhase {
             "glyph_transform" => Some(Self::GlyphTransform),
             "glyph_color" => Some(Self::GlyphColor),
             "glyph_mask" => Some(Self::GlyphMask),
-            "offscreen_pass" | "run_offscreen_pass" => Some(Self::OffscreenPass),
+            "run_offscreen_pass" => Some(Self::OffscreenPass),
             "post_process" => Some(Self::PostProcess),
-            "host_event" => Some(Self::HostEvent),
             _ => None,
         }
     }
@@ -380,34 +315,26 @@ impl BuiltinRichTextFxPhase {
 
 impl BuiltinRichTextFxProperty {
     /// Complete deterministic property inventory.
-    pub const ALL: [Self; 28] = [
+    pub const ALL: [Self; 20] = [
         Self::Phase,
         Self::Target,
         Self::Id,
-        Self::Effect,
-        Self::Name,
         Self::Amp,
         Self::Amount,
         Self::Period,
         Self::Speed,
-        Self::Freq,
         Self::Dir,
-        Self::Axis,
         Self::Seed,
         Self::Radius,
         Self::Start,
         Self::Step,
         Self::Angle,
-        Self::Origin,
         Self::Function,
-        Self::Curve,
-        Self::Scale,
         Self::ScaleAmp,
         Self::Cps,
         Self::Delay,
         Self::Cursor,
         Self::CursorAlpha,
-        Self::CursorOpacity,
         Self::Color,
     ];
 
@@ -418,30 +345,22 @@ impl BuiltinRichTextFxProperty {
             Self::Phase => "phase",
             Self::Target => "target",
             Self::Id => "id",
-            Self::Effect => "effect",
-            Self::Name => "name",
             Self::Amp => "amp",
             Self::Amount => "amount",
             Self::Period => "period",
             Self::Speed => "speed",
-            Self::Freq => "freq",
             Self::Dir => "dir",
-            Self::Axis => "axis",
             Self::Seed => "seed",
             Self::Radius => "radius",
             Self::Start => "start",
             Self::Step => "step",
             Self::Angle => "angle",
-            Self::Origin => "origin",
             Self::Function => "fn",
-            Self::Curve => "curve",
-            Self::Scale => "scale",
             Self::ScaleAmp => "scale_amp",
             Self::Cps => "cps",
             Self::Delay => "delay",
             Self::Cursor => "cursor",
             Self::CursorAlpha => "cursor_alpha",
-            Self::CursorOpacity => "cursor_opacity",
             Self::Color => "color",
         }
     }
@@ -453,30 +372,22 @@ impl BuiltinRichTextFxProperty {
             "phase" => Some(Self::Phase),
             "target" => Some(Self::Target),
             "id" => Some(Self::Id),
-            "effect" => Some(Self::Effect),
-            "name" => Some(Self::Name),
             "amp" => Some(Self::Amp),
             "amount" => Some(Self::Amount),
             "period" => Some(Self::Period),
             "speed" => Some(Self::Speed),
-            "freq" => Some(Self::Freq),
             "dir" => Some(Self::Dir),
-            "axis" => Some(Self::Axis),
             "seed" => Some(Self::Seed),
             "radius" => Some(Self::Radius),
             "start" => Some(Self::Start),
             "step" => Some(Self::Step),
             "angle" => Some(Self::Angle),
-            "origin" => Some(Self::Origin),
             "fn" => Some(Self::Function),
-            "curve" => Some(Self::Curve),
-            "scale" => Some(Self::Scale),
             "scale_amp" => Some(Self::ScaleAmp),
             "cps" => Some(Self::Cps),
             "delay" => Some(Self::Delay),
             "cursor" => Some(Self::Cursor),
             "cursor_alpha" => Some(Self::CursorAlpha),
-            "cursor_opacity" => Some(Self::CursorOpacity),
             "color" => Some(Self::Color),
             _ => None,
         }
@@ -496,63 +407,11 @@ impl BuiltinRichTextFxPropertySchema {
     }
 }
 
-/// Resolves the canonical family of an inferred dot-selector tag.
-#[must_use]
-pub fn inferred_tag_family(selector: &str, attrs: &str) -> Option<RichTextTagFamily> {
-    if let Some(effect) = BuiltinRichTextFx::from_selector(selector) {
-        return Some(effect.family());
-    }
-    match selector {
-        "italic" | "oblique" | "opacity" | "alpha" | "layer" | "object_layer" | "meta"
-        | "metadata" | "data" | "z" | "z_index" => Some(RichTextTagFamily::Style),
-        "horizontal_tb"
-        | "vertical_rl"
-        | "vertical_lr"
-        | "dir"
-        | "ruby_over"
-        | "ruby_under"
-        | "ruby_inter_character" => Some(RichTextTagFamily::Layout),
-        "offset" | "pos" | "rotate" | "scale" | "skew" => Some(RichTextTagFamily::Transform),
-        "host" => Some(RichTextTagFamily::Effect),
-        "mark" => Some(RichTextTagFamily::Marker),
-        _ if !attrs.trim().is_empty() => Some(RichTextTagFamily::Effect),
-        _ => None,
-    }
-}
-
-/// Canonical style-stack family for an authored rich-text tag or alias.
-///
-/// Syntax validation and retained-text rendering both use this inventory so
-/// an accepted end tag cannot resolve to a different runtime family.
-#[must_use]
-pub fn canonical_tag_name(name: &str) -> &str {
-    if BuiltinRichTextFx::from_selector(name).is_some() {
-        return "effect";
-    }
-    match name {
-        "" | "/" => "/",
-        "i" | "italic" | "oblique" | "slant" | "opacity" | "alpha" | "layer" | "object_layer"
-        | "meta" | "metadata" | "data" | "z" | "z_index" | "style" => "style",
-        "vertical"
-        | "vertical_rl"
-        | "vertical_lr"
-        | "horizontal_tb"
-        | "dir"
-        | "ruby_over"
-        | "ruby_under"
-        | "ruby_inter_character"
-        | "layout" => "layout",
-        "offset" | "pos" | "rotate" | "scale" | "skew" | "transform" => "transform",
-        "host" | "effect" | "fx" => "effect",
-        other => other,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        BuiltinRichTextFx, BuiltinRichTextFxPhase, BuiltinRichTextFxProperty, RichTextTagFamily,
-        canonical_tag_name, inferred_tag_family,
+        BuiltinPropertyDisposition, BuiltinRichTextFx, BuiltinRichTextFxPhase,
+        BuiltinRichTextFxProperty,
     };
 
     #[test]
@@ -562,18 +421,7 @@ mod tests {
                 BuiltinRichTextFx::from_selector(effect.selector()),
                 Some(effect)
             );
-            assert_eq!(effect.family(), RichTextTagFamily::Effect);
             assert!(effect.supported_phases().contains(&effect.default_phase()));
-            assert_eq!(canonical_tag_name(effect.selector()), "effect");
-            assert_eq!(
-                inferred_tag_family(effect.selector(), ""),
-                Some(RichTextTagFamily::Effect)
-            );
-            assert_eq!(
-                inferred_tag_family(effect.selector(), "amp=1"),
-                Some(RichTextTagFamily::Effect)
-            );
-
             let properties = effect.property_schema().properties().collect::<Vec<_>>();
             for (index, property) in properties.iter().copied().enumerate() {
                 assert_eq!(
@@ -587,7 +435,10 @@ mod tests {
 
     #[test]
     fn phase_and_property_inventories_round_trip() {
-        for phase in BuiltinRichTextFxPhase::ALL {
+        for phase in BuiltinRichTextFxPhase::ALL
+            .into_iter()
+            .filter(|phase| *phase != BuiltinRichTextFxPhase::HostEvent)
+        {
             assert_eq!(
                 BuiltinRichTextFxPhase::from_source_name(phase.source_name()),
                 Some(phase)
@@ -602,30 +453,85 @@ mod tests {
     }
 
     #[test]
-    fn unknown_and_host_selectors_keep_the_open_registry_boundary() {
-        assert_eq!(inferred_tag_family("unknown", ""), None);
-        assert_eq!(
-            inferred_tag_family("unknown", "amp=1"),
-            Some(RichTextTagFamily::Effect)
-        );
-        assert_eq!(
-            inferred_tag_family("host", ""),
-            Some(RichTextTagFamily::Effect)
-        );
-        assert_eq!(BuiltinRichTextFx::from_selector("host"), None);
+    fn phase_property_inventory_is_owned_by_the_original_effect_enums() {
+        for effect in BuiltinRichTextFx::ALL {
+            for phase in BuiltinRichTextFxPhase::ALL {
+                let properties = effect.properties_for_phase(phase);
+                for property in BuiltinRichTextFxProperty::ALL {
+                    match effect.property_spec(phase, property) {
+                        BuiltinPropertyDisposition::Accepted(spec) => {
+                            assert!(properties.contains(&property));
+                            assert_eq!(spec.id, property);
+                            assert_eq!(spec.source_name, property.source_name());
+                        }
+                        BuiltinPropertyDisposition::UnsupportedInPhase => {
+                            assert!(!properties.contains(&property));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     #[test]
-    fn aliases_resolve_to_their_style_stack_family() {
-        for (authored, canonical) in [
-            ("slant", "style"),
-            ("dir", "layout"),
-            ("skew", "transform"),
-            ("fx", "effect"),
-            ("sparkle", "effect"),
-            ("custom", "custom"),
-        ] {
-            assert_eq!(canonical_tag_name(authored), canonical);
+    fn conditional_defaults_are_owned_by_the_original_effect_enum() {
+        use arcweft_rich_text_schema::RichTextDefaultValue;
+
+        for effect in BuiltinRichTextFx::ALL {
+            for phase in BuiltinRichTextFxPhase::ALL {
+                for property in BuiltinRichTextFxProperty::ALL {
+                    let default = effect.conditional_default(phase, property);
+                    if default.is_some() {
+                        let BuiltinPropertyDisposition::Accepted(spec) =
+                            effect.property_spec(phase, property)
+                        else {
+                            panic!("a conditional default must have an accepted property schema");
+                        };
+                        assert!(matches!(
+                            spec.presence,
+                            arcweft_rich_text_schema::PropertyPresence::Conditional { .. }
+                        ));
+                    }
+                }
+            }
         }
+        assert_eq!(
+            BuiltinRichTextFx::Typewriter.conditional_default(
+                BuiltinRichTextFxPhase::GlyphMask,
+                BuiltinRichTextFxProperty::CursorAlpha,
+            ),
+            Some(RichTextDefaultValue::RatioMilli(350))
+        );
+    }
+
+    #[test]
+    fn provisional_property_and_phase_aliases_are_not_source_members() {
+        for removed in [
+            "freq",
+            "axis",
+            "effect",
+            "name",
+            "curve",
+            "scale",
+            "cursor_opacity",
+            "origin",
+        ] {
+            assert_eq!(BuiltinRichTextFxProperty::from_source_name(removed), None);
+        }
+        assert_eq!(
+            BuiltinRichTextFxPhase::from_source_name("run_offscreen_pass"),
+            Some(BuiltinRichTextFxPhase::OffscreenPass)
+        );
+        assert_eq!(
+            BuiltinRichTextFxPhase::from_source_name("offscreen_pass"),
+            None
+        );
+        assert_eq!(BuiltinRichTextFxPhase::from_source_name("host_event"), None);
+    }
+
+    #[test]
+    fn removed_open_registry_selectors_have_no_builtin_identity() {
+        assert_eq!(BuiltinRichTextFx::from_selector("host"), None);
+        assert_eq!(BuiltinRichTextFx::from_selector("unknown"), None);
     }
 }

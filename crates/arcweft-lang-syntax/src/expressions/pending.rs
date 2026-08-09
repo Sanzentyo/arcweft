@@ -12,7 +12,7 @@ use super::control;
 use super::{
     ExpressionComponentRole, ExpressionLiteralPart, ExpressionProjection,
     SyntaxClosureParameterPart, SyntaxClosureSyntax, SyntaxClosureTerminator,
-    SyntaxDialogueApplicationForm, SyntaxLifetimeRegistryPath, SyntaxThreadMode,
+    SyntaxLifetimeRegistryPath, SyntaxThreadMode,
 };
 use crate::grammar::kinds::SyntaxKind;
 use crate::id_ref::SyntaxIdRefPart;
@@ -133,19 +133,13 @@ impl PendingExpressionProjection {
     }
 
     pub(crate) const fn accepts_kind(&self, kind: SyntaxKind) -> bool {
-        if let ExpressionProjection::DialogueContentApplication(application) = &self.projection {
-            return match application.form() {
-                SyntaxDialogueApplicationForm::Bracket { .. }
-                | SyntaxDialogueApplicationForm::Colon => {
-                    matches!(kind, SyntaxKind::DialogueContentApplicationExpression)
-                }
-            };
-        }
-        if matches!(self.projection, ExpressionProjection::PostfixBracket(_)) {
-            return matches!(kind, SyntaxKind::PostfixBracketExpression);
-        }
+        Self::accepts_leaf_kind(&self.projection, kind)
+            || Self::accepts_structured_kind(&self.projection, kind)
+    }
+
+    const fn accepts_leaf_kind(projection: &ExpressionProjection, kind: SyntaxKind) -> bool {
         matches!(
-            (&self.projection, kind),
+            (projection, kind),
             (
                 ExpressionProjection::Unit | ExpressionProjection::Tuple(_),
                 SyntaxKind::TupleExpression
@@ -206,43 +200,46 @@ impl PendingExpressionProjection {
                     ExpressionProjection::Unary { .. },
                     SyntaxKind::UnaryExpression
                 )
-                | (
-                    ExpressionProjection::Range { .. },
-                    SyntaxKind::RangeExpression
-                )
-                | (
-                    ExpressionProjection::Record(_),
-                    SyntaxKind::RecordExpression
-                )
-                | (
-                    ExpressionProjection::RecordLiteral(_),
-                    SyntaxKind::RecordLiteralExpression
-                )
-                | (
-                    ExpressionProjection::Binary { .. },
-                    SyntaxKind::BinaryExpression
-                )
-                | (
-                    ExpressionProjection::Closure(_),
-                    SyntaxKind::ClosureExpression
-                )
-                | (
-                    ExpressionProjection::Block,
-                    SyntaxKind::BlockExpression | SyntaxKind::NamedBlockExpression
-                )
-                | (
-                    ExpressionProjection::ComputationBlock(_),
-                    SyntaxKind::ComputationBlockExpression
-                )
-                | (
-                    ExpressionProjection::NamedBlock(_),
-                    SyntaxKind::NamedBlockExpression
-                )
-                | (
-                    ExpressionProjection::Thread(_),
-                    SyntaxKind::ThreadExpression
-                )
-                | (ExpressionProjection::Choice, SyntaxKind::ChoiceExpression)
+        )
+    }
+
+    const fn accepts_structured_kind(projection: &ExpressionProjection, kind: SyntaxKind) -> bool {
+        matches!(
+            (projection, kind),
+            (
+                ExpressionProjection::DialogueContentApplication(_),
+                SyntaxKind::DialogueContentApplicationExpression
+            ) | (
+                ExpressionProjection::PostfixBracket(_) | ExpressionProjection::Index(_),
+                SyntaxKind::PostfixBracketExpression
+            ) | (
+                ExpressionProjection::Range { .. },
+                SyntaxKind::RangeExpression
+            ) | (
+                ExpressionProjection::Record(_),
+                SyntaxKind::RecordExpression
+            ) | (
+                ExpressionProjection::RecordLiteral(_),
+                SyntaxKind::RecordLiteralExpression
+            ) | (
+                ExpressionProjection::Binary { .. },
+                SyntaxKind::BinaryExpression
+            ) | (
+                ExpressionProjection::Closure(_),
+                SyntaxKind::ClosureExpression
+            ) | (
+                ExpressionProjection::Block,
+                SyntaxKind::BlockExpression | SyntaxKind::NamedBlockExpression
+            ) | (
+                ExpressionProjection::ComputationBlock(_),
+                SyntaxKind::ComputationBlockExpression
+            ) | (
+                ExpressionProjection::NamedBlock(_),
+                SyntaxKind::NamedBlockExpression
+            ) | (
+                ExpressionProjection::Thread(_),
+                SyntaxKind::ThreadExpression
+            ) | (ExpressionProjection::Choice, SyntaxKind::ChoiceExpression)
                 | (ExpressionProjection::If { .. }, SyntaxKind::IfExpression)
                 | (
                     ExpressionProjection::IfLet { .. },
@@ -272,91 +269,237 @@ impl PendingExpressionProjection {
         {
             return false;
         }
+        if let Some(valid) = [
+            basic_leaf_components_validate(&self.projection, owner, &roles, &self.components),
+            identity_components_validate(&self.projection, owner, &roles, &self.components),
+            sequence_components_validate(&self.projection, &roles, &self.components),
+            closure_components_validate(&self.projection, &roles, &self.components),
+            branch_components_validate(&self.projection, &roles, &self.components),
+        ]
+        .into_iter()
+        .flatten()
+        .next()
+        {
+            return valid;
+        }
 
-        match &self.projection {
-            ExpressionProjection::Unit
-            | ExpressionProjection::Path
-            | ExpressionProjection::Block
-            | ExpressionProjection::ComputationBlock(_)
-            | ExpressionProjection::Choice => self.components.is_empty(),
-            ExpressionProjection::NamedBlock(name) => {
-                exact_component_roles(&roles, &self.components, &[ExpressionComponentRole::Name])
-                    && component_range(&self.components, ExpressionComponentRole::Name).is_some_and(
-                        |range| match name {
-                            Ok(name) => {
-                                range.end().saturating_sub(range.start()) == name.as_str().len()
-                            }
-                            Err(SyntaxNameIssue::Missing) => false,
-                            Err(
-                                SyntaxNameIssue::InvalidStart { spelling }
-                                | SyntaxNameIssue::InvalidContinuation { spelling },
-                            ) => range.end().saturating_sub(range.start()) == spelling.len(),
-                        },
-                    )
+        remaining_components_validate(&self.projection, owner, &roles, &self.components)
+    }
+}
+
+fn remaining_components_validate(
+    projection: &ExpressionProjection,
+    owner: SourceRange,
+    roles: &HashSet<ExpressionComponentRole>,
+    components: &[PendingExpressionComponent],
+) -> bool {
+    match projection {
+        ExpressionProjection::Call(call) => {
+            call::components_validate(call, owner, roles, components)
+        }
+        ExpressionProjection::Select(_) => exact_component_roles(
+            roles,
+            components,
+            &[
+                ExpressionComponentRole::Target,
+                ExpressionComponentRole::SelectedMember,
+            ],
+        ),
+        ExpressionProjection::Index(_) => exact_component_roles(
+            roles,
+            components,
+            &[
+                ExpressionComponentRole::Target,
+                ExpressionComponentRole::Index,
+            ],
+        ),
+        ExpressionProjection::DialogueContentApplication(application) => {
+            dialogue::components_validate(application, roles, components)
+        }
+        ExpressionProjection::PostfixBracket(_) => exact_component_roles(
+            roles,
+            components,
+            &[
+                ExpressionComponentRole::Target,
+                ExpressionComponentRole::OpenBracket,
+                ExpressionComponentRole::CloseBracket,
+                ExpressionComponentRole::Content,
+            ],
+        ),
+        ExpressionProjection::Pipe(_) | ExpressionProjection::Binary { .. } => {
+            exact_component_roles(
+                roles,
+                components,
+                &[
+                    ExpressionComponentRole::LeftOperand,
+                    ExpressionComponentRole::Operator,
+                    ExpressionComponentRole::RightOperand,
+                ],
+            )
+        }
+        ExpressionProjection::Try { .. }
+        | ExpressionProjection::Await { .. }
+        | ExpressionProjection::Borrow { .. }
+        | ExpressionProjection::Dereference { .. }
+        | ExpressionProjection::Unary { .. } => exact_component_roles(
+            roles,
+            components,
+            &[
+                ExpressionComponentRole::Operand,
+                ExpressionComponentRole::Operator,
+            ],
+        ),
+        ExpressionProjection::Range {
+            start,
+            end,
+            inclusive,
+        } => {
+            components.iter().all(|component| {
+                matches!(
+                    component.role(),
+                    ExpressionComponentRole::RangeStart
+                        | ExpressionComponentRole::RangeEnd
+                        | ExpressionComponentRole::RangeInclusiveMarker
+                )
+            }) && has_role(roles, ExpressionComponentRole::RangeStart) == start.is_some()
+                && has_role(roles, ExpressionComponentRole::RangeEnd) == end.is_some()
+                && has_role(roles, ExpressionComponentRole::RangeInclusiveMarker) == *inclusive
+                && components.len()
+                    == usize::from(start.is_some())
+                        + usize::from(end.is_some())
+                        + usize::from(*inclusive)
+        }
+        ExpressionProjection::Record(fields) => {
+            record::components_validate(fields, true, roles, components)
+        }
+        ExpressionProjection::RecordLiteral(fields) => {
+            record::components_validate(fields, false, roles, components)
+        }
+        _ => unreachable!("specialized component validation returns before generic dispatch"),
+    }
+}
+
+fn basic_leaf_components_validate(
+    projection: &ExpressionProjection,
+    owner: SourceRange,
+    roles: &HashSet<ExpressionComponentRole>,
+    components: &[PendingExpressionComponent],
+) -> Option<bool> {
+    match projection {
+        ExpressionProjection::Unit
+        | ExpressionProjection::Path
+        | ExpressionProjection::Block
+        | ExpressionProjection::ComputationBlock(_)
+        | ExpressionProjection::Choice => Some(components.is_empty()),
+        ExpressionProjection::NamedBlock(name) => Some(
+            exact_component_roles(roles, components, &[ExpressionComponentRole::Name])
+                && component_range(components, ExpressionComponentRole::Name).is_some_and(
+                    |range| match name {
+                        Ok(name) => {
+                            range.end().saturating_sub(range.start()) == name.as_str().len()
+                        }
+                        Err(SyntaxNameIssue::Missing) => false,
+                        Err(
+                            SyntaxNameIssue::InvalidStart { spelling }
+                            | SyntaxNameIssue::InvalidContinuation { spelling },
+                        ) => range.end().saturating_sub(range.start()) == spelling.len(),
+                    },
+                ),
+        ),
+        ExpressionProjection::Thread(thread) => {
+            let mut expected = Vec::with_capacity(2);
+            if thread.mode() == SyntaxThreadMode::Detached {
+                expected.push(ExpressionComponentRole::ThreadMode);
             }
-            ExpressionProjection::Thread(thread) => {
-                let mut expected = Vec::with_capacity(2);
-                if thread.mode() == SyntaxThreadMode::Detached {
-                    expected.push(ExpressionComponentRole::ThreadMode);
-                }
-                if thread.name().is_some() {
-                    expected.push(ExpressionComponentRole::Name);
-                }
-                exact_component_roles(&roles, &self.components, &expected)
+            if thread.name().is_some() {
+                expected.push(ExpressionComponentRole::Name);
             }
-            ExpressionProjection::Literal(literal) => {
-                let shape = literal.shape();
-                self.components.iter().all(|component| {
+            Some(exact_component_roles(roles, components, &expected))
+        }
+        ExpressionProjection::Literal(literal) => {
+            let shape = literal.shape();
+            Some(
+                components.iter().all(|component| {
                     matches!(component.role(), ExpressionComponentRole::Literal(_))
                 }) && has_role(
-                    &roles,
+                    roles,
                     ExpressionComponentRole::Literal(ExpressionLiteralPart::Body),
                 ) && has_role(
-                    &roles,
+                    roles,
                     ExpressionComponentRole::Literal(ExpressionLiteralPart::Prefix),
                 ) == shape.has_prefix()
                     && has_role(
-                        &roles,
+                        roles,
                         ExpressionComponentRole::Literal(ExpressionLiteralPart::Suffix),
                     ) == shape.has_suffix()
                     && has_role(
-                        &roles,
+                        roles,
                         ExpressionComponentRole::Literal(ExpressionLiteralPart::Unit),
                     ) == shape.has_unit()
-                    && self.components.len()
+                    && components.len()
                         == 1 + usize::from(shape.has_prefix())
                             + usize::from(shape.has_suffix())
-                            + usize::from(shape.has_unit())
-            }
-            ExpressionProjection::EntityReference(entity) => {
-                let shape = entity.shape();
-                let expected = 1
-                    + usize::from(shape.has_absolute_marker())
-                    + (usize::from(shape.has_family()) * 2)
-                    + shape.parent_depth()
-                    + usize::try_from(shape.segment_count()).unwrap_or(usize::MAX);
-                self.components.iter().all(|component| {
+                            + usize::from(shape.has_unit()),
+            )
+        }
+        ExpressionProjection::ShortVariant(_) => Some(
+            components.len() == 2
+                && has_role(roles, ExpressionComponentRole::ShortVariantMarker)
+                && has_role(roles, ExpressionComponentRole::ShortVariantName)
+                && component_range(components, ExpressionComponentRole::ShortVariantMarker)
+                    .is_some_and(|range| {
+                        range.start() == owner.start() && range.start() < range.end()
+                    })
+                && component_range(components, ExpressionComponentRole::ShortVariantName)
+                    .is_some_and(|range| range.end() == owner.end()),
+        ),
+        ExpressionProjection::Placeholder(_) => Some(
+            components.len() == 1
+                && has_role(roles, ExpressionComponentRole::PlaceholderMarker)
+                && component_range(components, ExpressionComponentRole::PlaceholderMarker)
+                    == Some(owner),
+        ),
+        _ => None,
+    }
+}
+
+fn identity_components_validate(
+    projection: &ExpressionProjection,
+    owner: SourceRange,
+    roles: &HashSet<ExpressionComponentRole>,
+    components: &[PendingExpressionComponent],
+) -> Option<bool> {
+    match projection {
+        ExpressionProjection::EntityReference(entity) => {
+            let shape = entity.shape();
+            let expected = 1
+                + usize::from(shape.has_absolute_marker())
+                + (usize::from(shape.has_family()) * 2)
+                + shape.parent_depth()
+                + usize::try_from(shape.segment_count()).unwrap_or(usize::MAX);
+            Some(
+                components.iter().all(|component| {
                     matches!(
                         component.role(),
                         ExpressionComponentRole::EntityReference(_)
                     )
                 }) && has_role(
-                    &roles,
+                    roles,
                     ExpressionComponentRole::EntityReference(SyntaxIdRefPart::Whole),
                 ) && component_range(
-                    &self.components,
+                    components,
                     ExpressionComponentRole::EntityReference(SyntaxIdRefPart::Whole),
                 ) == Some(owner)
                     && has_role(
-                        &roles,
+                        roles,
                         ExpressionComponentRole::EntityReference(SyntaxIdRefPart::AbsoluteMarker),
                     ) == shape.has_absolute_marker()
                     && has_role(
-                        &roles,
+                        roles,
                         ExpressionComponentRole::EntityReference(SyntaxIdRefPart::Family),
                     ) == shape.has_family()
                     && has_role(
-                        &roles,
+                        roles,
                         ExpressionComponentRole::EntityReference(SyntaxIdRefPart::FamilySeparator),
                     ) == shape.has_family()
                     && contiguous_roles(
@@ -366,7 +509,7 @@ impl PendingExpressionProjection {
                                 SyntaxIdRefPart::ParentMarker { ordinal },
                             )
                         },
-                        &roles,
+                        roles,
                     )
                     && contiguous_roles(
                         usize::try_from(shape.segment_count()).unwrap_or(usize::MAX),
@@ -375,302 +518,205 @@ impl PendingExpressionProjection {
                                 SyntaxIdRefPart::SuffixSegment { ordinal },
                             )
                         },
-                        &roles,
+                        roles,
                     )
-                    && self.components.len() == expected
-            }
-            ExpressionProjection::LifetimePath(path) => {
-                self.components.iter().all(|component| {
+                    && components.len() == expected,
+            )
+        }
+        ExpressionProjection::LifetimePath(path) => Some(
+            components.iter().all(|component| {
+                matches!(
+                    component.role(),
+                    ExpressionComponentRole::LifetimeScope
+                        | ExpressionComponentRole::LifetimeKeySegment { .. }
+                        | ExpressionComponentRole::LifetimeOptionalMarker
+                )
+            }) && has_role(roles, ExpressionComponentRole::LifetimeScope)
+                && component_range(components, ExpressionComponentRole::LifetimeScope)
+                    .is_some_and(|range| range.start() == owner.start())
+                && contiguous_roles(
+                    path.segments().len(),
+                    |ordinal| ExpressionComponentRole::LifetimeKeySegment { ordinal },
+                    roles,
+                )
+                && has_role(roles, ExpressionComponentRole::LifetimeOptionalMarker)
+                    == path.is_optional()
+                && components.len() == 1 + path.segments().len() + usize::from(path.is_optional())
+                && lifetime_tail_range(components, path) == Some(owner.end()),
+        ),
+        _ => None,
+    }
+}
+
+fn sequence_components_validate(
+    projection: &ExpressionProjection,
+    roles: &HashSet<ExpressionComponentRole>,
+    components: &[PendingExpressionComponent],
+) -> Option<bool> {
+    match projection {
+        ExpressionProjection::Tuple(slots) | ExpressionProjection::BracketSequence(slots) => Some(
+            components.iter().all(|component| {
+                matches!(component.role(), ExpressionComponentRole::Element { .. })
+            }) && contiguous_roles(
+                slots.len(),
+                |ordinal| ExpressionComponentRole::Element { ordinal },
+                roles,
+            ) && components.len() == slots.len()
+                && (!matches!(projection, ExpressionProjection::Tuple(_)) || !slots.is_empty()),
+        ),
+        ExpressionProjection::NumericBracketSequence(sequence) => Some(
+            components.iter().all(|component| {
+                matches!(
+                    component.role(),
+                    ExpressionComponentRole::NumericElement { .. }
+                        | ExpressionComponentRole::NumericCommonSuffix
+                )
+            }) && contiguous_roles(
+                sequence.source_element_count(),
+                |ordinal| ExpressionComponentRole::NumericElement { ordinal },
+                roles,
+            ) && has_role(roles, ExpressionComponentRole::NumericCommonSuffix)
+                == sequence.common_suffix().is_some()
+                && components.len()
+                    == sequence.source_element_count()
+                        + usize::from(sequence.common_suffix().is_some()),
+        ),
+        ExpressionProjection::ArrayRepeat(_) => Some(
+            components.len() == 2
+                && has_role(roles, ExpressionComponentRole::RepeatValue)
+                && has_role(roles, ExpressionComponentRole::RepeatLength)
+                && components.iter().all(|component| {
                     matches!(
                         component.role(),
-                        ExpressionComponentRole::LifetimeScope
-                            | ExpressionComponentRole::LifetimeKeySegment { .. }
-                            | ExpressionComponentRole::LifetimeOptionalMarker
+                        ExpressionComponentRole::RepeatValue
+                            | ExpressionComponentRole::RepeatLength
                     )
-                }) && has_role(&roles, ExpressionComponentRole::LifetimeScope)
-                    && component_range(&self.components, ExpressionComponentRole::LifetimeScope)
-                        .is_some_and(|range| range.start() == owner.start())
-                    && contiguous_roles(
-                        path.segments().len(),
-                        |ordinal| ExpressionComponentRole::LifetimeKeySegment { ordinal },
-                        &roles,
-                    )
-                    && has_role(&roles, ExpressionComponentRole::LifetimeOptionalMarker)
-                        == path.is_optional()
-                    && self.components.len()
-                        == 1 + path.segments().len() + usize::from(path.is_optional())
-                    && lifetime_tail_range(&self.components, path) == Some(owner.end())
+                }),
+        ),
+        _ => None,
+    }
+}
+
+fn closure_components_validate(
+    projection: &ExpressionProjection,
+    roles: &HashSet<ExpressionComponentRole>,
+    components: &[PendingExpressionComponent],
+) -> Option<bool> {
+    let ExpressionProjection::Closure(closure) = projection else {
+        return None;
+    };
+    let mut expected = vec![
+        ExpressionComponentRole::Body,
+        ExpressionComponentRole::ClosureOpenDelimiter,
+        match closure.syntax().terminator() {
+            SyntaxClosureTerminator::Closed => ExpressionComponentRole::ClosureCloseDelimiter,
+            SyntaxClosureTerminator::RecoveredMissing => {
+                ExpressionComponentRole::ClosureRecoveryEnd
             }
-            ExpressionProjection::ShortVariant(_) => {
-                self.components.len() == 2
-                    && has_role(&roles, ExpressionComponentRole::ShortVariantMarker)
-                    && has_role(&roles, ExpressionComponentRole::ShortVariantName)
-                    && component_range(
-                        &self.components,
-                        ExpressionComponentRole::ShortVariantMarker,
-                    )
-                    .is_some_and(|range| {
-                        range.start() == owner.start() && range.start() < range.end()
-                    })
-                    && component_range(&self.components, ExpressionComponentRole::ShortVariantName)
-                        .is_some_and(|range| range.end() == owner.end())
-            }
-            ExpressionProjection::Placeholder(_) => {
-                self.components.len() == 1
-                    && has_role(&roles, ExpressionComponentRole::PlaceholderMarker)
-                    && component_range(&self.components, ExpressionComponentRole::PlaceholderMarker)
-                        == Some(owner)
-            }
-            ExpressionProjection::Tuple(slots) => {
-                self.components.iter().all(|component| {
-                    matches!(component.role(), ExpressionComponentRole::Element { .. })
-                }) && contiguous_roles(
-                    slots.len(),
-                    |ordinal| ExpressionComponentRole::Element { ordinal },
-                    &roles,
-                ) && self.components.len() == slots.len()
-                    && !slots.is_empty()
-            }
-            ExpressionProjection::BracketSequence(slots) => {
-                self.components.iter().all(|component| {
-                    matches!(component.role(), ExpressionComponentRole::Element { .. })
-                }) && contiguous_roles(
-                    slots.len(),
-                    |ordinal| ExpressionComponentRole::Element { ordinal },
-                    &roles,
-                ) && self.components.len() == slots.len()
-            }
-            ExpressionProjection::NumericBracketSequence(sequence) => {
-                self.components.iter().all(|component| {
-                    matches!(
-                        component.role(),
-                        ExpressionComponentRole::NumericElement { .. }
-                            | ExpressionComponentRole::NumericCommonSuffix
-                    )
-                }) && contiguous_roles(
-                    sequence.source_element_count(),
-                    |ordinal| ExpressionComponentRole::NumericElement { ordinal },
-                    &roles,
-                ) && has_role(&roles, ExpressionComponentRole::NumericCommonSuffix)
-                    == sequence.common_suffix().is_some()
-                    && self.components.len()
-                        == sequence.source_element_count()
-                            + usize::from(sequence.common_suffix().is_some())
-            }
-            ExpressionProjection::ArrayRepeat(_) => {
-                self.components.len() == 2
-                    && has_role(&roles, ExpressionComponentRole::RepeatValue)
-                    && has_role(&roles, ExpressionComponentRole::RepeatLength)
-                    && self.components.iter().all(|component| {
-                        matches!(
-                            component.role(),
-                            ExpressionComponentRole::RepeatValue
-                                | ExpressionComponentRole::RepeatLength
-                        )
-                    })
-            }
-            ExpressionProjection::Call(call) => {
-                call::components_validate(call, owner, &roles, &self.components)
-            }
-            ExpressionProjection::Select(_) => exact_component_roles(
-                &roles,
-                &self.components,
-                &[
-                    ExpressionComponentRole::Target,
-                    ExpressionComponentRole::SelectedMember,
-                ],
-            ),
-            ExpressionProjection::Index(_) => exact_component_roles(
-                &roles,
-                &self.components,
-                &[
-                    ExpressionComponentRole::Target,
-                    ExpressionComponentRole::Index,
-                ],
-            ),
-            ExpressionProjection::DialogueContentApplication(application) => {
-                dialogue::components_validate(application, &roles, &self.components)
-            }
-            ExpressionProjection::PostfixBracket(_) => exact_component_roles(
-                &roles,
-                &self.components,
-                &[
-                    ExpressionComponentRole::Target,
-                    ExpressionComponentRole::OpenBracket,
-                    ExpressionComponentRole::CloseBracket,
-                    ExpressionComponentRole::Content,
-                ],
-            ),
-            ExpressionProjection::Pipe(_) => exact_component_roles(
-                &roles,
-                &self.components,
-                &[
-                    ExpressionComponentRole::LeftOperand,
-                    ExpressionComponentRole::Operator,
-                    ExpressionComponentRole::RightOperand,
-                ],
-            ),
-            ExpressionProjection::Try { .. }
-            | ExpressionProjection::Await { .. }
-            | ExpressionProjection::Borrow { .. }
-            | ExpressionProjection::Dereference { .. }
-            | ExpressionProjection::Unary { .. } => exact_component_roles(
-                &roles,
-                &self.components,
-                &[
-                    ExpressionComponentRole::Operand,
-                    ExpressionComponentRole::Operator,
-                ],
-            ),
-            ExpressionProjection::Range {
-                start,
-                end,
-                inclusive,
-            } => {
-                self.components.iter().all(|component| {
-                    matches!(
-                        component.role(),
-                        ExpressionComponentRole::RangeStart
-                            | ExpressionComponentRole::RangeEnd
-                            | ExpressionComponentRole::RangeInclusiveMarker
-                    )
-                }) && has_role(&roles, ExpressionComponentRole::RangeStart) == start.is_some()
-                    && has_role(&roles, ExpressionComponentRole::RangeEnd) == end.is_some()
-                    && has_role(&roles, ExpressionComponentRole::RangeInclusiveMarker) == *inclusive
-                    && self.components.len()
-                        == usize::from(start.is_some())
-                            + usize::from(end.is_some())
-                            + usize::from(*inclusive)
-            }
-            ExpressionProjection::Record(fields) => {
-                record::components_validate(fields, true, &roles, &self.components)
-            }
-            ExpressionProjection::RecordLiteral(fields) => {
-                record::components_validate(fields, false, &roles, &self.components)
-            }
-            ExpressionProjection::Binary { .. } => exact_component_roles(
-                &roles,
-                &self.components,
-                &[
-                    ExpressionComponentRole::LeftOperand,
-                    ExpressionComponentRole::Operator,
-                    ExpressionComponentRole::RightOperand,
-                ],
-            ),
-            ExpressionProjection::Closure(closure) => {
-                let mut expected = vec![
-                    ExpressionComponentRole::Body,
-                    ExpressionComponentRole::ClosureOpenDelimiter,
-                    match closure.syntax().terminator() {
-                        SyntaxClosureTerminator::Closed => {
-                            ExpressionComponentRole::ClosureCloseDelimiter
-                        }
-                        SyntaxClosureTerminator::RecoveredMissing => {
-                            ExpressionComponentRole::ClosureRecoveryEnd
-                        }
-                    },
-                ];
-                if matches!(
-                    closure.syntax(),
-                    SyntaxClosureSyntax::CallbackBlock {
-                        explicit_header: true,
-                        ..
-                    }
-                ) {
-                    expected.push(ExpressionComponentRole::ClosureFatArrow);
-                }
-                if closure.has_result_type() {
-                    expected.push(ExpressionComponentRole::ReturnType);
-                }
-                for (parameter, projection) in closure.parameters().iter().enumerate() {
-                    let Ok(parameter) = u16::try_from(parameter) else {
-                        return false;
-                    };
-                    expected.extend([
-                        ExpressionComponentRole::ClosureParameter {
-                            parameter,
-                            part: SyntaxClosureParameterPart::Whole,
-                        },
-                        ExpressionComponentRole::ClosureParameter {
-                            parameter,
-                            part: SyntaxClosureParameterPart::Pattern,
-                        },
-                    ]);
-                    if projection.has_type() {
-                        expected.extend([
-                            ExpressionComponentRole::ClosureParameter {
-                                parameter,
-                                part: SyntaxClosureParameterPart::Colon,
-                            },
-                            ExpressionComponentRole::ClosureParameter {
-                                parameter,
-                                part: SyntaxClosureParameterPart::Type,
-                            },
-                        ]);
-                    }
-                    if parameter > 0 {
-                        expected.push(ExpressionComponentRole::ClosureParameterSeparator {
-                            following: parameter,
-                        });
-                    }
-                }
-                exact_component_roles(&roles, &self.components, &expected)
-            }
-            ExpressionProjection::If { else_branch, .. } => {
-                exact_component_roles(
-                    &roles,
-                    &self.components,
-                    &[
-                        ExpressionComponentRole::Condition,
-                        ExpressionComponentRole::ThenBranch,
-                        ExpressionComponentRole::ElseBranch,
-                    ],
-                ) && (else_branch.is_some() || {
-                    component_range(&self.components, ExpressionComponentRole::ThenBranch)
-                        .zip(component_range(
-                            &self.components,
-                            ExpressionComponentRole::ElseBranch,
-                        ))
-                        .is_some_and(|(then_branch, else_branch)| {
-                            else_branch.start() == then_branch.end()
-                                && else_branch.start() == else_branch.end()
-                        })
-                })
-            }
-            ExpressionProjection::IfLet {
-                guard, else_branch, ..
-            } => {
-                let mut expected = vec![
-                    ExpressionComponentRole::Pattern,
-                    ExpressionComponentRole::Scrutinee,
-                    ExpressionComponentRole::ThenBranch,
-                    ExpressionComponentRole::ElseBranch,
-                ];
-                if guard.is_some() {
-                    expected.push(ExpressionComponentRole::Guard);
-                }
-                exact_component_roles(&roles, &self.components, &expected)
-                    && (else_branch.is_some()
-                        || component_range(&self.components, ExpressionComponentRole::ThenBranch)
-                            .zip(component_range(
-                                &self.components,
-                                ExpressionComponentRole::ElseBranch,
-                            ))
-                            .is_some_and(|(then_branch, else_branch)| {
-                                else_branch.start() == then_branch.end()
-                                    && else_branch.start() == else_branch.end()
-                            }))
-            }
-            ExpressionProjection::Match(projection) => {
-                control::match_components_validate(projection, &roles, &self.components)
-            }
-            ExpressionProjection::Error => exact_component_roles(
-                &roles,
-                &self.components,
-                &[ExpressionComponentRole::Recovery],
-            ),
+        },
+    ];
+    if matches!(
+        closure.syntax(),
+        SyntaxClosureSyntax::CallbackBlock {
+            explicit_header: true,
+            ..
+        }
+    ) {
+        expected.push(ExpressionComponentRole::ClosureFatArrow);
+    }
+    if closure.has_result_type() {
+        expected.push(ExpressionComponentRole::ReturnType);
+    }
+    for (parameter, projection) in closure.parameters().iter().enumerate() {
+        let Ok(parameter) = u16::try_from(parameter) else {
+            return Some(false);
+        };
+        expected.extend([
+            ExpressionComponentRole::ClosureParameter {
+                parameter,
+                part: SyntaxClosureParameterPart::Whole,
+            },
+            ExpressionComponentRole::ClosureParameter {
+                parameter,
+                part: SyntaxClosureParameterPart::Pattern,
+            },
+        ]);
+        if projection.has_type() {
+            expected.extend([
+                ExpressionComponentRole::ClosureParameter {
+                    parameter,
+                    part: SyntaxClosureParameterPart::Colon,
+                },
+                ExpressionComponentRole::ClosureParameter {
+                    parameter,
+                    part: SyntaxClosureParameterPart::Type,
+                },
+            ]);
+        }
+        if parameter > 0 {
+            expected.push(ExpressionComponentRole::ClosureParameterSeparator {
+                following: parameter,
+            });
         }
     }
+    Some(exact_component_roles(roles, components, &expected))
+}
+
+fn branch_components_validate(
+    projection: &ExpressionProjection,
+    roles: &HashSet<ExpressionComponentRole>,
+    components: &[PendingExpressionComponent],
+) -> Option<bool> {
+    match projection {
+        ExpressionProjection::If { else_branch, .. } => Some(
+            exact_component_roles(
+                roles,
+                components,
+                &[
+                    ExpressionComponentRole::Condition,
+                    ExpressionComponentRole::ThenBranch,
+                    ExpressionComponentRole::ElseBranch,
+                ],
+            ) && (else_branch.is_some() || missing_else_is_at_then_end(components)),
+        ),
+        ExpressionProjection::IfLet {
+            guard, else_branch, ..
+        } => {
+            let mut expected = vec![
+                ExpressionComponentRole::Pattern,
+                ExpressionComponentRole::Scrutinee,
+                ExpressionComponentRole::ThenBranch,
+                ExpressionComponentRole::ElseBranch,
+            ];
+            if guard.is_some() {
+                expected.push(ExpressionComponentRole::Guard);
+            }
+            Some(
+                exact_component_roles(roles, components, &expected)
+                    && (else_branch.is_some() || missing_else_is_at_then_end(components)),
+            )
+        }
+        ExpressionProjection::Match(projection) => Some(control::match_components_validate(
+            projection, roles, components,
+        )),
+        ExpressionProjection::Error => Some(exact_component_roles(
+            roles,
+            components,
+            &[ExpressionComponentRole::Recovery],
+        )),
+        _ => None,
+    }
+}
+
+fn missing_else_is_at_then_end(components: &[PendingExpressionComponent]) -> bool {
+    component_range(components, ExpressionComponentRole::ThenBranch)
+        .zip(component_range(
+            components,
+            ExpressionComponentRole::ElseBranch,
+        ))
+        .is_some_and(|(then_branch, else_branch)| {
+            else_branch.start() == then_branch.end() && else_branch.start() == else_branch.end()
+        })
 }
 
 pub(super) fn exact_component_roles(

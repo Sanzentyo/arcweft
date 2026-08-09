@@ -1,7 +1,7 @@
 use arcweft_source::SourceRange;
 
 use super::build::{GrammarBuildError, build_grammar_text};
-use super::event::SyntaxEvent;
+use super::event::{PendingStartProjection, SyntaxEvent};
 use super::keyword_statement_projection::PendingKeywordStatementProjection;
 use super::{SyntaxKind, SyntaxRole};
 use crate::name::SyntaxName;
@@ -9,13 +9,15 @@ use crate::name::SyntaxName;
 fn keyword_start(kind: SyntaxKind, projection: PendingKeywordStatementProjection) -> SyntaxEvent {
     let mut event = SyntaxEvent::start(kind, SyntaxRole::Statement(0));
     let SyntaxEvent::StartNode {
-        keyword_statement_projection,
+        projection: selected,
         ..
     } = &mut event
     else {
         unreachable!("SyntaxEvent::start always returns a start event")
     };
-    *keyword_statement_projection = Some(projection);
+    selected.select(PendingStartProjection::KeywordStatement(Box::new(
+        projection,
+    )));
     event
 }
 

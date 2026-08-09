@@ -1,6 +1,7 @@
 //! Immutable grammar snapshot data and qualified session identities.
 
 use core::num::NonZeroU64;
+use std::cell::OnceCell;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -32,7 +33,7 @@ use crate::grammar::source_projection::{
 };
 use crate::grammar::style_projection::PendingStyleDeclarationProjection;
 use crate::grammar::test_projection::PendingTestKindProjection;
-use crate::grammar::view_projection::PendingViewExportProjection;
+use crate::grammar::view_projection::{PendingViewExportProjection, PendingViewFragmentProjection};
 use crate::patterns::PatternNodePath;
 use crate::types::TypeRefNodePath;
 
@@ -144,6 +145,9 @@ pub(crate) struct AttachedNodeRecord {
     role: SyntaxRole,
     path: GrammarEventPath,
     range: SourceRange,
+    parent_component_range: SourceRange,
+    semantic_parent: Option<SyntaxNodeId>,
+    semantic_component_range: SourceRange,
     parent: Option<SyntaxNodeId>,
     children: Box<[SyntaxNodeId]>,
     children_by_role: BTreeMap<SyntaxRole, Box<[SyntaxNodeId]>>,
@@ -167,6 +171,7 @@ pub(crate) struct AttachedNodeRecord {
     contract_clause_projection: Option<PendingFlowContractClauseProjection>,
     flow_declaration_projection: Option<PendingFlowDeclarationProjection>,
     view_export_projection: Option<PendingViewExportProjection>,
+    view_fragment_projection: Option<PendingViewFragmentProjection>,
 }
 
 #[derive(Clone, Debug)]
@@ -176,6 +181,9 @@ pub(super) struct AttachedNodeRecordParts {
     pub(super) role: SyntaxRole,
     pub(super) path: GrammarEventPath,
     pub(super) range: SourceRange,
+    pub(super) parent_component_range: SourceRange,
+    pub(super) semantic_parent: Option<SyntaxNodeId>,
+    pub(super) semantic_component_range: SourceRange,
     pub(super) parent: Option<SyntaxNodeId>,
     pub(super) children: Box<[SyntaxNodeId]>,
     pub(super) children_by_role: BTreeMap<SyntaxRole, Box<[SyntaxNodeId]>>,
@@ -199,6 +207,7 @@ pub(super) struct AttachedNodeRecordParts {
     pub(super) contract_clause_projection: Option<PendingFlowContractClauseProjection>,
     pub(super) flow_declaration_projection: Option<PendingFlowDeclarationProjection>,
     pub(super) view_export_projection: Option<PendingViewExportProjection>,
+    pub(super) view_fragment_projection: Option<PendingViewFragmentProjection>,
 }
 
 impl AttachedNodeRecord {
@@ -209,6 +218,9 @@ impl AttachedNodeRecord {
             role: parts.role,
             path: parts.path,
             range: parts.range,
+            parent_component_range: parts.parent_component_range,
+            semantic_parent: parts.semantic_parent,
+            semantic_component_range: parts.semantic_component_range,
             parent: parts.parent,
             children: parts.children,
             children_by_role: parts.children_by_role,
@@ -232,6 +244,7 @@ impl AttachedNodeRecord {
             contract_clause_projection: parts.contract_clause_projection,
             flow_declaration_projection: parts.flow_declaration_projection,
             view_export_projection: parts.view_export_projection,
+            view_fragment_projection: parts.view_fragment_projection,
         }
     }
 
@@ -510,6 +523,13 @@ impl SyntaxSnapshotData {
         self.record(id).view_export_projection.as_ref()
     }
 
+    pub(crate) fn view_fragment_projection(
+        self: &Arc<Self>,
+        id: SyntaxNodeId,
+    ) -> Option<&PendingViewFragmentProjection> {
+        self.record(id).view_fragment_projection.as_ref()
+    }
+
     pub(crate) fn method_receiver_projection(
         self: &Arc<Self>,
         id: SyntaxNodeId,
@@ -578,13 +598,16 @@ impl SyntaxSnapshotData {
 pub struct SyntaxNodeHandle {
     snapshot: Arc<SyntaxSnapshotData>,
     id: SyntaxNodeId,
-    node: SyntaxNode,
+    node: OnceCell<SyntaxNode>,
 }
 
 impl SyntaxNodeHandle {
     fn new(snapshot: Arc<SyntaxSnapshotData>, id: SyntaxNodeId) -> Self {
-        let node = snapshot.rowan_node(id);
-        Self { snapshot, id, node }
+        Self {
+            snapshot,
+            id,
+            node: OnceCell::new(),
+        }
     }
 
     pub const fn id(&self) -> SyntaxNodeId {
@@ -611,12 +634,31 @@ impl SyntaxNodeHandle {
         &self.snapshot.record(self.id).path
     }
 
+    /// Borrows the exact raw Rowan node for interop that explicitly needs the
+    /// lossless tree. Typed navigation remains record-backed; the red node is
+    /// materialized at most once for this immutable handle.
     pub fn rowan(&self) -> &SyntaxNode {
-        &self.node
+        self.node.get_or_init(|| self.snapshot.rowan_node(self.id))
     }
 
     pub fn range(&self) -> SourceRange {
         self.snapshot.record(self.id).range
+    }
+
+    pub(crate) fn semantic_component_range(&self) -> SourceRange {
+        self.snapshot.record(self.id).semantic_component_range
+    }
+
+    pub(crate) fn parent_component_range(&self) -> SourceRange {
+        self.snapshot.record(self.id).parent_component_range
+    }
+
+    pub(crate) fn parent_id(&self) -> Option<SyntaxNodeId> {
+        self.snapshot.record(self.id).parent
+    }
+
+    pub(crate) fn semantic_parent_id(&self) -> Option<SyntaxNodeId> {
+        self.snapshot.record(self.id).semantic_parent
     }
 
     /// Exact revision-bound source span occupied by this node.
@@ -767,6 +809,10 @@ impl SyntaxNodeHandle {
 
     pub(crate) fn view_export_projection(&self) -> Option<&PendingViewExportProjection> {
         self.snapshot.view_export_projection(self.id)
+    }
+
+    pub(crate) fn view_fragment_projection(&self) -> Option<&PendingViewFragmentProjection> {
+        self.snapshot.view_fragment_projection(self.id)
     }
 
     pub(crate) fn method_receiver_projection(&self) -> Option<&PendingMethodReceiverProjection> {

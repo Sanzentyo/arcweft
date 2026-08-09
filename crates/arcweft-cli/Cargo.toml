@@ -44,6 +44,7 @@ arcweft-resource-model.workspace = true
 arcweft-player-native = { workspace = true, optional = true }
 arcweft-player-scene = { workspace = true, optional = true }
 arcweft-render-text = { workspace = true }
+arcweft-text-model = { workspace = true }
 arcweft-render-wgpu = { workspace = true, optional = true }
 arcweft-rag = { workspace = true }
 arcweft-runtime-accelerator = { workspace = true, default-features = true }

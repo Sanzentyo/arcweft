@@ -9,6 +9,7 @@ use arcweft_lang_syntax::expressions::{
 use arcweft_lang_syntax::incremental::ParsedSource;
 
 use super::block_projection::{BlockValidationArenas, source_owner_matches};
+use super::expression_manifest::expression_component_role;
 use super::expression_manifest::projection::{expression_child_matches, poison_state_matches};
 use super::pattern_projection::{BindingLocalValidation, binding_locals_match};
 use super::{HirExprSourceRole, HirSourceSite};
@@ -29,10 +30,14 @@ use crate::scope::{HirLocalKind, HirPatternBindingPolicy, HirScopeKind, HirScope
 use crate::slot::{HirOrigin, SlotSnapshot};
 use crate::type_ref::HirType;
 
-/// Re-derives an IfLet's asymmetric scope graph and canonical binding
+/// Re-derives an `IfLet`'s asymmetric scope graph and canonical binding
 /// publication from its attached source owner. Generic composite validation
 /// cannot represent the outer-scope scrutinee/else and binding-scope
 /// guard/then split.
+#[allow(
+    clippy::too_many_lines,
+    reason = "one projection proves the complete asymmetric IfLet scope, binding, branch, and recovery graph"
+)]
 pub(super) fn if_let_expression_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -155,7 +160,9 @@ pub(super) fn if_let_expression_matches(
         None => return false,
     };
 
-    let Some(scrutinee_child) = child_for_slot(attached, 0, *scrutinee) else {
+    let Some(scrutinee_child) =
+        child_for_slot(attached, ExpressionComponentRole::Scrutinee, *scrutinee)
+    else {
         return false;
     };
     let Some(recovery) = child_recovery(
@@ -164,16 +171,18 @@ pub(super) fn if_let_expression_matches(
         arenas,
         owner,
         payload.scope(),
+        attached,
         scrutinee_child,
         expression.scrutinee(),
-        HirExprSourceRole::Scrutinee,
     ) else {
         return false;
     };
     expected_recovery = expected_recovery.or(recovery);
 
     if let Some(guard_slot) = guard {
-        let Some(guard_child) = child_for_slot(attached, 1, *guard_slot) else {
+        let Some(guard_child) =
+            child_for_slot(attached, ExpressionComponentRole::Guard, *guard_slot)
+        else {
             return false;
         };
         let Some(recovery) = expression.guard().and_then(|guard_owner| {
@@ -183,9 +192,9 @@ pub(super) fn if_let_expression_matches(
                 arenas,
                 owner,
                 binding_scope,
+                attached,
                 guard_child,
                 guard_owner,
-                HirExprSourceRole::Guard,
             )
         }) else {
             return false;
@@ -195,7 +204,9 @@ pub(super) fn if_let_expression_matches(
         return false;
     }
 
-    let Some(then_child) = child_for_slot(attached, 2, *then_branch) else {
+    let Some(then_child) =
+        child_for_slot(attached, ExpressionComponentRole::ThenBranch, *then_branch)
+    else {
         return false;
     };
     let Some(recovery) = child_recovery(
@@ -204,52 +215,20 @@ pub(super) fn if_let_expression_matches(
         arenas,
         owner,
         binding_scope,
+        attached,
         then_child,
         expression.then_branch(),
-        HirExprSourceRole::ThenBranch,
     ) else {
         return false;
     };
     expected_recovery = expected_recovery.or(recovery);
 
-    let else_recovery = match else_branch {
-        Some(slot) => {
-            let Some(child) = child_for_slot(attached, 3, *slot) else {
-                return false;
-            };
-            if child.missing().is_some() {
-                if !missing_required_tail_matches(
-                    parsed,
-                    slots,
-                    arenas,
-                    owner,
-                    expression.else_branch(),
-                    payload.scope(),
-                    child.source_span(),
-                ) {
-                    return false;
-                }
-                Some(HirRecoveryIssue::MissingRequiredTail)
-            } else {
-                let Some(recovery) = child_recovery(
-                    parsed,
-                    slots,
-                    arenas,
-                    owner,
-                    payload.scope(),
-                    child,
-                    expression.else_branch(),
-                    HirExprSourceRole::ElseBranch,
-                ) else {
-                    return false;
-                };
-                recovery
-            }
-        }
-        None => {
-            let Some(source) = attached.component(ExpressionComponentRole::ElseBranch) else {
-                return false;
-            };
+    let else_recovery = if let Some(slot) = else_branch {
+        let Some(child) = child_for_slot(attached, ExpressionComponentRole::ElseBranch, *slot)
+        else {
+            return false;
+        };
+        if child.missing().is_some() {
             if !missing_required_tail_matches(
                 parsed,
                 slots,
@@ -257,12 +236,42 @@ pub(super) fn if_let_expression_matches(
                 owner,
                 expression.else_branch(),
                 payload.scope(),
-                source,
+                &child.source_span(),
             ) {
                 return false;
             }
             Some(HirRecoveryIssue::MissingRequiredTail)
+        } else {
+            let Some(recovery) = child_recovery(
+                parsed,
+                slots,
+                arenas,
+                owner,
+                payload.scope(),
+                attached,
+                child,
+                expression.else_branch(),
+            ) else {
+                return false;
+            };
+            recovery
         }
+    } else {
+        let Some(source) = attached.component(ExpressionComponentRole::ElseBranch) else {
+            return false;
+        };
+        if !missing_required_tail_matches(
+            parsed,
+            slots,
+            arenas,
+            owner,
+            expression.else_branch(),
+            payload.scope(),
+            &source,
+        ) {
+            return false;
+        }
+        Some(HirRecoveryIssue::MissingRequiredTail)
     };
     expected_recovery = expected_recovery.or(else_recovery);
     poison_state_matches(payload.state(), expected_recovery)
@@ -273,6 +282,10 @@ pub(super) fn if_let_expression_matches(
 /// arenas are the only semantic carriers; no callback-specific syntax record
 /// participates in this validation.
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one projection proves closure parameters, captures, body scope, source roles, and recovery together"
+)]
 pub(super) fn closure_expression_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
@@ -438,7 +451,8 @@ pub(super) fn closure_expression_matches(
         _ => return false,
     }
 
-    let Some(body) = child_for_slot(attached, 0, projection.body()) else {
+    let Some(body) = child_for_slot(attached, ExpressionComponentRole::Body, projection.body())
+    else {
         return false;
     };
     if attached.children().len() != 1 {
@@ -452,7 +466,7 @@ pub(super) fn closure_expression_matches(
             owner,
             expression.body(),
             closure_scope,
-            body.source_span(),
+            &body.source_span(),
         ) {
             return false;
         }
@@ -464,9 +478,9 @@ pub(super) fn closure_expression_matches(
             arenas.expressions,
             owner,
             closure_scope,
+            attached,
             body,
             expression.body(),
-            HirExprSourceRole::Body,
         ) {
             return false;
         }
@@ -490,38 +504,43 @@ pub(super) fn closure_expression_matches(
 
 fn child_for_slot(
     attached: &AttachedExpressionNode,
-    ordinal: u32,
+    role: ExpressionComponentRole,
     slot: SyntaxExpressionSlot,
 ) -> Option<&AttachedExpressionChild> {
     attached
         .children()
         .iter()
-        .find(|child| child.ordinal() == ordinal)
+        .find(|child| child.component_role() == role)
         .filter(|child| {
             child.authored().is_some() == matches!(slot, SyntaxExpressionSlot::Authored)
         })
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::too_many_arguments,
+    clippy::option_option,
+    reason = "the helper returns a deliberate tri-state: mismatch, clean child, or a typed child recovery issue"
+)]
 fn child_recovery(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
     arenas: &BlockValidationArenas<'_>,
     parent: ExprId,
     scope: ScopeId,
+    parent_attached: &AttachedExpressionNode,
     attached: &AttachedExpressionChild,
     child: ExprId,
-    role: HirExprSourceRole,
 ) -> Option<Option<HirRecoveryIssue>> {
+    let role = expression_component_role(parent_attached.projection(), attached.component_role())?;
     if !expression_child_matches(
         parsed,
         slots,
         arenas.expressions,
         parent,
         scope,
+        parent_attached,
         attached,
         child,
-        role,
     ) {
         return None;
     }
@@ -548,7 +567,7 @@ fn missing_required_tail_matches(
     parent: ExprId,
     owner: ExprId,
     scope: ScopeId,
-    source: arcweft_source::SourceSpan,
+    source: &arcweft_source::SourceSpan,
 ) -> bool {
     let Ok(key) = SyntheticKey::try_new(
         SyntheticOwner::Expr(parent),
@@ -557,7 +576,7 @@ fn missing_required_tail_matches(
     ) else {
         return false;
     };
-    let Ok(expected_site) = HirSourceSite::from_attached_span(parsed.document(), &source) else {
+    let Ok(expected_site) = HirSourceSite::from_attached_span(parsed.document(), source) else {
         return false;
     };
     let Ok(metadata) = slots.resolve_prepared(owner) else {

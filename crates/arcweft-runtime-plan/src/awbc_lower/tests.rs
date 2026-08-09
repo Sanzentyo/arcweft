@@ -2,41 +2,23 @@ use super::*;
 use arcweft_core::awbc::fiber::FiberState;
 use arcweft_core::awbc::schema::{
     AwbcEffectKind, AwbcEntryId, AwbcEntryTarget, AwbcFunctionId, AwbcInstruction, AwbcProgram,
-    AwbcTerminator,
+    AwbcTerminator, AwbcTrapCode,
 };
 use arcweft_core::awbc::vm::{self, VmError, VmExit, VmHost, VmObservation, VmStepOptions};
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
-use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+use arcweft_core::entry::{EntryBindingIdentity, RuntimeCallableId, RuntimeEntryRoles};
+use arcweft_core::pattern::{
+    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimePattern, RuntimeSemanticTypeId,
+    RuntimeVariantIdentity,
+};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeFlow, RuntimePlan, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
     RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec,
 };
-use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeFieldExpr, RuntimeValue};
-use arcweft_dialogue::DialogueProfileRevision;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-plan-awbc-lower-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-plan-awbc-lower-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
-}
+use arcweft_core::value::{
+    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeValue,
+};
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::canonical(value).expect("test flow ID is valid")
@@ -45,7 +27,7 @@ fn flow_id(value: &str) -> FlowRuntimeId {
 fn lower_plan(plan: &RuntimePlan) -> AwbcLowerReport {
     AwbcLowerer::new(
         plan,
-        &arcweft_render_text::LineDisplayCatalog::new(test_dialogue_revision()),
+        &arcweft_text_model::DialogueContentCatalog::new(),
         "test.arcw",
     )
     .lower()
@@ -198,16 +180,26 @@ fn run_function(
 }
 
 #[test]
-fn pipe_left_value_is_evaluated_once_and_shared_by_awbc_reads() {
-    let source = arcweft_lang_syntax::expr::parse_expr("probe() |> (^ + ^)")
-        .expect("pipe expression parses");
-    let lowered = crate::expr::lower_runtime_expr_strict(&source)
-        .expect("pipe expression lowers to an exact-once binding");
+fn let_bound_call_is_evaluated_once_and_shared_by_awbc_reads() {
+    let binding = "pipe_left".to_owned();
+    let lowered = RuntimeExpr::Let {
+        name: binding.clone(),
+        expr: Box::new(RuntimeExpr::Call {
+            callee: RuntimeCallTarget::callable(
+                RuntimeCallableId::try_new("probe").expect("test callable identity"),
+            ),
+            args: Vec::new(),
+        }),
+        body: Box::new(RuntimeExpr::Binary {
+            lhs: Box::new(RuntimeExpr::Local(binding.clone())),
+            op: RuntimeBinaryOp::Add,
+            rhs: Box::new(RuntimeExpr::Local(binding)),
+        }),
+    };
     assert!(matches!(
         &lowered,
         RuntimeExpr::Let { name, body, .. }
-            if name.starts_with('\0')
-                && matches!(
+            if matches!(
                     body.as_ref(),
                     RuntimeExpr::Binary { lhs, rhs, .. }
                         if matches!(
@@ -233,7 +225,7 @@ fn pipe_left_value_is_evaluated_once_and_shared_by_awbc_reads() {
 
     assert_eq!(
         host.calls, 1,
-        "pipe lhs intrinsic must execute exactly once"
+        "let-bound callable must execute exactly once"
     );
     assert_eq!(exit, VmExit::Returned(Some(RuntimeValue::i64(10))));
 }
@@ -251,8 +243,8 @@ fn lowers_constant_return_plan_to_awbc_tables() {
         Vec::new(),
     )
     .expect("plan builds");
-    let display = arcweft_render_text::LineDisplayCatalog::new(test_dialogue_revision());
-    let report = AwbcLowerer::new(&plan, &display, "test.arcw")
+    let dialogue_content = arcweft_text_model::DialogueContentCatalog::new();
+    let report = AwbcLowerer::new(&plan, &dialogue_content, "test.arcw")
         .with_options(AwbcLowerOptions {
             verify: false,
             ..AwbcLowerOptions::default()
@@ -267,6 +259,102 @@ fn lowers_constant_return_plan_to_awbc_tables() {
             .iter()
             .all(|diagnostic| !diagnostic.is_error())
     );
+}
+
+#[test]
+fn generated_awbc_typed_bindings_match_choice_and_nominal_and_reject_mismatch() {
+    let nominal = arcweft_core::entry::RuntimeNominalTypeId::try_new("game.State")
+        .expect("test nominal identity");
+    let nominal_variant_type = RuntimeCheckedType::Variant {
+        nominal: nominal.clone(),
+        semantic_identity: RuntimeSemanticTypeId::from_bytes([9; 32]),
+        cases: ["Idle", "Running", "Paused", "Ready"]
+            .into_iter()
+            .map(|name| RuntimeCheckedVariantCase {
+                name: name.to_owned(),
+                payload: None,
+            })
+            .collect(),
+    };
+    let expected = RuntimeCheckedType::Choice(vec![
+        RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Unit),
+            error: Box::new(RuntimeCheckedType::String),
+        },
+        nominal_variant_type.clone(),
+    ]);
+    let lower = |expr: RuntimeExpr| {
+        let plan = RuntimePlan::new(
+            vec![RuntimeFlow {
+                id: flow_id("main"),
+                ops: vec![
+                    FlowOp::Let {
+                        pattern: RuntimePattern::Typed {
+                            name: "value".to_owned(),
+                            ty: expected.clone(),
+                        },
+                        expr,
+                    },
+                    FlowOp::ReturnExpr(RuntimeExpr::Local("value".to_owned())),
+                ],
+            }],
+            Vec::new(),
+        )
+        .expect("typed binding plan builds");
+        lower_plan(&with_test_entry(plan, flow_id("main")))
+    };
+
+    let result_value = RuntimeValue::result_ok(RuntimeValue::Unit);
+    let result_report = lower(RuntimeExpr::Variant {
+        owner: RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Unit),
+            error: Box::new(RuntimeCheckedType::String),
+        },
+        ordinal: 0,
+        name: "Ok".to_owned(),
+        payload: Some(Box::new(RuntimeExpr::Value(RuntimeValue::Unit))),
+    });
+    assert_eq!(
+        run_entry(&result_report.program, &mut TestPureHelperHost),
+        VmExit::Returned(Some(result_value))
+    );
+
+    let nominal_value = RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal,
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([9; 32]),
+        },
+        ordinal: 3,
+        name: "Ready".to_owned(),
+        payload: None,
+    };
+    let nominal_report = lower(RuntimeExpr::Variant {
+        owner: nominal_variant_type,
+        ordinal: 3,
+        name: "Ready".to_owned(),
+        payload: None,
+    });
+    assert_eq!(
+        run_entry(&nominal_report.program, &mut TestPureHelperHost),
+        VmExit::Returned(Some(nominal_value))
+    );
+
+    let mismatch_report = lower(RuntimeExpr::Value(RuntimeValue::Bool(true)));
+    let mut mismatch_fiber =
+        FiberState::for_entry(&mismatch_report.program, AwbcEntryId(0), 0, 256)
+            .expect("AWBC mismatch fiber initializes");
+    let mismatch = vm::step(
+        &mismatch_report.program,
+        &mut mismatch_fiber,
+        VmStepOptions {
+            max_instructions: 128,
+        },
+    )
+    .expect("typed mismatch traps instead of escaping the VM");
+    assert!(matches!(
+        mismatch.exit,
+        VmExit::Trapped(ref trap) if trap.code == AwbcTrapCode::PatternMismatch
+    ));
 }
 
 #[test]
@@ -286,8 +374,8 @@ fn lowers_runtime_function_apply_to_awbc_closure_instructions() {
     )
     .expect("plan builds");
     let plan = with_test_entry(plan, flow_id("main"));
-    let display = arcweft_render_text::LineDisplayCatalog::new(test_dialogue_revision());
-    let report = AwbcLowerer::new(&plan, &display, "test.arcw")
+    let dialogue_content = arcweft_text_model::DialogueContentCatalog::new();
+    let report = AwbcLowerer::new(&plan, &dialogue_content, "test.arcw")
         .lower()
         .expect("AWBC lowers runtime function apply");
 

@@ -12,8 +12,9 @@ use crate::expr::{
 use crate::identity::{ExprId, ItemId, TypeId};
 use crate::item::{
     HirStyleAssignOperation, HirStyleAssignOperationIssue, HirStyleBodyIssue, HirStyleBodyItem,
-    HirStyleCombinator, HirStyleEnvironmentComparison, HirStyleEnvironmentComparisonIssue,
-    HirStyleEnvironmentField, HirStyleEnvironmentFieldIssue, HirStyleItem, HirStyleSelectorIssue,
+    HirStyleCombinator, HirStyleDeclaration, HirStyleEnvironmentComparison,
+    HirStyleEnvironmentComparisonIssue, HirStyleEnvironmentField, HirStyleEnvironmentFieldIssue,
+    HirStyleItem, HirStyleSelectorIssue,
 };
 use crate::leaf::{HirIdRefInvariantError, HirIdRefIssue, HirIdRefShape};
 use crate::source_index::{HirExprSourceRole, HirSourceQuery};
@@ -47,7 +48,6 @@ struct CleanStyleSyntax {
 
 fn clean_style_syntax(parsed: &ParsedSource) -> CleanStyleSyntax {
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -92,6 +92,10 @@ fn clean_style_syntax(parsed: &ParsedSource) -> CleanStyleSyntax {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical Style test asserts one complete typed payload and child-owner graph"
+)]
 fn canonical_style_lowers_typed_payloads_and_exact_child_owners() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-style-clean",
@@ -288,7 +292,6 @@ fn missing_style_values_keep_their_parser_owned_source_identity() {
         ),
     );
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -339,6 +342,10 @@ fn missing_style_values_keep_their_parser_owned_source_identity() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the recovered Style test asserts the complete environment/token non-allocation matrix"
+)]
 fn whole_recovered_environment_and_nested_token_allocate_no_unowned_children() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-style-recovery-allocation",
@@ -357,7 +364,6 @@ fn whole_recovered_environment_and_nested_token_allocate_no_unowned_children() {
         ),
     );
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -471,13 +477,16 @@ fn whole_recovered_environment_and_nested_token_allocate_no_unowned_children() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Style delimiter test exhausts whole-recovery and retained-child boundaries"
+)]
 fn whole_recovered_delimiters_drop_children_but_outer_close_recovery_retains_them() {
     let rule_missing = parse(
         "arcweft-test://proof/final-hir-style-rule-missing-close",
         "style @style.rule_missing {\nPanel { opacity = 1\n",
     );
     let rule_attached = rule_missing
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -510,7 +519,6 @@ fn whole_recovered_delimiters_drop_children_but_outer_close_recovery_retains_the
         "style @style.environment_missing {\nwhen environment(color-scheme == dark)\n",
     );
     let environment_attached = environment_missing
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -549,7 +557,6 @@ fn whole_recovered_delimiters_drop_children_but_outer_close_recovery_retains_the
         "style @style.outer_missing {\nPanel { opacity = 1 }\n",
     );
     let outer_attached = outer_missing
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -689,6 +696,10 @@ fn mixed_style_aggregate_accepts_the_exact_hir_member_limit() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Style recovery test exhausts selector, property, environment, and body rows"
+)]
 fn style_recovery_matrix_keeps_typed_selector_property_environment_and_body_rows() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-style-recovery-matrix",
@@ -765,7 +776,7 @@ fn style_recovery_matrix_keeps_typed_selector_property_environment_and_body_rows
     assert_eq!(
         rule.declarations()
             .iter()
-            .map(|declaration| declaration.operation())
+            .map(HirStyleDeclaration::operation)
             .collect::<Vec<_>>(),
         [
             HirStyleAssignOperation::Recovered(HirStyleAssignOperationIssue::Missing),
@@ -843,7 +854,7 @@ fn style_name_bytes_accept_exact_and_reject_one_over_atomically() {
     let mut one_over_database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&one_over_database, &one_over, &one_over_key);
     let error = transaction
-        .lower_attached_source_file_items(&one_over.tree())
+        .lower_parsed_source_items(&one_over)
         .expect_err("one-over Style name must fail final-HIR preflight");
     let HirLowerFailure::Limit(error) = error else {
         panic!("one-over Style name must report its typed HIR limit")

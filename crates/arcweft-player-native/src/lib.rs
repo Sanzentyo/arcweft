@@ -49,11 +49,11 @@ pub use windowed_runtime::{
 
 use arcweft_bundle::ArcweftBundle;
 use arcweft_core::plan::FlowEvent;
-use arcweft_render_text::{LineDisplayCatalog, LineDisplayFrame, RuntimeLineContext};
 use arcweft_runtime_host::{
     BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode, NativeTaskStats,
     RuntimeExecutorStats, run_bundle_with_native_adapters,
 };
+use arcweft_text_model::LineDisplayFrame;
 use serde::Serialize;
 use std::path::Path;
 use thiserror::Error;
@@ -107,6 +107,10 @@ pub enum NativePlayerError {
     SceneWindow(String),
     #[error(transparent)]
     Audio(#[from] native_audio::NativePlayerAudioError),
+    #[error(
+        "runtime dialogue line {line} has no checked CharacterDialogue presentation projection"
+    )]
+    DialoguePresentationUnavailable { line: String },
 }
 
 /// Runs a compiled `.awfb` bundle through the runtime-host bundle boundary.
@@ -125,16 +129,11 @@ pub fn run_bundle_headless(
         },
         &[desktop_native_adapter_registrar],
     )?;
-    let mut frames = Vec::new();
+    let frames = Vec::new();
     let mut diagnostics = Vec::new();
     for step in &runner.steps {
         diagnostics.extend(step.diagnostics.iter().cloned());
-        append_display_frames(
-            &bundle.display,
-            &step.flow_events,
-            &mut frames,
-            &mut diagnostics,
-        );
+        reject_unprojected_dialogue_events(&step.flow_events)?;
     }
     Ok(HeadlessPlayerReport {
         frames,
@@ -165,21 +164,13 @@ fn desktop_native_adapter_registrar(
     adapter_set.register(builder).map(|(builder, _)| builder)
 }
 
-fn append_display_frames(
-    catalog: &LineDisplayCatalog,
-    events: &[FlowEvent],
-    frames: &mut Vec<LineDisplayFrame>,
-    diagnostics: &mut Vec<String>,
-) {
+fn reject_unprojected_dialogue_events(events: &[FlowEvent]) -> Result<(), NativePlayerError> {
     for event in events {
         match event {
-            FlowEvent::DialogueLine { line, bindings } => {
-                if let Some(spec) = catalog.find(line) {
-                    match spec.resolve_frame(&RuntimeLineContext::new(bindings.clone())) {
-                        Ok(frame) => frames.push(frame),
-                        Err(error) => diagnostics.push(error.to_string()),
-                    }
-                }
+            FlowEvent::DialogueLine { line, .. } => {
+                return Err(NativePlayerError::DialoguePresentationUnavailable {
+                    line: line.canonical_label().clone(),
+                });
             }
             FlowEvent::LineCancelled { .. }
             | FlowEvent::ChoicePresented { .. }
@@ -192,47 +183,34 @@ fn append_display_frames(
             | FlowEvent::Done => {}
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use arcweft_bundle::resource_codec::SourceMapSection;
-    use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
-    use arcweft_resource_model::registry::ResourceTypeRegistry;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-    fn test_dialogue_revision() -> DialogueProfileRevision {
-        let manifest = SourceDocument::try_new(
-            SourceDocumentId::try_new("player-native-lib-test").expect("document ID"),
-            SourceName::Memory,
-            "test manifest",
-        )
-        .expect("test document");
-        let sources = SourceSetRevision::try_for_identities([manifest.identity()])
-            .expect("test source revision");
-        DialogueProfileRevision::from_admitted_parts(
-            manifest.identity().clone(),
-            sources,
-            sources,
-            ViewProgramId::try_new("view_program.player-native-lib-test").expect("View program ID"),
-            AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-            ResourceTypeRegistry::empty().digest(),
-        )
+    fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+            .expect("fixture runtime artifact fingerprint is non-zero")
     }
 
     #[test]
-    fn bundle_headless_uses_runtime_host_flow_events_for_display_frames() {
+    fn bundle_headless_rejects_dialogue_without_checked_presentation_projection() {
         use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
         use arcweft_core::bytecode::BytecodeProgram;
         use arcweft_core::line_task::LineTaskGroup;
         use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
-        use arcweft_render_text::{LineDisplaySpec, RichTextDocument, RichTextNode};
+        use arcweft_id::TextKey;
         use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
+        use arcweft_text_model::{
+            DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
+        };
 
         let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
-        let expected_status = format!("dialogue {}", line.canonical_label());
+        let expected_line = line.canonical_label().clone();
         let plan = RuntimePlan::new(
             vec![RuntimeFlow {
                 id: FlowRuntimeId::from_runtime_target_value("flow.main").expect("flow runtime id"),
@@ -248,30 +226,23 @@ mod tests {
         )
         .expect("runtime plan is valid")
         .with_entries(vec![cli_main_entry()]);
-        let display = LineDisplayCatalog::try_from_lines(
-            test_dialogue_revision(),
-            vec![LineDisplaySpec {
+        let source_map = source_map("bundle-display.arcw", "flow main { dialogue }");
+        let source = source_map
+            .primary_document()
+            .expect("fixture source map retains its source")
+            .product_source_ref();
+        let dialogue_content =
+            DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
                 line,
-                callee: "alice".to_owned(),
-                speaker_label: None,
-                text_key: None,
-                view: arcweft_bundle::standard_view::dialogue_view_id(),
-                profile_style: None,
-                dialogue_revision: test_dialogue_revision(),
-                voice: None,
-                look: None,
-                style: None,
-                base_styles: Vec::new(),
-                inline_failure: InlineFailurePolicy::FailLine,
-                style_contributions: Vec::new(),
-                args: Vec::new(),
-                content: RichTextDocument::new(vec![RichTextNode::Text {
+                TextKey::try_new("text.bundle.opening").expect("text key"),
+                RichTextDocument::new(vec![RichTextNode::Text {
                     text: "Hello bundle".to_owned(),
                 }]),
-            }],
-        )
-        .expect("test display catalog is revision-consistent");
-        let product_awbc = AwbcLowerer::new(&plan, &display, "bundle-display.arcw")
+                Vec::new(),
+                source,
+            )])
+            .expect("test dialogue content is canonical");
+        let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "bundle-display.arcw")
             .lower()
             .expect("product AWBC lowers")
             .program;
@@ -284,6 +255,7 @@ mod tests {
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
                     flows: 1,
                     bytecode_instructions: 2,
@@ -292,28 +264,19 @@ mod tests {
                     source_plans: 0,
                 },
             },
-            source_map("bundle-display.arcw", "flow main { dialogue }"),
+            source_map,
             BytecodeProgram::from_runtime_plan(plan),
-            display,
+            dialogue_content,
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(product_awbc);
 
-        let report = run_bundle_headless(&bundle, 8).expect("bundle runs through runtime host");
-
-        assert_eq!(report.status, expected_status);
-        assert!((1..=8).contains(&report.steps));
-        assert_eq!(report.frames.len(), 1);
-        assert_eq!(report.frames[0].text, "Hello bundle");
-        let runtime = report
-            .runtime
-            .as_ref()
-            .expect("bundle player report includes runtime metadata");
-        assert_eq!(runtime.source, "bundle-display.arcw");
-        assert_eq!(runtime.bytecode_instructions, 2);
-        assert_eq!(runtime.adapter_manifests, 0);
-        assert_eq!(runtime.executor, BundleRunnerExecutor::AwbcProduct);
-        assert_eq!(runtime.native_io.scheduler.submitted, 0);
+        let error = run_bundle_headless(&bundle, 8)
+            .expect_err("dialogue cannot run before checked presentation is bundled");
+        assert!(matches!(
+            error,
+            NativePlayerError::DialoguePresentationUnavailable { line } if line == expected_line
+        ));
     }
 
     #[cfg(not(feature = "dev-capture"))]
@@ -341,8 +304,8 @@ mod tests {
         )
         .expect("runtime plan is valid")
         .with_entries(vec![cli_main_entry()]);
-        let display = LineDisplayCatalog::new(test_dialogue_revision());
-        let product_awbc = AwbcLowerer::new(&plan, &display, "return-only.arcw")
+        let dialogue_content = arcweft_text_model::DialogueContentCatalog::new();
+        let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "return-only.arcw")
             .lower()
             .expect("product AWBC lowers")
             .program;
@@ -355,6 +318,7 @@ mod tests {
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
                     flows: 1,
                     bytecode_instructions: 1,
@@ -365,7 +329,7 @@ mod tests {
             },
             source_map("return-only.arcw", "flow main { return \"done\" }"),
             BytecodeProgram::from_runtime_plan(plan),
-            display,
+            dialogue_content,
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(product_awbc)

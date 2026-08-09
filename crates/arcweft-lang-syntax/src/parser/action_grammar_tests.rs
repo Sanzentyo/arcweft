@@ -1,6 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
@@ -14,7 +14,7 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+    parse_document(&document(source), crate::parser::ParseOptions::default())
         .expect("Action grammar builds")
 }
 

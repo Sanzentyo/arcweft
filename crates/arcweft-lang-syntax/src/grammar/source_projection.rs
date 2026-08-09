@@ -16,6 +16,7 @@ pub(crate) enum PendingPathRoot {
 pub(crate) enum PendingPathSegmentKind {
     Identifier,
     Keyword,
+    ProjectSymbol,
     Lifetime,
 }
 

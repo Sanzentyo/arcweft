@@ -51,7 +51,7 @@ impl AttachedThreadEntityReference {
 /// Required Include target or its exact missing-expression insertion.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedRequiredIncludeTarget {
-    Reference(AttachedThreadEntityReference),
+    Reference(Box<AttachedThreadEntityReference>),
     Missing(AstNode<MissingExpressionKind>),
 }
 
@@ -478,7 +478,7 @@ impl AttachedSelectBranch {
     }
 }
 
-/// Complete typed AwaitWith statement relation.
+/// Complete typed `AwaitWith` statement relation.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttachedAwaitWithStatement {
     syntax: AstNode<AwaitWithStatementKind>,
@@ -510,7 +510,7 @@ impl AttachedAwaitWithStatement {
     }
 }
 
-/// Present AwaitWith branch body or its exact missing-body insertion.
+/// Present `AwaitWith` branch body or its exact missing-body insertion.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AttachedRequiredAwaitWithBranchBody {
     Present(AttachedAwaitWithBranchBlock),
@@ -526,7 +526,7 @@ impl AttachedRequiredAwaitWithBranchBody {
     }
 }
 
-/// Source-ordered AwaitWith branch container with no ordinary value tail.
+/// Source-ordered `AwaitWith` branch container with no ordinary value tail.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AttachedAwaitWithBranchBlock {
     syntax: AstNode<BlockKind>,
@@ -766,7 +766,7 @@ impl AstNode<SelectStatementKind> {
                 require_roles(self, &[SyntaxRole::Body])?;
                 AttachedSelectStatementForm::Branches(attach_select_branch_block(self, &branches)?)
             }
-            _ => return Err(invalid(self)),
+            crate::grammar::SyntaxSelectStatementForm::Operand => return Err(invalid(self)),
         };
         Ok(AttachedSelectStatement {
             syntax: self.clone(),
@@ -811,9 +811,9 @@ fn required_include_target(
     ) {
         return Err(invalid(owner));
     }
-    Ok(AttachedRequiredIncludeTarget::Reference(
+    Ok(AttachedRequiredIncludeTarget::Reference(Box::new(
         AttachedThreadEntityReference { expression },
-    ))
+    )))
 }
 
 fn attach_select_branch_block(
@@ -949,34 +949,30 @@ fn attach_await_with_branch_block(
         .zip(projections.iter().copied())
         .map(|(syntax, projection)| {
             let body = required_nested_thread_flow_body(&syntax)?;
-            match projection.kind() {
-                Some(kind) => {
-                    require_roles(&syntax, &[SyntaxRole::Pattern, SyntaxRole::Body])?;
-                    Ok(AttachedAwaitWithBranch {
-                        pattern: Some(
-                            syntax
-                                .required_family_child::<PatternFamily>(SyntaxRole::Pattern)?
-                                .semantic()?,
-                        ),
-                        syntax,
-                        kind: Some(kind),
-                        recovery: None,
-                        body,
-                    })
-                }
-                None => {
-                    require_roles(&syntax, &[SyntaxRole::Recovery(0), SyntaxRole::Body])?;
-                    Ok(AttachedAwaitWithBranch {
-                        recovery: Some(
-                            syntax
-                                .required_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?,
-                        ),
-                        syntax,
-                        kind: None,
-                        pattern: None,
-                        body,
-                    })
-                }
+            if let Some(kind) = projection.kind() {
+                require_roles(&syntax, &[SyntaxRole::Pattern, SyntaxRole::Body])?;
+                Ok(AttachedAwaitWithBranch {
+                    pattern: Some(
+                        syntax
+                            .required_family_child::<PatternFamily>(SyntaxRole::Pattern)?
+                            .semantic()?,
+                    ),
+                    syntax,
+                    kind: Some(kind),
+                    recovery: None,
+                    body,
+                })
+            } else {
+                require_roles(&syntax, &[SyntaxRole::Recovery(0), SyntaxRole::Body])?;
+                Ok(AttachedAwaitWithBranch {
+                    recovery: Some(
+                        syntax.required_exact_child::<ErrorNodeKind>(SyntaxRole::Recovery(0))?,
+                    ),
+                    syntax,
+                    kind: None,
+                    pattern: None,
+                    body,
+                })
             }
         })
         .collect::<Result<Vec<_>, SyntaxAccessError>>()?

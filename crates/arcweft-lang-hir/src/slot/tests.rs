@@ -7,11 +7,11 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use crate::identity::{
-    ExprId, HirDatabaseId, HirIdKind, HirLimit, HirModuleId, HirRevision, HirTypedId,
-    IdResolveError, RawHirId, ScopeId, StmtId, SyntheticKey, SyntheticKeyError, SyntheticOwner,
-    SyntheticRole, TypeId,
+    CaptureId, ExprId, HirDatabaseId, HirIdKind, HirLimit, HirModuleId, HirRevision, HirTypedId,
+    IdResolveError, ItemId, LocalId, PatternId, RawHirId, ScopeId, StmtId, SyntheticKey,
+    SyntheticKeyError, SyntheticOwner, SyntheticRole, TypeId,
 };
-use crate::lower::HirLimitError;
+use crate::lowering::HirLimitError;
 use crate::source_index::{HirInsertionPoint, HirSourceSite};
 
 use super::{
@@ -46,7 +46,7 @@ impl Fixture {
     }
 
     fn syntax(&self) -> SyntaxNodeId {
-        self.parsed.tree().root().id()
+        self.parsed.root_syntax().id()
     }
 
     fn source(&self, start: usize) -> HirSourceSite {
@@ -97,6 +97,60 @@ fn reserve_reused_expr_child(
     assert!(!repeated.is_first_touch());
     assert_eq!(repeated.id(), first.id());
     first.id()
+}
+
+fn assert_slot_identity_exhaustion_is_atomic_for<I: HirTypedId + core::fmt::Debug>() {
+    let fixture = Fixture::new();
+    let owner_module = module(91);
+    let empty = SlotSnapshot::empty(owner_module, revision(1));
+    let initial_lifetimes = empty.lifetime_test_state();
+
+    let mut exhausted = StagedSlotTransaction::from_snapshot(&empty, revision(1));
+    exhausted.exhaust_next_slot_identity_for_test();
+    assert_eq!(
+        exhausted
+            .reserve_source::<I>(fixture.syntax(), fixture.source(0), false)
+            .unwrap_err(),
+        HirSlotError::SlotIdentityExhausted {
+            module: owner_module,
+            kind: I::KIND,
+        }
+    );
+    assert!(matches!(
+        exhausted.reserve_source::<I>(fixture.syntax(), fixture.source(0), false),
+        Err(HirSlotError::TransactionPoisoned)
+    ));
+    assert!(matches!(
+        exhausted.prepare(),
+        Err(HirSlotError::TransactionPoisoned)
+    ));
+
+    assert_eq!(empty.lifetime_test_state(), initial_lifetimes);
+    assert_eq!(empty.committed_slot_count(), 0);
+    assert_eq!(empty.source_key_count(), 0);
+    assert_eq!(empty.synthetic_pair_count(), 0);
+
+    let mut control = StagedSlotTransaction::from_snapshot(&empty, revision(1));
+    let control_id = control
+        .reserve_source::<I>(fixture.syntax(), fixture.source(0), false)
+        .unwrap()
+        .id();
+    assert_eq!(control_id.raw().slot(), NonZeroU32::MIN);
+    let committed = control.commit().unwrap();
+    assert!(committed.resolve(control_id).is_ok());
+    assert_eq!(committed.committed_slot_count(), 1);
+}
+
+#[test]
+fn slot_identity_exhaustion_is_atomic() {
+    assert_slot_identity_exhaustion_is_atomic_for::<ItemId>();
+    assert_slot_identity_exhaustion_is_atomic_for::<ScopeId>();
+    assert_slot_identity_exhaustion_is_atomic_for::<LocalId>();
+    assert_slot_identity_exhaustion_is_atomic_for::<ExprId>();
+    assert_slot_identity_exhaustion_is_atomic_for::<StmtId>();
+    assert_slot_identity_exhaustion_is_atomic_for::<TypeId>();
+    assert_slot_identity_exhaustion_is_atomic_for::<PatternId>();
+    assert_slot_identity_exhaustion_is_atomic_for::<CaptureId>();
 }
 
 #[test]
@@ -279,7 +333,7 @@ fn exact_zero_tail_pairs_reuse_for_expr_and_scope_owners_with_child_insertions()
 }
 
 #[test]
-fn lifetime_resolution_precedence_is_module_birth_retirement_then_kind() {
+fn wrong_module_is_checked_before_slot() {
     let fixture = Fixture::new();
     let local_module = module(9);
     let foreign_module = module(10);
@@ -843,7 +897,59 @@ fn retired_owner_reports_exact_snapshot_and_retirement() {
 }
 
 #[test]
-fn liveness_precedes_kind_mismatch() {
+fn old_snapshot_resolves_live_interval() {
+    let fixture = Fixture::new();
+    let pre_birth = StagedSlotTransaction::new(module(44), revision(1))
+        .commit()
+        .unwrap();
+
+    let mut birth = StagedSlotTransaction::from_snapshot(&pre_birth, revision(2));
+    let owner = birth
+        .reserve_source::<ExprId>(fixture.syntax(), fixture.source(1), false)
+        .unwrap()
+        .id();
+    let born = birth.commit().unwrap();
+
+    let mut living = StagedSlotTransaction::from_snapshot(&born, revision(3));
+    assert_eq!(
+        living
+            .reserve_source::<ExprId>(fixture.syntax(), fixture.source(1), false)
+            .unwrap()
+            .id(),
+        owner
+    );
+    let live = living.commit().unwrap();
+
+    let mut retirement = StagedSlotTransaction::from_snapshot(&live, revision(4));
+    retirement.retire(owner).unwrap();
+    let retired = retirement.commit().unwrap();
+
+    assert!(matches!(
+        pre_birth.resolve(owner),
+        Err(HirSlotError::Resolve(IdResolveError::NotYetLive {
+            id,
+            snapshot,
+            born,
+        })) if id == owner.raw().view()
+            && snapshot == pre_birth.snapshot_id()
+            && born == revision(2)
+    ));
+    assert_eq!(born.resolve(owner).unwrap().born(), revision(2));
+    assert_eq!(live.resolve(owner).unwrap().born(), revision(2));
+    assert!(matches!(
+        retired.resolve(owner),
+        Err(HirSlotError::Resolve(IdResolveError::Retired {
+            id,
+            snapshot,
+            retired_at,
+        })) if id == owner.raw().view()
+            && snapshot == retired.snapshot_id()
+            && retired_at == revision(4)
+    ));
+}
+
+#[test]
+fn wrong_kind_corruption_hook_never_panics() {
     let fixture = Fixture::new();
     let initial = StagedSlotTransaction::new(module(1), revision(1))
         .commit()
@@ -1007,7 +1113,7 @@ fn pair_1025_poisons_and_rolls_back_the_complete_prefix() {
     }
     assert_eq!(
         transaction.reserve_synthetic::<ExprId>(
-            key(owner, SyntheticRole::DesugaredTemporary, 0),
+            key(owner, SyntheticRole::PostfixIndexCandidateExpression, 0),
             fixture.source(3),
             true,
         ),

@@ -1,6 +1,6 @@
 use crate::action::AgentActionTarget;
 use crate::artifact::RequiredEntity;
-use crate::ids::{AgentResourceUri, PublicId};
+use crate::ids::{AgentProjectGraphSymbolId, AgentResourceUri, PublicId};
 use crate::predicate::Predicate;
 use crate::value::AgentValue;
 use serde::{Deserialize, Serialize};
@@ -37,7 +37,7 @@ impl AgentProjectGraph {
 /// One graph symbol known to the Agent runtime.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentProjectGraphSymbol {
-    pub symbol_id: String,
+    pub symbol_id: AgentProjectGraphSymbolId,
     pub public_id: Option<PublicId>,
     pub qualified_name: Option<String>,
     pub kind: String,
@@ -77,15 +77,15 @@ pub struct AgentProjectFlowControlSummary {
 /// One directed graph edge known to the Agent runtime.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentProjectGraphEdge {
-    pub from_symbol_id: String,
-    pub to_symbol_id: String,
+    pub from_symbol_id: AgentProjectGraphSymbolId,
+    pub to_symbol_id: AgentProjectGraphSymbolId,
     pub edge_kind: String,
 }
 
 /// Typed Agent response containing graph symbols and edges near one root.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct AgentProjectGraphNeighborhood {
-    pub root: PublicId,
+    pub root: AgentProjectGraphSymbolId,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub symbols: Vec<AgentProjectGraphSymbol>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -247,13 +247,22 @@ pub enum AgentHostRequest {
     Act(Box<AgentAction>),
     Wait(Box<WaitRequest>),
     Capture(Box<CaptureRequest>),
-    ReadResource { uri: AgentResourceUri },
-    EntityMetadata { entity: PublicId },
-    ProjectGraphNeighborhood { root: PublicId, depth: u32 },
+    ReadResource {
+        uri: AgentResourceUri,
+    },
+    EntityMetadata {
+        entity: PublicId,
+    },
+    ProjectGraphNeighborhood {
+        root: AgentProjectGraphSymbolId,
+        depth: u32,
+    },
     RagQuery(Box<RagRequest>),
     Assert(Box<AgentAssertionRequest>),
     Attach(Box<AgentAttachment>),
-    Checkpoint { name: String },
+    Checkpoint {
+        name: String,
+    },
 }
 
 /// Response envelope returned across the Agent controller host boundary.

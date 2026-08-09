@@ -1,0 +1,5 @@
+error[E0599]: no associated function or constant named `linked_hir` found for struct `CompiledProject` in the current scope
+ --> tests/ui/no_linked_hir.rs:4:30
+  |
+4 |     let _ = CompiledProject::linked_hir;
+  |                              ^^^^^^^^^^ associated function or constant not found in `CompiledProject`

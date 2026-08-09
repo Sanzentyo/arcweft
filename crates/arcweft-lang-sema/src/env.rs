@@ -8,11 +8,10 @@ pub mod nominal;
 pub mod registered;
 pub mod rust_metadata;
 
-pub(crate) use base::NominalRecordLiteralPolicy;
+pub(crate) use base::EnvironmentEnumSchema;
 pub use base::{
-    AgentActionEnvParam, AgentActionEnvSignature, DebugPathKind, FunctionParam,
-    FunctionParamHigherOrderBinding, FunctionParamSelector, FunctionParamSelectorSegment,
-    FunctionSignature, MethodSignature, TypeCheckEnv, TypeCheckEnvBuildError,
+    FunctionParam, FunctionParamHigherOrderBinding, FunctionParamSelector,
+    FunctionParamSelectorSegment, FunctionSignature, TypeCheckEnv, TypeCheckEnvBuildError,
 };
 pub use effects::{EffectCapability, EffectCapabilityParts};
 pub use enums::EnumVariantPayload;
@@ -28,3 +27,6 @@ pub use rust_metadata::{
 
 #[cfg(test)]
 mod nominal_tests;
+
+#[cfg(test)]
+mod tests;

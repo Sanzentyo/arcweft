@@ -505,38 +505,21 @@ mod tests {
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::line_task::LineTaskGroup;
     use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimeLineId, RuntimePlan};
-    use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
-    use arcweft_render_text::{
-        LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode,
-    };
-    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_id::TextKey;
     use arcweft_runtime_driver::clock::RuntimeClockStep;
     use arcweft_runtime_driver::session::{BundleEntryStart, BundleStepInput};
     use arcweft_runtime_driver::swap::SwapCompatibility;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_text_model::{
+        DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
+    };
     use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
-    fn test_dialogue_revision() -> DialogueProfileRevision {
-        let manifest = SourceDocument::try_new(
-            SourceDocumentId::try_new("player-native-patch-endpoint-test").expect("document ID"),
-            SourceName::Memory,
-            "test manifest",
-        )
-        .expect("test document");
-        let sources = SourceSetRevision::try_for_identities([manifest.identity()])
-            .expect("test source revision");
-        DialogueProfileRevision::from_admitted_parts(
-            manifest.identity().clone(),
-            sources,
-            sources,
-            ViewProgramId::try_new("view_program.player-native-patch-endpoint-test")
-                .expect("View program ID"),
-            AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-            ResourceTypeRegistry::empty().digest(),
-        )
+    fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+        arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+            .expect("fixture runtime artifact fingerprint is non-zero")
     }
 
     #[test]
@@ -581,7 +564,7 @@ mod tests {
                 .dialogue
                 .latest_active()
                 .and_then(|(_, entry)| entry.current_stage())
-                .map(arcweft_render_text::LineDisplayStage::text),
+                .map(arcweft_text_model::LineDisplayStage::text),
             Some("New text")
         );
     }
@@ -1000,30 +983,22 @@ mod tests {
             ),
             roles: arcweft_core::entry::RuntimeEntryRoles::None,
         }]);
-        let display = LineDisplayCatalog::try_from_lines(
-            test_dialogue_revision(),
-            vec![LineDisplaySpec {
+        let source_map = source_map("native-patch.arcw", "flow main { ... }");
+        let dialogue_content =
+            DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
                 line,
-                callee: "alice".to_owned(),
-                speaker_label: None,
-                text_key: None,
-                view: arcweft_bundle::standard_view::dialogue_view_id(),
-                profile_style: None,
-                dialogue_revision: test_dialogue_revision(),
-                voice: None,
-                look: None,
-                style: None,
-                base_styles: Vec::new(),
-                inline_failure: InlineFailurePolicy::FailLine,
-                style_contributions: Vec::new(),
-                args: Vec::new(),
-                content: RichTextDocument::new(vec![RichTextNode::Text {
+                TextKey::try_new("text.opening").expect("text key"),
+                RichTextDocument::new(vec![RichTextNode::Text {
                     text: display_text.to_owned(),
                 }]),
-            }],
-        )
-        .expect("test display catalog is revision-consistent");
-        let product_awbc = AwbcLowerer::new(&plan, &display, "native-patch.arcw")
+                Vec::new(),
+                source_map
+                    .primary_document()
+                    .expect("fixture source map retains its source")
+                    .product_source_ref(),
+            )])
+            .expect("final dialogue content catalog");
+        let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "native-patch.arcw")
             .lower()
             .expect("product AWBC lowers")
             .program;
@@ -1038,6 +1013,7 @@ mod tests {
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
                     flows: stats.flows,
                     bytecode_instructions: stats.instructions,
@@ -1046,9 +1022,9 @@ mod tests {
                     source_plans: stats.source_plans,
                 },
             },
-            source_map("native-patch.arcw", "flow main { ... }"),
+            source_map,
             bytecode,
-            display,
+            dialogue_content,
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(product_awbc)

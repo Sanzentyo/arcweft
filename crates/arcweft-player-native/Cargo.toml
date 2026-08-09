@@ -29,6 +29,7 @@ arcweft-player-text-input = { workspace = true }
 arcweft-presentation = { workspace = true }
 arcweft-render-wgpu = { workspace = true }
 arcweft-render-text = { workspace = true }
+arcweft-text-model = { workspace = true }
 arcweft-runtime-driver = { workspace = true }
 arcweft-runtime-host = { workspace = true }
 arcweft-save.workspace = true
@@ -54,11 +55,8 @@ arboard.workspace = true
 windows = { workspace = true, features = ["Win32_Foundation"] }
 
 [dev-dependencies]
-arcweft-dialogue = { workspace = true }
-arcweft-resource-model = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }
-arcweft-view = { workspace = true }
 
 [lib]
 path = "src/lib.rs"

@@ -362,7 +362,7 @@ fn candidate_assertion_condition_limit_is_inclusive_and_charged_once() {
     let one_over = format!("{exact}, one_over");
     let source = format!("predicate leaf() = items[{{ assert.check({one_over}); marker }}]\n");
     assert_eq!(
-        parse_shadow_document(&document(&source), ParseOptions::default()).unwrap_err(),
+        parse_document(&document(&source), ParseOptions::default()).unwrap_err(),
         GrammarBuildError::LimitExceeded(limit)
     );
 }

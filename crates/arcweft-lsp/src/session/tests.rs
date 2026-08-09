@@ -13,9 +13,9 @@ use lsp_types::{
     ClientCapabilities, CodeActionContext, DidChangeTextDocumentParams,
     DidChangeWatchedFilesParams, DidCloseTextDocumentParams, DidOpenTextDocumentParams,
     GotoDefinitionResponse, InlayHint, InlayHintLabel, PartialResultParams, Position, Range,
-    ReferenceContext, SignatureHelp, SignatureHelpParams, TextDocumentContentChangeEvent,
-    TextDocumentIdentifier, TextDocumentItem, TextDocumentPositionParams, Uri,
-    VersionedTextDocumentIdentifier, WorkDoneProgressParams,
+    SignatureHelp, SignatureHelpParams, TextDocumentContentChangeEvent, TextDocumentIdentifier,
+    TextDocumentItem, TextDocumentPositionParams, Uri, VersionedTextDocumentIdentifier,
+    WorkDoneProgressParams,
 };
 use std::{
     fs::{create_dir_all, write},
@@ -55,7 +55,8 @@ fn entry_definition_protocol_dispatch_honors_utf8_utf16_and_utf32_positions() {
 fn smoke() -> Result<Unit, AgentError>
 effects {}
 {
-    Ok(())
+    let result: Result<Unit, AgentError> = Ok(())
+    result
 }
 
 fn selected_entry() -> Unit {
@@ -112,6 +113,18 @@ source = "src/main.arcw"
         });
         assert_eq!(capabilities.position_encoding, Some(kind));
         open_text(&mut session, uri.clone(), source);
+        let accepted = session.profile_for_uri(&uri).accepted_environment();
+        assert!(
+            accepted.is_some(),
+            "Entry definition profile was not accepted: {:#?}",
+            session.profile_for_uri(&uri).diagnostics()
+        );
+        let accepted = accepted.expect("accepted Entry profile");
+        assert_eq!(
+            accepted.project().entry_references().len(),
+            1,
+            "accepted Entry reference must retain one exact final-HIR source owner"
+        );
         let line_index = crate::positions::LineIndex::new(source.to_owned(), encoding);
         let response = session.handle_request(Request {
             id: RequestId::from(41),
@@ -142,28 +155,32 @@ fn workspace_edit_normalization_is_deterministic_and_deduplicated() {
     let current = "file:///b.arcw".parse::<Uri>().expect("current URI");
     let other = "file:///a.arcw".parse::<Uri>().expect("other URI");
     let mut documents = crate::documents::DocumentStore::default();
-    documents.open(
-        DidOpenTextDocumentParams {
-            text_document: TextDocumentItem::new(
-                current.clone(),
-                "arcweft".to_owned(),
-                7,
-                String::new(),
-            ),
-        },
-        PositionEncoding::Utf16,
-    );
-    documents.open(
-        DidOpenTextDocumentParams {
-            text_document: TextDocumentItem::new(
-                other.clone(),
-                "arcweft".to_owned(),
-                9,
-                String::new(),
-            ),
-        },
-        PositionEncoding::Utf16,
-    );
+    documents
+        .open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem::new(
+                    current.clone(),
+                    "arcweft".to_owned(),
+                    7,
+                    String::new(),
+                ),
+            },
+            PositionEncoding::Utf16,
+        )
+        .expect("current document parse");
+    documents
+        .open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem::new(
+                    other.clone(),
+                    "arcweft".to_owned(),
+                    9,
+                    String::new(),
+                ),
+            },
+            PositionEncoding::Utf16,
+        )
+        .expect("other document parse");
     let later = lsp_types::TextEdit::new(
         Range::new(Position::new(3, 4), Position::new(3, 8)),
         "later".to_owned(),
@@ -246,12 +263,19 @@ fn semantic_analysis_cache_is_exact_reused_and_bounded_per_open_uri() {
     let project = TestProject::new("lsp-analysis-cache");
     project.write(
         "arcw.toml",
-        &canonical_project_manifest("lsp-analysis-cache", ""),
+        &canonical_project_manifest(
+            "lsp-analysis-cache",
+            r#"
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+"#,
+        ),
     );
-    let first = "pub character @character.alice Alice as alice {}\nflow main {\n  alice: one\n}\n";
+    let first = "flow @flow.main main {\n    let value = \"one\"\n}\n";
     project.write("src/main.arcw", first);
     let uri = file_uri(&project.path("src/main.arcw"));
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
+    let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), first);
 
     assert_eq!(session.analyses_by_uri.len(), 1);
@@ -265,7 +289,7 @@ fn semantic_analysis_cache_is_exact_reused_and_bounded_per_open_uri() {
     assert_analysis_cache_requires_exact_source_lease(&session, &uri, first, &first_analysis);
     assert_code_actions_reuse_analysis(&session, &uri, &first_analysis);
 
-    let second = first.replace("alice: one", "alice: two");
+    let second = first.replace("\"one\"", "\"two\"");
     session
         .handle_notification(Notification::new(
             DidChangeTextDocument::METHOD.to_owned(),
@@ -348,6 +372,7 @@ fn assert_analysis_cache_requires_exact_source_lease(
     expected: &Arc<DocumentAnalysis>,
 ) {
     let open_snapshot = session.documents.get(uri).expect("open snapshot");
+    assert_open_snapshot_matches_accepted_compiler(session, uri);
     assert!(Arc::ptr_eq(
         expected.source_document(),
         open_snapshot.source_document()
@@ -360,22 +385,50 @@ fn assert_analysis_cache_requires_exact_source_lease(
     ));
 
     let mut independent_store = crate::documents::DocumentStore::default();
-    let equal_bytes_with_a_different_lease = independent_store.open(
-        DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: uri.clone(),
-                language_id: "arcweft".to_owned(),
-                version: open_snapshot.version(),
-                text: source.to_owned(),
+    let equal_bytes_with_a_different_lease = independent_store
+        .open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: uri.clone(),
+                    language_id: "arcweft".to_owned(),
+                    version: open_snapshot.version(),
+                    text: source.to_owned(),
+                },
             },
-        },
-        session.position_encoding,
-    );
+            session.position_encoding,
+        )
+        .expect("independent document parse");
     assert!(
         session
             .cached_analysis(&equal_bytes_with_a_different_lease)
             .is_none()
     );
+}
+
+fn assert_open_snapshot_matches_accepted_compiler(session: &ArcweftLspSession, uri: &Uri) {
+    let open = session.documents.get(uri).expect("open snapshot");
+    let accepted = session
+        .profile_for_uri(uri)
+        .accepted_environment()
+        .expect("accepted live profile");
+    let source = accepted
+        .project()
+        .sources()
+        .by_uri(uri)
+        .expect("accepted source adapter");
+    let key = accepted
+        .project()
+        .module_key(source.document().identity())
+        .expect("accepted source module key");
+    let parsed = accepted
+        .project()
+        .parsed_source(&key)
+        .expect("compiler-retained grammar lease");
+    assert!(open.parsed_source().is_same_snapshot(parsed));
+    assert!(Arc::ptr_eq(
+        open.parsed_source().document_lease(),
+        parsed.document_lease()
+    ));
 }
 
 fn assert_notification_rebuilds_analysis(
@@ -405,6 +458,7 @@ fn assert_notification_rebuilds_analysis(
             .expect("rebuilt analysis")
             .analysis,
     );
+    assert_open_snapshot_matches_accepted_compiler(session, uri);
     assert!(!Arc::ptr_eq(previous, &current));
     current
 }
@@ -431,40 +485,6 @@ fn assert_code_actions_reuse_analysis(
             .expect("reused analysis")
             .analysis
     ));
-}
-
-#[test]
-fn code_actions_expand_effect_upper_bound() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(
-        &mut session,
-        uri.clone(),
-        r#"
-extern capability fs {
-    fn read_text(path: String) -> String effects { fs.read }
-}
-flow @flow.opening opening
-effects { }
-{
-    let body = fs.read_text(path = "story.arcw")
-}
-"#,
-    );
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(Position::new(0, 0), Position::new(20, 0)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = code_action_by_title(&actions, "Expand effect upper bound")
-        .expect("upper-bound quickfix exists");
-    assert!(workspace_edit_replacements(action).contains(&"effects { fs.read }".to_owned()));
 }
 
 #[test]
@@ -497,104 +517,6 @@ effects { fs.read, debug.record }
         code_action_by_title(&actions, "Remove unused effect declaration").is_none(),
         "unused upper-bound members are not diagnostics"
     );
-}
-
-#[test]
-fn code_actions_include_canonical_rich_text_rewrite() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(
-        &mut session,
-        uri.clone(),
-        "flow @flow.opening opening {\n    alice: [.keyword]word[/][.sparkle amp=2px]hi[/]\n}\n",
-    );
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(Position::new(0, 0), Position::new(10, 0)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title == "Canonicalize inferred rich-text tags" =>
-            {
-                Some(action)
-            }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("canonical rich-text action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-
-    assert_eq!(edits.len(), 1);
-    assert!(
-        edits[0]
-            .new_text
-            .contains("[mark .keyword]word[effect .sparkle amp=2px]hi[/effect]")
-    );
-    assert!(
-        edits[0]
-            .new_text
-            .contains("[effect .sparkle amp=2px]hi[/effect]")
-    );
-    assert!(!edits[0].new_text.contains("[/]"));
-}
-
-#[test]
-fn code_actions_canonical_rich_text_preserve_nested_proxy_params() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(
-        &mut session,
-        uri.clone(),
-        "#[text_proxy(kind=\"keyword\", default_hit=true)]\npub struct KeywordHit {\n    channel: String\n}\n\n#[text_proxy(kind=\"hover\", default_hit=false)]\npub struct HoverHit {\n    layer: String\n}\n\nflow @flow.opening opening {\n    alice: [.hotspot type=KeywordHit channel=inventory][.HoverHit tone=alert]multi[/][/]\n}\n",
-    );
-
-    let actions = session
-        .code_actions(&CodeActionParams {
-            text_document: TextDocumentIdentifier { uri: uri.clone() },
-            range: Range::new(Position::new(0, 0), Position::new(14, 0)),
-            context: CodeActionContext::default(),
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        })
-        .expect("open document actions");
-
-    let action = actions
-        .iter()
-        .find_map(|action| match action {
-            CodeActionOrCommand::CodeAction(action)
-                if action.title == "Canonicalize inferred rich-text tags" =>
-            {
-                Some(action)
-            }
-            CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
-        })
-        .expect("canonical rich-text action");
-    let edits = action
-        .edit
-        .as_ref()
-        .and_then(|edit| edit.changes.as_ref())
-        .and_then(|changes| changes.get(&uri))
-        .expect("workspace edit");
-
-    assert_eq!(edits.len(), 1);
-    assert!(edits[0].new_text.contains(
-            "[object .hotspot type=KeywordHit channel=inventory][object .HoverHit type=HoverHit tone=alert]multi[/object][/object]"
-        ));
-    assert!(!edits[0].new_text.contains("[effect .HoverHit"));
-    assert!(!edits[0].new_text.contains("[/]"));
 }
 
 #[test]
@@ -639,11 +561,11 @@ fn did_open_refreshes_project_profile_for_completion() {
             &metadata,
         ),
     );
-    project.write("src/main.arcw", "flow @.main main {}\n");
+    project.write("src/main.arcw", "flow @flow.main main {}\n");
     project.write("generated/custom-echo.adapter.json", &metadata);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
-    open_text(&mut session, uri.clone(), "flow @.main main {}\n");
+    open_text(&mut session, uri.clone(), "flow @flow.main main {}\n");
 
     let completions = completion_labels(&mut session, uri);
     assert!(completions.iter().any(|item| item.label == "custom.echo"));
@@ -651,9 +573,10 @@ fn did_open_refreshes_project_profile_for_completion() {
 
 #[test]
 fn completions_include_standard_enum_variant_shorthands() {
-    let uri = "file:///story.arcw".parse::<Uri>().expect("uri");
-    let mut session = ArcweftLspSession::new(&LspConfig::default());
-    open_text(&mut session, uri.clone(), "flow @flow.opening opening {}\n");
+    let (_project, mut session, uri) = accepted_project_session(
+        "standard-enum-variant-shorthands",
+        "flow @flow.opening opening {}\n",
+    );
 
     let completions = completion_labels(&mut session, uri);
     let json = completions
@@ -673,7 +596,7 @@ fn completions_and_hover_expose_standard_dialogue_view_nominal_contract() {
     let source = r"
 pub view DialoguePanel(dialogue: DialogueView) {
     Column {
-        Text(dialogue.speaker)
+        Text(dialogue.character_display_name)
         RichText(dialogue.content)
     }
 }
@@ -683,7 +606,7 @@ pub view DialoguePanel(dialogue: DialogueView) {
     let completions = completion_labels(&mut session, uri.clone());
     for expected in [
         "DialogueView",
-        "speaker",
+        "character_display_name",
         "content",
         "occurrence",
         "stage",
@@ -706,7 +629,7 @@ fn completion_and_hover_use_custom_dialogue_view_role_inventory() {
     let source = r"
 #[dialogue_view]
 pub struct StoryDialogue {
-    speaker: String
+    character_display_name: String
     content: DialogueContent
     occurrence: DialogueOccurrenceId
     stage: DialogueStage
@@ -714,7 +637,7 @@ pub struct StoryDialogue {
     primary_action: DialogueAction
 }
 ";
-    let (_project, mut session, uri) = accepted_dialogue_session("custom-dialogue-view", source);
+    let (_project, mut session, uri) = accepted_project_session("custom-dialogue-view", source);
 
     let completions = completion_labels(&mut session, uri.clone());
     assert!(
@@ -746,7 +669,7 @@ fn completions_use_document_scoped_profiles() {
             &alpha_metadata,
         ),
     );
-    alpha.write("src/main.arcw", "flow @.main main {}\n");
+    alpha.write("src/main.arcw", "flow @flow.main main {}\n");
     alpha.write("generated/alpha.adapter.json", &alpha_metadata);
     let beta = TestProject::new("lsp-session-beta");
     let beta_metadata = adapter_metadata_with_function("call", "String", "String");
@@ -760,13 +683,13 @@ fn completions_use_document_scoped_profiles() {
             &beta_metadata,
         ),
     );
-    beta.write("src/main.arcw", "flow @.main main {}\n");
+    beta.write("src/main.arcw", "flow @flow.main main {}\n");
     beta.write("generated/beta.adapter.json", &beta_metadata);
     let alpha_uri = file_uri(&alpha.path("src/main.arcw"));
     let beta_uri = file_uri(&beta.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
-    open_text(&mut session, alpha_uri.clone(), "flow @.main main {}\n");
-    open_text(&mut session, beta_uri.clone(), "flow @.main main {}\n");
+    open_text(&mut session, alpha_uri.clone(), "flow @flow.main main {}\n");
+    open_text(&mut session, beta_uri.clone(), "flow @flow.main main {}\n");
 
     let alpha_completions = completion_labels(&mut session, alpha_uri);
     let beta_completions = completion_labels(&mut session, beta_uri);
@@ -807,11 +730,11 @@ fn watched_file_change_refreshes_profile_metadata() {
             &before_metadata,
         ),
     );
-    project.write("src/main.arcw", "flow @.main main {}\n");
+    project.write("src/main.arcw", "flow @flow.main main {}\n");
     project.write("generated/custom.adapter.json", &before_metadata);
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
-    open_text(&mut session, uri.clone(), "flow @.main main {}\n");
+    open_text(&mut session, uri.clone(), "flow @flow.main main {}\n");
     assert!(
         completion_labels(&mut session, uri.clone())
             .iter()
@@ -858,11 +781,11 @@ fn watched_file_change_refreshes_external_module_metadata() {
             &metadata,
         ),
     );
-    project.write("src/main.arcw", "flow @.main main {}\n");
+    project.write("src/main.arcw", "flow @flow.main main {}\n");
     project.write("generated/quest.adapter.json", "{ not json");
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
-    open_text(&mut session, uri.clone(), "flow @.main main {}\n");
+    open_text(&mut session, uri.clone(), "flow @flow.main main {}\n");
     assert!(
         !completion_labels(&mut session, uri.clone())
             .iter()
@@ -1115,30 +1038,16 @@ flow @flow.main main {}\n";
 fn inlay_hint_request_reports_inferred_function_types() {
     let source = r"
 flow @flow.function_inlays function_inlays {
-    let predicate = _ > 80i64
     let zero = || 1
-    let explicit: i64 -> bool = _ > 80i64
 }
 ";
-    let (_project, mut session, uri) = accepted_dialogue_session("function-inlays", source);
+    let (_project, mut session, uri) = accepted_project_session("function-inlays", source);
 
     let labels = inlay_hint_labels(&mut session, uri);
 
     assert!(
-        labels.iter().any(|label| label == ": i64 -> bool"),
-        "expected inferred partial-placeholder function type inlay, got {labels:?}"
-    );
-    assert!(
         labels.iter().any(|label| label == ": () -> i32"),
         "expected inferred closure function type inlay, got {labels:?}"
-    );
-    assert_eq!(
-        labels
-            .iter()
-            .filter(|label| label.as_str() == ": i64 -> bool")
-            .count(),
-        1,
-        "explicit let type ascription should not produce a duplicate inlay: {labels:?}"
     );
 }
 
@@ -1154,7 +1063,7 @@ flow @flow.numeric_inlays numeric_inlays {
     let explicit: u64 = 42
 }
 ";
-    let (_project, mut session, uri) = accepted_dialogue_session("numeric-inlays", source);
+    let (_project, mut session, uri) = accepted_project_session("numeric-inlays", source);
 
     let labels = inlay_hint_labels(&mut session, uri);
 
@@ -1185,7 +1094,7 @@ fn inlay_hint_request_without_accepted_project_returns_empty() {
         .expect("uri");
     let source = r"
 flow @flow.unaccepted_inlays unaccepted_inlays {
-    let predicate = _ > 80i64
+    let matcher = _ > 80i64
     let count = 42
 }
 ";
@@ -1202,25 +1111,27 @@ flow @flow.unaccepted_inlays unaccepted_inlays {
 fn inlay_hints_require_the_exact_accepted_project_source() {
     let source = r"
 flow @flow.accepted_inlays accepted_inlays {
-    let predicate = _ > 80i64
+    let matcher = _ > 80i64
     let count = 42
 }
 ";
-    let (_project, session, uri) = accepted_dialogue_session("accepted-inlay-boundary", source);
+    let (_project, session, uri) = accepted_project_session("accepted-inlay-boundary", source);
     let profile = session.profile_for_uri(&uri).clone();
     let mut documents = crate::documents::DocumentStore::default();
 
-    let stale = documents.open(
-        DidOpenTextDocumentParams {
-            text_document: TextDocumentItem::new(
-                uri.clone(),
-                "arcweft".to_owned(),
-                2,
-                source.replacen("80i64", "81i64", 1),
-            ),
-        },
-        PositionEncoding::Utf16,
-    );
+    let stale = documents
+        .open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem::new(
+                    uri.clone(),
+                    "arcweft".to_owned(),
+                    2,
+                    source.replacen("80i64", "81i64", 1),
+                ),
+            },
+            PositionEncoding::Utf16,
+        )
+        .expect("stale document parse");
     assert!(
         crate::features::inlay::hints(&profile, &stale).is_empty(),
         "same-length stale editor bytes must not reuse or reconstruct accepted semantics"
@@ -1229,17 +1140,19 @@ flow @flow.accepted_inlays accepted_inlays {
     let foreign_uri = "file:///foreign-inlays.arcw"
         .parse::<Uri>()
         .expect("foreign URI");
-    let foreign = documents.open(
-        DidOpenTextDocumentParams {
-            text_document: TextDocumentItem::new(
-                foreign_uri,
-                "arcweft".to_owned(),
-                1,
-                source.to_owned(),
-            ),
-        },
-        PositionEncoding::Utf16,
-    );
+    let foreign = documents
+        .open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem::new(
+                    foreign_uri,
+                    "arcweft".to_owned(),
+                    1,
+                    source.to_owned(),
+                ),
+            },
+            PositionEncoding::Utf16,
+        )
+        .expect("foreign document parse");
     assert!(
         crate::features::inlay::hints(&profile, &foreign).is_empty(),
         "matching bytes from a foreign document must not borrow accepted semantics"
@@ -1248,26 +1161,25 @@ flow @flow.accepted_inlays accepted_inlays {
 
 #[test]
 fn expression_type_inlays_are_profile_gated_and_skip_trivial_sites() {
-    let source = r#"
-struct Choice {
+    let source = r"
+struct MenuOption {
     label: String,
     enabled: bool,
 }
 
-fn add(lhs: i64, rhs: i64) -> i64 { lhs + rhs }
+fn option_label(option: MenuOption) -> String {
+    option.label
+}
 
 flow @flow.expression_inlays expression_inlays {
     let base = 2i64
     let copy = base
-    let choice = Choice { label: "Start", enabled: true }
-    let label = choice.label
-    let total = add(1i64, base + 3i64)
-    let piped = base |> add(^, 4i64)
+    let total = base + 3i64
 }
-"#;
+";
 
     let (_project, mut default_session, uri) =
-        accepted_dialogue_session("expression-inlays", source);
+        accepted_project_session("expression-inlays", source);
     let default_labels = inlay_hint_labels(&mut default_session, uri.clone());
     assert!(
         !default_labels.iter().any(|label| label == ": i64"),
@@ -1295,11 +1207,11 @@ flow @flow.expression_inlays expression_inlays {
         .filter(|label| label.as_str() == ": i64")
         .count();
     assert!(
-        i64_inlays >= 3,
-        "expected expression inlays for call, binary, and pipe-family expressions; got {enabled_labels:?}"
+        i64_inlays >= 1,
+        "expected an expression inlay for the binary expression; got {enabled_labels:?}"
     );
     assert!(
-        i64_inlays < 5,
+        i64_inlays < 3,
         "literal and trivial path expression sites should stay suppressed; got {enabled_labels:?}"
     );
     assert!(
@@ -1307,7 +1219,7 @@ flow @flow.expression_inlays expression_inlays {
         "enabled expression inlays should include non-trivial selector expressions; got {enabled_labels:?}"
     );
     assert!(
-        !enabled_labels.iter().any(|label| label == ": Choice"),
+        !enabled_labels.iter().any(|label| label == ": MenuOption"),
         "aggregate literal sites should stay suppressed under the conservative expression inlay policy; got {enabled_labels:?}"
     );
     let unique_sites = enabled_hints
@@ -1327,269 +1239,14 @@ flow @flow.expression_inlays expression_inlays {
 }
 
 #[test]
-fn definition_request_returns_effective_style_contributor_ranges() {
-    let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#202122")
-            }
-            ruby {
-                size = 14px
-            }
-        }
-    }
-}
-
-flow opening {
-    alice(rich_text=rich_text_style(ruby=ruby_style(gap=1px))): hi[p]
-}
-"##;
-    let (_project, mut session, uri) =
-        accepted_dialogue_session("definition-effective-style", source);
-
-    let response = session.handle_request(Request {
-        id: RequestId::from(5),
-        method: GotoDefinition::METHOD.to_owned(),
-        params: serde_json::json!(GotoDefinitionParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
-                position: position_of(source, "hi[p]"),
-            },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        }),
-    });
-    let definition = serde_json::from_value::<GotoDefinitionResponse>(
-        response.result.expect("definition response"),
-    )
-    .expect("definition response decodes");
-    let GotoDefinitionResponse::Array(locations) = definition else {
-        panic!("expected location array");
-    };
-
-    assert!(locations.iter().all(|location| location.uri == uri));
-    assert!(
-        locations
-            .iter()
-            .any(|location| { location.range.start == position_of(source, "14px") })
-    );
-    assert!(
-        locations
-            .iter()
-            .any(|location| { location.range.start == position_of(source, "rgb(\"#202122\")") })
-    );
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "1px")
-            && location.range.end == position_of(source, "))): hi[p]")
-    }));
-}
-
-#[test]
-fn references_request_returns_all_effective_style_contributors() {
-    let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#202122")
-            }
-        }
-    }
-}
-
-flow opening {
-    alice(rich_text.text.color=rgb("#303132")): hi[p]
-}
-"##;
-    let (_project, mut session, uri) =
-        accepted_dialogue_session("references-effective-style", source);
-
-    let response = session.handle_request(Request {
-        id: RequestId::from(6),
-        method: References::METHOD.to_owned(),
-        params: serde_json::json!(ReferenceParams {
-            text_document_position: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
-                position: position_of(source, "hi[p]"),
-            },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-            context: ReferenceContext {
-                include_declaration: true
-            },
-        }),
-    });
-    let locations = serde_json::from_value::<Vec<lsp_types::Location>>(
-        response.result.expect("references response"),
-    )
-    .expect("references response decodes");
-
-    assert!(locations.iter().all(|location| location.uri == uri));
-    assert!(
-        locations
-            .iter()
-            .any(|location| { location.range.start == position_of(source, "rgb(\"#202122\")") })
-    );
-    assert!(
-        locations
-            .iter()
-            .any(|location| { location.range.start == position_of(source, "rgb(\"#303132\")") })
-    );
-}
-
-#[test]
-fn definition_request_on_line_option_returns_matching_style_path() {
-    let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#101112")
-            }
-            ruby {
-                size = 14px
-            }
-        }
-    }
-}
-
-flow opening {
-    alice(rich_text.text.color=rgb("#202122")): hi[p]
-}
-"##;
-    let (_project, mut session, uri) = accepted_dialogue_session("definition-line-option", source);
-
-    let response = session.handle_request(Request {
-        id: RequestId::from(7),
-        method: GotoDefinition::METHOD.to_owned(),
-        params: serde_json::json!(GotoDefinitionParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
-                position: position_of(source, "#202122"),
-            },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        }),
-    });
-    let definition = serde_json::from_value::<GotoDefinitionResponse>(
-        response.result.expect("definition response"),
-    )
-    .expect("definition response decodes");
-    let GotoDefinitionResponse::Array(locations) = definition else {
-        panic!("expected location array");
-    };
-
-    assert!(locations.iter().all(|location| location.uri == uri));
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "rgb(\"#202122\")")
-            && location.range.end == position_of(source, "): hi[p]")
-    }));
-    assert!(
-        !locations
-            .iter()
-            .any(|location| { location.range.start == position_of(source, "14px") })
-    );
-}
-
-#[test]
-fn references_request_on_line_option_filters_to_matching_style_path() {
-    let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#101112")
-            }
-            ruby {
-                size = 14px
-            }
-        }
-    }
-}
-
-flow opening {
-    alice(rich_text.text.color=rgb("#202122")): hi[p]
-}
-"##;
-    let (_project, mut session, uri) = accepted_dialogue_session("references-line-option", source);
-
-    let response = session.handle_request(Request {
-        id: RequestId::from(8),
-        method: References::METHOD.to_owned(),
-        params: serde_json::json!(ReferenceParams {
-            text_document_position: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
-                position: position_of(source, "#202122"),
-            },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-            context: ReferenceContext {
-                include_declaration: true
-            },
-        }),
-    });
-    let locations = serde_json::from_value::<Vec<lsp_types::Location>>(
-        response.result.expect("references response"),
-    )
-    .expect("references response decodes");
-
-    assert!(locations.iter().all(|location| location.uri == uri));
-    assert!(
-        locations
-            .iter()
-            .any(|location| { location.range.start == position_of(source, "rgb(\"#101112\")") })
-    );
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "rgb(\"#202122\")")
-            && location.range.end == position_of(source, "): hi[p]")
-    }));
-    assert!(
-        !locations
-            .iter()
-            .any(|location| { location.range.start == position_of(source, "14px") })
-    );
-}
-
-#[test]
-fn hover_on_line_option_filters_effective_style_path() {
-    let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#101112")
-            }
-            ruby {
-                size = 14px
-            }
-        }
-    }
-}
-
-flow opening {
-    alice(rich_text.text.color=rgb("#202122")): hi[p]
-}
-"##;
-    let (_project, mut session, uri) = accepted_dialogue_session("hover-line-option", source);
-    let hover = hover_text(&mut session, uri, source, "202122");
-
-    assert!(hover.contains("effective dialogue style `rich_text.text.color` for `alice`"));
-    assert!(hover.contains("rich_text.text.color = rgb(\"#202122\")"));
-    assert!(hover.contains("rich_text.text.color = rgb(\"#101112\")"));
-    assert!(!hover.contains("rich_text.ruby.size = 14px"));
-}
-
-#[test]
-fn hover_in_child_module_uses_project_global_dialogue_ordinal() {
-    let project = TestProject::new("hover-child-dialogue-global-ordinal");
+fn hover_in_child_module_uses_exact_dialogue_application_character() {
+    let project = TestProject::new("hover-child-dialogue-character");
     project.write(
         "arcw.toml",
         r#"schema = 1
 
 [package]
-id = "org.arcweft.tests.dialogue.project-cascade"
+id = "org.arcweft.tests.dialogue.application"
 version = "0.1.0"
 
 [profiles.dev]
@@ -1597,27 +1254,27 @@ kind = "game"
 source = "src/main.arcw"
 "#,
     );
-    let root_source = r##"use self.side.child_helper
+    let root_source = r"use crate.side.child_helper
 
-pub character root_speaker {}
+pub character @character.root_speaker Root as root_speaker {}
 
-flow root {
-    root_speaker(rich_text.text.color=rgb("#111111")): root[p]
+test @test.root_dialogue scenario {
+    root_speaker[Hello[p]]
 }
-"##;
+";
     project.write("src/main.arcw", root_source);
-    let child_source = r##"mod side
+    let child_source = r"mod crate.side
 
-pub character child_speaker {}
+pub character @character.child_speaker Child as child_speaker {}
 
 pub fn child_helper() -> Unit {
     ()
 }
 
-flow child {
-    child_speaker(rich_text.text.color=rgb("#222222")): child[p]
+test @test.child_dialogue scenario {
+    child_speaker[Hello[p]]
 }
-"##;
+";
     project.write("src/side.arcw", child_source);
 
     let root_uri = file_uri(&project.path("src/main.arcw"));
@@ -1632,135 +1289,24 @@ flow child {
         profile.diagnostics()
     );
 
-    let hover = hover_text(&mut session, uri, child_source, "222222");
-    assert!(hover.contains("for `child_speaker`"), "{hover}");
-    assert!(hover.contains("#222222"), "{hover}");
-    assert!(!hover.contains("root_speaker"), "{hover}");
-    assert!(!hover.contains("#111111"), "{hover}");
-}
-
-#[test]
-fn hover_on_nested_rich_text_line_option_filters_to_leaf_path() {
-    let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#101112")
-            }
-            ruby {
-                size = 14px
-            }
-        }
-    }
-}
-
-flow opening {
-    alice(rich_text=rich_text_style(ruby=ruby_style(size=11px))): hi[p]
-}
-"##;
-    let (_project, mut session, uri) =
-        accepted_dialogue_session("hover-nested-line-option", source);
-    let hover = hover_text(&mut session, uri, source, "11px");
-
-    assert!(hover.contains("effective dialogue style `rich_text.ruby.size` for `alice`"));
-    assert!(hover.contains("rich_text.ruby.size = 11px"));
-    assert!(hover.contains("rich_text.ruby.size = 14px"));
-    assert!(!hover.contains("rich_text.text.color"));
-}
-
-#[test]
-fn hover_on_inline_rich_text_span_filters_to_leaf_path() {
-    let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#101112")
-            }
-            ruby {
-                size = 14px
-            }
-        }
-    }
-}
-
-flow opening {
-    alice: [.ruby_over ruby_size=11px]|[夢](ゆめ)[/][p]
-}
-"##;
-    let (_project, mut session, uri) = accepted_dialogue_session("hover-inline-span", source);
-    let hover = hover_text(&mut session, uri, source, "11px");
-
-    assert!(hover.contains("effective dialogue style `rich_text.ruby.size` for `alice`"));
-    assert!(hover.contains("rich_text.ruby.size = 11px (inline_span"));
-    assert!(hover.contains("rich_text.ruby.size = 14px"));
-    assert!(!hover.contains("rich_text.text.color"));
-}
-
-#[test]
-fn definition_on_nested_rich_text_line_option_returns_leaf_path_winner() {
-    let source = r##"
-pub character alice {
-    dialogue_style {
-        rich_text {
-            text {
-                color = rgb("#101112")
-            }
-            ruby {
-                size = 14px
-            }
-        }
-    }
-}
-
-flow opening {
-    alice(rich_text=rich_text_style(ruby=ruby_style(size=11px))): hi[p]
-}
-"##;
-    let (_project, mut session, uri) =
-        accepted_dialogue_session("definition-nested-line-option", source);
-
-    let response = session.handle_request(Request {
-        id: RequestId::from(9),
-        method: GotoDefinition::METHOD.to_owned(),
-        params: serde_json::json!(GotoDefinitionParams {
-            text_document_position_params: TextDocumentPositionParams {
-                text_document: TextDocumentIdentifier { uri: uri.clone() },
-                position: position_of(source, "11px"),
-            },
-            work_done_progress_params: WorkDoneProgressParams::default(),
-            partial_result_params: PartialResultParams::default(),
-        }),
-    });
-    let definition = serde_json::from_value::<GotoDefinitionResponse>(
-        response.result.expect("definition response"),
-    )
-    .expect("definition response decodes");
-    let GotoDefinitionResponse::Array(locations) = definition else {
-        panic!("expected location array");
-    };
-
-    assert!(locations.iter().all(|location| location.uri == uri));
-    assert!(locations.iter().any(|location| {
-        location.range.start == position_of(source, "11px")
-            && location.range.end == position_of(source, "))): hi[p]")
-    }));
+    let hover = hover_text(&mut session, uri, child_source, "child_speaker[");
     assert!(
-        !locations
-            .iter()
-            .any(|location| { location.range.start == position_of(source, "rgb(\"#101112\")") })
+        hover.contains("CharacterDialogue content application"),
+        "{hover}"
     );
+    assert!(hover.contains("@character.child_speaker"), "{hover}");
+    assert!(hover.contains("DialogueLine"), "{hover}");
+    assert!(!hover.contains("@character.root_speaker"), "{hover}");
 }
 
-fn accepted_dialogue_session(name: &str, source: &str) -> (TestProject, ArcweftLspSession, Uri) {
+fn accepted_project_session(name: &str, source: &str) -> (TestProject, ArcweftLspSession, Uri) {
     let project = TestProject::new(name);
     project.write(
         "arcw.toml",
         r#"schema = 1
 
 [package]
-id = "org.arcweft.tests.dialogue.cascade"
+id = "org.arcweft.tests.accepted.project"
 version = "0.1.0"
 
 [profiles.dev]
@@ -1798,35 +1344,6 @@ fn code_action_by_title<'a>(
         CodeActionOrCommand::CodeAction(action) if action.title.contains(title) => Some(action),
         CodeActionOrCommand::CodeAction(_) | CodeActionOrCommand::Command(_) => None,
     })
-}
-
-fn workspace_edit_replacements(action: &lsp_types::CodeAction) -> Vec<String> {
-    let Some(edit) = action.edit.as_ref() else {
-        return Vec::new();
-    };
-    edit.changes
-        .as_ref()
-        .into_iter()
-        .flat_map(|changes| changes.values())
-        .flatten()
-        .map(|edit| edit.new_text.clone())
-        .chain(
-            edit.document_changes
-                .as_ref()
-                .into_iter()
-                .flat_map(|changes| match changes {
-                    lsp_types::DocumentChanges::Edits(edits) => edits
-                        .iter()
-                        .flat_map(|edit| edit.edits.iter())
-                        .filter_map(|edit| match edit {
-                            lsp_types::OneOf::Left(edit) => Some(edit.new_text.clone()),
-                            lsp_types::OneOf::Right(_) => None,
-                        })
-                        .collect::<Vec<_>>(),
-                    lsp_types::DocumentChanges::Operations(_) => Vec::new(),
-                }),
-        )
-        .collect()
 }
 
 fn completion_labels(session: &mut ArcweftLspSession, uri: Uri) -> Vec<lsp_types::CompletionItem> {

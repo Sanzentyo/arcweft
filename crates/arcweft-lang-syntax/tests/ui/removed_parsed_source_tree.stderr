@@ -1,0 +1,5 @@
+error[E0599]: no method named `tree` found for reference `&ParsedSource` in the current scope
+ --> tests/ui/removed_parsed_source_tree.rs:4:20
+  |
+4 |     let _ = parsed.tree();
+  |                    ^^^^ method not found in `&ParsedSource`

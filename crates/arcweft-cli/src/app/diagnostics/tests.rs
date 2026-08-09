@@ -1,9 +1,8 @@
 use annotate_snippets::Renderer;
-use arcweft_agent_repl::{AgentDiagnosticProjector, AgentParserDiagnosticProjection};
+use arcweft_agent_repl::{AgentDiagnosticProjector, AgentSyntaxDiagnosticProjection};
 use arcweft_lang_syntax::{
-    parser::recovery::{ParseError, ParseErrorKind},
-    parser::{ParseOptions, parse_document_with_source},
-    source::ParsedSource,
+    incremental::{ParsedSource, SyntaxDatabase, SyntaxDiagnostic},
+    parser::ParseOptions,
 };
 use arcweft_lsp::{
     diagnostics::DiagnosticProjector,
@@ -12,9 +11,9 @@ use arcweft_lsp::{
 use arcweft_source::{
     Diagnostic, DiagnosticApplicability, DiagnosticLabel, DiagnosticSeverity, DiagnosticSuggestion,
     SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange,
-    SourceSpanValidationError,
+    SourceSpanValidationError, identity::SourceSnapshotId,
 };
-use serde_json::{Value, json};
+use serde_json::json;
 use std::sync::Arc;
 
 use super::{DiagnosticSource, diagnostic_groups};
@@ -25,7 +24,7 @@ const CORRECTED_SOURCE: &str =
 
 struct LogicalFixture {
     parsed: ParsedSource,
-    error: ParseError,
+    syntax: SyntaxDiagnostic,
     diagnostic: Diagnostic,
 }
 
@@ -44,24 +43,32 @@ fn logical_fixture() -> LogicalFixture {
         )
         .expect("fixture source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
+    let mut syntax = SyntaxDatabase::try_new().expect("fixture syntax database");
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            document,
+            ParseOptions::default(),
+        )
+        .expect("fixture source attaches");
     let matching = parsed
-        .errors()
+        .diagnostics()
         .iter()
-        .filter(|error| error.kind() == ParseErrorKind::ViewExportPartMissingAs)
+        .filter(|error| error.message() == "View part export needs `as` before its public name")
         .collect::<Vec<_>>();
     assert_eq!(
         matching.len(),
         1,
         "expected one missing-`as` diagnostic: {:?}",
-        parsed.errors()
+        parsed.diagnostics()
     );
-    assert_eq!(parsed.errors().len(), 1);
-    let error = (*matching[0]).clone();
-    let diagnostic = error.diagnostic(parsed.document());
+    let syntax = (*matching[0]).clone();
+    let diagnostic = Diagnostic::new(DiagnosticSeverity::Error, syntax.message())
+        .with_code(syntax.code())
+        .with_label(DiagnosticLabel::primary(syntax.primary().clone(), None));
     LogicalFixture {
         parsed,
-        error,
+        syntax,
         diagnostic,
     }
 }
@@ -95,27 +102,14 @@ fn test_only_edit_fixture(document: &SourceDocument) -> TestOnlyEditFixture {
     TestOnlyEditFixture { diagnostic, edit }
 }
 
-fn assert_parser_payload(error: &ParseError) {
-    assert_eq!(error.kind(), ParseErrorKind::ViewExportPartMissingAs);
-    assert_eq!(error.code(), "view::export_part_missing_as");
-    assert_eq!(
-        error.label(),
-        ParseErrorKind::ViewExportPartMissingAs.label()
-    );
-    assert_eq!(error.range().start(), 47);
-    assert_eq!(error.range().end(), 54);
-    assert_eq!(error.expected(), &["as public_name"]);
-    assert_eq!(error.found(), None);
+fn assert_syntax_payload(error: &SyntaxDiagnostic) {
+    assert_eq!(error.primary().range().start(), 47);
+    assert_eq!(error.primary().range().end(), 54);
     assert_eq!(
         error.message(),
         "View part export needs `as` before its public name"
     );
-    assert_eq!(error.recovery().len(), 1);
-    assert_eq!(
-        error.recovery()[0].applicability(),
-        DiagnosticApplicability::Unspecified
-    );
-    assert!(error.recovery()[0].edits().is_empty());
+    assert!(error.related().is_none());
 }
 
 fn assert_shared_payload(logical: &Diagnostic) {
@@ -127,31 +121,19 @@ fn assert_shared_payload(logical: &Diagnostic) {
     assert_eq!(logical.labels().len(), 1);
     assert_eq!(logical.labels()[0].span().range(), SourceRange::new(47, 54));
     assert_eq!(logical.labels()[0].message(), None);
-    assert_eq!(logical.notes(), &["expected: as public_name"]);
-    assert_eq!(logical.suggestions().len(), 1);
-    assert_eq!(
-        logical.suggestions()[0].message(),
-        "use as public_name syntax"
-    );
-    assert_eq!(
-        logical.suggestions()[0].applicability(),
-        DiagnosticApplicability::Unspecified
-    );
-    assert!(logical.suggestions()[0].edits().is_empty());
+    assert!(logical.notes().is_empty());
+    assert!(logical.suggestions().is_empty());
 }
 
 fn assert_cli_projection(fixture: &LogicalFixture) {
     let logical = &fixture.diagnostic;
     let cli_source = DiagnosticSource::new(fixture.parsed.document());
     let cli_groups = diagnostic_groups(logical, &cli_source);
-    assert_eq!(cli_groups.len(), 2);
+    assert_eq!(cli_groups.len(), 1);
     let cli_rendered = Renderer::plain().render(&cli_groups);
     assert!(cli_rendered.contains(
         "error[view::export_part_missing_as]: View part export needs `as` before its public name"
     ));
-    assert!(cli_rendered.contains("expected: as public_name"));
-    assert!(cli_rendered.contains("use as public_name syntax"));
-    assert!(!cli_rendered.contains("found `"));
     assert!(
         !cli_rendered
             .lines()
@@ -178,16 +160,7 @@ fn assert_lsp_projections(fixture: &LogicalFixture) {
         assert_eq!(lsp.range.start.character, start);
         assert_eq!(lsp.range.end.line, 1);
         assert_eq!(lsp.range.end.character, end);
-        assert_eq!(
-            lsp.data,
-            Some(json!({
-                "suggestions": [{
-                    "message": "use as public_name syntax",
-                    "applicability": "unspecified",
-                    "edits": [],
-                }],
-            }))
-        );
+        assert_eq!(lsp.data, None);
     }
 }
 
@@ -204,22 +177,15 @@ fn assert_agent_projections(fixture: &LogicalFixture) {
             "end": 54,
         })
     );
-    assert_eq!(
-        agent_shared.json()["recovery"][0],
-        json!({
-            "message": "use as public_name syntax",
-            "applicability": "unspecified",
-            "edits": [],
-        })
-    );
+    assert_eq!(agent_shared.json()["recovery"], json!([]));
 
     let agent_parser =
-        AgentParserDiagnosticProjection::source_local(&fixture.error, fixture.parsed.document())
-            .expect("typed parser diagnostic projects to Agent");
+        AgentSyntaxDiagnosticProjection::source_local(&fixture.syntax, fixture.parsed.document())
+            .expect("attached syntax diagnostic projects to Agent");
     assert_eq!(
         agent_parser.json(),
         json!({
-            "kind": ParseErrorKind::ViewExportPartMissingAs.label(),
+            "kind": "attached_source",
             "code": "view::export_part_missing_as",
             "message": "View part export needs `as` before its public name",
             "range": {
@@ -228,36 +194,33 @@ fn assert_agent_projections(fixture: &LogicalFixture) {
                 "end": 54,
             },
             "related": [],
-            "expected": ["as public_name"],
-            "found": Value::Null,
-            "recovery": [{
-                "message": "use as public_name syntax",
-                "applicability": "unspecified",
-                "edits": [],
-            }],
+            "expected": [],
+            "found": null,
+            "recovery": [],
         })
     );
     assert_eq!(
         agent_parser.human(),
-        "error[view::export_part_missing_as] source_utf8_bytes 47..54: View part export needs `as` before its public name\nexpected: as public_name\nhelp[unspecified]: use as public_name syntax"
+        "error[view::export_part_missing_as] source_utf8_bytes 47..54: View part export needs `as` before its public name"
     );
 }
 
 #[test]
-fn adapter_parity_reuses_one_complete_source_derived_logical_fixture() {
+fn cli_diagnostics_render_exact_revision_spans() {
     let fixture = logical_fixture();
 
-    assert_parser_payload(&fixture.error);
+    assert_syntax_payload(&fixture.syntax);
     assert_shared_payload(&fixture.diagnostic);
     assert_cli_projection(&fixture);
     assert_lsp_projections(&fixture);
     assert_agent_projections(&fixture);
+    assert_stale_revision_behavior();
 }
 
 #[test]
 fn adapter_parity_keeps_the_concrete_edit_in_a_separate_typed_test_fixture() {
     let source_derived = logical_fixture();
-    assert!(source_derived.error.recovery()[0].edits().is_empty());
+    assert!(source_derived.diagnostic.suggestions().is_empty());
 
     let document = source_derived.parsed.document();
     let fixture = test_only_edit_fixture(document);
@@ -319,6 +282,10 @@ fn adapter_parity_keeps_the_concrete_edit_in_a_separate_typed_test_fixture() {
 
 #[test]
 fn adapter_parity_omits_or_rejects_stale_diagnostic_and_edit_spans() {
+    assert_stale_revision_behavior();
+}
+
+fn assert_stale_revision_behavior() {
     let source_derived = logical_fixture();
     let document = source_derived.parsed.document();
     let fixture = test_only_edit_fixture(document);

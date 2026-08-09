@@ -2,7 +2,7 @@ use arcweft_agent_protocol::{
     ids::{AgentRunId, SessionId},
     protocol::AgentHostResponse,
 };
-use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::{effect::RuntimeAssertionFailure, engine::FlowFiberStatus};
 use arcweft_debug_model::sink::DebugEventSink;
 
 use crate::error::AgentRunError;
@@ -36,6 +36,9 @@ pub struct AgentControllerRunReport {
     pub steps: usize,
     pub host_calls: usize,
     pub responses: Vec<AgentHostResponse>,
+    /// Runtime-language assertion failures emitted by the controller VM.
+    /// Agent `expect`/`deny` host requests remain a separate DSL boundary.
+    pub assertion_failures: Vec<RuntimeAssertionFailure>,
     pub events_emitted: u64,
     pub final_status: Option<FlowFiberStatus>,
 }

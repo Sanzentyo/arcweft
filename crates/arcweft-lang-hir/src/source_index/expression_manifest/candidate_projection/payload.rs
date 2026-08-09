@@ -228,11 +228,6 @@ pub(super) fn dialogue_intrinsic_recovery(
                         recovery.get_or_insert(HirRecoveryIssue::InvalidRichText(issue.clone()));
                     }
                 }
-                (_, SyntaxDialogueNodeProjection::Mark(Err(_))) => {
-                    recovery.get_or_insert(HirRecoveryIssue::InvalidName(
-                        crate::leaf::HirNameInvariantError::InvalidIdentifier,
-                    ));
-                }
                 (_, SyntaxDialogueNodeProjection::Error(_)) => {
                     recovery.get_or_insert(HirRecoveryIssue::InvalidExpression(
                         HirExpressionRecoveryIssue::Generic(
@@ -251,6 +246,11 @@ pub(super) fn child_ids(children: &[CandidateChild]) -> Vec<ExprId> {
     children.iter().map(|child| child.id).collect()
 }
 
+#[allow(
+    clippy::match_same_arms,
+    clippy::too_many_lines,
+    reason = "one candidate record matrix keeps every field shape, shorthand case, source role, and recovery explicit"
+)]
 pub(super) fn candidate_record_fields_match(
     actual: &[HirRecordField],
     expected: &[SyntaxRecordField],
@@ -322,7 +322,7 @@ pub(super) fn candidate_record_fields_match(
                 };
                 actual_name.as_str() == expected_name.as_str()
                     && matches!(
-                        local_resolver.lookup(scope, actual_name, use_start),
+                        local_resolver.lookup(scope, actual_name.as_str(), use_start),
                         Some(crate::scope::LocalLookup::Found(found)) if found == *local
                     )
             }
@@ -431,7 +431,7 @@ pub(super) fn candidate_path_matches(
                 && actual.segments().iter().zip(segments).all(|(actual, expected)| {
                     matches!((actual, expected.kind()),
                         (HirPathSegment::Identifier(_), arcweft_lang_syntax::attachment::source_file::AttachedPathSegmentKind::Identifier)
-                        | (HirPathSegment::ProjectSymbol(_), arcweft_lang_syntax::attachment::source_file::AttachedPathSegmentKind::Keyword))
+                        | (HirPathSegment::ProjectSymbol(_), arcweft_lang_syntax::attachment::source_file::AttachedPathSegmentKind::Keyword | arcweft_lang_syntax::attachment::source_file::AttachedPathSegmentKind::ProjectSymbol))
                         && match actual {
                             HirPathSegment::Identifier(actual) => actual.as_str() == expected.source_text(),
                             HirPathSegment::ProjectSymbol(actual) => actual.as_str() == expected.source_text(),

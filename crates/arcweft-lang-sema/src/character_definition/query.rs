@@ -296,10 +296,12 @@ fn classify_unselected_cursor(
         if reference.start() <= cursor && cursor < reference.end() {
             return Ok(CharacterDefinitionQueryResult::NotApplicable(
                 match fact.form() {
-                    CharacterReferenceForm::OwnerPath { .. } => {
+                    CharacterReferenceForm::OwnerPath { .. }
+                    | CharacterReferenceForm::RecoveredOwner => {
                         CharacterDefinitionNotApplicable::Qualification
                     }
-                    CharacterReferenceForm::LocalMember { .. } => {
+                    CharacterReferenceForm::LocalMember { .. }
+                    | CharacterReferenceForm::RecoveredLocalMember => {
                         CharacterDefinitionNotApplicable::Delimiter
                     }
                 },

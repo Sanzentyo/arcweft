@@ -8,13 +8,15 @@ use arcweft_agent_repl::command::{
     parse_repl_input,
 };
 use arcweft_agent_repl::{ReplBaseSnapshot, ReplSession, ReplSessionOptions};
-use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
+use arcweft_lang_sema::project_index::ProgramHash;
 
 fn test_session() -> ReplSession {
     ReplSession::new(
-        ReplBaseSnapshot::from_project(
+        ReplBaseSnapshot::new(
             "trace.base",
-            ProjectSemanticIndex::new(ProgramHash::new("hash.trace.base")),
+            &ProgramHash::new("hash.trace.base"),
+            std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
         ),
         ReplSessionOptions::default(),
     )

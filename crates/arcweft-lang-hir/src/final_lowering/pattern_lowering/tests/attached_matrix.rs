@@ -1140,6 +1140,10 @@ fn assert_exact_recovery_payload(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one known-family recovery matrix proves family source retention and root diagnostics"
+)]
 fn known_family_recovery_keeps_family_source_and_root_diagnostic() {
     let cases = [
         (
@@ -1595,11 +1599,12 @@ fn reparsed_pattern_source(
 
 fn nested_synthetic_identities(
     module: &HirModule,
-    locals: NestedFixtureLocals,
+    locals: &NestedFixtureLocals,
 ) -> Vec<(LocalId, SyntheticKey)> {
     locals
         .ordinary
-        .into_iter()
+        .iter()
+        .copied()
         .chain([locals.rest])
         .map(|local| {
             let metadata = module
@@ -1633,7 +1638,7 @@ fn queried_span(
 }
 
 #[test]
-fn trivia_relower_reuses_pattern_local_and_synthetic_identity_but_refreshes_spans() {
+fn trivia_relower_returns_stable_source_ids_with_new_spans() {
     const TRIVIA: &str = "// retained Pattern trivia\n";
     const FIXTURE: &str = "(a, {left: b, right: (c, d), ..rest}, e (f, g))";
 
@@ -1656,7 +1661,7 @@ fn trivia_relower_reuses_pattern_local_and_synthetic_identity_but_refreshes_span
         .expect("initial Pattern publication")
         .into_module();
     let first_locals = nested_fixture_locals(&first_module, first_owner);
-    let first_synthetics = nested_synthetic_identities(&first_module, first_locals);
+    let first_synthetics = nested_synthetic_identities(&first_module, &first_locals);
     let first_whole = queried_span(
         &first_module,
         &initial,
@@ -1681,7 +1686,7 @@ fn trivia_relower_reuses_pattern_local_and_synthetic_identity_but_refreshes_span
         .expect("revised Pattern publication")
         .into_module();
     let second_locals = nested_fixture_locals(&second_module, second_owner);
-    let second_synthetics = nested_synthetic_identities(&second_module, second_locals);
+    let second_synthetics = nested_synthetic_identities(&second_module, &second_locals);
 
     assert_eq!(second_scope, first_scope);
     assert_eq!(second_owner, first_owner);

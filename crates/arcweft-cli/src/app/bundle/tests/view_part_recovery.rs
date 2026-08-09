@@ -1,24 +1,9 @@
 use super::*;
-use arcweft_lang_sema::view_part::check_view_parts;
-use arcweft_lang_syntax::ast::{
-    items::Item,
-    view::{ViewBody, ViewExpr},
+use arcweft_lang_syntax::{
+    attachment::item::TypedItemNode, incremental::SyntaxDatabase, parser::ParseOptions,
 };
-use arcweft_lang_syntax::parser::{ParseOptions, parse_document_with_source};
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId};
 use std::sync::Arc;
-
-fn first_view_body(parsed: &arcweft_lang_syntax::source::ParsedSource) -> &ViewBody {
-    parsed
-        .typed_tree()
-        .items()
-        .iter()
-        .find_map(|item| match item {
-            Item::EntityDecl(item) => item.view_body()?.view(),
-            _ => None,
-        })
-        .expect("recovered View body")
-}
 
 #[test]
 fn ordinary_view_recovery_cannot_create_exported_part_facts() {
@@ -41,31 +26,34 @@ flow test {
         )
         .expect("source document"),
     );
-    let parsed = parse_document_with_source(document, ParseOptions::default());
+    let mut syntax = SyntaxDatabase::try_new().expect("fixture syntax database");
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            Arc::clone(&document),
+            ParseOptions::default(),
+        )
+        .expect("attached recovered View source");
 
     assert!(
-        !parsed.errors().is_empty(),
+        !parsed.diagnostics().is_empty(),
         "non-current View input must use ordinary parser recovery"
     );
-    let body = first_view_body(&parsed);
-    assert!(body.exports().is_empty());
-    assert!(matches!(body.value(), ViewExpr::Raw(_)));
-
-    let hir =
-        arcweft_lang_hir::lower::lower_document_to_hir(parsed.document(), parsed.typed_tree())
-            .expect("ordinary recovery lowers without an exported-part node");
-    assert!(hir.view_parts().is_empty());
-
-    let (checked, _) = check_view_parts(&hir);
-    assert!(
-        checked
-            .owners()
-            .iter()
-            .all(|owner| owner.exports().is_empty())
-    );
+    let view = parsed
+        .items()
+        .expect("attached item projection")
+        .into_iter()
+        .find_map(|item| match item {
+            TypedItemNode::View(view) => Some(view),
+            _ => None,
+        })
+        .expect("recovered attached View");
+    let view = view.semantics().expect("attached View semantics");
+    assert_eq!(view.exports().count(), 0);
+    assert!(view.has_recovery());
 
     assert!(
-        collect_bundle_dsl_view_resources(&hir).is_err(),
+        collect_bundle_dsl_view_resources(&document).is_err(),
         "parser-recovered View syntax cannot enter an accepted runtime product"
     );
 }

@@ -3,7 +3,7 @@
 use arcweft_source::{SourceRange, SourceSpan};
 
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole, SyntaxRoleClass};
-use crate::grammar::view_projection::PendingViewRequiredKeyword;
+use crate::grammar::view_projection::{PendingViewPartLocalName, PendingViewRequiredKeyword};
 use crate::patterns::PatternSyntaxFamily;
 
 use super::node::{
@@ -128,6 +128,72 @@ pub enum AttachedViewFragmentEntry {
     MisplacedExport(AttachedViewExport),
 }
 
+/// Typed local-name state for one parser-owned View `.part(...)` modifier.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AttachedViewPartLocalName {
+    Present(SourceSpan),
+    Missing(SourceSpan),
+    Invalid(SourceSpan),
+}
+
+impl AttachedViewPartLocalName {
+    pub const fn source_span(&self) -> &SourceSpan {
+        match self {
+            Self::Present(source) | Self::Missing(source) | Self::Invalid(source) => source,
+        }
+    }
+
+    pub const fn has_recovery(&self) -> bool {
+        !matches!(self, Self::Present(_))
+    }
+}
+
+/// Exact source-role projection for one View `.part(...)` modifier.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AttachedViewPartModifier {
+    source_ordinal: u32,
+    whole: SourceSpan,
+    dot: SourceSpan,
+    name: SourceSpan,
+    open: SourceSpan,
+    local_name: AttachedViewPartLocalName,
+    close: Option<SourceSpan>,
+}
+
+impl AttachedViewPartModifier {
+    pub const fn source_ordinal(&self) -> u32 {
+        self.source_ordinal
+    }
+
+    pub const fn whole(&self) -> &SourceSpan {
+        &self.whole
+    }
+
+    pub const fn dot(&self) -> &SourceSpan {
+        &self.dot
+    }
+
+    pub const fn name(&self) -> &SourceSpan {
+        &self.name
+    }
+
+    pub const fn open(&self) -> &SourceSpan {
+        &self.open
+    }
+
+    pub const fn local_name(&self) -> &AttachedViewPartLocalName {
+        &self.local_name
+    }
+
+    pub const fn close(&self) -> Option<&SourceSpan> {
+        self.close.as_ref()
+    }
+
+    pub const fn has_recovery(&self) -> bool {
+        self.local_name.has_recovery() || self.close.is_none()
+    }
+}
+
 impl AttachedViewFragmentEntry {
     pub fn has_recovery(&self) -> bool {
         match self {
@@ -142,6 +208,7 @@ impl AttachedViewFragmentEntry {
 pub struct AttachedViewFragment {
     syntax: AstNode<ViewFragmentKind>,
     entries: Box<[AttachedViewFragmentEntry]>,
+    part_modifiers: Box<[AttachedViewPartModifier]>,
 }
 
 impl AttachedViewFragment {
@@ -151,6 +218,10 @@ impl AttachedViewFragment {
 
     pub const fn entries(&self) -> &[AttachedViewFragmentEntry] {
         &self.entries
+    }
+
+    pub const fn part_modifiers(&self) -> &[AttachedViewPartModifier] {
+        &self.part_modifiers
     }
 
     pub fn values(&self) -> impl Iterator<Item = &AttachedExpressionNode> {
@@ -171,6 +242,10 @@ impl AttachedViewFragment {
         self.entries
             .iter()
             .any(AttachedViewFragmentEntry::has_recovery)
+            || self
+                .part_modifiers
+                .iter()
+                .any(AttachedViewPartModifier::has_recovery)
     }
 }
 
@@ -399,6 +474,49 @@ fn attach_fragment(
     syntax: AstNode<ViewFragmentKind>,
     next_export_ordinal: &mut u16,
 ) -> Result<AttachedViewFragment, SyntaxAccessError> {
+    let projection = syntax
+        .syntax()
+        .view_fragment_projection()
+        .cloned()
+        .ok_or(SyntaxAccessError::MissingViewFragmentProjection { id: syntax.id() })?;
+    let part_modifiers = projection
+        .part_modifiers()
+        .iter()
+        .copied()
+        .enumerate()
+        .map(|(ordinal, modifier)| {
+            let source_ordinal = u32::try_from(ordinal)
+                .map_err(|_| SyntaxAccessError::InvalidViewProjection { id: syntax.id() })?;
+            Ok(AttachedViewPartModifier {
+                source_ordinal,
+                whole: syntax.syntax().source_span_for_range(modifier.whole()),
+                dot: syntax.syntax().source_span_for_range(modifier.dot()),
+                name: syntax.syntax().source_span_for_range(modifier.name()),
+                open: syntax.syntax().source_span_for_range(modifier.open()),
+                local_name: match modifier.local_name() {
+                    PendingViewPartLocalName::Present(source) => {
+                        AttachedViewPartLocalName::Present(
+                            syntax.syntax().source_span_for_range(source),
+                        )
+                    }
+                    PendingViewPartLocalName::Missing(source) => {
+                        AttachedViewPartLocalName::Missing(
+                            syntax.syntax().source_span_for_range(source),
+                        )
+                    }
+                    PendingViewPartLocalName::Invalid(source) => {
+                        AttachedViewPartLocalName::Invalid(
+                            syntax.syntax().source_span_for_range(source),
+                        )
+                    }
+                },
+                close: modifier
+                    .close()
+                    .map(|source| syntax.syntax().source_span_for_range(source)),
+            })
+        })
+        .collect::<Result<Vec<_>, SyntaxAccessError>>()?
+        .into_boxed_slice();
     let mut next_value_ordinal = 0_u32;
     let mut next_misplaced_ordinal = 0_u16;
     let mut entries = Vec::new();
@@ -439,6 +557,7 @@ fn attach_fragment(
     Ok(AttachedViewFragment {
         syntax,
         entries: entries.into_boxed_slice(),
+        part_modifiers,
     })
 }
 

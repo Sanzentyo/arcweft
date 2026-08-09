@@ -10,22 +10,33 @@ use arcweft_adapter_context::manifest::{
 };
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_compiler::incremental::{BuildSnapshotRequest, snapshot_compiled_project};
+use arcweft_compiler::lower::project_runtime_semantic_facts;
 use arcweft_compiler::project::{
-    CompiledProjectModule, ProjectCompilationContext, ProjectCompileCache,
-    ProjectCompileCacheStatus, ProjectCompileUnitFingerprint, compile_project_with_cache,
+    CompiledProject, CompiledProjectModule, ProjectCompilationContext, ProjectCompilationSession,
+    ProjectCompileCache, ProjectCompileCacheStatus, ProjectCompileError,
+    ProjectCompileUnitFingerprint, compile_project_with_cache,
 };
+use arcweft_lang_hir::item::HirItemKind;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
 use arcweft_lang_sema::{
     env::TypeCheckEnv,
     registration::{CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts},
     types::TypeKind,
 };
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_syntax::{
+    ast::module_path::{CanonicalModulePath, ModuleSegment},
+    incremental::{ParsedSource, SyntaxDatabase},
+    parser::ParseOptions,
+};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::fingerprint::BuildDigest;
+use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_runtime_plan::flow::{RuntimeEntryLoweringInput, lower_runtime_plan_with_stats};
+use arcweft_source::{
+    SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange,
+    identity::SourceSnapshotId,
+};
 
 #[derive(Default)]
 struct RecordingCache {
@@ -58,6 +69,109 @@ impl ProjectCompileCache for RecordingCache {
         self.stores += 1;
         self.units.insert(fingerprint, modules.to_vec());
     }
+}
+
+struct AttachedCompiler {
+    session: ProjectCompilationSession,
+    syntax: SyntaxDatabase,
+    parsed_sources: BTreeMap<CanonicalModulePath, ParsedSource>,
+}
+
+impl AttachedCompiler {
+    fn new(project: &ProjectSources) -> Self {
+        let mut syntax = SyntaxDatabase::try_new().expect("cache test syntax database");
+        let parsed_sources = parse_project_sources(&mut syntax, project);
+        Self {
+            session: ProjectCompilationSession::try_new().expect("cache test HIR database"),
+            syntax,
+            parsed_sources,
+        }
+    }
+
+    fn replace_sources(&mut self, project: &ProjectSources) {
+        let same_lineages = self.parsed_sources.len() == project.modules().len()
+            && project.modules().all(|source| {
+                self.parsed_sources
+                    .get(source.module())
+                    .is_some_and(|parsed| {
+                        parsed.document().identity().id() == source.document().identity().id()
+                    })
+            });
+        if !same_lineages {
+            let mut syntax = SyntaxDatabase::try_new().expect("replacement syntax database");
+            self.parsed_sources = parse_project_sources(&mut syntax, project);
+            self.syntax = syntax;
+            return;
+        }
+
+        let mut next = BTreeMap::new();
+        for source in project.modules() {
+            let parsed = match self.parsed_sources.get(source.module()) {
+                Some(previous)
+                    if previous.document().identity() == source.document().identity() =>
+                {
+                    previous.clone()
+                }
+                Some(previous) => {
+                    let whole = previous
+                        .document()
+                        .span(SourceRange::new(0, previous.source().len()))
+                        .expect("whole previous document span");
+                    self.syntax
+                        .reparse(
+                            previous,
+                            &[SourceEdit::new(whole, source.document().text())],
+                            ParseOptions::default(),
+                        )
+                        .expect("incremental cache-test reparse")
+                }
+                None => self
+                    .syntax
+                    .parse_initial(
+                        SourceSnapshotId::initial(source.document().display_name().clone()),
+                        Arc::clone(source.document()),
+                        ParseOptions::default(),
+                    )
+                    .expect("new cache-test attached source"),
+            };
+            next.insert(source.module().clone(), parsed);
+        }
+        self.parsed_sources = next;
+    }
+
+    fn compile<C: ProjectCompileCache>(
+        &mut self,
+        project: &ProjectSources,
+        context: &ProjectCompilationContext,
+        cache: &mut C,
+    ) -> Result<CompiledProject, ProjectCompileError> {
+        compile_project_with_cache(
+            &mut self.session,
+            project,
+            &self.parsed_sources,
+            context,
+            cache,
+        )
+    }
+}
+
+fn parse_project_sources(
+    syntax: &mut SyntaxDatabase,
+    project: &ProjectSources,
+) -> BTreeMap<CanonicalModulePath, ParsedSource> {
+    project
+        .modules()
+        .map(|source| {
+            let parsed = syntax
+                .parse_initial(
+                    SourceSnapshotId::initial(source.document().display_name().clone()),
+                    Arc::clone(source.document()),
+                    ParseOptions::default(),
+                )
+                .expect("cache test attached source");
+            (source.module().clone(), parsed)
+        })
+        .collect()
 }
 
 fn fixture(source: &str, profile: &str) -> (ProjectSources, Arc<ProjectRegistrationFacts>) {
@@ -140,6 +254,94 @@ fn project_fixture_with_document_id(
     )
     .expect("world");
     (project, document, world)
+}
+
+fn child_module(name: &str) -> CanonicalModulePath {
+    CanonicalModulePath::crate_root().join(ModuleSegment::new(name).expect("module segment"))
+}
+
+fn three_unit_document(profile: &str, file: &str, source: &str) -> Arc<SourceDocument> {
+    Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!(
+                "arcweft-project://compiler-cache-{profile}/src/{file}.arcw"
+            ))
+            .expect("three-unit document ID"),
+            SourceName::path(format!("src/{file}.arcw")),
+            source,
+        )
+        .expect("three-unit source document"),
+    )
+}
+
+fn three_unit_project(
+    profile: &str,
+    root: Arc<SourceDocument>,
+    dependency: Arc<SourceDocument>,
+    unrelated: Arc<SourceDocument>,
+) -> (ProjectSources, Arc<ProjectRegistrationFacts>) {
+    let package_id = format!("org.arcweft.compiler-cache-{profile}");
+    let package = PackageSpec {
+        id: PackageId::new(package_id.clone()).expect("package ID"),
+        version: PackageVersion::new("0.1.0").expect("package version"),
+    };
+    let dependency_path = child_module("dependency");
+    let unrelated_path = child_module("unrelated");
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        package,
+        BuildSpec::default(),
+        Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(format!(
+                    "arcweft-project://compiler-cache-{profile}/arcw.toml"
+                ))
+                .expect("manifest document ID"),
+                SourceName::path("arcw.toml"),
+                format!("schema = 1\n[package]\nid = \"{package_id}\"\nversion = \"0.1.0\"\n"),
+            )
+            .expect("manifest document"),
+        ),
+        [
+            ProjectSourceFile::new(
+                CanonicalModulePath::crate_root(),
+                PathBuf::from("src/main.arcw"),
+                Arc::clone(&root),
+                [ModuleDependency::new(dependency_path.clone())],
+            ),
+            ProjectSourceFile::new(
+                dependency_path,
+                PathBuf::from("src/dependency.arcw"),
+                Arc::clone(&dependency),
+                [],
+            ),
+            ProjectSourceFile::new(
+                unrelated_path,
+                PathBuf::from("src/unrelated.arcw"),
+                Arc::clone(&unrelated),
+                [],
+            ),
+        ],
+    )
+    .expect("three-unit project");
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(package_id).expect("package"),
+        root.identity().id().clone(),
+        profile,
+    )
+    .expect("three-unit symbol world");
+    let facts = Arc::new(
+        ProjectRegistrationFacts::try_new(
+            world,
+            vec![root, dependency, unrelated],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .expect("three-unit registration facts"),
+    );
+    (project, facts)
 }
 
 fn fixture_with_manifest(
@@ -238,13 +440,14 @@ fn snapshot_with_manifest(
 ) -> arcweft_project::incremental::BuildSnapshot {
     let (project, facts, base) =
         fixture_with_manifest("fn main() -> Unit { () }\n", profile, manifest);
-    let compiled = compile_project_with_cache(
-        &project,
-        &context(base, facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut RecordingCache::default(),
-    )
-    .expect("compiled project");
+    let mut session = AttachedCompiler::new(&project);
+    let compiled = session
+        .compile(
+            &project,
+            &context(base, facts),
+            &mut RecordingCache::default(),
+        )
+        .expect("compiled project");
     snapshot_compiled_project(
         &project,
         &compiled,
@@ -270,22 +473,188 @@ fn context(base: TypeCheckEnv, facts: Arc<ProjectRegistrationFacts>) -> ProjectC
 }
 
 #[test]
-fn compiled_project_exposes_the_exact_shared_hir_project() {
+fn compiled_project_contains_no_linked_hir() {
     let (project, facts) = fixture("fn main() -> Unit { () }\n", "shared-hir");
     let mut cache = RecordingCache::default();
-    let compiled = compile_project_with_cache(
-        &project,
-        &context(TypeCheckEnv::standard(), facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("compiled project");
+    let mut session = AttachedCompiler::new(&project);
+    let root = CanonicalModulePath::crate_root();
+    let expected_parsed = session
+        .parsed_sources
+        .get(&root)
+        .expect("root parsed source")
+        .clone();
+    let expected_hir_database = session.session.hir_database_id();
+    let compiled = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("compiled project");
 
     let retained = Arc::clone(compiled.hir_project());
     assert!(Arc::ptr_eq(compiled.hir_project(), &retained));
+    let compiled_module = &compiled.modules()[0];
+    let accepted_module = compiled
+        .hir_project()
+        .module(compiled_module.module())
+        .expect("compiled module remains present in the accepted HIR project")
+        .module();
+    assert!(
+        Arc::ptr_eq(compiled_module.hir(), accepted_module),
+        "compiled modules retain the exact accepted project HIR lease instead of a linked clone",
+    );
+    assert!(compiled_module.parsed().is_same_snapshot(&expected_parsed));
+    assert!(Arc::ptr_eq(
+        compiled_module.parsed().document_lease(),
+        expected_parsed.document_lease()
+    ));
     assert_eq!(
-        compiled.modules()[0].source(),
+        compiled_module.hir().provenance().syntax_snapshot(),
+        expected_parsed.snapshot_id()
+    );
+    assert_eq!(
+        compiled_module.hir().snapshot_id().module().database(),
+        expected_hir_database
+    );
+    assert_eq!(
+        compiled_module.source(),
         project.root_module().document().identity()
+    );
+}
+
+#[test]
+fn runtime_plan_consumes_project_view_without_flattening() {
+    let profile = "runtime-project-view";
+    let root = three_unit_document(profile, "main", "flow root {\n}\n");
+    let dependency = three_unit_document(profile, "dependency", "flow dependency {\n}\n");
+    let unrelated = three_unit_document(profile, "unrelated", "flow unrelated {\n}\n");
+    let expected_paths = [
+        CanonicalModulePath::crate_root(),
+        child_module("dependency"),
+        child_module("unrelated"),
+    ];
+    let (project, facts) = three_unit_project(profile, root, dependency, unrelated);
+    let mut cache = RecordingCache::default();
+    let mut session = AttachedCompiler::new(&project);
+    let compiled = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("three-module project compiles");
+
+    let executable = compiled
+        .hir_project()
+        .executable_view()
+        .expect("accepted project is executable");
+    let runtime_facts = project_runtime_semantic_facts(
+        executable,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+    )
+    .expect("runtime facts project from the accepted project view");
+    let entry_input = RuntimeEntryLoweringInput::empty(executable);
+    let lowered = lower_runtime_plan_with_stats(executable, &runtime_facts, &entry_input)
+        .expect("runtime plan lowers from the accepted project view");
+
+    let projected = executable
+        .items()
+        .filter_map(|item| {
+            if !matches!(item.item().kind(), HirItemKind::Flow(_)) {
+                return None;
+            }
+            let accepted_module = executable
+                .module(item.module_path())
+                .expect("project item retains its canonical module");
+            assert!(Arc::ptr_eq(item.module(), accepted_module));
+            assert_eq!(item.id().module(), item.module().module_id());
+            assert!(compiled.final_analysis().item(item.id()).is_some());
+            let runtime = runtime_facts
+                .flow(item.id())
+                .cloned()
+                .expect("module-qualified flow retains its runtime projection");
+            Some((item.module_path().clone(), item.id(), runtime))
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        projected
+            .iter()
+            .map(|(path, _, _)| path.clone())
+            .collect::<Vec<_>>(),
+        expected_paths
+    );
+    assert!(projected.iter().enumerate().all(|(index, (_, item, _))| {
+        projected[..index]
+            .iter()
+            .all(|(_, prior, _)| item.module() != prior.module())
+    }));
+    assert_eq!(
+        lowered
+            .plan
+            .flows
+            .iter()
+            .map(|flow| flow.id.clone())
+            .collect::<Vec<_>>(),
+        projected
+            .iter()
+            .map(|(_, _, runtime)| runtime.clone())
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn lowered_hir_cache_rejects_exact_source_from_another_syntax_and_hir_session() {
+    let (project, facts) = fixture("fn main() -> Unit { () }\n", "cross-session-miss");
+    let root = CanonicalModulePath::crate_root();
+    let mut cache = RecordingCache::default();
+    let mut first_compiler = AttachedCompiler::new(&project);
+    let first_syntax_database = first_compiler.parsed_sources[&root]
+        .snapshot_id()
+        .lineage()
+        .database();
+    let first_hir_database = first_compiler.session.hir_database_id();
+    let first = first_compiler
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), Arc::clone(&facts)),
+            &mut cache,
+        )
+        .expect("first session compiles");
+    cache.reset_activity();
+
+    let mut second_compiler = AttachedCompiler::new(&project);
+    let second_syntax_database = second_compiler.parsed_sources[&root]
+        .snapshot_id()
+        .lineage()
+        .database();
+    let second_hir_database = second_compiler.session.hir_database_id();
+    assert_ne!(first_syntax_database, second_syntax_database);
+    assert_ne!(first_hir_database, second_hir_database);
+
+    let second = second_compiler
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("foreign in-memory HIR is rebuilt in the second session");
+
+    assert_eq!(cache.loads, 1);
+    assert_eq!(cache.stores, 1);
+    assert_eq!(
+        first.compile_units()[0].fingerprint(),
+        second.compile_units()[0].fingerprint()
+    );
+    assert_eq!(
+        second.compile_units()[0].cache_status(),
+        ProjectCompileCacheStatus::Miss
+    );
+    assert_eq!(
+        second.modules()[0].hir().snapshot_id().module().database(),
+        second_hir_database
     );
 }
 
@@ -293,23 +662,24 @@ fn compiled_project_exposes_the_exact_shared_hir_project() {
 fn lowered_hir_cache_hit_remains_read_only() {
     let (project, facts) = fixture("fn main() -> Unit { () }\n", "read-only-hit");
     let mut cache = RecordingCache::default();
-    let first = compile_project_with_cache(
-        &project,
-        &context(TypeCheckEnv::standard(), Arc::clone(&facts)),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("first compilation");
+    let mut session = AttachedCompiler::new(&project);
+    let first = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), Arc::clone(&facts)),
+            &mut cache,
+        )
+        .expect("first compilation");
     assert_eq!(cache.stores, 1);
     cache.reset_activity();
 
-    let hit = compile_project_with_cache(
-        &project,
-        &context(TypeCheckEnv::standard(), facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("cache-hit compilation still registers and typechecks");
+    let hit = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("cache-hit compilation still registers and typechecks");
 
     assert_eq!(cache.loads, 1);
     assert_eq!(cache.stores, 0);
@@ -337,13 +707,14 @@ fn lowered_hir_cache_rejects_another_document_identity_with_the_same_bytes() {
     );
     let first_facts = registration_facts(first_document, first_world);
     let mut cache = RecordingCache::default();
-    let first = compile_project_with_cache(
-        &first_project,
-        &context(TypeCheckEnv::standard(), first_facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("first compilation");
+    let mut session = AttachedCompiler::new(&first_project);
+    let first = session
+        .compile(
+            &first_project,
+            &context(TypeCheckEnv::standard(), first_facts),
+            &mut cache,
+        )
+        .expect("first compilation");
     cache.reset_activity();
 
     let (second_project, second_document, second_world) = project_fixture_with_document_id(
@@ -353,13 +724,14 @@ fn lowered_hir_cache_rejects_another_document_identity_with_the_same_bytes() {
     );
     let expected_identity = second_document.identity().clone();
     let second_facts = registration_facts(second_document, second_world);
-    let second = compile_project_with_cache(
-        &second_project,
-        &context(TypeCheckEnv::standard(), second_facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("second compilation");
+    session.replace_sources(&second_project);
+    let second = session
+        .compile(
+            &second_project,
+            &context(TypeCheckEnv::standard(), second_facts),
+            &mut cache,
+        )
+        .expect("second compilation");
 
     assert_eq!(cache.loads, 1, "the identical content key was consulted");
     assert_eq!(
@@ -384,31 +756,33 @@ fn source_revision_change_invalidates_the_compile_unit_cache() {
     let (first_project, first_document, first_world) =
         project_fixture_with_document_id("fn main() -> Unit { () }\n", profile, document_id);
     let mut cache = RecordingCache::default();
-    let first = compile_project_with_cache(
-        &first_project,
-        &context(
-            TypeCheckEnv::standard(),
-            registration_facts(first_document, first_world),
-        ),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("first compilation");
+    let mut session = AttachedCompiler::new(&first_project);
+    let first = session
+        .compile(
+            &first_project,
+            &context(
+                TypeCheckEnv::standard(),
+                registration_facts(first_document, first_world),
+            ),
+            &mut cache,
+        )
+        .expect("first compilation");
     cache.reset_activity();
 
     let (changed_project, changed_document, changed_world) =
         project_fixture_with_document_id("fn main() -> Unit {\n    ()\n}\n", profile, document_id);
     let changed_revision = changed_document.identity().revision();
-    let changed = compile_project_with_cache(
-        &changed_project,
-        &context(
-            TypeCheckEnv::standard(),
-            registration_facts(changed_document, changed_world),
-        ),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("changed compilation");
+    session.replace_sources(&changed_project);
+    let changed = session
+        .compile(
+            &changed_project,
+            &context(
+                TypeCheckEnv::standard(),
+                registration_facts(changed_document, changed_world),
+            ),
+            &mut cache,
+        )
+        .expect("changed compilation");
 
     assert_eq!(cache.loads, 1);
     assert_eq!(cache.stores, 1);
@@ -424,17 +798,151 @@ fn source_revision_change_invalidates_the_compile_unit_cache() {
 }
 
 #[test]
+#[expect(
+    clippy::too_many_lines,
+    reason = "the cache invalidation transaction must assert changed, dependent, and retained modules together"
+)]
+fn symbol_table_revision_invalidates_exact_changed_modules() {
+    fn unit<'project>(
+        project: &'project CompiledProject,
+        module: &CanonicalModulePath,
+    ) -> &'project arcweft_compiler::project::ProjectCompileUnitSummary {
+        project
+            .compile_units()
+            .iter()
+            .find(|unit| unit.modules() == std::slice::from_ref(module))
+            .unwrap_or_else(|| panic!("one-module compile unit for {module}"))
+    }
+
+    fn compiled_module<'project>(
+        project: &'project CompiledProject,
+        module: &CanonicalModulePath,
+    ) -> &'project CompiledProjectModule {
+        project
+            .modules()
+            .iter()
+            .find(|compiled| compiled.module() == module)
+            .unwrap_or_else(|| panic!("compiled module for {module}"))
+    }
+
+    let profile = "three-unit-symbol-invalidation";
+    let root = three_unit_document(
+        profile,
+        "main",
+        "use crate.dependency.value\nfn main() -> i32 { value() }\n",
+    );
+    let first_dependency =
+        three_unit_document(profile, "dependency", "pub fn value() -> i32 { 1 }\n");
+    let unrelated = three_unit_document(profile, "unrelated", "pub fn steady() -> i32 { 7 }\n");
+    let (first_sources, first_facts) = three_unit_project(
+        profile,
+        Arc::clone(&root),
+        first_dependency,
+        Arc::clone(&unrelated),
+    );
+    let mut session = AttachedCompiler::new(&first_sources);
+    let mut cache = RecordingCache::default();
+    let first = session
+        .compile(
+            &first_sources,
+            &context(TypeCheckEnv::standard(), first_facts),
+            &mut cache,
+        )
+        .expect("initial three-unit project compiles");
+    assert_eq!(first.compile_units().len(), 3);
+    assert!(
+        first
+            .compile_units()
+            .iter()
+            .all(|unit| unit.cache_status() == ProjectCompileCacheStatus::Miss)
+    );
+    cache.reset_activity();
+
+    let changed_dependency = three_unit_document(
+        profile,
+        "dependency",
+        "pub(crate) fn value() -> i32 { 1 }\n",
+    );
+    let (changed_sources, changed_facts) = three_unit_project(
+        profile,
+        Arc::clone(&root),
+        changed_dependency,
+        Arc::clone(&unrelated),
+    );
+    session.replace_sources(&changed_sources);
+    let changed = session
+        .compile(
+            &changed_sources,
+            &context(TypeCheckEnv::standard(), changed_facts),
+            &mut cache,
+        )
+        .expect("changed dependency publishes only after every required rebuild succeeds");
+
+    let root_path = CanonicalModulePath::crate_root();
+    let dependency_path = child_module("dependency");
+    let unrelated_path = child_module("unrelated");
+    let first_root = unit(&first, &root_path);
+    let first_dependency = unit(&first, &dependency_path);
+    let first_unrelated = unit(&first, &unrelated_path);
+    let changed_root = unit(&changed, &root_path);
+    let changed_dependency = unit(&changed, &dependency_path);
+    let changed_unrelated = unit(&changed, &unrelated_path);
+
+    assert_ne!(
+        first_dependency.fingerprint(),
+        changed_dependency.fingerprint()
+    );
+    assert_ne!(first_root.fingerprint(), changed_root.fingerprint());
+    assert_eq!(
+        first_unrelated.fingerprint(),
+        changed_unrelated.fingerprint()
+    );
+    assert_eq!(
+        changed_dependency.cache_status(),
+        ProjectCompileCacheStatus::Miss
+    );
+    assert_eq!(changed_root.cache_status(), ProjectCompileCacheStatus::Miss);
+    assert_eq!(
+        changed_unrelated.cache_status(),
+        ProjectCompileCacheStatus::Hit
+    );
+    assert!(
+        Arc::ptr_eq(
+            compiled_module(&first, &unrelated_path).hir(),
+            compiled_module(&changed, &unrelated_path).hir(),
+        ),
+        "a cache hit retains the exact accepted HIR module lease",
+    );
+    assert_eq!(cache.loads, 3, "every unit consults its typed fingerprint");
+    assert_eq!(cache.stores, 2, "only changed and dependent units rebuild");
+    assert_ne!(
+        first.project_symbols().revision(),
+        changed.project_symbols().revision()
+    );
+    assert_eq!(
+        changed.project_symbols().revision(),
+        changed.registered_environment().symbol_revision(),
+        "symbol publication and registered semantic facts share the final project revision",
+    );
+    changed
+        .registered_environment()
+        .verify_character_inventory(changed.project_symbols())
+        .expect("no partial registration is observable after the two required rebuilds");
+}
+
+#[test]
 fn pending_stores_flush_after_complete_success() {
     let (project, facts) = fixture("fn main() -> Unit { () }\n", "flush-success");
     let mut cache = RecordingCache::default();
+    let mut session = AttachedCompiler::new(&project);
 
-    let compiled = compile_project_with_cache(
-        &project,
-        &context(TypeCheckEnv::standard(), facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("complete project compilation");
+    let compiled = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("complete project compilation");
 
     assert_eq!(cache.loads, 1);
     assert_eq!(cache.stores, 1);
@@ -453,14 +961,15 @@ fn pending_stores_flush_after_complete_success() {
 fn pending_stores_discard_on_type_error() {
     let (project, facts) = fixture("fn main() -> i32 { true }\n", "discard-type-error");
     let mut cache = RecordingCache::default();
+    let mut session = AttachedCompiler::new(&project);
 
-    let error = compile_project_with_cache(
-        &project,
-        &context(TypeCheckEnv::standard(), facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect_err("return type mismatch rejects compilation");
+    let error = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect_err("return type mismatch rejects compilation");
 
     assert_eq!(error.stage(), "type-check");
     assert_eq!(cache.stores, 0);
@@ -468,64 +977,22 @@ fn pending_stores_discard_on_type_error() {
 }
 
 #[test]
-fn pending_stores_discard_when_typed_image_admission_fails() {
-    let (project, facts) = fixture(
-        r"
-image poster {
-    asset = @asset.poster
-    x = 0px
-    y = 0px
-    width = 1280px
-    height = 720px
-    enabled = true
-}
-",
-        "discard-image-error",
-    );
-    let mut cache = RecordingCache::default();
-
-    let error = compile_project_with_cache(
-        &project,
-        &context(TypeCheckEnv::standard(), facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect_err("unsupported retained image fields reject the compiler transaction");
-
-    assert_eq!(
-        error.stage(),
-        "image-lower",
-        "unexpected diagnostics: {:#?}",
-        error.diagnostics()
-    );
-    assert_eq!(cache.stores, 0);
-    assert!(cache.units.is_empty());
-    let diagnostic = &error.diagnostics()[0];
-    assert_eq!(
-        diagnostic
-            .diagnostic()
-            .code()
-            .map(arcweft_source::DiagnosticCode::as_str),
-        Some("compiler.image.unsupported_field")
-    );
-}
-
-#[test]
 fn character_digest_cannot_key_semantic_reuse() {
     let (project, facts) = fixture("fn main() -> i32 { configured }\n", "semantic-reuse");
     let mut cache = RecordingCache::default();
+    let mut session = AttachedCompiler::new(&project);
     let first_base = TypeCheckEnv::standard().with_symbol("configured", TypeKind::I32);
-    let first = compile_project_with_cache(
-        &project,
-        &context(first_base, Arc::clone(&facts)),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("first semantic world");
+    let first = session
+        .compile(
+            &project,
+            &context(first_base, Arc::clone(&facts)),
+            &mut cache,
+        )
+        .expect("first semantic world");
     let changed_base = TypeCheckEnv::standard().with_symbol("configured", TypeKind::Bool);
     let changed_registered = CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(changed_base.clone()),
-        first.hir_project(),
+        first.hir_project().view(),
         &facts,
         Some(first.registered_environment()),
     ))
@@ -536,13 +1003,9 @@ fn character_digest_cannot_key_semantic_reuse() {
     );
     cache.reset_activity();
 
-    let error = compile_project_with_cache(
-        &project,
-        &context(changed_base, facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect_err("base change must rerun semantic checking after a HIR hit");
+    let error = session
+        .compile(&project, &context(changed_base, facts), &mut cache)
+        .expect_err("base change must rerun semantic checking after a HIR hit");
 
     assert_eq!(cache.loads, 1, "the lowered HIR cache was consulted");
     assert_eq!(cache.stores, 0, "a hit is read-only even on later failure");
@@ -553,13 +1016,14 @@ fn character_digest_cannot_key_semantic_reuse() {
 fn compiled_project_holds_one_registered_world() {
     let (project, facts) = fixture("fn main() -> Unit { () }\n", "one-world");
     let mut cache = RecordingCache::default();
-    let compiled = compile_project_with_cache(
-        &project,
-        &context(TypeCheckEnv::standard(), facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("compiled project");
+    let mut session = AttachedCompiler::new(&project);
+    let compiled = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("compiled project");
 
     assert_eq!(
         compiled.project_symbols().world(),
@@ -583,13 +1047,14 @@ fn compiled_project_holds_one_registered_world() {
 fn compiled_snapshot_carries_the_registered_environment_digest() {
     let (project, facts) = fixture("fn main() -> Unit { () }\n", "environment-digest");
     let mut cache = RecordingCache::default();
-    let compiled = compile_project_with_cache(
-        &project,
-        &context(TypeCheckEnv::standard(), facts),
-        &RuntimePlanLowerOptions::default(),
-        &mut cache,
-    )
-    .expect("compiled project");
+    let mut session = AttachedCompiler::new(&project);
+    let compiled = session
+        .compile(
+            &project,
+            &context(TypeCheckEnv::standard(), facts),
+            &mut cache,
+        )
+        .expect("compiled project");
     let expected = BuildDigest::from_bytes(
         *compiled
             .registered_environment()

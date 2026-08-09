@@ -1,6 +1,10 @@
 use super::*;
 
 use crate::item::{HirDeclarationMemberIssue, HirViewDeclaration};
+use crate::source_index::{
+    HirCallableSourceOwner, HirCallableSourceRole, HirItemSourceRole, HirSourcePresence,
+    HirSourceQuery, HirViewBodySourcePart, HirViewExportSourcePart, HirViewSourceRole,
+};
 
 use super::super::retained::preflight_view_exports;
 
@@ -16,9 +20,7 @@ fn assert_view_freeze_rejects(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     tamper(&mut transaction, owner);
     assert!(
@@ -111,7 +113,28 @@ fn member(
     module.declaration_members().resolve(id).unwrap()
 }
 
+fn view_source_query(owner: crate::identity::ItemId, role: HirViewSourceRole) -> HirSourceQuery {
+    HirSourceQuery::Item {
+        owner,
+        role: HirItemSourceRole::View(role),
+    }
+}
+
+fn callable_source_query(
+    owner: crate::identity::ItemId,
+    role: HirCallableSourceRole,
+) -> HirSourceQuery {
+    HirSourceQuery::Item {
+        owner,
+        role: HirItemSourceRole::Callable(role),
+    }
+}
+
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical View test asserts one complete parameter, export, value, scope, and source graph"
+)]
 fn canonical_view_freezes_callable_parameters_exports_and_value_owners() {
     let source = concat!(
         "/// Main View\n",
@@ -198,6 +221,109 @@ fn canonical_view_freezes_callable_parameters_exports_and_value_owners() {
         assert_source_backed_child(&module, value);
     }
     assert_item_slot_whole(&module, &parsed, owner);
+
+    let attached_items = parsed.items().unwrap();
+    let [TypedItemNode::View(attached_node)] = attached_items.as_slice() else {
+        panic!("canonical source must retain exactly one attached View")
+    };
+    let attached = attached_node.semantics().unwrap();
+    let arcweft_lang_syntax::attachment::AttachedViewBody::Braced {
+        open,
+        close,
+        fragment,
+        ..
+    } = attached.body()
+    else {
+        panic!("canonical View must retain a braced body")
+    };
+
+    let whole = module
+        .source_site(
+            parsed.document().identity(),
+            view_source_query(owner, HirViewSourceRole::Whole),
+        )
+        .unwrap();
+    assert!(matches!(
+        whole.presence(),
+        HirSourcePresence::Present(HirSourceSite::Span(span))
+            if span == &attached.syntax().source_span()
+    ));
+    assert_eq!(
+        module
+            .source_site(
+                parsed.document().identity(),
+                view_source_query(owner, HirViewSourceRole::ItemId),
+            )
+            .unwrap()
+            .presence(),
+        HirSourcePresence::AbsentOptional
+    );
+    for (part, expected) in [
+        (HirViewBodySourcePart::OpenDelimiter, open.source_span()),
+        (HirViewBodySourcePart::CloseDelimiter, close.source_span()),
+        (
+            HirViewBodySourcePart::Fragment,
+            fragment.syntax().source_span(),
+        ),
+    ] {
+        let lookup = module
+            .source_site(
+                parsed.document().identity(),
+                view_source_query(owner, HirViewSourceRole::Body(part)),
+            )
+            .unwrap();
+        assert!(matches!(
+            lookup.presence(),
+            HirSourcePresence::Present(HirSourceSite::Span(actual)) if actual == &expected
+        ));
+    }
+    let name = match attached.header().name() {
+        arcweft_lang_syntax::attachment::AttachedRetainedName::Resolved { syntax, .. }
+        | arcweft_lang_syntax::attachment::AttachedRetainedName::Missing { syntax }
+        | arcweft_lang_syntax::attachment::AttachedRetainedName::Invalid { syntax } => {
+            syntax.source_span()
+        }
+    };
+    let name_lookup = module
+        .source_site(
+            parsed.document().identity(),
+            callable_source_query(
+                owner,
+                HirCallableSourceRole::Name {
+                    owner: HirCallableSourceOwner::ViewItem,
+                },
+            ),
+        )
+        .unwrap();
+    assert!(matches!(
+        name_lookup.presence(),
+        HirSourcePresence::Present(HirSourceSite::Span(actual)) if actual == &name
+    ));
+    let export = attached.exports().next().unwrap();
+    let export_lookup = module
+        .source_site(
+            parsed.document().identity(),
+            view_source_query(
+                owner,
+                HirViewSourceRole::Export {
+                    ordinal: 0,
+                    part: HirViewExportSourcePart::LocalPart,
+                },
+            ),
+        )
+        .unwrap();
+    let expected_export = match export.local_part() {
+        arcweft_lang_syntax::attachment::AttachedViewPartPath::Path(path) => {
+            path.syntax().source_span()
+        }
+        arcweft_lang_syntax::attachment::AttachedViewPartPath::Missing(syntax) => {
+            syntax.source_span()
+        }
+    };
+    assert!(matches!(
+        export_lookup.presence(),
+        HirSourcePresence::Present(HirSourceSite::Span(actual)) if actual == &expected_export
+    ));
 }
 
 #[test]
@@ -236,7 +362,7 @@ fn view_recovery_preserves_family_export_ordinals_and_primary_issue_order() {
         HirDeclarationMemberPoisonState::Poisoned(HirDeclarationMemberIssue::RecoveredChild)
     );
 
-    let (_, missing_item, missing) = view(&module, 1);
+    let (missing_owner, missing_item, missing) = view(&module, 1);
     assert_eq!(
         missing_item.state(),
         &HirItemPoisonState::Poisoned(HirItemIssue::Recovery)
@@ -244,6 +370,32 @@ fn view_recovery_preserves_family_export_ordinals_and_primary_issue_order() {
     assert!(missing.parameters().is_empty());
     assert!(missing.exports().is_empty());
     assert!(missing.values().is_empty());
+    assert!(matches!(
+        module
+            .source_site(
+                parsed.document().identity(),
+                view_source_query(
+                    missing_owner,
+                    HirViewSourceRole::Body(HirViewBodySourcePart::Whole),
+                ),
+            )
+            .unwrap()
+            .presence(),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+    ));
+    assert_eq!(
+        module
+            .source_site(
+                parsed.document().identity(),
+                view_source_query(
+                    missing_owner,
+                    HirViewSourceRole::Body(HirViewBodySourcePart::OpenDelimiter),
+                ),
+            )
+            .unwrap()
+            .presence(),
+        HirSourcePresence::AbsentOptional
+    );
 
     let (_, header_item, _) = view(&module, 2);
     assert_eq!(

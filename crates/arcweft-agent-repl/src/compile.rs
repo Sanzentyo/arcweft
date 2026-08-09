@@ -1,10 +1,11 @@
-use std::{path::PathBuf, sync::Arc};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use arcweft_compiler::{
     agent::compile_agent_project_bundle,
+    incremental::{BuildSnapshotRequest, runtime_plan_artifact_key, snapshot_compiled_project},
     project::{
-        ProjectCompilationContext, ProjectCompileError, ProjectCompileStage, ProjectEntrySelection,
-        ProjectEntrySelectionKind, compile_project,
+        ProjectCompilationContext, ProjectCompilationSession, ProjectCompileError,
+        ProjectCompileStage, ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
     },
     types::CompiledAgentBundle,
 };
@@ -14,10 +15,10 @@ use arcweft_lang_sema::registration::ProjectRegistrationFacts;
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use crate::{
+    binding::{ReplBindingRecord, committed_bindings},
     error::{ReplTransactionError, ReplTransactionPhase},
     session::ReplBaseSnapshot,
     source::ParsedReplCell,
@@ -25,21 +26,27 @@ use crate::{
 
 const REPL_PACKAGE_NAME: &str = "org.arcweft.tool.agent-repl";
 
+pub(crate) struct CompiledReplCell {
+    pub(crate) artifact: CompiledAgentBundle,
+    pub(crate) bindings: Vec<ReplBindingRecord>,
+}
+
 pub(crate) fn compile_repl_cell(
     parsed: &ParsedReplCell,
     base: &ReplBaseSnapshot,
-) -> Result<CompiledAgentBundle, ReplTransactionError> {
+) -> Result<CompiledReplCell, ReplTransactionError> {
     let selected_entry = PublicId::try_new(&parsed.synthetic_entry_id).map_err(|error| {
         ReplTransactionError::Compile {
             phase: ReplTransactionPhase::ClassifyParse,
             message: error.to_string(),
         }
     })?;
-    let (source_path, document) = repl_source_document(parsed, base)?;
+    let source_path = PathBuf::from(format!("repl/{}.arcw", parsed.synthetic_controller_name));
+    let document = Arc::clone(parsed.parsed_source.document_lease());
     let project = repl_project(source_path, &document)?;
     let facts = repl_registration_facts(parsed, &document)?;
     let context = ProjectCompilationContext::new(
-        Arc::new(base.project().typecheck_env()),
+        Arc::clone(base.typecheck_environment()),
         Arc::new(facts),
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
@@ -48,45 +55,61 @@ pub(crate) fn compile_repl_cell(
             ProjectEntrySelectionKind::Agent,
         )),
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
-        .map_err(|error| map_project_compile_error(&error))?;
-    let artifact_project = base
-        .project()
-        .clone()
-        .with_checked_entry_catalog(compiled.checked_entries());
-    compile_agent_project_bundle(&compiled, &selected_entry, &artifact_project).map_err(|error| {
-        ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::SemanticEffectChecks,
+    let parsed_sources = BTreeMap::from([(
+        CanonicalModulePath::crate_root(),
+        parsed.parsed_source.clone(),
+    )]);
+    let mut compilation_session =
+        ProjectCompilationSession::try_new().map_err(|error| ReplTransactionError::Compile {
+            phase: ReplTransactionPhase::HirLowering,
             message: error.to_string(),
-        }
-    })
-}
-
-fn repl_source_document(
-    parsed: &ParsedReplCell,
-    base: &ReplBaseSnapshot,
-) -> Result<(PathBuf, Arc<SourceDocument>), ReplTransactionError> {
-    let source_path = PathBuf::from(format!("repl/{}.arcw", parsed.synthetic_controller_name));
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new(format!(
-                "arcweft-repl://{}/{}.arcw",
-                base.generation().as_u64(),
-                parsed.synthetic_controller_name
-            ))
-            .map_err(|error| ReplTransactionError::Compile {
-                phase: ReplTransactionPhase::ClassifyParse,
-                message: error.to_string(),
-            })?,
-            SourceName::path(source_path.display().to_string()),
-            parsed.synthetic_source.clone(),
-        )
-        .map_err(|error| ReplTransactionError::Compile {
-            phase: ReplTransactionPhase::ClassifyParse,
-            message: error.to_string(),
-        })?,
+        })?;
+    let compiled = compile_project(
+        &mut compilation_session,
+        &project,
+        &parsed_sources,
+        &context,
+    )
+    .map_err(|error| map_project_compile_error(&error))?;
+    let artifact_project = base.target_entities().iter().cloned().fold(
+        compiled.semantic_index().as_ref().clone(),
+        arcweft_lang_sema::project_index::ProjectSemanticIndex::with_entity,
     );
-    Ok((source_path, document))
+    let bindings = committed_bindings(
+        parsed.id,
+        compiled.hir_project(),
+        &document,
+        &parsed.synthetic_controller_name,
+        parsed.cell_source_range,
+    )
+    .map_err(|message| ReplTransactionError::Compile {
+        phase: ReplTransactionPhase::SemanticEffectChecks,
+        message,
+    })?;
+    let snapshot = snapshot_compiled_project(
+        &project,
+        &compiled,
+        BuildSnapshotRequest {
+            build_id: compiled.program_hash().as_str().to_owned(),
+            compiler_build_id: env!("CARGO_PKG_VERSION").to_owned(),
+            target_triple: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+            target_features: Vec::new(),
+            profile: "agent-repl".to_owned(),
+            selected_entries: vec![selected_entry.as_str().to_owned()],
+        },
+    );
+    let runtime_plan_artifact_key = runtime_plan_artifact_key(&snapshot, &compiled);
+    let artifact = compile_agent_project_bundle(
+        &compiled,
+        &selected_entry,
+        &artifact_project,
+        runtime_plan_artifact_key,
+    )
+    .map_err(|error| ReplTransactionError::Compile {
+        phase: ReplTransactionPhase::SemanticEffectChecks,
+        message: error.to_string(),
+    })?;
+    Ok(CompiledReplCell { artifact, bindings })
 }
 
 fn repl_project(
@@ -180,10 +203,10 @@ fn map_project_compile_error(error: &ProjectCompileError) -> ReplTransactionErro
     let parse_diagnostics = error
         .diagnostics()
         .iter()
-        .filter_map(|diagnostic| diagnostic.parse_error().cloned())
+        .filter_map(|diagnostic| diagnostic.syntax_diagnostic().cloned())
         .collect::<Vec<_>>();
     if !parse_diagnostics.is_empty() {
-        return ReplTransactionError::Parse {
+        return ReplTransactionError::AttachedParse {
             diagnostics: parse_diagnostics,
             coordinate_space: crate::error::ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
         };
@@ -213,57 +236,41 @@ fn map_project_compile_error(error: &ProjectCompileError) -> ReplTransactionErro
 
 #[cfg(test)]
 mod tests {
-    use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
-    use arcweft_lang_syntax::parser::recovery::ParseErrorKind;
-
     use crate::{
-        cell::ReplCellKind, error::ReplTransactionError, session::ReplBaseSnapshot,
-        source::ParsedReplCell,
+        cell::{ReplCellId, ReplCellInput},
+        session::ReplBaseSnapshot,
+        source::classify_repl_cell,
     };
+    use arcweft_lang_sema::project_index::ProgramHash;
+    use std::sync::Arc;
 
     use super::compile_repl_cell;
 
     #[test]
-    fn project_parser_payload_reaches_the_repl_without_code_reconstruction() {
-        let source = r"pub view Card() {
-    export part as card.heading
-    Panel().part(header)
-}
-";
-        let parsed = ParsedReplCell {
-            kind: ReplCellKind::Item,
-            source: source.to_owned(),
-            source_hash: "source-hash".to_owned(),
-            synthetic_source: source.to_owned(),
-            synthetic_source_hash: "synthetic-source-hash".to_owned(),
-            synthetic_entry_id: "entry.agent.repl.cell_1".to_owned(),
-            synthetic_controller_name: "repl_cell_1".to_owned(),
-            bindings: Vec::new(),
-        };
-        let base = ReplBaseSnapshot::from_project(
+    fn compiler_reuses_the_accepted_synthetic_source_identity() {
+        let parsed = classify_repl_cell(
+            ReplCellId::new(1),
+            &ReplCellInput::statement("let answer = 42"),
+            "",
+        )
+        .expect("synthetic cell parses exactly once");
+        let base = ReplBaseSnapshot::new(
             "test",
-            ProjectSemanticIndex::new(ProgramHash::new("program-test")),
+            &ProgramHash::new("program-test"),
+            Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
         );
-
-        let Err(error) = compile_repl_cell(&parsed, &base) else {
-            panic!("malformed View export must fail REPL compilation");
-        };
-        let ReplTransactionError::Parse {
-            diagnostics,
-            coordinate_space,
-        } = error
-        else {
-            panic!("project parser diagnostics must remain typed at the REPL boundary");
-        };
-        assert_eq!(
-            coordinate_space,
-            crate::error::ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes
+        let compiled = compile_repl_cell(&parsed, &base).expect("accepted cell compiles");
+        assert!(
+            compiled
+                .artifact
+                .hir_project
+                .view()
+                .modules()
+                .any(|(_, module)| module.provenance().source_identity()
+                    == parsed.parsed_source.document().identity())
         );
-        let diagnostic = diagnostics
-            .iter()
-            .find(|diagnostic| diagnostic.kind() == ParseErrorKind::ViewExportPartMissingLocal)
-            .expect("typed missing-local parser diagnostic");
-        assert_eq!(diagnostic.code(), "view::export_part_missing_local");
-        assert_eq!(&source[diagnostic.range().as_range()], "as");
+        assert_eq!(compiled.bindings.len(), 1);
+        assert_eq!(compiled.bindings[0].name, "answer");
     }
 }

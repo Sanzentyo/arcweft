@@ -8,4 +8,5 @@ fn removed_compiler_apis_are_unavailable() {
     cases.compile_fail("tests/ui/lower_source_document_removed.rs");
     cases.compile_fail("tests/ui/parse_source_text_removed.rs");
     cases.compile_fail("tests/ui/runtime_capability_policy_absent.rs");
+    cases.compile_fail("tests/ui/no_linked_hir.rs");
 }

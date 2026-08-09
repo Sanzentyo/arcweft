@@ -9,10 +9,12 @@ repository.workspace = true
 [dependencies]
 arcweft-character = { workspace = true }
 arcweft-data.workspace = true
+arcweft-dialogue.workspace = true
 arcweft-id = { workspace = true }
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
 arcweft-presentation = { workspace = true }
+arcweft-rich-text-schema.workspace = true
 arcweft-rust-abi = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-view = { workspace = true }

@@ -6,7 +6,8 @@ use arcweft_lang_syntax::expressions::{ExpressionComponentRole, ExpressionProjec
 use super::*;
 use crate::expr::HirMatchRecoveryIssue;
 use crate::identity::CaptureId;
-use crate::scope::{CaptureAccess, HirCapture};
+use crate::pattern::{HirPatternBinding, HirPatternKind};
+use crate::scope::{CaptureAccess, HirCapture, LocalLookup};
 use crate::source_index::HirMatchArmSourcePart;
 use crate::type_ref::HirTypeKind;
 
@@ -240,6 +241,294 @@ fn typed_named_block(module: &HirModule, owner: ExprId) -> &crate::expr::HirName
 }
 
 #[test]
+fn destructuring_binds_left_to_right_after_initializer() {
+    let parsed = parsed_source(
+        "destructuring-binding-point",
+        &[concat!(
+            "result { ",
+            "let (a, {left: b, right: (c, d), ..rest}, e (f, g)) = source_value; ",
+            "(a, b, c, d, rest, e, f, g) ",
+            "}"
+        )
+        .into()],
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "unexpected destructuring diagnostics: {:#?}",
+        parsed.diagnostics()
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+
+    let block = typed_computation_block(&module, owners[0]);
+    let [statement_id] = block.statements() else {
+        panic!("destructuring fixture must retain one Let statement");
+    };
+    let statement = module
+        .resolve_stmt(*statement_id)
+        .expect("destructuring Let");
+    let HirStmtKind::Let {
+        pattern,
+        initializer,
+        locals,
+        ..
+    } = statement.kind()
+    else {
+        panic!("destructuring fixture statement must remain a Let");
+    };
+    assert!(matches!(
+        module.resolve_pattern(*pattern).unwrap().kind(),
+        HirPatternKind::Tuple { .. }
+    ));
+
+    let expected_names = ["a", "b", "c", "d", "rest", "e", "f", "g"];
+    assert_eq!(locals.len(), expected_names.len());
+    for (local_id, expected_name) in locals.iter().zip(expected_names) {
+        let local = module.resolve_local(*local_id).expect("destructured Local");
+        assert_eq!(local.scope(), block.scope());
+        assert_eq!(local.name().as_str(), expected_name);
+        assert_eq!(local.generation(), LocalGeneration::FIRST);
+        assert!(!local.is_poisoned());
+    }
+    assert!(
+        locals
+            .windows(2)
+            .all(|pair| pair[0].raw().slot() < pair[1].raw().slot())
+    );
+
+    let statement_end = match module.metadata(*statement_id).unwrap().source_site() {
+        HirSourceSite::Span(span) => span.range().end(),
+        HirSourceSite::Insertion(_) => panic!("authored Let must own a source span"),
+    };
+    let initializer_end = match module.metadata(*initializer).unwrap().source_site() {
+        HirSourceSite::Span(span) => span.range().end(),
+        HirSourceSite::Insertion(_) => panic!("authored initializer must own a source span"),
+    };
+    assert!(initializer_end < statement_end);
+    let at_binding_point = parsed
+        .document()
+        .span(SourceRange::new(statement_end, statement_end))
+        .expect("statement-end lookup point");
+    let after_binding_point = parsed
+        .document()
+        .span(SourceRange::new(statement_end + 1, statement_end + 1))
+        .expect("post-statement lookup point");
+    for local_id in locals {
+        let local = module.resolve_local(*local_id).unwrap();
+        assert_eq!(
+            module.lookup_local(block.scope(), local.name(), at_binding_point.clone()),
+            Ok(LocalLookup::NotFound),
+            "{} became visible before the complete Let statement",
+            local.name().as_str()
+        );
+        assert_eq!(
+            module.lookup_local(block.scope(), local.name(), after_binding_point.clone()),
+            Ok(LocalLookup::Found(*local_id)),
+            "{} did not share the post-statement binding point",
+            local.name().as_str()
+        );
+    }
+}
+
+#[test]
+fn duplicate_pattern_names_poison_all_duplicate_bindings() {
+    let parsed = parsed_source(
+        "duplicate-pattern-bindings",
+        &["result { let (x, x) = pair; Point { x } }".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+
+    let block = typed_computation_block(&module, owners[0]);
+    let [statement_id] = block.statements() else {
+        panic!("duplicate fixture must retain one Let statement");
+    };
+    let statement = module.resolve_stmt(*statement_id).expect("duplicate Let");
+    let HirStmtKind::Let {
+        pattern, locals, ..
+    } = statement.kind()
+    else {
+        panic!("duplicate fixture statement must remain a Let");
+    };
+    let HirPatternKind::Tuple { elements } = module.resolve_pattern(*pattern).unwrap().kind()
+    else {
+        panic!("duplicate fixture must retain its tuple Pattern");
+    };
+    let [first_pattern, duplicate_pattern] = elements.as_ref() else {
+        panic!("duplicate tuple must retain both occurrence PatternIds");
+    };
+    assert_ne!(first_pattern, duplicate_pattern);
+    let [first_local, duplicate_local] = locals.as_ref() else {
+        panic!("duplicate tuple must retain both LocalIds");
+    };
+    for (pattern_id, local_id) in [
+        (*first_pattern, *first_local),
+        (*duplicate_pattern, *duplicate_local),
+    ] {
+        let HirPatternKind::Binding(HirPatternBinding::Bound { local, .. }) =
+            module.resolve_pattern(pattern_id).unwrap().kind()
+        else {
+            panic!("duplicate occurrence must remain a binding Pattern");
+        };
+        assert_eq!(*local, local_id);
+    }
+
+    let first = module.resolve_local(*first_local).unwrap();
+    let duplicate = module.resolve_local(*duplicate_local).unwrap();
+    assert_eq!(first.generation(), LocalGeneration::FIRST);
+    assert_eq!(duplicate.generation(), LocalGeneration::FIRST);
+    assert!(!first.is_poisoned());
+    assert!(duplicate.is_poisoned());
+    assert_eq!(first.scope(), duplicate.scope());
+    assert_eq!(
+        module
+            .diagnostics()
+            .iter()
+            .filter(|diagnostic| matches!(
+                diagnostic,
+                HirDiagnostic::Recovery(recovery)
+                    if recovery.owner() == SyntheticOwner::Local(*duplicate_local)
+            ))
+            .count(),
+        1
+    );
+
+    let HirExprKind::Record(tail) = expression(&module, block.tail()).kind() else {
+        panic!("duplicate fixture tail must remain a Record shorthand");
+    };
+    let [field] = tail.fields() else {
+        panic!("duplicate fixture tail must retain one field");
+    };
+    assert_eq!(field.local(), Some(*first_local));
+    let use_start = parsed.document().text().rfind('x').unwrap();
+    let use_span = parsed
+        .document()
+        .span(SourceRange::new(use_start, use_start + 1))
+        .unwrap();
+    assert_eq!(
+        module.lookup_local(first.scope(), first.name(), use_span),
+        Ok(LocalLookup::Found(*first_local))
+    );
+}
+
+#[test]
+fn poisoned_pattern_does_not_leak_names() {
+    let parsed = parsed_source(
+        "poisoned-pattern-visibility",
+        &["result { let .Some((leaked, _)) = source; leaked }".into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+
+    let block = typed_computation_block(&module, owners[0]);
+    let [statement_id] = block.statements() else {
+        panic!("poisoned fixture must retain one Let statement");
+    };
+    let statement = module.resolve_stmt(*statement_id).expect("poisoned Let");
+    assert!(statement.state().is_poisoned());
+    let HirStmtKind::Let {
+        pattern, locals, ..
+    } = statement.kind()
+    else {
+        panic!("poisoned fixture statement must remain a Let");
+    };
+    assert!(matches!(
+        module.resolve_pattern(*pattern).unwrap().kind(),
+        HirPatternKind::Variant(_)
+    ));
+    let [local_id] = locals.as_ref() else {
+        panic!("valid nested binding remains queryable as one poisoned Local");
+    };
+    let local = module.resolve_local(*local_id).unwrap();
+    assert_eq!(local.name().as_str(), "leaked");
+    assert!(local.is_poisoned());
+
+    let use_start = parsed.document().text().rfind("leaked").unwrap();
+    let use_span = parsed
+        .document()
+        .span(SourceRange::new(use_start, use_start + "leaked".len()))
+        .unwrap();
+    assert_eq!(
+        module.lookup_local(block.scope(), local.name(), use_span),
+        Ok(LocalLookup::AmbiguousPoisoned(Box::new([*local_id])))
+    );
+    assert!(
+        matches!(
+            expression(&module, block.tail()).kind(),
+            HirExprKind::Path(_)
+        ),
+        "the authored use remains a typed Path without selecting a poisoned Local"
+    );
+}
+
+#[test]
+fn sequential_shadowing_increments_local_generation() {
+    let parsed = parsed_source(
+        "sequential-shadowing",
+        &[concat!(
+            "result { ",
+            "let x = 1; Point { x }; ",
+            "let x = 2; Point { x }; ",
+            "let x = 3; Point { x } ",
+            "}"
+        )
+        .into()],
+    );
+    let (module, owners, _) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Clean);
+
+    let block = typed_computation_block(&module, owners[0]);
+    let [first_let, first_use, second_let, second_use, third_let] = block.statements() else {
+        panic!("shadow fixture must retain three Lets and two intermediate uses");
+    };
+    let local_from_let = |statement_id| {
+        let statement = module.resolve_stmt(statement_id).expect("shadowing Let");
+        let HirStmtKind::Let { locals, .. } = statement.kind() else {
+            panic!("shadowing binding must remain a Let");
+        };
+        let [local] = locals.as_ref() else {
+            panic!("shadowing Let must retain one Local");
+        };
+        *local
+    };
+    let locals = [
+        local_from_let(*first_let),
+        local_from_let(*second_let),
+        local_from_let(*third_let),
+    ];
+    for (index, local_id) in locals.iter().enumerate() {
+        let local = module.resolve_local(*local_id).unwrap();
+        assert_eq!(local.name().as_str(), "x");
+        assert_eq!(local.scope(), block.scope());
+        assert_eq!(local.generation().get(), u32::try_from(index + 1).unwrap());
+        assert!(!local.is_poisoned());
+    }
+
+    let record_local = |statement_id| {
+        let statement = module.resolve_stmt(statement_id).expect("shadowing use");
+        let HirStmtKind::Expression { expression: owner } = statement.kind() else {
+            panic!("intermediate shadowing use must remain an expression statement");
+        };
+        let HirExprKind::Record(record) = expression(&module, *owner).kind() else {
+            panic!("shadowing use must remain a Record shorthand");
+        };
+        let [field] = record.fields() else {
+            panic!("shadowing Record must retain one field");
+        };
+        field.local().expect("shadowing shorthand Local")
+    };
+    assert_eq!(record_local(*first_use), locals[0]);
+    assert_eq!(record_local(*second_use), locals[1]);
+    let HirExprKind::Record(tail) = expression(&module, block.tail()).kind() else {
+        panic!("final shadowing use must remain the block tail Record");
+    };
+    let [field] = tail.fields() else {
+        panic!("final shadowing Record must retain one field");
+    };
+    assert_eq!(field.local(), Some(locals[2]));
+}
+
+#[test]
 fn closure_lowers_parameters_result_and_body_into_one_lexical_owner() {
     let parsed = parsed_source(
         "closure-owner",
@@ -427,6 +716,10 @@ fn closure_reassignment_joins_access_without_losing_first_use() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test validates one complete closure shadowing and capture-isolation scenario"
+)]
 fn closure_parameter_and_inner_shadow_prevent_capture() {
     let parsed = parsed_source(
         "closure-capture-shadow",
@@ -1011,6 +1304,10 @@ fn closure_capture_freeze_rejects_a_sibling_scope_local() {
     assert!(database.current(&module_key(&parsed)).is_none());
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "this helper executes one closed atomic capture-graph tamper matrix shared by its small public test cases"
+)]
 fn assert_capture_graph_tamper_rejected(tamper: CaptureGraphTamper) {
     let suffix = match tamper {
         CaptureGraphTamper::WrongOwner => "wrong-owner",
@@ -2211,6 +2508,170 @@ fn e32_match_recovery_keeps_guard_parent_poison_and_scope_owned_missing_value() 
                 arcweft_lang_syntax::expressions::SyntaxMatchBodyTerminator::MissingBody
             )
     ));
+}
+
+#[test]
+fn match_multiple_missing_arm_values_use_distinct_scope_tail_owners_and_rollback() {
+    let parsed = parsed_source(
+        "match-multiple-missing-arm-values",
+        &["match option { .Some =>, .None => }".into()],
+    );
+    let (module, owners, attached) = lower_and_publish(&parsed);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert_eq!(attached[0].match_arms().len(), 2);
+
+    let owner = owners[0];
+    let root = expression(&module, owner);
+    let [first, second] = typed_match(&module, owner).arms() else {
+        panic!("recovered Match must retain two typed arms");
+    };
+    let mut tail_ids = BTreeSet::new();
+    for arm in [first, second] {
+        let scope = module.resolve_scope(arm.scope()).expect("Match-arm scope");
+        assert_eq!(scope.kind(), HirScopeKind::MatchArm);
+        assert_eq!(scope.parent(), Some(root.scope()));
+        assert_eq!(scope.owner(), &HirScopeOwner::Expr(owner));
+
+        let metadata = module
+            .slots()
+            .resolve(arm.value())
+            .expect("missing arm-value slot");
+        assert!(matches!(
+            metadata.origin(),
+            HirOrigin::Synthetic(key)
+                if key.owner() == SyntheticOwner::Scope(arm.scope())
+                    && key.role() == SyntheticRole::MissingRequiredTail
+                    && key.ordinal() == 0
+        ));
+        assert_eq!(expression(&module, arm.value()).scope(), arm.scope());
+        assert!(matches!(
+            expression(&module, arm.value()).state(),
+            HirPoisonState::Poisoned(HirRecoveryIssue::MissingRequiredTail)
+        ));
+        assert!(tail_ids.insert(arm.value()));
+    }
+    assert_ne!(first.scope(), second.scope());
+    assert_eq!(tail_ids.len(), 2);
+
+    let attached = attached_expressions(&parsed).pop().unwrap();
+    let mut database = HirDatabase::try_new().expect("rollback HIR database");
+    let before = database.test_state();
+    let mut transaction = stage(&database, &parsed);
+    let outer_scope = allocate_module_scope(&mut transaction, &parsed);
+    transaction.storage_mut().1.scopes().set_maximum_for_test(2);
+    assert!(matches!(
+        transaction.lower_attached_expression(&attached, outer_scope),
+        Err(HirLowerFailure::Limit(error)) if error.limit() == HirLimit::Scopes
+    ));
+    assert!(transaction.finish(&mut database).is_err());
+    assert_eq!(database.test_state(), before);
+    assert!(database.current(&module_key(&parsed)).is_none());
+}
+
+#[test]
+fn match_arm_scope_identity_survives_reverse_production_lookup_order() {
+    let parsed = parsed_source(
+        "match-arm-reverse-scope-lookup",
+        &["match option { .Some =>, .None => }".into()],
+    );
+    let attached = attached_expressions(&parsed).pop().unwrap();
+    let mut database = HirDatabase::try_new().expect("Match lookup-order HIR database");
+    let mut transaction = stage(&database, &parsed);
+    let outer_scope = allocate_module_scope(&mut transaction, &parsed);
+    let owner = transaction
+        .lower_attached_expression(&attached, outer_scope)
+        .expect("source-ordered Match prefix");
+    let (source_order_scopes, staged_tails) = {
+        let (slots, arenas) = transaction.storage_mut();
+        let payload = arenas
+            .expressions()
+            .resolve_staged(slots, owner)
+            .expect("staged Match owner");
+        let HirExprKind::Match(matched) = payload.kind() else {
+            panic!("staged Match payload")
+        };
+        (
+            matched
+                .arms()
+                .iter()
+                .map(HirMatchArm::scope)
+                .collect::<Vec<_>>(),
+            matched
+                .arms()
+                .iter()
+                .map(HirMatchArm::value)
+                .collect::<Vec<_>>(),
+        )
+    };
+
+    // Match lowering has no internal arm work queue or diagnostic map to
+    // reverse. Reusing the production scope allocator in reverse attached-arm
+    // order is the strongest real perturbation: identity must come from each
+    // arm record, without changing the authored order stored in HirMatchExpr.
+    let reverse_lookup_scopes = attached
+        .match_arms()
+        .iter()
+        .rev()
+        .map(|arm| {
+            transaction
+                .allocate_match_arm_scope(arm, owner, outer_scope)
+                .expect("reverse production Match-arm scope lookup")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        reverse_lookup_scopes,
+        source_order_scopes
+            .iter()
+            .rev()
+            .copied()
+            .collect::<Vec<_>>()
+    );
+
+    let module = transaction
+        .finish(&mut database)
+        .expect("reverse Match-arm lookup publishes atomically")
+        .into_module();
+    let matched = typed_match(&module, owner);
+    assert_eq!(
+        matched
+            .arms()
+            .iter()
+            .map(HirMatchArm::scope)
+            .collect::<Vec<_>>(),
+        source_order_scopes
+    );
+    assert_eq!(
+        matched
+            .arms()
+            .iter()
+            .map(HirMatchArm::value)
+            .collect::<Vec<_>>(),
+        staged_tails
+    );
+
+    let mut distinct_scopes = BTreeSet::new();
+    let mut distinct_tails = BTreeSet::new();
+    for (arm, attached_arm) in matched.arms().iter().zip(attached.match_arms()) {
+        assert!(distinct_scopes.insert(arm.scope()));
+        assert!(distinct_tails.insert(arm.value()));
+        let scope = module.resolve_scope(arm.scope()).expect("Match-arm scope");
+        assert_eq!(scope.kind(), HirScopeKind::MatchArm);
+        assert_eq!(scope.parent(), Some(outer_scope));
+        assert_eq!(scope.owner(), &HirScopeOwner::Expr(owner));
+        assert_eq!(
+            module.slots().resolve(arm.scope()).unwrap().source_site(),
+            &HirSourceSite::Span(attached_arm.whole_source_span())
+        );
+        assert!(matches!(
+            module.slots().resolve(arm.value()).unwrap().origin(),
+            HirOrigin::Synthetic(key)
+                if key.owner() == SyntheticOwner::Scope(arm.scope())
+                    && key.role() == SyntheticRole::MissingRequiredTail
+                    && key.ordinal() == 0
+        ));
+    }
+    assert_eq!(distinct_scopes.len(), 2);
+    assert_eq!(distinct_tails.len(), 2);
 }
 
 #[test]

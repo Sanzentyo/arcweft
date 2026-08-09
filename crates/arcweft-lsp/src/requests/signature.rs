@@ -2,8 +2,9 @@
 
 use std::sync::Arc;
 
+use arcweft_compiler::project::CompiledProject;
 use arcweft_lang_hir::{
-    model::HirModule,
+    module::HirModule,
     project::HirProject,
     symbol::{ProjectSymbolRevision, ProjectSymbolWorldId},
 };
@@ -13,6 +14,7 @@ use arcweft_lang_sema::registration::{
 };
 use arcweft_lang_sema::{
     callable::{CallableQueryLimitError, ResolveCallError, SemanticSignatureError},
+    final_analysis::FinalSemanticAnalysis,
     signature::{SignatureQueryError, SignatureQueryOutcome},
 };
 use arcweft_source::{SourceDocument, SourceDocumentIdentity};
@@ -41,12 +43,12 @@ use super::{ActiveRequest, RequestAdmissionError, RequestControl, SignatureCance
 #[derive(Debug)]
 pub(crate) struct AcceptedDocumentHirLease {
     environment: Arc<AcceptedProfileEnvironment>,
+    executable: Arc<CompiledProject>,
     document: Arc<SourceDocument>,
     module: AcceptedModuleKey,
 }
 
 /// Immutable evidence used for every pre-cache and publication freshness check.
-#[derive(Debug)]
 pub(crate) struct SignatureRequestStamp {
     profile_state: Arc<LspProfileState>,
     accepted: Arc<AcceptedProfileEnvironment>,
@@ -69,7 +71,6 @@ pub(crate) struct SignatureRequestStamp {
 }
 
 /// Fully acquired request that owns every source borrowed by later worker execution.
-#[derive(Debug)]
 pub(crate) struct PreparedSignatureRequest {
     request_id: RequestId,
     position: Position,
@@ -176,6 +177,7 @@ pub(crate) enum SignatureAcquireError {
     },
     ProfileClosing,
     NoAcceptedEnvironment,
+    ExecutableUnavailable,
     ProfileKeyMismatch,
     UriNotAccepted {
         uri: LspUriKey,
@@ -218,6 +220,9 @@ impl std::fmt::Display for SignatureAcquireError {
             Self::ProfileClosing => formatter.write_str("profile request admission is closed"),
             Self::NoAcceptedEnvironment => {
                 formatter.write_str("profile has no accepted environment")
+            }
+            Self::ExecutableUnavailable => {
+                formatter.write_str("accepted project is available only for tooling")
             }
             Self::ProfileKeyMismatch => {
                 formatter.write_str("accepted profile key differs from the mapped profile")
@@ -393,11 +398,13 @@ pub(crate) enum SignatureRequestError {
 impl AcceptedDocumentHirLease {
     pub(crate) fn new(
         environment: Arc<AcceptedProfileEnvironment>,
+        executable: Arc<CompiledProject>,
         document: Arc<SourceDocument>,
         module: AcceptedModuleKey,
     ) -> Self {
         Self {
             environment,
+            executable,
             document,
             module,
         }
@@ -408,23 +415,29 @@ impl AcceptedDocumentHirLease {
     }
 
     pub(crate) fn world(&self) -> &RegisteredSemanticWorld {
-        self.environment.world().as_ref()
+        self.executable.registered_world()
     }
 
     pub(crate) fn hir(&self) -> Result<&HirModule, SignatureAcquireError> {
         self.environment
             .project()
             .hir(&self.module)
+            .map(Arc::as_ref)
             .map_err(|error| match error {
                 AcceptedHirLookupError::MissingModule { key } => {
                     SignatureAcquireError::MissingHirModule { module: key }
                 }
                 AcceptedHirLookupError::SourceIdentityMismatch { key, .. }
-                | AcceptedHirLookupError::MissingSourceDocument { key }
                 | AcceptedHirLookupError::SourceDocumentMismatch { key, .. } => {
                     SignatureAcquireError::HirIdentityMismatch { module: key }
                 }
             })
+    }
+
+    /// Exact final semantic report retained by the same accepted generation as
+    /// this document and HIR module.
+    pub(crate) fn final_analysis(&self) -> &FinalSemanticAnalysis {
+        self.executable.final_analysis().as_ref()
     }
 }
 
@@ -436,6 +449,7 @@ impl SignatureRequestStamp {
     pub(crate) fn new(
         profile_state: Arc<LspProfileState>,
         accepted: Arc<AcceptedProfileEnvironment>,
+        world: Arc<RegisteredSemanticWorld>,
         accepted_document: Arc<SourceDocument>,
         uri: LspUriKey,
         protocol_document: SourceDocumentIdentity,
@@ -444,7 +458,6 @@ impl SignatureRequestStamp {
     ) -> Self {
         let project = Arc::clone(accepted.project());
         let hir_project = Arc::clone(project.hir_project());
-        let world = Arc::clone(accepted.world());
         let environment = world.environment();
         Self {
             profile_state,
@@ -706,7 +719,9 @@ impl SignatureAcquireError {
                 | RequestAdmissionError::QueueClosed,
             )
             | Self::ProfileClosing => ErrorCode::ServerCancelled as i32,
-            Self::Admission(_) | Self::NoAcceptedEnvironment => ErrorCode::RequestFailed as i32,
+            Self::Admission(_) | Self::NoAcceptedEnvironment | Self::ExecutableUnavailable => {
+                ErrorCode::RequestFailed as i32
+            }
             Self::SourceDigestCollision { .. }
             | Self::MissingHirModule { .. }
             | Self::HirIdentityMismatch { .. } => ErrorCode::InternalError as i32,
@@ -728,6 +743,7 @@ impl SignatureAcquireError {
             Self::ProfileNotMapped { .. } => "aw.signature.acquire.profile_not_mapped",
             Self::ProfileClosing => "aw.signature.acquire.profile_closing",
             Self::NoAcceptedEnvironment => "aw.signature.acquire.no_accepted_environment",
+            Self::ExecutableUnavailable => "aw.signature.acquire.executable_unavailable",
             Self::ProfileKeyMismatch => "aw.signature.acquire.profile_key_mismatch",
             Self::UriNotAccepted { .. } => "aw.signature.acquire.uri_not_accepted",
             Self::OverlayNotAccepted { .. } => "aw.signature.acquire.overlay_not_accepted",

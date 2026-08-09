@@ -9,17 +9,19 @@ use arcweft_adapter_context::{manifest::AdapterManifest, standard};
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_compiler::project::{
     AcceptedLaunchProfileInput, CompiledProject, ProjectCompilationContext,
-    ProjectCompileDiagnostic, ProjectCompileError, ProjectEntrySelection,
-    ProjectEntrySelectionKind, compile_project,
+    ProjectCompilationSession, ProjectCompileDiagnostic, ProjectCompileError,
+    ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
 };
 use arcweft_core::entry::{RootExecutionLimits, RuntimeCommandPolicy};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
-use arcweft_lang_sema::{
-    check::TypeCheckReport, env::TypeCheckEnv, registration::ProjectRegistrationFacts,
+use arcweft_lang_sema::{env::TypeCheckEnv, registration::ProjectRegistrationFacts};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath,
+    incremental::{ParsedSource, SyntaxDatabase},
+    parser::ParseOptions,
 };
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_launch::{
     EntrySelectionId, LaunchKind, LaunchMathBackend, LaunchProfileSelection, LaunchPureBackend,
     diagnostic::ManifestDiagnosticCode, manifest::LaunchPureWorkers,
@@ -38,7 +40,7 @@ use arcweft_project_loader::{
     project::LoadedProject,
     topology::{
         LoadedProfileTopology, ProfileTopologyLoadRequest, ProfileTopologyOwnerId,
-        load_profile_topology,
+        load_profile_topology, reload_profile_topology,
     },
 };
 use arcweft_runtime_accelerator::{
@@ -46,13 +48,14 @@ use arcweft_runtime_accelerator::{
     math::RuntimeMathBackend,
 };
 use arcweft_runtime_host::{NativeFileRoots, NativeTaskBridge};
-use arcweft_runtime_plan::{flow::RuntimePlanLowerOptions, line_task::LoweredLineTaskGroup};
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId};
+use arcweft_verify::{VerificationPolicy, VerificationReport, verify_project};
 use clap::Args;
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 #[derive(Args, Clone, Debug, Default)]
 pub(in crate::app) struct ProfileOptions {
@@ -75,6 +78,7 @@ pub(in crate::app) struct SelectionSemanticContext {
 
 pub(in crate::app) struct DirectProjectCompilationInput {
     sources: ProjectSources,
+    parsed_sources: BTreeMap<CanonicalModulePath, ParsedSource>,
     context: ProjectCompilationContext,
 }
 
@@ -85,6 +89,12 @@ impl DirectProjectCompilationInput {
 
     pub(in crate::app) const fn context(&self) -> &ProjectCompilationContext {
         &self.context
+    }
+
+    pub(in crate::app) const fn parsed_sources(
+        &self,
+    ) -> &BTreeMap<CanonicalModulePath, ParsedSource> {
+        &self.parsed_sources
     }
 }
 
@@ -106,7 +116,7 @@ impl SelectionSemanticContext {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(in crate::app) enum SourceSelection {
     Direct {
         path: PathBuf,
@@ -114,10 +124,23 @@ pub(in crate::app) enum SourceSelection {
     Project {
         manifest: PathBuf,
         path: PathBuf,
+        loaded: Arc<LoadedProject>,
+        syntax: Arc<Mutex<SyntaxDatabase>>,
+        compiler: Arc<Mutex<ProjectCompilationSession>>,
     },
     Profile {
         topology: Arc<LoadedProfileTopology>,
+        syntax: Arc<Mutex<SyntaxDatabase>>,
+        compiler: Arc<Mutex<ProjectCompilationSession>>,
+        owner: ProfileTopologyOwnerId,
     },
+}
+
+struct LoadedProfileSelection {
+    topology: Arc<LoadedProfileTopology>,
+    syntax: Arc<Mutex<SyntaxDatabase>>,
+    compiler: Arc<Mutex<ProjectCompilationSession>>,
+    owner: ProfileTopologyOwnerId,
 }
 
 enum CliTopologyLoadError {
@@ -126,10 +149,28 @@ enum CliTopologyLoadError {
 }
 
 impl SourceSelection {
+    pub(in crate::app) fn from_loaded_project(
+        loaded: LoadedProject,
+        syntax: Arc<Mutex<SyntaxDatabase>>,
+        compiler: Arc<Mutex<ProjectCompilationSession>>,
+    ) -> Self {
+        let manifest = loaded.sources().manifest_path().to_path_buf();
+        let path = loaded.sources().root_module().path().to_path_buf();
+        Self::Project {
+            manifest,
+            path,
+            loaded: Arc::new(loaded),
+            syntax,
+            compiler,
+        }
+    }
+
     pub(in crate::app) fn path(&self) -> &Path {
         match self {
             Self::Direct { path } | Self::Project { path, .. } => path,
-            Self::Profile { topology } => topology.loaded_project().sources().root_module().path(),
+            Self::Profile { topology, .. } => {
+                topology.loaded_project().sources().root_module().path()
+            }
         }
     }
 
@@ -146,7 +187,9 @@ impl SourceSelection {
     pub(in crate::app) fn resource_manifest(&self) -> Option<&Path> {
         match self {
             Self::Project { manifest, .. } => Some(manifest),
-            Self::Profile { topology } => Some(topology.loaded_project().sources().manifest_path()),
+            Self::Profile { topology, .. } => {
+                Some(topology.loaded_project().sources().manifest_path())
+            }
             Self::Direct { .. } => None,
         }
     }
@@ -154,13 +197,13 @@ impl SourceSelection {
     pub(in crate::app) fn profile(&self) -> Option<&ResolvedLaunchProfile> {
         match self {
             Self::Direct { .. } | Self::Project { .. } => None,
-            Self::Profile { topology } => Some(topology.selected_profile()),
+            Self::Profile { topology, .. } => Some(topology.selected_profile()),
         }
     }
 
     pub(in crate::app) fn profile_topology(&self) -> Option<&LoadedProfileTopology> {
         match self {
-            Self::Profile { topology } => Some(topology),
+            Self::Profile { topology, .. } => Some(topology),
             Self::Direct { .. } | Self::Project { .. } => None,
         }
     }
@@ -206,6 +249,82 @@ impl SourceSelection {
         arcweft_project_loader::project::discover_manifest(path)
             .ok()
             .and_then(|manifest| manifest.parent().map(Path::to_path_buf))
+    }
+
+    pub(in crate::app) fn loaded_project(&self) -> Option<&LoadedProject> {
+        match self {
+            Self::Project { loaded, .. } => Some(loaded),
+            Self::Profile { topology, .. } => Some(topology.loaded_project()),
+            Self::Direct { .. } => None,
+        }
+    }
+
+    pub(in crate::app) fn compiler_session(
+        &self,
+    ) -> Option<&Arc<Mutex<ProjectCompilationSession>>> {
+        match self {
+            Self::Project { compiler, .. } | Self::Profile { compiler, .. } => Some(compiler),
+            Self::Direct { .. } => None,
+        }
+    }
+
+    pub(in crate::app) fn refresh(&mut self) -> Result<(), ExitCode> {
+        match self {
+            Self::Direct { .. } => Ok(()),
+            Self::Project {
+                manifest,
+                loaded,
+                syntax,
+                ..
+            } => {
+                let mut syntax = syntax.lock().map_err(|_| {
+                    eprintln!("error: project syntax session lock is poisoned");
+                    ExitCode::FAILURE
+                })?;
+                let revised =
+                    arcweft_project_loader::project::reload(&mut syntax, loaded, manifest)
+                        .map_err(|error| {
+                            eprintln!("error: {error}");
+                            ExitCode::FAILURE
+                        })?;
+                *loaded = Arc::new(revised);
+                Ok(())
+            }
+            Self::Profile {
+                topology,
+                syntax,
+                owner,
+                ..
+            } => {
+                let manifest = topology
+                    .loaded_project()
+                    .sources()
+                    .manifest_path()
+                    .to_path_buf();
+                let profile = topology.selected_profile().id().as_str().to_owned();
+                let mut syntax = syntax.lock().map_err(|_| {
+                    eprintln!("error: profile syntax session lock is poisoned");
+                    ExitCode::FAILURE
+                })?;
+                let revised = reload_profile_topology(
+                    &mut syntax,
+                    topology.loaded_project(),
+                    ProfileTopologyLoadRequest::new(
+                        &manifest,
+                        owner.clone(),
+                        LaunchProfileSelection::Explicit(&profile),
+                        &[],
+                        standard::standard_registry(),
+                    ),
+                )
+                .map_err(|error| {
+                    eprintln!("error: failed to reload profile topology: {error}");
+                    ExitCode::FAILURE
+                })?;
+                *topology = Arc::new(revised);
+                Ok(())
+            }
+        }
     }
 
     pub(in crate::app) fn entry(&self) -> Option<&str> {
@@ -264,13 +383,8 @@ impl SourceSelection {
                 .as_str()
                 .to_owned());
         }
-        if let Self::Project { manifest, .. } = self {
-            return arcweft_project_loader::project::load(manifest)
-                .map(|project| project.sources().package().id.as_str().to_owned())
-                .map_err(|error| {
-                    eprintln!("error: failed to resolve package identity: {error}");
-                    ExitCode::FAILURE
-                });
+        if let Self::Project { loaded, .. } = self {
+            return Ok(loaded.sources().package().id.as_str().to_owned());
         }
         let package_name = self
             .path()
@@ -290,17 +404,6 @@ impl SourceSelection {
                 ExitCode::FAILURE
             })
     }
-}
-
-pub(in crate::app) fn runtime_plan_options_for_selection(
-    selection: &SourceSelection,
-) -> Result<RuntimePlanLowerOptions, ExitCode> {
-    let options = RuntimePlanLowerOptions::default()
-        .with_package_identity(selection.package_identity()?)
-        .with_command_policy(RuntimeCommandPolicy::deny_all(
-            RootExecutionLimits::engine_default(),
-        ));
-    Ok(options)
 }
 
 pub(in crate::app) fn runtime_pure_config_for_selection(
@@ -414,17 +517,17 @@ pub(in crate::app) fn resolve_source_selection_or_default_profile(
                 &manifest_path,
                 LaunchProfileSelection::Automatic { previous: None },
             ) {
-                Ok(topology) => {
-                    if topology.selected_profile().kind() != preferred_kind {
+                Ok(loaded) => {
+                    if loaded.topology.selected_profile().kind() != preferred_kind {
                         eprintln!(
                             "error: default launch profile `{}` has kind {}; use --profile to select a {} profile",
-                            topology.selected_profile().id(),
-                            topology.selected_profile().kind().as_str(),
+                            loaded.topology.selected_profile().id(),
+                            loaded.topology.selected_profile().kind().as_str(),
                             preferred_kind.as_str()
                         );
                         return Err(ExitCode::from(2));
                     }
-                    Ok(SourceSelection::Profile { topology })
+                    Ok(loaded.into_selection())
                 }
                 Err(CliTopologyLoadError::NoProfiles) => {
                     resolve_project_root_source_selection(&manifest_path)
@@ -445,14 +548,15 @@ fn resolve_direct_or_containing_default_profile(
     let Ok(manifest) = arcweft_project_loader::project::discover_manifest(path) else {
         return Ok(direct());
     };
-    let topology = match load_profile_topology_at(
+    let loaded = match load_profile_topology_at(
         &manifest,
         LaunchProfileSelection::Automatic { previous: None },
     ) {
-        Ok(topology) => topology,
+        Ok(loaded) => loaded,
         Err(CliTopologyLoadError::NoProfiles) => return Ok(direct()),
         Err(CliTopologyLoadError::Failed) => return Err(ExitCode::FAILURE),
     };
+    let topology = &loaded.topology;
     if topology.selected_profile().kind() != preferred_kind {
         return Ok(direct());
     }
@@ -479,7 +583,7 @@ fn resolve_direct_or_containing_default_profile(
         ExitCode::FAILURE
     })?;
     if selected_source == requested_source {
-        Ok(SourceSelection::Profile { topology })
+        Ok(loaded.into_selection())
     } else {
         Ok(direct())
     }
@@ -498,20 +602,32 @@ fn resolve_profile_source_selection_from_manifest(
     profile_id: &str,
 ) -> Result<SourceSelection, ExitCode> {
     load_profile_topology_at(manifest_path, LaunchProfileSelection::Explicit(profile_id))
-        .map(|topology| SourceSelection::Profile { topology })
+        .map(LoadedProfileSelection::into_selection)
         .map_err(|_| ExitCode::FAILURE)
 }
 
-fn resolve_project_root_source_selection(
+pub(in crate::app) fn resolve_project_root_source_selection(
     manifest_path: &Path,
 ) -> Result<SourceSelection, ExitCode> {
-    let project = arcweft_project_loader::project::load(manifest_path).map_err(|error| {
-        eprintln!("error: {error}");
+    let mut syntax = SyntaxDatabase::try_new().map_err(|error| {
+        eprintln!("error: failed to create project syntax session: {error}");
+        ExitCode::FAILURE
+    })?;
+    let project =
+        arcweft_project_loader::project::load(&mut syntax, manifest_path).map_err(|error| {
+            eprintln!("error: {error}");
+            ExitCode::FAILURE
+        })?;
+    let compiler = ProjectCompilationSession::try_new().map_err(|error| {
+        eprintln!("error: failed to create project compiler session: {error}");
         ExitCode::FAILURE
     })?;
     Ok(SourceSelection::Project {
         manifest: project.sources().manifest_path().to_path_buf(),
         path: project.sources().root_module().path().to_path_buf(),
+        loaded: Arc::new(project),
+        syntax: Arc::new(Mutex::new(syntax)),
+        compiler: Arc::new(Mutex::new(compiler)),
     })
 }
 
@@ -535,7 +651,7 @@ fn resolve_manifest_path(path: &Path) -> Result<PathBuf, ExitCode> {
 fn load_profile_topology_at(
     manifest_path: &Path,
     selection: LaunchProfileSelection<'_>,
-) -> Result<Arc<LoadedProfileTopology>, CliTopologyLoadError> {
+) -> Result<LoadedProfileSelection, CliTopologyLoadError> {
     let manifest = fs::canonicalize(manifest_path).map_err(|error| {
         eprintln!(
             "error: failed to resolve profile manifest {}: {error}",
@@ -555,14 +671,30 @@ fn load_profile_topology_at(
         eprintln!("error: invalid profile topology owner: {error}");
         CliTopologyLoadError::Failed
     })?;
-    load_profile_topology(ProfileTopologyLoadRequest::new(
-        &manifest,
+    let mut syntax = SyntaxDatabase::try_new().map_err(|error| {
+        eprintln!("error: failed to create profile syntax session: {error}");
+        CliTopologyLoadError::Failed
+    })?;
+    let compiler = ProjectCompilationSession::try_new().map_err(|error| {
+        eprintln!("error: failed to create profile compiler session: {error}");
+        CliTopologyLoadError::Failed
+    })?;
+    load_profile_topology(
+        &mut syntax,
+        ProfileTopologyLoadRequest::new(
+            &manifest,
+            owner.clone(),
+            selection,
+            &[],
+            standard::standard_registry(),
+        ),
+    )
+    .map(|topology| LoadedProfileSelection {
+        topology: Arc::new(topology),
+        syntax: Arc::new(Mutex::new(syntax)),
+        compiler: Arc::new(Mutex::new(compiler)),
         owner,
-        selection,
-        &[],
-        standard::standard_registry(),
-    ))
-    .map(Arc::new)
+    })
     .map_err(|error| {
         if matches!(
             &error,
@@ -578,6 +710,17 @@ fn load_profile_topology_at(
         eprintln!("error: failed to load profile topology: {error}");
         CliTopologyLoadError::Failed
     })
+}
+
+impl LoadedProfileSelection {
+    fn into_selection(self) -> SourceSelection {
+        SourceSelection::Profile {
+            topology: self.topology,
+            syntax: self.syntax,
+            compiler: self.compiler,
+            owner: self.owner,
+        }
+    }
 }
 
 pub(in crate::app) fn require_profile_kind(
@@ -605,85 +748,99 @@ pub(in crate::app) fn load_and_check_selection(
 ) -> Result<CheckedModule, ExitCode> {
     let mut phases = Vec::new();
     let semantic = semantic_context_for_selection(selection, adapter_override)?;
-    let runtime_options = runtime_plan_options_for_selection(selection)?;
     if let Some(topology) = semantic.profile_topology() {
         let context = profile_project_compilation_context(topology, &semantic)?;
         return load_and_check_loaded_project(
             topology.loaded_project(),
+            selection.compiler_session(),
             &context,
-            &semantic,
-            &runtime_options,
+            selection,
             phases,
         );
     }
-    if let Some(manifest) = selection.project_manifest() {
-        return load_and_check_project_with_env(
-            manifest,
-            selection,
-            &semantic,
-            &runtime_options,
-            phases,
-        );
+    if selection.project_manifest().is_some() {
+        return load_and_check_project_with_env(selection, &semantic, phases);
     }
     let direct = direct_project_compilation_input(selection, &semantic, &mut phases)?;
     load_and_check_project_sources(
         direct.sources(),
+        direct.parsed_sources(),
+        None,
         direct.context(),
-        semantic.base(),
-        &runtime_options,
+        selection,
         phases,
     )
 }
 
 fn load_and_check_project_with_env(
-    manifest: &Path,
     selection: &SourceSelection,
     semantic: &SelectionSemanticContext,
-    runtime_options: &RuntimePlanLowerOptions,
-    mut phases: Vec<RuntimeProfilePhase>,
+    phases: Vec<RuntimeProfilePhase>,
 ) -> Result<CheckedModule, ExitCode> {
-    let loaded = run_profile_phase(&mut phases, "load_project", || {
-        arcweft_project_loader::project::load(manifest).map_err(|error| {
-            eprintln!("error: {error}");
-            ExitCode::FAILURE
-        })
-    })?;
-    let context = project_compilation_context(&loaded, selection, semantic)?;
-    load_and_check_loaded_project(&loaded, &context, semantic, runtime_options, phases)
+    let loaded = selection
+        .loaded_project()
+        .expect("project selections retain their accepted loaded project");
+    let context = project_compilation_context(loaded, selection, semantic)?;
+    load_and_check_loaded_project(
+        loaded,
+        selection.compiler_session(),
+        &context,
+        selection,
+        phases,
+    )
 }
 
 fn load_and_check_loaded_project(
     loaded: &LoadedProject,
+    compiler: Option<&Arc<Mutex<ProjectCompilationSession>>>,
     context: &ProjectCompilationContext,
-    semantic: &SelectionSemanticContext,
-    runtime_options: &RuntimePlanLowerOptions,
+    selection: &SourceSelection,
     phases: Vec<RuntimeProfilePhase>,
 ) -> Result<CheckedModule, ExitCode> {
     load_and_check_project_sources(
         loaded.sources(),
+        loaded.module_parsed_source_map(),
+        compiler,
         context,
-        semantic.base(),
-        runtime_options,
+        selection,
         phases,
     )
 }
 
 fn load_and_check_project_sources(
     sources: &ProjectSources,
+    parsed_sources: &BTreeMap<CanonicalModulePath, ParsedSource>,
+    compiler: Option<&Arc<Mutex<ProjectCompilationSession>>>,
     context: &ProjectCompilationContext,
-    env: &TypeCheckEnv,
-    runtime_options: &RuntimePlanLowerOptions,
+    selection: &SourceSelection,
     mut phases: Vec<RuntimeProfilePhase>,
 ) -> Result<CheckedModule, ExitCode> {
     let source_document = Arc::clone(sources.root_module().document());
-    let compiled = run_profile_phase(&mut phases, "project_compile", || {
-        compile_project(sources, context, runtime_options).map_err(|error| {
-            print_project_compile_error(&error);
+    let compiled_project = if let Some(compiler) = compiler {
+        let mut session = compiler.lock().map_err(|_| {
+            eprintln!("error: project compiler session lock is poisoned");
             ExitCode::FAILURE
-        })
-    })?;
+        })?;
+        run_profile_phase(&mut phases, "project_compile", || {
+            compile_project(&mut session, sources, parsed_sources, context).map_err(|error| {
+                print_project_compile_error(&error);
+                ExitCode::FAILURE
+            })
+        })?
+    } else {
+        let mut session = ProjectCompilationSession::try_new().map_err(|error| {
+            eprintln!("error: failed to create project compiler session: {error}");
+            ExitCode::FAILURE
+        })?;
+        run_profile_phase(&mut phases, "project_compile", || {
+            compile_project(&mut session, sources, parsed_sources, context).map_err(|error| {
+                print_project_compile_error(&error);
+                ExitCode::FAILURE
+            })
+        })?
+    };
     let emitter = DiagnosticEmitter::stderr();
-    for compiled_module in compiled.modules() {
+    for compiled_module in compiled_project.modules() {
         let source = sources
             .module(compiled_module.module())
             .expect("compiled project modules originate from the accepted project sources");
@@ -692,15 +849,17 @@ fn load_and_check_project_sources(
             emitter.emit(&lint.diagnostic(source.document()), &diagnostic_source);
         }
     }
-    let compiled = Arc::new(compiled);
+    let execution_diagnostics = crate::app::runtime_artifact::bind_execution_diagnostics(
+        selection,
+        sources,
+        &compiled_project,
+    )?;
+    let compiled_project = Arc::new(compiled_project);
     Ok(CheckedModule {
-        hir: compiled.linked_hir().clone(),
-        env: env.clone(),
         source_document,
-        syntax_warnings: compiled.syntax_warnings(),
-        line_task_groups: compiled.line_task_groups().to_vec(),
-        typecheck_report: compiled.typecheck_report().clone(),
-        compiled,
+        syntax_warnings: compiled_project.syntax_warnings(),
+        compiled: compiled_project,
+        execution_diagnostics,
         phases,
     })
 }
@@ -745,6 +904,21 @@ fn direct_project_compilation_input_with_env(
     })?;
     let document = Arc::new(source_document_for_path(path, source)?);
     let sources = direct_project_sources(path, package_id, &document)?;
+    let mut syntax = SyntaxDatabase::try_new().map_err(|error| {
+        eprintln!("error: failed to create direct-source syntax session: {error}");
+        ExitCode::FAILURE
+    })?;
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            Arc::clone(&document),
+            ParseOptions::default(),
+        )
+        .map_err(|error| {
+            eprintln!("error: failed to parse {}: {error}", path.display());
+            ExitCode::FAILURE
+        })?;
+    let parsed_sources = BTreeMap::from([(CanonicalModulePath::crate_root(), parsed)]);
     let facts = direct_registration_facts(package_id, &document, adapter_manifests)?;
     let context = ProjectCompilationContext::new(
         Arc::new(env.clone()),
@@ -752,8 +926,15 @@ fn direct_project_compilation_input_with_env(
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         None,
-    );
-    Ok(DirectProjectCompilationInput { sources, context })
+    )
+    .with_command_policy(RuntimeCommandPolicy::deny_all(
+        RootExecutionLimits::engine_default(),
+    ));
+    Ok(DirectProjectCompilationInput {
+        sources,
+        parsed_sources,
+        context,
+    })
 }
 
 fn direct_project_sources(
@@ -953,7 +1134,10 @@ fn compilation_context_from_facts(
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
         entry_selection,
-    ))
+    )
+    .with_command_policy(RuntimeCommandPolicy::deny_all(
+        RootExecutionLimits::engine_default(),
+    )))
 }
 
 const fn project_entry_kind(kind: LaunchKind) -> ProjectEntrySelectionKind {
@@ -1056,7 +1240,7 @@ fn load_selection_profile_topology(
     selection: &SourceSelection,
 ) -> Option<Arc<LoadedProfileTopology>> {
     match selection {
-        SourceSelection::Profile { topology } => Some(Arc::clone(topology)),
+        SourceSelection::Profile { topology, .. } => Some(Arc::clone(topology)),
         SourceSelection::Direct { .. } | SourceSelection::Project { .. } => None,
     }
 }
@@ -1142,12 +1326,10 @@ fn adapter_registry_for_selection(
 
 pub(crate) struct CheckedModule {
     pub(crate) compiled: Arc<CompiledProject>,
-    pub(crate) hir: arcweft_lang_hir::model::HirModule,
-    pub(crate) env: TypeCheckEnv,
+    pub(crate) execution_diagnostics:
+        Arc<arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext>,
     pub(crate) source_document: Arc<SourceDocument>,
     pub(crate) syntax_warnings: usize,
-    pub(crate) line_task_groups: Vec<LoweredLineTaskGroup>,
-    pub(crate) typecheck_report: TypeCheckReport,
     pub(crate) phases: Vec<RuntimeProfilePhase>,
 }
 
@@ -1155,6 +1337,28 @@ impl CheckedModule {
     pub(crate) fn runtime_plan(&self) -> &arcweft_runtime_plan::flow::RuntimePlanLowerReport {
         self.compiled.runtime_plan()
     }
+}
+
+/// Verifies the exact executable HIR generation and semantic authority retained
+/// by one compiled project.
+pub(crate) fn verify_compiled_project(
+    compiled: &CompiledProject,
+    policy: VerificationPolicy,
+) -> Result<VerificationReport, ExitCode> {
+    let project = compiled.hir_project().executable_view().map_err(|error| {
+        eprintln!("error: compiled HIR project is not executable: {error}");
+        ExitCode::FAILURE
+    })?;
+    verify_project(
+        project,
+        compiled.project_symbols(),
+        compiled.final_analysis(),
+        policy,
+    )
+    .map_err(|error| {
+        eprintln!("error: verifier rejected the compiled project generation: {error}");
+        ExitCode::FAILURE
+    })
 }
 
 pub(in crate::app) fn load_and_check_with_env(
@@ -1176,16 +1380,15 @@ pub(in crate::app) fn load_and_check_with_env(
     })?;
     let direct =
         direct_project_compilation_input_with_env(path, &package_id, env, &[], &mut phases)?;
-    let runtime_options = RuntimePlanLowerOptions::default()
-        .with_package_identity(package_id.as_str())
-        .with_command_policy(RuntimeCommandPolicy::deny_all(
-            RootExecutionLimits::engine_default(),
-        ));
+    let selection = SourceSelection::Direct {
+        path: path.to_path_buf(),
+    };
     load_and_check_project_sources(
         direct.sources(),
+        direct.parsed_sources(),
+        None,
         direct.context(),
-        env,
-        &runtime_options,
+        &selection,
         phases,
     )
 }

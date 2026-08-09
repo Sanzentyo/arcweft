@@ -177,7 +177,7 @@ impl RuntimeIdPath {
         let Some(first) = raw_segments.next() else {
             return Err(RuntimeIdError::Empty { family });
         };
-        if first != "__agent_controller" {
+        if !matches!(first, "__agent_controller" | "__checked_flow") {
             return Self::from_canonical_str(family, value);
         }
         let mut segments = vec![RuntimeIdSegment(first.to_owned())];
@@ -233,6 +233,23 @@ impl RuntimeIdPath {
             segments: vec![
                 RuntimeIdSegment("__agent_controller".to_owned()),
                 RuntimeIdSegment(hasher.finalize().to_hex().to_string()),
+            ],
+        }
+    }
+
+    /// Creates the opaque one-way runtime path for an accepted structural
+    /// Flow declaration. The semantic digest is never decoded back into HIR.
+    pub(crate) fn for_checked_flow_declaration(digest: [u8; 32]) -> Self {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        let mut encoded = String::with_capacity(64);
+        for byte in digest {
+            encoded.push(char::from(HEX[usize::from(byte >> 4)]));
+            encoded.push(char::from(HEX[usize::from(byte & 0x0f)]));
+        }
+        Self {
+            segments: vec![
+                RuntimeIdSegment("__checked_flow".to_owned()),
+                RuntimeIdSegment(encoded),
             ],
         }
     }
@@ -338,5 +355,6 @@ fn reserved_family_segment(value: &str) -> bool {
             | "asset"
             | "pure"
             | "__agent_controller"
+            | "__checked_flow"
     )
 }

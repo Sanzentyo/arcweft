@@ -446,60 +446,35 @@ fn mixed_control_candidate_exact_aggregate_descendant_limit_publishes() {
         .expressions()
         .try_iter(module.slots())
         .expect("candidate expression inventory")
-        .filter(|(id, _)| {
-            module
-                .slots()
-                .resolve(*id)
-                .is_ok_and(|metadata| candidate_origin(metadata))
-        })
+        .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
         .count();
     let type_count = module
         .arenas()
         .types()
         .try_iter(module.slots())
         .expect("candidate Type inventory")
-        .filter(|(id, _)| {
-            module
-                .slots()
-                .resolve(*id)
-                .is_ok_and(|metadata| candidate_origin(metadata))
-        })
+        .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
         .count();
     let pattern_count = module
         .arenas()
         .patterns()
         .try_iter(module.slots())
         .expect("candidate Pattern inventory")
-        .filter(|(id, _)| {
-            module
-                .slots()
-                .resolve(*id)
-                .is_ok_and(|metadata| candidate_origin(metadata))
-        })
+        .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
         .count();
     let scope_count = module
         .arenas()
         .scopes()
         .try_iter(module.slots())
         .expect("candidate Scope inventory")
-        .filter(|(id, _)| {
-            module
-                .slots()
-                .resolve(*id)
-                .is_ok_and(|metadata| candidate_origin(metadata))
-        })
+        .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
         .count();
     let local_count = module
         .arenas()
         .locals()
         .try_iter(module.slots())
         .expect("candidate Local inventory")
-        .filter(|(id, _)| {
-            module
-                .slots()
-                .resolve(*id)
-                .is_ok_and(|metadata| candidate_origin(metadata))
-        })
+        .filter(|(id, _)| module.slots().resolve(*id).is_ok_and(&candidate_origin))
         .count();
     assert_eq!(type_count, 1);
     assert_eq!(pattern_count, 1);

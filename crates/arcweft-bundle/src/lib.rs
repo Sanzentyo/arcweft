@@ -30,11 +30,12 @@ use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_audio_core::graph::AudioGraph;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_core::effect::RuntimeArtifactFingerprint;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
 use arcweft_layout::stage_placement::StagePlacement;
-use arcweft_render_text::LineDisplayCatalog;
 use arcweft_source::SourceDocumentId;
+use arcweft_text_model::DialogueContentCatalog;
 use arcweft_view::ViewId;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -47,7 +48,7 @@ use yaml_rust2::yaml::Hash;
 #[cfg(feature = "format-yaml")]
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
-pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 5;
+pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 6;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArcweftBundle {
@@ -61,7 +62,7 @@ pub struct ArcweftBundle {
     pub bytecode: BundleBytecodeProgram,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_awbc: Option<BundleAwbcProgram>,
-    pub display: LineDisplayCatalog,
+    pub dialogue_content: DialogueContentCatalog,
     #[serde(default, skip_serializing_if = "FxDefinitions::is_empty")]
     pub fx_definitions: FxDefinitions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -169,6 +170,7 @@ pub struct BundleAdapterHostCall {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct BundleRuntimeSummary {
+    pub artifact_fingerprint: RuntimeArtifactFingerprint,
     pub entry_flow: Option<String>,
     pub flows: usize,
     pub bytecode_instructions: usize,
@@ -436,16 +438,6 @@ pub enum BundleCodecError {
     DuplicateCharacterPackage { id: String },
     #[error("bundle contains duplicate View definition `{view}`")]
     DuplicateViewDefinition { view: ViewId },
-    #[error("dialogue line `{line}` selects missing View definition `{view}`")]
-    MissingDialogueViewDefinition {
-        line: arcweft_core::plan::RuntimeLineId,
-        view: ViewId,
-    },
-    #[error("dialogue line `{line}` selects View `{view}` without a dialogue input parameter")]
-    DialogueViewDefinitionMissingRole {
-        line: arcweft_core::plan::RuntimeLineId,
-        view: ViewId,
-    },
     #[error(
         "bundle character package `{character_id}` references missing virtual file asset:{path}"
     )]
@@ -569,7 +561,7 @@ impl ArcweftBundle {
         manifest: BundleManifest,
         source_map: SourceMapSection,
         bytecode: BytecodeProgram,
-        display: LineDisplayCatalog,
+        dialogue_content: DialogueContentCatalog,
     ) -> Result<Self, SourceMapBuildError> {
         let standard_view_source = standard_view::dialogue_view_source_document();
         let standard_style_source = standard_view::dialogue_style_source_document();
@@ -587,7 +579,7 @@ impl ArcweftBundle {
                 program: bytecode,
             },
             product_awbc: None,
-            display,
+            dialogue_content,
             fx_definitions: FxDefinitions::default(),
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
@@ -1135,7 +1127,6 @@ impl ArcweftBundle {
                 });
             }
         }
-        self.validate_dialogue_view_definitions()?;
         let dialogue_contract = match &self.view_program {
             Some(program) => program
                 .validate_dialogue_contract(self.view_text.as_ref())
@@ -1170,35 +1161,6 @@ impl ArcweftBundle {
             self.view_style.clone(),
             ViewProductValidationLimits::default(),
         )?;
-        Ok(())
-    }
-
-    fn validate_dialogue_view_definitions(&self) -> Result<(), BundleCodecError> {
-        let mut definitions = BTreeMap::new();
-        for definition in self
-            .view_program
-            .iter()
-            .flat_map(|program| program.definitions.iter())
-        {
-            let view = definition.public_id.view_id().clone();
-            if definitions.insert(view.clone(), definition).is_some() {
-                return Err(BundleCodecError::DuplicateViewDefinition { view });
-            }
-        }
-        for spec in self.display.lines() {
-            let Some(definition) = definitions.get(&spec.view) else {
-                return Err(BundleCodecError::MissingDialogueViewDefinition {
-                    line: spec.line.clone(),
-                    view: spec.view.clone(),
-                });
-            };
-            if !definition.accepts_dialogue_input() {
-                return Err(BundleCodecError::DialogueViewDefinitionMissingRole {
-                    line: spec.line.clone(),
-                    view: spec.view.clone(),
-                });
-            }
-        }
         Ok(())
     }
 
@@ -1586,19 +1548,18 @@ mod tests {
         AudioAsset, AudioBusDef, AudioDecodeStrategy, AudioFormat, AudioGraph,
     };
     use arcweft_core::awbc::schema::{
-        AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget,
+        AwbcBlock, AwbcBlockId, AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan,
+        AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
         AwbcFrameLayout, AwbcFrameLayoutId, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId,
         AwbcFunctionKind, AwbcSafePointKind, AwbcSignature, AwbcSignatureId, AwbcStringId,
         AwbcTableRange, AwbcTerminator,
     };
+    use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeAssertionGuardId};
     use arcweft_core::entry::AgentBudget;
-    use arcweft_dialogue::DialogueProfileRevision;
     use arcweft_interaction_model::audio::{
         AudioBusId, AudioLoopMode, AudioResourceId, GainDbMilli,
     };
-    use arcweft_resource_model::registry::ResourceTypeRegistry;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
     #[test]
     fn bundle_json_round_trips_without_paths() {
@@ -1611,6 +1572,7 @@ mod tests {
                 adapter_manifest_ids: vec!["native-file".to_owned()],
                 required_host_calls: vec!["fs.read_text".to_owned()],
                 runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: test_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
                     flows: 1,
                     bytecode_instructions: 3,
@@ -1621,7 +1583,7 @@ mod tests {
             },
             source_map("main.arcw", "flow main { return \"ok\" }"),
             BytecodeProgram::default(),
-            LineDisplayCatalog::new(test_dialogue_revision()),
+            DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
         .with_adapter_manifests([BundleAdapterManifest {
@@ -1647,6 +1609,66 @@ mod tests {
             ArcweftBundle::from_json_slice(&bytes).expect("bundle decodes"),
             bundle
         );
+    }
+
+    #[test]
+    fn awfb_round_trip_retains_typed_runtime_assertion_payload() {
+        let guard =
+            RuntimeAssertionGuardId::try_from_bytes([0xa7; 16]).expect("non-zero assertion guard");
+        let mut program = minimal_awbc_program();
+        program.strings = vec![
+            "always".to_owned(),
+            "entry.main".to_owned(),
+            "inventory >= 0".to_owned(),
+            "inventory must stay non-negative".to_owned(),
+        ];
+        program.functions[0].public_id = Some(AwbcStringId(1));
+        program.entries[0].public_id = AwbcStringId(1);
+        program.constants = vec![
+            AwbcConstant::Bytes(guard.as_bytes().to_vec()),
+            AwbcConstant::String(AwbcStringId(2)),
+            AwbcConstant::String(AwbcStringId(3)),
+            AwbcConstant::String(AwbcStringId(0)),
+        ];
+        program.effect_plans.push(AwbcEffectPlan {
+            kind: AwbcEffectKind::Assert,
+            signature: AwbcSignatureId(0),
+            capability: None,
+            audio: None,
+            static_args: vec![
+                AwbcConstantId(0),
+                AwbcConstantId(1),
+                AwbcConstantId(2),
+                AwbcConstantId(3),
+            ],
+            resources: Vec::new(),
+        });
+        let expected_program = program.clone();
+        let bundle = empty_test_bundle().with_product_awbc(program);
+        let expected_artifact = bundle.manifest.runtime.artifact_fingerprint;
+
+        let encoded = bundle
+            .to_format_bytes(BundleFormat::Awfb)
+            .expect("encode assertion AWFB");
+        let decoded = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &encoded)
+            .expect("decode assertion AWFB");
+        let decoded_program = decoded
+            .product_awbc_program()
+            .expect("decoded bundle retains canonical AWBC");
+        assert_eq!(
+            decoded.manifest.runtime.artifact_fingerprint,
+            expected_artifact
+        );
+        assert_eq!(decoded_program, &expected_program);
+        let decoded_guard = match &decoded_program.constants[0] {
+            AwbcConstant::Bytes(bytes) => RuntimeAssertionGuardId::try_from_bytes(
+                bytes.as_slice().try_into().expect("fixed 16-byte guard"),
+            )
+            .expect("decoded guard remains non-zero"),
+            other => panic!("assertion guard changed constant kind: {other:?}"),
+        };
+        assert_eq!(decoded_guard, guard);
+        assert_eq!(decoded_program.effect_plans[0].kind, AwbcEffectKind::Assert);
     }
 
     #[test]
@@ -2158,6 +2180,7 @@ mod tests {
                 adapter_manifest_ids: Vec::new(),
                 required_host_calls: Vec::new(),
                 runtime: BundleRuntimeSummary {
+                    artifact_fingerprint: test_runtime_artifact_fingerprint(),
                     entry_flow: Some("flow.main".to_owned()),
                     flows: 1,
                     bytecode_instructions: 0,
@@ -2168,7 +2191,7 @@ mod tests {
             },
             source_map("main.arcw", "flow main { return \"ok\" }"),
             BytecodeProgram::default(),
-            LineDisplayCatalog::new(test_dialogue_revision()),
+            DialogueContentCatalog::new(),
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(minimal_awbc_program())
@@ -2184,23 +2207,9 @@ mod tests {
         SourceMapSection::try_from_documents(&[&document]).expect("source map")
     }
 
-    fn test_dialogue_revision() -> DialogueProfileRevision {
-        let source = SourceDocument::try_new(
-            SourceDocumentId::try_new("bundle-lib-test-revision").expect("source ID"),
-            SourceName::Memory,
-            "test manifest",
-        )
-        .expect("source document");
-        let sources = SourceSetRevision::try_for_identities([source.identity()])
-            .expect("test source revision");
-        DialogueProfileRevision::from_admitted_parts(
-            source.identity().clone(),
-            sources,
-            sources,
-            ViewProgramId::try_new("view_program.bundle-lib-test").expect("View program ID"),
-            AcceptedViewProgramRevision::try_from_bytes([0x6b; 32]).expect("View program revision"),
-            ResourceTypeRegistry::empty().digest(),
-        )
+    fn test_runtime_artifact_fingerprint() -> RuntimeArtifactFingerprint {
+        RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+            .expect("non-zero runtime artifact fingerprint")
     }
 
     fn minimal_awbc_program() -> AwbcProgram {
@@ -2223,6 +2232,14 @@ mod tests {
                 blocks: AwbcTableRange::new(0, 1),
                 entry_block: AwbcBlockId(0),
                 flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+            }],
+            flow_bindings: vec![AwbcFlowBinding {
+                flow: arcweft_core::plan::FlowRuntimeId::from_checked_declaration_digest(
+                    [0xa4; 32],
+                    "flow.main",
+                )
+                .expect("test checked Flow identity"),
+                function: AwbcFunctionId(0),
             }],
             blocks: vec![AwbcBlock {
                 owner: AwbcFunctionId(0),

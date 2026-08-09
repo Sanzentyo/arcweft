@@ -534,6 +534,7 @@ mod tests {
     };
     use arcweft_adapter_context::standard::standard_registry;
     use arcweft_lang_syntax::ast::symbol_path::{ProjectSymbolPathError, ProjectSymbolSegment};
+    use arcweft_lang_syntax::incremental::SyntaxDatabase;
     use arcweft_launch::LaunchProfileSelection;
     use std::{fs, path::PathBuf};
 
@@ -574,17 +575,21 @@ compression = "none"
         );
         fixture.write_character_layers("assets/zundamon.awchar");
 
-        let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
-            &fixture.path("arcw.toml"),
-            ProfileTopologyOwnerId::workspace(
-                format!("file:///{}", slash(fixture.root())),
-                format!("file:///{}", slash(&fixture.path("arcw.toml"))),
-            )
-            .expect("workspace owner"),
-            LaunchProfileSelection::Explicit("dev"),
-            &[],
-            standard_registry(),
-        ))
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let topology = load_profile_topology(
+            &mut syntax,
+            ProfileTopologyLoadRequest::new(
+                &fixture.path("arcw.toml"),
+                ProfileTopologyOwnerId::workspace(
+                    format!("file:///{}", slash(fixture.root())),
+                    format!("file:///{}", slash(&fixture.path("arcw.toml"))),
+                )
+                .expect("workspace owner"),
+                LaunchProfileSelection::Explicit("dev"),
+                &[],
+                standard_registry(),
+            ),
+        )
         .expect("topology loads");
         let registration =
             load_profile_registration(&ProfileRegistrationLoadRequest::new(&topology))
@@ -694,13 +699,17 @@ compression = "none"
             format!("file:///{}", slash(&manifest_path)),
         )
         .expect("workspace owner");
-        let topology = load_profile_topology(ProfileTopologyLoadRequest::new(
-            &manifest_path,
-            owner,
-            LaunchProfileSelection::Explicit("dev"),
-            &[],
-            standard_registry(),
-        ))
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let topology = load_profile_topology(
+            &mut syntax,
+            ProfileTopologyLoadRequest::new(
+                &manifest_path,
+                owner,
+                LaunchProfileSelection::Explicit("dev"),
+                &[],
+                standard_registry(),
+            ),
+        )
         .expect("topology loads");
 
         fs::remove_file(&manifest_path).expect("manifest removed");

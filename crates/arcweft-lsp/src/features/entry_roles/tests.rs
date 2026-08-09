@@ -6,19 +6,28 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use arcweft_lang_hir::{
+    item::HirItemFamily,
+    source_index::{
+        HirCallableSourceOwner, HirCallableSourceRole, HirDeclarationSourceRole, HirItemSourceRole,
+    },
+    symbol::CallableDeclarationOwner,
+};
+use arcweft_lang_syntax::attachment::TypedItemNode;
 use lsp_types::{
-    DidOpenTextDocumentParams, DocumentSymbolResponse, SymbolKind, TextDocumentItem, Uri,
+    DidOpenTextDocumentParams, DocumentSymbolResponse, TextDocumentItem, Uri,
     WorkspaceSymbolResponse,
 };
 
 use super::*;
 use crate::{
-    documents::DocumentStore,
+    documents::{AcceptedOpenDocument, DocumentStore},
     positions::PositionEncoding,
-    profiles::{LspProfile, LspProfileResolver},
+    profiles::{LspProfile, LspProfileResolver, LspProfileTestHarness},
 };
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 
@@ -34,8 +43,8 @@ smoke()
 }
 
 fn shadowed() -> Unit {
-let smoke = || ()
-smoke()
+let smoke: (Unit) -> Unit effects {} = |_unit: Unit| -> Unit { () }
+smoke(())
 }
 
 fn selected_entry() -> Unit {
@@ -58,16 +67,19 @@ fn role_rhs_uses_the_ordinary_callable_for_definition_hover_and_rename() {
     project.write_manifest();
     project.write("src/main.arcw", SOURCE);
     let source_path = project.path("src/main.arcw");
-    let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path)
-        .expect("profile construction")
-        .publish_for_test();
+    let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&source_path)
+    .expect("profile construction")
+    .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
         profile.diagnostics()
     );
-    let document = open(&source_path, SOURCE);
+    let document = open_accepted(&profile, &source_path, SOURCE, PositionEncoding::Utf16);
     let offset = SOURCE.rfind("smoke").expect("controller role");
 
     assert!(definition(&profile, &document, offset).is_some());
@@ -143,20 +155,26 @@ fn workspace_symbols_union_distinct_worlds_deduplicate_and_ignore_profile_order(
     first_project.write_manifest();
     let first_source = SOURCE.replace("smoke", "alpha_smoke");
     first_project.write("src/main.arcw", &first_source);
-    let first = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&first_project.path("src/main.arcw"))
-        .expect("first profile construction")
-        .publish_for_test();
+    let first = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&first_project.path("src/main.arcw"))
+    .expect("first profile construction")
+    .publish_for_test();
     assert!(first.diagnostics().is_empty(), "{:?}", first.diagnostics());
 
     let second_project = TestProject::new("workspace-symbol-second");
     second_project.write_manifest();
     let second_source = SOURCE.replace("smoke", "beta_smoke");
     second_project.write("src/main.arcw", &second_source);
-    let second = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&second_project.path("src/main.arcw"))
-        .expect("second profile construction")
-        .publish_for_test();
+    let second = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&second_project.path("src/main.arcw"))
+    .expect("second profile construction")
+    .publish_for_test();
     assert!(
         second.diagnostics().is_empty(),
         "{:?}",
@@ -191,13 +209,26 @@ fn stale_open_bytes_do_not_reuse_accepted_entry_role_spans() {
     project.write_manifest();
     project.write("src/main.arcw", SOURCE);
     let source_path = project.path("src/main.arcw");
-    let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path)
-        .expect("profile construction")
-        .publish_for_test();
+    let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&source_path)
+    .expect("profile construction")
+    .publish_for_test();
     let stale = format!("// unsaved\n{SOURCE}");
     let document = open(&source_path, &stale);
     let offset = stale.rfind("smoke").expect("controller role");
+    let accepted = profile.accepted_environment().expect("accepted profile");
+    let accepted_source = accepted
+        .project()
+        .sources()
+        .by_uri(document.uri())
+        .expect("accepted source");
+    assert!(
+        !Arc::ptr_eq(accepted_source.document(), document.source_document()),
+        "unsaved bytes must form a distinct source-document lease"
+    );
 
     assert!(definition(&profile, &document, offset).is_none());
     assert!(
@@ -210,24 +241,17 @@ fn stale_open_bytes_do_not_reuse_accepted_entry_role_spans() {
         )
         .is_none()
     );
-    let DocumentSymbolResponse::Nested(symbols) = document_symbols(&profile, &document) else {
-        panic!("ordinary outline remains available for stale editor bytes");
-    };
-    let smoke = symbols
-        .iter()
-        .find(|symbol| symbol.name == "smoke")
-        .expect("ordinary function symbol");
     assert!(
-        smoke
-            .detail
-            .as_deref()
-            .is_some_and(|detail| !detail.contains("bound as")),
-        "role annotations require exact accepted bytes"
+        matches!(
+            document_symbols(&profile, &document),
+            DocumentSymbolResponse::Nested(symbols) if symbols.is_empty()
+        ),
+        "a stale editor lineage must not receive any accepted-project symbols"
     );
 }
 
 #[test]
-fn document_outline_preserves_ordinary_declarations_without_a_manifest() {
+fn document_outline_without_an_accepted_project_fails_closed() {
     const OUTLINE: &str = r"
 struct GameState {}
 enum GameEvent { Start }
@@ -242,35 +266,43 @@ goto @flow.opening
     project.write("src/main.arcw", OUTLINE);
     let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
     let document = open(&source_path, OUTLINE);
+    assert!(
+        profile.accepted_environment().is_none(),
+        "a manifest-free document has no compiler-owned tooling lease"
+    );
 
     let DocumentSymbolResponse::Nested(symbols) = document_symbols(&profile, &document) else {
         panic!("ordinary outline");
     };
-    assert_eq!(
-        symbols
-            .iter()
-            .map(|symbol| (symbol.name.as_str(), symbol.kind))
-            .collect::<Vec<_>>(),
-        [
-            ("GameState", SymbolKind::STRUCT),
-            ("GameEvent", SymbolKind::ENUM),
-            ("update", SymbolKind::FUNCTION),
-            ("opening", SymbolKind::FUNCTION),
-            ("entry.game.main", SymbolKind::OBJECT),
-        ]
+    assert!(
+        symbols.is_empty(),
+        "document symbols require the compiler-owned tooling lease; the LSP must not lower a parallel local HIR"
     );
 }
 
 #[test]
-fn rename_aborts_when_a_secondary_open_manifest_is_stale() {
+fn rename_aborts_when_a_secondary_open_source_is_stale() {
+    const HELPERS: &str = r"
+mod crate.helpers
+
+pub fn selected_entry() -> Unit {
+let selected = @entry.agent.main
+()
+}
+";
     let project = TestProject::new("entry-rename-stale-secondary");
     project.write_manifest();
-    project.write("src/main.arcw", SOURCE);
+    let main = format!("use crate.helpers.selected_entry\n{SOURCE}");
+    project.write("src/main.arcw", &main);
+    project.write("src/helpers.arcw", HELPERS);
     let source_path = project.path("src/main.arcw");
-    let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path)
-        .expect("profile construction")
-        .publish_for_test();
+    let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&source_path)
+    .expect("profile construction")
+    .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
@@ -278,32 +310,50 @@ fn rename_aborts_when_a_secondary_open_manifest_is_stale() {
     );
 
     let mut documents = DocumentStore::default();
-    let document = documents.open(
-        DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: file_uri(&source_path),
-                language_id: "arcweft".to_owned(),
-                version: 4,
-                text: SOURCE.to_owned(),
+    let accepted = profile.accepted_environment().expect("accepted profile");
+    let accepted_source = accepted
+        .project()
+        .sources()
+        .by_uri(&file_uri(&source_path))
+        .expect("accepted source");
+    let authority = AcceptedOpenDocument::new(Arc::clone(accepted_source.document()), None);
+    let document = documents
+        .open_with_authority(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: file_uri(&source_path),
+                    language_id: "arcweft".to_owned(),
+                    version: 4,
+                    text: main.clone(),
+                },
             },
-        },
-        PositionEncoding::Utf16,
-    );
-    documents.open(
-        DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: file_uri(&project.path("arcw.toml")),
-                language_id: "toml".to_owned(),
-                version: 8,
-                text: format!("# unsaved\n{}", TestProject::manifest()),
+            PositionEncoding::Utf16,
+            Some(&authority),
+        )
+        .expect("source document parse");
+    let helpers_path = project.path("src/helpers.arcw");
+    let helpers_uri = file_uri(&helpers_path);
+    let accepted_helper = accepted
+        .project()
+        .sources()
+        .by_uri(&helpers_uri)
+        .expect("accepted helper source");
+    let helper_authority = AcceptedOpenDocument::new(Arc::clone(accepted_helper.document()), None);
+    documents
+        .open_with_authority(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: helpers_uri,
+                    language_id: "arcweft".to_owned(),
+                    version: 8,
+                    text: format!("{HELPERS}\n// unsaved editor revision\n"),
+                },
             },
-        },
-        PositionEncoding::Utf16,
-    );
-    let offset = SOURCE
-        .rfind("@entry.agent.main")
-        .expect("entry declaration")
-        + 1;
+            PositionEncoding::Utf16,
+            Some(&helper_authority),
+        )
+        .expect("helper document parse");
+    let offset = main.rfind("@entry.agent.main").expect("entry declaration") + 1;
 
     assert!(
         rename(&profile, &documents, &document, offset, "renamed").is_none(),
@@ -329,17 +379,24 @@ Start
 fn initial_game_state() -> GameState
 effects {}
 {
-initial_game_state()
+GameState { score = 0i32 }
 }
 
-fn reduce_game(state: &GameState, event: GameEvent)
+fn reduce_game(current: &GameState, event: GameEvent)
 -> Result<Reduction<GameState>, ReducerError>
 effects {}
 {
-reduce_game(state, event)
+Ok(Reduction.unchanged(current))
 }
 
-flow @flow.opening opening(state: GameState) {
+fn preview_reduction(current: &GameState, event: GameEvent)
+-> Result<Reduction<GameState>, ReducerError>
+effects {}
+{
+reduce_game(current, event)
+}
+
+flow @flow.opening opening(current: GameState) {
 }
 
 entry game @entry.game.main {
@@ -367,16 +424,19 @@ source = "src/main.arcw"
     );
     project.write("src/main.arcw", STATEFUL);
     let source_path = project.path("src/main.arcw");
-    let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("game".to_owned()))
-        .resolve_for_document_path(&source_path)
-        .expect("profile construction")
-        .publish_for_test();
+    let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("game".to_owned()),
+    ))
+    .resolve_for_document_path(&source_path)
+    .expect("profile construction")
+    .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
         profile.diagnostics()
     );
-    let document = open(&source_path, STATEFUL);
+    let document = open_accepted(&profile, &source_path, STATEFUL, PositionEncoding::Utf16);
 
     for (role, declaration) in [
         ("state = GameState", "struct GameState"),
@@ -416,7 +476,7 @@ source = "src/main.arcw"
         );
     }
 
-    let reducer_declaration = STATEFUL.find("reduce_game(state").expect("reducer name");
+    let reducer_declaration = STATEFUL.find("reduce_game(current").expect("reducer name");
     let reducer_role = STATEFUL.rfind("reduce_game").expect("reducer role");
     assert_eq!(
         rename(
@@ -483,6 +543,7 @@ fn direct() -> Result<Unit, AgentError> {
 smoke()
 }
 
+
 fn aliased() -> Result<Unit, AgentError> {
 inspect()
 }
@@ -505,16 +566,19 @@ Ok(())
     project.write("src/main.arcw", MAIN);
     project.write("src/helpers.arcw", HELPERS);
     let source_path = project.path("src/main.arcw");
-    let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path)
-        .expect("profile construction")
-        .publish_for_test();
+    let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&source_path)
+    .expect("profile construction")
+    .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
         profile.diagnostics()
     );
-    let document = open(&source_path, MAIN);
+    let document = open_accepted(&profile, &source_path, MAIN, PositionEncoding::Utf16);
     let alias_offset = MAIN.find("inspect()").expect("aliased call");
 
     let GotoDefinitionResponse::Scalar(definition_location) =
@@ -561,15 +625,304 @@ Ok(())
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exact matrix row proves the three ordinary callable families across every navigation surface and both syntax/HIR identities"
+)]
+fn lsp_navigation_uses_typed_syntax_and_module_hir_ids() {
+    const MAIN: &str = r"
+use crate.helpers.helper
+
+fn controller() -> Result<Unit, AgentError>
+effects {}
+{
+Ok(())
+}
+
+fn serve() -> Unit { () }
+
+fn invoke() -> Unit {
+serve()
+}
+
+predicate allows(value: bool) = value
+
+predicate combined(value: bool) = allows(value)
+
+proof witness() = ()
+
+proof combined_witness() {
+witness();
+}
+
+entry agent @entry.agent.main {
+controller = controller
+}
+";
+    const HELPERS: &str = r"
+mod crate.helpers
+
+pub fn helper() -> Unit { () }
+";
+
+    let project = TestProject::new("typed-callable-navigation");
+    project.write_manifest();
+    project.write("src/main.arcw", MAIN);
+    project.write("src/helpers.arcw", HELPERS);
+    let main_path = project.path("src/main.arcw");
+    let helpers_path = project.path("src/helpers.arcw");
+    let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&main_path)
+    .expect("profile construction")
+    .publish_for_test();
+    assert!(
+        profile.diagnostics().is_empty(),
+        "{:?}",
+        profile.diagnostics()
+    );
+
+    let accepted = profile
+        .accepted_environment()
+        .expect("accepted environment");
+    let accepted_project = accepted.project();
+    let navigation_uri = file_uri(&main_path);
+    let helpers_uri = file_uri(&helpers_path);
+    let accepted_source = accepted_project
+        .sources()
+        .by_uri(&navigation_uri)
+        .expect("accepted navigation source");
+    let module_key = accepted_project
+        .module_key(accepted_source.document().identity())
+        .expect("module-preserving source key");
+    let parsed = accepted_project
+        .parsed_source(&module_key)
+        .expect("compiler-retained ParsedSource");
+    let hir = accepted_project
+        .hir(&module_key)
+        .expect("compiler-retained HIR module");
+    assert!(Arc::ptr_eq(
+        hir,
+        accepted_project
+            .hir_project()
+            .view()
+            .module(module_key.module())
+            .expect("same module in shared HIR project")
+    ));
+    assert!(Arc::ptr_eq(
+        parsed.document_lease(),
+        accepted_source.document()
+    ));
+    assert!(Arc::ptr_eq(
+        hir.provenance().document(),
+        accepted_source.document()
+    ));
+    assert_eq!(hir.provenance().syntax_snapshot(), parsed.snapshot_id());
+    let helpers_source = accepted_project
+        .sources()
+        .by_uri(&helpers_uri)
+        .expect("accepted helpers source");
+    let helpers_key = accepted_project
+        .module_key(helpers_source.document().identity())
+        .expect("module-preserving helpers key");
+    let helpers_hir = accepted_project
+        .hir(&helpers_key)
+        .expect("compiler-retained helpers HIR module");
+    assert_ne!(module_key.module(), helpers_key.module());
+    assert_eq!(
+        hir.module_id().database(),
+        helpers_hir.module_id().database()
+    );
+    assert!(Arc::ptr_eq(
+        helpers_hir,
+        accepted_project
+            .hir_project()
+            .view()
+            .module(helpers_key.module())
+            .expect("same helpers module in shared HIR project")
+    ));
+
+    let attached = parsed.items().expect("attached source items");
+    let expected = [
+        (
+            "serve",
+            CallableDeclarationOwner::Function,
+            HirItemFamily::Function,
+        ),
+        (
+            "allows",
+            CallableDeclarationOwner::Predicate,
+            HirItemFamily::Predicate,
+        ),
+        (
+            "witness",
+            CallableDeclarationOwner::Proof,
+            HirItemFamily::Proof,
+        ),
+    ];
+    for (name, owner, family) in expected {
+        let syntax = attached
+            .iter()
+            .find(|item| {
+                item.name()
+                    .ok()
+                    .flatten()
+                    .is_some_and(|source_name| source_name.source_text() == name)
+            })
+            .expect("typed callable syntax");
+        assert!(matches!(
+            (owner, syntax),
+            (
+                CallableDeclarationOwner::Function,
+                TypedItemNode::Function(_)
+            ) | (
+                CallableDeclarationOwner::Predicate,
+                TypedItemNode::Predicate(_)
+            ) | (CallableDeclarationOwner::Proof, TypedItemNode::Proof(_))
+        ));
+        assert_eq!(syntax.snapshot_id(), parsed.snapshot_id());
+
+        let symbol = accepted_project
+            .project_symbols()
+            .callable_symbols()
+            .find(|symbol| symbol.owner() == owner && symbol.declaration().name() == name)
+            .expect("typed callable symbol");
+        assert_eq!(symbol.declaration().module(), module_key.module());
+        assert_eq!(symbol.source_snapshot(), hir.snapshot_id());
+        assert_eq!(symbol.source_owner(), HirCallableSourceOwner::Item);
+        assert_eq!(
+            hir.resolve_item(symbol.source_item())
+                .expect("module-local ItemId")
+                .family(),
+            family
+        );
+        let whole = item_source_span(
+            hir,
+            symbol.source_item(),
+            HirItemSourceRole::Declaration(HirDeclarationSourceRole::Whole),
+        )
+        .expect("typed declaration source");
+        let syntax_span = syntax.source_span();
+        assert_eq!(whole, syntax_span);
+        let name_span = item_source_span(
+            hir,
+            symbol.source_item(),
+            HirItemSourceRole::Callable(HirCallableSourceRole::Name {
+                owner: HirCallableSourceOwner::Item,
+            }),
+        )
+        .expect("typed callable name source");
+        assert_eq!(name_span, *symbol.name_span());
+    }
+
+    let mut documents = DocumentStore::default();
+    let authority = AcceptedOpenDocument::new(Arc::clone(accepted_source.document()), None);
+    let document = documents
+        .open_with_authority(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: navigation_uri.clone(),
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: MAIN.to_owned(),
+                },
+            },
+            PositionEncoding::Utf16,
+            Some(&authority),
+        )
+        .expect("accepted helper document");
+
+    let DocumentSymbolResponse::Nested(outline) = document_symbols(&profile, &document) else {
+        panic!("expected nested outline");
+    };
+    let outlined = outline
+        .iter()
+        .filter(|symbol| ["serve", "allows", "witness"].contains(&symbol.name.as_str()))
+        .map(|symbol| {
+            (
+                symbol.name.as_str(),
+                symbol
+                    .detail
+                    .as_deref()
+                    .expect("typed callable source label"),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        outlined,
+        [
+            ("serve", "fn serve() -> Unit"),
+            ("allows", "predicate allows(value: bool)"),
+            ("witness", "proof witness()"),
+        ]
+    );
+
+    for (name, keyword, expected_references) in [
+        ("serve", "fn", 2),
+        ("allows", "predicate", 2),
+        ("witness", "proof", 2),
+    ] {
+        let offset = MAIN
+            .find(&format!("{keyword} {name}"))
+            .expect("callable declaration")
+            + keyword.len()
+            + 1;
+        let GotoDefinitionResponse::Scalar(location) =
+            definition(&profile, &document, offset).expect("callable definition")
+        else {
+            panic!("expected scalar definition");
+        };
+        assert_eq!(location.uri, navigation_uri);
+        let HoverContents::Scalar(MarkedString::String(hover_text)) =
+            hover(&profile, &document, offset)
+                .expect("callable hover")
+                .contents
+        else {
+            panic!("expected string hover");
+        };
+        assert!(
+            hover_text.contains(&format!("{name}(")),
+            "{keyword} hover must come from the typed signature: {hover_text}"
+        );
+        assert_eq!(
+            references(&profile, &document, offset)
+                .expect("typed callable references")
+                .len(),
+            expected_references,
+            "exact typed declaration and use inventory for {name}"
+        );
+        let edits = rename(
+            &profile,
+            &documents,
+            &document,
+            offset,
+            &format!("renamed_{name}"),
+        )
+        .and_then(|edit| edit.changes)
+        .expect("typed callable rename edits");
+        assert_eq!(
+            edits.values().map(Vec::len).sum::<usize>(),
+            expected_references,
+            "exact typed declaration and use rename inventory for {name}"
+        );
+    }
+}
+
+#[test]
 fn manifest_entry_token_defines_and_renames_the_source_entry() {
     let project = TestProject::new("entry-manifest-tooling");
     project.write_manifest();
     project.write("src/main.arcw", SOURCE);
     let source_path = project.path("src/main.arcw");
-    let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path)
-        .expect("profile construction")
-        .publish_for_test();
+    let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&source_path)
+    .expect("profile construction")
+    .publish_for_test();
     let manifest = TestProject::manifest();
     let document = open(&project.path("arcw.toml"), &manifest);
     let offset = manifest.find("entry.agent.main").expect("entry selection");
@@ -579,7 +932,7 @@ fn manifest_entry_token_defines_and_renames_the_source_entry() {
     else {
         panic!("expected scalar manifest entry definition");
     };
-    let source_document = open(&source_path, SOURCE);
+    let source_document = open_accepted(&profile, &source_path, SOURCE, PositionEncoding::Utf16);
     let source_entry_start = SOURCE
         .rfind("@entry.agent.main")
         .expect("source entry declaration");
@@ -637,10 +990,13 @@ fn entry_reference_ranges_follow_utf8_utf16_and_utf32_encodings() {
     project.write_manifest();
     project.write("src/main.arcw", &source);
     let source_path = project.path("src/main.arcw");
-    let profile = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("agent".to_owned()))
-        .resolve_for_document_path(&source_path)
-        .expect("profile construction")
-        .publish_for_test();
+    let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("agent".to_owned()),
+    ))
+    .resolve_for_document_path(&source_path)
+    .expect("profile construction")
+    .publish_for_test();
     assert!(
         profile.diagnostics().is_empty(),
         "{:?}",
@@ -653,7 +1009,7 @@ fn entry_reference_ranges_follow_utf8_utf16_and_utf32_encodings() {
         PositionEncoding::Utf16,
         PositionEncoding::Utf32,
     ] {
-        let document = open_with_encoding(&source_path, &source, encoding);
+        let document = open_accepted(&profile, &source_path, &source, encoding);
         let expected = document.line_index().position_from_byte_offset(offset);
         let edits = rename(
             &profile,
@@ -676,19 +1032,52 @@ fn open(path: &Path, source: &str) -> DocumentSnapshot {
     open_with_encoding(path, source, PositionEncoding::Utf16)
 }
 
+fn open_accepted(
+    profile: &LspProfile,
+    path: &Path,
+    source: &str,
+    encoding: PositionEncoding,
+) -> DocumentSnapshot {
+    let uri = file_uri(path);
+    let accepted = profile.accepted_environment().expect("accepted profile");
+    let accepted_source = accepted
+        .project()
+        .sources()
+        .by_uri(&uri)
+        .expect("accepted source");
+    let authority = AcceptedOpenDocument::new(Arc::clone(accepted_source.document()), None);
+    let mut store = DocumentStore::default();
+    store
+        .open_with_authority(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri,
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: source.to_owned(),
+                },
+            },
+            encoding,
+            Some(&authority),
+        )
+        .expect("accepted document open")
+}
+
 fn open_with_encoding(path: &Path, source: &str, encoding: PositionEncoding) -> DocumentSnapshot {
     let mut store = DocumentStore::default();
-    store.open(
-        DidOpenTextDocumentParams {
-            text_document: TextDocumentItem {
-                uri: file_uri(path),
-                language_id: "arcweft".to_owned(),
-                version: 1,
-                text: source.to_owned(),
+    store
+        .open(
+            DidOpenTextDocumentParams {
+                text_document: TextDocumentItem {
+                    uri: file_uri(path),
+                    language_id: "arcweft".to_owned(),
+                    version: 1,
+                    text: source.to_owned(),
+                },
             },
-        },
-        encoding,
-    )
+            encoding,
+        )
+        .expect("document parse")
 }
 
 fn file_uri(path: &Path) -> Uri {

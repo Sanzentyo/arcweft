@@ -8,7 +8,7 @@ use crate::resource_codec::view::{
     ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource, ViewTextSourceKind,
     ViewTextSourceRecord, ViewTextSurface,
 };
-use crate::resource_codec::{ProductSourceRef, SourceMapSection, SourceRangeRef};
+use crate::resource_codec::{SourceMapSection, SourceRangeRef};
 use arcweft_presentation::appearance::PresentationColor;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use arcweft_view::style::{
@@ -38,10 +38,10 @@ pub const DIALOGUE_STYLE_ID: &str = "std.style.dialogue";
 pub const DIALOGUE_STYLE_SOURCE_ID: &str = "arcweft:standard/dialogue-style";
 
 const PANEL_PART: &str = "part.dialogue.panel";
-const SPEAKER_PART: &str = "part.dialogue.speaker";
+const CHARACTER_DISPLAY_NAME_PART: &str = "part.dialogue.character.display_name";
 const CONTENT_PART: &str = "part.dialogue.content";
 const ACTION_PART: &str = "part.dialogue.primary_action";
-const SPEAKER_SOURCE: &str = "std.dialogue.text.speaker";
+const CHARACTER_DISPLAY_NAME_SOURCE: &str = "std.dialogue.text.character_display_name";
 const CONTENT_SOURCE: &str = "std.dialogue.text.content";
 
 fn local_part(value: &str) -> ViewPartLocalName {
@@ -111,10 +111,10 @@ pub fn dialogue_program() -> ViewProgramResource {
                 source: None,
             },
             ViewProgramInstruction::EmitText {
-                text_source: SPEAKER_SOURCE.to_owned(),
-                text_block: SPEAKER_PART.to_owned(),
+                text_source: CHARACTER_DISPLAY_NAME_SOURCE.to_owned(),
+                text_block: CHARACTER_DISPLAY_NAME_PART.to_owned(),
                 styles: Vec::new(),
-                part: Some(local_part(SPEAKER_PART)),
+                part: Some(local_part(CHARACTER_DISPLAY_NAME_PART)),
                 source: None,
             },
             ViewProgramInstruction::EmitText {
@@ -137,6 +137,15 @@ pub fn dialogue_program() -> ViewProgramResource {
         ],
         text_blocks: vec![
             text_block_milli(
+                CHARACTER_DISPLAY_NAME_PART,
+                CHARACTER_DISPLAY_NAME_SOURCE,
+                85_600,
+                480_800,
+                1_108_800,
+                28_000,
+                ViewTextSurface::Text,
+            ),
+            text_block_milli(
                 CONTENT_PART,
                 CONTENT_SOURCE,
                 85_600,
@@ -144,15 +153,6 @@ pub fn dialogue_program() -> ViewProgramResource {
                 1_108_800,
                 125_600,
                 ViewTextSurface::RichText,
-            ),
-            text_block_milli(
-                SPEAKER_PART,
-                SPEAKER_SOURCE,
-                85_600,
-                480_800,
-                1_108_800,
-                28_000,
-                ViewTextSurface::Text,
             ),
         ],
         surfaces: vec![ViewSurfaceResource {
@@ -179,11 +179,19 @@ pub fn dialogue_program() -> ViewProgramResource {
     }
 }
 
-/// Typed speaker/content sources and the default primary-action label.
+/// Typed character-display-name/content sources and the default primary-action label.
 #[must_use]
 pub fn dialogue_text() -> ViewTextResource {
     ViewTextResource {
         sources: vec![
+            ViewTextSourceRecord {
+                public_id: CHARACTER_DISPLAY_NAME_SOURCE.to_owned(),
+                kind: ViewTextSourceKind::Dialogue {
+                    parameter: DIALOGUE_PARAMETER.to_owned(),
+                    projection: DialogueTextProjection::CharacterDisplayName,
+                },
+                source: None,
+            },
             ViewTextSourceRecord {
                 public_id: CONTENT_SOURCE.to_owned(),
                 kind: ViewTextSourceKind::Dialogue {
@@ -196,14 +204,6 @@ pub fn dialogue_text() -> ViewTextResource {
                 public_id: ACTION_LABEL_SOURCE.to_owned(),
                 kind: ViewTextSourceKind::Literal {
                     value: String::new(),
-                },
-                source: None,
-            },
-            ViewTextSourceRecord {
-                public_id: SPEAKER_SOURCE.to_owned(),
-                kind: ViewTextSourceKind::Dialogue {
-                    parameter: DIALOGUE_PARAMETER.to_owned(),
-                    projection: DialogueTextProjection::Speaker,
                 },
                 source: None,
             },
@@ -223,12 +223,11 @@ pub fn dialogue_style() -> ViewStyleResource {
     let document = dialogue_style_source_document();
     let section = SourceMapSection::try_from_documents(&[&document])
         .expect("standard dialogue Style source map is canonical");
-    let source_ref = ProductSourceRef::from_document(
-        section
-            .documents()
-            .next()
-            .expect("standard dialogue Style source map is non-empty"),
-    );
+    let source_ref = section
+        .documents()
+        .next()
+        .expect("standard dialogue Style source map is non-empty")
+        .product_source_ref();
     let source_refs = vec![source_ref.clone()];
     let source_range = SourceRangeRef::try_for_source(
         &source_refs,
@@ -303,7 +302,7 @@ fn dialogue_style_rules(source: ViewStyleSourceId) -> Vec<ViewStyleRule> {
             source,
         ),
         rule(
-            SPEAKER_PART,
+            CHARACTER_DISPLAY_NAME_PART,
             vec![
                 declaration(ViewPropertyKind::Color, rgba(174, 226, 142, 255), source),
                 declaration(ViewPropertyKind::FontSize, length(25_000), source),

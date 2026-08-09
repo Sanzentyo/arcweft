@@ -12,13 +12,17 @@ use crate::dialogue_application::{
 };
 use crate::expr::{HirExpressionRecoveryIssue, HirRecoveryIssue};
 use crate::identity::{ExprId, ScopeId};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::{HirExprSourceRole, expression_component_role};
 
-use super::{CandidateCursor, project_node, project_tag};
+use super::{CandidateCursor, paired_start_tags, project_node, project_tag};
 use crate::final_lowering::StagedHirModuleTransaction;
 
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "nested Dialogue application lowering is one closed content/tag/node projection with a single candidate cursor"
+    )]
     pub(super) fn lower_nested_candidate_dialogue_application(
         &mut self,
         owner: ExprId,
@@ -138,6 +142,7 @@ impl StagedHirModuleTransaction<'_> {
                         &mut recovery,
                     )?);
                 }
+                let paired_starts = paired_start_tags(source, &tags)?;
                 let mut nodes = Vec::with_capacity(source.nodes().len());
                 for (ordinal, source_node) in source.nodes().iter().enumerate() {
                     let id = HirDialogueNodeId::try_new(content_id, ordinal)
@@ -148,6 +153,7 @@ impl StagedHirModuleTransaction<'_> {
                             content_id,
                             &tags,
                             source_node,
+                            paired_starts[ordinal],
                             node_values[ordinal],
                             &mut recovery,
                         )?,

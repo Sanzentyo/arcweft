@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_metric_declaration_header;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
@@ -29,7 +29,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::MetricDeclarationItem, role);
     emit_metric_declaration_header(&mut parser, emit_metric_kind, emit_metric_value_type);
     parser.bump_trivia();
@@ -38,7 +38,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_metric_kind(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_metric_kind(parser: &mut DocumentParser<'_, '_>) {
     let role = match parser.current_text() {
         Some("counter") => SyntaxRole::MetricKindValue(MetricKindSyntaxValue::Counter),
         Some("gauge") => SyntaxRole::MetricKindValue(MetricKindSyntaxValue::Gauge),
@@ -75,7 +75,7 @@ fn emit_metric_kind(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_metric_value_type(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_metric_value_type(parser: &mut DocumentParser<'_, '_>) {
     emit_required_punctuation(
         parser,
         SyntaxKind::ColonNode,
@@ -85,7 +85,7 @@ fn emit_metric_value_type(parser: &mut ShadowDocumentParser<'_, '_>) {
         "Metric declaration requires `: ValueType`",
     );
     parser.bump_trivia();
-    let end = find_top_level_boundary(parser, parser.cursor(), &["{"]);
+    let end = find_top_level_boundary(parser, parser.cursor(), token_count(parser), &["{"]);
     emit_type(parser, end, SyntaxRole::Type);
     bump_until(parser, end);
 }
@@ -99,7 +99,7 @@ struct MetricMemberLedger {
 impl MetricMemberLedger {
     fn record(
         &mut self,
-        parser: &mut ShadowDocumentParser<'_, '_>,
+        parser: &mut DocumentParser<'_, '_>,
         rank: usize,
         member: &'static str,
         range: SourceRange,
@@ -127,7 +127,7 @@ impl MetricMemberLedger {
     }
 }
 
-fn emit_metric_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_metric_body(parser: &mut DocumentParser<'_, '_>) {
     if !parser.at("{") {
         emit_missing_body(parser);
         return;
@@ -148,7 +148,7 @@ fn emit_metric_body(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_missing_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_body(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
     parser.push(SyntaxEvent::MissingToken {
@@ -163,7 +163,7 @@ fn emit_missing_body(parser: &mut ShadowDocumentParser<'_, '_>) {
     )));
 }
 
-fn emit_metric_members(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize) {
+fn emit_metric_members(parser: &mut DocumentParser<'_, '_>, body_end: usize) {
     let mut ledger = MetricMemberLedger::default();
     let mut ordinal = 0_u16;
     while parser.cursor() < body_end {
@@ -196,7 +196,7 @@ fn emit_metric_members(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usiz
 }
 
 fn emit_unit_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     line_end: usize,
     ordinal: u16,
     ledger: &mut MetricMemberLedger,
@@ -231,7 +231,7 @@ fn emit_unit_member(
 }
 
 fn emit_labels_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     line_end: usize,
     ordinal: u16,
     ledger: &mut MetricMemberLedger,
@@ -267,7 +267,7 @@ fn emit_labels_member(
     parser.finish();
 }
 
-fn emit_metric_labels(parser: &mut ShadowDocumentParser<'_, '_>, block_end: usize) {
+fn emit_metric_labels(parser: &mut DocumentParser<'_, '_>, block_end: usize) {
     let mut names = BTreeMap::<String, SourceRange>::new();
     let mut ordinal = 0_u16;
     while parser.cursor() < block_end {
@@ -293,7 +293,7 @@ fn emit_metric_labels(parser: &mut ShadowDocumentParser<'_, '_>, block_end: usiz
 }
 
 fn emit_metric_label(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     label_end: usize,
     ordinal: u16,
     names: &mut BTreeMap<String, SourceRange>,
@@ -348,7 +348,7 @@ fn emit_metric_label(
 }
 
 fn emit_buckets_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     line_end: usize,
     ordinal: u16,
     ledger: &mut MetricMemberLedger,
@@ -381,7 +381,7 @@ fn emit_buckets_member(
     parser.finish();
 }
 
-fn emit_bucket_sequence(parser: &mut ShadowDocumentParser<'_, '_>, line_end: usize) {
+fn emit_bucket_sequence(parser: &mut DocumentParser<'_, '_>, line_end: usize) {
     let close = find_matching_close(parser, parser.cursor() + 1, "[")
         .map_or(line_end, |index| index.min(line_end));
     let owner = parser.start_projected_owner(
@@ -398,7 +398,7 @@ fn emit_bucket_sequence(parser: &mut ShadowDocumentParser<'_, '_>, line_end: usi
         if parser.cursor() >= close || parser.at("]") {
             break;
         }
-        let bucket_end = find_top_level_boundary(parser, parser.cursor(), &[",", "]"]).min(close);
+        let bucket_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", "]"]);
         let (slot, range) = super::expression::expression_slot(parser, bucket_end);
         emit_expression(parser, bucket_end, SyntaxRole::Bucket(ordinal));
         bump_until(parser, bucket_end);
@@ -448,7 +448,7 @@ fn emit_bucket_sequence(parser: &mut ShadowDocumentParser<'_, '_>, line_end: usi
 }
 
 fn emit_unknown_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     line_end: usize,
     ordinal: u16,
     range: SourceRange,
@@ -466,7 +466,7 @@ fn emit_unknown_member(
     )));
 }
 
-fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>, code: &'static str) {
+fn emit_assignment(parser: &mut DocumentParser<'_, '_>, code: &'static str) {
     parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
     if parser.at("=") {
         parser.bump();
@@ -487,7 +487,7 @@ fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>, code: &'static str
 }
 
 fn emit_missing_member_value(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     code: &'static str,
     message: &'static str,
 ) {
@@ -501,7 +501,7 @@ fn emit_missing_member_value(
     )));
 }
 
-fn is_single_string_token(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> bool {
+fn is_single_string_token(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> bool {
     let significant = (start..end)
         .filter_map(|index| {
             let token = parser.token_at(index)?;
@@ -511,7 +511,7 @@ fn is_single_string_token(parser: &ShadowDocumentParser<'_, '_>, start: usize, e
     matches!(significant.as_slice(), [token] if token.kind() == SyntaxKind::StringToken)
 }
 
-fn token_range(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
+fn token_range(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
     let first = (start..end).find_map(|index| {
         parser
             .token_at(index)
@@ -542,7 +542,7 @@ const fn is_trivia(kind: SyntaxKind) -> bool {
     )
 }
 
-fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_trailing_recovery(parser: &mut DocumentParser<'_, '_>) {
     parser.bump_trivia();
     if parser.is_at_end() {
         return;

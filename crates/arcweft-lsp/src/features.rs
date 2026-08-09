@@ -1,7 +1,6 @@
 //! LSP feature handlers built on top of Sans I/O helper crates.
 
 pub mod actions;
-pub mod cascade;
 pub mod character_definition;
 pub mod character_metadata;
 pub mod completion;
@@ -15,5 +14,3 @@ pub mod references;
 pub mod rename;
 pub mod semantic_tokens;
 pub mod signature;
-pub mod style_environment;
-mod view_part_metadata;

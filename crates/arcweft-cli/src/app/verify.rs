@@ -2,6 +2,7 @@ use super::diagnostics::emit_diagnostics;
 use super::project::{
     CheckedModule, ProfileOptions, SourceSelection, load_and_check_selection,
     native_host_policy_for_selection, resolve_source_selection, runtime_pure_config_for_selection,
+    verify_compiled_project,
 };
 use super::runtime::entry::select_runtime_entry;
 use super::runtime::executor::RuntimeExecutorInstance;
@@ -15,9 +16,8 @@ use super::runtime::profile::run_profile_phase;
 use super::runtime::steps::{NativeRunHost, NativeRunSource, run_runtime_steps_with_executor};
 use super::shared::print_json;
 use crate::output::{
-    BorrowCheckProfileStats, RuntimeExecutorTier, RuntimeTypeValidationProfileStats,
-    RuntimeTypeValidationReportSummary, TypeCheckProfileStats, VerifyTypesReport,
-    VerifyTypesRuntimeSelfCheck, VerifyTypesVerifierSummary,
+    FinalSemanticProfileStats, RuntimeExecutorTier, VerifyTypesReport, VerifyTypesRuntimeSelfCheck,
+    VerifyTypesVerifierSummary,
 };
 use arcweft_core::{
     engine::{FlowFiberStatus, FlowStatusLabelStyle},
@@ -28,7 +28,6 @@ use arcweft_runtime_host::NativeAdapterRegistrar;
 use arcweft_verify::{
     BackendKind, VerificationMode, VerificationPolicy, VerificationReport,
     smt::{SmtBackend, SmtEmission},
-    validate_runtime_plan_types, verify_module_with_env,
 };
 use arcweft_verify_oxiz::OxizBackend;
 use arcweft_verify_z3::ExternalZ3Backend;
@@ -44,15 +43,14 @@ const Z3_BIN_ENV: &str = "ARCWEFT_Z3_BIN";
 pub(super) fn verify_command(options: &VerifyOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let mut report = verify_module_with_env(
-        &checked.hir,
-        &checked.env,
+    let mut report = verify_compiled_project(
+        &checked.compiled,
         VerificationPolicy {
             mode: options.mode,
             backend: options.backend,
             allow_trusted_proofs: options.mode != VerificationMode::Release,
         },
-    );
+    )?;
 
     if let Some(path) = options.emit_obligations.as_ref() {
         write_json(path, &report.obligations)?;
@@ -98,8 +96,7 @@ pub(super) fn verify_types_command(
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let mut checked = load_and_check_selection(&selection, None)?;
     let (runtime_plan, entry) = verify_types_runtime_plan(&mut checked, &selection, options)?;
-    let runtime_type_validation =
-        verify_types_runtime_type_validation(&mut checked, &runtime_plan)?;
+    let line_task_groups = runtime_plan.line_task_groups.len();
     let verification = verify_types_semantics(&mut checked, options.mode)?;
     let runtime = verify_types_runtime_self_check(
         runtime_plan,
@@ -113,7 +110,7 @@ pub(super) fn verify_types_command(
         .as_ref()
         .is_some_and(|runtime| runtime.failed || runtime.diagnostics > 0);
     let verification_failed = verification.has_blocking_runtime_safety_gaps();
-    let status = if runtime_type_validation.has_errors() || verification_failed || runtime_failed {
+    let status = if verification_failed || runtime_failed {
         "failed"
     } else {
         "ok"
@@ -122,19 +119,9 @@ pub(super) fn verify_types_command(
         status: status.to_owned(),
         source: report_path(selection.path()),
         syntax_warnings: checked.syntax_warnings,
-        line_task_groups: checked.line_task_groups.len(),
+        line_task_groups,
         phases: checked.phases.clone(),
-        typecheck: TypeCheckProfileStats::from(&checked.typecheck_report),
-        borrow_check: BorrowCheckProfileStats::from(&checked.typecheck_report.stats),
-        runtime_type_validation: RuntimeTypeValidationReportSummary {
-            diagnostics: runtime_type_validation.diagnostics.len(),
-            errors: runtime_type_validation
-                .diagnostics
-                .iter()
-                .filter(|diagnostic| diagnostic.severity == arcweft_verify::Severity::Error)
-                .count(),
-            stats: RuntimeTypeValidationProfileStats::from(&runtime_type_validation.stats),
-        },
+        semantic: FinalSemanticProfileStats::from(checked.compiled.final_analysis().as_ref()),
         verifier: VerifyTypesVerifierSummary {
             diagnostics: verification.diagnostics.len(),
             obligations: verification.obligations.len(),
@@ -146,12 +133,8 @@ pub(super) fn verify_types_command(
         print_json(&report)?;
     } else {
         println!(
-            "{}: {} (type_judgments={}, runtime_type_errors={}, obligations={})",
-            report.status,
-            report.source,
-            report.typecheck.judgments,
-            report.runtime_type_validation.errors,
-            report.verifier.obligations
+            "{}: {} (semantic_expressions={}, obligations={})",
+            report.status, report.source, report.semantic.expressions, report.verifier.obligations
         );
     }
     if status == "ok" {
@@ -172,32 +155,19 @@ fn verify_types_runtime_plan(
     Ok((runtime_plan, entry))
 }
 
-fn verify_types_runtime_type_validation(
-    checked: &mut CheckedModule,
-    runtime_plan: &RuntimePlan,
-) -> Result<arcweft_verify::RuntimeTypeValidationReport, ExitCode> {
-    run_profile_phase(&mut checked.phases, "runtime_type_validate", || {
-        Ok(validate_runtime_plan_types(
-            runtime_plan,
-            &checked.typecheck_report,
-        ))
-    })
-}
-
 fn verify_types_semantics(
     checked: &mut CheckedModule,
     mode: VerificationMode,
 ) -> Result<arcweft_verify::VerificationReport, ExitCode> {
     run_profile_phase(&mut checked.phases, "verify", || {
-        Ok(verify_module_with_env(
-            &checked.hir,
-            &checked.env,
+        verify_compiled_project(
+            &checked.compiled,
             VerificationPolicy {
                 mode,
                 backend: BackendKind::Emit,
                 allow_trusted_proofs: mode != VerificationMode::Release,
             },
-        ))
+        )
     })
 }
 
@@ -246,6 +216,7 @@ fn verify_types_runtime_self_check(
             options.runtime_mode,
             options.max_ops,
             &options.values,
+            &checked.execution_diagnostics,
         )
     })?;
     Ok(Some(VerifyTypesRuntimeSelfCheck {
@@ -263,15 +234,14 @@ fn verify_types_runtime_self_check(
 pub(super) fn unsafe_command(options: &UnsafeOptions) -> Result<(), ExitCode> {
     let selection = resolve_source_selection(options.path.as_ref(), &options.profile)?;
     let checked = load_and_check_selection(&selection, None)?;
-    let report = verify_module_with_env(
-        &checked.hir,
-        &checked.env,
+    let report = verify_compiled_project(
+        &checked.compiled,
         VerificationPolicy {
             mode: options.mode,
             backend: BackendKind::Emit,
             allow_trusted_proofs: options.mode != VerificationMode::Release,
         },
-    );
+    )?;
     if options.json {
         print_json(&report.unsafe_audits)?;
     } else {

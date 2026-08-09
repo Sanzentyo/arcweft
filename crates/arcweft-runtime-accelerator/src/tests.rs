@@ -3,10 +3,13 @@ use super::*;
 use arcweft_core::value::runtime_sequence_dense_u32;
 use arcweft_core::{
     engine::{Engine, FlowExit, FlowFiberStatus},
+    entry::RuntimeNominalTypeId,
+    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
     plan::{FlowOp, FlowRuntimeId, RuntimeFlow, RuntimePlan},
     step::{RuntimeStepInput, RuntimeStepOptions},
 };
 use arcweft_core::{
+    entry::RuntimeCallableId,
     plan::RuntimePureHelperId,
     value::{
         RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue,
@@ -18,6 +21,33 @@ fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::from_runtime_target_value(value).expect("test flow ID is valid")
 }
 
+fn callable_target(value: &str) -> RuntimeCallTarget {
+    RuntimeCallTarget::callable(
+        RuntimeCallableId::try_new(value).expect("test callable identity is valid"),
+    )
+}
+
+fn data_format_value(format: DataFormat) -> RuntimeValue {
+    let ordinal = DataFormat::ALL
+        .iter()
+        .position(|candidate| candidate == &format)
+        .and_then(|ordinal| u32::try_from(ordinal).ok())
+        .expect("DataFormat inventory fits the runtime ordinal");
+    RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new("DataFormat")
+                .expect("DataFormat runtime nominal identity is valid"),
+            // The accelerator consumes the checked owner identity rather than
+            // rebuilding semantic type facts. A distinctive test identity
+            // proves it does not fall back to a source path.
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([0xDA; 32]),
+        },
+        ordinal,
+        name: format.variant_name().to_owned(),
+        payload: None,
+    }
+}
+
 #[test]
 fn data_external_call_encodes_and_decodes_json_with_format_enum() {
     let mut accelerator =
@@ -25,15 +55,11 @@ fn data_external_call_encodes_and_decodes_json_with_format_enum() {
     let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::String(
         "hello".to_owned(),
     )]));
-    let format = RuntimeValue::Variant {
-        path: None,
-        name: "Json".to_owned(),
-        payload: None,
-    };
+    let format = data_format_value(DataFormat::Json);
 
     let encoded = accelerator
         .call_external(
-            &RuntimeCallTarget::from_label("data.encode"),
+            &callable_target("data.encode"),
             &[value.clone(), format.clone()],
         )
         .expect("data encode is handled")
@@ -44,14 +70,49 @@ fn data_external_call_encodes_and_decodes_json_with_format_enum() {
     assert_eq!(bytes.as_slice(), br#"["hello"]"#);
 
     let decoded = accelerator
-        .call_external(
-            &RuntimeCallTarget::from_label("data.decode"),
-            &[encoded, format],
-        )
+        .call_external(&callable_target("data.decode"), &[encoded, format])
         .expect("data decode is handled")
         .expect("data decode succeeds");
 
     assert_eq!(decoded, value);
+}
+
+#[test]
+fn data_external_call_rejects_wrong_data_format_owner_and_ordinal() {
+    let mut accelerator =
+        RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
+    let value = RuntimeValue::String("hello".to_owned());
+    let wrong_owner = RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new("OtherFormat")
+                .expect("test runtime nominal identity is valid"),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([0xDA; 32]),
+        },
+        ordinal: 0,
+        name: "Json".to_owned(),
+        payload: None,
+    };
+    let wrong_ordinal = RuntimeValue::Variant {
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new("DataFormat")
+                .expect("DataFormat runtime nominal identity is valid"),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([0xDA; 32]),
+        },
+        ordinal: 1,
+        name: "Json".to_owned(),
+        payload: None,
+    };
+
+    for format in [wrong_owner, wrong_ordinal] {
+        let error = accelerator
+            .call_external(&callable_target("data.encode"), &[value.clone(), format])
+            .expect("data encode is handled")
+            .expect_err("forged DataFormat identity is rejected");
+        let RuntimeEvalError::UnsupportedPure { reason, .. } = error else {
+            panic!("expected UnsupportedPure for forged DataFormat identity");
+        };
+        assert!(reason.contains("DataFormat"));
+    }
 }
 
 #[test]
@@ -62,24 +123,17 @@ fn data_external_call_round_trips_dynamic_avro() {
         name: "speaker".to_owned(),
         value: RuntimeValue::String("alice".to_owned()),
     }]);
-    let format = RuntimeValue::Variant {
-        path: None,
-        name: "Avro".to_owned(),
-        payload: None,
-    };
+    let format = data_format_value(DataFormat::Avro);
 
     let encoded = accelerator
         .call_external(
-            &RuntimeCallTarget::from_label("data.encode"),
+            &callable_target("data.encode"),
             &[value.clone(), format.clone()],
         )
         .expect("data encode is handled")
         .expect("data encode succeeds");
     let decoded = accelerator
-        .call_external(
-            &RuntimeCallTarget::from_label("data.decode"),
-            &[encoded, format],
-        )
+        .call_external(&callable_target("data.decode"), &[encoded, format])
         .expect("data decode is handled")
         .expect("data decode succeeds");
 
@@ -101,24 +155,19 @@ fn data_external_call_encodes_shape_required_formats_and_rejects_dynamic_decode(
                 value: RuntimeValue::String("alice".to_owned()),
             },
         ])]));
-        let format = RuntimeValue::Variant {
-            path: None,
-            name: variant.to_owned(),
-            payload: None,
-        };
+        let format = data_format_value(
+            DataFormat::from_variant_name(variant).expect("tested data format is registered"),
+        );
 
         let encoded = accelerator
             .call_external(
-                &RuntimeCallTarget::from_label("data.encode"),
+                &callable_target("data.encode"),
                 &[value.clone(), format.clone()],
             )
             .unwrap_or_else(|| panic!("{variant} data encode is handled"))
             .unwrap_or_else(|error| panic!("{variant} data encode succeeds: {error}"));
         let error = accelerator
-            .call_external(
-                &RuntimeCallTarget::from_label("data.decode"),
-                &[encoded, format],
-            )
+            .call_external(&callable_target("data.decode"), &[encoded, format])
             .unwrap_or_else(|| panic!("{variant} data decode is handled"))
             .expect_err("shape-required formats need an explicit decode shape");
 
@@ -147,30 +196,22 @@ fn data_external_call_decodes_shape_required_formats_with_explicit_shape() {
                 value: RuntimeValue::String("alice".to_owned()),
             },
         ])]));
-        let format = RuntimeValue::Variant {
-            path: None,
-            name: variant.to_owned(),
-            payload: None,
-        };
+        let format = data_format_value(
+            DataFormat::from_variant_name(variant).expect("tested data format is registered"),
+        );
         let shape = accelerator
-            .call_external(
-                &RuntimeCallTarget::from_label("data.shape"),
-                std::slice::from_ref(&value),
-            )
+            .call_external(&callable_target("data.shape"), std::slice::from_ref(&value))
             .unwrap_or_else(|| panic!("{variant} data shape is handled"))
             .unwrap_or_else(|error| panic!("{variant} data shape succeeds: {error}"));
         let encoded = accelerator
             .call_external(
-                &RuntimeCallTarget::from_label("data.encode"),
+                &callable_target("data.encode"),
                 &[value.clone(), format.clone()],
             )
             .unwrap_or_else(|| panic!("{variant} data encode is handled"))
             .unwrap_or_else(|error| panic!("{variant} data encode succeeds: {error}"));
         let decoded = accelerator
-            .call_external(
-                &RuntimeCallTarget::from_label("data.decode"),
-                &[encoded, format, shape],
-            )
+            .call_external(&callable_target("data.decode"), &[encoded, format, shape])
             .unwrap_or_else(|| panic!("{variant} data decode is handled"))
             .unwrap_or_else(|error| panic!("{variant} data decode succeeds: {error}"));
 
@@ -192,8 +233,8 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
     let dense = DenseTensorF32::new(vec![4, 2], vec![0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 2.0])
         .expect("dense tensor shape is valid");
     let bias = DenseTensorF32::new(vec![2], vec![0.0, 0.0]).expect("bias tensor shape is valid");
-    let conv_target = RuntimeCallTarget::from_label("conv2d.valid_f32");
-    assert!(matches!(conv_target, RuntimeCallTarget::Named(_)));
+    let conv_target = callable_target("conv2d.valid_f32");
+    assert!(matches!(&conv_target, RuntimeCallTarget::Callable(_)));
     let plan = RuntimePlan::new(
         vec![RuntimeFlow {
             id: flow_id("flow.infer"),
@@ -211,10 +252,10 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
                 body: Box::new(RuntimeExpr::Let {
                     name: "pooled".to_owned(),
                     expr: Box::new(RuntimeExpr::Call {
-                        callee: RuntimeCallTarget::from_label("infer.max_pool2d_f32"),
+                        callee: callable_target("infer.max_pool2d_f32"),
                         args: vec![
                             RuntimeExpr::Call {
-                                callee: RuntimeCallTarget::from_label("infer.relu_f32"),
+                                callee: callable_target("infer.relu_f32"),
                                 args: vec![RuntimeExpr::Local("conv".to_owned())],
                             },
                             RuntimeExpr::Value(RuntimeValue::usize(2)),
@@ -226,12 +267,10 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
                     body: Box::new(RuntimeExpr::Let {
                         name: "logits".to_owned(),
                         expr: Box::new(RuntimeExpr::Call {
-                            callee: RuntimeCallTarget::from_label("infer.matmul_bias_add_f32"),
+                            callee: callable_target("infer.matmul_bias_add_f32"),
                             args: vec![
                                 RuntimeExpr::Call {
-                                    callee: RuntimeCallTarget::from_label(
-                                        "infer.flatten_outer_f32",
-                                    ),
+                                    callee: callable_target("infer.flatten_outer_f32"),
                                     args: vec![RuntimeExpr::Local("pooled".to_owned())],
                                 },
                                 RuntimeExpr::Value(RuntimeValue::tensor_f32(dense)),
@@ -239,7 +278,7 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
                             ],
                         }),
                         body: Box::new(RuntimeExpr::Call {
-                            callee: RuntimeCallTarget::from_label("infer.argmax_last_dim_f32"),
+                            callee: callable_target("infer.argmax_last_dim_f32"),
                             args: vec![RuntimeExpr::Local("logits".to_owned())],
                         }),
                     }),
@@ -267,7 +306,7 @@ fn runtime_flow_external_inference_call_sequence_uses_adapter_boundary() {
     assert!(matches!(
         RuntimeExternalCallBackend::call_external(
             &mut accelerator,
-            &RuntimeCallTarget::from_label("infer.argmax_last_dim_f32"),
+            &callable_target("infer.argmax_last_dim_f32"),
             &[RuntimeValue::tensor_f32(
                 DenseTensorF32::new(vec![1, 2], vec![0.0, 1.0]).unwrap()
             )]
@@ -490,7 +529,7 @@ fn runtime_external_infer_matmul_bias_add_reuses_prepared_wgpu_buffers() {
         },
         &[],
     );
-    let target = RuntimeCallTarget::from_label("infer.matmul_bias_add_f32");
+    let target = callable_target("infer.matmul_bias_add_f32");
 
     let Some(Ok(first)) = RuntimeExternalCallBackend::call_external(
         &mut accelerator,

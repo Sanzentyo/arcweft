@@ -11,7 +11,7 @@ use crate::identity::{
     ItemId, LocalId, PatternId, ScopeId, StmtId, SyntheticKey, SyntheticOwner, SyntheticRole,
     TypeId,
 };
-use crate::lower::HirLimitError;
+use crate::lowering::HirLimitError;
 use crate::slot::{HirOrigin, HirSlotError, SlotSnapshot, StagedSlotTransaction};
 use crate::source_index::{HirInsertionPoint, HirSourceSite};
 
@@ -73,11 +73,11 @@ impl Fixture {
     }
 
     fn syntax(&self) -> SyntaxNodeId {
-        self.parsed.tree().root().id()
+        self.parsed.root_syntax().id()
     }
 
     fn syntax_ids(&self) -> [SyntaxNodeId; 2] {
-        let root = self.parsed.tree().root().syntax();
+        let root = self.parsed.root_syntax();
         let mut ids = root
             .rowan()
             .descendants()
@@ -501,11 +501,12 @@ fn unfinalized_reservation_prevents_slot_publication() {
     let empty = SlotSnapshot::empty(module(4), revision(1));
     let mut slots = StagedSlotTransaction::from_snapshot(&empty, revision(1));
     let mut arena = StagedArena::<u8, ExprId>::new();
-    let reservation = arena
-        .reserve_source(&mut slots, fixture.syntax(), fixture.source(0))
-        .unwrap();
-    let id = reservation.id();
-    drop(reservation);
+    let id = {
+        let reservation = arena
+            .reserve_source(&mut slots, fixture.syntax(), fixture.source(0))
+            .unwrap();
+        reservation.id()
+    };
 
     assert!(matches!(
         arena.into_snapshot(&mut slots),
@@ -626,6 +627,10 @@ impl HirArenaPayload for NonClonePageRecord {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one copy-on-write matrix proves unchanged sharing and changed-page rebuilding for non-Clone payloads"
+)]
 fn revision_cow_shares_unchanged_non_clone_page_and_rebuilds_changed_page() {
     let fixture = Fixture::new();
     let mut first_slots = StagedSlotTransaction::new(module(7), revision(1));
@@ -741,7 +746,9 @@ fn revision_cow_shares_unchanged_non_clone_page_and_rebuilds_changed_page() {
     ));
 }
 
-fn assert_typed_limit<I: HirTypedId>() {
+fn assert_typed_limit<I: HirTypedId>(limit: HirLimit, production_maximum: usize) {
+    assert_eq!(I::KIND.allocation_limit(), limit);
+    assert_eq!(limit.maximum(), production_maximum);
     let fixture = Fixture::new();
     let [first_syntax, second_syntax] = fixture.syntax_ids();
     let maximum = 1;
@@ -822,8 +829,52 @@ fn stage_capture_rows(
     Ok(())
 }
 
+fn stage_module_local_rows(
+    count: usize,
+    owner_capacity: usize,
+    fixture: &Fixture,
+    slots: &mut StagedSlotTransaction,
+    owner_arena: &mut StagedArena<u8, ExprId>,
+    local_arena: &mut StagedArena<u8, LocalId>,
+    first_local: &mut Option<LocalId>,
+) -> Result<(), HirArenaError> {
+    assert!(count <= owner_capacity);
+    let root = owner_arena.allocate_source(slots, fixture.syntax(), fixture.source(0), 0)?;
+    let per_owner = HirLimit::SyntheticDescendantsPerOwner.maximum();
+    let owner_count = owner_capacity.div_ceil(per_owner);
+    let mut owners = Vec::with_capacity(owner_count);
+    for ordinal in 0..owner_count {
+        owners.push(owner_arena.allocate_synthetic(
+            slots,
+            key(
+                SyntheticOwner::Expr(root),
+                SyntheticRole::RecoveryOperand,
+                u32::try_from(ordinal).expect("local-limit owner ordinal fits u32"),
+            ),
+            fixture.insertion(0),
+            0,
+        )?);
+    }
+    for index in 0..count {
+        let local = local_arena.allocate_synthetic(
+            slots,
+            key(
+                SyntheticOwner::Expr(owners[index / per_owner]),
+                SyntheticRole::RecoveryOperand,
+                u32::try_from(index % per_owner).expect("local-limit child ordinal fits u32"),
+            ),
+            fixture.insertion(0),
+            0,
+        )?;
+        if first_local.is_none() {
+            *first_local = Some(local);
+        }
+    }
+    Ok(())
+}
+
 #[test]
-fn capture_arena_enforces_the_production_exact_and_one_over_limit_atomically() {
+fn capture_limit_is_inclusive_and_atomic() {
     let fixture = Fixture::new();
     let maximum = HirLimit::Captures.maximum();
 
@@ -873,22 +924,113 @@ fn capture_arena_enforces_the_production_exact_and_one_over_limit_atomically() {
 }
 
 #[test]
-fn every_typed_arena_enforces_its_exact_and_one_over_limit_atomically() {
-    assert_eq!(HirLimit::Items.maximum(), 16_384);
-    assert_eq!(HirLimit::Scopes.maximum(), 16_384);
-    assert_eq!(HirLimit::LocalsPerModule.maximum(), 65_536);
-    assert_eq!(HirLimit::Expressions.maximum(), 262_144);
-    assert_eq!(HirLimit::Statements.maximum(), 65_536);
-    assert_eq!(HirLimit::Types.maximum(), 131_072);
-    assert_eq!(HirLimit::Patterns.maximum(), 131_072);
-    assert_eq!(HirLimit::Captures.maximum(), 65_536);
+fn local_module_limit_is_inclusive_and_atomic() {
+    let fixture = Fixture::new();
+    let maximum = HirLimit::LocalsPerModule.maximum();
+    assert_eq!(maximum, 65_536);
 
-    assert_typed_limit::<ItemId>();
-    assert_typed_limit::<ScopeId>();
-    assert_typed_limit::<LocalId>();
-    assert_typed_limit::<ExprId>();
-    assert_typed_limit::<StmtId>();
-    assert_typed_limit::<TypeId>();
-    assert_typed_limit::<PatternId>();
-    assert_typed_limit::<CaptureId>();
+    let mut exact_slots = StagedSlotTransaction::new(module(42), revision(1));
+    let mut exact_owners = StagedArena::<u8, ExprId>::new();
+    let mut exact_locals = StagedArena::<u8, LocalId>::new();
+    let mut exact_first = None;
+    stage_module_local_rows(
+        maximum,
+        maximum,
+        &fixture,
+        &mut exact_slots,
+        &mut exact_owners,
+        &mut exact_locals,
+        &mut exact_first,
+    )
+    .unwrap();
+    let exact_owner_count = maximum.div_ceil(HirLimit::SyntheticDescendantsPerOwner.maximum());
+    let exact_owners = exact_owners.into_snapshot(&mut exact_slots).unwrap();
+    let exact_locals = exact_locals.into_snapshot(&mut exact_slots).unwrap();
+    let exact_slots = exact_slots.commit().unwrap();
+    assert_eq!(exact_owners.len(), exact_owner_count + 1);
+    assert_eq!(exact_locals.len(), maximum);
+    assert_eq!(
+        exact_slots.committed_slot_count(),
+        maximum + exact_owner_count + 1
+    );
+    assert!(
+        exact_locals
+            .resolve(&exact_slots, exact_first.expect("exact first local"))
+            .is_ok()
+    );
+
+    let empty = SlotSnapshot::empty(module(43), revision(1));
+    let mut over_slots = StagedSlotTransaction::from_snapshot(&empty, revision(1));
+    let mut over_owners = StagedArena::<u8, ExprId>::new();
+    let mut over_locals = StagedArena::<u8, LocalId>::new();
+    let mut over_first = None;
+    let error = stage_module_local_rows(
+        maximum + 1,
+        maximum + 1,
+        &fixture,
+        &mut over_slots,
+        &mut over_owners,
+        &mut over_locals,
+        &mut over_first,
+    )
+    .unwrap_err();
+    assert_eq!(
+        error,
+        HirArenaError::Limit(HirLimitError::with_maximum(
+            HirLimit::LocalsPerModule,
+            maximum + 1,
+            maximum,
+        ))
+    );
+    assert!(matches!(
+        over_slots.commit(),
+        Err(HirSlotError::TransactionPoisoned)
+    ));
+    assert_eq!(empty.committed_slot_count(), 0);
+
+    let mut retry_slots = StagedSlotTransaction::from_snapshot(&empty, revision(1));
+    let mut retry_owners = StagedArena::<u8, ExprId>::new();
+    let mut retry_locals = StagedArena::<u8, LocalId>::new();
+    let mut retry_first = None;
+    stage_module_local_rows(
+        1,
+        maximum + 1,
+        &fixture,
+        &mut retry_slots,
+        &mut retry_owners,
+        &mut retry_locals,
+        &mut retry_first,
+    )
+    .unwrap();
+    assert_eq!(retry_first, over_first);
+}
+
+#[test]
+fn item_limit_is_inclusive_and_atomic() {
+    assert_typed_limit::<ItemId>(HirLimit::Items, 16_384);
+}
+
+#[test]
+fn scope_limit_is_inclusive_and_atomic() {
+    assert_typed_limit::<ScopeId>(HirLimit::Scopes, 16_384);
+}
+
+#[test]
+fn statement_limit_is_inclusive_and_atomic() {
+    assert_typed_limit::<StmtId>(HirLimit::Statements, 65_536);
+}
+
+#[test]
+fn expression_limit_is_inclusive_and_atomic() {
+    assert_typed_limit::<ExprId>(HirLimit::Expressions, 262_144);
+}
+
+#[test]
+fn type_limit_is_inclusive_and_atomic() {
+    assert_typed_limit::<TypeId>(HirLimit::Types, 131_072);
+}
+
+#[test]
+fn pattern_limit_is_inclusive_and_atomic() {
+    assert_typed_limit::<PatternId>(HirLimit::Patterns, 131_072);
 }

@@ -11,6 +11,10 @@ use super::{
     VmPureFunctionScratch, Writer, fmt, math, runtime_sequence_dense_bytes,
     runtime_sequence_dense_usize,
 };
+use arcweft_core::{
+    entry::RuntimeNominalTypeId,
+    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum RuntimeAcceleratorExternalCall {
@@ -150,7 +154,7 @@ fn decode_runtime_data(input: &[u8], format: DataFormat) -> Result<RuntimeValue,
         | DataFormat::ArcweftBinary => Err(dynamic_decode_shape_error(format)),
     }
     .map_err(|error| data_runtime_error(format.id(), error.to_string()))?;
-    Ok(data_value_to_runtime_value(value))
+    data_value_to_runtime_value(value)
 }
 
 fn decode_runtime_data_with_shape(
@@ -209,20 +213,26 @@ fn decode_runtime_data_with_shape(
         )),
     }
     .map_err(|error| data_runtime_error(format.id(), error.to_string()))?;
-    Ok(data_value_to_runtime_value(value))
+    data_value_to_runtime_value_with_shape(value, shape)
 }
 
 fn data_format_arg(label: &str, value: &RuntimeValue) -> Result<DataFormat, RuntimeEvalError> {
     match value {
         RuntimeValue::Variant {
-            path,
+            owner: RuntimeVariantIdentity::Nominal { nominal, .. },
+            ordinal,
             name,
             payload: None,
-        } if path.as_deref().is_none_or(|path| path == "DataFormat") => {
-            DataFormat::from_variant_name(name).ok_or_else(|| {
-                data_runtime_error(label, format!("unknown DataFormat variant `{name}`"))
+        } if nominal.as_str() == "DataFormat" => DataFormat::from_variant_name(name)
+            .filter(|format| {
+                DataFormat::ALL.get(usize::try_from(*ordinal).unwrap_or(usize::MAX)) == Some(format)
             })
-        }
+            .ok_or_else(|| {
+                data_runtime_error(
+                    label,
+                    format!("unknown DataFormat case #{ordinal} `{name}`"),
+                )
+            }),
         other => Err(data_runtime_error(
             label,
             format!(
@@ -303,7 +313,8 @@ fn runtime_value_to_data_value(value: &RuntimeValue) -> Result<Value, RuntimeEva
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map(Value::Record),
         RuntimeValue::Variant {
-            path: _,
+            owner: _,
+            ordinal: _,
             name,
             payload,
         } => payload
@@ -332,37 +343,369 @@ fn runtime_value_to_data_value(value: &RuntimeValue) -> Result<Value, RuntimeEva
     }
 }
 
-fn data_value_to_runtime_value(value: Value) -> RuntimeValue {
+fn data_value_to_runtime_value(value: Value) -> Result<RuntimeValue, RuntimeEvalError> {
     match value {
-        Value::Unit => RuntimeValue::Unit,
-        Value::Bool(value) => RuntimeValue::Bool(value),
-        Value::Number(Number::I(value)) => RuntimeValue::i128(value),
-        Value::Number(Number::U(value)) => RuntimeValue::u128(value),
-        Value::Number(Number::F32(value)) => RuntimeValue::F32(value),
-        Value::Number(Number::F64(value)) => RuntimeValue::F64(value),
-        Value::String(value) => RuntimeValue::String(value),
-        Value::Char(value) => RuntimeValue::Char(value),
-        Value::Bytes(bytes) => runtime_sequence_dense_bytes(bytes.into_vec()),
-        Value::Seq(values) => RuntimeValue::Seq(RuntimeSeq::Values(
-            values
-                .into_iter()
-                .map(data_value_to_runtime_value)
-                .collect(),
+        Value::Unit => Ok(RuntimeValue::Unit),
+        Value::Bool(value) => Ok(RuntimeValue::Bool(value)),
+        Value::Number(Number::I(value)) => Ok(RuntimeValue::i128(value)),
+        Value::Number(Number::U(value)) => Ok(RuntimeValue::u128(value)),
+        Value::Number(Number::F32(value)) => Ok(RuntimeValue::F32(value)),
+        Value::Number(Number::F64(value)) => Ok(RuntimeValue::F64(value)),
+        Value::String(value) => Ok(RuntimeValue::String(value)),
+        Value::Char(value) => Ok(RuntimeValue::Char(value)),
+        Value::Bytes(bytes) => Ok(runtime_sequence_dense_bytes(bytes.into_vec())),
+        Value::Seq(values) => values
+            .into_iter()
+            .map(data_value_to_runtime_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeSeq::Values)
+            .map(RuntimeValue::Seq),
+        Value::Map(values) | Value::Record(values) => values
+            .into_iter()
+            .map(|(name, value)| {
+                data_value_to_runtime_value(value)
+                    .map(|value| arcweft_core::value::RuntimeFieldValue { name, value })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::Record),
+        Value::Enum { .. } => Err(data_runtime_error(
+            "data.decode",
+            "enum values require an explicit TypeShape so their typed owner and case ordinal are preserved",
         )),
-        Value::Map(values) | Value::Record(values) => RuntimeValue::Record(
-            values
-                .into_iter()
-                .map(|(name, value)| arcweft_core::value::RuntimeFieldValue {
-                    name,
-                    value: data_value_to_runtime_value(value),
-                })
-                .collect(),
+    }
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exhaustive typed data-shape conversion matrix must remain visibly total"
+)]
+fn data_value_to_runtime_value_with_shape(
+    value: Value,
+    shape: &TypeShape,
+) -> Result<RuntimeValue, RuntimeEvalError> {
+    match (value, shape) {
+        (Value::Unit, TypeShape::Unit) => Ok(RuntimeValue::Unit),
+        (Value::Bool(value), TypeShape::Bool) => Ok(RuntimeValue::Bool(value)),
+        (Value::Number(Number::I(value)), TypeShape::I8) => i8::try_from(value)
+            .map(RuntimeValue::i8)
+            .map_err(|_| data_shape_value_error("i8")),
+        (Value::Number(Number::I(value)), TypeShape::I16) => i16::try_from(value)
+            .map(RuntimeValue::i16)
+            .map_err(|_| data_shape_value_error("i16")),
+        (Value::Number(Number::I(value)), TypeShape::I32) => i32::try_from(value)
+            .map(RuntimeValue::i32)
+            .map_err(|_| data_shape_value_error("i32")),
+        (Value::Number(Number::I(value)), TypeShape::I64) => i64::try_from(value)
+            .map(RuntimeValue::i64)
+            .map_err(|_| data_shape_value_error("i64")),
+        (Value::Number(Number::I(value)), TypeShape::I128) => Ok(RuntimeValue::i128(value)),
+        (Value::Number(Number::I(value)), TypeShape::Isize) => i64::try_from(value)
+            .map(RuntimeValue::isize)
+            .map_err(|_| data_shape_value_error("isize")),
+        (Value::Number(Number::U(value)), TypeShape::U8) => u8::try_from(value)
+            .map(RuntimeValue::u8)
+            .map_err(|_| data_shape_value_error("u8")),
+        (Value::Number(Number::U(value)), TypeShape::U16) => u16::try_from(value)
+            .map(RuntimeValue::u16)
+            .map_err(|_| data_shape_value_error("u16")),
+        (Value::Number(Number::U(value)), TypeShape::U32) => u32::try_from(value)
+            .map(RuntimeValue::u32)
+            .map_err(|_| data_shape_value_error("u32")),
+        (Value::Number(Number::U(value)), TypeShape::U64) => u64::try_from(value)
+            .map(RuntimeValue::u64)
+            .map_err(|_| data_shape_value_error("u64")),
+        (Value::Number(Number::U(value)), TypeShape::U128) => Ok(RuntimeValue::u128(value)),
+        (Value::Number(Number::U(value)), TypeShape::Usize) => u64::try_from(value)
+            .map(RuntimeValue::usize)
+            .map_err(|_| data_shape_value_error("usize")),
+        (Value::Number(Number::F32(value)), TypeShape::F32) => Ok(RuntimeValue::F32(value)),
+        (Value::Number(Number::F64(value)), TypeShape::F64) => Ok(RuntimeValue::F64(value)),
+        (Value::String(value), TypeShape::String) => Ok(RuntimeValue::String(value)),
+        (Value::Char(value), TypeShape::Char) => Ok(RuntimeValue::Char(value)),
+        (Value::Bytes(bytes), TypeShape::Bytes { .. }) => {
+            Ok(runtime_sequence_dense_bytes(bytes.into_vec()))
+        }
+        (Value::Unit, TypeShape::Option(_)) => Ok(RuntimeValue::option_none()),
+        (value, TypeShape::Option(inner)) => {
+            data_value_to_runtime_value_with_shape(value, inner).map(RuntimeValue::option_some)
+        }
+        (Value::Seq(values), TypeShape::Seq(item)) => values
+            .into_iter()
+            .map(|value| data_value_to_runtime_value_with_shape(value, item))
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeSeq::Values)
+            .map(RuntimeValue::Seq),
+        (Value::Map(values), TypeShape::Map { value, .. }) => values
+            .into_iter()
+            .map(|(name, item)| {
+                data_value_to_runtime_value_with_shape(item, value)
+                    .map(|value| arcweft_core::value::RuntimeFieldValue { name, value })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::Record),
+        (Value::Record(values), TypeShape::Record { fields, .. }) => values
+            .into_iter()
+            .map(|(name, value)| {
+                let field = fields
+                    .iter()
+                    .find(|field| field.wire_name == name)
+                    .ok_or_else(|| {
+                        data_runtime_error(
+                            "data.decode",
+                            format!("decoded record field `{name}` is absent from TypeShape"),
+                        )
+                    })?;
+                data_value_to_runtime_value_with_shape(value, &field.value_shape())
+                    .map(|value| arcweft_core::value::RuntimeFieldValue { name, value })
+            })
+            .collect::<Result<Vec<_>, _>>()
+            .map(RuntimeValue::Record),
+        (Value::Enum { variant, payload }, shape @ TypeShape::Enum { name, variants, .. }) => {
+            let (ordinal, case) = variants
+                .iter()
+                .enumerate()
+                .find(|(_, case)| case.wire_name == variant)
+                .ok_or_else(|| {
+                    data_runtime_error(
+                        "data.decode",
+                        format!("decoded enum case `{variant}` is absent from TypeShape `{name}`"),
+                    )
+                })?;
+            let payload = match (payload, case.payload.as_ref()) {
+                (None, None) => None,
+                (Some(payload), Some(payload_shape)) => Some(Box::new(
+                    data_value_to_runtime_value_with_shape(*payload, payload_shape)?,
+                )),
+                _ => {
+                    return Err(data_runtime_error(
+                        "data.decode",
+                        format!(
+                            "decoded enum case `{variant}` payload does not match TypeShape `{name}`"
+                        ),
+                    ));
+                }
+            };
+            Ok(RuntimeValue::Variant {
+                owner: runtime_data_enum_identity(shape, name)?,
+                ordinal: u32::try_from(ordinal).map_err(|_| {
+                    data_runtime_error("data.decode", "enum case ordinal exceeds u32")
+                })?,
+                name: variant,
+                payload,
+            })
+        }
+        (_, TypeShape::Named(name)) => Err(data_runtime_error(
+            "data.decode",
+            format!("named TypeShape `{name}` has no admitted runtime value projection"),
+        )),
+        (value, shape) => Err(data_runtime_error(
+            "data.decode",
+            format!(
+                "decoded {} value does not match explicit {} TypeShape",
+                value.type_name(),
+                shape.type_name()
+            ),
+        )),
+    }
+}
+
+fn data_shape_value_error(expected: &'static str) -> RuntimeEvalError {
+    data_runtime_error(
+        "data.decode",
+        format!("decoded numeric value is outside the explicit {expected} TypeShape"),
+    )
+}
+
+fn runtime_data_enum_identity(
+    shape: &TypeShape,
+    name: &str,
+) -> Result<RuntimeVariantIdentity, RuntimeEvalError> {
+    let digest = semantic_type_shape_value(shape)
+        .try_digest(1_048_576)
+        .map_err(|error| {
+            data_runtime_error(
+                "data.decode",
+                format!("failed to derive enum TypeShape identity: {error}"),
+            )
+        })?;
+    let nominal = RuntimeNominalTypeId::try_new(format!("arcweft.data.{name}"))
+        .map_err(|error| data_runtime_error("data.decode", error.to_string()))?;
+    Ok(RuntimeVariantIdentity::Nominal {
+        nominal,
+        semantic_identity: RuntimeSemanticTypeId::from_bytes(*digest.as_bytes()),
+    })
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "one exhaustive semantic TypeShape encoding matrix must remain visibly total"
+)]
+fn semantic_type_shape_value(shape: &TypeShape) -> RuntimeValue {
+    let tuple = |kind: &str, values: Vec<RuntimeValue>| {
+        let mut output = Vec::with_capacity(values.len() + 1);
+        output.push(RuntimeValue::String(kind.to_owned()));
+        output.extend(values);
+        RuntimeValue::Tuple(output)
+    };
+    match shape {
+        TypeShape::Unit => tuple("unit", Vec::new()),
+        TypeShape::Bool => tuple("bool", Vec::new()),
+        TypeShape::I8 => tuple("i8", Vec::new()),
+        TypeShape::I16 => tuple("i16", Vec::new()),
+        TypeShape::I32 => tuple("i32", Vec::new()),
+        TypeShape::I64 => tuple("i64", Vec::new()),
+        TypeShape::I128 => tuple("i128", Vec::new()),
+        TypeShape::Isize => tuple("isize", Vec::new()),
+        TypeShape::U8 => tuple("u8", Vec::new()),
+        TypeShape::U16 => tuple("u16", Vec::new()),
+        TypeShape::U32 => tuple("u32", Vec::new()),
+        TypeShape::U64 => tuple("u64", Vec::new()),
+        TypeShape::U128 => tuple("u128", Vec::new()),
+        TypeShape::Usize => tuple("usize", Vec::new()),
+        TypeShape::F32 => tuple("f32", Vec::new()),
+        TypeShape::F64 => tuple("f64", Vec::new()),
+        TypeShape::String => tuple("string", Vec::new()),
+        TypeShape::Char => tuple("char", Vec::new()),
+        TypeShape::Bytes { format } => tuple(
+            "bytes",
+            vec![RuntimeValue::String(
+                bytes_format_identity(*format).to_owned(),
+            )],
         ),
-        Value::Enum { variant, payload } => RuntimeValue::Variant {
-            path: None,
-            name: variant,
-            payload: payload.map(|payload| Box::new(data_value_to_runtime_value(*payload))),
-        },
+        TypeShape::Option(item) => tuple("option", vec![semantic_type_shape_value(item)]),
+        TypeShape::Seq(item) => tuple("seq", vec![semantic_type_shape_value(item)]),
+        TypeShape::Map { key, value } => tuple(
+            "map",
+            vec![
+                semantic_type_shape_value(key),
+                semantic_type_shape_value(value),
+            ],
+        ),
+        TypeShape::Record {
+            name,
+            fields,
+            policy,
+        } => tuple(
+            "record",
+            vec![
+                RuntimeValue::String(name.clone()),
+                RuntimeValue::Bool(policy.deny_unknown_fields),
+                RuntimeValue::Seq(RuntimeSeq::Values(
+                    fields
+                        .iter()
+                        .map(|field| {
+                            tuple(
+                                "field",
+                                vec![
+                                    RuntimeValue::String(field.rust_name.clone()),
+                                    RuntimeValue::String(field.wire_name.clone()),
+                                    semantic_type_shape_value(&field.shape),
+                                    RuntimeValue::Bool(field.has_default),
+                                    RuntimeValue::Bool(field.skip),
+                                    field.bytes_format.map_or_else(
+                                        RuntimeValue::option_none,
+                                        |format| {
+                                            RuntimeValue::option_some(RuntimeValue::String(
+                                                bytes_format_identity(format).to_owned(),
+                                            ))
+                                        },
+                                    ),
+                                ],
+                            )
+                        })
+                        .collect(),
+                )),
+            ],
+        ),
+        TypeShape::Enum {
+            name,
+            variants,
+            tag,
+            repr,
+        } => tuple(
+            "enum",
+            vec![
+                RuntimeValue::String(name.clone()),
+                RuntimeValue::Seq(RuntimeSeq::Values(
+                    variants
+                        .iter()
+                        .map(|variant| {
+                            tuple(
+                                "case",
+                                vec![
+                                    RuntimeValue::String(variant.rust_name.clone()),
+                                    RuntimeValue::String(variant.wire_name.clone()),
+                                    variant.payload.as_ref().map_or_else(
+                                        RuntimeValue::option_none,
+                                        |payload| {
+                                            RuntimeValue::option_some(semantic_type_shape_value(
+                                                payload,
+                                            ))
+                                        },
+                                    ),
+                                    variant.discriminant.map_or_else(
+                                        RuntimeValue::option_none,
+                                        |value| {
+                                            RuntimeValue::option_some(RuntimeValue::i128(value))
+                                        },
+                                    ),
+                                ],
+                            )
+                        })
+                        .collect(),
+                )),
+                enum_tag_identity(tag),
+                repr.map_or_else(RuntimeValue::option_none, |repr| {
+                    RuntimeValue::option_some(RuntimeValue::String(
+                        enum_repr_identity(repr).to_owned(),
+                    ))
+                }),
+            ],
+        ),
+        TypeShape::Named(name) => tuple("named", vec![RuntimeValue::String(name.clone())]),
+    }
+}
+
+const fn bytes_format_identity(format: BytesFormat) -> &'static str {
+    match format {
+        BytesFormat::Binary => "binary",
+        BytesFormat::Base64 => "base64",
+        BytesFormat::Hex => "hex",
+        BytesFormat::Array => "array",
+    }
+}
+
+fn enum_tag_identity(tag: &arcweft_data::EnumTagStyle) -> RuntimeValue {
+    match tag {
+        arcweft_data::EnumTagStyle::External => {
+            RuntimeValue::Tuple(vec![RuntimeValue::String("external".to_owned())])
+        }
+        arcweft_data::EnumTagStyle::Internal { tag } => RuntimeValue::Tuple(vec![
+            RuntimeValue::String("internal".to_owned()),
+            RuntimeValue::String(tag.clone()),
+        ]),
+        arcweft_data::EnumTagStyle::Adjacent { tag, content } => RuntimeValue::Tuple(vec![
+            RuntimeValue::String("adjacent".to_owned()),
+            RuntimeValue::String(tag.clone()),
+            RuntimeValue::String(content.clone()),
+        ]),
+    }
+}
+
+const fn enum_repr_identity(repr: arcweft_data::EnumRepr) -> &'static str {
+    match repr {
+        arcweft_data::EnumRepr::I8 => "i8",
+        arcweft_data::EnumRepr::I16 => "i16",
+        arcweft_data::EnumRepr::I32 => "i32",
+        arcweft_data::EnumRepr::I64 => "i64",
+        arcweft_data::EnumRepr::I128 => "i128",
+        arcweft_data::EnumRepr::Isize => "isize",
+        arcweft_data::EnumRepr::U8 => "u8",
+        arcweft_data::EnumRepr::U16 => "u16",
+        arcweft_data::EnumRepr::U32 => "u32",
+        arcweft_data::EnumRepr::U64 => "u64",
+        arcweft_data::EnumRepr::U128 => "u128",
+        arcweft_data::EnumRepr::Usize => "usize",
     }
 }
 
@@ -768,9 +1111,12 @@ fn runtime_value_label_for_data(value: &RuntimeValue) -> String {
             format!("nominal-record/{}", record.type_id().as_str())
         }
         RuntimeValue::Range(range) => range.label(),
-        RuntimeValue::Variant { path, name, .. } => path
-            .as_ref()
-            .map_or_else(|| format!(".{name}"), |path| format!("{path}.{name}")),
+        RuntimeValue::Variant {
+            owner,
+            ordinal,
+            name,
+            ..
+        } => format!("variant/{owner:?}/#{ordinal}/{name}"),
         RuntimeValue::Duration(_)
         | RuntimeValue::EntityRef(_)
         | RuntimeValue::Function(_)

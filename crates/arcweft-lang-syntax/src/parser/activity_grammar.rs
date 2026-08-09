@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_retained_declaration_header;
 use super::expression::emit_expression;
 use super::lexer::LexToken;
@@ -29,7 +29,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::ActivityDeclarationItem, role);
     emit_retained_declaration_header(&mut parser, DeclarationIdentityFamily::Activity, |_| {});
     parser.bump_trivia();
@@ -40,11 +40,11 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn reject_unexpected_header(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
+fn reject_unexpected_header(parser: &mut DocumentParser<'_, '_>) -> bool {
     if parser.at("{") || parser.is_at_end() {
         return false;
     }
-    let body = find_top_level_boundary(parser, parser.cursor(), &["{"]);
+    let body = find_top_level_boundary(parser, parser.cursor(), token_count(parser), &["{"]);
     let start = parser.current_offset();
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
     bump_until(parser, body);
@@ -66,7 +66,7 @@ struct ActivitySectionLedger {
 impl ActivitySectionLedger {
     fn record(
         &mut self,
-        parser: &mut ShadowDocumentParser<'_, '_>,
+        parser: &mut DocumentParser<'_, '_>,
         rank: usize,
         section: &'static str,
         range: SourceRange,
@@ -94,7 +94,7 @@ impl ActivitySectionLedger {
     }
 }
 
-fn emit_activity_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_activity_body(parser: &mut DocumentParser<'_, '_>) {
     if !parser.at("{") {
         emit_missing_body(parser);
         return;
@@ -115,7 +115,7 @@ fn emit_activity_body(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_missing_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_body(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
     parser.push(SyntaxEvent::MissingToken {
@@ -130,7 +130,7 @@ fn emit_missing_body(parser: &mut ShadowDocumentParser<'_, '_>) {
     )));
 }
 
-fn emit_activity_sections(parser: &mut ShadowDocumentParser<'_, '_>, body_end: usize) {
+fn emit_activity_sections(parser: &mut DocumentParser<'_, '_>, body_end: usize) {
     let mut ledger = ActivitySectionLedger::default();
     let mut port_names = BTreeMap::<String, SourceRange>::new();
     let mut ordinal = 0_u16;
@@ -240,7 +240,7 @@ impl ActivityPolicy {
 }
 
 fn emit_policy_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     section_end: usize,
     ordinal: u16,
     ledger: &mut ActivitySectionLedger,
@@ -324,7 +324,7 @@ impl PortDirection {
 }
 
 fn emit_port_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     section_end: usize,
     ordinal: u16,
     ledger: &mut ActivitySectionLedger,
@@ -363,7 +363,7 @@ fn emit_port_block(
 }
 
 fn emit_ports(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     block_end: usize,
     direction: PortDirection,
     names: &mut BTreeMap<String, SourceRange>,
@@ -392,7 +392,7 @@ fn emit_ports(
 }
 
 fn emit_port(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
     role: SyntaxRole,
     names: &mut BTreeMap<String, SourceRange>,
@@ -432,7 +432,7 @@ fn emit_port(
     parser.finish();
 }
 
-fn emit_port_type(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize) {
+fn emit_port_type(parser: &mut DocumentParser<'_, '_>, entry_end: usize) {
     parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
     if !parser.at(":") {
         let at = parser.current_offset();
@@ -452,7 +452,7 @@ fn emit_port_type(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize) {
     parser.bump();
     parser.finish();
     parser.bump_trivia();
-    let default = find_top_level_boundary(parser, parser.cursor(), &["="]).min(entry_end);
+    let default = find_top_level_boundary(parser, parser.cursor(), entry_end, &["="]);
     emit_type(parser, default, SyntaxRole::Type);
     bump_until(parser, default);
     if parser.at("=") {
@@ -472,7 +472,7 @@ fn emit_port_type(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize) {
 }
 
 fn emit_contract_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     section_end: usize,
     ordinal: u16,
     ledger: &mut ActivitySectionLedger,
@@ -506,7 +506,7 @@ fn emit_contract_block(
     parser.finish();
 }
 
-fn emit_activity_contract_clauses(parser: &mut ShadowDocumentParser<'_, '_>, block_end: usize) {
+fn emit_activity_contract_clauses(parser: &mut DocumentParser<'_, '_>, block_end: usize) {
     let mut contract_ordinal = 0_u16;
     let mut recovery_ordinal = 0_u32;
     let mut saw_ensures = false;
@@ -568,7 +568,7 @@ fn emit_activity_contract_clauses(parser: &mut ShadowDocumentParser<'_, '_>, blo
 }
 
 fn emit_activity_contract_clause(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
     kind: SyntaxKind,
     role: SyntaxRole,
@@ -607,7 +607,7 @@ fn emit_activity_contract_clause(
 }
 
 fn emit_contract_error(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
     recovery_ordinal: u32,
 ) {
@@ -626,7 +626,7 @@ fn emit_contract_error(
 }
 
 fn emit_unknown_section(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     section_end: usize,
     ordinal: u16,
     range: SourceRange,
@@ -644,7 +644,7 @@ fn emit_unknown_section(
     )));
 }
 
-fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>, code: &'static str) {
+fn emit_assignment(parser: &mut DocumentParser<'_, '_>, code: &'static str) {
     parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
     if parser.at("=") {
         parser.bump();
@@ -664,7 +664,7 @@ fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>, code: &'static str
     )));
 }
 
-fn emit_missing_section_body(parser: &mut ShadowDocumentParser<'_, '_>, section: &str) {
+fn emit_missing_section_body(parser: &mut DocumentParser<'_, '_>, section: &str) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
     parser.finish();
@@ -675,7 +675,7 @@ fn emit_missing_section_body(parser: &mut ShadowDocumentParser<'_, '_>, section:
     )));
 }
 
-fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>, recovery_ordinal: u32) {
+fn emit_trailing_recovery(parser: &mut DocumentParser<'_, '_>, recovery_ordinal: u32) {
     parser.bump_trivia();
     if parser.is_at_end() {
         return;

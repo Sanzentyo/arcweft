@@ -3,9 +3,10 @@
 use arcweft_lang_syntax::attachment::node::FlowItemKind;
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
-    AstNode, AttachedCallableParameterKind, AttachedFlowContractClause, AttachedFlowContractMode,
-    AttachedFlowContractOperands, AttachedFlowIdSyntax, AttachedFlowIdentity,
-    AttachedFlowReturnSyntax, AttachedGenericParameter, AttachedRequiredFlowBody,
+    AstNode, AttachedCallableParameterKind, AttachedFlowContractClause, AttachedFlowContractList,
+    AttachedFlowContractMode, AttachedFlowContractOperands, AttachedFlowIdSyntax,
+    AttachedFlowIdentity, AttachedFlowReturnSyntax, AttachedGenericParameter,
+    AttachedRequiredFlowBody,
 };
 
 use crate::expr::{HirThreadFlowItem, HirThreadIssue};
@@ -19,7 +20,7 @@ use crate::item::{
 use crate::leaf::{
     HirFamilyRelativeId, HirIdFamily, HirIdRef, HirIdRefValue, HirIdSuffix, HirName, HirRelativeId,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirLoweringCheckpoint};
 use crate::scope::{HirPatternBindingPolicy, HirScopeKind};
 use crate::source_index::{
     HirFlowContractSourcePart, HirFlowParameterSourcePart, HirFlowSourceRole, HirItemSourceRole,
@@ -29,7 +30,17 @@ use crate::source_index::{
 use super::super::{StagedHirModuleTransaction, require_limit};
 use super::{LoweredItemProjection, item_state};
 
+struct LoweredFlowParameters {
+    parameters: Box<[HirParameter]>,
+    locals: Box<[LocalId]>,
+    issues: Vec<HirFlowIssue>,
+}
+
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one transaction lowers and seals the complete ordinary Flow owner graph"
+    )]
     pub(super) fn lower_flow_declaration(
         &mut self,
         owner: ItemId,
@@ -49,7 +60,7 @@ impl StagedHirModuleTransaction<'_> {
             .map(AttachedFlowContractClause::keyword)
             .map(|source| self.attached_component_site(source))
             .transpose()?
-            .unwrap_or(self.attached_insertion_site(attached.signature().end().clone())?);
+            .unwrap_or(self.attached_insertion_site(attached.signature().end())?);
         let ensures_site = attached
             .contracts()
             .iter()
@@ -57,7 +68,7 @@ impl StagedHirModuleTransaction<'_> {
             .map(AttachedFlowContractClause::keyword)
             .map(|source| self.attached_component_site(source))
             .transpose()?
-            .unwrap_or(self.attached_insertion_site(attached.signature().end().clone())?);
+            .unwrap_or(self.attached_insertion_site(attached.signature().end())?);
         let contract_scopes =
             self.allocate_item_contract_scopes(owner, callable_scope, requires_site, ensures_site)?;
         let body_scope = match attached.body() {
@@ -82,14 +93,19 @@ impl StagedHirModuleTransaction<'_> {
                 )?
             }
         };
+        self.control
+            .checkpoint(HirLoweringCheckpoint::FlowScopesReserved)?;
 
         let (identity, identity_issues) = lower_flow_identity(owner, attached.identity())?;
         let (generic_parameters, _) =
             self.lower_generic_parameters(attached.signature().generics(), callable_scope)?;
         let generic_issues =
             self.flow_generic_issues(owner, attached.signature().generics(), &generic_parameters)?;
-        let (parameters, parameter_locals, parameter_issues) =
-            self.lower_flow_parameters(owner, attached.signature().parameters(), callable_scope)?;
+        let LoweredFlowParameters {
+            parameters,
+            locals: parameter_locals,
+            issues: parameter_issues,
+        } = self.lower_flow_parameters(owner, attached.signature().parameters(), callable_scope)?;
         self.close_scope_members(callable_scope, parameter_locals)?;
 
         let (result, result_issues) = match attached.signature().result() {
@@ -118,8 +134,7 @@ impl StagedHirModuleTransaction<'_> {
         let where_clauses = attached
             .signature()
             .where_clause()
-            .map(std::slice::from_ref)
-            .unwrap_or(&[]);
+            .map_or(&[][..], std::slice::from_ref);
         let (where_predicates, _) = self.lower_where_clauses(where_clauses, callable_scope)?;
         let where_issues = self.flow_where_issues(
             owner,
@@ -136,7 +151,7 @@ impl StagedHirModuleTransaction<'_> {
                 self.allocate_postcondition_result_local(
                     contract_scopes.ensures(),
                     result.authored_type(),
-                    attached.signature().end().clone(),
+                    attached.signature().end(),
                 )
                 .map(HirFlowResultLocal::new)
             })
@@ -221,6 +236,8 @@ impl StagedHirModuleTransaction<'_> {
         .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         self.source_components
             .stage_attached_flow(self.request.source(), owner, &attached)?;
+        self.control
+            .checkpoint(HirLoweringCheckpoint::FlowSourceStaged)?;
         let item = HirItem::try_new_with_state(
             owner,
             parent_scope,
@@ -236,14 +253,22 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the ordered Flow parameter projection owns one atomic parameter/local/issue matrix"
+    )]
     fn lower_flow_parameters(
         &mut self,
         owner: ItemId,
         group: Option<&arcweft_lang_syntax::attachment::AttachedFixedParameterGroup>,
         callable_scope: ScopeId,
-    ) -> Result<(Box<[HirParameter]>, Box<[LocalId]>, Vec<HirFlowIssue>), HirLowerFailure> {
+    ) -> Result<LoweredFlowParameters, HirLowerFailure> {
         let Some(group) = group else {
-            return Ok((Box::new([]), Box::new([]), Vec::new()));
+            return Ok(LoweredFlowParameters {
+                parameters: Box::new([]),
+                locals: Box::new([]),
+                issues: Vec::new(),
+            });
         };
         if group.source_ordinal() != 0 {
             return Err(HirInvariantFailure::InvalidArenaCommit.into());
@@ -339,11 +364,11 @@ impl StagedHirModuleTransaction<'_> {
             ));
         }
         require_limit(crate::identity::HirLimit::LocalsPerScope, locals.len())?;
-        Ok((
-            parameters.into_boxed_slice(),
-            locals.into_boxed_slice(),
+        Ok(LoweredFlowParameters {
+            parameters: parameters.into_boxed_slice(),
+            locals: locals.into_boxed_slice(),
             issues,
-        ))
+        })
     }
 
     fn flow_generic_issues(
@@ -466,6 +491,10 @@ impl StagedHirModuleTransaction<'_> {
         Ok(issues)
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "the ordered Flow contract projection closes one clause/operand/issue matrix"
+    )]
     fn lower_flow_contracts(
         &mut self,
         owner: ItemId,
@@ -630,7 +659,9 @@ impl StagedHirModuleTransaction<'_> {
                 }
             }
             if matches!(
-                clause.list().and_then(|list| list.close_state()),
+                clause
+                    .list()
+                    .and_then(AttachedFlowContractList::close_state),
                 Some(AttachedDelimiterState::Missing(_))
             ) {
                 issues.push(flow_item_issue(
@@ -705,9 +736,9 @@ fn lower_flow_identity(
                 .into_iter()
                 .collect();
             Ok((
-                public_id
-                    .map(|public_id| HirFlowIdentity::PublicId { public_id })
-                    .unwrap_or(HirFlowIdentity::Missing),
+                public_id.map_or(HirFlowIdentity::Missing, |public_id| {
+                    HirFlowIdentity::PublicId { public_id }
+                }),
                 issues,
             ))
         }

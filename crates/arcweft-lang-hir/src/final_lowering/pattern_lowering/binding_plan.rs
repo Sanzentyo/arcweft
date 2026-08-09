@@ -10,7 +10,7 @@ use arcweft_lang_syntax::patterns::{
 
 use crate::identity::HirLimit;
 use crate::leaf::HirName;
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::pattern::{HirPatternBindingIssue, HirPatternFieldIssue};
 
 use super::super::name_projection::{name, name_issue};
@@ -113,10 +113,10 @@ impl BindingPlan {
 
     pub(super) fn allocation(
         &self,
-        site: BindingSite,
+        site: &BindingSite,
     ) -> Result<BindingAllocation, HirLowerFailure> {
         self.allocations
-            .get(&site)
+            .get(site)
             .cloned()
             .ok_or_else(|| HirInvariantFailure::InvalidArenaCommit.into())
     }

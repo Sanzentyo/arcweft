@@ -1,0 +1,39 @@
+error[E0624]: associated function `new` is private
+  --> tests/ui/final_select_fields_private.rs:10:20
+   |
+10 |     HirSelectExpr::new(target, member)
+   |                    ^^^ private associated function
+   |
+  ::: src/expr/basic.rs
+   |
+   |     pub(crate) const fn new(target: ExprId, member: HirSelectedMember) -> Self {
+   |     -------------------------------------------------------------------------- private associated function defined here
+
+error[E0308]: mismatched types
+  --> tests/ui/final_select_fields_private.rs:10:32
+   |
+10 |     HirSelectExpr::new(target, member)
+   |     ------------------         ^^^^^^ expected `HirSelectedMember`, found `HirName`
+   |     |
+   |     arguments to this function are incorrect
+   |
+note: associated function defined here
+  --> src/expr/basic.rs
+   |
+   |     pub(crate) const fn new(target: ExprId, member: HirSelectedMember) -> Self {
+   |                         ^^^
+help: try wrapping the expression in `arcweft_lang_hir::expr::HirSelectedMember::Name`
+   |
+10 |     HirSelectExpr::new(target, arcweft_lang_hir::expr::HirSelectedMember::Name(member))
+   |                                ++++++++++++++++++++++++++++++++++++++++++++++++      +
+
+error[E0308]: mismatched types
+  --> tests/ui/final_select_fields_private.rs:14:5
+   |
+13 | fn old_member_accessor(select: &HirSelectExpr) -> &HirName {
+   |                                                   -------- expected `&HirName` because of return type
+14 |     select.member()
+   |     ^^^^^^^^^^^^^^^ expected `&HirName`, found `&HirSelectedMember`
+   |
+   = note: expected reference `&HirName`
+              found reference `&HirSelectedMember`

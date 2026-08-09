@@ -2,18 +2,17 @@
 
 use arcweft_lang_syntax::expressions::{
     SyntaxDialogueApplicationProjection, SyntaxDialogueContentIssue,
-    SyntaxDialogueContentProjection, SyntaxDialogueControl, SyntaxDialogueNodeProjection,
-    SyntaxLineBreakKind, SyntaxProjectSymbolPath, SyntaxRichTextArgumentProjection,
-    SyntaxRichTextEndTagProjection, SyntaxRichTextIssue, SyntaxRichTextTagIdentity,
-    SyntaxRichTextTagPayloadProjection,
+    SyntaxDialogueContentProjection, SyntaxDialogueNodeProjection, SyntaxLineBreakKind,
+    SyntaxProjectSymbolPath, SyntaxRichTextArgumentProjection, SyntaxRichTextEndTagProjection,
+    SyntaxRichTextIssue, SyntaxRichTextTagIdentity, SyntaxRichTextTagPayloadProjection,
 };
 use arcweft_lang_syntax::name::SyntaxNameIssue;
 use arcweft_lang_syntax::text::RichTextArgumentIssue;
 
 use crate::dialogue_application::{
-    HirDialogueContentApplication, HirDialogueContentError, HirDialogueControl,
-    HirDialogueNodeKind, HirLineBreakKind, HirRichTextArgument, HirRichTextArgumentIssue,
-    HirRichTextEndTag, HirRichTextIssue, HirRichTextTagIdentity, HirRichTextTagPayload,
+    HirDialogueContentApplication, HirDialogueContentError, HirDialogueNodeKind, HirLineBreakKind,
+    HirRichTextArgument, HirRichTextArgumentIssue, HirRichTextEndTag, HirRichTextIssue,
+    HirRichTextTagIdentity, HirRichTextTagPayload,
 };
 
 pub(super) fn dialogue_application_projection_matches(
@@ -95,12 +94,6 @@ pub(super) fn dialogue_node_projection_matches(
         (HirDialogueNodeKind::Interpolation(_), SyntaxDialogueNodeProjection::Interpolation(_)) => {
             true
         }
-        (HirDialogueNodeKind::Control(actual), SyntaxDialogueNodeProjection::Control(expected)) => {
-            dialogue_control_projection_matches(*actual, *expected)
-        }
-        (HirDialogueNodeKind::Mark(actual), SyntaxDialogueNodeProjection::Mark(Ok(expected))) => {
-            actual.as_str() == expected.as_str()
-        }
         (
             HirDialogueNodeKind::LineBreak(actual),
             SyntaxDialogueNodeProjection::LineBreak(expected),
@@ -110,55 +103,6 @@ pub(super) fn dialogue_node_projection_matches(
         }
         _ => false,
     }
-}
-
-const fn dialogue_control_projection_matches(
-    actual: HirDialogueControl,
-    expected: SyntaxDialogueControl,
-) -> bool {
-    matches!(
-        (actual, expected),
-        (HirDialogueControl::Wait, SyntaxDialogueControl::Wait)
-            | (HirDialogueControl::Reset, SyntaxDialogueControl::Reset)
-            | (HirDialogueControl::Clear, SyntaxDialogueControl::Clear)
-            | (HirDialogueControl::Erase, SyntaxDialogueControl::Erase)
-            | (
-                HirDialogueControl::ClearMessage,
-                SyntaxDialogueControl::ClearMessage
-            )
-            | (HirDialogueControl::Speed, SyntaxDialogueControl::Speed)
-            | (HirDialogueControl::Voice, SyntaxDialogueControl::Voice)
-            | (HirDialogueControl::Face, SyntaxDialogueControl::Face)
-            | (HirDialogueControl::Pose, SyntaxDialogueControl::Pose)
-            | (HirDialogueControl::Show, SyntaxDialogueControl::Show)
-            | (HirDialogueControl::Hide, SyntaxDialogueControl::Hide)
-            | (HirDialogueControl::Move, SyntaxDialogueControl::Move)
-            | (HirDialogueControl::Scale, SyntaxDialogueControl::Scale)
-            | (HirDialogueControl::Rotate, SyntaxDialogueControl::Rotate)
-            | (
-                HirDialogueControl::Animation,
-                SyntaxDialogueControl::Animation
-            )
-            | (
-                HirDialogueControl::StageShake,
-                SyntaxDialogueControl::StageShake
-            )
-            | (HirDialogueControl::At, SyntaxDialogueControl::At)
-            | (HirDialogueControl::Call, SyntaxDialogueControl::Call)
-            | (HirDialogueControl::Signal, SyntaxDialogueControl::Signal)
-            | (
-                HirDialogueControl::ConditionalIf,
-                SyntaxDialogueControl::ConditionalIf
-            )
-            | (
-                HirDialogueControl::ConditionalElse,
-                SyntaxDialogueControl::ConditionalElse
-            )
-            | (
-                HirDialogueControl::ConditionalEnd,
-                SyntaxDialogueControl::ConditionalEnd
-            )
-    )
 }
 
 const fn line_break_projection_matches(
@@ -254,14 +198,17 @@ pub(super) fn rich_text_tag_identity_projection_matches(
             *actual == (*expected).into()
         }
         (
-            HirRichTextTagIdentity::Marker(actual),
-            SyntaxRichTextTagIdentity::Marker(Ok(expected)),
-        ) => actual.as_str() == expected.as_str(),
+            HirRichTextTagIdentity::Unresolved(actual),
+            SyntaxRichTextTagIdentity::DotSelector(Ok(expected)),
+        ) => {
+            actual.issue() == &HirRichTextIssue::UnknownRegisteredTag
+                && actual.name().as_str() == expected.as_str()
+        }
         (
             HirRichTextTagIdentity::Unresolved(actual),
-            SyntaxRichTextTagIdentity::Marker(Err(expected)),
+            SyntaxRichTextTagIdentity::DotSelector(Err(expected)),
         ) => {
-            actual.issue() == &HirRichTextIssue::UnknownTag
+            actual.issue() == &HirRichTextIssue::UnknownRegisteredTag
                 && attempted_name_spelling(expected)
                     .is_some_and(|expected| actual.name().as_str() == expected)
         }
@@ -384,9 +331,9 @@ mod tests {
     }
 
     #[test]
-    fn rich_text_identity_projection_freezes_unresolved_marker_spelling_and_issue() {
+    fn rich_text_identity_projection_freezes_unresolved_dot_selector_spelling_and_issue() {
         let expected =
-            SyntaxRichTextTagIdentity::Marker(Err(SyntaxNameIssue::InvalidContinuation {
+            SyntaxRichTextTagIdentity::DotSelector(Err(SyntaxNameIssue::InvalidContinuation {
                 spelling: "bad-name".into(),
             }));
         let segment =
@@ -395,14 +342,14 @@ mod tests {
         assert!(rich_text_tag_identity_projection_matches(
             &HirRichTextTagIdentity::Unresolved(HirUnresolvedRichTextTag::new(
                 segment.clone(),
-                HirRichTextIssue::UnknownTag,
+                HirRichTextIssue::UnknownRegisteredTag,
             )),
             &expected,
         ));
         assert!(!rich_text_tag_identity_projection_matches(
             &HirRichTextTagIdentity::Unresolved(HirUnresolvedRichTextTag::new(
                 segment,
-                HirRichTextIssue::UnknownRegisteredTag,
+                HirRichTextIssue::UnknownTag,
             )),
             &expected,
         ));
@@ -411,6 +358,7 @@ mod tests {
     #[test]
     fn rich_text_end_tag_projection_freezes_identity_and_inferred_role() {
         let actual = HirRichTextEndTag::new(
+            None,
             Some(HirRichTextTagIdentity::Builtin(HirBuiltinRichTextTag::Page)),
             false,
             None,

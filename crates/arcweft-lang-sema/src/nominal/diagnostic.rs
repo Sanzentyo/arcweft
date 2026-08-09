@@ -2,8 +2,10 @@
 
 use core::cmp::Ordering;
 
-use arcweft_lang_hir::symbol::{ProjectTypeCandidate, nominal::ProjectNominalDeclarationId};
-use arcweft_lang_syntax::types::TypePath;
+use arcweft_lang_hir::{
+    leaf::{HirPath, HirPathRoot, HirPathSegment},
+    symbol::{ProjectTypeCandidate, nominal::ProjectNominalDeclarationId},
+};
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity};
 
 use crate::types::TypePoisonId;
@@ -31,18 +33,18 @@ pub enum NominalTypeDiagnosticCode {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum NominalTypeDiagnosticKind {
     Unknown {
-        path: TypePath,
+        path: HirPath,
     },
     Ambiguous {
-        path: TypePath,
+        path: HirPath,
         candidates: Box<[ProjectTypeCandidate]>,
     },
     Inaccessible {
-        path: TypePath,
+        path: HirPath,
         candidates: Box<[ProjectTypeCandidate]>,
     },
     WrongKind {
-        path: TypePath,
+        path: HirPath,
         actual: ProjectTypeCandidate,
     },
     WrongArgumentKind {
@@ -154,11 +156,18 @@ impl NominalTypeDiagnosticKind {
 
     fn message(&self) -> String {
         match self {
-            Self::Unknown { path } => format!("unknown type `{path}`"),
-            Self::Ambiguous { path, .. } => format!("type `{path}` is ambiguous"),
-            Self::Inaccessible { path, .. } => format!("type `{path}` is inaccessible here"),
+            Self::Unknown { path } => format!("unknown type `{}`", format_hir_path(path)),
+            Self::Ambiguous { path, .. } => {
+                format!("type `{}` is ambiguous", format_hir_path(path))
+            }
+            Self::Inaccessible { path, .. } => {
+                format!("type `{}` is inaccessible here", format_hir_path(path))
+            }
             Self::WrongKind { path, .. } => {
-                format!("`{path}` does not name a type declaration")
+                format!(
+                    "`{}` does not name a type declaration",
+                    format_hir_path(path)
+                )
             }
             Self::WrongArgumentKind {
                 argument, expected, ..
@@ -189,6 +198,27 @@ impl NominalTypeDiagnosticKind {
             ),
         }
     }
+}
+
+fn format_hir_path(path: &HirPath) -> String {
+    let mut rendered = match path.root() {
+        HirPathRoot::ImplicitCrate => String::new(),
+        HirPathRoot::Crate => "crate::".to_owned(),
+        HirPathRoot::SelfModule => "self::".to_owned(),
+        HirPathRoot::Super { depth } => "super::".repeat(depth),
+    };
+    rendered.push_str(
+        &path
+            .segments()
+            .iter()
+            .map(|segment| match segment {
+                HirPathSegment::Identifier(name) => name.as_str(),
+                HirPathSegment::ProjectSymbol(name) => name.as_str(),
+            })
+            .collect::<Vec<_>>()
+            .join("::"),
+    );
+    rendered
 }
 
 impl Ord for NominalTypeDiagnosticKind {
@@ -473,7 +503,6 @@ fn candidate_cmp(left: &ProjectTypeCandidate, right: &ProjectTypeCandidate) -> O
 
 #[cfg(test)]
 mod tests {
-    use arcweft_lang_syntax::ast::common::TextRange;
     use arcweft_source::{
         DiagnosticLabelStyle, SourceDocument, SourceDocumentId, SourceName, SourceRange,
     };
@@ -497,12 +526,12 @@ mod tests {
         let diagnostic = NominalTypeDiagnostic::new(
             TypePoisonId::from_index(7),
             NominalTypeDiagnosticKind::SelfUnavailable,
-            TypeSourceEvidence::new(TextRange::new(2, 6), None),
+            TypeSourceEvidence::detached(SourceRange::new(2, 6)),
             [],
             0,
         );
         assert!(diagnostic.to_source_diagnostic().is_none());
-        assert_eq!(diagnostic.primary().local(), TextRange::new(2, 6));
+        assert_eq!(diagnostic.primary().local(), SourceRange::new(2, 6));
     }
 
     #[test]
@@ -521,9 +550,9 @@ mod tests {
         let diagnostic = NominalTypeDiagnostic::new(
             TypePoisonId::from_index(3),
             NominalTypeDiagnosticKind::SelfUnavailable,
-            TypeSourceEvidence::accepted(TextRange::new(0, 7), primary.clone()),
+            TypeSourceEvidence::accepted(SourceRange::new(0, 7), primary.clone()),
             [NominalDiagnosticRelated::new(
-                TypeSourceEvidence::accepted(TextRange::new(8, 17), secondary.clone()),
+                TypeSourceEvidence::accepted(SourceRange::new(8, 17), secondary.clone()),
                 NominalRelatedMessage::CandidateDeclaration,
             )],
             0,

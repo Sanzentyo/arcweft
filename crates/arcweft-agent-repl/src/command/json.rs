@@ -69,64 +69,47 @@ pub fn repl_command_result_json(
 /// Projects a failed REPL transaction without discarding typed parser payloads.
 #[must_use]
 pub fn repl_transaction_error_json(error: &ReplTransactionError) -> Value {
-    error
-        .parse_diagnostics()
-        .zip(error.parse_coordinate_space())
-        .map_or_else(
-            || json!(error.to_string()),
-            |(diagnostics, coordinate_space)| {
-                json!({
-                    "kind": "parse",
-                    "diagnostics": diagnostics
-                        .iter()
-                        .map(|diagnostic| parse_diagnostic_json(diagnostic, coordinate_space))
-                        .collect::<Vec<_>>(),
-                })
-            },
-        )
+    let Some(coordinate_space) = error.parse_coordinate_space() else {
+        return json!(error.to_string());
+    };
+    if let Some(diagnostics) = error.attached_parse_diagnostics() {
+        return json!({
+            "kind": "parse",
+            "diagnostics": diagnostics
+                .iter()
+                .map(|diagnostic| attached_parse_diagnostic_json(diagnostic, coordinate_space))
+                .collect::<Vec<_>>(),
+        });
+    }
+    json!(error.to_string())
 }
 
-fn parse_diagnostic_json(
-    diagnostic: &arcweft_lang_syntax::parser::recovery::ParseError,
+fn attached_parse_diagnostic_json(
+    diagnostic: &arcweft_lang_syntax::incremental::SyntaxDiagnostic,
     coordinate_space: crate::ReplParseCoordinateSpace,
 ) -> Value {
     json!({
-        "kind": diagnostic.label(),
+        "kind": "attached_source",
         "code": diagnostic.code(),
         "message": diagnostic.message(),
         "range": {
             "coordinate_space": coordinate_space.as_str(),
-            "start": diagnostic.range().start(),
-            "end": diagnostic.range().end(),
+            "start": diagnostic.primary().range().start(),
+            "end": diagnostic.primary().range().end(),
         },
-        "related": diagnostic.related().iter().map(|related| {
+        "related": diagnostic.related().into_iter().map(|related| {
             json!({
                 "range": {
                     "coordinate_space": coordinate_space.as_str(),
                     "start": related.range().start(),
                     "end": related.range().end(),
                 },
-                "message": related.message(),
+                "message": "related syntax recovery",
             })
         }).collect::<Vec<_>>(),
-        "expected": diagnostic.expected(),
-        "found": diagnostic.found(),
-        "recovery": diagnostic.recovery().iter().map(|suggestion| {
-            json!({
-                "message": suggestion.message(),
-                "applicability": suggestion.applicability().as_str(),
-                "edits": suggestion.edits().iter().map(|edit| {
-                    json!({
-                        "range": {
-                            "coordinate_space": coordinate_space.as_str(),
-                            "start": edit.range().start(),
-                            "end": edit.range().end(),
-                        },
-                        "replacement": edit.replacement(),
-                    })
-                }).collect::<Vec<_>>(),
-            })
-        }).collect::<Vec<_>>(),
+        "expected": [],
+        "found": Value::Null,
+        "recovery": [],
     })
 }
 
@@ -672,33 +655,45 @@ fn tier_invalidation_reason_label(value: ReplTierInvalidationReason) -> &'static
 #[cfg(test)]
 mod tests {
     use crate::ReplParseCoordinateSpace;
-    use arcweft_lang_syntax::parser::{
-        ParseOptions, parse_document_with_source, recovery::ParseErrorKind,
+    use arcweft_lang_syntax::{incremental::SyntaxDatabase, parser::ParseOptions};
+    use arcweft_source::{
+        SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId,
     };
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
-    use serde_json::{Value, json};
     use std::sync::Arc;
 
     use super::{ReplTransactionError, repl_transaction_error_json};
 
     #[test]
-    fn transaction_parse_json_preserves_typed_diagnostic_payload() {
-        let parsed = parse_document_with_source(
-            Arc::new(
-                SourceDocument::try_new(
-                    SourceDocumentId::try_new(
-                        "arcweft-test://agent-repl/command-json/typed-diagnostic-payload",
-                    )
-                    .expect("fixture document ID"),
-                    SourceName::path("typed-diagnostic-payload.arcw"),
-                    "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n",
+    fn transaction_attached_parse_json_preserves_revision_bound_payload() {
+        let source = "pub view Card() {\n    export part as card.heading\n    Panel()\n}\n";
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(
+                    "arcweft-test://agent-repl/command-json/attached-diagnostic",
                 )
-                .expect("fixture source document"),
-            ),
-            ParseOptions::default(),
+                .expect("fixture document ID"),
+                SourceName::path("attached-diagnostic.arcw"),
+                source,
+            )
+            .expect("fixture source document"),
         );
-        let error = ReplTransactionError::Parse {
-            diagnostics: parsed.errors().to_vec(),
+        let mut syntax = SyntaxDatabase::try_new().expect("fixture syntax database");
+        let parsed = syntax
+            .parse_initial(
+                SourceSnapshotId::initial(document.display_name().clone()),
+                document,
+                ParseOptions::default(),
+            )
+            .expect("attached fixture source");
+        let diagnostic = parsed
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| diagnostic.code() == "syntax.view.export_missing_local")
+            .expect("missing-local diagnostic")
+            .clone();
+        let expected_range = diagnostic.primary().range();
+        let error = ReplTransactionError::AttachedParse {
+            diagnostics: vec![diagnostic],
             coordinate_space: ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
         };
 
@@ -706,60 +701,10 @@ mod tests {
         let diagnostic = &json["diagnostics"][0];
 
         assert_eq!(json["kind"], "parse");
-        assert_eq!(diagnostic["code"], "view::export_part_missing_as");
-        assert_eq!(
-            diagnostic["kind"],
-            ParseErrorKind::ViewExportPartMissingAs.label()
-        );
+        assert_eq!(diagnostic["kind"], "attached_source");
+        assert_eq!(diagnostic["code"], "syntax.view.export_missing_local");
         assert_eq!(diagnostic["range"]["coordinate_space"], "synthetic_source");
-        assert_eq!(diagnostic["range"]["start"], 47);
-        assert_eq!(diagnostic["range"]["end"], 54);
-        assert_eq!(diagnostic["related"], json!([]));
-        assert_eq!(diagnostic["expected"][0], "as public_name");
-        assert_eq!(diagnostic["found"], Value::Null);
-        assert_eq!(
-            diagnostic["message"],
-            "View part export needs `as` before its public name"
-        );
-        assert_eq!(diagnostic["recovery"][0]["applicability"], "unspecified");
-        assert_eq!(diagnostic["recovery"][0]["edits"], json!([]));
-    }
-
-    #[test]
-    fn transaction_parse_json_preserves_related_parser_ranges() {
-        let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
-        let parsed = parse_document_with_source(
-            Arc::new(
-                SourceDocument::try_new(
-                    SourceDocumentId::try_new(
-                        "arcweft-test://agent-repl/command-json/related-parser-ranges",
-                    )
-                    .expect("fixture document ID"),
-                    SourceName::path("related-parser-ranges.arcw"),
-                    source,
-                )
-                .expect("fixture source document"),
-            ),
-            ParseOptions::default(),
-        );
-        let diagnostic = parsed
-            .errors()
-            .iter()
-            .find(|diagnostic| diagnostic.kind() == ParseErrorKind::EntryDuplicateRole)
-            .expect("duplicate-role diagnostic")
-            .clone();
-        let error = ReplTransactionError::Parse {
-            diagnostics: vec![diagnostic],
-            coordinate_space: ReplParseCoordinateSpace::CellSourceUtf8Bytes,
-        };
-
-        let json = repl_transaction_error_json(&error);
-        let related = &json["diagnostics"][0]["related"][0];
-        let first = source.find("state = GameState").expect("first state role");
-
-        assert_eq!(related["range"]["coordinate_space"], "source_utf8_bytes");
-        assert_eq!(related["range"]["start"], first);
-        assert_eq!(related["range"]["end"], first + "state = GameState".len());
-        assert_eq!(related["message"], "the first role binding is here");
+        assert_eq!(diagnostic["range"]["start"], expected_range.start());
+        assert_eq!(diagnostic["range"]["end"], expected_range.end());
     }
 }

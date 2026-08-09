@@ -249,6 +249,7 @@ pub enum FlowFiberStatus {
     Running,
     Dialogue(DialogueState),
     Waiting(AwaitState),
+    NeedWaiting(NeedId),
     WaitingMany(Box<AwaitManyState>),
     HostCall(HostCallState),
     Choice(ChoiceState),
@@ -344,6 +345,7 @@ impl FlowFiberStatus {
             Self::Running => "running".to_owned(),
             Self::Dialogue(state) => format!("dialogue {}", state.line),
             Self::Waiting(state) => format!("waiting {}", state.target.task.0),
+            Self::NeedWaiting(need) => format!("need_waiting {}", need.0),
             Self::WaitingMany(state) => format!(
                 "waiting_many {} {}/{}",
                 state.target.task.0,
@@ -364,6 +366,7 @@ impl FlowFiberStatus {
             Self::Running => "running".to_owned(),
             Self::Dialogue(state) => format!("dialogue {}", state.line),
             Self::Waiting(state) => format!("waiting {}", state.target.task.0),
+            Self::NeedWaiting(need) => format!("need_waiting {}", need.0),
             Self::WaitingMany(state) => format!(
                 "waiting_many {} {}/{}",
                 state.target.task.0,
@@ -384,6 +387,7 @@ impl FlowFiberStatus {
             Self::Running => "running".to_owned(),
             Self::Dialogue(_) => "dialogue".to_owned(),
             Self::Waiting(_) => "waiting".to_owned(),
+            Self::NeedWaiting(_) => "need_waiting".to_owned(),
             Self::WaitingMany(_) => "waiting_many".to_owned(),
             Self::HostCall(_) => "host_call".to_owned(),
             Self::Choice(_) => "choice".to_owned(),
@@ -712,6 +716,7 @@ impl Engine {
         let pending_ops_before = self.pending_ops_len();
         let root_events_in = input.root_events.len();
         let deferred_root_events = std::mem::take(&mut input.deferred_root_events);
+        let need_states_in = input.need_states.len();
         let protected_root_flow_binding = self.root_flow_binding.as_ref().and_then(|binding| {
             self.fiber
                 .env
@@ -775,6 +780,7 @@ impl Engine {
             child_fibers: self.child_fibers.len(),
             pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in,
+            need_states_in,
             source_events_in,
             root_events_in,
             root_transitions: output.root_transitions.len(),
@@ -1034,6 +1040,7 @@ impl Engine {
                 self.fiber.status,
                 FlowFiberStatus::Done(_)
                     | FlowFiberStatus::Waiting(_)
+                    | FlowFiberStatus::NeedWaiting(_)
                     | FlowFiberStatus::WaitingMany(_)
                     | FlowFiberStatus::HostCall(_)
                     | FlowFiberStatus::Dialogue(_)
@@ -1052,6 +1059,7 @@ impl Engine {
                 self.fiber.status,
                 FlowFiberStatus::Done(_)
                     | FlowFiberStatus::Waiting(_)
+                    | FlowFiberStatus::NeedWaiting(_)
                     | FlowFiberStatus::WaitingMany(_)
                     | FlowFiberStatus::HostCall(_)
                     | FlowFiberStatus::Dialogue(_)
@@ -1076,6 +1084,7 @@ impl Engine {
             } else {
                 RuntimeStepStopReason::Blocked
             }),
+            FlowFiberStatus::NeedWaiting(_) => Some(RuntimeStepStopReason::Blocked),
             FlowFiberStatus::Running if has_host_requests(output) => {
                 Some(RuntimeStepStopReason::Output)
             }

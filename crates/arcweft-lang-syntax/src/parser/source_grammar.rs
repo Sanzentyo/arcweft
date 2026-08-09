@@ -3,7 +3,7 @@
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::{emit_contract_clause_until, emit_outer_prefixes, emit_visibility};
 use super::expression::emit_expression_node;
 use super::lexer::{LexToken, typed_entity_reference};
@@ -54,11 +54,41 @@ struct SourceBodyLedger {
     contract_ordinal: u16,
     requires: u16,
     ensures: u16,
-    saw_ensures: bool,
-    saw_from: bool,
-    saw_backpressure: bool,
-    saw_replay: bool,
-    saw_privacy: bool,
+    seen: SourceBodySeen,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SourceBodyMilestone {
+    Ensures,
+    From,
+    Backpressure,
+    Replay,
+    Privacy,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct SourceBodySeen(u8);
+
+impl SourceBodySeen {
+    const fn mask(milestone: SourceBodyMilestone) -> u8 {
+        match milestone {
+            SourceBodyMilestone::Ensures => 1 << 0,
+            SourceBodyMilestone::From => 1 << 1,
+            SourceBodyMilestone::Backpressure => 1 << 2,
+            SourceBodyMilestone::Replay => 1 << 3,
+            SourceBodyMilestone::Privacy => 1 << 4,
+        }
+    }
+
+    const fn contains(self, milestone: SourceBodyMilestone) -> bool {
+        self.0 & Self::mask(milestone) != 0
+    }
+
+    fn observe(&mut self, milestone: SourceBodyMilestone) -> bool {
+        let duplicate = self.contains(milestone);
+        self.0 |= Self::mask(milestone);
+        duplicate
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -79,7 +109,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     let owner = parser.start_projected_owner(SyntaxKind::SourceItem, role);
     parser.start(SyntaxKind::DeclarationHeader, SyntaxRole::Element(0));
     emit_outer_prefixes(&mut parser);
@@ -125,7 +155,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdEmission> {
+fn emit_public_id(parser: &mut DocumentParser<'_, '_>) -> Option<SourceIdEmission> {
     if parser.current_kind() != Some(SyntaxKind::EntityReferenceToken) {
         return None;
     }
@@ -160,10 +190,8 @@ fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdE
     let canonical_source_family = !malformed_delimited_absolute
         && match typed.value() {
             Ok(_) => typed.normalized_for_family(&source_family).1,
-            Err(SyntaxIdRefIssue::MissingSuffix) => marker_family.as_ref().is_some_and(|family| {
-                family.as_ref().is_none_or(|family| {
-                    family.as_str() == DeclarationIdentityFamily::Source.prefix()
-                })
+            Err(SyntaxIdRefIssue::MissingSuffix) => marker_family.as_ref().is_some_and(|marker| {
+                marker.matches_family(DeclarationIdentityFamily::Source.prefix())
             }),
             Err(_) => false,
         };
@@ -208,19 +236,7 @@ fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdE
     }
     parser.finish();
     if let Some(problem) = problem {
-        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-            match problem {
-                SourceIdProblem::WrongFamily => "syntax.source.wrong_family_id",
-                SourceIdProblem::Malformed => "syntax.source.malformed_id",
-            },
-            id_range,
-            match problem {
-                SourceIdProblem::WrongFamily => {
-                    "source declaration ID must belong to the `source` family"
-                }
-                SourceIdProblem::Malformed => "source declaration ID is malformed",
-            },
-        )));
+        emit_source_id_diagnostic(parser, problem, id_range);
     }
     if trailing_type_colon {
         parser.push(SyntaxEvent::token(
@@ -240,7 +256,27 @@ fn emit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) -> Option<SourceIdE
     })
 }
 
-fn emit_optional_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceName {
+fn emit_source_id_diagnostic(
+    parser: &mut DocumentParser<'_, '_>,
+    problem: SourceIdProblem,
+    range: SourceRange,
+) {
+    let (code, message) = match problem {
+        SourceIdProblem::WrongFamily => (
+            "syntax.source.wrong_family_id",
+            "source declaration ID must belong to the `source` family",
+        ),
+        SourceIdProblem::Malformed => (
+            "syntax.source.malformed_id",
+            "source declaration ID is malformed",
+        ),
+    };
+    parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+        code, range, message,
+    )));
+}
+
+fn emit_optional_name(parser: &mut DocumentParser<'_, '_>) -> PendingSourceName {
     if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
         let token = parser.current().expect("checked Source name token");
         let value = SyntaxName::try_new(parser.text_of(token));
@@ -256,7 +292,7 @@ fn emit_optional_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourc
     }
 }
 
-fn emit_required_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceName {
+fn emit_required_name(parser: &mut DocumentParser<'_, '_>) -> PendingSourceName {
     if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
         emit_optional_name(parser)
     } else {
@@ -264,7 +300,7 @@ fn emit_required_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourc
     }
 }
 
-fn emit_missing_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceName {
+fn emit_missing_name(parser: &mut DocumentParser<'_, '_>) -> PendingSourceName {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
     parser.push(SyntaxEvent::MissingToken {
@@ -283,7 +319,7 @@ fn emit_missing_name(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSource
 }
 
 fn emit_source_type(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     consumed_colon: bool,
 ) -> (PendingSourceTypeState, bool) {
     let mut missing_colon = false;
@@ -329,7 +365,7 @@ fn emit_source_type(
     (PendingSourceTypeState::Authored, missing_colon)
 }
 
-fn emit_source_body(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceBodyProjection {
+fn emit_source_body(parser: &mut DocumentParser<'_, '_>) -> PendingSourceBodyProjection {
     parser.bump_trivia();
     if !parser.at("{") {
         let at = parser.current_offset();
@@ -408,7 +444,7 @@ fn emit_source_body(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingSourceB
 }
 
 fn find_source_entry_terminator(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     close: usize,
 ) -> Option<(usize, bool)> {
@@ -417,7 +453,7 @@ fn find_source_entry_terminator(
         return ordinary;
     }
 
-    let arrow = find_top_level_boundary(parser, start, &["=>"]).min(close);
+    let arrow = find_top_level_boundary(parser, start, close, &["=>"]);
     if arrow >= close || token_text(parser, arrow) != Some("=>") {
         return ordinary;
     }
@@ -460,7 +496,7 @@ fn is_source_body_head(spelling: &str) -> bool {
 }
 
 fn emit_source_body_entry(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     ledger: &mut SourceBodyLedger,
 ) -> PendingSourceMemberProjection {
@@ -469,12 +505,12 @@ fn emit_source_body_entry(
     match parser.current_text() {
         Some("from") => {
             let statement_ordinal = take_statement_ordinal(ledger);
-            let duplicate = std::mem::replace(&mut ledger.saw_from, true);
+            let duplicate = ledger.seen.observe(SourceBodyMilestone::From);
             emit_source_from(parser, end, source_ordinal, statement_ordinal, duplicate)
         }
         Some("backpressure") => {
             let statement_ordinal = take_statement_ordinal(ledger);
-            let duplicate = std::mem::replace(&mut ledger.saw_backpressure, true);
+            let duplicate = ledger.seen.observe(SourceBodyMilestone::Backpressure);
             let (assignment, evidence) =
                 emit_source_policy_assignment(parser, end, statement_ordinal);
             PendingSourceMemberProjection::Backpressure {
@@ -487,7 +523,7 @@ fn emit_source_body_entry(
         }
         Some("replay") => {
             let statement_ordinal = take_statement_ordinal(ledger);
-            let duplicate = std::mem::replace(&mut ledger.saw_replay, true);
+            let duplicate = ledger.seen.observe(SourceBodyMilestone::Replay);
             let (assignment, evidence) =
                 emit_source_policy_assignment(parser, end, statement_ordinal);
             PendingSourceMemberProjection::Replay {
@@ -500,7 +536,7 @@ fn emit_source_body_entry(
         }
         Some("privacy") => {
             let statement_ordinal = take_statement_ordinal(ledger);
-            let duplicate = std::mem::replace(&mut ledger.saw_privacy, true);
+            let duplicate = ledger.seen.observe(SourceBodyMilestone::Privacy);
             let (assignment, evidence) =
                 emit_source_policy_assignment(parser, end, statement_ordinal);
             PendingSourceMemberProjection::Privacy {
@@ -515,57 +551,20 @@ fn emit_source_body_entry(
             let statement_ordinal = take_statement_ordinal(ledger);
             emit_source_handler(parser, end, source_ordinal, statement_ordinal)
         }
-        Some("requires") => {
-            let clause_start = parser.current_offset();
-            let contract_ordinal = ledger.contract_ordinal;
-            let condition = emit_contract_clause_until(
-                parser,
-                end,
-                SyntaxKind::RequiresClause,
-                SyntaxRole::ContractClause(contract_ordinal),
-            );
-            let condition = completed_expression_state(parser, condition.start_event);
-            if ledger.saw_ensures {
-                parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                    "syntax.contract.invalid_clause_order",
-                    SourceRange::new(clause_start, parser.current_offset()),
-                    "`requires` clauses must precede every `ensures` clause",
-                )));
-            }
-            let family_ordinal = ledger.requires;
-            ledger.requires = ledger.requires.saturating_add(1);
-            ledger.contract_ordinal = ledger.contract_ordinal.saturating_add(1);
-            PendingSourceMemberProjection::UnsupportedContract {
-                source_ordinal,
-                contract_ordinal,
-                family: SourceContractSyntaxKind::Requires,
-                family_ordinal,
-                condition,
-                out_of_order: ledger.saw_ensures,
-            }
-        }
-        Some("ensures") => {
-            let contract_ordinal = ledger.contract_ordinal;
-            let condition = emit_contract_clause_until(
-                parser,
-                end,
-                SyntaxKind::EnsuresClause,
-                SyntaxRole::ContractClause(contract_ordinal),
-            );
-            let condition = completed_expression_state(parser, condition.start_event);
-            let family_ordinal = ledger.ensures;
-            ledger.ensures = ledger.ensures.saturating_add(1);
-            ledger.contract_ordinal = ledger.contract_ordinal.saturating_add(1);
-            ledger.saw_ensures = true;
-            PendingSourceMemberProjection::UnsupportedContract {
-                source_ordinal,
-                contract_ordinal,
-                family: SourceContractSyntaxKind::Ensures,
-                family_ordinal,
-                condition,
-                out_of_order: false,
-            }
-        }
+        Some("requires") => emit_source_contract(
+            parser,
+            end,
+            source_ordinal,
+            ledger,
+            SourceContractSyntaxKind::Requires,
+        ),
+        Some("ensures") => emit_source_contract(
+            parser,
+            end,
+            source_ordinal,
+            ledger,
+            SourceContractSyntaxKind::Ensures,
+        ),
         _ => {
             let statement_ordinal = take_statement_ordinal(ledger);
             emit_statement_fragment(parser, end, SyntaxRole::Statement(statement_ordinal));
@@ -577,6 +576,58 @@ fn emit_source_body_entry(
     }
 }
 
+fn emit_source_contract(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    source_ordinal: u32,
+    ledger: &mut SourceBodyLedger,
+    family: SourceContractSyntaxKind,
+) -> PendingSourceMemberProjection {
+    let clause_start = parser.current_offset();
+    let contract_ordinal = ledger.contract_ordinal;
+    let syntax_kind = match family {
+        SourceContractSyntaxKind::Requires => SyntaxKind::RequiresClause,
+        SourceContractSyntaxKind::Ensures => SyntaxKind::EnsuresClause,
+    };
+    let condition = emit_contract_clause_until(
+        parser,
+        end,
+        syntax_kind,
+        SyntaxRole::ContractClause(contract_ordinal),
+    );
+    let condition = completed_expression_state(parser, condition.start_event);
+    let (family_ordinal, out_of_order) = match family {
+        SourceContractSyntaxKind::Requires => {
+            let follows_ensures = ledger.seen.contains(SourceBodyMilestone::Ensures);
+            if follows_ensures {
+                parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+                    "syntax.contract.invalid_clause_order",
+                    SourceRange::new(clause_start, parser.current_offset()),
+                    "`requires` clauses must precede every `ensures` clause",
+                )));
+            }
+            let ordinal = ledger.requires;
+            ledger.requires = ledger.requires.saturating_add(1);
+            (ordinal, follows_ensures)
+        }
+        SourceContractSyntaxKind::Ensures => {
+            let ordinal = ledger.ensures;
+            ledger.ensures = ledger.ensures.saturating_add(1);
+            ledger.seen.observe(SourceBodyMilestone::Ensures);
+            (ordinal, false)
+        }
+    };
+    ledger.contract_ordinal = ledger.contract_ordinal.saturating_add(1);
+    PendingSourceMemberProjection::UnsupportedContract {
+        source_ordinal,
+        contract_ordinal,
+        family,
+        family_ordinal,
+        condition,
+        out_of_order,
+    }
+}
+
 fn take_statement_ordinal(ledger: &mut SourceBodyLedger) -> u32 {
     let ordinal = ledger.statement_ordinal;
     ledger.statement_ordinal = ledger.statement_ordinal.saturating_add(1);
@@ -584,7 +635,7 @@ fn take_statement_ordinal(ledger: &mut SourceBodyLedger) -> u32 {
 }
 
 fn emit_source_from(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     source_ordinal: u32,
     statement_ordinal: u32,
@@ -609,7 +660,7 @@ fn emit_source_from(
 }
 
 fn emit_source_handler(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     source_ordinal: u32,
     statement_ordinal: u32,
@@ -620,8 +671,28 @@ fn emit_source_handler(
     );
     parser.bump();
     parser.bump_trivia();
-    let arrow = find_top_level_boundary(parser, parser.cursor(), &["=>"]).min(end);
+    let arrow = find_top_level_boundary(parser, parser.cursor(), end, &["=>"]);
     let has_arrow = arrow < end && token_text(parser, arrow) == Some("=>");
+    let event = emit_source_handler_event(parser, arrow);
+    bump_until(parser, arrow);
+    let arrow_state = emit_source_handler_arrow(parser, has_arrow);
+    parser.bump_trivia();
+    let body = emit_source_handler_body(parser, end, has_arrow);
+    bump_until(parser, end);
+    parser.finish();
+    PendingSourceMemberProjection::Handler {
+        source_ordinal,
+        statement_ordinal,
+        event,
+        arrow: arrow_state,
+        body,
+    }
+}
+
+fn emit_source_handler_event(
+    parser: &mut DocumentParser<'_, '_>,
+    arrow: usize,
+) -> PendingSourceHandlerEvent {
     let event_start = first_significant(parser, parser.cursor(), arrow);
     let head = match event_start.and_then(|index| token_text(parser, index)) {
         Some("item") => SourceHandlerHead::Item,
@@ -633,7 +704,7 @@ fn emit_source_handler(
         _ => SourceHandlerHead::Unknown,
     };
     let unknown_value = event_start.and_then(|start| single_name_in_interval(parser, start, arrow));
-    let event = match head {
+    match head {
         SourceHandlerHead::Item | SourceHandlerHead::Error | SourceHandlerHead::Progress => {
             parser.start(SyntaxKind::NameReference, SyntaxRole::Name);
             parser.bump();
@@ -670,10 +741,21 @@ fn emit_source_handler(
                 condition: completed_expression_state(parser, condition.start_event),
             }
         }
-    };
-    bump_until(parser, arrow);
+    }
+}
 
-    let arrow_state = if !has_arrow {
+fn emit_source_handler_arrow(
+    parser: &mut DocumentParser<'_, '_>,
+    has_arrow: bool,
+) -> PendingSourcePunctuation {
+    if has_arrow {
+        let range = parser
+            .current()
+            .expect("checked Source handler arrow")
+            .range();
+        parser.bump();
+        PendingSourcePunctuation::Authored(range)
+    } else {
         let at = parser.current_offset();
         parser.push(SyntaxEvent::MissingToken {
             expected: expected(SyntaxKind::PunctuationToken),
@@ -687,18 +769,16 @@ fn emit_source_handler(
             "source handler requires `=>` before its body",
         )));
         PendingSourcePunctuation::Missing(SourceRange::new(at, at))
-    } else {
-        let range = parser
-            .current()
-            .expect("checked Source handler arrow")
-            .range();
-        parser.bump();
-        PendingSourcePunctuation::Authored(range)
-    };
+    }
+}
 
-    parser.bump_trivia();
+fn emit_source_handler_body(
+    parser: &mut DocumentParser<'_, '_>,
+    end: usize,
+    has_arrow: bool,
+) -> PendingSourceHandlerBody {
     let body_end = trimmed_end(parser, parser.cursor(), end);
-    let body = if parser.cursor() >= body_end || !has_arrow {
+    if parser.cursor() >= body_end || !has_arrow {
         let at = parser.current_offset();
         if has_arrow {
             parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -723,15 +803,6 @@ fn emit_source_handler(
     } else {
         emit_statement_fragment(parser, end, SyntaxRole::Body);
         PendingSourceHandlerBody::Statement
-    };
-    bump_until(parser, end);
-    parser.finish();
-    PendingSourceMemberProjection::Handler {
-        source_ordinal,
-        statement_ordinal,
-        event,
-        arrow: arrow_state,
-        body,
     }
 }
 
@@ -743,13 +814,13 @@ struct SourcePolicyEvidence {
 }
 
 fn emit_source_policy_assignment(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     statement_ordinal: u32,
 ) -> (PendingSourcePunctuation, SourcePolicyEvidence) {
     let child_end = statement_child_end(parser, end);
     let target_start = parser.cursor();
-    let equals = find_top_level_boundary(parser, target_start, &["="]).min(child_end);
+    let equals = find_top_level_boundary(parser, target_start, child_end, &["="]);
     let has_equals = equals < child_end && token_text(parser, equals) == Some("=");
     let target_end = if has_equals {
         equals
@@ -797,7 +868,7 @@ fn emit_source_policy_assignment(
 }
 
 fn source_backpressure_policy(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     evidence: &SourcePolicyEvidence,
 ) -> PendingSourceBackpressurePolicy {
     match evidence.state {
@@ -813,7 +884,7 @@ fn source_backpressure_policy(
 }
 
 fn source_bounded_policy(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     evidence: &SourcePolicyEvidence,
 ) -> Option<PendingSourceBackpressurePolicy> {
     let pending = evidence.projection.as_ref()?;
@@ -956,7 +1027,7 @@ fn source_privacy_policy(
 }
 
 fn source_argument_state(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     pending: &PendingExpressionProjection,
     argument: &SyntaxCallArgumentProjection,
     ordinal: u16,
@@ -992,7 +1063,7 @@ fn source_call_argument_value_range(
 }
 
 fn source_call_argument_name(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     pending: &PendingExpressionProjection,
     argument: PendingSourceBoundedArgument,
 ) -> Option<SyntaxName> {
@@ -1013,7 +1084,7 @@ fn source_call_argument_name(
 }
 
 fn completed_expression_state(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start_event: usize,
 ) -> PendingSourceChildState {
     if parser.completed_kind(start_event) == Some(SyntaxKind::MissingExpression) {
@@ -1029,7 +1100,7 @@ fn completed_expression_state(
 }
 
 fn emitted_pattern_state(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     event_position: usize,
 ) -> PendingSourceChildState {
     if parser.started_kind_since(event_position, SyntaxKind::MissingPattern) {
@@ -1042,7 +1113,7 @@ fn emitted_pattern_state(
 }
 
 fn single_name_in_interval(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<SyntaxName> {
@@ -1055,10 +1126,7 @@ fn single_name_in_interval(
     SyntaxName::try_new(parser.text_of(token)).ok()
 }
 
-fn single_name_in_range(
-    parser: &ShadowDocumentParser<'_, '_>,
-    range: SourceRange,
-) -> Option<SyntaxName> {
+fn single_name_in_range(parser: &DocumentParser<'_, '_>, range: SourceRange) -> Option<SyntaxName> {
     let mut found = None;
     for index in 0..token_count(parser) {
         let token = parser.token_at(index)?;
@@ -1082,7 +1150,7 @@ fn single_name_in_range(
     found
 }
 
-fn statement_child_end(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> usize {
+fn statement_child_end(parser: &DocumentParser<'_, '_>, end: usize) -> usize {
     if end > parser.cursor() && token_text(parser, end - 1) == Some(";") {
         end - 1
     } else {

@@ -13,8 +13,8 @@ use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_lang_syntax::name::SyntaxNameIssue;
 
 use super::call::{call_children_match, call_projection_matches};
-use super::composite_child_at;
 use super::dialogue_projection::dialogue_application_projection_matches;
+use super::expression_component_role;
 use super::leaf::{
     id_ref_source_shape, lifetime_projection_matches, literal_projection_matches,
     numeric_sequence_matches, path_projection_matches, resolved_path_projection_matches,
@@ -26,21 +26,24 @@ use crate::dialogue_application::{
     HirPostfixBracketCandidates, HirPostfixCandidateFailureKind, HirRichTextTagPayload,
 };
 use crate::expr::{
-    HirAwaitPropagation, HirBinaryOp, HirBorrowKind, HirCallArgumentOrdinal,
-    HirComputationBlockKind, HirExpr, HirExprKind, HirExpressionRecoveryIssue, HirGenericExprIssue,
-    HirNamedBlockName, HirPlaceholderKind, HirPoisonState, HirRecordField, HirRecordFieldIssue,
-    HirRecoveryIssue, HirSelectedMember, HirThreadMode, HirTryForm, HirUnaryOp,
+    HirAwaitPropagation, HirBinaryOp, HirBorrowKind, HirComputationBlockKind, HirExpr, HirExprKind,
+    HirExpressionRecoveryIssue, HirGenericExprIssue, HirNamedBlockName, HirPlaceholderKind,
+    HirPoisonState, HirRecordField, HirRecordFieldIssue, HirRecoveryIssue, HirRecoveryOperandSlot,
+    HirSelectedMember, HirThreadMode, HirTryForm, HirUnaryOp,
 };
 use crate::identity::{ExprId, SyntheticKey, SyntheticOwner, SyntheticRole, TypeId};
 use crate::leaf::{HirIdRefValue, HirPathValue};
 use crate::slot::{HirOrigin, SlotSnapshot};
 use crate::source_index::{
-    HirCallArgumentSourcePart, HirDialogueNodeSourcePart, HirExprSourceRole,
-    HirRecordFieldSourcePart, HirRichTextTagSourcePart, HirSourceIndex, HirSourceQuery,
-    HirSourceSite,
+    HirExprSourceRole, HirRecordFieldSourcePart, HirSourceIndex, HirSourceQuery, HirSourceSite,
 };
 use crate::type_ref::HirType;
 
+#[allow(
+    clippy::match_same_arms,
+    clippy::too_many_lines,
+    reason = "one exhaustive payload projection keeps every final expression family and recovery shape explicit"
+)]
 pub(super) fn expression_payload_matches(
     payload: &HirExprKind,
     attached: &AttachedExpressionNode,
@@ -305,6 +308,7 @@ fn choice_projection_matches(
     expected: &arcweft_lang_syntax::attachment::AttachedChoiceExpression,
 ) -> bool {
     actual.id().is_some() == expected.id().is_some()
+        && actual.required_expression_slots().len() == expected.required_expression_slots().len()
         && actual.plan().is_some() == expected.plan().is_some()
         && match expected.body() {
             arcweft_lang_syntax::attachment::AttachedRequiredChoiceBody::Present(body) => {
@@ -382,6 +386,10 @@ const fn postfix_failure_kind_projection_matches(
     )
 }
 
+#[allow(
+    clippy::match_same_arms,
+    reason = "the record projection keeps distinct authored field forms explicit in one typed matrix"
+)]
 fn record_fields_projection_match(
     actual: &[HirRecordField],
     expected: &[SyntaxRecordField],
@@ -443,6 +451,12 @@ fn record_fields_projection_match(
     })
 }
 
+#[allow(
+    clippy::match_same_arms,
+    clippy::too_many_arguments,
+    clippy::too_many_lines,
+    reason = "one exhaustive child projection validates the closed expression family against exact owner, scope, and source inputs"
+)]
 pub(super) fn expression_children_match(
     index: &HirSourceIndex,
     parsed: &ParsedSource,
@@ -560,9 +574,9 @@ pub(super) fn expression_children_match(
                         expressions,
                         parent,
                         payload.scope(),
+                        attached,
                         attached_child,
                         child,
-                        composite_child_role(payload.kind(), attached_child.ordinal()),
                     )
                 })
             });
@@ -574,18 +588,20 @@ pub(super) fn expression_children_match(
         let expected_len = if else_branch.is_some() { 3 } else { 2 };
         if attached.children().len() != expected_len
             || !attached.children().iter().all(|attached_child| {
-                composite_child_at(payload.kind(), attached_child.ordinal()).is_some_and(|child| {
-                    expression_child_matches(
-                        parsed,
-                        slots,
-                        expressions,
-                        parent,
-                        payload.scope(),
-                        attached_child,
-                        child,
-                        composite_child_role(payload.kind(), attached_child.ordinal()),
-                    )
-                })
+                matches!(
+                    payload.kind().recovery_operand_slot(attached_child.ordinal()),
+                    Some(HirRecoveryOperandSlot::Retained(child))
+                        if expression_child_matches(
+                            parsed,
+                            slots,
+                            expressions,
+                            parent,
+                            payload.scope(),
+                            attached,
+                            attached_child,
+                            child,
+                        )
+                )
             })
         {
             return false;
@@ -649,9 +665,9 @@ pub(super) fn expression_children_match(
                     expressions,
                     parent,
                     payload.scope(),
+                    attached,
                     attached_child,
                     *child,
-                    composite_child_role(payload.kind(), attached_child.ordinal()),
                 )
             })
 }
@@ -668,84 +684,93 @@ fn dialogue_application_children_match(
     let Some(target) = attached.children().first() else {
         return false;
     };
-    if target.ordinal() != 0
+    if target.component_role() != ExpressionComponentRole::Target
         || !expression_child_matches(
             parsed,
             slots,
             expressions,
             parent,
             payload.scope(),
+            attached,
             target,
             application.target(),
-            HirExprSourceRole::Target,
         )
     {
         return false;
     }
 
-    let mut nested = Vec::new();
-    for (ordinal, node) in application.content().nodes().iter().enumerate() {
-        let HirDialogueNodeKind::Interpolation(expression) = node.kind() else {
-            continue;
-        };
-        let Ok(ordinal) = u32::try_from(ordinal) else {
-            return false;
-        };
-        let source_role = HirExprSourceRole::DialogueNode {
-            ordinal,
-            part: HirDialogueNodeSourcePart::Interpolation,
-        };
-        let syntax_role = ExpressionComponentRole::DialogueNode {
-            ordinal,
-            part: arcweft_lang_syntax::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
-        };
-        let Some(source) = attached.component(syntax_role) else {
-            return false;
-        };
-        nested.push((source.range(), source_role, *expression));
-    }
-    for (tag, value) in application.content().tags().iter().enumerate() {
-        let expression = match value.payload() {
-            HirRichTextTagPayload::FxCall(expression)
-            | HirRichTextTagPayload::DialogueCall(expression)
-            | HirRichTextTagPayload::Condition(expression) => *expression,
-            HirRichTextTagPayload::Arguments | HirRichTextTagPayload::None => continue,
-        };
-        let Ok(tag) = u32::try_from(tag) else {
-            return false;
-        };
-        let source_role = HirExprSourceRole::RichTextTag {
-            tag,
-            part: HirRichTextTagSourcePart::Payload,
-        };
-        let syntax_role = ExpressionComponentRole::RichTextTag {
-            tag,
-            part: arcweft_lang_syntax::expressions::SyntaxRichTextTagSourcePart::Payload,
-        };
-        let Some(source) = attached.component(syntax_role) else {
-            return false;
-        };
-        nested.push((source.range(), source_role, expression));
-    }
-    nested.sort_by_key(|(range, _, _)| (range.start(), range.end()));
-    if attached.children().len() != nested.len() + 1 {
+    let expected_nested = application
+        .content()
+        .nodes()
+        .iter()
+        .filter(|node| matches!(node.kind(), HirDialogueNodeKind::Interpolation(_)))
+        .count()
+        + application
+            .content()
+            .tags()
+            .iter()
+            .filter(|tag| {
+                matches!(
+                    tag.payload(),
+                    HirRichTextTagPayload::FxCall(_)
+                        | HirRichTextTagPayload::DialogueCall(_)
+                        | HirRichTextTagPayload::Condition(_)
+                )
+            })
+            .count();
+    if attached.children().len() != expected_nested + 1 {
         return false;
     }
-    attached.children()[1..].iter().zip(nested).enumerate().all(
-        |(position, (attached_child, (_, role, child)))| {
-            u32::try_from(position + 1).ok() == Some(attached_child.ordinal())
-                && expression_child_matches(
-                    parsed,
-                    slots,
-                    expressions,
-                    parent,
-                    payload.scope(),
-                    attached_child,
-                    child,
-                    role,
-                )
-        },
-    )
+    let mut seen = BTreeSet::new();
+    attached.children()[1..].iter().all(|attached_child| {
+        let component_role = attached_child.component_role();
+        if !seen.insert(component_role) {
+            return false;
+        }
+        let child = match component_role {
+            ExpressionComponentRole::DialogueNode {
+                ordinal,
+                part: arcweft_lang_syntax::expressions::SyntaxDialogueNodeSourcePart::Interpolation,
+            } => usize::try_from(ordinal).ok().and_then(|ordinal| {
+                application
+                    .content()
+                    .nodes()
+                    .get(ordinal)
+                    .and_then(|node| match node.kind() {
+                        HirDialogueNodeKind::Interpolation(expression) => Some(*expression),
+                        _ => None,
+                    })
+            }),
+            ExpressionComponentRole::RichTextTag {
+                tag,
+                part: arcweft_lang_syntax::expressions::SyntaxRichTextTagSourcePart::Payload,
+            } => usize::try_from(tag).ok().and_then(|tag| {
+                application
+                    .content()
+                    .tags()
+                    .get(tag)
+                    .and_then(|tag| match tag.payload() {
+                        HirRichTextTagPayload::FxCall(expression)
+                        | HirRichTextTagPayload::DialogueCall(expression)
+                        | HirRichTextTagPayload::Condition(expression) => Some(*expression),
+                        HirRichTextTagPayload::Arguments | HirRichTextTagPayload::None => None,
+                    })
+            }),
+            _ => None,
+        };
+        child.is_some_and(|child| {
+            expression_child_matches(
+                parsed,
+                slots,
+                expressions,
+                parent,
+                payload.scope(),
+                attached,
+                attached_child,
+                child,
+            )
+        })
+    })
 }
 
 fn postfix_bracket_children_match(
@@ -760,16 +785,16 @@ fn postfix_bracket_children_match(
     let [target] = attached.children() else {
         return false;
     };
-    if target.ordinal() != 0
+    if target.component_role() != ExpressionComponentRole::Target
         || !expression_child_matches(
             parsed,
             slots,
             expressions,
             parent,
             payload.scope(),
+            attached,
             target,
             postfix.target(),
-            HirExprSourceRole::Target,
         )
     {
         return false;
@@ -856,15 +881,19 @@ fn error_recovery_prefix_matches(
                 expressions,
                 parent,
                 parent_scope,
+                attached,
                 prefix,
                 child,
-                HirExprSourceRole::Recovery,
             )
         }
         _ => false,
     }
 }
 
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the record-child validator compares one exact typed owner, scope, field set, attachment, and arena context"
+)]
 fn record_children_match(
     index: &HirSourceIndex,
     parsed: &ParsedSource,
@@ -881,14 +910,13 @@ fn record_children_match(
         let Ok(field) = u32::try_from(field) else {
             return false;
         };
-        let attached_child = attached
-            .children()
-            .iter()
-            .find(|child| child.ordinal() == field);
-        let role = HirExprSourceRole::RecordField {
-            field,
-            part: HirRecordFieldSourcePart::Value,
-        };
+        let attached_child = attached.children().iter().find(|child| {
+            child.component_role()
+                == ExpressionComponentRole::RecordField {
+                    field,
+                    part: arcweft_lang_syntax::expressions::ExpressionRecordFieldPart::Value,
+                }
+        });
         match value {
             HirRecordField::Explicit { value, .. } => attached_child.is_some_and(|child| {
                 child.authored().is_some()
@@ -898,9 +926,9 @@ fn record_children_match(
                         expressions,
                         parent,
                         parent_scope,
+                        attached,
                         child,
                         *value,
-                        role,
                     )
             }),
             HirRecordField::Shorthand { name, local } => {
@@ -917,7 +945,7 @@ fn record_children_match(
                 };
                 attached_child.is_none()
                     && matches!(
-                        local_resolver.lookup(parent_scope, name, use_start),
+                        local_resolver.lookup(parent_scope, name.as_str(), use_start),
                         Some(crate::scope::LocalLookup::Found(found)) if found == *local
                     )
             }
@@ -943,9 +971,9 @@ fn record_children_match(
                     expressions,
                     parent,
                     parent_scope,
+                    attached,
                     child,
                     value,
-                    role,
                 )
             }
             HirRecordField::Invalid { .. } => true,
@@ -1024,12 +1052,17 @@ fn composite_parent_state_matches(
     }
     let mut expected = None;
     for child in attached.children() {
-        let role = composite_child_role(payload.kind(), child.ordinal());
+        let Some(role) = expression_component_role(attached.projection(), child.component_role())
+        else {
+            return false;
+        };
         if child.missing().is_some() {
             expected = Some(HirRecoveryIssue::MissingOperand { role });
             break;
         }
-        let Some(child_id) = composite_child_at(payload.kind(), child.ordinal()) else {
+        let Some(HirRecoveryOperandSlot::Retained(child_id)) =
+            payload.kind().recovery_operand_slot(child.ordinal())
+        else {
             return false;
         };
         let Ok(child_payload) = expressions.resolve_prepared(slots, child_id) else {
@@ -1097,58 +1130,25 @@ pub(in crate::source_index) fn poison_state_matches(
     }
 }
 
-fn composite_child_role(payload: &HirExprKind, ordinal: u32) -> HirExprSourceRole {
-    match payload {
-        HirExprKind::ArrayRepeat(_) if ordinal == 0 => HirExprSourceRole::RepeatValue,
-        HirExprKind::ArrayRepeat(_) => HirExprSourceRole::RepeatLength,
-        HirExprKind::Call(_) if ordinal == 0 => HirExprSourceRole::CallCallee,
-        HirExprKind::Call(_) => HirExprSourceRole::CallArgument {
-            argument: HirCallArgumentOrdinal::try_new(
-                usize::try_from(ordinal - 1).expect("u32 Call ordinal fits usize"),
-            )
-            .expect("attached Call arguments remain within the final HIR limit"),
-            part: HirCallArgumentSourcePart::Value,
-        },
-        HirExprKind::Select(_) => HirExprSourceRole::Target,
-        HirExprKind::Index(_) if ordinal == 0 => HirExprSourceRole::Target,
-        HirExprKind::Index(_) => HirExprSourceRole::Index,
-        HirExprKind::Pipe(_) if ordinal == 0 => HirExprSourceRole::LeftOperand,
-        HirExprKind::Pipe(_) => HirExprSourceRole::RightOperand,
-        HirExprKind::Range(_) if ordinal == 0 => HirExprSourceRole::RangeStart,
-        HirExprKind::Range(_) => HirExprSourceRole::RangeEnd,
-        HirExprKind::Binary(_) if ordinal == 0 => HirExprSourceRole::LeftOperand,
-        HirExprKind::Binary(_) => HirExprSourceRole::RightOperand,
-        HirExprKind::If(_) if ordinal == 0 => HirExprSourceRole::Condition,
-        HirExprKind::If(_) if ordinal == 1 => HirExprSourceRole::ThenBranch,
-        HirExprKind::If(_) => HirExprSourceRole::ElseBranch,
-        HirExprKind::IfLet(_) if ordinal == 0 => HirExprSourceRole::Scrutinee,
-        HirExprKind::IfLet(_) if ordinal == 1 => HirExprSourceRole::Guard,
-        HirExprKind::IfLet(_) if ordinal == 2 => HirExprSourceRole::ThenBranch,
-        HirExprKind::IfLet(_) => HirExprSourceRole::ElseBranch,
-        HirExprKind::Closure(_) => HirExprSourceRole::Body,
-        HirExprKind::Record(_) | HirExprKind::RecordLiteral(_) => HirExprSourceRole::RecordField {
-            field: ordinal,
-            part: HirRecordFieldSourcePart::Value,
-        },
-        HirExprKind::Try(_)
-        | HirExprKind::Await(_)
-        | HirExprKind::Borrow(_)
-        | HirExprKind::Dereference(_)
-        | HirExprKind::Unary(_) => HirExprSourceRole::Operand,
-        _ => HirExprSourceRole::Element { ordinal },
-    }
-}
-
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the child validator compares one exact parent/child identity, scope, role, attachment, and arena context"
+)]
 pub(in crate::source_index) fn expression_child_matches(
     parsed: &ParsedSource,
     slots: &SlotSnapshot,
     expressions: &ArenaSnapshot<HirExpr, ExprId>,
     parent: ExprId,
     parent_scope: crate::identity::ScopeId,
+    parent_attached: &AttachedExpressionNode,
     attached: &AttachedExpressionChild,
     child: ExprId,
-    role: HirExprSourceRole,
 ) -> bool {
+    let Some(role) =
+        expression_component_role(parent_attached.projection(), attached.component_role())
+    else {
+        return false;
+    };
     let Ok(metadata) = slots.resolve_prepared(child) else {
         return false;
     };

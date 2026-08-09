@@ -1,7 +1,7 @@
 use crate::config::LspConfig;
 use crate::custom::ArcweftCustomRequest;
 use crate::diagnostics::{DocumentAnalysis, publish_diagnostics_from_analysis};
-use crate::documents::{DocumentError, DocumentSnapshot, DocumentStore};
+use crate::documents::{AcceptedOpenDocument, DocumentError, DocumentSnapshot, DocumentStore};
 use crate::features;
 use crate::positions::PositionEncoding;
 use crate::profiles::{
@@ -10,6 +10,7 @@ use crate::profiles::{
 };
 use crate::repl_command::{LspReplCommandExecutor, LspReplCommandRequest, LspReplCommandResponse};
 use crate::uri_key::LspUriKey;
+use arcweft_compiler::project::ProjectCompilationSession;
 use arcweft_tooling::model::ToolingError;
 use lsp_server::{ErrorCode, Notification, Request, RequestId, Response, ResponseError};
 use lsp_types::notification::{
@@ -41,9 +42,9 @@ use thiserror::Error;
 use self::overlay_authority::PendingSignatureAuthority;
 
 /// Stateful Sans I/O session used by the stdio transport.
-#[derive(Debug)]
 pub struct ArcweftLspSession {
     documents: DocumentStore,
+    project_compiler: ProjectCompilationSession,
     default_profile: LspProfile,
     profiles_by_uri: BTreeMap<LspUriKey, LspProfile>,
     profile_keys_by_uri: BTreeMap<LspUriKey, AcceptedProfileKey>,
@@ -86,6 +87,11 @@ pub enum SessionError {
 
 impl ArcweftLspSession {
     /// Creates a session before initialize is received.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the process cannot allocate the session's sole HIR database
+    /// identity.
     pub fn new(config: &LspConfig) -> Self {
         let profile_resolver =
             LspProfileResolver::new(config.runner(), config.profile_id().map(str::to_owned))
@@ -93,6 +99,8 @@ impl ArcweftLspSession {
         let default_profile = profile_resolver.default_profile();
         Self {
             documents: DocumentStore::default(),
+            project_compiler: ProjectCompilationSession::try_new()
+                .expect("an LSP session can allocate one HIR database identity"),
             default_profile,
             profiles_by_uri: BTreeMap::new(),
             profile_keys_by_uri: BTreeMap::new(),
@@ -219,18 +227,28 @@ impl ArcweftLspSession {
                     notification.params,
                 )?;
                 let uri = LspUriKey::from_uri(&params.text_document.uri);
+                let accepted = self.accepted_open_document_for_uri(&params.text_document.uri);
+                let snapshot = self.documents.open_with_authority(
+                    params,
+                    self.position_encoding,
+                    accepted.as_ref(),
+                )?;
                 requests.cancel_uri(
                     &uri,
                     crate::requests::SignatureCancellationReason::DocumentChanged,
                 );
-                self.evict_signature_document_for_uri(&params.text_document.uri);
-                let snapshot = self.documents.open(params, self.position_encoding);
+                self.evict_signature_document_for_uri(snapshot.uri());
                 if self.attach_open_uri_to_accepted_profile(snapshot.uri()) {
                     self.mark_signature_authority_pending(snapshot.uri(), requests);
                     self.rebuild_profiles_affected_by_uri(snapshot.uri(), requests, true);
                 } else {
                     self.refresh_profile_for_uri(snapshot.uri(), requests);
                 }
+                let snapshot = self
+                    .documents
+                    .get_by_key(&uri)
+                    .cloned()
+                    .expect("accepted publication retains the opened document");
                 Ok(vec![self.refresh_document_diagnostics(&snapshot)])
             }
             DidChangeTextDocument::METHOD => {
@@ -239,14 +257,19 @@ impl ArcweftLspSession {
                     notification.params,
                 )?;
                 let uri = LspUriKey::from_uri(&params.text_document.uri);
+                let snapshot = self.documents.change(params, self.position_encoding)?;
                 requests.cancel_uri(
                     &uri,
                     crate::requests::SignatureCancellationReason::DocumentChanged,
                 );
-                self.evict_signature_document_for_uri(&params.text_document.uri);
-                let snapshot = self.documents.change(params, self.position_encoding)?;
+                self.evict_signature_document_for_uri(snapshot.uri());
                 self.mark_signature_authority_pending(snapshot.uri(), requests);
                 self.rebuild_profiles_affected_by_uri(snapshot.uri(), requests, true);
+                let snapshot = self
+                    .documents
+                    .get_by_key(&uri)
+                    .cloned()
+                    .expect("accepted publication retains the changed document");
                 Ok(vec![self.refresh_document_diagnostics(&snapshot)])
             }
             DidCloseTextDocument::METHOD => {
@@ -594,6 +617,39 @@ impl ArcweftLspSession {
                 })
             })
             .unwrap_or(&self.default_profile)
+    }
+
+    fn accepted_open_document_for_uri(&self, uri: &lsp_types::Uri) -> Option<AcceptedOpenDocument> {
+        let mut selected: Option<AcceptedOpenDocument> = None;
+        for accepted in self
+            .profiles_by_uri
+            .values()
+            .filter_map(LspProfile::accepted_environment)
+        {
+            let Some(source) = accepted.project().sources().by_uri(uri) else {
+                continue;
+            };
+            let parsed = accepted
+                .project()
+                .module_key(source.document().identity())
+                .and_then(|key| accepted.project().parsed_source(&key))
+                .cloned();
+            if selected.as_ref().is_some_and(|current| {
+                !Arc::ptr_eq(current.document(), source.document())
+                    || match (current.parsed(), parsed.as_ref()) {
+                        (Some(current), Some(candidate)) => !current.is_same_snapshot(candidate),
+                        (None, None) => false,
+                        _ => true,
+                    }
+            }) {
+                return None;
+            }
+            selected = Some(AcceptedOpenDocument::new(
+                Arc::clone(source.document()),
+                parsed,
+            ));
+        }
+        selected
     }
 
     fn replace_analysis(&mut self, snapshot: &DocumentSnapshot) -> Arc<DocumentAnalysis> {

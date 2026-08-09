@@ -78,6 +78,7 @@ impl HirRichTextArgumentId {
 /// One authored or inferred end-tag record.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct HirRichTextEndTag {
+    paired_start: Option<HirRichTextTagId>,
     identity: Option<HirRichTextTagIdentity>,
     inferred: bool,
     issue: Option<HirRichTextIssue>,
@@ -85,15 +86,27 @@ pub struct HirRichTextEndTag {
 
 impl HirRichTextEndTag {
     pub(crate) const fn new(
+        paired_start: Option<HirRichTextTagId>,
         identity: Option<HirRichTextTagIdentity>,
         inferred: bool,
         issue: Option<HirRichTextIssue>,
     ) -> Self {
         Self {
+            paired_start,
             identity,
             inferred,
             issue,
         }
+    }
+
+    /// Returns the syntax-owned opening tag paired with this end tag.
+    ///
+    /// This identity is the semantic pairing authority. The authored end-tag
+    /// name may denote a family such as `effect`, while the opening tag owns a
+    /// concrete selector such as `.wave`; consumers must not compare or
+    /// reconstruct those spellings.
+    pub const fn paired_start(&self) -> Option<HirRichTextTagId> {
+        self.paired_start
     }
 
     /// Returns the resolved or retained tag identity, when present.
@@ -248,7 +261,6 @@ impl HirRichTextTag {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum HirRichTextTagIdentity {
     Builtin(HirBuiltinRichTextTag),
-    Marker(HirName),
     Registered(HirRegisteredRichTextTagId),
     Unresolved(HirUnresolvedRichTextTag),
 }
@@ -272,6 +284,7 @@ pub enum HirBuiltinRichTextTag {
     Clear,
     Reset,
     Speed,
+    Marker,
     DirectStyle(HirRichTextDirectStyle),
     Style(HirRichTextStyleSelector),
     Layout(HirRichTextLayoutSelector),
@@ -380,10 +393,6 @@ pub struct HirExternalSymbolId {
 }
 
 impl HirExternalSymbolId {
-    pub(crate) const fn new(project: HirProjectSymbolSegment, path: HirPath) -> Self {
-        Self { project, path }
-    }
-
     /// Returns the external project segment.
     pub const fn project(&self) -> &HirProjectSymbolSegment {
         &self.project
@@ -429,7 +438,12 @@ pub enum HirRichTextTagPayload {
 }
 
 impl HirRichTextTagPayload {
-    const fn expression(&self) -> Option<ExprId> {
+    /// Returns the expression owned by expression-bearing payload families.
+    ///
+    /// The returned identity belongs to the same module arena as the owning
+    /// dialogue-content application; consumers must resolve it through that
+    /// module rather than reconstructing or reparsing source text.
+    pub const fn expression(&self) -> Option<ExprId> {
         match self {
             Self::FxCall(expression)
             | Self::DialogueCall(expression)
@@ -588,6 +602,7 @@ impl From<SyntaxBuiltinRichTextTag> for HirBuiltinRichTextTag {
             SyntaxBuiltinRichTextTag::Clear => Self::Clear,
             SyntaxBuiltinRichTextTag::Reset => Self::Reset,
             SyntaxBuiltinRichTextTag::Speed => Self::Speed,
+            SyntaxBuiltinRichTextTag::Marker => Self::Marker,
             SyntaxBuiltinRichTextTag::DirectStyle(value) => Self::DirectStyle(value.into()),
             SyntaxBuiltinRichTextTag::Style(value) => Self::Style(value.into()),
             SyntaxBuiltinRichTextTag::Layout(value) => Self::Layout(value.into()),

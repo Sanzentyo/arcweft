@@ -143,7 +143,6 @@ define_ast_kinds!(STATEMENT_MARKERS, Statement;
     ReturnStatementKind => ReturnStatement,
     OutStatementKind => OutStatement,
     GotoStatementKind => GotoStatement,
-    ThreadStatementKind => ThreadStatement,
     DeferBlockStatementKind => DeferBlockStatement,
     DeferStatementKind => DeferStatement,
     YieldStatementKind => YieldStatement,

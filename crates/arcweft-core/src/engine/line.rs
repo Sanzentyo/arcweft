@@ -1,8 +1,8 @@
 use super::{
     Engine, FlowControlStackEntryKind, FlowCursor, FlowEvent, FlowExit, FlowFiberStatus,
-    FlowRuntimeId, LineEffectRequest, RuntimeStepInput, RuntimeStepOutput,
-    run_line_task_group_for_input,
+    LineEffectRequest, RuntimeStepInput, RuntimeStepOutput, run_line_task_group_for_input,
 };
+use crate::plan::FlowRuntimeId;
 use crate::pure::RuntimeCallBackend;
 
 impl Engine {
@@ -36,7 +36,7 @@ impl Engine {
             return false;
         };
         match control {
-            FlowControl::Goto(target) => match FlowRuntimeId::from_runtime_target_value(&target) {
+            FlowControl::Goto(target) => match self.plan.resolve_flow_target_value(&target) {
                 Ok(target) => self.goto(&target, output, pure_backend),
                 Err(error) => {
                     self.fiber.status =

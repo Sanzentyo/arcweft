@@ -8,9 +8,10 @@ use arcweft_lang_syntax::grammar::SyntaxKind;
 
 use crate::final_lowering::StagedHirModuleTransaction;
 use crate::identity::{ExprId, ScopeId, StmtId};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
-use crate::source_index::HirExprSourceRole;
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::stmt::{HirStmtChildRole, HirStmtKind, HirStmtRecoveryIssue};
+
+use super::HirStmtRecoveryOperandSlot;
 
 #[derive(Clone, Copy)]
 enum RequiredOperandFamily {
@@ -21,10 +22,12 @@ enum RequiredOperandFamily {
 }
 
 impl RequiredOperandFamily {
-    const fn source_role(self) -> HirExprSourceRole {
+    const fn missing_slot(self, insertion: usize) -> HirStmtRecoveryOperandSlot {
         match self {
-            Self::Wait { .. } | Self::Close => HirExprSourceRole::Target,
-            Self::Return | Self::Yield => HirExprSourceRole::Operand,
+            Self::Return => HirStmtRecoveryOperandSlot::ReturnValue { insertion },
+            Self::Yield => HirStmtRecoveryOperandSlot::YieldExpression { insertion },
+            Self::Wait { .. } => HirStmtRecoveryOperandSlot::WaitTarget { insertion },
+            Self::Close => HirStmtRecoveryOperandSlot::CloseTarget { insertion },
         }
     }
 
@@ -97,7 +100,9 @@ impl StagedHirModuleTransaction<'_> {
         };
 
         let expression =
-            self.lower_required_statement_operand(owner, &operand, scope, family.source_role(), 0)?;
+            self.lower_required_statement_operand(owner, &operand, scope, |insertion| {
+                family.missing_slot(insertion)
+            })?;
         let expression_poisoned = self.staged_expression_is_poisoned(expression)?;
         let recovery = if expression_poisoned {
             Some(HirStmtRecoveryIssue::RecoveredChild {
@@ -127,8 +132,7 @@ impl StagedHirModuleTransaction<'_> {
         owner: StmtId,
         operand: &RequiredStatementExpressionNode,
         scope: ScopeId,
-        role: HirExprSourceRole,
-        recovery_ordinal: u32,
+        missing_slot: impl FnOnce(usize) -> HirStmtRecoveryOperandSlot,
     ) -> Result<ExprId, HirLowerFailure> {
         match operand {
             RequiredStatementExpressionNode::Expression(expression) => {
@@ -141,9 +145,7 @@ impl StagedHirModuleTransaction<'_> {
                 .lower_missing_statement_expression(
                     owner,
                     scope,
-                    missing.range().start(),
-                    recovery_ordinal,
-                    role,
+                    missing_slot(missing.range().start()),
                 ),
         }
     }

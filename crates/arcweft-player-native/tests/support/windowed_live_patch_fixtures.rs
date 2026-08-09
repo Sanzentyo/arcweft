@@ -16,23 +16,28 @@ use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_id::TextKey;
 use arcweft_player_native::windowed_patch::{
     FrameBoundary, PatchEventSource, RestartReason, WindowedPatchEvent, WindowedPatchReport,
 };
 use arcweft_player_native::{WindowedRuntimeOutcome, WindowedRuntimeOwner};
 use arcweft_player_scene::input::InputController;
-use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
 use arcweft_render_wgpu::geometry::RenderViewport;
-use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleEntryStart, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::swap::GenerationId;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::{
+    DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
+};
 use serde::Serialize;
 use std::fmt::Write as _;
+
+fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
+    arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+        .expect("fixture runtime artifact fingerprint is non-zero")
+}
 
 pub const GENERATED_DIR: &str =
     "crates/arcweft-player-native/tests/fixtures/windowed_live_patch/generated";
@@ -49,26 +54,6 @@ const WRONG_BASE_SOURCE_LABEL: &str = "tests/fixtures/windowed_live_patch/src/wr
 const AWAIT_BASE_SOURCE_LABEL: &str = "tests/fixtures/windowed_live_patch/src/await_base.arcw";
 const AWAIT_CODE_GENERATIONAL_TARGET_SOURCE_LABEL: &str =
     "tests/fixtures/windowed_live_patch/src/await_code_generational_target.arcw";
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("player-native-windowed-live-patch-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.player-native-windowed-live-patch-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
-}
 
 const BASE_SOURCE: &str = include_str!("../fixtures/windowed_live_patch/src/base.arcw");
 const CONTENT_TARGET_SOURCE: &str =
@@ -1006,9 +991,10 @@ fn dialogue_bundle(
 ) -> ArcweftBundle {
     let line = RuntimeLineId::from_runtime_line_value("line.opening").expect("runtime line id");
     let plan = dialogue_runtime_plan(&line, changed_main_code, extra_flow);
-    let display = dialogue_display_catalog(line, display_text);
+    let source_map = source_map(source_label, source);
+    let dialogue_content = dialogue_content_catalog(line, display_text, &source_map);
     with_optional_fixture_image(
-        bundle_from_runtime_parts(source_label, source, plan, display, "dialogue"),
+        bundle_from_runtime_parts(source_label, source_map, plan, dialogue_content, "dialogue"),
         image_bytes,
     )
 }
@@ -1063,40 +1049,34 @@ fn dialogue_main_ops(line: &RuntimeLineId, changed_main_code: bool) -> Vec<FlowO
     ]
 }
 
-fn dialogue_display_catalog(line: RuntimeLineId, display_text: &str) -> LineDisplayCatalog {
-    LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![LineDisplaySpec {
-            line,
-            callee: "alice".to_owned(),
-            speaker_label: None,
-            text_key: None,
-            view: arcweft_bundle::standard_view::dialogue_view_id(),
-            profile_style: None,
-            dialogue_revision: test_dialogue_revision(),
-            voice: None,
-            look: None,
-            style: None,
-            base_styles: Vec::new(),
-            inline_failure: InlineFailurePolicy::FailLine,
-            style_contributions: Vec::new(),
-            args: Vec::new(),
-            content: RichTextDocument::new(vec![RichTextNode::Text {
-                text: display_text.to_owned(),
-            }]),
-        }],
-    )
-    .expect("test display catalog is revision-consistent")
+fn dialogue_content_catalog(
+    line: RuntimeLineId,
+    display_text: &str,
+    source_map: &SourceMapSection,
+) -> DialogueContentCatalog {
+    DialogueContentCatalog::try_from_records(vec![DialogueContentSpec::new(
+        line,
+        TextKey::try_new("text.opening").expect("text key"),
+        RichTextDocument::new(vec![RichTextNode::Text {
+            text: display_text.to_owned(),
+        }]),
+        Vec::new(),
+        source_map
+            .primary_document()
+            .expect("fixture source map retains its source")
+            .product_source_ref(),
+    )])
+    .expect("final dialogue content catalog")
 }
 
 fn bundle_from_runtime_parts(
     source_label: &str,
-    source: &str,
+    source_map: SourceMapSection,
     plan: RuntimePlan,
-    display: LineDisplayCatalog,
+    dialogue_content: DialogueContentCatalog,
     fixture_name: &str,
 ) -> ArcweftBundle {
-    let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, source_label)
         .lower()
         .unwrap_or_else(|error| panic!("{fixture_name} fixture product AWBC lowers: {error:?}"))
         .program;
@@ -1111,6 +1091,7 @@ fn bundle_from_runtime_parts(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -1119,9 +1100,9 @@ fn bundle_from_runtime_parts(
                 source_plans: stats.source_plans,
             },
         },
-        source_map(source_label, source),
+        source_map,
         bytecode,
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
@@ -1180,8 +1161,8 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     )
     .expect("await fixture runtime plan is valid")
     .with_entries(vec![cli_main_entry()]);
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
-    let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
+    let dialogue_content = DialogueContentCatalog::new();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, source_label)
         .lower()
         .expect("await fixture product AWBC lowers")
         .program;
@@ -1196,6 +1177,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -1206,7 +1188,7 @@ fn await_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         },
         source_map(source_label, source),
         bytecode,
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)
@@ -1222,8 +1204,8 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
     )
     .expect("await replacement runtime plan is valid")
     .with_entries(vec![cli_main_entry()]);
-    let display = LineDisplayCatalog::new(test_dialogue_revision());
-    let product_awbc = AwbcLowerer::new(&plan, &display, source_label)
+    let dialogue_content = DialogueContentCatalog::new();
+    let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, source_label)
         .lower()
         .expect("await replacement product AWBC lowers")
         .program;
@@ -1238,6 +1220,7 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: fixture_runtime_artifact_fingerprint(),
                 entry_flow: Some("flow.main".to_owned()),
                 flows: stats.flows,
                 bytecode_instructions: stats.instructions,
@@ -1248,7 +1231,7 @@ fn await_replacement_bundle(source_label: &str, source: &str) -> ArcweftBundle {
         },
         source_map(source_label, source),
         bytecode,
-        display,
+        dialogue_content,
     )
     .expect("standard dialogue source joins source map")
     .with_product_awbc(product_awbc)

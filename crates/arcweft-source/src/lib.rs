@@ -3,6 +3,7 @@ use core::ops::Range;
 pub mod diagnostic;
 pub mod document;
 pub mod identity;
+pub mod product;
 
 pub use diagnostic::{
     Diagnostic, DiagnosticApplicability, DiagnosticBag, DiagnosticCode, DiagnosticCommand,
@@ -13,6 +14,10 @@ pub use document::{
     SourceDocumentIdError, SourceDocumentIdentity, SourceRevision, SourceRevisionParseError,
     SourceSetRevision, SourceSetRevisionError, SourceSpan, SourceSpanError,
     SourceSpanValidationError,
+};
+pub use product::{
+    MAX_PRODUCT_SOURCE_ID_INPUT_BYTES, ProductSourceId, ProductSourceIdentityError,
+    ProductSourceRef,
 };
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SourceRange {

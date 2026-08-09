@@ -151,7 +151,7 @@ pub enum AttachedTriggerPattern {
     Select(AttachedPatternTrigger),
     Task(AttachedPatternTrigger),
     Scope(AttachedPatternTrigger),
-    Expr(AttachedExpressionNode),
+    Expr(Box<AttachedExpressionNode>),
 }
 
 impl AttachedTriggerPattern {
@@ -189,41 +189,41 @@ pub(super) fn attach_trigger_pattern(
 ) -> Result<AttachedTriggerPattern, SyntaxAccessError> {
     match syntax.kind() {
         SyntaxKind::InputTriggerPattern => Ok(AttachedTriggerPattern::Input(
-            attach_pattern_trigger(syntax.cast::<InputTriggerPatternKind>()?)?,
+            attach_pattern_trigger(&syntax.cast::<InputTriggerPatternKind>()?)?,
         )),
         SyntaxKind::EventTriggerPattern => Ok(AttachedTriggerPattern::Event(
-            attach_pattern_trigger(syntax.cast::<EventTriggerPatternKind>()?)?,
+            attach_pattern_trigger(&syntax.cast::<EventTriggerPatternKind>()?)?,
         )),
         SyntaxKind::SignalTriggerPattern => Ok(AttachedTriggerPattern::Signal(
-            attach_signal_trigger(syntax.cast()?)?,
+            attach_signal_trigger(&syntax.cast()?)?,
         )),
         SyntaxKind::TimeoutTriggerPattern => Ok(AttachedTriggerPattern::Timeout(
-            attach_expression_trigger(syntax.cast()?)?,
+            attach_expression_trigger(&syntax.cast()?)?,
         )),
         SyntaxKind::MarkTriggerPattern => Ok(AttachedTriggerPattern::Mark(attach_pattern_trigger(
-            syntax.cast::<MarkTriggerPatternKind>()?,
+            &syntax.cast::<MarkTriggerPatternKind>()?,
         )?)),
         SyntaxKind::SelectTriggerPattern => Ok(AttachedTriggerPattern::Select(
-            attach_pattern_trigger(syntax.cast::<SelectTriggerPatternKind>()?)?,
+            attach_pattern_trigger(&syntax.cast::<SelectTriggerPatternKind>()?)?,
         )),
         SyntaxKind::TaskTriggerPattern => Ok(AttachedTriggerPattern::Task(attach_pattern_trigger(
-            syntax.cast::<TaskTriggerPatternKind>()?,
+            &syntax.cast::<TaskTriggerPatternKind>()?,
         )?)),
         SyntaxKind::ScopeTriggerPattern => Ok(AttachedTriggerPattern::Scope(
-            attach_pattern_trigger(syntax.cast::<ScopeTriggerPatternKind>()?)?,
+            attach_pattern_trigger(&syntax.cast::<ScopeTriggerPatternKind>()?)?,
         )),
-        kind if kind.is_expression() => Ok(AttachedTriggerPattern::Expr(
+        kind if kind.is_expression() => Ok(AttachedTriggerPattern::Expr(Box::new(
             AttachedExpressionNode::from_syntax(syntax)?,
-        )),
+        ))),
         _ => Err(SyntaxAccessError::InvalidTriggerShape { id: syntax.id() }),
     }
 }
 
 fn attach_pattern_trigger<K: AstKind>(
-    syntax: AstNode<K>,
+    syntax: &AstNode<K>,
 ) -> Result<AttachedPatternTrigger, SyntaxAccessError> {
     validate_roles(
-        &syntax,
+        syntax,
         &[
             SyntaxRole::OpenDelimiter,
             SyntaxRole::Pattern,
@@ -234,16 +234,16 @@ fn attach_pattern_trigger<K: AstKind>(
         pattern: syntax
             .required_family_child::<PatternFamily>(SyntaxRole::Pattern)?
             .semantic()?,
-        delimiters: attach_delimiters(&syntax)?,
+        delimiters: attach_delimiters(syntax)?,
         syntax: syntax.syntax(),
     })
 }
 
 fn attach_expression_trigger(
-    syntax: AstNode<TimeoutTriggerPatternKind>,
+    syntax: &AstNode<TimeoutTriggerPatternKind>,
 ) -> Result<AttachedExpressionTrigger, SyntaxAccessError> {
     validate_roles(
-        &syntax,
+        syntax,
         &[
             SyntaxRole::OpenDelimiter,
             SyntaxRole::Operand,
@@ -251,17 +251,17 @@ fn attach_expression_trigger(
         ],
     )?;
     Ok(AttachedExpressionTrigger {
-        expression: required_statement_expression(&syntax, SyntaxRole::Operand)?,
-        delimiters: attach_delimiters(&syntax)?,
+        expression: required_statement_expression(syntax, SyntaxRole::Operand)?,
+        delimiters: attach_delimiters(syntax)?,
         syntax: syntax.syntax(),
     })
 }
 
 fn attach_signal_trigger(
-    syntax: AstNode<SignalTriggerPatternKind>,
+    syntax: &AstNode<SignalTriggerPatternKind>,
 ) -> Result<AttachedSignalTrigger, SyntaxAccessError> {
     validate_roles(
-        &syntax,
+        syntax,
         &[
             SyntaxRole::OpenDelimiter,
             SyntaxRole::Target,
@@ -274,9 +274,9 @@ fn attach_signal_trigger(
         .map(|value| value.semantic())
         .transpose()?;
     Ok(AttachedSignalTrigger {
-        target: required_statement_expression(&syntax, SyntaxRole::Target)?,
+        target: required_statement_expression(syntax, SyntaxRole::Target)?,
         value,
-        delimiters: attach_delimiters(&syntax)?,
+        delimiters: attach_delimiters(syntax)?,
         syntax: syntax.syntax(),
     })
 }

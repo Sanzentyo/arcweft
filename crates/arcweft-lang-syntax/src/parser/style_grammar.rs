@@ -3,7 +3,7 @@
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::{emit_outer_prefixes, emit_visibility};
 use super::expression::{emit_entity_reference, emit_expression};
 use super::lexer::LexToken;
@@ -47,7 +47,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     let owner = parser.start_projected_owner(SyntaxKind::StyleItem, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -73,7 +73,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_style_id(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleId {
+fn emit_style_id(parser: &mut DocumentParser<'_, '_>) -> PendingStyleId {
     if parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
         let source = parser.current().expect("Style ID token").range();
         let (_, authored) = emit_entity_reference(parser, SyntaxRole::Reference(0));
@@ -125,7 +125,7 @@ fn emit_style_id(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleId {
     let end = trimmed_end(
         parser,
         parser.cursor(),
-        find_top_level_boundary(parser, parser.cursor(), &["{"]),
+        find_top_level_boundary(parser, parser.cursor(), token_count(parser), &["{"]),
     );
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Reference(0));
     bump_until(parser, end);
@@ -143,7 +143,7 @@ fn emit_style_id(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleId {
     }
 }
 
-fn emit_bare_style_id(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleId {
+fn emit_bare_style_id(parser: &mut DocumentParser<'_, '_>) -> PendingStyleId {
     let start = parser.current_offset();
     parser.start(SyntaxKind::NameDefinition, SyntaxRole::Reference(0));
     let mut segments = Vec::new();
@@ -217,14 +217,14 @@ fn style_family_root(parent_depth: usize) -> AuthoredIdRoot {
     }
 }
 
-fn recover_header_tail(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
+fn recover_header_tail(parser: &mut DocumentParser<'_, '_>) -> bool {
     if parser.at("{") || parser.is_at_end() {
         return false;
     }
     let end = trimmed_end(
         parser,
         parser.cursor(),
-        find_top_level_boundary(parser, parser.cursor(), &["{"]),
+        find_top_level_boundary(parser, parser.cursor(), token_count(parser), &["{"]),
     );
     let start = parser.current_offset();
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
@@ -239,7 +239,7 @@ fn recover_header_tail(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
     true
 }
 
-fn emit_style_body(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleBodyProjection {
+fn emit_style_body(parser: &mut DocumentParser<'_, '_>) -> PendingStyleBodyProjection {
     if !parser.at("{") {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -280,7 +280,7 @@ fn emit_style_body(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingStyleBod
 }
 
 fn emit_style_members(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     allow_tokens: bool,
 ) -> Vec<PendingStyleMemberProjection> {
@@ -307,7 +307,7 @@ fn emit_style_members(
                 close,
                 source_ordinal,
             ))
-        } else if find_top_level_boundary(parser, start, &["{"]) < close {
+        } else if find_top_level_boundary(parser, start, close, &["{"]) < close {
             PendingStyleMemberProjection::Rule(emit_rule(parser, close, source_ordinal))
         } else {
             let end = member_boundary(parser, start, close);
@@ -323,7 +323,7 @@ fn emit_style_members(
 }
 
 fn emit_token_declaration(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     source_ordinal: u32,
     allowed_at_this_depth: bool,
@@ -353,8 +353,7 @@ fn emit_token_declaration(
         parser.bump();
         parser.finish();
         bump_trivia_before(parser, end);
-        let type_end =
-            find_top_level_boundary(parser, parser.cursor(), &["=", "+=", "-="]).min(end);
+        let type_end = find_top_level_boundary(parser, parser.cursor(), end, &["=", "+=", "-="]);
         if parser.cursor() < type_end {
             emit_type(parser, type_end, SyntaxRole::Type);
             bump_until(parser, type_end);
@@ -389,7 +388,7 @@ fn emit_token_declaration(
 }
 
 fn emit_style_name(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     kind: SyntaxKind,
     role: SyntaxRole,
@@ -458,7 +457,7 @@ fn emit_style_name(
 }
 
 fn emit_assignment(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     diagnostic: &'static str,
 ) -> PendingStylePunctuation {
     if parser.at("=") {
@@ -499,7 +498,7 @@ fn emit_assignment(
     PendingStylePunctuation::Missing(SourceRange::new(at, at))
 }
 
-fn emit_invalid_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u32) {
+fn emit_invalid_member(parser: &mut DocumentParser<'_, '_>, end: usize, ordinal: u32) {
     let start = parser.cursor();
     parser.start(SyntaxKind::ErrorNode, SyntaxRole::Element(ordinal));
     bump_until(parser, end);
@@ -511,7 +510,7 @@ fn emit_invalid_member(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, or
     )));
 }
 
-fn emit_missing_type(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_type(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingType, SyntaxRole::Type);
     parser.push(SyntaxEvent::MissingToken {
@@ -527,7 +526,7 @@ fn emit_missing_type(parser: &mut ShadowDocumentParser<'_, '_>) {
 }
 
 fn emit_missing_name(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     role: SyntaxRole,
     code: &'static str,
     message: &'static str,
@@ -549,7 +548,7 @@ fn emit_missing_name(
     }
 }
 
-fn bump_member_separators(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn bump_member_separators(parser: &mut DocumentParser<'_, '_>, end: usize) {
     while parser.cursor() < end
         && parser
             .current()
@@ -559,16 +558,13 @@ fn bump_member_separators(parser: &mut ShadowDocumentParser<'_, '_>, end: usize)
     }
 }
 
-fn bump_trivia_before(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn bump_trivia_before(parser: &mut DocumentParser<'_, '_>, end: usize) {
     while parser.cursor() < end && parser.current_kind().is_some_and(is_trivia) {
         parser.bump();
     }
 }
 
-fn bump_selector_trivia(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-) -> Option<SourceRange> {
+fn bump_selector_trivia(parser: &mut DocumentParser<'_, '_>, end: usize) -> Option<SourceRange> {
     let start = parser
         .current()
         .filter(|token| parser.cursor() < end && is_trivia(token.kind()))
@@ -581,7 +577,7 @@ fn bump_selector_trivia(
     Some(SourceRange::new(start.start(), finish))
 }
 
-fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
+fn member_boundary(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let mut depth = 0_usize;
     for index in start..end {
         let Some(token) = parser.token_at(index) else {
@@ -600,11 +596,7 @@ fn member_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usi
     end
 }
 
-fn environment_clause_end(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> usize {
+fn environment_clause_end(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let mut delimiters = Vec::new();
     for index in start..end {
         let Some(token) = parser.token_at(index) else {
@@ -631,7 +623,7 @@ fn environment_clause_end(
     end
 }
 
-fn selector_sequence_end(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> usize {
+fn selector_sequence_end(parser: &DocumentParser<'_, '_>, end: usize) -> usize {
     let mut index = parser.cursor();
     while index < end {
         let Some(token) = parser.token_at(index) else {
@@ -645,11 +637,7 @@ fn selector_sequence_end(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> u
     index.max(parser.cursor().saturating_add(1)).min(end)
 }
 
-fn next_nontrivia(
-    parser: &ShadowDocumentParser<'_, '_>,
-    mut index: usize,
-    end: usize,
-) -> Option<usize> {
+fn next_nontrivia(parser: &DocumentParser<'_, '_>, mut index: usize, end: usize) -> Option<usize> {
     while index < end {
         let token = parser.token_at(index)?;
         if !is_trivia(token.kind()) {
@@ -661,7 +649,7 @@ fn next_nontrivia(
 }
 
 fn next_significant_text<'a>(
-    parser: &'a ShadowDocumentParser<'_, '_>,
+    parser: &'a DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<&'a str> {
@@ -685,7 +673,7 @@ const fn is_trivia(kind: SyntaxKind) -> bool {
     )
 }
 
-fn token_range(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
+fn token_range(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
     let start = first_significant(parser, start, end).unwrap_or(start);
     let end = trimmed_end(parser, start, end);
     let range_start = parser

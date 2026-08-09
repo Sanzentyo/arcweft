@@ -22,6 +22,7 @@ use arcweft_core::awbc::schema::{
     AwbcBlock, AwbcFrameLayout, AwbcFunction, AwbcInstruction, AwbcProgram, AwbcSignature,
     AwbcTableRange,
 };
+use arcweft_core::awbc::verify::{AwbcVerifyBudget, AwbcVerifyContext};
 use arcweft_core::bytecode::BYTECODE_ABI_VERSION;
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -1452,11 +1453,18 @@ fn awbc_executable_compatibility(
 }
 
 fn decode_awbc_program(bytes: &[u8]) -> Result<AwbcProgram, PatchBundleError> {
-    AwbcProgram::decode_canonical(bytes, AwbcDecodeBudget::default()).map_err(|error| {
-        PatchBundleError::Compatibility {
+    let program =
+        AwbcProgram::decode_canonical(bytes, AwbcDecodeBudget::default()).map_err(|error| {
+            PatchBundleError::Compatibility {
+                message: error.to_string(),
+            }
+        })?;
+    program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .map_err(|error| PatchBundleError::Compatibility {
             message: error.to_string(),
-        }
-    })
+        })?;
+    Ok(program)
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1473,10 +1481,21 @@ fn awbc_function_fingerprints(
         .iter()
         .enumerate()
         .map(|(index, function)| {
-            let id = function
-                .public_id
-                .and_then(|id| program.strings.get(id.index()).cloned())
-                .unwrap_or_else(|| format!("function.{index}"));
+            let function_id = arcweft_core::awbc::schema::AwbcFunctionId(
+                u32::try_from(index).unwrap_or(u32::MAX),
+            );
+            let id = program.flow_identity(function_id).map_or_else(
+                || {
+                    function
+                        .public_id
+                        .and_then(|id| program.strings.get(id.index()).cloned())
+                        .map_or_else(
+                            || format!("function:{index}"),
+                            |public_id| format!("public:{public_id}"),
+                        )
+                },
+                |flow| format!("flow:{}", flow.canonical_label()),
+            );
             let signature = program.signatures.get(function.signature.index());
             let frame_layout = program.frame_layouts.get(function.frame_layout.index());
             let blocks = awbc_function_blocks(program, function)?;
@@ -1617,4 +1636,150 @@ fn section_index(sections: &[SectionDescriptor]) -> BTreeMap<SectionId, &Section
         .iter()
         .map(|section| (section.id(), section))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use arcweft_core::awbc::schema::{
+        AwbcBlockId, AwbcEffectSetId, AwbcEntry, AwbcEntryKind, AwbcEntryTarget, AwbcFlowBinding,
+        AwbcFrameLayoutId, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcSafePointKind,
+        AwbcSignatureId, AwbcStringId, AwbcTerminator,
+    };
+    use arcweft_core::entry::{EntryBindingIdentity, RuntimeEntryRoles};
+    use arcweft_core::plan::{EntryRuntimeId, FlowRuntimeId};
+
+    fn same_label_flow_program() -> AwbcProgram {
+        AwbcProgram {
+            strings: vec!["flow.main".to_owned()],
+            signatures: vec![AwbcSignature {
+                params: Vec::new(),
+                result: None,
+                effects: AwbcEffectSetId(0),
+            }],
+            frame_layouts: vec![AwbcFrameLayout {
+                slots: Vec::new(),
+                max_scope_depth: 0,
+            }],
+            functions: vec![
+                AwbcFunction {
+                    public_id: Some(AwbcStringId(0)),
+                    kind: AwbcFunctionKind::Flow,
+                    signature: AwbcSignatureId(0),
+                    frame_layout: AwbcFrameLayoutId(0),
+                    blocks: AwbcTableRange::new(0, 1),
+                    entry_block: AwbcBlockId(0),
+                    flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                },
+                AwbcFunction {
+                    public_id: Some(AwbcStringId(0)),
+                    kind: AwbcFunctionKind::Flow,
+                    signature: AwbcSignatureId(0),
+                    frame_layout: AwbcFrameLayoutId(0),
+                    blocks: AwbcTableRange::new(1, 1),
+                    entry_block: AwbcBlockId(1),
+                    flags: AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC),
+                },
+            ],
+            blocks: vec![
+                AwbcBlock {
+                    owner: AwbcFunctionId(0),
+                    instructions: AwbcTableRange::new(0, 0),
+                    terminator: AwbcTerminator::Return { value: None },
+                    safe_point: AwbcSafePointKind::FlowEntry,
+                    source_map: None,
+                },
+                AwbcBlock {
+                    owner: AwbcFunctionId(1),
+                    instructions: AwbcTableRange::new(0, 0),
+                    terminator: AwbcTerminator::Return { value: None },
+                    safe_point: AwbcSafePointKind::FlowEntry,
+                    source_map: None,
+                },
+            ],
+            flow_bindings: vec![
+                AwbcFlowBinding {
+                    flow: FlowRuntimeId::from_checked_declaration_digest([0x91; 32], "flow.main")
+                        .expect("first checked Flow identity"),
+                    function: AwbcFunctionId(0),
+                },
+                AwbcFlowBinding {
+                    flow: FlowRuntimeId::from_checked_declaration_digest([0x92; 32], "flow.main")
+                        .expect("second checked Flow identity"),
+                    function: AwbcFunctionId(1),
+                },
+            ],
+            entries: vec![AwbcEntry {
+                runtime_id: EntryRuntimeId::from_source_entity_body("entry.main")
+                    .expect("test entry identity"),
+                binding: EntryBindingIdentity::from_bytes([1; 32]),
+                public_id: AwbcStringId(0),
+                kind: AwbcEntryKind::Cli,
+                signature: AwbcSignatureId(0),
+                target: AwbcEntryTarget::Function(AwbcFunctionId(0)),
+                roles: RuntimeEntryRoles::None,
+            }],
+            ..AwbcProgram::default()
+        }
+    }
+
+    #[test]
+    fn awbc_patch_fingerprints_keep_same_label_checked_flows_distinct() {
+        let program = same_label_flow_program();
+        let fingerprints = awbc_function_fingerprints(&program).expect("fingerprints build");
+        let first = format!("flow:{}", program.flow_bindings[0].flow.canonical_label());
+        let second = format!("flow:{}", program.flow_bindings[1].flow.canonical_label());
+
+        assert_eq!(fingerprints.len(), 2);
+        assert!(fingerprints.contains_key(&first));
+        assert!(fingerprints.contains_key(&second));
+        assert!(!fingerprints.contains_key("public:flow.main"));
+    }
+
+    #[test]
+    fn awbc_patch_classifies_each_same_label_flow_independently() {
+        let base = same_label_flow_program();
+        let base_bytes = base.encode_canonical().expect("base AWBC encodes");
+
+        let mut body_change = base.clone();
+        body_change.blocks[1].terminator = AwbcTerminator::Trap {
+            code: arcweft_core::awbc::schema::AwbcTrapCode::ExplicitPanic,
+            message: None,
+        };
+        assert_eq!(
+            awbc_executable_compatibility(
+                &base_bytes,
+                &body_change.encode_canonical().expect("body AWBC encodes")
+            )
+            .expect("body compatibility"),
+            PatchCompatibility::CodeCompatible
+        );
+
+        let mut interface_change = base.clone();
+        interface_change.functions[1].flags =
+            AwbcFunctionFlags(AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND);
+        assert_eq!(
+            awbc_executable_compatibility(
+                &base_bytes,
+                &interface_change
+                    .encode_canonical()
+                    .expect("interface AWBC encodes")
+            )
+            .expect("interface compatibility"),
+            PatchCompatibility::CodeGenerational
+        );
+
+        let mut removed = base;
+        removed.functions.pop();
+        removed.blocks.pop();
+        removed.flow_bindings.pop();
+        assert_eq!(
+            awbc_executable_compatibility(
+                &base_bytes,
+                &removed.encode_canonical().expect("removed AWBC encodes")
+            )
+            .expect("removal compatibility"),
+            PatchCompatibility::RestartRequired
+        );
+    }
 }

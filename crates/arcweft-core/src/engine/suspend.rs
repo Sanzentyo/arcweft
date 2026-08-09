@@ -37,6 +37,10 @@ impl Engine {
                 self.resume_await_state(state, events, output);
                 true
             }
+            FlowFiberStatus::NeedWaiting(need) => {
+                self.fiber.status = FlowFiberStatus::NeedWaiting(need);
+                false
+            }
             FlowFiberStatus::WaitingMany(state) => {
                 self.resume_await_many_state(*state, events, output, pure_backend);
                 true

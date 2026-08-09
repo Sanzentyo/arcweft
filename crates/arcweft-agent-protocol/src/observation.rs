@@ -6,13 +6,11 @@ use crate::image::AgentImageResource;
 use crate::object::{AgentObservedLayer, AgentObservedObject, AgentObservedView};
 use crate::presentation::{AgentPresentationTree, AgentPresentationTreeQuery};
 use crate::resource::{
-    AgentBinaryEncoding, AgentBinaryResourceBody, AgentResource, AgentResourceBody,
-    AgentResourceKind,
+    AgentBinaryResourceBody, AgentResource, AgentResourceBody, AgentResourceKind,
 };
 use crate::session::{AgentAssignment, AgentAudioState};
 use crate::view::{AgentObservedScrollRegion, AgentObservedVirtualList, AgentViewTree};
 use arcweft_core::effect::{RuntimeEvent, RuntimeLog};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 
 /// One Agent Debug Bus observation frame.
@@ -150,18 +148,19 @@ impl AgentObservationReport {
         })
     }
 
-    /// Builds an MCP-style image resource body for an image listed in this observation.
-    pub fn image_resource(&self, image: &AgentImageResource, bytes: &[u8]) -> AgentResource {
+    /// Builds an MCP-style image resource for an image listed in this observation.
+    pub fn image_resource(
+        &self,
+        image: &AgentImageResource,
+        body: AgentBinaryResourceBody,
+    ) -> AgentResource {
         AgentResource {
             uri: resource_uri(image.uri.clone()),
             kind: AgentResourceKind::Image,
             mime_type: image.mime_type.clone(),
             hash: image.hash.clone(),
             image: Some(crate::image::AgentImageMetadata::from_image_resource(image)),
-            body: AgentResourceBody::BytesBase64(AgentBinaryResourceBody {
-                encoding: AgentBinaryEncoding::Base64,
-                data: STANDARD.encode(bytes),
-            }),
+            body: AgentResourceBody::BytesBase64(body),
         }
     }
 

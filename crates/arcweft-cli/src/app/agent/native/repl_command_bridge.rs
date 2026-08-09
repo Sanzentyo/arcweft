@@ -11,7 +11,6 @@ use super::repl_command_format::{
 use super::{
     AgentControllerRunConfig, AgentReplOptions, AgentRunnerConfig, CollectingDebugSink,
     NativeAdapterRegistrar, NoopRagService, PathBuf, agent_cli_session_id,
-    agent_script_project_index,
 };
 #[cfg(feature = "native-player")]
 use arcweft_agent_repl::command::RuntimeTaskReplCommandHost;
@@ -25,6 +24,7 @@ use arcweft_agent_repl::{
     ReplBaseSnapshot, ReplCellExecutionStatus, ReplCellInput, ReplEvaluateOutcome,
     ReplEvaluationRuntime, ReplSession,
 };
+use arcweft_lang_sema::project_index::ProgramHash;
 
 pub(super) fn agent_repl_eval_line(
     index: usize,
@@ -108,7 +108,7 @@ fn agent_repl_transaction_error_report(
     error: &arcweft_agent_repl::ReplTransactionError,
 ) -> AgentReplCellReport {
     let message = error
-        .parse_diagnostics()
+        .attached_parse_diagnostics()
         .zip(error.parse_coordinate_space())
         .map_or_else(
             || error.to_string(),
@@ -120,34 +120,16 @@ fn agent_repl_transaction_error_report(
                             "error[{}] {} {}..{}: {}",
                             diagnostic.code(),
                             coordinate_space.as_str(),
-                            diagnostic.range().start(),
-                            diagnostic.range().end(),
+                            diagnostic.primary().range().start(),
+                            diagnostic.primary().range().end(),
                             diagnostic.message(),
                         )];
-                        if !diagnostic.expected().is_empty() {
-                            lines.push(format!("expected: {}", diagnostic.expected().join(", ")));
-                        }
-                        if let Some(found) = diagnostic.found() {
-                            lines.push(format!("found: {found}"));
-                        }
-                        lines.extend(diagnostic.related().iter().map(|related| {
+                        lines.extend(diagnostic.related().into_iter().map(|related| {
                             let start = related.range().start();
                             let end = related.range().end();
-                            related.message().map_or_else(
-                                || format!("related {} {start}..{end}", coordinate_space.as_str()),
-                                |message| {
-                                    format!(
-                                        "related {} {start}..{end}: {message}",
-                                        coordinate_space.as_str()
-                                    )
-                                },
-                            )
-                        }));
-                        lines.extend(diagnostic.recovery().iter().map(|suggestion| {
                             format!(
-                                "help[{}]: {}",
-                                suggestion.applicability().as_str(),
-                                suggestion.message()
+                                "related {} {start}..{end}: related syntax recovery",
+                                coordinate_space.as_str()
                             )
                         }));
                         lines.join("\n")
@@ -581,110 +563,123 @@ fn cli_repl_base_snapshot(path: Option<&str>) -> Result<ReplBaseSnapshot, ReplCo
             ));
         }
     }
-    let project = agent_script_project_index(&[]).map_err(|message| {
-        ReplCommandHostError::new(ReplCommandDiagnosticCode::ProjectLoaderError, message)
-    })?;
     let label = path.map_or_else(
         || "cli-agent-repl:current".to_owned(),
         |path| format!("cli-agent-repl:{path}"),
     );
-    Ok(ReplBaseSnapshot::from_project(label, project))
+    Ok(ReplBaseSnapshot::new(
+        label,
+        &ProgramHash::new("cli-agent-repl"),
+        std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+        [],
+    ))
 }
 
 #[cfg(test)]
 mod parse_diagnostic_tests {
     use arcweft_agent_repl::{ReplParseCoordinateSpace, ReplTransactionError};
-    use arcweft_lang_syntax::parser::{
-        ParseOptions, parse_document_with_source, recovery::ParseErrorKind,
+    use arcweft_lang_syntax::{
+        incremental::{ParsedSource, SyntaxDatabase},
+        parser::ParseOptions,
     };
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{
+        SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId,
+    };
     use std::sync::Arc;
 
     use super::agent_repl_transaction_error_report;
 
+    fn attached(source: &str, name: &str) -> ParsedSource {
+        let document = Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new(format!("arcweft-test://cli/agent-repl/{name}"))
+                    .expect("fixture document ID"),
+                SourceName::path(format!("{name}.arcw")),
+                source,
+            )
+            .expect("fixture source document"),
+        );
+        let mut syntax = SyntaxDatabase::try_new().expect("fixture syntax database");
+        syntax
+            .parse_initial(
+                SourceSnapshotId::initial(document.display_name().clone()),
+                document,
+                ParseOptions::default(),
+            )
+            .expect("fixture source attaches")
+    }
+
     #[test]
     fn agent_repl_parse_failure_json_preserves_typed_diagnostics() {
-        let parsed = parse_document_with_source(
-            Arc::new(
-                SourceDocument::try_new(
-                    SourceDocumentId::try_new("arcweft-test://cli/agent-repl/parse-failure-json")
-                        .expect("fixture document ID"),
-                    SourceName::path("parse-failure-json.arcw"),
-                    "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n",
-                )
-                .expect("fixture source document"),
-            ),
-            ParseOptions::default(),
+        let parsed = attached(
+            "pub view Card() {\n    export part タイトル heading\n    Panel()\n}\n",
+            "parse-failure-json",
         );
-        let error = ReplTransactionError::Parse {
-            diagnostics: parsed.errors().to_vec(),
+        let source_diagnostic = parsed
+            .diagnostics()
+            .iter()
+            .find(|diagnostic| {
+                diagnostic.message() == "View part export needs `as` before its public name"
+            })
+            .expect("missing-as attached diagnostic")
+            .clone();
+        let range = source_diagnostic.primary().range();
+        let code = source_diagnostic.code();
+        let error = ReplTransactionError::AttachedParse {
+            diagnostics: vec![source_diagnostic],
             coordinate_space: ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
         };
 
         let report = agent_repl_transaction_error_report(3, "invalid cell", &error);
         let message = report.message.as_deref().expect("human parse diagnostics");
-        assert!(message.contains(
-            "error[view::export_part_missing_as] synthetic_source 47..54: View part export needs `as` before its public name"
-        ));
-        assert!(!message.contains(ParseErrorKind::ViewExportPartMissingAs.label()));
+        assert!(message.contains(&format!(
+            "error[{code}] synthetic_source {}..{}: View part export needs `as` before its public name",
+            range.start(),
+            range.end()
+        )));
         let value = report.value.expect("typed parse error JSON");
         let diagnostic = &value["transaction_error"]["diagnostics"][0];
-        assert_eq!(diagnostic["code"], "view::export_part_missing_as");
-        assert_eq!(
-            diagnostic["kind"],
-            ParseErrorKind::ViewExportPartMissingAs.label()
-        );
+        assert_eq!(diagnostic["code"], code);
+        assert_eq!(diagnostic["kind"], "attached_source");
         assert_eq!(diagnostic["range"]["coordinate_space"], "synthetic_source");
-        assert_eq!(diagnostic["range"]["start"], 47);
-        assert_eq!(diagnostic["range"]["end"], 54);
-        assert_eq!(diagnostic["expected"][0], "as public_name");
+        assert_eq!(diagnostic["range"]["start"], range.start());
+        assert_eq!(diagnostic["range"]["end"], range.end());
+        assert_eq!(diagnostic["expected"], serde_json::json!([]));
         assert_eq!(diagnostic["found"], serde_json::Value::Null);
         assert_eq!(
             diagnostic["message"],
             "View part export needs `as` before its public name"
         );
-        assert_eq!(diagnostic["recovery"][0]["applicability"], "unspecified");
-        assert_eq!(diagnostic["recovery"][0]["edits"], serde_json::json!([]));
+        assert_eq!(diagnostic["recovery"], serde_json::json!([]));
     }
 
     #[test]
     fn agent_repl_parse_failure_human_output_preserves_related_ranges() {
         let source = "entry game @entry.game.main {\nstate = GameState\nstate = OtherState\n}\n";
-        let parsed = parse_document_with_source(
-            Arc::new(
-                SourceDocument::try_new(
-                    SourceDocumentId::try_new("arcweft-test://cli/agent-repl/related-ranges")
-                        .expect("fixture document ID"),
-                    SourceName::path("related-ranges.arcw"),
-                    source,
-                )
-                .expect("fixture source document"),
-            ),
-            ParseOptions::default(),
-        );
+        let parsed = attached(source, "related-ranges");
         let diagnostic = parsed
-            .errors()
+            .diagnostics()
             .iter()
-            .find(|diagnostic| diagnostic.kind() == ParseErrorKind::EntryDuplicateRole)
+            .find(|diagnostic| diagnostic.code() == "syntax.entry.duplicate_role")
             .expect("duplicate-role diagnostic")
             .clone();
-        let error = ReplTransactionError::Parse {
+        let first = diagnostic.related().expect("first role source").range();
+        let error = ReplTransactionError::AttachedParse {
             diagnostics: vec![diagnostic],
-            coordinate_space: ReplParseCoordinateSpace::CellSourceUtf8Bytes,
+            coordinate_space: ReplParseCoordinateSpace::SyntheticSourceUtf8Bytes,
         };
 
         let report = agent_repl_transaction_error_report(4, source, &error);
         let message = report.message.expect("human parse diagnostic");
-        let first = source.find("state = GameState").expect("first state role");
-
         assert!(message.contains(&format!(
-            "related source_utf8_bytes {first}..{}: the first role binding is here",
-            first + "state = GameState".len()
+            "related synthetic_source {}..{}: related syntax recovery",
+            first.start(),
+            first.end()
         )));
         assert_eq!(
             report.value.expect("typed JSON")["transaction_error"]["diagnostics"][0]["related"][0]
                 ["range"]["start"],
-            first
+            first.start()
         );
     }
 }

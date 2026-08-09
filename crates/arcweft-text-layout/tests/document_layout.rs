@@ -2,14 +2,16 @@ use std::{error::Error, fmt};
 
 use arcweft_render_text::{
     ResolvedTextDocument, ResolvedTextRuby, ResolvedTextRun, ResolvedTextRunSource,
-    ResolvedTextStyle, RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout,
-    RichTextPresentation, RichTextRange, RichTextRubyPosition, RichTextWritingMode, TextColor,
-    TextDocumentRevision, TextFontFamily,
+    ResolvedTextStyle, TextColor, TextDocumentRevision, TextFontFamily,
 };
 use arcweft_text_layout::{
     FontFaceId, FontInventoryHash, LayoutPoint, LayoutRect, LayoutSize, ShapedGlyphKey,
     ShapedTextGlyph, ShapedTextRun, TextLayout, TextLayoutError, TextLayoutRequest,
     TextShapeRequest, TextShaper, layout_document,
+};
+use arcweft_text_model::{
+    RichTextInlineDirection, RichTextJlreqStrictness, RichTextLayout, RichTextPresentation,
+    RichTextRange, RichTextRubyPosition, RichTextWritingMode,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -177,7 +179,7 @@ fn proportional_shaped_advances_drive_placement_and_one_visual_line() {
 #[test]
 fn logical_ordinal_is_independent_from_rtl_visual_order() {
     let rtl = style().with_flow(
-        arcweft_render_text::RichTextWritingMode::HorizontalTb,
+        RichTextWritingMode::HorizontalTb,
         RichTextInlineDirection::Rtl,
     );
     let document = document("abc", rtl, 2);

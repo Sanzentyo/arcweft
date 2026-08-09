@@ -1,4 +1,4 @@
-//! Stateful implementation of the single recursive nominal resolver.
+//! Stateful implementation of the single recursive final-HIR nominal resolver.
 
 mod resolution;
 mod state;
@@ -7,16 +7,15 @@ mod traversal;
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use arcweft_lang_hir::symbol::nominal::{
-    ProjectNominalBody, ProjectNominalDeclarationId, SourceBackedTypeRef,
+use arcweft_lang_hir::{
+    identity::TypeId,
+    leaf::HirPath,
+    source_index::{HirSourceSite, HirTypeSourceRole},
+    symbol::nominal::ProjectNominalDeclarationId,
+    type_ref::HirTypeKind,
 };
-use arcweft_lang_syntax::{
-    ast::module_path::{CanonicalModulePath, ModuleSegment},
-    types::{
-        AuthoredTypeRef, TypePath, TypeRef, TypeRefNodePath, TypeRefNodeStep, TypeRefSourceMap,
-    },
-};
-use arcweft_source::SourceSpan;
+use arcweft_lang_syntax::ast::module_path::ModuleSegment;
+use arcweft_source::SourceRange;
 
 use crate::types::{EntityKind, GenericTypeParameterId, TypeKind, TypePoisonId};
 
@@ -28,13 +27,13 @@ use super::super::{
     ResolvedTypeNode, ResolvedTypeProduct, ResolvedTypeRefOutcome, SelfTypeScope,
     StructuralTypeNodeKind, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
     TypeArityTarget, TypeNameResolution, TypePoisonOrigin, TypePoisonRecord, TypeResolutionFailure,
-    TypeResolutionInput, TypeResolutionInputError, TypeResolutionReport, TypeResolutionWorld,
-    TypeSourceEvidence,
+    TypeResolutionInput, TypeResolutionInputError, TypeResolutionModule, TypeResolutionReport,
+    TypeResolutionWorld, TypeSourceEvidence,
 };
 use support::{
-    ProjectNameLookup, ProjectSelection, canonical_cycle, canonical_poisons,
-    collect_recovery_poisons, diagnostic_kind, diagnostic_ordering, direct_name, direct_segment,
-    evidence_from_project, open_expectation, related_ordering,
+    ProjectNameLookup, ProjectSelection, canonical_cycle, canonical_poisons, diagnostic_kind,
+    diagnostic_ordering, direct_name, evidence_from_project, hir_path_matches_type_path,
+    open_expectation, open_rule_matches_hir, related_ordering,
 };
 
 pub(super) fn resolve_type_ref(
@@ -49,7 +48,7 @@ struct Resolver<'input, 'world> {
     aliases: Vec<AliasExpansionFact>,
     diagnostics: Vec<NominalTypeDiagnostic>,
     poisons: Vec<TypePoisonRecord>,
-    unavailable: Vec<TypeRefNodePath>,
+    unavailable: Vec<TypeId>,
     reserved_poison_indices: BTreeSet<u32>,
     next_poison_index: u32,
     type_nodes: u64,
@@ -60,9 +59,7 @@ struct Resolver<'input, 'world> {
 }
 
 struct SourceContext<'a> {
-    authored: &'a AuthoredTypeRef,
-    project: Option<&'a TypeRefSourceMap<SourceSpan>>,
-    module: Option<&'a CanonicalModulePath>,
+    module: TypeResolutionModule<'a>,
     generics: GenericContext<'a>,
     alias_target: bool,
 }
@@ -140,70 +137,46 @@ impl NodeValue {
 }
 
 impl SourceContext<'_> {
-    fn child_path(&self, parent: &TypeRefNodePath, step: TypeRefNodeStep) -> TypeRefNodePath {
-        self.authored
-            .source()
-            .nodes()
-            .iter()
-            .find_map(|(candidate, _)| {
-                let steps = candidate.steps();
-                (steps.len() == parent.steps().len() + 1
-                    && steps.starts_with(parent.steps())
-                    && steps.last() == Some(&step))
-                .then(|| candidate.clone())
-            })
-            .expect("validated authored source maps contain every typed child path")
-    }
-
-    fn evidence(&self, path: &TypeRefNodePath, head: bool) -> TypeSourceEvidence {
-        let local = self
-            .authored
-            .source_at(path)
-            .expect("validated authored source maps contain the visited node");
-        let local = if head {
-            local.head().map_or(*local.whole(), |head| *head.range())
+    fn evidence(&self, owner: TypeId, head: bool) -> TypeSourceEvidence {
+        let role = if head {
+            self.head_role(owner)
         } else {
-            *local.whole()
+            HirTypeSourceRole::Whole
         };
-        let project = self.project.map(|spans| {
-            let source = spans
-                .source_at(path)
-                .expect("bound project maps preserve every typed node path");
-            if head {
-                source
-                    .head()
-                    .map_or_else(|| source.whole().clone(), |head| head.range().clone())
-            } else {
-                source.whole().clone()
-            }
-        });
-        TypeSourceEvidence::new(local, project)
+        self.evidence_for(owner, role)
+            .unwrap_or_else(|| self.required_whole(owner))
     }
 
-    fn terminal_evidence(&self, path: &TypeRefNodePath) -> Option<TypeSourceEvidence> {
-        let local = self.authored.source_at(path)?.head()?.terminal().copied()?;
-        let project = self.project.map(|spans| {
-            spans
-                .source_at(path)
-                .expect("bound project maps preserve every typed node path")
-                .head()
-                .and_then(|head| head.terminal())
-                .expect("bound project path heads preserve their terminal segment")
-                .clone()
-        });
-        Some(TypeSourceEvidence::new(local, project))
+    fn terminal_evidence(&self, owner: TypeId) -> Option<TypeSourceEvidence> {
+        let ty = self
+            .module
+            .resolve_type(owner)
+            .expect("validated final-HIR type identity remains live");
+        let role = match ty.kind() {
+            HirTypeKind::Path(path) => HirTypeSourceRole::PathSegment {
+                ordinal: u32::try_from(path.segments().len().saturating_sub(1)).ok()?,
+            },
+            HirTypeKind::Generic(_) => HirTypeSourceRole::GenericBase,
+            HirTypeKind::TraitBound(_) => HirTypeSourceRole::TraitBase,
+            HirTypeKind::Projection(_) => HirTypeSourceRole::ProjectionName,
+            _ => return None,
+        };
+        self.evidence_for(owner, role)
     }
 
-    fn reference_path(&self, path: &TypeRefNodePath) -> Option<TypePath> {
-        match self.authored.value_at(path)? {
-            TypeRef::Path(path) | TypeRef::Generic { base: path, .. } => Some(path.clone()),
-            TypeRef::TraitBound(bound) => Some(bound.path().clone()),
+    fn reference_path(&self, owner: TypeId) -> Option<HirPath> {
+        let ty = self.module.resolve_type(owner).ok()?;
+        match ty.kind() {
+            HirTypeKind::Path(path) => Some(path.clone()),
+            HirTypeKind::Generic(generic) => Some(generic.base().clone()),
+            HirTypeKind::TraitBound(bound) => Some(bound.base().clone()),
             _ => None,
         }
     }
 
-    fn generic(&self, path: &TypePath) -> Option<(GenericTypeParameterId, TypeKind)> {
-        let name = direct_segment(path)?.try_as_module_segment().ok()?;
+    fn generic(&self, path: &HirPath) -> Option<(GenericTypeParameterId, TypeKind)> {
+        let name = direct_name(path)?;
+        let name = ModuleSegment::new(name).ok()?;
         match &self.generics {
             GenericContext::Input(scope) => scope.binding(&name).map(|binding| {
                 (
@@ -216,27 +189,49 @@ impl SourceContext<'_> {
                 .map(|binding| (binding.id.clone(), binding.value.clone())),
         }
     }
+
+    fn head_role(&self, owner: TypeId) -> HirTypeSourceRole {
+        match self
+            .module
+            .resolve_type(owner)
+            .expect("validated final-HIR type identity remains live")
+            .kind()
+        {
+            HirTypeKind::ConstInt(_) => HirTypeSourceRole::ConstInteger,
+            HirTypeKind::Path(path) => HirTypeSourceRole::PathSegment {
+                ordinal: u32::try_from(path.segments().len().saturating_sub(1))
+                    .expect("HIR path segment limits fit u32"),
+            },
+            HirTypeKind::Generic(_) => HirTypeSourceRole::GenericBase,
+            HirTypeKind::TraitBound(_) => HirTypeSourceRole::TraitBase,
+            HirTypeKind::Projection(_) => HirTypeSourceRole::ProjectionName,
+            HirTypeKind::Never => HirTypeSourceRole::NeverMarker,
+            _ => HirTypeSourceRole::Whole,
+        }
+    }
+
+    fn evidence_for(&self, owner: TypeId, role: HirTypeSourceRole) -> Option<TypeSourceEvidence> {
+        match self.module.type_source_site(owner, role)? {
+            HirSourceSite::Span(span) => {
+                Some(TypeSourceEvidence::accepted(span.range(), span.clone()))
+            }
+            HirSourceSite::Insertion(insertion) => Some(TypeSourceEvidence::detached(
+                SourceRange::new(insertion.offset(), insertion.offset()),
+            )),
+        }
+    }
+
+    fn required_whole(&self, owner: TypeId) -> TypeSourceEvidence {
+        self.evidence_for(owner, HirTypeSourceRole::Whole)
+            .expect("every final-HIR type owner retains its required whole source role")
+    }
 }
 
 impl<'input, 'world> Resolver<'input, 'world> {
     fn new(input: &'input TypeResolutionInput<'world>) -> Self {
         let mut reserved_poison_indices = BTreeSet::new();
-        collect_recovery_poisons(
-            input.authored().authored().value(),
-            &mut reserved_poison_indices,
-        );
         if let SelfTypeScope::Poisoned(poison) = input.self_scope() {
             reserved_poison_indices.insert(poison.index());
-        }
-        if let Some(symbols) = input.world().symbols() {
-            for declaration in symbols.nominal_symbols() {
-                if let ProjectNominalBody::TypeAlias { target } = declaration.body() {
-                    collect_recovery_poisons(
-                        target.authored().value(),
-                        &mut reserved_poison_indices,
-                    );
-                }
-            }
         }
         Self {
             input,
@@ -256,16 +251,13 @@ impl<'input, 'world> Resolver<'input, 'world> {
     }
 
     fn resolve(mut self) -> Result<TypeResolutionReport, TypeResolutionInputError> {
-        let authored = self.input.authored();
         let root_context = SourceContext {
-            authored: authored.authored(),
-            project: authored.source_backed().map(SourceBackedTypeRef::spans),
-            module: self.input.current_module(),
+            module: self.input.module(),
             generics: GenericContext::Input(self.input.generics()),
             alias_target: false,
         };
-        let root = TypeRefNodePath::root();
-        let value = self.resolve_node(&root_context, authored.authored().value(), &root, 1)?;
+        let root = self.input.root();
+        let value = self.resolve_node(&root_context, root, 1)?;
         let recovered = value.ty.unwrap_or_else(|| {
             value
                 .causes
@@ -273,7 +265,7 @@ impl<'input, 'world> Resolver<'input, 'world> {
                 .copied()
                 .map_or(TypeKind::Unit, TypeKind::Error)
         });
-        let product = ResolvedTypeProduct::new(recovered, self.nodes, self.aliases);
+        let product = ResolvedTypeProduct::new(root, recovered, self.nodes, self.aliases);
         let outcome = if self.unavailable.is_empty() {
             if value.causes.is_empty() {
                 ResolvedTypeRefOutcome::Complete(product)

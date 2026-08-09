@@ -3,6 +3,9 @@
 //! This crate owns client state, document synchronization, request dispatch,
 //! and transport concerns. LSP value conversion stays in `arcweft-verify-lsp`.
 
+#[cfg(test)]
+extern crate self as arcweft_lsp;
+
 pub mod config;
 pub mod custom;
 pub mod diagnostics;

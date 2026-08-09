@@ -3,17 +3,24 @@
 //! Entry roles never create synthetic reducer, state, or Agent symbols. This
 //! module adapts accepted semantic edges back to their original declarations.
 
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, sync::Arc};
 
 use arcweft_lang_hir::{
-    callable_source::HirCallableSignatureSource, model::HirTopLevelDecl,
-    symbol::CallableDeclarationId,
+    identity::ItemId,
+    item::HirItemKind,
+    leaf::{HirIdRef, HirIdRefValue},
+    module::HirModule,
+    source_index::{
+        HirCallableSourceRole, HirEntrySourcePart, HirItemSourceRole, HirSourcePresence,
+        HirSourceQuery, HirSourceSite,
+    },
+    symbol::nominal::{ProjectNominalDeclaration, ProjectNominalDeclarationKind},
+    symbol::{CallableDeclarationKey, CallableSymbol, FlowDeclarationId},
 };
 use arcweft_lang_sema::{
-    entry::{BoundNominalTypeKey, CheckedEntryId, CheckedFlowId},
+    entry::{BoundNominalKind, BoundNominalTypeKey, CheckedEntryId, CheckedFlowId},
     project_index::{ProjectEntryRoleTarget, ProjectSemanticIndex},
 };
-use arcweft_lang_syntax::ast::common::TextRange;
 use arcweft_source::{SourceDocumentIdentity, SourceRange, SourceSpan};
 use arcweft_verify_lsp::LspPositionMapper;
 use lsp_types::{GotoDefinitionResponse, Hover, HoverContents, Location, MarkedString};
@@ -33,7 +40,7 @@ pub(crate) use rename::{prepare_rename, rename};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum EntryToolSymbol {
-    Callable(CallableDeclarationId),
+    Callable(CallableDeclarationKey),
     Nominal(BoundNominalTypeKey),
     Flow(CheckedFlowId),
     Entry(CheckedEntryId),
@@ -52,8 +59,9 @@ pub(crate) fn definition(
     offset: usize,
 ) -> Option<GotoDefinitionResponse> {
     let accepted = profile.accepted_environment()?;
+    let index = accepted.executable()?.semantic_index();
     let project = accepted.project();
-    let cursor = symbol_at(profile, document, offset)?;
+    let cursor = symbol_at(profile, document, offset, index)?;
     Some(GotoDefinitionResponse::Scalar(declaration_location(
         project,
         &cursor.symbol,
@@ -67,8 +75,9 @@ pub(crate) fn references(
     offset: usize,
 ) -> Option<Vec<Location>> {
     let accepted = profile.accepted_environment()?;
+    let index = accepted.executable()?.semantic_index();
     let project = accepted.project();
-    let cursor = symbol_at(profile, document, offset)?;
+    let cursor = symbol_at(profile, document, offset, index)?;
     let encoding = document.line_index().position_encoding();
     let mut locations = declaration_location(project, &cursor.symbol, encoding)
         .into_iter()
@@ -76,14 +85,13 @@ pub(crate) fn references(
     match &cursor.symbol {
         EntryToolSymbol::Callable(declaration) => {
             locations.extend(
-                project
-                    .semantic_index()
+                index
                     .entry_role_edges()
                     .iter()
                     .filter(|edge| {
-                        edge.target()
-                            .callable()
-                            .is_some_and(|(candidate, _)| candidate == declaration)
+                        edge.target().callable().is_some_and(|(candidate, _)| {
+                            &CallableDeclarationKey::Existing(candidate.clone()) == declaration
+                        })
                     })
                     .filter_map(|edge| source_location(project, edge.source(), encoding)),
             );
@@ -97,8 +105,7 @@ pub(crate) fn references(
         }
         EntryToolSymbol::Nominal(key) => {
             locations.extend(
-                project
-                    .semantic_index()
+                index
                     .entry_role_edges()
                     .iter()
                     .filter(|edge| {
@@ -111,8 +118,7 @@ pub(crate) fn references(
         }
         EntryToolSymbol::Flow(id) => {
             locations.extend(
-                project
-                    .semantic_index()
+                index
                     .entry_role_edges()
                     .iter()
                     .filter(|edge| {
@@ -121,6 +127,19 @@ pub(crate) fn references(
                             .is_some_and(|(candidate, _)| candidate == id)
                     })
                     .filter_map(|edge| source_location(project, edge.source(), encoding)),
+            );
+            locations.extend(
+                project
+                    .callable_references()
+                    .iter()
+                    .filter(|reference| {
+                        matches!(
+                            reference.declaration(),
+                            CallableDeclarationKey::Flow(declaration)
+                                if declaration.semantic_digest() == *id.declaration_digest()
+                        )
+                    })
+                    .filter_map(|reference| source_location(project, reference.source(), encoding)),
             );
         }
         EntryToolSymbol::Entry(id) => {
@@ -162,21 +181,26 @@ pub(crate) fn hover(
     offset: usize,
 ) -> Option<Hover> {
     let accepted = profile.accepted_environment()?;
+    let index = accepted.executable()?.semantic_index();
     let project = accepted.project();
-    let cursor = symbol_at(profile, document, offset)?;
+    let cursor = symbol_at(profile, document, offset, index)?;
     let mut text = match &cursor.symbol {
         EntryToolSymbol::Callable(declaration) => {
-            let source = callable_source(project.hir_project(), declaration)?;
-            format!(
-                "```arcw\n{}\n```",
-                source_text(project, source.signature_span())?
-            )
+            let source = callable_symbol(project, declaration)?;
+            let signature = callable_source_span(
+                project,
+                source,
+                HirCallableSourceRole::Signature {
+                    owner: source.source_owner(),
+                },
+            )?;
+            format!("```arcw\n{}\n```", source_text(project, &signature)?)
         }
         EntryToolSymbol::Nominal(key) => format!("`{}` nominal type", key.name()),
         EntryToolSymbol::Flow(id) => format!("flow `@{}`", id.public_id()),
         EntryToolSymbol::Entry(id) => format!("entry `@{}`", id.public_id()),
     };
-    let bindings = binding_annotations(project.semantic_index(), &cursor.symbol);
+    let bindings = binding_annotations(index, &cursor.symbol);
     if !bindings.is_empty() {
         text.push_str("\n\n");
         text.push_str(&bindings.join("\n"));
@@ -191,18 +215,19 @@ fn symbol_at(
     profile: &LspProfile,
     document: &DocumentSnapshot,
     offset: usize,
+    index: &ProjectSemanticIndex,
 ) -> Option<CursorSymbol> {
-    if let Some(symbol) = manifest_entry_at(profile, document, offset) {
+    if let Some(symbol) = manifest_entry_at(profile, document, offset, index) {
         return Some(symbol);
     }
     let accepted = profile.accepted_environment()?;
     let project = accepted.project();
     let accepted_source = project.sources().by_uri(document.uri())?;
-    if accepted_source.document().text() != document.text() {
+    if !Arc::ptr_eq(accepted_source.document(), document.source_document()) {
         return None;
     }
     let identity = accepted_source.document().identity();
-    for edge in project.semantic_index().entry_role_edges() {
+    for edge in index.entry_role_edges() {
         if edge.source().source() == identity && contains_source(edge.source().range(), offset) {
             let symbol = target_symbol(edge.target());
             let (source_range, placeholder) = match &symbol {
@@ -233,7 +258,7 @@ fn symbol_at(
         {
             let placeholder = source_text(project, reference.source())?.to_owned();
             return Some(CursorSymbol {
-                symbol: EntryToolSymbol::Callable(reference.declaration().clone()),
+                symbol: entry_tool_symbol_for_declaration(Some(index), reference.declaration())?,
                 source_range: reference.source().range().start()..reference.source().range().end(),
                 placeholder,
             });
@@ -250,27 +275,32 @@ fn symbol_at(
             });
         }
     }
-    for callable in project.hir_project().callable_signature_sources() {
+    for callable in project.project_symbols().callable_symbols() {
         if callable.name_span().source() == identity
             && contains_source(callable.name_span().range(), offset)
         {
+            let Some(symbol) =
+                entry_tool_symbol_for_declaration(Some(index), callable.declaration())
+            else {
+                continue;
+            };
             return Some(CursorSymbol {
-                symbol: EntryToolSymbol::Callable(callable.declaration().clone()),
+                symbol,
                 source_range: callable.name_span().range().start()
                     ..callable.name_span().range().end(),
                 placeholder: callable.declaration().name().to_owned(),
             });
         }
     }
-    declaration_symbol_at(project, identity, offset)
+    declaration_symbol_at(project, identity, offset, index)
 }
 
 fn manifest_entry_at(
     profile: &LspProfile,
     document: &DocumentSnapshot,
     offset: usize,
+    index: &ProjectSemanticIndex,
 ) -> Option<CursorSymbol> {
-    let accepted = profile.accepted_environment()?;
     for (entry, selection) in profile.entry_selections() {
         if selection.uri().as_ref() != Some(document.uri()) || selection.source() != document.text()
         {
@@ -278,9 +308,7 @@ fn manifest_entry_at(
         }
         let range = selection.value_range();
         if range.start <= offset && offset <= range.end {
-            let id = accepted
-                .project()
-                .semantic_index()
+            let id = index
                 .entry_records()
                 .keys()
                 .find(|id| id.public_id().as_str() == entry)?
@@ -299,63 +327,51 @@ fn declaration_symbol_at(
     project: &crate::profiles::accepted_project::AcceptedProjectSnapshot,
     identity: &SourceDocumentIdentity,
     offset: usize,
+    index: &ProjectSemanticIndex,
 ) -> Option<CursorSymbol> {
-    for (module, hir) in project.hir_project().modules() {
-        if project.hir_project().source(module) != Some(identity) {
+    for nominal in project.project_symbols().nominal_symbols() {
+        let span = nominal.source().name();
+        if span.source() != identity || !contains_source(span.range(), offset) {
             continue;
         }
-        for flow in hir.flows() {
-            let Some(id) = flow.id() else { continue };
-            if contains(id.range(), offset) {
-                let checked = project
-                    .semantic_index()
-                    .entry_role_edges()
-                    .iter()
-                    .filter_map(|edge| edge.target().flow().map(|(id, _)| id))
-                    .find(|checked| checked.public_id().as_str() == id.body())?
+        let key = nominal_key(index, nominal)?;
+        return Some(CursorSymbol {
+            symbol: EntryToolSymbol::Nominal(key),
+            source_range: span.range().start()..span.range().end(),
+            placeholder: nominal.id().name().as_str().to_owned(),
+        });
+    }
+
+    for (_, hir) in project.hir_project().view().modules() {
+        if hir.provenance().source_identity() != identity {
+            continue;
+        }
+        for owner in hir.source_ordered_items() {
+            let item = hir.resolve_item(*owner).ok()?;
+            if let HirItemKind::Entry(entry) = item.kind() {
+                let Some(public_id) = entry.id().value().and_then(resolved_absolute_id) else {
+                    continue;
+                };
+                let Some(span) = item_source_span(
+                    hir,
+                    *owner,
+                    HirItemSourceRole::Entry(HirEntrySourcePart::Id),
+                ) else {
+                    continue;
+                };
+                if !contains_source(span.range(), offset) {
+                    continue;
+                }
+                let checked = index
+                    .entry_records()
+                    .keys()
+                    .find(|id| id.public_id().as_str() == public_id)?
                     .clone();
                 return Some(CursorSymbol {
-                    symbol: EntryToolSymbol::Flow(checked),
-                    source_range: id.range().start()..id.range().end(),
-                    placeholder: id.body().to_owned(),
+                    symbol: EntryToolSymbol::Entry(checked),
+                    source_range: span.range().start()..span.range().end(),
+                    placeholder: public_id.to_owned(),
                 });
-            }
-        }
-        for declaration in hir.declarations() {
-            match declaration {
-                HirTopLevelDecl::Entry(entry) if contains(entry.id().range(), offset) => {
-                    let name_range = entry.id().authored_body_range()?;
-                    let id = project
-                        .semantic_index()
-                        .entry_records()
-                        .keys()
-                        .find(|id| id.public_id().as_str() == entry.id().body())?
-                        .clone();
-                    return Some(CursorSymbol {
-                        symbol: EntryToolSymbol::Entry(id),
-                        source_range: name_range.start()..name_range.end(),
-                        placeholder: entry.id().body().to_owned(),
-                    });
-                }
-                HirTopLevelDecl::Struct(item) => {
-                    if contains(item.name_range(), offset) {
-                        let key = nominal_key(project.semantic_index(), module, item.name())?;
-                        return Some(CursorSymbol {
-                            symbol: EntryToolSymbol::Nominal(key),
-                            source_range: item.name_range().start()..item.name_range().end(),
-                            placeholder: item.name().to_owned(),
-                        });
-                    }
-                }
-                HirTopLevelDecl::Enum(item) if contains(item.name_range(), offset) => {
-                    let key = nominal_key(project.semantic_index(), module, item.name())?;
-                    return Some(CursorSymbol {
-                        symbol: EntryToolSymbol::Nominal(key),
-                        source_range: item.name_range().start()..item.name_range().end(),
-                        placeholder: item.name().to_owned(),
-                    });
-                }
-                _ => {}
             }
         }
     }
@@ -370,7 +386,7 @@ fn declaration_location(
     match symbol {
         EntryToolSymbol::Callable(declaration) => source_location(
             project,
-            callable_source(project.hir_project(), declaration)?.name_span(),
+            callable_symbol(project, declaration)?.name_span(),
             encoding,
         ),
         EntryToolSymbol::Nominal(key) => nominal_declaration(project, key)
@@ -383,92 +399,168 @@ fn declaration_location(
     }
 }
 
-fn callable_source<'a>(
-    hir: &'a arcweft_lang_hir::project::HirProject,
-    declaration: &CallableDeclarationId,
-) -> Option<&'a HirCallableSignatureSource> {
-    hir.callable_signature_sources()
-        .find(|source| source.declaration() == declaration)
+fn callable_symbol<'a>(
+    project: &'a crate::profiles::accepted_project::AcceptedProjectSnapshot,
+    declaration: &CallableDeclarationKey,
+) -> Option<&'a CallableSymbol> {
+    project.project_symbols().callable(declaration)
+}
+
+fn callable_source_span(
+    project: &crate::profiles::accepted_project::AcceptedProjectSnapshot,
+    symbol: &CallableSymbol,
+    role: HirCallableSourceRole,
+) -> Option<SourceSpan> {
+    let hir = project
+        .hir_project()
+        .view()
+        .module(symbol.declaration().module())?;
+    if hir.snapshot_id() != symbol.source_snapshot() || role.owner() != symbol.source_owner() {
+        return None;
+    }
+    item_source_span(hir, symbol.source_item(), HirItemSourceRole::Callable(role))
 }
 
 fn nominal_key(
     index: &ProjectSemanticIndex,
-    module: &arcweft_lang_syntax::ast::module_path::CanonicalModulePath,
-    name: &str,
+    nominal: &ProjectNominalDeclaration,
 ) -> Option<BoundNominalTypeKey> {
+    let expected_kind = match nominal.id().kind() {
+        ProjectNominalDeclarationKind::Struct => BoundNominalKind::Struct,
+        ProjectNominalDeclarationKind::Enum => BoundNominalKind::Enum,
+        ProjectNominalDeclarationKind::TypeAlias => return None,
+    };
     index
         .entry_role_edges()
         .iter()
         .filter_map(|edge| edge.target().nominal().map(|(key, _)| key))
-        .find(|key| key.module() == module && key.name() == name)
+        .find(|key| {
+            key.module() == nominal.id().module()
+                && key.name() == nominal.id().name().as_str()
+                && key.kind() == expected_kind
+        })
         .cloned()
+}
+
+fn nominal_symbol<'a>(
+    project: &'a crate::profiles::accepted_project::AcceptedProjectSnapshot,
+    key: &BoundNominalTypeKey,
+) -> Option<&'a ProjectNominalDeclaration> {
+    if project.project_symbols().world().package() != key.package() {
+        return None;
+    }
+    project.project_symbols().nominal_symbols().find(|nominal| {
+        let kind_matches = matches!(
+            (nominal.id().kind(), key.kind()),
+            (
+                ProjectNominalDeclarationKind::Struct,
+                BoundNominalKind::Struct
+            ) | (ProjectNominalDeclarationKind::Enum, BoundNominalKind::Enum)
+        );
+        nominal.id().module() == key.module()
+            && nominal.id().name().as_str() == key.name()
+            && kind_matches
+    })
 }
 
 fn nominal_declaration(
     project: &crate::profiles::accepted_project::AcceptedProjectSnapshot,
     key: &BoundNominalTypeKey,
 ) -> Option<SourceSpan> {
-    let identity = project.hir_project().source(key.module())?.clone();
-    let hir = project.hir_project().module(key.module())?;
-    for declaration in hir.declarations() {
-        let range = match declaration {
-            HirTopLevelDecl::Struct(item) if item.name() == key.name() => item.name_range(),
-            HirTopLevelDecl::Enum(item) if item.name() == key.name() => item.name_range(),
-            _ => continue,
-        };
-        return project
-            .source(&identity)?
-            .document()
-            .span(SourceRange::new(range.start(), range.end()))
-            .ok();
-    }
-    None
+    Some(nominal_symbol(project, key)?.source().name().clone())
 }
 
 fn flow_declaration(
     project: &crate::profiles::accepted_project::AcceptedProjectSnapshot,
     checked: &CheckedFlowId,
 ) -> Option<SourceSpan> {
-    for (module, hir) in project.hir_project().modules() {
-        let identity = project.hir_project().source(module)?.clone();
-        for flow in hir.flows() {
-            let Some(id) = flow.id() else { continue };
-            if id.body() == checked.public_id().as_str() {
-                return project
-                    .source(&identity)?
-                    .document()
-                    .span(SourceRange::new(id.range().start(), id.range().end()))
-                    .ok();
-            }
+    project
+        .project_symbols()
+        .callable_symbols()
+        .find(|symbol| {
+            matches!(
+                symbol.declaration(),
+                CallableDeclarationKey::Flow(declaration)
+                    if declaration.semantic_digest() == *checked.declaration_digest()
+            )
+        })
+        .map(|symbol| symbol.name_span().clone())
+}
+
+fn checked_flow_for_declaration<'a>(
+    index: &'a ProjectSemanticIndex,
+    declaration: &FlowDeclarationId,
+) -> Option<&'a CheckedFlowId> {
+    let digest = declaration.semantic_digest();
+    index
+        .entry_role_edges()
+        .iter()
+        .filter_map(|edge| edge.target().flow().map(|(id, _)| id))
+        .find(|checked| *checked.declaration_digest() == digest)
+}
+
+fn entry_tool_symbol_for_declaration(
+    index: Option<&ProjectSemanticIndex>,
+    declaration: &CallableDeclarationKey,
+) -> Option<EntryToolSymbol> {
+    match declaration {
+        CallableDeclarationKey::Flow(declaration) => {
+            checked_flow_for_declaration(index?, declaration)
+                .cloned()
+                .map(EntryToolSymbol::Flow)
         }
+        declaration => Some(EntryToolSymbol::Callable(declaration.clone())),
     }
-    None
 }
 
 fn entry_declaration(
     project: &crate::profiles::accepted_project::AcceptedProjectSnapshot,
     checked: &CheckedEntryId,
 ) -> Option<(String, SourceSpan)> {
-    for (module, hir) in project.hir_project().modules() {
-        let identity = project.hir_project().source(module)?.clone();
-        for declaration in hir.declarations() {
-            let HirTopLevelDecl::Entry(entry) = declaration else {
+    for (_, hir) in project.hir_project().view().modules() {
+        for owner in hir.source_ordered_items() {
+            let item = hir.resolve_item(*owner).ok()?;
+            let HirItemKind::Entry(entry) = item.kind() else {
                 continue;
             };
-            if entry.id().body() == checked.public_id().as_str() {
-                let span = project
-                    .source(&identity)?
-                    .document()
-                    .span(SourceRange::new(
-                        entry.id().range().start(),
-                        entry.id().range().end(),
-                    ))
-                    .ok()?;
-                return Some((entry.id().body().to_owned(), span));
+            let Some(public_id) = entry.id().value().and_then(resolved_absolute_id) else {
+                continue;
+            };
+            if public_id == checked.public_id().as_str() {
+                let span = item_source_span(
+                    hir,
+                    *owner,
+                    HirItemSourceRole::Entry(HirEntrySourcePart::Id),
+                )?;
+                return Some((public_id.to_owned(), span));
             }
         }
     }
     None
+}
+
+fn item_source_span(hir: &HirModule, owner: ItemId, role: HirItemSourceRole) -> Option<SourceSpan> {
+    let lookup = hir
+        .source_site(
+            hir.provenance().source_identity(),
+            HirSourceQuery::Item { owner, role },
+        )
+        .ok()?;
+    let HirSourcePresence::Present(HirSourceSite::Span(span)) = lookup.presence() else {
+        return None;
+    };
+    Some(span.clone())
+}
+
+fn absolute_id(reference: &HirIdRef) -> Option<&str> {
+    match reference {
+        HirIdRef::Absolute(reference) => Some(reference.as_str()),
+        HirIdRef::Relative(_) | HirIdRef::FamilyRelative(_) => None,
+    }
+}
+
+fn resolved_absolute_id(reference: &HirIdRefValue) -> Option<&str> {
+    reference.as_resolved().and_then(absolute_id)
 }
 
 fn source_location(
@@ -512,19 +604,15 @@ fn source_text<'a>(
 fn target_symbol(target: &ProjectEntryRoleTarget) -> EntryToolSymbol {
     match target {
         ProjectEntryRoleTarget::Callable { declaration, .. } => {
-            EntryToolSymbol::Callable(declaration.clone())
+            EntryToolSymbol::Callable(CallableDeclarationKey::Existing(declaration.clone()))
         }
         ProjectEntryRoleTarget::Nominal { key, .. } => EntryToolSymbol::Nominal(key.clone()),
         ProjectEntryRoleTarget::Flow { id, .. } => EntryToolSymbol::Flow(id.clone()),
     }
 }
 
-fn contains(range: &TextRange, offset: usize) -> bool {
-    range.start() <= offset && offset <= range.end()
-}
-
 fn contains_source(range: SourceRange, offset: usize) -> bool {
-    range.start() <= offset && offset <= range.end()
+    range.start() <= offset && offset < range.end()
 }
 
 #[cfg(test)]

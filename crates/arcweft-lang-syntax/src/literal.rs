@@ -38,13 +38,6 @@ impl IntRadix {
             Self::Hexadecimal => 16,
         }
     }
-
-    pub(crate) const fn prefix_len(self) -> usize {
-        match self {
-            Self::Decimal => 0,
-            Self::Binary | Self::Octal | Self::Hexadecimal => 2,
-        }
-    }
 }
 
 /// Explicit integer width suffix accepted by Arcweft source syntax.

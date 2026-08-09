@@ -2,12 +2,12 @@
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use crate::grammar::event::{ExpectedToken, PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
 pub(super) fn emit_open_delimiter(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     kind: SyntaxKind,
     spelling: &str,
 ) {
@@ -18,7 +18,7 @@ pub(super) fn emit_open_delimiter(
 }
 
 pub(super) fn emit_close_delimiter(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     kind: SyntaxKind,
     spelling: &'static str,
     diagnostic: &'static str,
@@ -43,7 +43,7 @@ pub(super) fn emit_close_delimiter(
 }
 
 pub(super) fn emit_missing_delimiter(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     kind: SyntaxKind,
     role: SyntaxRole,
 ) {
@@ -59,7 +59,7 @@ pub(super) fn emit_missing_delimiter(
 /// parser-selected insertion site.  The caller supplies the domain role, so
 /// attached consumers never need to search source text for the token.
 pub(super) fn emit_required_punctuation(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     kind: SyntaxKind,
     role: SyntaxRole,
     spelling: &'static str,
@@ -90,7 +90,7 @@ pub(super) fn emit_required_punctuation(
 
 /// Emits one required keyword owner as authored bytes or its exact insertion.
 pub(super) fn emit_required_keyword(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     kind: SyntaxKind,
     role: SyntaxRole,
     spelling: &'static str,
@@ -123,10 +123,11 @@ pub(super) fn expected(kind: SyntaxKind) -> ExpectedToken {
     ExpectedToken::try_new(kind).expect("real grammar token kind")
 }
 
-pub(super) fn find_header_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize) -> usize {
+pub(super) fn find_header_boundary(parser: &DocumentParser<'_, '_>, start: usize) -> usize {
     find_top_level_boundary(
         parser,
         start,
+        token_count(parser),
         &[
             "where",
             "requires",
@@ -144,13 +145,17 @@ pub(super) fn find_header_boundary(parser: &ShadowDocumentParser<'_, '_>, start:
 }
 
 pub(super) fn find_top_level_boundary(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
+    end: usize,
     boundaries: &[&str],
 ) -> usize {
     let mut depth = 0_usize;
     let mut index = start;
-    while let Some(token) = parser.token_at(index) {
+    while index < end {
+        let Some(token) = parser.token_at(index) else {
+            return end;
+        };
         let text = parser.text_of(token);
         if depth == 0 && boundaries.contains(&text) {
             return index;
@@ -162,11 +167,11 @@ pub(super) fn find_top_level_boundary(
         }
         index += 1;
     }
-    index
+    end
 }
 
 pub(super) fn find_matching_close(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     opening: &str,
 ) -> Option<usize> {
@@ -176,7 +181,7 @@ pub(super) fn find_matching_close(
 /// Finds the close paired with an already-consumed opening delimiter without
 /// crossing a caller-selected grammar recovery boundary.
 pub(super) fn find_matching_close_before(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
     opening: &str,
@@ -202,7 +207,7 @@ pub(super) fn find_matching_close_before(
 }
 
 pub(super) fn find_statement_terminator(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<(usize, bool)> {
@@ -231,7 +236,7 @@ pub(super) fn find_statement_terminator(
 }
 
 pub(super) fn first_significant(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<usize> {
@@ -242,11 +247,7 @@ pub(super) fn first_significant(
     })
 }
 
-pub(super) fn trimmed_end(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> usize {
+pub(super) fn trimmed_end(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     (start..end)
         .rev()
         .find(|index| {
@@ -257,7 +258,7 @@ pub(super) fn trimmed_end(
         .map_or(start, |index| index + 1)
 }
 
-pub(super) fn token_count(parser: &ShadowDocumentParser<'_, '_>) -> usize {
+pub(super) fn token_count(parser: &DocumentParser<'_, '_>) -> usize {
     let mut index = parser.cursor();
     while parser.token_at(index).is_some() {
         index += 1;
@@ -265,14 +266,11 @@ pub(super) fn token_count(parser: &ShadowDocumentParser<'_, '_>) -> usize {
     index
 }
 
-pub(super) fn token_text<'a>(
-    parser: &'a ShadowDocumentParser<'_, '_>,
-    index: usize,
-) -> Option<&'a str> {
+pub(super) fn token_text<'a>(parser: &'a DocumentParser<'_, '_>, index: usize) -> Option<&'a str> {
     parser.token_at(index).map(|token| parser.text_of(token))
 }
 
-pub(super) fn bump_until(parser: &mut ShadowDocumentParser<'_, '_>, exclusive: usize) {
+pub(super) fn bump_until(parser: &mut DocumentParser<'_, '_>, exclusive: usize) {
     while parser.cursor() < exclusive && parser.bump().is_some() {}
 }
 

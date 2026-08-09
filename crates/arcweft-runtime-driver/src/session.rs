@@ -50,7 +50,7 @@ use arcweft_core::awbc::{
     schema::{AwbcEntryId, AwbcProgram},
 };
 use arcweft_core::bytecode::BytecodeVerificationError;
-use arcweft_core::effect::LineEffectRequest;
+use arcweft_core::effect::{LineEffectRequest, RuntimeAssertionFailure};
 use arcweft_core::engine::{FlowFiberStatus, FlowStatusLabelStyle};
 use arcweft_core::executor::{
     ArcweftRuntimeExecutor, ArcweftRuntimeExecutorSnapshot, RuntimeExecutor,
@@ -65,7 +65,9 @@ use arcweft_core::step::{
     RuntimeHostCallResult, RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode,
     RuntimeStepOptions, RuntimeStepStats, RuntimeStepStopReason,
 };
-use arcweft_core::task::{CancelScopeId, LogicalEpoch, TaskEvent, TaskEventKind, TaskSequence};
+use arcweft_core::task::{
+    CancelScopeId, LogicalEpoch, RuntimeNeedState, TaskEvent, TaskEventKind, TaskSequence,
+};
 use arcweft_core::value::{RuntimeBinding, RuntimeFieldValue, RuntimePayload, RuntimeValue};
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
@@ -79,7 +81,7 @@ use arcweft_presentation::appearance::{
 };
 use arcweft_presentation::input::Action;
 use arcweft_presentation::text_input::TextControlWriteBack;
-use arcweft_render_text::LineDisplayCatalog;
+use arcweft_text_model::DialogueContentCatalog;
 use arcweft_view::{ViewStyleProgram, virtualization::ViewVirtualizationRuntime};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -150,6 +152,7 @@ pub struct BundleStepInput {
     pub deferred_root_events: Vec<RootEventInput>,
     pub presentation_inputs: Vec<BundlePresentationInput>,
     pub input_events: Vec<RoutedInputEvent>,
+    pub need_states: Vec<RuntimeNeedState>,
     pub task_events: Vec<TaskEvent>,
     pub audio_events: Vec<AudioEvent>,
     pub source_events: Vec<RuntimeSourceEvent>,
@@ -176,6 +179,9 @@ pub struct BundleSessionStep {
     pub status_label: String,
     pub stats: RuntimeStepStats,
     pub diagnostics: Vec<String>,
+    /// Typed assertion failures admitted at this host boundary. Successful
+    /// assertions were omitted by the runtime and never enter this vector.
+    pub assertion_failures: Vec<RuntimeAssertionFailure>,
     pub observations: RuntimeObservationState,
     pub flow_events: Vec<FlowEvent>,
     pub root_transitions: Vec<RootTransitionOutcome>,
@@ -252,7 +258,7 @@ pub struct BundleSession {
     source_label: String,
     executor: ArcweftRuntimeExecutor,
     runtime_images: GenerationRuntimeTable<SessionRuntime>,
-    display: LineDisplayCatalog,
+    dialogue_content: DialogueContentCatalog,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
@@ -633,6 +639,10 @@ impl BundleSession {
     }
 
     /// Executes exactly one VM step using explicit, non-zero logical time.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one session step is the atomic owner of VM execution, output publication, presentation update, and lifecycle finalization"
+    )]
     pub fn step_with_clock(
         &mut self,
         clock: RuntimeClockStep,
@@ -672,7 +682,16 @@ impl BundleSession {
             .extend(deferred_root_events.iter().cloned());
         let flow_events = std::mem::take(&mut output.flow_events);
         let line_effects = std::mem::take(&mut output.effects.line);
-        let display = resolve_display_frames(&self.display, &flow_events);
+        let assertion_failures = line_effects
+            .iter()
+            .filter_map(|effect| match effect {
+                LineEffectRequest::Assert(assertion) => {
+                    Some(RuntimeAssertionFailure::new(assertion.clone()))
+                }
+                _ => None,
+            })
+            .collect();
+        let display = resolve_display_frames(&self.dialogue_content, &flow_events, None);
         let mut diagnostics = output
             .diagnostics
             .into_iter()
@@ -725,6 +744,7 @@ impl BundleSession {
             fiber_status: result.fiber_status,
             stats: result.stats,
             diagnostics,
+            assertion_failures,
             observations,
             flow_events,
             root_transitions,
@@ -797,6 +817,7 @@ impl BundleSession {
                 root_events: input.root_events,
                 deferred_root_events: input.deferred_root_events,
                 input_events: input.input_events,
+                need_states: input.need_states,
                 task_events,
                 audio_events: input.audio_events,
                 source_events: input.source_events,

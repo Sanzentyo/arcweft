@@ -2,9 +2,8 @@
 
 use std::{error::Error, fmt};
 
-use arcweft_render_text::{
-    LanguageTag, ResolvedTextStyle, RichTextInlineDirection, RichTextRange, RichTextWritingMode,
-};
+use arcweft_render_text::{LanguageTag, ResolvedTextStyle};
+use arcweft_text_model::{RichTextInlineDirection, RichTextRange, RichTextWritingMode};
 use serde::{Deserialize, Serialize};
 
 use crate::{LayoutPoint, LayoutRect, LayoutSize};

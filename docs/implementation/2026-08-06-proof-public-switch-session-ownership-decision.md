@@ -62,7 +62,9 @@ existing result, not a parallel parsed-project model.
    to `SyntaxDatabase::reparse` with the current `ParsedSource`. A no-op keeps
    the exact snapshot; a failed or stale edit publishes no syntax generation.
 3. **Read topology from the committed snapshot.** The module declaration and
-   `use` inventory are read from `ParsedSource::tree()`. Both
+   `use` inventory are read from `ParsedSource::{items, entries}` and the
+   snapshot-bound typed handles those methods return. There is no public
+   whole-tree projection. Both
    `project.rs::scan_source` and
    `topology/loader.rs::load_module_dependencies` consume this retained
    snapshot. Neither calls `parse_document_with_source`.
@@ -175,6 +177,8 @@ Focused tests must prove:
 - a failed compile, failed accepted-project admission, or lost publication race
   leaves the old environment and its caches authoritative;
 - no LSP feature lowers locally and no compiler product exposes linked HIR;
+- `ParsedSource::tree()` and public `TypedSyntaxTree` fail to compile while
+  typed item/root access remains bound to the accepted `ParsedSource`;
 - cross-session in-memory HIR reuse is rejected, while stable persistent facts
   contain no session-only IDs; and
 - recovered modules remain available to tooling but cannot enter executable

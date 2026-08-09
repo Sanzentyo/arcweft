@@ -22,7 +22,7 @@ use crate::leaf::{
     HirFloatIssue, HirFloatLiteral, HirIntegerIssue, HirIntegerLiteral, HirLiteral, HirStringIssue,
     HirStringLiteral, HirUnitNumberIssue, HirUnitNumberLiteral,
 };
-use crate::lower::{HirModuleKey, LoweringRequest};
+use crate::lowering::{HirModuleKey, LoweringRequest};
 use crate::module::HirModule;
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::HirOrigin;
@@ -58,7 +58,6 @@ fn parsed_source(document_id: &str, patterns: &[&str]) -> ParsedSource {
 
 fn statements(parsed: &ParsedSource) -> Vec<StatementNode> {
     let item = parsed
-        .tree()
         .items()
         .expect("source item inventory")
         .into_iter()
@@ -102,11 +101,12 @@ fn stage<'source>(
     database: &HirDatabase,
     parsed: &'source ParsedSource,
 ) -> StagedHirModuleTransaction<'source> {
-    database
-        .stage_final_hir(
-            LoweringRequest::try_new(module_key(parsed), parsed).expect("lowering request"),
-        )
-        .expect("staged HIR module")
+    super::super::stage_unpublished_module_for_invariant_test(
+        database,
+        LoweringRequest::try_new(module_key(parsed), parsed).expect("lowering request"),
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .expect("staged HIR module")
 }
 
 fn allocate_module_scope(
@@ -1125,6 +1125,45 @@ fn record_cross_field_recovery_does_not_allocate_duplicate_or_second_rest() {
 }
 
 #[test]
+fn underscore_allocates_no_local() {
+    let parsed = parsed_source("discard-bindings", &["_", "(left, _, right)"]);
+    let (module, owners, _) = lower_and_publish(&parsed);
+
+    assert!(matches!(
+        pattern(&module, owners[0]).kind(),
+        HirPatternKind::Discard
+    ));
+    let HirPatternKind::Tuple { elements } = pattern(&module, owners[1]).kind() else {
+        panic!("mixed discard fixture must retain its tuple Pattern");
+    };
+    let [left, discard, right] = elements.as_ref() else {
+        panic!("mixed discard tuple must retain all three PatternIds");
+    };
+    assert!(matches!(
+        pattern(&module, *left).kind(),
+        HirPatternKind::Binding(_)
+    ));
+    assert!(matches!(
+        pattern(&module, *discard).kind(),
+        HirPatternKind::Discard
+    ));
+    assert!(matches!(
+        pattern(&module, *right).kind(),
+        HirPatternKind::Binding(_)
+    ));
+
+    let scope = pattern(&module, owners[0]).scope();
+    let scope = module.resolve_scope(scope).expect("discard fixture scope");
+    let names = scope
+        .locals()
+        .iter()
+        .map(|local| module.resolve_local(*local).unwrap().name().as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(names, ["left", "right"]);
+    assert!(module.captures().next().is_none());
+}
+
+#[test]
 fn generations_follow_current_scope_source_order() {
     let parsed = parsed_source("generation-order", &["same", "same", "other", "same"]);
     let (module, _, _) = lower_and_publish(&parsed);
@@ -1435,7 +1474,7 @@ fn foreign_attached_pattern_is_rejected_before_reservation() {
 }
 
 #[test]
-fn local_generation_exhaustion_is_fatal_and_publishes_nothing() {
+fn local_generation_exhaustion_is_atomic() {
     let parsed = parsed_source("generation-exhaustion", &["overflowed", "overflowed"]);
     let attached = attached_patterns(&parsed);
     let database = HirDatabase::try_new().expect("HIR database");

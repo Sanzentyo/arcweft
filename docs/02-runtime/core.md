@@ -210,7 +210,6 @@ pub struct LineTaskGroup {
     pub out: Vec<LineOutRequest>,
     pub cancel_rules: Vec<LineCancelRuleRequest>,
     pub memo: Vec<LineMemoRequest>,
-    pub assertions: Vec<LineAssertionRequest>,
     pub cleanup: LineCleanupPolicy,
 }
 
@@ -274,9 +273,14 @@ pub enum LineEffectRequest {
 }
 
 pub struct RuntimeAssertion {
-    pub condition: String,
-    pub message: String,
-    pub profile: RuntimeAssertionProfile,
+    guard: RuntimeAssertionGuardId,
+    condition: String,
+    message: String,
+    profile: RuntimeAssertionProfile,
+}
+
+pub struct RuntimeAssertionFailure {
+    assertion: RuntimeAssertion,
 }
 
 pub enum RuntimeAssertionProfile {
@@ -284,6 +288,22 @@ pub enum RuntimeAssertionProfile {
     DebugOnly,
 }
 ```
+
+`RuntimeEffectExpr::Assert` evaluates its condition as a typed `Bool` inside
+the Sans-I/O runtime. `true` produces no host request. Only `false`
+materializes `LineEffectRequest::Assert`, so hosts treat that request as an
+already-established failure and never parse `condition` text to decide whether
+it failed. A non-`Bool` condition is a typed runtime materialization error.
+
+The persisted failure identity is the checked 16-byte
+`RuntimeAssertionGuardId`; condition and message strings are presentation data.
+Hosts return `RuntimeAssertionFailure` as core data. A fresh compiler session
+may join that guard to the exact statement, zero-based condition index, mode,
+and revision-bound source span through a non-serialized runtime-plan inventory
+bound to the exact runtime-plan artifact fingerprint. Without that exact
+association, CLI, LSP, Agent, and debug presentation use persisted evidence and
+must not fabricate HIR or syntax identity. Both paths emit the stable code
+`runtime.assertion_failed`.
 
 Current Phase 2.0 lowering maps checked HIR dialogue plans into this data model:
 
@@ -309,12 +329,11 @@ signal.set(target, value)   -> LineEffectRequest::SignalWrite
 metric.set(target, value)   -> LineEffectRequest::MetricWrite
 event.emit(Event, fields)   -> LineEffectRequest::EmitEvent
 ensure(cond, msg)           -> LineEffectRequest::Ensure
-assert(cond, msg?)          -> LineEffectRequest::Assert(profile=Always)
-debug_assert(cond, msg?)    -> LineEffectRequest::Assert(profile=DebugOnly)
+assert.check(cond, ...)     -> LineEffectRequest::Assert(profile=Always)
+assert.debug(cond, ...)     -> LineEffectRequest::Assert(profile=DebugOnly)
 out expr                    -> LineEffectRequest::Out and LineTaskGroup.out
 cancel on ... { ... }       -> LineTaskGroup.cancel_rules
 memo name(...)              -> LineTaskGroup.memo
-assert(expr)                -> LineTaskGroup.assertions
 ```
 
 `yield` is not a line effect. It lowers only through stream/source generation

@@ -13,7 +13,7 @@ use crate::identity::{
     IdResolveError, ItemId, LocalId, PatternId, RawHirId, RawHirIdView, ScopeId, StmtId,
     SyntheticKey, SyntheticOwner, SyntheticRole, TypeId,
 };
-use crate::lower::HirLimitError;
+use crate::lowering::HirLimitError;
 use crate::source_index::HirSourceSite;
 
 type SyntheticLedgerKey = (SyntheticKey, HirIdKind);
@@ -141,6 +141,14 @@ impl SharedSlotLifetimes {
         validate_lifetime_update(&committed, &proposed)?;
         *committed = proposed;
         Ok(())
+    }
+
+    fn validates_publish(&self, proposed: &[HirSlotLifetime]) -> Result<(), HirSlotError> {
+        let committed = match self.committed.read() {
+            Ok(committed) => committed,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        validate_lifetime_update(&committed, proposed)
     }
 
     fn len(&self) -> usize {
@@ -583,6 +591,8 @@ pub(crate) struct StagedSlotTransaction {
     lifetimes: Arc<SharedSlotLifetimes>,
     #[cfg(test)]
     total_slot_maximum: usize,
+    #[cfg(test)]
+    next_slot_identity: Option<u64>,
     poisoned: bool,
 }
 
@@ -616,6 +626,12 @@ impl PreparedSlotCommit {
             }
             _ => false,
         }
+    }
+
+    pub(crate) fn validate_publish(&self) -> Result<(), HirSlotError> {
+        self.snapshot
+            .lifetimes
+            .validates_publish(&self.proposed_lifetimes)
     }
 
     pub(crate) fn publish(self) -> Result<Arc<SlotSnapshot>, HirSlotError> {
@@ -666,6 +682,8 @@ impl StagedSlotTransaction {
             lifetimes: Arc::clone(&snapshot.lifetimes),
             #[cfg(test)]
             total_slot_maximum: HirLimit::TotalSlotsPerModule.maximum(),
+            #[cfg(test)]
+            next_slot_identity: None,
             poisoned: false,
         }
     }
@@ -680,6 +698,17 @@ impl StagedSlotTransaction {
         assert!(maximum <= HirLimit::TotalSlotsPerModule.maximum());
         assert!(self.metadata.len() <= maximum);
         self.total_slot_maximum = maximum;
+    }
+
+    /// Seeds only the next raw identity conversion with the first value that
+    /// cannot be represented by the production `NonZeroU32` slot owner.
+    ///
+    /// The allocator still performs ordinary total-slot accounting, error
+    /// construction, and transaction poisoning. The hook cannot manufacture
+    /// a successful or non-contiguous ID.
+    #[cfg(test)]
+    pub(crate) fn exhaust_next_slot_identity_for_test(&mut self) {
+        self.next_slot_identity = Some(u64::from(u32::MAX) + 1);
     }
 
     pub(crate) const fn transaction_lease(&self) -> &Arc<HirSlotTransactionLease> {
@@ -953,6 +982,7 @@ impl StagedSlotTransaction {
         Ok(())
     }
 
+    #[cfg(test)]
     pub(crate) fn retire<I: HirTypedId>(&mut self, id: I) -> Result<(), HirSlotError> {
         self.ensure_open()?;
         let raw = id.raw();
@@ -1185,13 +1215,24 @@ impl StagedSlotTransaction {
             )
             .into());
         }
-        let slot = u32::try_from(observed)
-            .ok()
-            .and_then(NonZeroU32::new)
-            .ok_or(HirSlotError::SlotIdentityExhausted {
-                module: self.snapshot.module(),
-                kind,
-            })?;
+        let slot = {
+            #[cfg(test)]
+            {
+                self.next_slot_identity.take().map_or_else(
+                    || u32::try_from(observed).ok(),
+                    |identity| u32::try_from(identity).ok(),
+                )
+            }
+            #[cfg(not(test))]
+            {
+                u32::try_from(observed).ok()
+            }
+        }
+        .and_then(NonZeroU32::new)
+        .ok_or(HirSlotError::SlotIdentityExhausted {
+            module: self.snapshot.module(),
+            kind,
+        })?;
         let raw = RawHirId::new(self.snapshot.module(), slot, kind);
         self.metadata.push(HirSlotMetadata {
             kind,

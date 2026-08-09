@@ -346,10 +346,7 @@ entry cli @entry.main {
         .unwrap_or_else(|| {
             panic!("shallower nested proxy should remain visible as a lower-ranked hit: {hit_json}")
         });
-    assert_eq!(
-        keyword_hit["region"]["proxy_params"]["channel"]["value"],
-        "choice"
-    );
+    assert_text_proxy_field(&keyword_hit["region"], "channel", "choice");
 }
 
 fn assert_agent_hit_capture_refs_match(hit: &serde_json::Value, object: &serde_json::Value) {
@@ -399,6 +396,24 @@ fn assert_text_proxy_declaration_with_attribute(
     assert_eq!(declaration["attribute"], attribute);
 }
 
+fn assert_text_proxy_field(region: &serde_json::Value, name: &str, value: &str) {
+    let field = region["proxy_fields"]
+        .as_array()
+        .expect("typed proxy fields are listed")
+        .iter()
+        .find(|field| field["name"] == name)
+        .unwrap_or_else(|| panic!("typed proxy field {name} is present: {region}"));
+    let schema_field = region["proxy_schema"]["fields"]
+        .as_array()
+        .expect("typed proxy schema fields are listed")
+        .iter()
+        .find(|field| field["name"] == name)
+        .unwrap_or_else(|| panic!("typed proxy schema field {name} is present: {region}"));
+    assert_eq!(field["value"]["value"], value);
+    assert_eq!(field["id"], schema_field["id"]);
+    assert!(region.get("proxy_params").is_none());
+}
+
 #[test]
 fn agent_observe_infers_text_proxy_struct_shorthand() {
     let path = inferred_text_proxy_struct_shorthand_source();
@@ -439,10 +454,7 @@ fn agent_observe_infers_text_proxy_struct_shorthand() {
         "HoverHit",
     );
     assert_eq!(hit_json["hits"][0]["region"]["proxy_layer"], "view");
-    assert_eq!(
-        hit_json["hits"][0]["region"]["proxy_params"]["tone"]["value"],
-        "alert"
-    );
+    assert_text_proxy_field(&hit_json["hits"][0]["region"], "tone", "alert");
     assert_eq!(hit_json["hits"][0]["depth"], 7000);
 }
 
@@ -533,10 +545,7 @@ flow main {
     );
     assert_eq!(hit_json["hits"][0]["region"]["proxy_role"], "quest");
     assert_eq!(hit_json["hits"][0]["region"]["proxy_layer"], "hud");
-    assert_eq!(
-        hit_json["hits"][0]["region"]["proxy_params"]["state"]["value"],
-        "active"
-    );
+    assert_text_proxy_field(&hit_json["hits"][0]["region"], "state", "active");
     assert_eq!(hit_json["hits"][0]["depth"], 6000);
 }
 
@@ -1120,10 +1129,7 @@ fn assert_depth_sorted_mcp_proxy_hits(hit_json: &serde_json::Value, hover: &serd
         .unwrap_or_else(|| {
             panic!("MCP hit-test should keep the lower-ranked proxy hit with params: {hit_json}")
         });
-    assert_eq!(
-        keyword_hit["region"]["proxy_params"]["channel"]["value"],
-        "choice"
-    );
+    assert_text_proxy_field(&keyword_hit["region"], "channel", "choice");
 }
 
 #[test]
@@ -1194,10 +1200,7 @@ flow main {
     assert_eq!(late_hit["top_object_id"], late_proxy["id"]);
     assert_eq!(late_hit["hits"][0]["region"]["kind"], "text_object_proxy");
     assert_eq!(late_hit["hits"][0]["region"]["proxy_id"], "hotspot");
-    assert_eq!(
-        late_hit["hits"][0]["region"]["proxy_params"]["channel"]["value"],
-        "choice"
-    );
+    assert_text_proxy_field(&late_hit["hits"][0]["region"], "channel", "choice");
 
     let early_hit = hit_test_animated_proxy_source_at(&path, late_center_x, late_center_y, "0");
     assert!(
@@ -1412,10 +1415,7 @@ fn assert_rich_text_page_and_line_aggregate_proxy_metadata(observe_json: &serde_
     assert_eq!(line_keyword_hit["proxy_type"], "KeywordHit");
     assert_text_proxy_declaration(&line_keyword_hit["proxy_declaration"], "KeywordHit");
     assert_eq!(line_keyword_hit["depth"], 4000);
-    assert_eq!(
-        line_keyword_hit["proxy_params"]["channel"]["value"],
-        "choice"
-    );
+    assert_text_proxy_field(line_keyword_hit, "channel", "choice");
 }
 
 #[test]

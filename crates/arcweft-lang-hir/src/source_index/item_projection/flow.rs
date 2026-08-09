@@ -4,10 +4,11 @@ use std::collections::BTreeMap;
 
 use arcweft_lang_syntax::attachment::source_file::AttachedDelimiterState;
 use arcweft_lang_syntax::attachment::{
-    AttachedCallableParameterKind, AttachedFlowContractClause, AttachedFlowContractMode,
-    AttachedFlowContractOperands, AttachedFlowDeclaration, AttachedFlowIdSyntax,
-    AttachedFlowIdentity, AttachedFlowPublicId, AttachedFlowReturnSyntax, AttachedFlowSignature,
-    AttachedGenericParameter, AttachedRequiredFlowBody,
+    AttachedCallableParameterKind, AttachedFlowContractClause, AttachedFlowContractList,
+    AttachedFlowContractMode, AttachedFlowContractOperands, AttachedFlowDeclaration,
+    AttachedFlowIdSyntax, AttachedFlowIdentity, AttachedFlowPublicId, AttachedFlowReturnSyntax,
+    AttachedFlowSignature, AttachedFlowSignatureRecovery, AttachedGenericParameter,
+    AttachedRequiredFlowBody,
 };
 use arcweft_lang_syntax::incremental::ParsedSource;
 use arcweft_source::SourceSpan;
@@ -48,6 +49,11 @@ struct FlowManifest {
 }
 
 impl FlowManifest {
+    #[allow(
+        clippy::needless_pass_by_value,
+        clippy::result_large_err,
+        reason = "manifest insertion consumes one exact span and preserves complete query/source evidence on rejection"
+    )]
     fn required(
         &mut self,
         parsed: &ParsedSource,
@@ -191,9 +197,8 @@ pub(super) fn payload_matches(
     issues.extend(signature_issues);
     issues.extend(contract_issues);
     issues.extend(body_issues);
-    let trailing_base = match u32::try_from(signature.recovery().len()) {
-        Ok(value) => value,
-        Err(_) => return false,
+    let Ok(trailing_base) = u32::try_from(signature.recovery().len()) else {
+        return false;
     };
     for position in 0..attached.trailing_recovery().len() {
         let Ok(position) = u32::try_from(position) else {
@@ -211,6 +216,10 @@ pub(super) fn payload_matches(
     flow_poison_matches(item, flow, issues)
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "Flow manifest failures preserve the complete typed query, source component, and owner evidence"
+)]
 fn flow_manifest(
     parsed: &ParsedSource,
     owner: ItemId,
@@ -239,7 +248,7 @@ fn flow_manifest(
         .signature()
         .recovery()
         .iter()
-        .map(|recovery| recovery.syntax())
+        .map(AttachedFlowSignatureRecovery::syntax)
         .chain(attached.trailing_recovery().iter())
         .enumerate()
     {
@@ -254,6 +263,10 @@ fn flow_manifest(
     Ok(manifest)
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "identity projection failures preserve the complete typed Flow owner and source role"
+)]
 fn project_identity(
     manifest: &mut FlowManifest,
     parsed: &ParsedSource,
@@ -289,6 +302,10 @@ fn project_identity(
     Ok(())
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "signature projection failures preserve the complete typed Flow owner and source role"
+)]
 fn project_signature(
     manifest: &mut FlowManifest,
     parsed: &ParsedSource,
@@ -393,6 +410,10 @@ fn project_signature(
     Ok(())
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "contract projection failures preserve the complete typed Flow owner and source role"
+)]
 fn project_contracts(
     manifest: &mut FlowManifest,
     parsed: &ParsedSource,
@@ -483,6 +504,10 @@ fn operand_source(clause: &AttachedFlowContractClause, ordinal: usize) -> Source
     clause_operands(clause)[ordinal].whole_source_span()
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "body projection failures preserve the complete typed Flow owner and source role"
+)]
 fn project_body(
     manifest: &mut FlowManifest,
     parsed: &ParsedSource,
@@ -628,9 +653,9 @@ fn project_flow_identity(attached: &AttachedFlowIdentity) -> Option<(HirFlowIden
         AttachedFlowIdentity::PublicId { public_id } => {
             let (public_id, recovered) = project_flow_public_id(public_id, None)?;
             Some((
-                public_id
-                    .map(|public_id| HirFlowIdentity::PublicId { public_id })
-                    .unwrap_or(HirFlowIdentity::Missing),
+                public_id.map_or(HirFlowIdentity::Missing, |public_id| {
+                    HirFlowIdentity::PublicId { public_id }
+                }),
                 recovered,
             ))
         }
@@ -714,6 +739,10 @@ fn flow_return_matches(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered matrix derives every Flow signature issue from the closed typed signature schema"
+)]
 fn flow_signature_issues(
     owner: ItemId,
     flow: &HirFlowItem,
@@ -933,6 +962,10 @@ fn flow_signature_issues(
     Some(issues)
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "one ordered matrix compares all nine Flow contract variants, operands, delimiters, and recovery roles"
+)]
 fn flow_contracts_match(
     owner: ItemId,
     flow: &HirFlowItem,
@@ -1116,7 +1149,9 @@ fn flow_contracts_match(
             }
         }
         if matches!(
-            attached.list().and_then(|list| list.close_state()),
+            attached
+                .list()
+                .and_then(AttachedFlowContractList::close_state),
             Some(AttachedDelimiterState::Missing(_))
         ) {
             issues.push(flow_item_issue(

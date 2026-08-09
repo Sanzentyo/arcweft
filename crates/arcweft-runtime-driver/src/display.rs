@@ -23,13 +23,14 @@ use arcweft_bundle::{
 };
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
-use arcweft_core::plan::FlowEvent;
+use arcweft_core::{plan::FlowEvent, value::RuntimeBinding};
 use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, StageSize};
 use arcweft_presentation::{
     BackgroundSlotAddress, PresentationSlot, PresentationTarget, fx::FxDiagnostic,
 };
-use arcweft_render_text::{LineDisplayCatalog, RuntimeLineContext};
+use arcweft_render_text::{RuntimeLineContext, resolve_frame};
+use arcweft_text_model::{DialogueContentCatalog, DialogueContentSpec};
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -54,6 +55,33 @@ pub struct BundleViewportFit {
 pub struct DisplayResolution {
     pub dialogue_operations: Vec<DialoguePresentationOperation>,
     pub diagnostics: Vec<String>,
+}
+
+/// Checked dynamic presentation context for one static dialogue-content row.
+///
+/// The static bundle catalog deliberately cannot manufacture character or
+/// `CharacterDialogue` values. Runtime integrations provide this boundary
+/// only after validating the exact value selected for the emitted line.
+pub trait DialogueRuntimeContextProvider {
+    fn context_for(
+        &self,
+        content: &DialogueContentSpec,
+        bindings: &[RuntimeBinding],
+    ) -> Result<RuntimeLineContext, DialogueRuntimeContextError>;
+}
+
+/// Failure to obtain one checked dynamic dialogue presentation context.
+#[derive(Clone, Debug, Error, Eq, PartialEq)]
+pub enum DialogueRuntimeContextError {
+    #[error("checked runtime CharacterDialogue context is unavailable for line {line:?}")]
+    Unavailable {
+        line: arcweft_core::plan::RuntimeLineId,
+    },
+    #[error("checked runtime CharacterDialogue context was rejected for line {line:?}: {reason}")]
+    Rejected {
+        line: arcweft_core::plan::RuntimeLineId,
+        reason: String,
+    },
 }
 
 /// Failure to atomically apply one presentation update.
@@ -148,8 +176,9 @@ pub(crate) struct BundlePresentationResources<'a> {
 
 /// Resolves dialogue flow events into host-renderable, Sans I/O display frames.
 pub fn resolve_display_frames(
-    catalog: &LineDisplayCatalog,
+    catalog: &DialogueContentCatalog,
     events: &[FlowEvent],
+    context_provider: Option<&dyn DialogueRuntimeContextProvider>,
 ) -> DisplayResolution {
     events
         .iter()
@@ -157,12 +186,26 @@ pub fn resolve_display_frames(
             if let FlowEvent::DialogueLine { line, bindings } = event
                 && let Some(spec) = catalog.find(line)
             {
-                match spec.resolve_frame(&RuntimeLineContext::new(bindings.clone())) {
+                let Some(provider) = context_provider else {
+                    resolution.diagnostics.push(
+                        DialogueRuntimeContextError::Unavailable { line: line.clone() }.to_string(),
+                    );
+                    return resolution;
+                };
+                let context = match provider.context_for(spec, bindings) {
+                    Ok(context) => context,
+                    Err(error) => {
+                        resolution.diagnostics.push(error.to_string());
+                        return resolution;
+                    }
+                };
+                match resolve_frame(spec, &context) {
                     Ok(frame) => {
+                        let view = frame.effective.view.clone();
                         resolution
                             .dialogue_operations
                             .push(DialoguePresentationOperation::append(
-                                DialogueViewDefinition::new(spec.view.clone()),
+                                DialogueViewDefinition::new(view),
                                 frame,
                             ));
                     }

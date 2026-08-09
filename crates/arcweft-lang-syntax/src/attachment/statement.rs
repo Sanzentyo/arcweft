@@ -317,7 +317,13 @@ pub(super) fn require_roles<K: AstKind>(
         .syntax()
         .children()
         .iter()
-        .all(|child| accepted.contains(&child.role()))
+        .all(|child| {
+            accepted.contains(&child.role())
+                || matches!(
+                    child.role(),
+                    SyntaxRole::OpenDelimiter | SyntaxRole::CloseDelimiter
+                )
+        })
         .then_some(())
         .ok_or_else(|| invalid(owner))
 }

@@ -1,0 +1,11 @@
+error[E0599]: no method named `append_module_body` found for mutable reference `&mut HirModule` in the current scope
+ --> tests/ui/no_append_module_body.rs:4:12
+  |
+4 |     module.append_module_body(other);
+  |            ^^^^^^^^^^^^^^^^^^
+  |
+help: there is a method `module_id` with a similar name, but with different arguments
+ --> src/module.rs
+  |
+  |     pub const fn module_id(&self) -> HirModuleId {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

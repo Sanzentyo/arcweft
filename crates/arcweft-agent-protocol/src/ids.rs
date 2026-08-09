@@ -21,6 +21,15 @@ pub enum IdentifierError {
 #[serde(transparent)]
 pub struct PublicId(String);
 
+/// Canonical identity of one symbol in the accepted Agent project graph.
+///
+/// This is distinct from `PublicId`: structural declarations such as
+/// module-local Flow may share a public display label while retaining separate
+/// graph identities.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(transparent)]
+pub struct AgentProjectGraphSymbolId(String);
+
 /// Canonical identity of an ordinary Arcweft callable declaration.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(transparent)]
@@ -64,6 +73,22 @@ impl PublicId {
 
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl AgentProjectGraphSymbolId {
+    pub fn new(value: impl Into<String>) -> Result<Self, IdentifierError> {
+        nonempty(value).map(Self)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Display for AgentProjectGraphSymbolId {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
     }
 }
 

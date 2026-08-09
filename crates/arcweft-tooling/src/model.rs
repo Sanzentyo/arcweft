@@ -73,6 +73,10 @@ pub struct ToolingEditReport {
 /// Error returned when edit application or semantic preconditions fail.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ToolingError {
+    #[error("syntax database allocation failed: {message}")]
+    SyntaxDatabaseUnavailable { message: String },
+    #[error("source attachment failed: {message}")]
+    SyntaxAttachmentFailed { message: String },
     #[error("text edit range {start}..{end} is outside source length {len}")]
     RangeOutOfBounds {
         start: usize,
@@ -89,6 +93,9 @@ impl ToolingError {
     #[must_use]
     pub const fn code(&self) -> &'static str {
         match self {
+            Self::SyntaxDatabaseUnavailable { .. } | Self::SyntaxAttachmentFailed { .. } => {
+                "AWT-SYNTAX-001"
+            }
             Self::RangeOutOfBounds { .. }
             | Self::OverlappingEdit { .. }
             | Self::InvalidCharBoundary { .. } => "AWT-EDIT-001",

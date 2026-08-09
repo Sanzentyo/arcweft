@@ -56,7 +56,7 @@ fn associated_call_receiver(module: &HirModule, expression_id: ExprId) -> crate:
     let HirExprKind::Call(call) = expression(module, expression_id).kind() else {
         panic!("keyword payload must remain an associated Call");
     };
-    let (receiver, member) = call
+    let (receiver, _, member) = call
         .callee()
         .associated_parts()
         .expect("typed associated callee");
@@ -64,7 +64,7 @@ fn associated_call_receiver(module: &HirModule, expression_id: ExprId) -> crate:
         member.resolved().map(crate::leaf::HirName::as_str),
         Some("with_capacity")
     );
-    receiver.type_id()
+    receiver.type_id().expect("associated receiver type")
 }
 
 #[test]

@@ -2,7 +2,7 @@ use std::fmt::Write as _;
 
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuildError, UnattachedGrammarEntry};
 use crate::grammar::kinds::SyntaxKind;
 use crate::incremental::SyntaxLimit;
@@ -17,7 +17,7 @@ fn document(text: &str) -> SourceDocument {
 }
 
 fn kinds(text: &str) -> Vec<SyntaxKind> {
-    parse_shadow_document(&document(text), crate::parser::ParseOptions::default())
+    parse_document(&document(text), crate::parser::ParseOptions::default())
         .unwrap()
         .index()
         .entries()
@@ -29,8 +29,7 @@ fn kinds(text: &str) -> Vec<SyntaxKind> {
 #[test]
 fn top_level_function_receiver_shape_requires_a_typed_pattern_annotation() {
     let source = "fn invalid(self) -> Unit { () }\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let pattern = entries
         .iter()
@@ -63,13 +62,13 @@ fn ordinary_function_owns_curried_signature_contracts_and_block_descendants() {
         "where T: Clone + Debug\n",
         "requires state.ready()\n",
         "ensures result == route\n",
+        "effects { state.read, control.suspend }\n",
         "{\n",
         "    let next: T = route\n",
         "    next\n",
         "}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -90,6 +89,7 @@ fn ordinary_function_owns_curried_signature_contracts_and_block_descendants() {
         SyntaxKind::WhereClause,
         SyntaxKind::RequiresClause,
         SyntaxKind::EnsuresClause,
+        SyntaxKind::EffectsClause,
         SyntaxKind::FunctionBody,
         SyntaxKind::Block,
         SyntaxKind::LetStatement,
@@ -111,8 +111,7 @@ fn ordinary_function_owns_curried_signature_contracts_and_block_descendants() {
 #[test]
 fn ordinary_function_parameters_retain_typed_fixed_default_and_rest_children() {
     let source = "fn staged(first: I64)(second: I64 = seed + 1)(tail: ...I64) -> I64 { first }\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let parsed_kinds = built
         .index()
         .entries()
@@ -171,9 +170,8 @@ fn invalid_rest_shapes_remain_lossless_typed_parameter_trees() {
             1,
         ),
     ] {
-        let built =
-            parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
-                .expect("invalid rest shape remains a recoverable document");
+        let built = parse_document(&document(source), crate::parser::ParseOptions::default())
+            .expect("invalid rest shape remains a recoverable document");
         let parsed_kinds = built
             .index()
             .entries()
@@ -229,7 +227,7 @@ fn function_with_parameters(group_lengths: &[usize]) -> String {
 fn function_parameter_budget_is_inclusive_across_all_curried_groups() {
     let limit = SyntaxLimit::FixedParameters;
     let accepted = function_with_parameters(&[128, limit.maximum() - 128]);
-    let built = parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&accepted), crate::parser::ParseOptions::default())
         .expect("the exact cross-group Function parameter limit must build");
     assert_eq!(
         built
@@ -244,12 +242,11 @@ fn function_parameter_budget_is_inclusive_across_all_curried_groups() {
 
     let rejected = function_with_parameters(&[128, limit.maximum() - 127]);
     assert_eq!(
-        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default())
-            .unwrap_err(),
+        parse_document(&document(&rejected), crate::parser::ParseOptions::default()).unwrap_err(),
         GrammarBuildError::LimitExceeded(limit)
     );
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("fn ready(value: I64) {}\n"),
             crate::parser::ParseOptions::default()
         )
@@ -266,7 +263,7 @@ fn function_with_empty_groups(group_count: usize) -> String {
 fn function_empty_parameter_group_budget_is_inclusive_and_transactional() {
     let limit = SyntaxLimit::FixedParameters;
     let accepted = function_with_empty_groups(limit.maximum());
-    let built = parse_shadow_document(&document(&accepted), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&accepted), crate::parser::ParseOptions::default())
         .expect("the exact empty Function parameter-group limit must build");
     assert_eq!(
         built
@@ -281,12 +278,11 @@ fn function_empty_parameter_group_budget_is_inclusive_and_transactional() {
 
     let rejected = function_with_empty_groups(limit.maximum() + 1);
     assert_eq!(
-        parse_shadow_document(&document(&rejected), crate::parser::ParseOptions::default())
-            .unwrap_err(),
+        parse_document(&document(&rejected), crate::parser::ParseOptions::default()).unwrap_err(),
         GrammarBuildError::LimitExceeded(limit)
     );
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("fn ready() {}\n"),
             crate::parser::ParseOptions::default()
         )
@@ -298,8 +294,7 @@ fn function_empty_parameter_group_budget_is_inclusive_and_transactional() {
 #[test]
 fn missing_function_body_does_not_consume_the_following_proof() {
     let source = "fn missing(value: Int) -> Int\nproof next() = ()\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -335,8 +330,7 @@ fn missing_function_body_does_not_consume_the_following_proof() {
 fn missing_function_close_synchronizes_before_the_following_declaration() {
     let source = "fn broken(value: Int) -> Int { let local = value\nproof next() = ()\n";
     let next_start = source.find("proof next").unwrap();
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -370,8 +364,7 @@ fn missing_function_close_synchronizes_before_the_following_declaration() {
 fn trailing_function_syntax_is_one_typed_recovery_owner() {
     let source = "fn recovered() {} trailing\n";
     let trailing_start = source.find("trailing").unwrap();
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let recoveries = built
         .index()
         .entries()
@@ -393,8 +386,7 @@ fn trailing_function_syntax_is_one_typed_recovery_owner() {
 #[test]
 fn function_header_without_parameters_gets_typed_missing_group_recovery() {
     let source = "fn missing -> Int {}\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let parsed_kinds = kinds(source);
 
     assert!(parsed_kinds.contains(&SyntaxKind::FixedParameterGroup));
@@ -412,8 +404,7 @@ fn removed_function_role_spellings_do_not_form_function_items() {
     for role in ["task", "dialogue", "stream"] {
         let source = format!("{role} fn removed() -> Unit {{}}\n");
         let built =
-            parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
-                .unwrap();
+            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
         let parsed_kinds = built
             .index()
             .entries()

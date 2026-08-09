@@ -88,7 +88,7 @@ impl HirPattern {
         &self.state
     }
 
-    pub(crate) const fn is_poisoned(&self) -> bool {
+    pub const fn is_poisoned(&self) -> bool {
         self.state.is_poisoned()
     }
 }
@@ -134,6 +134,18 @@ pub enum HirPatternKind {
 }
 
 impl HirPatternKind {
+    /// Returns the exact type node authored by this pattern, when the pattern
+    /// itself owns the annotation.
+    ///
+    /// Let lowering retains `name: Type` as a typed-binding pattern rather
+    /// than duplicating the same source type on the enclosing statement.
+    pub const fn authored_type(&self) -> Option<TypeId> {
+        match self {
+            Self::TypedBinding { ty, .. } => Some(*ty),
+            _ => None,
+        }
+    }
+
     /// Derives the deterministic poison state for a projected pattern payload.
     ///
     /// Attached lowering uses this after all children are staged so recovery
@@ -459,6 +471,11 @@ impl HirPatternRecordPath {
         }
     }
 
+    /// Returns the validated semantic record-path segment count.
+    ///
+    /// # Panics
+    ///
+    /// Panics only on a target where `usize` cannot represent a `u32` count.
     pub fn segment_count(&self) -> usize {
         match self {
             Self::Absent => 0,

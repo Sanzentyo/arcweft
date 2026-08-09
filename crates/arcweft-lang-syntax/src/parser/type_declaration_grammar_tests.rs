@@ -2,7 +2,7 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use std::sync::Arc;
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::attachment::{AttachedTypeFamily, TypedItemNode};
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::kinds::SyntaxKind;
@@ -39,8 +39,7 @@ pub type PlayerName<T> = Result<T, ParseError>
 where T: Format
 where ParseError: Error
 ";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::EnumItem), 1);
@@ -72,8 +71,7 @@ fn malformed_fields_and_missing_alias_target_recover_before_following_items() {
         "type Missing =\n",
         "proof next() = ()\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::StructItem), 1);
@@ -106,8 +104,7 @@ fn missing_enum_payload_and_body_closes_do_not_consume_the_next_declaration() {
         "proof next() = ()\n",
     );
     let next = source.find("proof next").unwrap();
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
 
     assert_eq!(kind_count(entries, SyntaxKind::EnumItem), 1);
@@ -137,7 +134,7 @@ fn nominal_declarations_attach_their_exact_bodies_and_members() {
     let parsed = database
         .parse_initial(snapshot, document, crate::parser::ParseOptions::default())
         .unwrap();
-    let items = parsed.tree().items().unwrap();
+    let items = parsed.items().unwrap();
 
     let [
         TypedItemNode::TypeAlias(alias),
@@ -173,7 +170,7 @@ fn nominal_where_predicates_attach_missing_bounds_as_typed_recovery() {
     let parsed = database
         .parse_initial(snapshot, document, crate::parser::ParseOptions::default())
         .unwrap();
-    let items = parsed.tree().items().unwrap();
+    let items = parsed.items().unwrap();
 
     let [
         TypedItemNode::TypeAlias(empty),

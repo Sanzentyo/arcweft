@@ -134,6 +134,7 @@ pub(in crate::app) fn runtime_serve_selection(
                 pure_config: config.pure_config,
                 host_policy,
             },
+            &checked.execution_diagnostics,
         )
         .map_err(|error| {
             eprintln!("error: {error}");

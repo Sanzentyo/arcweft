@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_sema::effect_contract`
+ --> tests/ui/removed_source_string_effect.rs:1:24
+  |
+1 | use arcweft_lang_sema::effect_contract::effect_id_from_expr;
+  |                        ^^^^^^^^^^^^^^^ could not find `effect_contract` in `arcweft_lang_sema`

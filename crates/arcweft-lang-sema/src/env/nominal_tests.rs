@@ -1,10 +1,13 @@
 use arcweft_lang_syntax::{
-    ast::module_path::{CanonicalModulePath, ModuleSegment},
-    types::{TypePath, TypeRef, parse_type_ref},
+    ast::{
+        module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
+        symbol_path::{ProjectSymbolPath, ProjectSymbolSegment},
+    },
+    types::TypePath,
 };
 
 use super::{
-    NominalRecordLiteralPolicy, TypeCheckEnv,
+    TypeCheckEnv,
     identity::EnvironmentBindingId,
     nominal::{
         AcceptedNominalCatalog, AcceptedNominalCatalogError, AcceptedNominalId,
@@ -18,11 +21,13 @@ use crate::nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimi
 use crate::types::{AcceptedNominalType, TypeKind};
 
 fn path(source: &str) -> TypePath {
-    let authored = parse_type_ref(source).expect("test path parses");
-    let TypeRef::Path(path) = authored.value() else {
-        panic!("test fixture is a direct path")
-    };
-    path.clone()
+    let segments = source
+        .split('.')
+        .map(|segment| ProjectSymbolSegment::try_new(segment).expect("test path segment"));
+    TypePath::from(
+        ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, segments)
+            .expect("test project-symbol path"),
+    )
 }
 
 fn standard_record(source: &str, semantics: AcceptedNominalSemantics) -> AcceptedNominalRecord {
@@ -580,10 +585,6 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
     assert_eq!(
         transform_fields.get("rotation"),
         Some(&TypeKind::Named("Angle".to_owned()))
-    );
-    assert_eq!(
-        environment.nominal_record_literal_policy("Transform2D"),
-        NominalRecordLiteralPolicy::DefaultMissing
     );
 }
 

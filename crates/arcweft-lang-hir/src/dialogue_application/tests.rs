@@ -225,11 +225,11 @@ fn rich_text_calls_share_expr_ids_and_report_call_kind_requirements() {
         HirDialogueContent::try_new(content_id, nodes, Box::new([fx_tag, dialogue_tag])).unwrap();
     let application =
         HirDialogueContentApplication::try_new(owner, target, content, None, Box::new([])).unwrap();
-    let mut context = RecordingContext::default();
-    application.validate_transaction(&mut context).unwrap();
+    let mut validation = RecordingContext::default();
+    application.validate_transaction(&mut validation).unwrap();
 
     assert!(
-        context
+        validation
             .requirements
             .contains(&HirDialogueTransactionRequirement::Expression {
                 id: fx_call,
@@ -237,7 +237,7 @@ fn rich_text_calls_share_expr_ids_and_report_call_kind_requirements() {
             })
     );
     assert!(
-        context
+        validation
             .requirements
             .contains(&HirDialogueTransactionRequirement::Expression {
                 id: dialogue_call,
@@ -245,7 +245,7 @@ fn rich_text_calls_share_expr_ids_and_report_call_kind_requirements() {
             })
     );
     assert!(
-        context
+        validation
             .requirements
             .contains(&HirDialogueTransactionRequirement::Expression {
                 id: interpolation,
@@ -253,7 +253,7 @@ fn rich_text_calls_share_expr_ids_and_report_call_kind_requirements() {
             })
     );
     assert!(
-        context
+        validation
             .requirements
             .contains(&HirDialogueTransactionRequirement::RichTextCharge(
                 HirRichTextCharge::ContentTags { observed: 2 },

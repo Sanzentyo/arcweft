@@ -221,13 +221,15 @@ fn level_for(severity: DiagnosticSeverity) -> Level<'static> {
 #[cfg(test)]
 mod renderer_tests {
     use super::*;
-    use arcweft_lang_syntax::parser::{
-        ParseOptions, parse_document_with_source, recovery::ParseErrorKind,
+    use arcweft_core::effect::{
+        RuntimeAssertion, RuntimeAssertionFailure, RuntimeAssertionGuardId, RuntimeAssertionProfile,
     };
+    use arcweft_lang_syntax::{incremental::SyntaxDatabase, parser::ParseOptions};
     use arcweft_source::{
         DiagnosticApplicability, DiagnosticCommand, DiagnosticLabel, DiagnosticSuggestion,
-        SourceDocumentId, SourceEdit, SourceName, SourceRange,
+        SourceDocumentId, SourceEdit, SourceName, SourceRange, identity::SourceSnapshotId,
     };
+    use arcweft_tooling::runtime_diagnostic::project_persisted_assertion_failure;
     use std::sync::Arc;
 
     fn document(text: &str) -> SourceDocument {
@@ -344,23 +346,66 @@ mod renderer_tests {
     fn plain_renderer_preserves_typed_parser_code_without_injecting_kind_label() {
         let source = "pub view Card() {\n    export part as heading\n    Panel()\n}\n";
         let document = Arc::new(document(source));
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-        let error = parsed
-            .errors()
+        let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+        let parsed = syntax
+            .parse_initial(
+                SourceSnapshotId::initial(document.display_name().clone()),
+                Arc::clone(&document),
+                ParseOptions::default(),
+            )
+            .expect("source attaches");
+        let syntax_diagnostic = parsed
+            .diagnostics()
             .iter()
-            .find(|error| error.kind() == ParseErrorKind::ViewExportPartMissingLocal)
-            .expect("typed parser error");
-        let diagnostic = error.diagnostic(document.as_ref());
+            .find(|diagnostic| diagnostic.code() == "syntax.view.export_missing_local")
+            .expect("typed parser diagnostic");
+        let mut diagnostic =
+            Diagnostic::new(DiagnosticSeverity::Error, syntax_diagnostic.message())
+                .with_code(syntax_diagnostic.code())
+                .with_label(DiagnosticLabel::primary(
+                    syntax_diagnostic.primary().clone(),
+                    None,
+                ));
+        if let Some(related) = syntax_diagnostic.related() {
+            diagnostic = diagnostic.with_label(DiagnosticLabel::secondary(
+                related.clone(),
+                Some("related syntax recovery".to_owned()),
+            ));
+        }
         let source = DiagnosticSource::new(document.as_ref());
         let groups = diagnostic_groups(&diagnostic, &source);
         let rendered = Renderer::plain().render(&groups);
 
         assert!(rendered.contains(
-            "error[view::export_part_missing_local]: View part export needs a private local target before `as`"
+            "error[syntax.view.export_missing_local]: View export requires a dotted name"
         ));
-        assert!(rendered.contains("expected: local part name"));
-        assert!(rendered.contains("use local part name syntax"));
         assert!(!rendered.contains("Missing local View part name"));
+    }
+
+    #[test]
+    fn plain_renderer_consumes_shared_runtime_assertion_diagnostic() {
+        let source = "flow checks { assert.check(ready) }\n";
+        let document = document(source);
+        let condition_start = source.find("ready").expect("condition source");
+        let condition_span = document
+            .span(SourceRange::new(
+                condition_start,
+                condition_start + "ready".len(),
+            ))
+            .expect("condition span");
+        let failure = RuntimeAssertionFailure::new(RuntimeAssertion::new(
+            RuntimeAssertionGuardId::try_from_bytes([0x41; 16]).expect("fixture guard"),
+            "ready".to_owned(),
+            "runtime condition failed".to_owned(),
+            RuntimeAssertionProfile::Always,
+        ));
+        let diagnostic = project_persisted_assertion_failure(&failure, Some(condition_span))
+            .to_source_diagnostic();
+        let source = DiagnosticSource::new(&document);
+        let rendered = Renderer::plain().render(&diagnostic_groups(&diagnostic, &source));
+
+        assert!(rendered.contains("error[runtime.assertion_failed]: runtime condition failed"));
+        assert!(rendered.contains("ready"));
     }
 }
 

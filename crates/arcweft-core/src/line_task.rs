@@ -31,8 +31,6 @@ pub struct LineTaskGroup {
     pub cancel_rules: Vec<LineCancelRuleRequest>,
     /// Memoization directives local to this line plan.
     pub memo: Vec<LineMemoRequest>,
-    /// Runtime-checkable assertions attached to this line plan.
-    pub assertions: Vec<LineAssertionRequest>,
     /// Automatic cleanup policy for line-owned handles and child tasks.
     pub cleanup: LineCleanupPolicy,
 }
@@ -149,13 +147,6 @@ pub struct LineCancelRuleRequest {
 pub struct LineMemoRequest {
     pub name: String,
     pub options: Vec<RuntimeField>,
-}
-
-/// Runtime-checkable line assertion.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
-pub struct LineAssertionRequest {
-    pub debug: bool,
-    pub expr: String,
 }
 
 /// Declarative cleanup policy applied when the line scope exits.

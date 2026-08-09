@@ -4,13 +4,14 @@ use super::{
     FiberAwaitManyInFlight, FiberState, FiberSuspensionReason, FlowEvent, MappedEffect, NeedId,
     PendingHostCall, ProductStepError, RuntimeBinding, RuntimeDiagnostic,
     RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallRequest,
-    RuntimePayload, RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue, SourceEventKind,
-    SourceRuntimeState, TaskEvent, TaskEventKind, TaskId, TaskKey, TaskSequence, VmObservation,
-    content_request, flow_id_from_awbc_public_id, runtime_sequence_values, runtime_value_label,
-    source_id_for, stream_id_for, task_spec,
+    RuntimeNeedState, RuntimePayload, RuntimeStepOutput, RuntimeStreamEvent, RuntimeValue,
+    SourceEventKind, SourceRuntimeState, TaskEvent, TaskEventKind, TaskId, TaskKey, TaskSequence,
+    VmObservation, content_request, resolved_runtime_need_state, runtime_sequence_values,
+    runtime_value_label, source_id_for, stream_id_for, task_spec,
 };
 use crate::awbc::vm::cancel_fiber;
 use crate::source::SourcePolicy;
+use arcweft_need::Need;
 
 impl AwbcProductStepExecutor {
     pub(super) fn ensure_await_started(
@@ -62,27 +63,11 @@ impl AwbcProductStepExecutor {
             .map_or_else(|| NeedId(task_id.0.clone()), |plan| self.task_need_id(plan));
         match &event.kind {
             TaskEventKind::Ready(value) => {
-                if let Some(pattern) = binding
-                    && let Err(error) = crate::awbc::vm::bind_pattern(
-                        &self.program,
-                        &mut self.fiber,
-                        pattern,
-                        value.value(),
-                    )
-                {
-                    self.fail_with_trap(
-                        AwbcTrapCode::PatternMismatch,
-                        error.to_string(),
-                        None,
-                        output,
-                    );
-                    return true;
-                }
                 output.flow_events.push(FlowEvent::AwaitReady {
                     need,
                     value: value.clone(),
                 });
-                self.resume_at(resume, output)
+                self.resume_await_value(binding, resume, value.value(), output)
             }
             TaskEventKind::Progress(progress) => {
                 output.flow_events.push(FlowEvent::AwaitProgress {
@@ -106,6 +91,57 @@ impl AwbcProductStepExecutor {
                 true
             }
         }
+    }
+
+    pub(super) fn resume_need(
+        &mut self,
+        need: &NeedId,
+        binding: Option<crate::awbc::schema::AwbcPatternId>,
+        resume: AwbcResumePointId,
+        states: &[RuntimeNeedState],
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        let Some(state) = resolved_runtime_need_state(states, need) else {
+            return false;
+        };
+        match state.state() {
+            Need::NotStarted | Need::Pending(_) => false,
+            Need::Ready(value) => {
+                let result = RuntimeValue::result_ok(value.value().clone());
+                self.resume_await_value(binding, resume, &result, output)
+            }
+            Need::Err(error) => {
+                let result = RuntimeValue::result_err(error.value().clone());
+                self.resume_await_value(binding, resume, &result, output)
+            }
+            Need::Cancelled => {
+                let cancellation = cancel_fiber(&mut self.fiber);
+                self.consume_observations(cancellation.observations, output);
+                true
+            }
+        }
+    }
+
+    fn resume_await_value(
+        &mut self,
+        binding: Option<crate::awbc::schema::AwbcPatternId>,
+        resume: AwbcResumePointId,
+        value: &RuntimeValue,
+        output: &mut RuntimeStepOutput,
+    ) -> bool {
+        if let Some(pattern) = binding
+            && let Err(error) =
+                crate::awbc::vm::bind_pattern(&self.program, &mut self.fiber, pattern, value)
+        {
+            self.fail_with_trap(
+                AwbcTrapCode::PatternMismatch,
+                error.to_string(),
+                None,
+                output,
+            );
+            return true;
+        }
+        self.resume_at(resume, output)
     }
 
     pub(super) fn fill_await_many(&mut self, output: &mut RuntimeStepOutput) {
@@ -429,13 +465,10 @@ impl AwbcProductStepExecutor {
                         }
                     }
                 }
-                VmObservation::Goto(target) => {
-                    let public_id = self.function_public_id(target);
-                    match flow_id_from_awbc_public_id(&public_id) {
-                        Ok(target) => output.flow_events.push(FlowEvent::Goto { target }),
-                        Err(error) => self.record_error(error, output),
-                    }
-                }
+                VmObservation::Goto(target) => match self.flow_identity_for_function(target) {
+                    Ok(target) => output.flow_events.push(FlowEvent::Goto { target }),
+                    Err(error) => self.record_error(error, output),
+                },
                 VmObservation::FiberSpawned { function, args, .. } => {
                     self.spawn_child(function, &args, output);
                 }
@@ -506,6 +539,7 @@ impl AwbcProductStepExecutor {
             return;
         };
         match plan.kind.map_product_effect(&self.program, effect, args) {
+            MappedEffect::Omitted => {}
             MappedEffect::Line(effect) => output.effects.line.push(effect),
             MappedEffect::Audio(command) => output.requests.audio.push(AudioCommandEnvelope::new(
                 self.next_audio_dispatch(),

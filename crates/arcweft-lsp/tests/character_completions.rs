@@ -2,7 +2,7 @@ use arcweft_character::id::CharacterId;
 use arcweft_lang_sema::types::TypeKind;
 use arcweft_lsp::features::character_metadata::character_hover_markdown;
 use arcweft_lsp::features::completion::completions;
-use arcweft_lsp::profiles::{LspProfileDiagnosticKind, LspProfileResolver};
+use arcweft_lsp::profiles::{LspProfileDiagnosticKind, LspProfileResolver, LspProfileTestHarness};
 use arcweft_runtime_host::RuntimeHostRunnerKind;
 use std::fs::{create_dir_all, write};
 use std::path::{Component, PathBuf};
@@ -18,7 +18,10 @@ fn completions_include_loaded_character_manifest_data() {
     project.write("src/main.arcw", "flow @flow.main main {}\n");
     write_character_fixture(&project);
 
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
     let build = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
         .expect("profile construction");
@@ -49,7 +52,10 @@ fn hover_includes_psd_source_layer_names() {
     project.write("src/main.arcw", "flow @flow.main main {}\n");
     write_character_fixture(&project);
 
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
     let build = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
         .expect("profile construction");
@@ -71,7 +77,10 @@ fn missing_character_manifest_uses_typed_profile_diagnostic() {
     );
     project.write("src/main.arcw", "flow @flow.main main {}\n");
 
-    let resolver = LspProfileResolver::new(RuntimeHostRunnerKind::Native, Some("dev".into()));
+    let mut resolver = LspProfileTestHarness::new(LspProfileResolver::new(
+        RuntimeHostRunnerKind::Native,
+        Some("dev".into()),
+    ));
     let diagnostic = resolver
         .resolve_for_document_path(&project.path("src/main.arcw"))
         .expect_err("missing character manifest rejects construction");

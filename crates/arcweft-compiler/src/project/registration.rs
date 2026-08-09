@@ -1,11 +1,17 @@
 use super::{ProjectCompileError, ProjectCompileStage, linked_error_with_registration_sources};
+use arcweft_core::entry::RuntimeCommandPolicy;
 use arcweft_id::PublicId;
 use arcweft_lang_hir::project::HirProject;
+use arcweft_lang_hir::proof_return::{
+    HirProofReturnHeaderProjectView, HirProofReturnProjectGeneration,
+};
 use arcweft_lang_sema::{
+    assertion::AssertionBuildProfile,
     env::TypeCheckEnv,
     registration::{
-        CharacterRegistrar, CharacterRegistrationDiagnostic, CharacterRegistrationRequest,
-        ProjectRegistrationFacts, RegisteredSemanticWorld, RegisteredTypeCheckEnv,
+        CharacterRegistrar, CharacterRegistrationDiagnostic, ProjectRegistrationFacts,
+        ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest, RegisteredSemanticWorld,
+        RegisteredTypeCheckEnv,
     },
 };
 use arcweft_launch::{accepted::SourceBackedManifest, resolve::ResolvedLaunchProfile};
@@ -56,6 +62,8 @@ pub struct ProjectCompilationContext {
     previous: Option<Arc<RegisteredTypeCheckEnv>>,
     entry_selection: Option<ProjectEntrySelection>,
     accepted_launch_profile: Option<AcceptedLaunchProfileInput>,
+    command_policy: Option<RuntimeCommandPolicy>,
+    assertion_build_profile: AssertionBuildProfile,
 }
 
 impl AcceptedLaunchProfileInput {
@@ -140,6 +148,8 @@ impl ProjectCompilationContext {
             previous,
             entry_selection,
             accepted_launch_profile: None,
+            command_policy: None,
+            assertion_build_profile: AssertionBuildProfile::Debug,
         }
     }
 
@@ -147,6 +157,20 @@ impl ProjectCompilationContext {
     #[must_use]
     pub fn with_accepted_launch_profile(mut self, input: AcceptedLaunchProfileInput) -> Self {
         self.accepted_launch_profile = Some(input);
+        self
+    }
+
+    /// Selects the explicit runtime/adapter command policy for stateful entries.
+    #[must_use]
+    pub fn with_command_policy(mut self, policy: RuntimeCommandPolicy) -> Self {
+        self.command_policy = Some(policy);
+        self
+    }
+
+    /// Selects the one typed assertion profile for this compilation transaction.
+    #[must_use]
+    pub const fn with_assertion_build_profile(mut self, profile: AssertionBuildProfile) -> Self {
+        self.assertion_build_profile = profile;
         self
     }
 }
@@ -165,23 +189,52 @@ impl ProjectCompilationContext {
         self.accepted_launch_profile.as_ref()
     }
 
+    /// Exact command constructor policy selected for this compiler transaction.
+    pub const fn command_policy(&self) -> Option<&RuntimeCommandPolicy> {
+        self.command_policy.as_ref()
+    }
+
     /// Exact configured-resource registry used by this compiler transaction.
     pub const fn resource_types(&self) -> &Arc<ResourceTypeRegistry> {
         &self.resource_types
     }
+
+    /// Assertion profile admitted by this exact project compilation transaction.
+    pub const fn assertion_build_profile(&self) -> AssertionBuildProfile {
+        self.assertion_build_profile
+    }
 }
 
-pub(super) fn register(
-    project: &HirProject,
-    context: &ProjectCompilationContext,
-) -> Result<Arc<RegisteredSemanticWorld>, ProjectCompileError> {
-    let request = CharacterRegistrationRequest::new(
+pub(super) fn prepare_proof_return_registration<'a>(
+    generation: Arc<HirProofReturnProjectGeneration>,
+    project: HirProofReturnHeaderProjectView<'a, 'a>,
+    context: &'a ProjectCompilationContext,
+) -> Result<ProofReturnRegistrationPrelude, ProjectCompileError> {
+    let request = ProofReturnRegistrationRequest::new(
         Arc::clone(&context.base),
+        generation,
         project,
         &context.facts,
         context.previous.as_deref(),
     );
-    CharacterRegistrar::register(request)
+    CharacterRegistrar::prepare_proof_return_headers(request).map_err(|failure| {
+        linked_error_with_registration_sources(
+            ProjectCompileStage::Registration,
+            &context.facts,
+            failure
+                .diagnostics()
+                .iter()
+                .map(CharacterRegistrationDiagnostic::diagnostic),
+        )
+    })
+}
+
+pub(super) fn finish_proof_return_registration(
+    project: &HirProject,
+    prelude: ProofReturnRegistrationPrelude,
+    context: &ProjectCompilationContext,
+) -> Result<Arc<RegisteredSemanticWorld>, ProjectCompileError> {
+    CharacterRegistrar::finish_proof_return_registration(project.view(), &context.facts, prelude)
         .map(Arc::new)
         .map_err(|failure| {
             linked_error_with_registration_sources(

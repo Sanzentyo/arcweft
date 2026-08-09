@@ -1,17 +1,20 @@
 //! Typed, revision-bound source components for final HIR owners.
 
 mod block_projection;
+mod call_cursor;
 mod control_projection;
 mod expr_projection;
 mod expression_manifest;
 mod flow_role;
 mod item_projection;
+mod item_role;
 mod match_projection;
 mod pattern_projection;
 mod stmt_projection;
 mod style_role;
 mod thread_body_projection;
 mod type_projection;
+mod view_role;
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -28,7 +31,8 @@ use thiserror::Error;
 use crate::expr::HirThreadBodyOwner;
 use crate::expr::{HirCallArgumentOrdinal, HirCallTypeArgumentOrdinal};
 use crate::identity::{
-    ExprId, IdResolveError, ItemId, LocalId, PatternId, ScopeId, StmtId, SyntheticOwner, TypeId,
+    ExprId, IdResolveError, ItemId, LocalId, PatternId, ScopeId, StmtId, SyntheticOwner,
+    SyntheticRole, TypeId,
 };
 use crate::slot::{HirOrigin, HirSlotTransactionLease, SlotSnapshot, StagedSlotTransaction};
 
@@ -38,7 +42,7 @@ use crate::slot::{HirOrigin, HirSlotTransactionLease, SlotSnapshot, StagedSlotTr
 /// The lookup is revision-bound through the module's retained syntax lineage.
 /// It never reparses source text or derives an owner from source position.
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
-pub(crate) enum HirSourceLookupError {
+pub enum HirSourceLookupError {
     #[error("syntax ID belongs to database {actual:?}, expected {expected:?}")]
     WrongSyntaxDatabase {
         expected: SyntaxDatabaseId,
@@ -63,15 +67,20 @@ pub(crate) enum HirSourceLookupError {
 }
 
 pub(crate) use expression_manifest::expression_component_role;
-pub(crate) use flow_role::{
+pub use flow_role::{
     HirFlowContractSourcePart, HirFlowParameterSourcePart, HirFlowReturnSourcePart,
     HirFlowSourceRole,
 };
 pub(crate) use item_projection::ItemValidationArenas;
-pub(crate) use style_role::{
-    HirItemSourceRole, HirStyleBodyPath, HirStyleBodySourcePart, HirStyleSourceRole,
-    HirStyleTokenSourcePart,
+pub use item_role::{
+    HirCallableEffectSourcePart, HirCallableParameterSourcePart, HirCallableSourceOwner,
+    HirCallableSourceRole, HirDeclarationSourceRole, HirEntrySourcePart, HirItemSourceRole,
+    HirNominalMemberSourcePart, HirTestBenchSourceRole, HirUseBindingSourcePart, HirUseSourceRole,
 };
+pub use style_role::{
+    HirStyleBodyPath, HirStyleBodySourcePart, HirStyleSourceRole, HirStyleTokenSourcePart,
+};
+pub use view_role::{HirViewBodySourcePart, HirViewExportSourcePart, HirViewSourceRole};
 
 /// Revision-bound source span or checked zero-width insertion point.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -153,7 +162,7 @@ pub enum HirInsertionPointError {
 
 /// Whole/name/value component of one ordinary call argument.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirCallArgumentSourcePart {
+pub enum HirCallArgumentSourcePart {
     Whole,
     Name,
     Equals,
@@ -163,14 +172,14 @@ pub(crate) enum HirCallArgumentSourcePart {
 
 /// Whole/type component of one explicit Call type argument.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirCallTypeArgumentSourcePart {
+pub enum HirCallTypeArgumentSourcePart {
     Whole,
     Type,
 }
 
 /// Source component of the optional explicit type application on one Call.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirCallTypeApplicationSourceRole {
+pub enum HirCallTypeApplicationSourceRole {
     Whole,
     TurbofishSeparator,
     OpenAngle,
@@ -189,7 +198,7 @@ pub(crate) enum HirCallTypeApplicationSourceRole {
 
 /// Source component of one record-expression field.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirRecordFieldSourcePart {
+pub enum HirRecordFieldSourcePart {
     Whole,
     Name,
     Colon,
@@ -198,7 +207,7 @@ pub(crate) enum HirRecordFieldSourcePart {
 
 /// Source component of one closure parameter.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirClosureParameterSourcePart {
+pub enum HirClosureParameterSourcePart {
     Whole,
     Pattern,
     Colon,
@@ -207,7 +216,7 @@ pub(crate) enum HirClosureParameterSourcePart {
 
 /// Source component of one match arm.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirMatchArmSourcePart {
+pub enum HirMatchArmSourcePart {
     Whole,
     Pattern,
     Guard,
@@ -217,7 +226,7 @@ pub(crate) enum HirMatchArmSourcePart {
 
 /// Source component of one Dialogue content node.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirDialogueNodeSourcePart {
+pub enum HirDialogueNodeSourcePart {
     Whole,
     Text,
     Raw,
@@ -225,15 +234,13 @@ pub(crate) enum HirDialogueNodeSourcePart {
     RubyBase,
     RubyText,
     Interpolation,
-    Control,
-    Mark,
     LineBreak,
     Error,
 }
 
 /// Source component of one `RichText` tag.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirRichTextTagSourcePart {
+pub enum HirRichTextTagSourcePart {
     Whole,
     OpenDelimiter,
     Name,
@@ -245,7 +252,7 @@ pub(crate) enum HirRichTextTagSourcePart {
 
 /// Source component of one `RichText` argument.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirRichTextArgumentSourcePart {
+pub enum HirRichTextArgumentSourcePart {
     Whole,
     Name,
     Equals,
@@ -254,7 +261,7 @@ pub(crate) enum HirRichTextArgumentSourcePart {
 
 /// Typed source component of one HIR expression.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirExprSourceRole {
+pub enum HirExprSourceRole {
     Whole,
     Target,
     OpenBracket,
@@ -362,9 +369,130 @@ pub(crate) enum HirExprSourceRole {
     Recovery,
 }
 
+/// Exact source and ordinal descriptor for one statement-owned synthetic
+/// `RecoveryOperand` expression.
+///
+/// Final lowering and source-freeze validation share this closed inventory so
+/// neither side can independently reconstruct statement child ordinals.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum HirStmtRecoveryOperandSlot {
+    LetInitializer { insertion: usize },
+    AssignmentTarget { insertion: usize },
+    AssignmentValue { insertion: usize },
+    LifetimeSetTarget { insertion: usize },
+    LifetimeSetValue { insertion: usize },
+    OutValue { insertion: usize },
+    GotoTarget { insertion: usize },
+    DeferExpression { insertion: usize },
+    SignalTarget { insertion: usize },
+    SignalValue { insertion: usize },
+    ReturnValue { insertion: usize },
+    YieldExpression { insertion: usize },
+    WaitTarget { insertion: usize },
+    CloseTarget { insertion: usize },
+    WhileCondition { insertion: usize },
+    WhileLetScrutinee { insertion: usize },
+    WhileLetGuard { insertion: usize },
+    ForSource { insertion: usize },
+    SelectOperand { insertion: usize },
+    SelectBranchSource { insertion: usize, branch: u32 },
+    AwaitWithOperand { insertion: usize },
+    MatchScrutinee { insertion: usize },
+    MatchArmGuard { insertion: usize, arm: u32 },
+    UnsafeAuditReason { insertion: usize },
+}
+
+impl HirStmtRecoveryOperandSlot {
+    pub(crate) const fn insertion(self) -> usize {
+        match self {
+            Self::LetInitializer { insertion }
+            | Self::AssignmentTarget { insertion }
+            | Self::AssignmentValue { insertion }
+            | Self::LifetimeSetTarget { insertion }
+            | Self::LifetimeSetValue { insertion }
+            | Self::OutValue { insertion }
+            | Self::GotoTarget { insertion }
+            | Self::DeferExpression { insertion }
+            | Self::SignalTarget { insertion }
+            | Self::SignalValue { insertion }
+            | Self::ReturnValue { insertion }
+            | Self::YieldExpression { insertion }
+            | Self::WaitTarget { insertion }
+            | Self::CloseTarget { insertion }
+            | Self::WhileCondition { insertion }
+            | Self::WhileLetScrutinee { insertion }
+            | Self::WhileLetGuard { insertion }
+            | Self::ForSource { insertion }
+            | Self::SelectOperand { insertion }
+            | Self::SelectBranchSource { insertion, .. }
+            | Self::AwaitWithOperand { insertion }
+            | Self::MatchScrutinee { insertion }
+            | Self::MatchArmGuard { insertion, .. }
+            | Self::UnsafeAuditReason { insertion } => insertion,
+        }
+    }
+
+    pub(crate) const fn ordinal(self) -> Option<u32> {
+        match self {
+            Self::AssignmentValue { .. }
+            | Self::LifetimeSetValue { .. }
+            | Self::SignalValue { .. }
+            | Self::WhileLetGuard { .. } => Some(1),
+            Self::SelectBranchSource { branch, .. } => Some(branch),
+            Self::MatchArmGuard { arm, .. } => arm.checked_add(1),
+            Self::LetInitializer { .. }
+            | Self::AssignmentTarget { .. }
+            | Self::LifetimeSetTarget { .. }
+            | Self::OutValue { .. }
+            | Self::GotoTarget { .. }
+            | Self::DeferExpression { .. }
+            | Self::SignalTarget { .. }
+            | Self::ReturnValue { .. }
+            | Self::YieldExpression { .. }
+            | Self::WaitTarget { .. }
+            | Self::CloseTarget { .. }
+            | Self::WhileCondition { .. }
+            | Self::WhileLetScrutinee { .. }
+            | Self::ForSource { .. }
+            | Self::SelectOperand { .. }
+            | Self::AwaitWithOperand { .. }
+            | Self::MatchScrutinee { .. }
+            | Self::UnsafeAuditReason { .. } => Some(0),
+        }
+    }
+
+    pub(crate) const fn source_role(self) -> HirExprSourceRole {
+        match self {
+            Self::AssignmentTarget { .. }
+            | Self::LifetimeSetTarget { .. }
+            | Self::GotoTarget { .. }
+            | Self::SignalTarget { .. }
+            | Self::WaitTarget { .. }
+            | Self::CloseTarget { .. } => HirExprSourceRole::Target,
+            Self::WhileCondition { .. } => HirExprSourceRole::Condition,
+            Self::WhileLetScrutinee { .. }
+            | Self::ForSource { .. }
+            | Self::MatchScrutinee { .. } => HirExprSourceRole::Scrutinee,
+            Self::WhileLetGuard { .. } | Self::MatchArmGuard { .. } => HirExprSourceRole::Guard,
+            Self::LetInitializer { .. }
+            | Self::AssignmentValue { .. }
+            | Self::LifetimeSetValue { .. }
+            | Self::OutValue { .. }
+            | Self::DeferExpression { .. }
+            | Self::SignalValue { .. }
+            | Self::ReturnValue { .. }
+            | Self::YieldExpression { .. }
+            | Self::SelectOperand { .. }
+            | Self::SelectBranchSource { .. }
+            | Self::AwaitWithOperand { .. }
+            | Self::UnsafeAuditReason { .. } => HirExprSourceRole::Operand,
+        }
+    }
+}
+
 /// Source component shared by every literal family.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirLiteralSourcePart {
+pub enum HirLiteralSourcePart {
     Body,
     Prefix,
     Suffix,
@@ -373,7 +501,7 @@ pub(crate) enum HirLiteralSourcePart {
 
 /// Source component of a structured Arcweft ID reference.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirIdRefSourcePart {
+pub enum HirIdRefSourcePart {
     Whole,
     AbsoluteMarker,
     Family,
@@ -397,7 +525,7 @@ impl From<SyntaxIdRefPart> for HirIdRefSourcePart {
 
 /// Source component of a qualified or shorthand variant-pattern head.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirVariantPatternHeadSourcePart {
+pub enum HirVariantPatternHeadSourcePart {
     QualifiedRoot,
     QualifiedSegment { ordinal: u32 },
     DotShorthandMarker,
@@ -405,7 +533,7 @@ pub(crate) enum HirVariantPatternHeadSourcePart {
 
 /// Source component of an optional variant-pattern payload.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirVariantPatternPayloadSourcePart {
+pub enum HirVariantPatternPayloadSourcePart {
     Whole,
     OpenDelimiter,
     CloseDelimiter,
@@ -413,7 +541,7 @@ pub(crate) enum HirVariantPatternPayloadSourcePart {
 
 /// Source component of one record-pattern field.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirPatternFieldSourcePart {
+pub enum HirPatternFieldSourcePart {
     Whole,
     Name,
     Colon,
@@ -424,7 +552,7 @@ pub(crate) enum HirPatternFieldSourcePart {
 
 /// Source component of a bracket-pattern rest.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirPatternRestSourcePart {
+pub enum HirPatternRestSourcePart {
     Whole,
     Marker,
     Binding,
@@ -432,7 +560,7 @@ pub(crate) enum HirPatternRestSourcePart {
 
 /// Typed source component of one HIR pattern.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirPatternSourceRole {
+pub enum HirPatternSourceRole {
     Whole,
     Name,
     MutKeyword,
@@ -462,7 +590,7 @@ pub(crate) enum HirPatternSourceRole {
 
 /// Source component of one associated-type binding.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirAssociatedTypeBindingSourcePart {
+pub enum HirAssociatedTypeBindingSourcePart {
     Whole,
     Name,
     Equals,
@@ -471,7 +599,7 @@ pub(crate) enum HirAssociatedTypeBindingSourcePart {
 
 /// Source component of a named or elided type region.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirTypeRegionSourcePart {
+pub enum HirTypeRegionSourcePart {
     Whole,
     NamedApostrophe,
     NamedName,
@@ -480,7 +608,7 @@ pub(crate) enum HirTypeRegionSourcePart {
 
 /// Typed source component of one HIR type.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirTypeSourceRole {
+pub enum HirTypeSourceRole {
     Whole,
     NeverMarker,
     ConstInteger,
@@ -559,14 +687,14 @@ pub(crate) enum HirTypeSourceRole {
 /// the same revision-bound component index as every other final-HIR source
 /// component.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirStmtSourceRole {
+pub enum HirStmtSourceRole {
     Whole,
     UnsafeAuditInsertion,
 }
 
 /// Typed source component of one lexical scope.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirScopeSourceRole {
+pub enum HirScopeSourceRole {
     Whole,
     OpenDelimiter,
     CloseDelimiter,
@@ -575,7 +703,7 @@ pub(crate) enum HirScopeSourceRole {
 
 /// Typed source component of one local binding.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirLocalSourceRole {
+pub enum HirLocalSourceRole {
     Whole,
     Name,
     Type,
@@ -585,14 +713,14 @@ pub(crate) enum HirLocalSourceRole {
 
 /// Source component selected inside one shared Flow/Thread body row.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirThreadFlowItemSourcePart {
+pub enum HirThreadFlowItemSourcePart {
     Whole,
     ChildWhole,
 }
 
 /// Typed source component of one shared Flow/Thread body.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirThreadBodySourceRole {
+pub enum HirThreadBodySourceRole {
     Whole,
     OpenDelimiter,
     CloseDelimiter,
@@ -604,7 +732,7 @@ pub(crate) enum HirThreadBodySourceRole {
 
 /// One typed HIR owner paired with only its applicable source-role family.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirSourceQuery {
+pub enum HirSourceQuery {
     Item {
         owner: ItemId,
         role: HirItemSourceRole,
@@ -642,11 +770,16 @@ pub(crate) enum HirSourceQuery {
 impl HirSourceQuery {
     /// Returns whether `Whole` is retained by the raw owner slot rather than
     /// by the component table.
-    pub(crate) const fn is_slot_whole(&self) -> bool {
+    pub const fn is_slot_whole(&self) -> bool {
         matches!(
             self,
             Self::Item {
-                role: HirItemSourceRole::Flow(HirFlowSourceRole::Whole),
+                role: HirItemSourceRole::Declaration(HirDeclarationSourceRole::Whole)
+                    | HirItemSourceRole::Entry(HirEntrySourcePart::Whole)
+                    | HirItemSourceRole::Use(HirUseSourceRole::Whole)
+                    | HirItemSourceRole::TestBench(HirTestBenchSourceRole::Whole)
+                    | HirItemSourceRole::Flow(HirFlowSourceRole::Whole)
+                    | HirItemSourceRole::View(HirViewSourceRole::Whole),
                 ..
             } | Self::Expr {
                 role: HirExprSourceRole::Whole,
@@ -670,7 +803,7 @@ impl HirSourceQuery {
         )
     }
 
-    pub(crate) const fn owner(&self) -> SyntheticOwner {
+    pub const fn owner(&self) -> SyntheticOwner {
         match self {
             Self::Item { owner, .. } => SyntheticOwner::Item(*owner),
             Self::Expr { owner, .. } => SyntheticOwner::Expr(*owner),
@@ -690,21 +823,21 @@ impl HirSourceQuery {
 
 /// Source-site presence after typed owner and role validation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) enum HirSourcePresence<'a> {
+pub enum HirSourcePresence<'a> {
     Present(&'a HirSourceSite),
     AbsentOptional,
 }
 
 /// Executability status read from the immutable owner slot.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirSourceOwnerStatus {
+pub enum HirSourceOwnerStatus {
     Clean,
     Poisoned,
 }
 
 /// Exact source-site result for one typed HIR query.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(crate) struct HirSourceLookup<'a> {
+pub struct HirSourceLookup<'a> {
     presence: HirSourcePresence<'a>,
     owner_status: HirSourceOwnerStatus,
 }
@@ -717,18 +850,18 @@ impl<'a> HirSourceLookup<'a> {
         }
     }
 
-    pub(crate) const fn presence(&self) -> HirSourcePresence<'a> {
+    pub const fn presence(&self) -> HirSourcePresence<'a> {
         self.presence
     }
 
-    pub(crate) const fn owner_status(&self) -> HirSourceOwnerStatus {
+    pub const fn owner_status(&self) -> HirSourceOwnerStatus {
         self.owner_status
     }
 }
 
 /// Typed failure from the sole final HIR source query.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(crate) enum HirSourceQueryError {
+pub enum HirSourceQueryError {
     #[error("failed to resolve item source owner {owner:?}")]
     ItemResolve {
         owner: ItemId,
@@ -1001,6 +1134,7 @@ pub(crate) struct HirSourceIndex {
 }
 
 impl HirSourceIndex {
+    #[cfg(test)]
     pub(crate) fn empty(source: SourceDocumentIdentity, slots: &SlotSnapshot) -> Self {
         Self {
             source,
@@ -1065,6 +1199,10 @@ impl HirSourceIndex {
     /// Performs query work after the module supplies typed owner/payload
     /// resolution. Calling the resolver first preserves the normative ordering
     /// ahead of source identity checks.
+    #[allow(
+        clippy::result_large_err,
+        reason = "lookup failures retain the complete typed query, source identities, and invariant evidence"
+    )]
     pub(crate) fn lookup<'a>(
         &'a self,
         retained_source: &SourceDocumentIdentity,
@@ -1248,6 +1386,24 @@ impl StagedHirSourceIndex {
         }
     }
 
+    /// Read-only source-role projection used by the unpublished project header
+    /// barrier. It exposes only already-staged typed components and cannot
+    /// commit, infer, or synthesize a missing role.
+    pub(crate) fn component_presence(
+        &self,
+        query: &HirSourceQuery,
+    ) -> Option<HirSourcePresence<'_>> {
+        match (self.requirements.get(query), self.components.get(query)) {
+            (Some(_), Some(site)) => Some(HirSourcePresence::Present(site)),
+            (Some(HirSourceRequirement::Optional), None) => Some(HirSourcePresence::AbsentOptional),
+            (Some(HirSourceRequirement::Required), None) | (None, _) => None,
+        }
+    }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "transaction failures retain the complete conflicting typed owner evidence"
+    )]
     fn bind_syntax_owner(
         &mut self,
         owner: SyntheticOwner,
@@ -1270,6 +1426,10 @@ impl StagedHirSourceIndex {
         }
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "transaction failures retain the complete conflicting typed requirement evidence"
+    )]
     fn require(
         &mut self,
         query: &HirSourceQuery,
@@ -1295,6 +1455,10 @@ impl StagedHirSourceIndex {
         }
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "transaction failures retain the complete typed query and source-site evidence"
+    )]
     fn stage(
         &mut self,
         query: &HirSourceQuery,
@@ -1333,6 +1497,10 @@ impl StagedHirSourceIndex {
     /// Test-only mutation hook for proving that publication rejects an extra
     /// optional manifest row. This is absent from production builds.
     #[cfg(test)]
+    #[allow(
+        clippy::result_large_err,
+        reason = "the test hook preserves the same structured transaction error as production staging"
+    )]
     pub(crate) fn stage_absent_optional_query(
         &mut self,
         query: &HirSourceQuery,
@@ -1341,6 +1509,10 @@ impl StagedHirSourceIndex {
     }
 
     #[cfg(test)]
+    #[allow(
+        clippy::result_large_err,
+        reason = "the test hook preserves the same structured transaction error as production staging"
+    )]
     pub(crate) fn inject_component_for_test(
         &mut self,
         query: &HirSourceQuery,
@@ -1349,6 +1521,10 @@ impl StagedHirSourceIndex {
         self.stage(query, site)
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "commit rejection preserves the complete missing or undeclared typed manifest row"
+    )]
     pub(crate) fn commit(self) -> Result<HirSourceIndex, HirSourceCommitInvariantError> {
         self.ensure_open()?;
         if let Some(query) = self
@@ -1380,6 +1556,10 @@ impl StagedHirSourceIndex {
         })
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "the transaction uses one structured invariant error family at every fallible boundary"
+    )]
     const fn ensure_open(&self) -> Result<(), HirSourceCommitInvariantError> {
         if self.poisoned {
             Err(HirSourceCommitInvariantError::TransactionPoisoned)
@@ -1388,6 +1568,10 @@ impl StagedHirSourceIndex {
         }
     }
 
+    #[allow(
+        clippy::result_large_err,
+        reason = "rejection returns the original structured invariant error after poisoning the transaction"
+    )]
     fn reject<T>(
         &mut self,
         error: HirSourceCommitInvariantError,
@@ -1406,11 +1590,9 @@ fn query_owner_is_prepared(
         HirSourceQuery::Item { owner, .. } => slots
             .resolve_prepared(*owner)
             .is_ok_and(|metadata| matches!(metadata.origin(), HirOrigin::Source(_))),
-        HirSourceQuery::Expr { owner, .. } => syntax_owners
-            .get(&SyntheticOwner::Expr(*owner))
-            .is_some_and(|syntax| {
-                prepared_source_origin_matches(slots.resolve_prepared(*owner), *syntax)
-            }),
+        HirSourceQuery::Expr { owner, .. } => {
+            expression_query_owner_is_prepared(*owner, syntax_owners, slots)
+        }
         HirSourceQuery::Pattern { owner, .. } => syntax_owners
             .get(&SyntheticOwner::Pattern(*owner))
             .is_some_and(|syntax| {
@@ -1442,6 +1624,37 @@ fn query_owner_is_prepared(
                 .is_ok_and(|metadata| matches!(metadata.origin(), HirOrigin::Source(_))),
         },
     }
+}
+
+fn expression_query_owner_is_prepared(
+    owner: ExprId,
+    syntax_owners: &BTreeMap<SyntheticOwner, SyntaxNodeId>,
+    slots: &SlotSnapshot,
+) -> bool {
+    if syntax_owners
+        .get(&SyntheticOwner::Expr(owner))
+        .is_some_and(|syntax| {
+            prepared_source_origin_matches(slots.resolve_prepared(owner), *syntax)
+        })
+    {
+        return true;
+    }
+    let Ok(metadata) = slots.resolve_prepared(owner) else {
+        return false;
+    };
+    let HirOrigin::Synthetic(key) = metadata.origin() else {
+        return false;
+    };
+    let SyntheticOwner::Expr(outer) = key.owner() else {
+        return false;
+    };
+    key.role() == SyntheticRole::DialogueContentCandidateExpression
+        && key.ordinal() == 0
+        && syntax_owners
+            .get(&SyntheticOwner::Expr(outer))
+            .is_some_and(|syntax| {
+                prepared_source_origin_matches(slots.resolve_prepared(outer), *syntax)
+            })
 }
 
 fn source_owner_is_prepared_at(
@@ -1478,6 +1691,10 @@ fn prepared_source_origin_matches(
     )
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "source mismatch errors preserve both complete document identities and revisions"
+)]
 fn validate_component_source(
     expected: &SourceDocumentIdentity,
     actual: &SourceDocumentIdentity,

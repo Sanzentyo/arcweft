@@ -333,6 +333,79 @@ pub(in crate::source_index) fn resolved_path_projection_matches(
             .all(|(actual, expected)| path_segment_matches(actual, expected))
 }
 
+/// Matches one grouped-import path projected from an attached module path and
+/// one parser-classified terminal reference.
+///
+/// This mirrors the shared typed path projection without constructing a
+/// second path or reopening source text. The attached segment family and its
+/// parser-owned spelling remain the comparison authority.
+pub(in crate::source_index) fn path_projection_with_terminal_matches(
+    actual: &HirPathValue,
+    base: &AttachedPath,
+    terminal_kind: AttachedPathSegmentKind,
+    terminal_spelling: &str,
+) -> bool {
+    let root = attached_path_root(base);
+    let segment_count = base
+        .segments()
+        .len()
+        .saturating_add(usize::from(base.missing_name().is_some()))
+        .saturating_add(1);
+    let expected_issue = base
+        .segments()
+        .iter()
+        .position(|segment| segment.kind() == AttachedPathSegmentKind::Lifetime)
+        .map(|ordinal| HirPathIssue::InvalidSegment {
+            ordinal: u32::try_from(ordinal).expect("attached path ordinal fits u32"),
+        })
+        .or_else(|| {
+            base.missing_name()
+                .is_some()
+                .then(|| HirPathIssue::InvalidSegment {
+                    ordinal: u32::try_from(base.segments().len())
+                        .expect("attached path ordinal fits u32"),
+                })
+        })
+        .or_else(|| {
+            (terminal_kind == AttachedPathSegmentKind::Lifetime).then(|| {
+                HirPathIssue::InvalidSegment {
+                    ordinal: u32::try_from(
+                        base.segments().len() + usize::from(base.missing_name().is_some()),
+                    )
+                    .expect("attached path ordinal fits u32"),
+                }
+            })
+        });
+
+    match actual {
+        HirPathValue::Resolved(actual) => {
+            expected_issue.is_none()
+                && actual.root() == root
+                && actual.segments().len() == segment_count
+                && actual
+                    .segments()
+                    .iter()
+                    .take(base.segments().len())
+                    .zip(base.segments())
+                    .all(|(actual, expected)| path_segment_matches(actual, expected))
+                && actual.segments().last().is_some_and(|actual| {
+                    path_segment_family_and_spelling_matches(
+                        actual,
+                        terminal_kind,
+                        terminal_spelling,
+                    )
+                })
+        }
+        HirPathValue::Recovered(actual) => {
+            actual.root() == root
+                && usize::try_from(actual.segment_count()).ok() == Some(segment_count)
+                && expected_issue
+                    .as_ref()
+                    .is_some_and(|issue| actual.issue() == issue)
+        }
+    }
+}
+
 pub(in crate::source_index) fn attached_path_is_resolved(path: &AttachedPath) -> bool {
     expected_path_issue(path).is_none()
 }
@@ -370,18 +443,26 @@ fn path_segment_matches(
     actual: &HirPathSegment,
     expected: &arcweft_lang_syntax::attachment::source_file::AttachedPathSegment,
 ) -> bool {
+    path_segment_family_and_spelling_matches(actual, expected.kind(), expected.source_text())
+}
+
+fn path_segment_family_and_spelling_matches(
+    actual: &HirPathSegment,
+    expected_kind: AttachedPathSegmentKind,
+    expected_spelling: &str,
+) -> bool {
     matches!(
-        (actual, expected.kind()),
+        (actual, expected_kind),
         (
             HirPathSegment::Identifier(_),
             AttachedPathSegmentKind::Identifier
         ) | (
             HirPathSegment::ProjectSymbol(_),
-            AttachedPathSegmentKind::Keyword
+            AttachedPathSegmentKind::Keyword | AttachedPathSegmentKind::ProjectSymbol
         )
     ) && match actual {
-        HirPathSegment::Identifier(actual) => actual.as_str() == expected.source_text(),
-        HirPathSegment::ProjectSymbol(actual) => actual.as_str() == expected.source_text(),
+        HirPathSegment::Identifier(actual) => actual.as_str() == expected_spelling,
+        HirPathSegment::ProjectSymbol(actual) => actual.as_str() == expected_spelling,
     }
 }
 

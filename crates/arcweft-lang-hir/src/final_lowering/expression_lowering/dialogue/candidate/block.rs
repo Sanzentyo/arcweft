@@ -26,7 +26,7 @@ use crate::expr::{
 };
 use crate::identity::{ExprId, HirLimit, LocalId, ScopeId, StmtId, SyntheticKey, SyntheticOwner};
 use crate::leaf::{HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirPatternBindingPolicy, HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::{HirExprSourceRole, HirMatchArmSourcePart, HirSourceSite};
 use crate::stmt::{
@@ -232,6 +232,10 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "candidate statement lowering atomically reserves, projects, validates, diagnoses, and finalizes one typed statement owner"
+    )]
     fn lower_candidate_statement(
         &mut self,
         statement: AttachedCandidateStatement<'_>,
@@ -492,6 +496,10 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "candidate If lowering is one source-ordered transaction over condition or pattern, scopes, branches, and recovery precedence"
+    )]
     fn lower_candidate_if_statement(
         &mut self,
         statement: AttachedCandidateStatement<'_>,
@@ -685,6 +693,10 @@ impl StagedHirModuleTransaction<'_> {
         }
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "candidate Match lowering owns one scrutinee and the complete ordered arm scope/binding/body matrix"
+    )]
     fn lower_candidate_match_statement(
         &mut self,
         statement: AttachedCandidateStatement<'_>,

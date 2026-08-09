@@ -4,7 +4,10 @@
 //! projection that wraps resources for MCP clients.
 
 use arcweft_agent_policy::PublishedAgentResource;
-use arcweft_agent_protocol::resource::{AGENT_TRACE_MIME_TYPE, AgentResource, AgentResourceBody};
+use arcweft_agent_protocol::resource::{
+    AGENT_TRACE_MIME_TYPE, AgentBinaryEncoding, AgentResource, AgentResourceBody,
+};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 
 use crate::model::{
     McpBlobResourceContents, McpCallToolResult, McpContentBlock, McpListResourceTemplatesResult,
@@ -125,9 +128,20 @@ pub fn resource_descriptor(published: &PublishedAgentResource) -> McpResourceDes
         title: Some(resource.title().to_owned()),
         description: Some(resource.description()),
         mime_type: Some(resource.mime_type.clone()),
-        size: resource.decoded_len(),
+        size: mcp_resource_size(&resource.body),
         image: resource.image.clone(),
     }
+}
+
+fn mcp_resource_size(body: &AgentResourceBody) -> Option<u64> {
+    let byte_len = match body {
+        AgentResourceBody::Json(value) => serde_json::to_vec(value).ok()?.len(),
+        AgentResourceBody::Text(text) => text.len(),
+        AgentResourceBody::BytesBase64(body) => match body.encoding {
+            AgentBinaryEncoding::Base64 => STANDARD.decode(&body.data).ok()?.len(),
+        },
+    };
+    u64::try_from(byte_len).ok()
 }
 
 fn resource_template(

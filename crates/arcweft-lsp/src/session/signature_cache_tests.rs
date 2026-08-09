@@ -231,12 +231,14 @@ impl SignatureCacheFixture {
     }
 
     fn accepted(&self) -> Arc<crate::profiles::state::AcceptedProfileEnvironment> {
-        self.session
-            .read()
-            .expect("session read")
-            .profile_for_uri(&self.uri)
-            .accepted_environment()
-            .expect("accepted signature environment")
+        let session = self.session.read().expect("session read");
+        let profile = session.profile_for_uri(&self.uri);
+        profile.accepted_environment().unwrap_or_else(|| {
+            panic!(
+                "accepted signature environment; profile diagnostics: {:?}",
+                profile.diagnostics()
+            )
+        })
     }
 
     #[allow(
@@ -1078,7 +1080,10 @@ fn did_open_equal_manifest_publishes_one_metadata_generation_on_the_existing_sta
         .state();
     assert!(Arc::ptr_eq(&previous_state, manifest_state));
     assert_eq!(current.generation().get(), previous.generation().get() + 1);
-    assert!(Arc::ptr_eq(current.world(), previous.world()));
+    assert!(Arc::ptr_eq(
+        current.executable().expect("current executable"),
+        previous.executable().expect("previous executable")
+    ));
     assert!(Arc::ptr_eq(current.project(), previous.project()));
     assert_eq!(
         current
@@ -1214,7 +1219,10 @@ fn identical_did_change_reuses_project_arcs_and_accepts_the_exact_new_version() 
 
     let current = fixture.accepted();
     assert_eq!(current.generation().get(), previous.generation().get() + 1);
-    assert!(Arc::ptr_eq(current.world(), previous.world()));
+    assert!(Arc::ptr_eq(
+        current.executable().expect("current executable"),
+        previous.executable().expect("previous executable")
+    ));
     assert!(Arc::ptr_eq(current.project(), previous.project()));
     assert_eq!(previous.signature_cache_snapshot_for_test().entries, 0);
     assert_eq!(current.signature_cache_snapshot_for_test().entries, 0);

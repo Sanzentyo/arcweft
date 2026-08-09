@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuildError, UnattachedGrammarEntry};
 use crate::grammar::event::PendingSyntaxDiagnostic;
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
@@ -37,7 +37,7 @@ fn style_shadow_grammar_is_lossless_and_owns_typed_members() {
         "    }\n",
         "}\n",
     );
-    let built = parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default())
         .expect("shadow grammar builds");
     let entries = built.index().entries();
 
@@ -128,7 +128,7 @@ fn malformed_style_member_recovers_before_later_member_and_declaration() {
         "}\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default())
         .expect("shadow grammar builds");
     let codes = built
         .diagnostics()
@@ -175,7 +175,7 @@ fn missing_style_close_preserves_the_following_declaration() {
         "    Button { color = color.text }\n",
         "proof next() = ()\n",
     );
-    let built = parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default())
         .expect("shadow grammar builds");
     let codes = built
         .diagnostics()
@@ -202,7 +202,7 @@ fn missing_style_close_preserves_the_following_declaration() {
 #[test]
 fn style_members_share_the_declaration_member_limit_exactly() {
     let exact = style_with_tokens(SyntaxLimit::DeclarationMembers.maximum());
-    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&exact), crate::parser::ParseOptions::default())
         .expect("exact Style declaration-member limit builds");
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::StyleTokenDeclaration),
@@ -211,7 +211,7 @@ fn style_members_share_the_declaration_member_limit_exactly() {
 
     let one_over = style_with_tokens(SyntaxLimit::DeclarationMembers.maximum() + 1);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::DeclarationMembers
         ))
@@ -223,7 +223,7 @@ fn mixed_style_members_share_one_aggregate_declaration_member_budget() {
     let maximum = SyntaxLimit::DeclarationMembers.maximum();
     assert_eq!(maximum, 1_024);
     let exact = style_with_mixed_members(maximum);
-    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&exact), crate::parser::ParseOptions::default())
         .expect("mixed Style aggregate at 1,024 members builds");
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::StyleTokenDeclaration),
@@ -238,7 +238,7 @@ fn mixed_style_members_share_one_aggregate_declaration_member_budget() {
 
     let one_over = style_with_mixed_members(maximum + 1);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::DeclarationMembers
         ))
@@ -248,7 +248,7 @@ fn mixed_style_members_share_one_aggregate_declaration_member_budget() {
 #[test]
 fn style_environment_nesting_accepts_exact_limit_and_rejects_one_over() {
     let exact = nested_style_environments(SyntaxLimit::StyleNestingDepth.maximum());
-    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&exact), crate::parser::ParseOptions::default())
         .expect("exact Style environment nesting limit builds");
     assert_eq!(
         kind_count(built.index().entries(), SyntaxKind::StyleEnvironmentBlock),
@@ -257,7 +257,7 @@ fn style_environment_nesting_accepts_exact_limit_and_rejects_one_over() {
 
     let one_over = nested_style_environments(SyntaxLimit::StyleNestingDepth.maximum() + 1);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default()),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::StyleNestingDepth
         ))

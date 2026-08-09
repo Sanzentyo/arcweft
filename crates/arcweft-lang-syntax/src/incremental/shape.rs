@@ -1,8 +1,8 @@
 //! Deterministic attached-grammar shapes for syntax identity reconciliation.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
-use crate::attachment::{SyntaxNode, grammar_node_at_path};
+use crate::attachment::{SyntaxNode, grammar_nodes_for_paths};
 use crate::grammar::build::{GrammarBuild, GrammarEventPath};
 use crate::grammar::event::ExpectedToken;
 use crate::grammar::kinds::{
@@ -56,6 +56,9 @@ impl GrammarShapeNode {
             .iter()
             .map(|entry| entry.path().clone())
             .collect::<HashSet<_>>();
+        let syntax_nodes = grammar_nodes_for_paths(&root, &identity_paths)
+            .ok_or(GrammarShapeError::InvalidEventPath)?;
+        let missing_expected = MissingExpectedByOwner::from_build(build);
         let mut drafts = Vec::<GrammarShapeDraft>::with_capacity(entries.len());
         let mut ancestors = Vec::<usize>::new();
 
@@ -69,10 +72,11 @@ impl GrammarShapeNode {
             if parent.is_none() && !drafts.is_empty() {
                 return Err(GrammarShapeError::InvalidParentOrder);
             }
-            let syntax = grammar_node_at_path(&root, entry.path())
+            let syntax = syntax_nodes
+                .get(entry.path())
                 .ok_or(GrammarShapeError::InvalidEventPath)?;
-            let own_non_trivia_digest = own_token_digest(&syntax, entry.path(), &identity_paths)?;
-            let recovery_class = recovery_class(build, entry.kind(), entry.path());
+            let own_non_trivia_digest = own_token_digest(syntax, entry.path(), &identity_paths)?;
+            let recovery_class = recovery_class(&missing_expected, entry.kind(), entry.path());
             let index = drafts.len();
             drafts.push(GrammarShapeDraft {
                 path: entry.path().clone(),
@@ -130,6 +134,24 @@ struct GrammarShapeDraft {
     own_non_trivia_digest: [u8; 16],
     recovery_class: RecoveryClass,
     children: Vec<usize>,
+}
+
+struct MissingExpectedByOwner<'build> {
+    expected: HashMap<&'build GrammarEventPath, ExpectedToken>,
+}
+
+impl<'build> MissingExpectedByOwner<'build> {
+    fn from_build(build: &'build GrammarBuild) -> Self {
+        let mut expected = HashMap::with_capacity(build.missing_tokens().len());
+        for site in build.missing_tokens() {
+            expected.entry(site.owner_path()).or_insert(site.expected());
+        }
+        Self { expected }
+    }
+
+    fn get(&self, path: &GrammarEventPath) -> Option<ExpectedToken> {
+        self.expected.get(path).copied()
+    }
 }
 
 fn build_grammar_shape(
@@ -225,17 +247,12 @@ fn hash_owned_tokens(
 }
 
 fn recovery_class(
-    build: &GrammarBuild,
+    missing_expected: &MissingExpectedByOwner<'_>,
     kind: GrammarKind,
     path: &GrammarEventPath,
 ) -> RecoveryClass {
     if kind.is_missing_node() {
-        let expected = build
-            .missing_tokens()
-            .iter()
-            .find(|site| site.owner_path() == path)
-            .map(crate::grammar::build::MissingTokenSite::expected);
-        RecoveryClass::Missing(expected)
+        RecoveryClass::Missing(missing_expected.get(path))
     } else if kind.is_omitted_node() {
         RecoveryClass::Omitted
     } else if kind.is_error_node() {
@@ -295,4 +312,61 @@ fn hash_field(hasher: &mut blake3::Hasher, bytes: &[u8]) {
 
 const fn role_class_tag(role: SyntaxRoleClass) -> u16 {
     role as u16
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{GrammarShapeNode, RecoveryClass};
+    use crate::grammar::build::build_grammar_text;
+    use crate::grammar::event::{ExpectedToken, SyntaxEvent};
+    use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
+
+    #[test]
+    fn missing_expected_inventory_is_path_exact_and_preserves_event_order() {
+        let punctuation = ExpectedToken::try_new(SyntaxKind::PunctuationToken)
+            .expect("punctuation is a real expected token");
+        let identifier = ExpectedToken::try_new(SyntaxKind::IdentifierToken)
+            .expect("identifier is a real expected token");
+        let events = [
+            SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root),
+            SyntaxEvent::start(SyntaxKind::MissingTokenNode, SyntaxRole::Element(0)),
+            SyntaxEvent::MissingToken {
+                expected: punctuation,
+                at: 0,
+            },
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::start(SyntaxKind::MissingTokenNode, SyntaxRole::Element(1)),
+            SyntaxEvent::MissingToken {
+                expected: identifier,
+                at: 0,
+            },
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::start(SyntaxKind::MissingTokenNode, SyntaxRole::Element(2)),
+            SyntaxEvent::MissingToken {
+                expected: punctuation,
+                at: 0,
+            },
+            SyntaxEvent::MissingToken {
+                expected: identifier,
+                at: 0,
+            },
+            SyntaxEvent::FinishNode,
+            SyntaxEvent::FinishNode,
+        ];
+        let build = build_grammar_text("", &events, 0).expect("valid missing-node grammar");
+        let shape = GrammarShapeNode::from_build(&build).expect("valid grammar shape");
+
+        assert_eq!(
+            shape
+                .children()
+                .iter()
+                .map(|child| child.own.recovery_class)
+                .collect::<Vec<_>>(),
+            vec![
+                RecoveryClass::Missing(Some(punctuation)),
+                RecoveryClass::Missing(Some(identifier)),
+                RecoveryClass::Missing(Some(punctuation)),
+            ]
+        );
+    }
 }

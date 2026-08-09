@@ -3,6 +3,7 @@ use std::collections::BTreeMap;
 use arcweft_bundle::{ArcweftBundle, BundleKind};
 use arcweft_core::{
     bytecode::BytecodeProgram,
+    effect::{LineEffectRequest, RuntimeAssertionFailure},
     engine::{EngineStartError, FlowFiberStatus},
     entry::{AgentBudget, RuntimeCallableExecutableCode},
     executor::{ArcweftExecutionTier, ArcweftRuntimeExecutor, RuntimeExecutor},
@@ -37,7 +38,7 @@ use crate::session::{AgentSession, RagService};
 
 use arcweft_agent_protocol::{
     artifact::{AgentArtifactManifest, AgentBundleKind, ProjectBinding, ProjectBindingMode},
-    ids::{AgentResourceUri, PublicId, StableHash},
+    ids::{AgentProjectGraphSymbolId, AgentResourceUri, PublicId, StableHash},
     protocol::{
         AgentAction, AgentAssertionRequest, AgentHostRequest, AgentHostResponse, CaptureRequest,
         ObservationEnvelope, ObserveRequest, RagRequest, WaitRequest,
@@ -516,7 +517,7 @@ where
 
     fn handle_project_graph_neighborhood_request(
         &mut self,
-        root: &PublicId,
+        root: &AgentProjectGraphSymbolId,
         depth: u32,
     ) -> AgentRunnerResult<AgentHostResponse, S, D, R> {
         self.ensure(RuntimeAgentCapability::DebugRead)?;
@@ -759,6 +760,7 @@ where
             steps: 0,
             host_calls: 0,
             responses: Vec::new(),
+            assertion_failures: Vec::new(),
             events_emitted: self.sequence,
             final_status: None,
         };
@@ -778,6 +780,12 @@ where
                 options,
             );
             for effect in &step.output.effects.line {
+                if let LineEffectRequest::Assert(assertion) = effect {
+                    report
+                        .assertion_failures
+                        .push(RuntimeAssertionFailure::new(assertion.clone()));
+                    continue;
+                }
                 let request = agent_host_request_from_effect(effect)
                     .map_err(AgentRunError::UnsupportedControllerEffect)?;
                 let host_report =
@@ -813,6 +821,7 @@ where
                 FlowFiberStatus::Running
                 | FlowFiberStatus::Dialogue(_)
                 | FlowFiberStatus::Waiting(_)
+                | FlowFiberStatus::NeedWaiting(_)
                 | FlowFiberStatus::WaitingMany(_)
                 | FlowFiberStatus::HostCall(_)
                 | FlowFiberStatus::Choice(_) => {}

@@ -7,7 +7,7 @@ use crate::proxy::AgentPresentationObjectProxyRef;
 use crate::rich_text::AgentRichTextElementRef;
 use crate::serde_helpers::default_true;
 use arcweft_layout::stage_placement::{ResolvedStagePlacement, StagePlacement};
-use arcweft_render_text::LineDisplayFrame;
+use arcweft_text_model::LineDisplayFrame;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 

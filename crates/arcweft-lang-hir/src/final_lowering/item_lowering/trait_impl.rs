@@ -19,7 +19,7 @@ use crate::item::{
     HirMethodReceiverKind, HirParameter, HirParameterKind, HirTraitAssociatedType,
     HirTraitFunction, HirTraitItem, HirTraitMember,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::HirPatternBindingPolicy;
 
 use super::super::{StagedHirModuleTransaction, require_limit};
@@ -396,7 +396,8 @@ impl StagedHirModuleTransaction<'_> {
         item_scope: ScopeId,
         attached: &AttachedTraitFunction,
     ) -> Result<ItemProjection<HirTraitFunction>, HirLowerFailure> {
-        let parts = self.lower_method_parts(owner, item_scope, attached.into())?;
+        let input = AttachedMethodInput::from(attached);
+        let parts = self.lower_method_parts(owner, item_scope, &input)?;
         let value = HirTraitFunction::try_new(
             owner.module(),
             parts.prefix,
@@ -421,7 +422,8 @@ impl StagedHirModuleTransaction<'_> {
         item_scope: ScopeId,
         attached: &AttachedImplFunction,
     ) -> Result<ItemProjection<HirImplFunction>, HirLowerFailure> {
-        let parts = self.lower_method_parts(owner, item_scope, attached.into())?;
+        let input = AttachedMethodInput::from(attached);
+        let parts = self.lower_method_parts(owner, item_scope, &input)?;
         let value = HirImplFunction::try_new(
             owner.module(),
             parts.prefix,
@@ -444,7 +446,7 @@ impl StagedHirModuleTransaction<'_> {
         &mut self,
         owner: ItemId,
         item_scope: ScopeId,
-        attached: AttachedMethodInput<'_>,
+        attached: &AttachedMethodInput<'_>,
     ) -> Result<LoweredMethodParts, HirLowerFailure> {
         let callable_scope =
             self.allocate_item_callable_scope(attached.syntax, owner, item_scope)?;

@@ -7,14 +7,18 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
 use super::{
     AstNode, AttachedCallableParameter, AttachedCallableParameterKind, AttachedFunctionBody,
-    AttachedProofBody, FunctionItemKind, PredicateItemKind, ProofItemKind,
+    AttachedPredicateBody, AttachedProofBody, FunctionItemKind, PredicateItemKind, ProofItemKind,
+    ProofTrustSyntax,
 };
+use crate::assertion::AssertionMode;
+use crate::attachment::node::{AssertionStatementKind, ProofCallStatementKind};
+use crate::attachment::source_file::AttachedVisibilityKind;
 use crate::attachment::{
-    AttachedTypeFamily, GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId,
-    SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
+    AttachedTypeFamily, BlockTailNode, GrammarIdentityMap, SyntaxDatabaseId, SyntaxLineageId,
+    SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
 };
 use crate::grammar::kinds::SyntaxKind;
-use crate::parser::{ParseOptions, parse_shadow_document};
+use crate::parser::{ParseOptions, parse_document};
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
     let document = Arc::new(
@@ -25,7 +29,7 @@ fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
         )
         .unwrap(),
     );
-    let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
     let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(181).unwrap());
     let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
     let snapshot = SyntaxSnapshotId::new(
@@ -81,6 +85,48 @@ fn function(snapshot: &Arc<SyntaxSnapshotData>) -> AstNode<FunctionItemKind> {
         .unwrap()
         .cast()
         .unwrap()
+}
+
+#[test]
+fn proof_attachment_owns_final_trust_and_consumes_the_generic_attribute() {
+    let verified = attach("proof verified() = ()\n");
+    let verified = proof(&verified).semantics().unwrap();
+    assert!(matches!(verified.trust(), Some(ProofTrustSyntax::Verified)));
+    assert!(verified.prefix().attributes().is_empty());
+
+    let trusted = attach(concat!(
+        "#[cfg(debug)]\n",
+        "#[verify.trusted(reason = \"  reviewed ✓  \")]\n",
+        "proof trusted() = ()\n",
+    ));
+    let trusted = proof(&trusted).semantics().unwrap();
+    let Some(ProofTrustSyntax::Trusted { reason, .. }) = trusted.trust() else {
+        panic!("expected typed trusted Proof")
+    };
+    assert_eq!(reason.as_str(), "  reviewed ✓  ");
+    assert_eq!(trusted.prefix().attributes().len(), 1);
+    assert_eq!(
+        trusted.prefix().attributes()[0].path().segments()[0].source_text(),
+        "cfg"
+    );
+    assert!(trusted.trust_attribute_source_span().is_some());
+    assert!(trusted.trust_reason_source_span().is_some());
+}
+
+#[test]
+fn malformed_trust_metadata_is_explicit_recovery_not_verified() {
+    let snapshot = attach(concat!(
+        "#[verify.trusted(reason = \"first\")]\n",
+        "#[verify.trusted(reason = \"second\")]\n",
+        "proof duplicate() = ()\n",
+    ));
+    let attached = proof(&snapshot).semantics().unwrap();
+
+    assert!(attached.trust().is_none());
+    assert!(attached.has_trust_recovery());
+    assert!(attached.prefix().attributes().is_empty());
+    assert!(attached.trust_attribute_source_span().is_none());
+    assert!(attached.trust_reason_source_span().is_none());
 }
 
 #[test]
@@ -328,6 +374,208 @@ fn predicate_and_proof_receiver_shapes_attach_as_typed_parameter_recovery() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the table-driven header matrix keeps exact child ranges and all recovery roles together"
+)]
+fn predicate_proof_headers_bind_exact_children_and_malformed_recovery_roles() {
+    enum RecoveryRole {
+        MissingName,
+        MissingGenericName,
+        MissingParameterClose,
+        MissingWhereColon,
+        MissingBody,
+        ExtraParameterGroup,
+    }
+
+    let source = concat!(
+        "pub(super) proof parent_visible<'a, T>",
+        "((left, right): (T, T), cmp: Comparator<T>) -> Bool ",
+        "where T: Ord, Comparator<T>: Ready ",
+        "requires cmp.ready() ensures result { left == right }\n",
+    );
+    let snapshot = attach(source);
+    let attached = proof(&snapshot).semantics().unwrap();
+
+    assert_eq!(attached.syntax().range(), SourceRange::new(0, 178));
+    let visibility = attached
+        .prefix()
+        .visibility()
+        .expect("authored pub(super) visibility");
+    assert_eq!(visibility.kind(), AttachedVisibilityKind::Super);
+    assert_eq!(visibility.syntax().range(), SourceRange::new(0, 10));
+    assert_eq!(attached.name().syntax().range(), SourceRange::new(17, 31));
+
+    let generics = attached.generics().expect("authored generic group");
+    assert_eq!(generics.syntax().range(), SourceRange::new(31, 38));
+    assert_eq!(generics.open().range(), SourceRange::new(31, 32));
+    assert_eq!(generics.close().range(), SourceRange::new(37, 38));
+    assert_eq!(
+        generics
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.syntax().range())
+            .collect::<Vec<_>>(),
+        [SourceRange::new(32, 34), SourceRange::new(36, 37)]
+    );
+    assert!(!generics.has_recovery());
+
+    let parameters = attached.parameter_group();
+    assert_eq!(parameters.syntax().range(), SourceRange::new(38, 81));
+    assert_eq!(parameters.open().range(), SourceRange::new(38, 39));
+    assert_eq!(parameters.close().range(), SourceRange::new(80, 81));
+    assert_eq!(
+        parameters
+            .parameters()
+            .iter()
+            .map(|parameter| parameter.syntax().range())
+            .collect::<Vec<_>>(),
+        [SourceRange::new(39, 60), SourceRange::new(62, 80)]
+    );
+    assert!(!parameters.has_recovery());
+
+    let [where_clause] = attached.where_clauses() else {
+        panic!("expected one where wrapper")
+    };
+    assert_eq!(where_clause.syntax().range(), SourceRange::new(90, 125));
+    let [ordinal, comparator_bound] = where_clause.predicates() else {
+        panic!("expected both source-ordered where predicates")
+    };
+    assert_eq!(ordinal.syntax().range(), SourceRange::new(96, 102));
+    assert_eq!(
+        comparator_bound.syntax().range(),
+        SourceRange::new(104, 124)
+    );
+    assert!(!where_clause.has_recovery());
+
+    let authored_return = attached
+        .authored_return()
+        .expect("authored Proof return type");
+    assert_eq!(authored_return.syntax().range(), SourceRange::new(82, 89));
+
+    let [requires, ensures] = attached.contracts() else {
+        panic!("expected requires then ensures")
+    };
+    assert!(requires.is_requires());
+    assert_eq!(
+        requires.syntax_source_span().range(),
+        SourceRange::new(125, 145)
+    );
+    assert!(ensures.is_ensures());
+    assert_eq!(
+        ensures.syntax_source_span().range(),
+        SourceRange::new(146, 160)
+    );
+
+    let AttachedProofBody::Block { syntax, block } = attached.body() else {
+        panic!("expected attached Proof block")
+    };
+    assert_eq!(syntax.range(), SourceRange::new(161, 178));
+    assert_eq!(block.range(), SourceRange::new(161, 178));
+
+    for (source, role, expected_recovery, expected_following) in [
+        (
+            "proof () = ()\nproof following() = ()\n",
+            RecoveryRole::MissingName,
+            SourceRange::new(6, 6),
+            SourceRange::new(14, 36),
+        ),
+        (
+            "proof broken<, T>() = ()\nproof following() = ()\n",
+            RecoveryRole::MissingGenericName,
+            SourceRange::new(13, 13),
+            SourceRange::new(25, 47),
+        ),
+        (
+            "proof broken(value: Int\nproof following() = ()\n",
+            RecoveryRole::MissingParameterClose,
+            SourceRange::new(24, 24),
+            SourceRange::new(24, 46),
+        ),
+        (
+            "proof broken() where T = ()\nproof following() = ()\n",
+            RecoveryRole::MissingWhereColon,
+            SourceRange::new(22, 22),
+            SourceRange::new(28, 50),
+        ),
+        (
+            "predicate broken()\nproof following() = ()\n",
+            RecoveryRole::MissingBody,
+            SourceRange::new(18, 18),
+            SourceRange::new(19, 41),
+        ),
+        (
+            "proof staged()(value: Int) = ()\nproof following() = ()\n",
+            RecoveryRole::ExtraParameterGroup,
+            SourceRange::new(14, 26),
+            SourceRange::new(32, 54),
+        ),
+    ] {
+        let snapshot = attach(source);
+        let following = snapshot
+            .nodes()
+            .filter(|node| node.kind() == SyntaxKind::ProofItem)
+            .last()
+            .unwrap()
+            .cast::<ProofItemKind>()
+            .unwrap();
+        assert_eq!(following.range(), expected_following, "{source}");
+        following.semantics().unwrap();
+
+        let (owner, recovery, recovery_identity) = match role {
+            RecoveryRole::MissingName => {
+                let owner = proof(&snapshot).semantics().unwrap();
+                (
+                    owner.syntax().id(),
+                    owner.name().syntax().range(),
+                    Some(owner.name().syntax().id()),
+                )
+            }
+            RecoveryRole::MissingGenericName => {
+                let owner = proof(&snapshot).semantics().unwrap();
+                let recovery = owner.generics().unwrap().parameters()[0].name().syntax();
+                (owner.syntax().id(), recovery.range(), Some(recovery.id()))
+            }
+            RecoveryRole::MissingParameterClose => {
+                let owner = proof(&snapshot).semantics().unwrap();
+                (
+                    owner.syntax().id(),
+                    owner.parameter_group().close().range(),
+                    Some(owner.parameter_group().close().id()),
+                )
+            }
+            RecoveryRole::MissingWhereColon => {
+                let owner = proof(&snapshot).semantics().unwrap();
+                let recovery = owner.where_clauses()[0].predicates()[0]
+                    .colon()
+                    .source_span()
+                    .range();
+                (owner.syntax().id(), recovery, None)
+            }
+            RecoveryRole::MissingBody => {
+                let owner = predicate(&snapshot).semantics().unwrap();
+                let AttachedPredicateBody::Missing { missing, .. } = owner.body() else {
+                    panic!("expected typed missing Predicate body")
+                };
+                (owner.syntax().id(), missing.range(), Some(missing.id()))
+            }
+            RecoveryRole::ExtraParameterGroup => {
+                let owner = proof(&snapshot).semantics().unwrap();
+                let [recovery] = owner.trailing_recovery() else {
+                    panic!("expected one typed malformed-header recovery")
+                };
+                (owner.syntax().id(), recovery.range(), Some(recovery.id()))
+            }
+        };
+        assert_eq!(recovery, expected_recovery, "{source}");
+        if let Some(recovery_identity) = recovery_identity {
+            assert_ne!(recovery_identity, following.id(), "{source}");
+        }
+        assert_ne!(owner, following.id(), "{source}");
+    }
+}
+
+#[test]
 fn proof_attachment_owns_return_contracts_and_proof_statement_families() {
     let snapshot = attach(concat!(
         "pub proof established<T>(value: T) -> T\n",
@@ -386,7 +634,7 @@ fn proof_attachment_uses_fallback_anchors_when_all_contracts_are_recovered() {
         attached
             .contracts()
             .iter()
-            .all(|clause| clause.has_recovery())
+            .all(super::AttachedCallableContractClause::has_recovery)
     );
 
     let parameter_end = source.find(" -> Int").unwrap();
@@ -406,5 +654,251 @@ fn proof_attachment_uses_fallback_anchors_when_all_contracts_are_recovered() {
             .range()
             .start(),
         return_end
+    );
+}
+
+#[test]
+fn expression_body_and_one_expression_block_are_observably_distinct() {
+    let expression_snapshot = attach("proof expression() = 1\n");
+    let expression = proof(&expression_snapshot).semantics().unwrap();
+    let AttachedProofBody::Expression {
+        syntax: expression_body,
+        expression: value,
+    } = expression.body()
+    else {
+        panic!("expected expression Proof body")
+    };
+    assert_eq!(expression_body.kind(), SyntaxKind::ProofBody);
+    assert_eq!(value.syntax().kind(), SyntaxKind::LiteralExpression);
+    assert_ne!(expression_body.id(), value.syntax().id());
+
+    let block_snapshot = attach("proof block() { 1 }\n");
+    let block = proof(&block_snapshot).semantics().unwrap();
+    assert_ne!(expression.body(), block.body());
+    let AttachedProofBody::Block {
+        syntax: block_body,
+        block,
+    } = block.body()
+    else {
+        panic!("expected block Proof body")
+    };
+    let BlockTailNode::Expression(tail) = block.tail().unwrap() else {
+        panic!("one-expression block must retain an authored tail")
+    };
+    let distinct = [
+        block_body.id(),
+        block.id(),
+        block.open_delimiter().unwrap().id(),
+        block.close_delimiter().unwrap().id(),
+        tail.id(),
+    ];
+    assert!(
+        distinct
+            .iter()
+            .enumerate()
+            .all(|(index, id)| distinct[..index].iter().all(|prior| prior != id))
+    );
+}
+
+#[test]
+fn proof_block_exact_shapes_and_ranges() {
+    let source = "proof p() -> Int { let x: Int = 1; assert.prove(x == 1); x }\n";
+    let snapshot = attach(source);
+    let attached = proof(&snapshot).semantics().unwrap();
+    assert_eq!(attached.syntax().range(), SourceRange::new(0, 60));
+    assert_eq!(attached.syntax().source_text(), &source[..60]);
+    let AttachedProofBody::Block { syntax, block } = attached.body() else {
+        panic!("expected Proof block")
+    };
+    assert_ne!(syntax.id(), block.id());
+    assert_eq!(block.range(), SourceRange::new(17, 60));
+    assert_eq!(
+        block.open_delimiter().unwrap().range(),
+        SourceRange::new(17, 18)
+    );
+    assert_eq!(
+        block.close_delimiter().unwrap().range(),
+        SourceRange::new(59, 60)
+    );
+
+    let statements = block.statements().unwrap();
+    assert_eq!(statements.len(), 2);
+    assert_eq!(statements[0].kind(), SyntaxKind::LetStatement);
+    assert_eq!(statements[0].range(), SourceRange::new(19, 34));
+    assert_eq!(statements[1].kind(), SyntaxKind::AssertionStatement);
+    assert_eq!(statements[1].range(), SourceRange::new(35, 56));
+    let assertion = statements[1]
+        .clone()
+        .cast::<AssertionStatementKind>()
+        .unwrap()
+        .semantics()
+        .unwrap();
+    assert_eq!(assertion.mode().value(), Some(AssertionMode::Prove));
+    assert_eq!(assertion.conditions().len(), 1);
+    assert_eq!(
+        assertion.conditions()[0].syntax().range(),
+        SourceRange::new(48, 54)
+    );
+    let BlockTailNode::Expression(tail) = block.tail().unwrap() else {
+        panic!("expected authored Proof tail")
+    };
+    assert_eq!(tail.range(), SourceRange::new(57, 58));
+}
+
+#[test]
+fn predicate_block_exact_shapes_and_ranges() {
+    let source = "predicate p(x: Int) { let y: Int = x; y > 0 }\n";
+    let snapshot = attach(source);
+    let attached = predicate(&snapshot).semantics().unwrap();
+    assert_eq!(attached.syntax().range(), SourceRange::new(0, 45));
+    assert_eq!(attached.syntax().source_text(), &source[..45]);
+    let AttachedPredicateBody::Block { syntax, block } = attached.body() else {
+        panic!("expected Predicate block")
+    };
+    assert_ne!(syntax.id(), block.id());
+    assert_eq!(block.range(), SourceRange::new(20, 45));
+    let statements = block.statements().unwrap();
+    assert_eq!(statements.len(), 1);
+    assert_eq!(statements[0].kind(), SyntaxKind::LetStatement);
+    assert_eq!(statements[0].range(), SourceRange::new(22, 37));
+    assert!(
+        statements
+            .iter()
+            .all(|statement| statement.kind() != SyntaxKind::AssertionStatement)
+    );
+    let BlockTailNode::Expression(tail) = block.tail().unwrap() else {
+        panic!("expected authored Predicate tail")
+    };
+    assert_eq!(tail.range(), SourceRange::new(38, 43));
+}
+
+#[test]
+fn missing_proof_block_close_does_not_absorb_the_following_item() {
+    let source = "proof broken() -> Int { let x = ;\nproof next() = ()\n";
+    let snapshot = attach(source);
+    let proofs = snapshot
+        .nodes()
+        .filter(|node| node.kind() == SyntaxKind::ProofItem)
+        .map(|node| node.cast::<ProofItemKind>().unwrap())
+        .collect::<Vec<_>>();
+    let [broken, following] = proofs.as_slice() else {
+        panic!("expected the recovered and following Proof items")
+    };
+
+    let missing_close = snapshot
+        .nodes()
+        .find(|node| {
+            node.kind() == SyntaxKind::CloseBraceNode && node.range() == SourceRange::new(34, 34)
+        })
+        .expect("recovered Proof block owns a zero-width close at synchronization");
+    assert_eq!(missing_close.range(), SourceRange::new(34, 34));
+    assert_eq!(broken.range(), SourceRange::new(0, 34));
+    assert_eq!(following.range(), SourceRange::new(34, 51));
+    assert_eq!(following.source_text(), "proof next() = ()");
+    assert_eq!(broken.source_text(), "proof broken() -> Int { let x = ;\n");
+    assert!(!broken.source_text().contains("proof next"));
+}
+
+#[test]
+fn empty_block_has_distinct_braces_and_omitted_tail() {
+    let snapshot = attach("proof unit() {}\n");
+    let attached = proof(&snapshot).semantics().unwrap();
+    let AttachedProofBody::Block { syntax, block } = attached.body() else {
+        panic!("expected empty Proof block")
+    };
+    let open = block.open_delimiter().unwrap();
+    let close = block.close_delimiter().unwrap();
+    let BlockTailNode::Omitted(tail) = block.tail().unwrap() else {
+        panic!("empty Proof block must own an omitted tail")
+    };
+    assert_eq!(block.range(), SourceRange::new(13, 15));
+    assert_eq!(open.range(), SourceRange::new(13, 14));
+    assert_eq!(close.range(), SourceRange::new(14, 15));
+    assert_eq!(tail.range(), SourceRange::new(14, 14));
+    let identities = [syntax.id(), block.id(), open.id(), close.id(), tail.id()];
+    assert!(
+        identities
+            .iter()
+            .enumerate()
+            .all(|(index, id)| identities[..index].iter().all(|prior| prior != id))
+    );
+}
+
+#[test]
+fn one_expression_block_retains_authored_tail_identity() {
+    let snapshot = attach("proof unit() { 1 }\n");
+    let attached = proof(&snapshot).semantics().unwrap();
+    let AttachedProofBody::Block { block, .. } = attached.body() else {
+        panic!("expected Proof block")
+    };
+    assert_eq!(block.range(), SourceRange::new(13, 18));
+    assert!(block.statements().unwrap().is_empty());
+    let BlockTailNode::Expression(tail) = block.tail().unwrap() else {
+        panic!("authored tail must not become an omitted-tail node")
+    };
+    assert_eq!(tail.range(), SourceRange::new(15, 16));
+    assert_eq!(tail.kind(), SyntaxKind::LiteralExpression);
+}
+
+#[test]
+fn proof_call_statement_uses_existing_call_expression() {
+    let snapshot = attach("proof calls(x: Int) { lemma(x); }\n");
+    let attached = proof(&snapshot).semantics().unwrap();
+    let AttachedProofBody::Block { block, .. } = attached.body() else {
+        panic!("expected Proof block")
+    };
+    let statements = block.statements().unwrap();
+    let [statement] = statements.as_slice() else {
+        panic!("expected one Proof-call statement")
+    };
+    let proof_call = statement.clone().cast::<ProofCallStatementKind>().unwrap();
+    let call = proof_call.callee().unwrap();
+    assert_eq!(call.kind(), SyntaxKind::CallExpression);
+    assert_eq!(call.range(), SourceRange::new(22, 30));
+    assert_ne!(proof_call.id(), call.id());
+}
+
+#[test]
+fn assert_prove_uses_existing_assertion_authority() {
+    let source = "proof checks(left: Bool, right: Bool) { assert.prove(left, right); }\n";
+    let snapshot = attach(source);
+    let attached = proof(&snapshot).semantics().unwrap();
+    let AttachedProofBody::Block { block, .. } = attached.body() else {
+        panic!("expected Proof block")
+    };
+    let statements = block.statements().unwrap();
+    let [statement] = statements.as_slice() else {
+        panic!("expected one assertion statement")
+    };
+    let assertion = statement
+        .clone()
+        .cast::<AssertionStatementKind>()
+        .unwrap()
+        .semantics()
+        .unwrap();
+    assert_eq!(assertion.mode().value(), Some(AssertionMode::Prove));
+    assert_eq!(
+        assertion
+            .conditions()
+            .iter()
+            .map(|condition| condition.syntax().source_text())
+            .collect::<Vec<_>>(),
+        ["left", "right"]
+    );
+    assert_eq!(
+        assertion.conditions()[0].syntax().range(),
+        SourceRange::new(53, 57)
+    );
+    assert_eq!(
+        assertion.conditions()[1].syntax().range(),
+        SourceRange::new(59, 64)
+    );
+    assert_ne!(
+        assertion.syntax().id(),
+        assertion.conditions()[0].syntax().id()
+    );
+    assert_ne!(
+        assertion.conditions()[0].syntax().id(),
+        assertion.conditions()[1].syntax().id()
     );
 }

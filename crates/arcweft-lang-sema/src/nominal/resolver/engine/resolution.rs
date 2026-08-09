@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::symbol::{
-    ExternalSymbol, ProjectSymbolTable, ProjectTypeLookupError, ProjectTypeTarget,
-    nominal::{ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationKind},
+use arcweft_lang_hir::{
+    identity::TypeId,
+    leaf::HirPath,
+    symbol::{
+        ExternalSymbol, ProjectSymbolTable, ProjectTypeLookupError, ProjectTypeTarget,
+        nominal::{ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationKind},
+    },
 };
-use arcweft_lang_syntax::{
-    ast::symbol_path::SymbolPath,
-    types::{TypePath, TypeRefNodePath},
-};
+use arcweft_lang_syntax::ast::symbol_path::SymbolPath;
 
 use crate::{
     env::nominal::{
@@ -32,7 +33,7 @@ use super::{
     SourceContext, TypeArgumentExpectation, TypeArgumentKind, TypeArityExpectation,
     TypeArityTarget, TypeNameResolution, TypePoisonOrigin, TypeResolutionFailure,
     TypeResolutionInputError, TypeResolutionWorld, canonical_cycle, canonical_poisons,
-    evidence_from_project, open_expectation,
+    evidence_from_project, hir_path_matches_type_path, open_expectation, open_rule_matches_hir,
 };
 
 enum ExternalRecordLookup {
@@ -42,7 +43,7 @@ enum ExternalRecordLookup {
 
 struct ExternalResolutionSite<'a, 'source> {
     context: &'a SourceContext<'source>,
-    node: &'a TypeRefNodePath,
+    node: TypeId,
     symbols: &'a ProjectSymbolTable,
     environment: &'a AcceptedNominalWorld,
     external: &'a ExternalSymbol,
@@ -52,9 +53,9 @@ impl Resolver<'_, '_> {
     pub(super) fn resolve_name(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
-        path: &TypePath,
-        arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        node: TypeId,
+        path: &HirPath,
+        arguments: Vec<(TypeId, NodeValue)>,
         depth: u16,
     ) -> Result<NameResult, TypeResolutionInputError> {
         let actual = u16::try_from(arguments.len()).expect("parser generic-argument cap fits u16");
@@ -67,7 +68,7 @@ impl Resolver<'_, '_> {
             return Ok(scoped);
         }
 
-        if let Some(builtin) = BuiltinTypeConstructor::from_type_path(path) {
+        if let Some(builtin) = BuiltinTypeConstructor::from_hir_path(path) {
             let expected = TypeArityExpectation::Exact(builtin.arity());
             if !expected.contains(actual) {
                 return Ok(self.failed_name(
@@ -107,6 +108,7 @@ impl Resolver<'_, '_> {
                     let TypeResolutionWorld::Accepted {
                         symbols,
                         environment,
+                        ..
                     } = self.input.world()
                     else {
                         unreachable!("project lookup only selects externals in accepted worlds")
@@ -132,8 +134,8 @@ impl Resolver<'_, '_> {
     fn resolve_scoped_name(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
-        path: &TypePath,
+        node: TypeId,
+        path: &HirPath,
         actual: u16,
         child_causes: &[TypePoisonId],
     ) -> Option<NameResult> {
@@ -178,22 +180,22 @@ impl Resolver<'_, '_> {
     fn lookup_project_name(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
-        path: &TypePath,
+        node: TypeId,
+        path: &HirPath,
         child_causes: &[TypePoisonId],
     ) -> ProjectNameLookup {
         let TypeResolutionWorld::Accepted { symbols, .. } = self.input.world() else {
             return ProjectNameLookup::Absent;
         };
-        let source = context
-            .evidence(node, true)
-            .project()
-            .expect("accepted input has project source evidence")
-            .clone();
-        let current_module = context
-            .module
-            .expect("accepted input and alias targets have an owning module");
-        let lookup = symbols.resolve_type_target(current_module, path, source);
+        let evidence = context.evidence(node, true);
+        let Some(source) = evidence.project().cloned() else {
+            // Synthetic/insertion-owned types have no authored project
+            // reference site. They may resolve through language, generic, or
+            // environment authority, but must not fabricate a SourceSpan in
+            // order to probe the project symbol table.
+            return ProjectNameLookup::Absent;
+        };
+        let lookup = symbols.resolve_hir_type_target(context.module.key().path(), path, source);
         match lookup {
             Ok(ProjectTypeTarget::Nominal(declaration)) => self.charged_project_selection(
                 context,
@@ -258,7 +260,7 @@ impl Resolver<'_, '_> {
     fn charged_project_selection(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
+        node: TypeId,
         child_causes: &[TypePoisonId],
         selection: ProjectSelection,
     ) -> ProjectNameLookup {
@@ -271,7 +273,7 @@ impl Resolver<'_, '_> {
     fn project_lookup_failure(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
+        node: TypeId,
         child_causes: &[TypePoisonId],
         work: u64,
         failure: TypeResolutionFailure,
@@ -292,14 +294,18 @@ impl Resolver<'_, '_> {
     fn resolve_environment_name(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
-        path: &TypePath,
-        arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        node: TypeId,
+        path: &HirPath,
+        arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
         actual: u16,
     ) -> NameResult {
         let catalog = self.input.world().environment().nominal_catalog();
-        if let Some(record) = catalog.exact(path).cloned() {
+        if let Some(record) = catalog
+            .exact_records()
+            .find(|record| hir_path_matches_type_path(path, record.id().canonical_path()))
+            .cloned()
+        {
             if let Some(failed) = self.charge_name_work(1, context, node, child_causes.clone()) {
                 return failed;
             }
@@ -311,9 +317,9 @@ impl Resolver<'_, '_> {
     fn resolve_open_or_unavailable(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
-        path: &TypePath,
-        arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        node: TypeId,
+        path: &HirPath,
+        arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
         actual: u16,
     ) -> NameResult {
@@ -334,13 +340,20 @@ impl Resolver<'_, '_> {
             if let Some(failed) = self.charge_name_work(1, context, node, child_causes.clone()) {
                 return failed;
             }
-            if rule.matches(environment_kind, context.module, path, actual) {
+            if open_rule_matches_hir(
+                &rule,
+                environment_kind,
+                context.module.key().path(),
+                path,
+                actual,
+            ) {
                 return self.resolve_open(context, &rule, path, arguments, child_causes);
             }
             if wrong_arity_rule.is_none()
-                && rule.matches(
+                && open_rule_matches_hir(
+                    &rule,
                     environment_kind,
-                    context.module,
+                    context.module.key().path(),
                     path,
                     rule.arity().minimum(),
                 )
@@ -375,8 +388,8 @@ impl Resolver<'_, '_> {
     fn unavailable_name(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
-        path: &TypePath,
+        node: TypeId,
+        path: &HirPath,
         child_causes: Vec<TypePoisonId>,
     ) -> NameResult {
         if matches!(self.input.world(), TypeResolutionWorld::Accepted { .. }) {
@@ -389,15 +402,11 @@ impl Resolver<'_, '_> {
             );
         }
         let source = context.evidence(node, true);
-        let reason = if context.module.is_some() {
-            DetachedNominalReason::ProjectWorldUnavailable
-        } else {
-            DetachedNominalReason::ModuleUnavailable
-        };
+        let reason = DetachedNominalReason::ProjectWorldUnavailable;
         let evidence = DetachedNominalEvidence::new(path.clone(), source.clone(), reason);
         let poison = self.allocate_poison();
         self.record_poison(poison, TypePoisonOrigin::DetachedUnavailable, source, false);
-        self.unavailable.push(node.clone());
+        self.unavailable.push(node);
         NameResult {
             value: NodeValue::error(poison, child_causes),
             outcome: TypeNameResolution::DetachedUnavailable(evidence),
@@ -407,9 +416,9 @@ impl Resolver<'_, '_> {
     fn resolve_project_nominal(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
+        node: TypeId,
         declaration: &ProjectNominalDeclaration,
-        arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
         depth: u16,
     ) -> Result<NameResult, TypeResolutionInputError> {
@@ -440,7 +449,7 @@ impl Resolver<'_, '_> {
         }
         let checked = arguments
             .into_iter()
-            .map(|(path, value)| self.require_type(context, &path, value))
+            .map(|(owner, value)| self.require_type(context, owner, value))
             .collect::<Vec<_>>();
         match declaration.id().kind() {
             ProjectNominalDeclarationKind::Struct | ProjectNominalDeclarationKind::Enum => {
@@ -462,7 +471,7 @@ impl Resolver<'_, '_> {
     fn expand_alias(
         &mut self,
         use_context: &SourceContext<'_>,
-        use_node: &TypeRefNodePath,
+        use_node: TypeId,
         declaration: &ProjectNominalDeclaration,
         arguments: Vec<TypeKind>,
         child_causes: Vec<TypePoisonId>,
@@ -522,23 +531,20 @@ impl Resolver<'_, '_> {
             );
         }
         let target_context = SourceContext {
-            authored: target.authored(),
-            project: Some(target.spans()),
-            module: Some(declaration.id().module()),
+            module: self
+                .input
+                .world()
+                .project()
+                .and_then(|project| project.module(declaration.id().module()))
+                .expect("accepted symbol declarations retain their exact HIR module"),
             generics: GenericContext::Alias(&bindings),
             alias_target: true,
         };
-        let target_node = TypeRefNodePath::root();
         self.alias_stack.push(declaration.id().clone());
-        let normalized = self.resolve_node(
-            &target_context,
-            target.authored().value(),
-            &target_node,
-            depth + 1,
-        )?;
+        let normalized = self.resolve_node(&target_context, *target, depth + 1)?;
         self.alias_stack.pop();
 
-        let target_source = target_context.evidence(&target_node, true);
+        let target_source = target_context.evidence(*target, true);
         let use_source = use_context.evidence(use_node, true);
         let declaration_source = declaration.source().name().clone();
         let normalized_ty = normalized.recovered_or(TypeKind::Unit);
@@ -571,9 +577,9 @@ impl Resolver<'_, '_> {
     fn resolve_accepted(
         &mut self,
         context: &SourceContext<'_>,
-        node: &TypeRefNodePath,
+        node: TypeId,
         record: &AcceptedNominalRecord,
-        arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
     ) -> NameResult {
         let actual = u16::try_from(arguments.len()).expect("parser cap");
@@ -603,7 +609,7 @@ impl Resolver<'_, '_> {
         }
         let checked = arguments
             .into_iter()
-            .map(|(path, value)| self.require_type(context, &path, value))
+            .map(|(owner, value)| self.require_type(context, owner, value))
             .collect::<Vec<_>>();
         let nominal = AcceptedNominalType::new(record.id().clone(), checked);
         let ty = record
@@ -619,13 +625,13 @@ impl Resolver<'_, '_> {
         &mut self,
         context: &SourceContext<'_>,
         rule: &OpenNominalRule,
-        path: &TypePath,
-        arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        path: &HirPath,
+        arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
     ) -> NameResult {
         let checked = arguments
             .into_iter()
-            .map(|(path, value)| self.require_type(context, &path, value))
+            .map(|(owner, value)| self.require_type(context, owner, value))
             .collect::<Vec<_>>();
         let fact = ResolvedOpenNominal::new(rule.id().clone(), path.clone(), checked.clone());
         let nominal = OpenNominalType::new(rule.id().clone(), path.clone(), checked);
@@ -638,7 +644,7 @@ impl Resolver<'_, '_> {
     fn resolve_external(
         &mut self,
         site: &ExternalResolutionSite<'_, '_>,
-        arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
     ) -> Result<NameResult, TypeResolutionInputError> {
         let owner = Self::registered_external_owner(site.symbols, site.environment, site.external)?;
@@ -691,7 +697,7 @@ impl Resolver<'_, '_> {
         }
         let checked = arguments
             .into_iter()
-            .map(|(path, value)| self.require_type(site.context, &path, value))
+            .map(|(owner, value)| self.require_type(site.context, owner, value))
             .collect::<Vec<_>>();
         let (ty, resolution) = if let Some(accepted) = bound_accepted {
             let ty = TypeKind::AcceptedNominal(accepted.clone());
@@ -858,7 +864,7 @@ impl Resolver<'_, '_> {
         &mut self,
         context: &SourceContext<'_>,
         constructor: BuiltinTypeConstructor,
-        mut arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        mut arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
     ) -> NodeValue {
         if let Some(ty) = Self::scalar_builtin(constructor) {
@@ -907,9 +913,7 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::Source => {
                 self.apply_binary_builtin(context, constructor, arguments, child_causes)
             }
-            BuiltinTypeConstructor::Ref
-            | BuiltinTypeConstructor::Speaker
-            | BuiltinTypeConstructor::SpeakerPreset => self.apply_entity_family_builtin(
+            BuiltinTypeConstructor::Ref => self.apply_entity_family_builtin(
                 context,
                 constructor,
                 arguments.remove(0),
@@ -949,10 +953,10 @@ impl Resolver<'_, '_> {
         &mut self,
         context: &SourceContext<'_>,
         constructor: BuiltinTypeConstructor,
-        (path, value): (TypeRefNodePath, NodeValue),
+        (owner, value): (TypeId, NodeValue),
         child_causes: Vec<TypePoisonId>,
     ) -> NodeValue {
-        let inner = self.require_type(context, &path, value);
+        let inner = self.require_type(context, owner, value);
         let ty = match constructor {
             BuiltinTypeConstructor::Vec => TypeKind::Vec(Box::new(inner)),
             BuiltinTypeConstructor::Slice => TypeKind::Slice(Box::new(inner)),
@@ -969,13 +973,13 @@ impl Resolver<'_, '_> {
     fn apply_array_builtin(
         &mut self,
         context: &SourceContext<'_>,
-        mut arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        mut arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
         target: TypeArityTarget,
     ) -> NodeValue {
         let (item_path, item) = arguments.remove(0);
         let (length_path, length) = arguments.remove(0);
-        let item = self.require_type(context, &item_path, item);
+        let item = self.require_type(context, item_path, item);
         let length = if let Some(value) = length.const_int {
             ArrayLength::Const(value)
         } else {
@@ -991,10 +995,10 @@ impl Resolver<'_, '_> {
                     };
                     let poison = self.emit_failure(
                         &failure,
-                        context.evidence(&length_path, true),
+                        context.evidence(length_path, true),
                         Vec::new(),
                     );
-                    self.replace_node_outcome(&length_path, TypeNameResolution::Failed(failure));
+                    self.replace_node_outcome(length_path, TypeNameResolution::Failed(failure));
                     ArrayLength::Error(poison)
                 }
                 None => ArrayLength::Inferred,
@@ -1019,13 +1023,13 @@ impl Resolver<'_, '_> {
         &mut self,
         context: &SourceContext<'_>,
         constructor: BuiltinTypeConstructor,
-        mut arguments: Vec<(TypeRefNodePath, NodeValue)>,
+        mut arguments: Vec<(TypeId, NodeValue)>,
         child_causes: Vec<TypePoisonId>,
     ) -> NodeValue {
         let (first_path, first) = arguments.remove(0);
         let (second_path, second) = arguments.remove(0);
-        let first = self.require_type(context, &first_path, first);
-        let second = self.require_type(context, &second_path, second);
+        let first = self.require_type(context, first_path, first);
+        let second = self.require_type(context, second_path, second);
         let ty = match constructor {
             BuiltinTypeConstructor::OrderedMap => TypeKind::Map {
                 kind: MapKind::Ordered,
@@ -1067,7 +1071,7 @@ impl Resolver<'_, '_> {
         &mut self,
         context: &SourceContext<'_>,
         constructor: BuiltinTypeConstructor,
-        (path, value): (TypeRefNodePath, NodeValue),
+        (owner, value): (TypeId, NodeValue),
         child_causes: Vec<TypePoisonId>,
         target: TypeArityTarget,
     ) -> NodeValue {
@@ -1087,8 +1091,8 @@ impl Resolver<'_, '_> {
                 expected: TypeArgumentExpectation::EntityFamily,
                 actual,
             };
-            let poison = self.emit_failure(&failure, context.evidence(&path, true), Vec::new());
-            self.replace_node_outcome(&path, TypeNameResolution::Failed(failure));
+            let poison = self.emit_failure(&failure, context.evidence(owner, true), Vec::new());
+            self.replace_node_outcome(owner, TypeNameResolution::Failed(failure));
             return NodeValue::error(poison, child_causes);
         }
         let poison = value

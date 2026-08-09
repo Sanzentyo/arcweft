@@ -2,7 +2,7 @@ use super::diagnostics::emit_diagnostics;
 use super::progress::{CliProgress, CliProgressStatus};
 use super::project::{
     ProfileOptions, SourceSelection, adapter_manifest_for_selection, resolve_source_selection,
-    semantic_context_for_selection,
+    semantic_context_for_selection, verify_compiled_project,
 };
 use super::runtime::options::{CliRuntimeExecutorTier, CliRuntimeStepMode};
 use super::runtime::parse::parse_runtime_binding_arg;
@@ -49,6 +49,7 @@ use arcweft_core::{
     value::{RuntimeBinding, RuntimeExpr, RuntimeValue},
 };
 use arcweft_id::{AssetId, AssetVirtualPath, DeclarationIdentityFamily, PublicId};
+use arcweft_lang_sema::project_index::ProjectSemanticIndex;
 use arcweft_launch::LaunchKind;
 use arcweft_project::layout::AuthoredResourceRoots;
 use arcweft_runtime_accelerator::RuntimePureAcceleratorConfig;
@@ -58,12 +59,13 @@ use arcweft_runtime_host::{
     run_bundle_with_native_adapters,
 };
 use arcweft_source::SourceDocument;
-use arcweft_verify::{VerificationPolicy, VerificationReport, verify_module_with_env};
+use arcweft_verify::{VerificationPolicy, VerificationReport};
 use clap::Args;
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::process::ExitCode;
+use std::sync::Arc;
 
 #[derive(Args, Clone, Debug)]
 pub(in crate::app) struct BundleOptions {
@@ -248,6 +250,9 @@ fn compile_bundle_artifact(
 pub(in crate::app) struct CompiledBundleArtifact {
     pub(in crate::app) bundle: ArcweftBundle,
     pub(in crate::app) entry_kinds: Vec<RuntimeEntryKind>,
+    pub(in crate::app) semantic_index: Arc<ProjectSemanticIndex>,
+    pub(in crate::app) execution_diagnostics:
+        Arc<arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext>,
 }
 
 pub(in crate::app) fn compile_bundle_for_selection(
@@ -257,11 +262,17 @@ pub(in crate::app) fn compile_bundle_for_selection(
 ) -> Result<CompiledBundleArtifact, ExitCode> {
     let semantic = semantic_context_for_selection(selection, None)?;
     let compiled = compile_profile_runtime_plan(selection, &semantic, phases)?;
-    let verification = verify_module_with_env(
-        &compiled.hir,
-        semantic.base(),
-        VerificationPolicy::default(),
-    );
+    compile_bundle_from_profile_runtime_plan(selection, compiled, include_spaces)
+}
+
+pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
+    selection: &SourceSelection,
+    compiled: ProfileCompiledRuntimePlan,
+    include_spaces: Vec<BundleVirtualFileSpace>,
+) -> Result<CompiledBundleArtifact, ExitCode> {
+    let semantic_index = Arc::clone(compiled.compiled.semantic_index());
+    let execution_diagnostics = Arc::clone(&compiled.execution_diagnostics);
+    let verification = verify_compiled_project(&compiled.compiled, VerificationPolicy::default())?;
     if verification.has_blocking_runtime_safety_gaps() {
         emit_bundle_verification_diagnostics(&compiled.source_document, &verification);
         return Err(ExitCode::FAILURE);
@@ -289,19 +300,14 @@ pub(in crate::app) fn compile_bundle_for_selection(
         include_spaces,
     )?;
     let image_assets = collect_bundle_image_assets(&virtual_files)?;
-    let mut image_objects = compiled.image_catalog.objects().to_vec();
     let fx_definitions =
         FxDefinitions::try_new(compiled.fx_definitions.iter().cloned()).map_err(|error| {
             eprintln!("error: failed to build Fx definitions inventory: {error}");
             ExitCode::FAILURE
         })?;
     let view_product = compiled.view_product.clone();
-    image_objects.extend(view_product.image_objects().iter().cloned());
-    validate_referenced_bundle_image_assets(
-        &compiled.plan,
-        compiled.image_catalog.asset_refs(),
-        &image_assets,
-    )?;
+    let image_objects = view_product.image_objects().to_vec();
+    validate_referenced_bundle_image_assets(&compiled.plan, &image_assets)?;
     let bundle = attach_compiled_view_product(
         ArcweftBundle::try_new(
             bundle_manifest(
@@ -312,7 +318,7 @@ pub(in crate::app) fn compile_bundle_for_selection(
             ),
             compiled.source_map,
             compiled.bytecode,
-            compiled.line_display_catalog,
+            compiled.dialogue_content_catalog,
         )
         .map_err(|error| {
             eprintln!("error: failed to reserve the standard dialogue Style source: {error}");
@@ -329,6 +335,8 @@ pub(in crate::app) fn compile_bundle_for_selection(
     Ok(CompiledBundleArtifact {
         bundle,
         entry_kinds,
+        semantic_index,
+        execution_diagnostics,
     })
 }
 
@@ -348,7 +356,7 @@ fn attach_compiled_view_product(
             ExitCode::FAILURE
         })?;
     if let Some(mut resource) = compiled.text().cloned() {
-        hydrate_default_view_localization(&mut resource, &bundle.display);
+        hydrate_default_view_localization(&mut resource, &bundle.dialogue_content);
         bundle = bundle.with_view_text(resource);
     }
     if let Some(resource) = compiled.input().cloned() {
@@ -359,7 +367,7 @@ fn attach_compiled_view_product(
 
 fn hydrate_default_view_localization(
     resource: &mut ViewTextResource,
-    display: &arcweft_render_text::LineDisplayCatalog,
+    dialogue_content: &arcweft_text_model::DialogueContentCatalog,
 ) {
     let keys = resource
         .sources
@@ -376,15 +384,15 @@ fn hydrate_default_view_localization(
         if resource.localized_document(&key, None).is_some() {
             continue;
         }
-        if let Some(spec) = display
-            .lines()
+        if let Some(spec) = dialogue_content
+            .records()
             .iter()
-            .find(|spec| spec.text_key.as_deref() == Some(key.as_str()))
+            .find(|spec| spec.text_key().as_str() == key.as_str())
         {
             resource.localized.push(ViewLocalizedTextResource {
                 key,
                 locale: None,
-                document: spec.content.clone(),
+                document: spec.content().clone(),
             });
         }
     }
@@ -420,6 +428,7 @@ fn bundle_manifest(
         adapter_manifest_ids,
         required_host_calls,
         runtime: BundleRuntimeSummary {
+            artifact_fingerprint: compiled.execution_diagnostics.artifact(),
             entry_flow: selection.entry().and_then(|selected| {
                 compiled
                     .plan
@@ -765,14 +774,13 @@ fn collect_flow_ops_host_calls<'a>(ops: impl IntoIterator<Item = &'a FlowOp>) ->
 
 fn validate_referenced_bundle_image_assets(
     plan: &RuntimePlan,
-    declared_asset_refs: impl IntoIterator<Item = impl AsRef<str>>,
     image_assets: &[BundleImageAsset],
 ) -> Result<(), ExitCode> {
     let available = image_assets
         .iter()
         .map(|asset| asset.id.as_str())
         .collect::<Vec<_>>();
-    let missing = static_image_asset_refs(plan, declared_asset_refs)
+    let missing = static_image_asset_refs(plan)
         .into_iter()
         .filter(|id| !available.iter().any(|available_id| available_id == id))
         .collect::<Vec<_>>();
@@ -786,10 +794,7 @@ fn validate_referenced_bundle_image_assets(
     Err(ExitCode::from(2))
 }
 
-fn static_image_asset_refs(
-    plan: &RuntimePlan,
-    declared_asset_refs: impl IntoIterator<Item = impl AsRef<str>>,
-) -> Vec<String> {
+fn static_image_asset_refs(plan: &RuntimePlan) -> Vec<String> {
     let mut refs = plan
         .flows
         .iter()
@@ -801,11 +806,6 @@ fn static_image_asset_refs(
                 .flat_map(collect_line_task_group_static_image_asset_refs),
         )
         .collect::<Vec<_>>();
-    refs.extend(
-        declared_asset_refs
-            .into_iter()
-            .map(|asset| asset.as_ref().to_owned()),
-    );
     refs.sort();
     refs.dedup();
     refs

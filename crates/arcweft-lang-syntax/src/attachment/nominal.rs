@@ -593,7 +593,7 @@ fn attach_generic_parameter(
             let colon = parameter
                 .optional_exact_child::<ColonKind>(SyntaxRole::Colon)?
                 .map(|colon| punctuation(&colon));
-            if colon.is_some() != !bounds.is_empty() {
+            if colon.is_some() == bounds.is_empty() {
                 return Err(SyntaxAccessError::InvalidItemProjection { id: syntax.id() });
             }
             Ok(AttachedGenericParameter::Type {
@@ -652,10 +652,10 @@ pub(super) fn where_clauses(
 }
 
 fn struct_body(owner: &SyntaxNodeHandle) -> Result<AttachedStructBody, SyntaxAccessError> {
-    if let Some(missing) = owner.optional_unique_child(SyntaxRole::Body)? {
-        if missing.kind() == SyntaxKind::MissingBody {
-            return Ok(AttachedStructBody::Missing(missing.cast()?));
-        }
+    if let Some(missing) = owner.optional_unique_child(SyntaxRole::Body)?
+        && missing.kind() == SyntaxKind::MissingBody
+    {
+        return Ok(AttachedStructBody::Missing(missing.cast()?));
     }
     let fields = owner
         .ordered_children(SyntaxRoleClass::Field)?
@@ -671,10 +671,10 @@ fn struct_body(owner: &SyntaxNodeHandle) -> Result<AttachedStructBody, SyntaxAcc
 }
 
 fn enum_body(owner: &SyntaxNodeHandle) -> Result<AttachedEnumBody, SyntaxAccessError> {
-    if let Some(missing) = owner.optional_unique_child(SyntaxRole::Body)? {
-        if missing.kind() == SyntaxKind::MissingBody {
-            return Ok(AttachedEnumBody::Missing(missing.cast()?));
-        }
+    if let Some(missing) = owner.optional_unique_child(SyntaxRole::Body)?
+        && missing.kind() == SyntaxKind::MissingBody
+    {
+        return Ok(AttachedEnumBody::Missing(missing.cast()?));
     }
     let variants = owner
         .ordered_children(SyntaxRoleClass::Field)?
@@ -778,7 +778,7 @@ pub(super) fn required_type(
     owner
         .optional_unique_child(role)?
         .ok_or(SyntaxAccessError::InvalidItemProjection { id: owner.id() })
-        .and_then(|syntax| super::family::FamilyNode::<TypeFamily>::new(syntax))?
+        .and_then(super::family::FamilyNode::<TypeFamily>::new)?
         .semantic()
 }
 

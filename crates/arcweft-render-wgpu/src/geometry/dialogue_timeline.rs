@@ -1,4 +1,4 @@
-use arcweft_render_text::{RichTextControl, RichTextControlMarker, RichTextStyle, RichTextTextRun};
+use arcweft_text_model::{RichTextControl, RichTextControlMarker, RichTextStyle, RichTextTextRun};
 use num_traits::ToPrimitive;
 
 const DEFAULT_TYPEWRITER_CPS: f64 = 28.0;
@@ -146,8 +146,7 @@ fn apply_controls_through(
             | RichTextControl::HardBreak
             | RichTextControl::Reset
             | RichTextControl::Mark { .. }
-            | RichTextControl::Raw { .. }
-            | RichTextControl::Unknown { .. } => {}
+            | RichTextControl::Raw { .. } => {}
         }
         *control_index = (*control_index).saturating_add(1);
     }
@@ -165,25 +164,11 @@ fn cps_at(runs: &[RichTextTextRun], offset: usize) -> f64 {
         .iter()
         .rev()
         .find_map(|style| match style {
-            RichTextStyle::Speed { value } => parse_speed(value),
+            RichTextStyle::Speed { milli_cps } => Some(f64::from(milli_cps.0) / 1_000.0),
             _ => None,
         })
         .unwrap_or(DEFAULT_TYPEWRITER_CPS)
         .clamp(MIN_TYPEWRITER_CPS, MAX_TYPEWRITER_CPS)
-}
-
-fn parse_speed(value: &str) -> Option<f64> {
-    let value = value
-        .trim()
-        .strip_prefix("cps=")
-        .or_else(|| value.trim().strip_prefix("speed="))
-        .unwrap_or(value.trim());
-    match value {
-        "slow" => Some(14.0),
-        "normal" => Some(DEFAULT_TYPEWRITER_CPS),
-        "fast" => Some(56.0),
-        _ => value.parse::<f64>().ok().filter(|value| value.is_finite()),
-    }
 }
 
 fn micros_per_character(cps: f64) -> u64 {
@@ -194,7 +179,7 @@ fn micros_per_character(cps: f64) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use arcweft_render_text::{RichTextPresentation, RichTextRange, RichTextTextSource};
+    use arcweft_text_model::{Milli, RichTextPresentation, RichTextRange, RichTextTextSource};
 
     const TIMED_REVEAL: DialogueRevealPolicy = DialogueRevealPolicy {
         complete_stage: false,
@@ -234,7 +219,7 @@ mod tests {
         let runs = vec![run(
             text,
             vec![RichTextStyle::Speed {
-                value: "10".to_owned(),
+                milli_cps: Milli(10_000),
             }],
         )];
         let controls = vec![control(
@@ -309,7 +294,7 @@ mod tests {
         let runs = vec![run(
             text,
             vec![RichTextStyle::Speed {
-                value: "10".to_owned(),
+                milli_cps: Milli(10_000),
             }],
         )];
         let controls = vec![control(1, RichTextControl::Clear)];
@@ -341,7 +326,7 @@ mod tests {
                 source: RichTextTextSource::Text,
                 node_index: 0,
                 styles: vec![RichTextStyle::Speed {
-                    value: "5".to_owned(),
+                    milli_cps: Milli(5_000),
                 }],
                 presentation: RichTextPresentation::default(),
             },
@@ -350,7 +335,7 @@ mod tests {
                 source: RichTextTextSource::Text,
                 node_index: 1,
                 styles: vec![RichTextStyle::Speed {
-                    value: "20".to_owned(),
+                    milli_cps: Milli(20_000),
                 }],
                 presentation: RichTextPresentation::default(),
             },

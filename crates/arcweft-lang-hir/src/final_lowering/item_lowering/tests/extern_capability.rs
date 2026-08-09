@@ -87,9 +87,7 @@ fn assert_capability_transaction_freeze_rejects(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     tamper(&mut transaction, owner);
     assert!(matches!(
@@ -102,6 +100,10 @@ fn assert_capability_transaction_freeze_rejects(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical capability test asserts the complete interleaved member/scope/source matrix"
+)]
 fn canonical_extern_capability_freezes_interleaved_members_and_callable_scope() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-extern-capability-clean",
@@ -189,6 +191,11 @@ fn canonical_extern_capability_freezes_interleaved_members_and_callable_scope() 
         send.callable_scope()
     );
     assert_eq!(send.effects().len(), 2);
+    assert_eq!(
+        item.kind().effect_expression_roots(),
+        send.effects(),
+        "associated types and non-effect members cannot enter the effect inventory"
+    );
     for effect in send.effects() {
         assert_eq!(
             module
@@ -219,7 +226,7 @@ fn canonical_extern_capability_freezes_interleaved_members_and_callable_scope() 
     assert!(module.declaration_members().arena(owner).is_none());
     assert_item_slot_whole(&module, &parsed, owner);
 
-    let items = parsed.tree().items().unwrap();
+    let items = parsed.items().unwrap();
     let [TypedItemNode::ExternCapability(source_capability)] = items.as_slice() else {
         panic!("one attached ExternCapability item")
     };
@@ -912,7 +919,7 @@ fn extern_capability_member_limit_accepts_exact_source_and_rejects_one_over_pref
 }
 
 #[test]
-fn extern_capability_callable_locals_accept_exact_and_reject_one_over_transactionally() {
+fn local_scope_limit_is_inclusive_and_atomic() {
     let source = |local_count: usize| {
         let maximum_descendants = HirLimit::SyntheticDescendantsPerOwner.maximum();
         let mut source = String::from("extern capability host { fn run(");
@@ -962,9 +969,7 @@ fn extern_capability_callable_locals_accept_exact_and_reject_one_over_transactio
     let key = module_key(&parsed);
     let database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    let Err(HirLowerFailure::Limit(error)) =
-        transaction.lower_attached_source_file_items(&parsed.tree())
-    else {
+    let Err(HirLowerFailure::Limit(error)) = transaction.lower_parsed_source_items(&parsed) else {
         panic!("one-over callable locals must fail in the staged HIR transaction")
     };
     assert_eq!(error.limit(), HirLimit::LocalsPerScope);

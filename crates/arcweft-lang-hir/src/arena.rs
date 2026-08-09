@@ -11,7 +11,7 @@ use thiserror::Error;
 use crate::identity::{
     HirIdKind, HirLimit, HirSnapshotId, HirTypedId, RawHirId, RawHirIdView, SyntheticKey,
 };
-use crate::lower::HirLimitError;
+use crate::lowering::HirLimitError;
 use crate::slot::{
     HirSlotError, HirSlotTransactionLease, SlotReservation, SlotSnapshot, StagedSlotTransaction,
 };

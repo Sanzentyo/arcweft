@@ -1,18 +1,13 @@
-//! One-pass lexer and root event stream for the staged document grammar.
-
-#![allow(
-    dead_code,
-    reason = "the shadow document parser remains private until the atomic syntax switch"
-)]
+//! One-pass lexer and root event stream for the accepted document grammar.
 
 use arcweft_source::{SourceDocument, SourceRange};
 
 use crate::grammar::budget::GrammarBudget;
 use crate::grammar::build::{GrammarBuild, GrammarBuildError, build_grammar_text};
-use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
+use crate::grammar::event::{PendingSyntaxDiagnostic, PendingSyntaxSuggestion, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
-use super::cursor::{ShadowDocumentParser, is_trivia_kind};
+use super::cursor::{DocumentParser, is_trivia_kind};
 use super::expression::emit_expression;
 use super::fragment::ParseOptions;
 use super::item::{classify_top_level_item, is_declaration_item_kind};
@@ -21,17 +16,39 @@ use super::pattern::emit_pattern;
 use super::statement::emit_statement_fragment;
 use super::type_ref::emit_type;
 
-/// Builds the private lossless root tree without allocating syntax identity.
-pub(crate) fn parse_shadow_document(
+/// Builds the lossless root tree before transaction-owned identity attachment.
+pub(crate) fn parse_document(
     document: &SourceDocument,
     options: ParseOptions,
+) -> Result<GrammarBuild, GrammarBuildError> {
+    parse_document_with_budget(document, options, GrammarBudget::default())
+}
+
+#[cfg(test)]
+pub(crate) fn parse_document_with_global_count(
+    document: &SourceDocument,
+    options: ParseOptions,
+    limit: crate::incremental::SyntaxLimit,
+    already_charged: usize,
+) -> Result<GrammarBuild, GrammarBuildError> {
+    parse_document_with_budget(
+        document,
+        options,
+        GrammarBudget::with_test_global_count(limit, already_charged),
+    )
+}
+
+fn parse_document_with_budget(
+    document: &SourceDocument,
+    options: ParseOptions,
+    budget: GrammarBudget,
 ) -> Result<GrammarBuild, GrammarBuildError> {
     // The accepted option type is currently fieldless. Destructuring it at
     // the canonical grammar entry makes a future option an explicit parser
     // migration instead of letting the transaction silently discard it.
     let ParseOptions {} = options;
     let tokens = DocumentLexer::new(document.text()).lex();
-    build_shadow_root(document, &tokens, |tokens, events, budget| {
+    build_document_root(document, &tokens, budget, |tokens, events, budget| {
         start_event(events, budget, SyntaxKind::ItemList, SyntaxRole::Element(0));
         emit_logical_lines(document.text(), tokens, events, budget)?;
         finish_event(events, budget);
@@ -54,43 +71,50 @@ pub(super) fn parse_unbound_fragment(
     grammar: FragmentGrammar,
 ) -> Result<GrammarBuild, GrammarBuildError> {
     let tokens = DocumentLexer::new(source).lex();
-    build_shadow_root_text(source, &tokens, |tokens, events, budget| {
-        let mut parser = ShadowDocumentParser::for_fragment(source, tokens, 0, events, budget);
-        parser.bump_trivia();
-        match grammar {
-            FragmentGrammar::Expression => {
-                emit_expression(&mut parser, tokens.len(), SyntaxRole::Element(0));
+    build_document_root_text(
+        source,
+        &tokens,
+        GrammarBudget::default(),
+        |tokens, events, budget| {
+            let mut parser = DocumentParser::for_fragment(source, tokens, 0, events, budget);
+            parser.bump_trivia();
+            match grammar {
+                FragmentGrammar::Expression => {
+                    emit_expression(&mut parser, tokens.len(), SyntaxRole::Element(0));
+                }
+                FragmentGrammar::Type => {
+                    emit_type(&mut parser, tokens.len(), SyntaxRole::Element(0));
+                }
+                FragmentGrammar::Pattern => {
+                    emit_pattern(&mut parser, tokens.len(), SyntaxRole::Element(0));
+                }
+                FragmentGrammar::Statement => {
+                    emit_statement_fragment(&mut parser, tokens.len(), SyntaxRole::Element(0));
+                }
             }
-            FragmentGrammar::Type => {
-                emit_type(&mut parser, tokens.len(), SyntaxRole::Element(0));
-            }
-            FragmentGrammar::Pattern => {
-                emit_pattern(&mut parser, tokens.len(), SyntaxRole::Element(0));
-            }
-            FragmentGrammar::Statement => {
-                emit_statement_fragment(&mut parser, tokens.len(), SyntaxRole::Element(0));
-            }
-        }
-        while parser.bump().is_some() {}
-        Ok(())
-    })
+            while parser.bump().is_some() {}
+            Ok(())
+        },
+    )
 }
 
-fn build_shadow_root(
+fn build_document_root(
     document: &SourceDocument,
     tokens: &[LexToken],
+    budget: GrammarBudget,
     emit_body: impl FnOnce(
         &[LexToken],
         &mut Vec<SyntaxEvent>,
         &mut GrammarBudget,
     ) -> Result<(), GrammarBuildError>,
 ) -> Result<GrammarBuild, GrammarBuildError> {
-    build_shadow_root_text(document.text(), tokens, emit_body)
+    build_document_root_text(document.text(), tokens, budget, emit_body)
 }
 
-fn build_shadow_root_text(
+fn build_document_root_text(
     source: &str,
     tokens: &[LexToken],
+    mut budget: GrammarBudget,
     emit_body: impl FnOnce(
         &[LexToken],
         &mut Vec<SyntaxEvent>,
@@ -98,7 +122,6 @@ fn build_shadow_root_text(
     ) -> Result<(), GrammarBuildError>,
 ) -> Result<GrammarBuild, GrammarBuildError> {
     let mut events = Vec::with_capacity(tokens.len() + 8);
-    let mut budget = GrammarBudget::default();
     start_event(
         &mut events,
         &mut budget,
@@ -176,6 +199,7 @@ enum SourceRootRecovery {
     DuplicateModule,
     LateModule,
     LateUse,
+    LateInnerAttribute,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -188,6 +212,11 @@ struct SourceRootItem {
 impl SourceRootState {
     fn classify(&mut self, kind: SyntaxKind) -> Result<SourceRootItem, GrammarBuildError> {
         let (kind, role, recovery) = match kind {
+            SyntaxKind::InnerAttribute if self.phase != SourceRootPhase::Header => (
+                SyntaxKind::ErrorItem,
+                self.next_item_role()?,
+                Some(SourceRootRecovery::LateInnerAttribute),
+            ),
             SyntaxKind::InnerAttribute | SyntaxKind::OuterAttribute => {
                 let ordinal = self.attributes;
                 self.attributes = ordinal
@@ -525,6 +554,8 @@ fn emit_declaration_item(
     budget: &mut GrammarBudget,
 ) -> Result<(), GrammarBuildError> {
     let item_start = events.len();
+    let terminal_newline_belongs_to_root =
+        matches!(kind, SyntaxKind::PredicateItem | SyntaxKind::ProofItem);
     match kind {
         SyntaxKind::FlowItem => {
             super::shadow_flow::emit_declaration(source, tokens, role, events, budget);
@@ -575,8 +606,45 @@ fn emit_declaration_item(
         _ => unreachable!("only structured declaration kinds are grouped"),
     }
     budget_failure(budget)?;
+    let terminal_newline = if terminal_newline_belongs_to_root {
+        detach_terminal_newline(tokens, item_start, events)
+    } else {
+        None
+    };
     wrap_declaration_logical_lines(source, item_start, events);
+    if let Some(newline) = terminal_newline {
+        // The grammar already charged this token. Reinsert the exact event as
+        // a root-owned sibling instead of charging a second parser event.
+        events.push(newline);
+    }
     Ok(())
+}
+
+fn detach_terminal_newline(
+    tokens: &[LexToken],
+    item_start: usize,
+    events: &mut Vec<SyntaxEvent>,
+) -> Option<SyntaxEvent> {
+    let terminal = tokens
+        .last()
+        .filter(|token| token.kind() == SyntaxKind::NewlineToken)?;
+    let position = events[item_start..].iter().rposition(|event| {
+        matches!(
+            event,
+            SyntaxEvent::Token { kind, range }
+                if *kind == SyntaxKind::NewlineToken && *range == terminal.range()
+        )
+    })? + item_start;
+    if events[position + 1..]
+        .iter()
+        .any(|event| matches!(event, SyntaxEvent::MissingToken { .. }))
+    {
+        // A missing delimiter may be anchored immediately after the line
+        // break. Keeping that synchronization token inside the recovered item
+        // preserves both parent containment and the exact zero-width anchor.
+        return None;
+    }
+    Some(events.remove(position))
 }
 
 fn emit_retained_declaration_item(
@@ -733,6 +801,13 @@ fn emit_logical_line(
             super::shadow_flow::emit_declaration(source, tokens, role, events, budget);
         }
         Some(SourceRootItem {
+            kind: SyntaxKind::InnerAttribute,
+            role,
+            recovery: None,
+        }) => {
+            super::declaration::emit_inner_attribute(source, tokens, role, events, budget);
+        }
+        Some(SourceRootItem {
             kind,
             role,
             recovery,
@@ -764,19 +839,25 @@ fn emit_logical_line(
                         "syntax.source.late_use_declaration",
                         "a use declaration must precede ordinary items",
                     ),
-                    None => (
-                        "syntax.item.expected_declaration",
-                        "regular Arcweft source accepts declarations at the top level",
+                    Some(SourceRootRecovery::LateInnerAttribute) => (
+                        "syntax.source.late_inner_attribute",
+                        "an inner source attribute must appear before module, use, and ordinary items",
                     ),
+                    None => ("syntax.parse", "unexpected top-level item"),
                 };
                 push_event(
                     events,
                     budget,
-                    SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
-                        code,
-                        SourceRange::new(first.range.start(), last.range.end()),
-                        message,
-                    )),
+                    SyntaxEvent::Diagnostic(
+                        PendingSyntaxDiagnostic::new(
+                            code,
+                            SourceRange::new(first.range.start(), last.range.end()),
+                            message,
+                        )
+                        .with_suggestions(recovery.is_none().then(|| {
+                            PendingSyntaxSuggestion::new("use a current Arcweft declaration form")
+                        })),
+                    ),
                 );
             }
             finish_event(events, budget);

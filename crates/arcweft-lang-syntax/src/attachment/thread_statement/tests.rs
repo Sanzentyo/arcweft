@@ -16,7 +16,7 @@ use crate::attachment::{
     GrammarIdentityMap, RequiredStatementExpressionNode, SyntaxDatabaseId, SyntaxLineageId,
     SyntaxNodeId, SyntaxSnapshotData, SyntaxSnapshotId, attach_typed_tree,
 };
-use crate::parser::{ParseOptions, parse_shadow_document};
+use crate::parser::{ParseOptions, parse_document};
 use crate::patterns::PatternSyntaxState;
 
 fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
@@ -28,7 +28,7 @@ fn attach(text: &str) -> Arc<SyntaxSnapshotData> {
         )
         .unwrap(),
     );
-    let build = parse_shadow_document(&document, ParseOptions::default()).unwrap();
+    let build = parse_document(&document, ParseOptions::default()).unwrap();
     let database = SyntaxDatabaseId::from_raw_for_test(NonZeroU64::new(311).unwrap());
     let lineage = SyntaxLineageId::from_raw_for_test(database, NonZeroU64::new(1).unwrap());
     let snapshot = SyntaxSnapshotId::new(
@@ -159,6 +159,26 @@ fn loop_while_while_let_and_for_own_typed_heads_and_thread_flow_bodies() {
     ));
     assert_one_nested_item(for_statement.body());
     assert!(!for_statement.has_recovery());
+}
+
+#[test]
+fn for_source_accepts_transparent_group_delimiters_without_a_second_expression_identity() {
+    let body = flow_body(concat!(
+        "flow grouped_for {\n",
+        "    for item in (Counter { start: 0, end: 3 }) { include @flow.consume }\n",
+        "}\n",
+    ));
+    let [AttachedThreadFlowItem::For(statement)] = body.items() else {
+        panic!("fixture must retain one For statement");
+    };
+    let statement = statement.semantics().expect("grouped For source attaches");
+    assert!(matches!(
+        statement.source(),
+        RequiredStatementExpressionNode::Expression(source)
+            if source.source_text() == "Counter { start: 0, end: 3 }"
+    ));
+    assert_one_nested_item(statement.body());
+    assert!(!statement.has_recovery());
 }
 
 #[test]

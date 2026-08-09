@@ -6,14 +6,31 @@ use arcweft_lang_syntax::grammar::SyntaxKind;
 
 use crate::final_lowering::StagedHirModuleTransaction;
 use crate::identity::{ExprId, ScopeId, StmtId};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
-use crate::source_index::HirExprSourceRole;
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::stmt::{HirStmtChildRole, HirStmtKind, HirStmtRecoveryIssue};
+
+use super::HirStmtRecoveryOperandSlot;
 
 #[derive(Clone, Copy)]
 enum AssignmentFamily {
     Assignment,
     LifetimeSet,
+}
+
+impl AssignmentFamily {
+    const fn target_slot(self, insertion: usize) -> HirStmtRecoveryOperandSlot {
+        match self {
+            Self::Assignment => HirStmtRecoveryOperandSlot::AssignmentTarget { insertion },
+            Self::LifetimeSet => HirStmtRecoveryOperandSlot::LifetimeSetTarget { insertion },
+        }
+    }
+
+    const fn value_slot(self, insertion: usize) -> HirStmtRecoveryOperandSlot {
+        match self {
+            Self::Assignment => HirStmtRecoveryOperandSlot::AssignmentValue { insertion },
+            Self::LifetimeSet => HirStmtRecoveryOperandSlot::LifetimeSetValue { insertion },
+        }
+    }
 }
 
 impl StagedHirModuleTransaction<'_> {
@@ -55,24 +72,16 @@ impl StagedHirModuleTransaction<'_> {
             _ => return Err(HirInvariantFailure::InvalidArenaCommit.into()),
         };
 
-        let target = self.lower_attached_assignment_operand(
-            owner,
-            target,
-            scope,
-            0,
-            HirExprSourceRole::Target,
-        )?;
+        let target = self.lower_attached_assignment_operand(owner, target, scope, |insertion| {
+            family.target_slot(insertion)
+        })?;
         if matches!(family, AssignmentFamily::Assignment) {
             self.upgrade_direct_reassignment_capture(target)?;
         }
         let target_poisoned = self.staged_expression_is_poisoned(target)?;
-        let value = self.lower_attached_assignment_operand(
-            owner,
-            value,
-            scope,
-            1,
-            HirExprSourceRole::Operand,
-        )?;
+        let value = self.lower_attached_assignment_operand(owner, value, scope, |insertion| {
+            family.value_slot(insertion)
+        })?;
         let value_poisoned = self.staged_expression_is_poisoned(value)?;
         let recovery = if target_poisoned {
             Some(HirStmtRecoveryIssue::RecoveredChild {
@@ -97,8 +106,7 @@ impl StagedHirModuleTransaction<'_> {
         owner: StmtId,
         operand: RequiredStatementExpressionNode,
         scope: ScopeId,
-        ordinal: u32,
-        role: HirExprSourceRole,
+        missing_slot: impl FnOnce(usize) -> HirStmtRecoveryOperandSlot,
     ) -> Result<ExprId, HirLowerFailure> {
         match operand {
             RequiredStatementExpressionNode::Expression(expression) => {
@@ -111,9 +119,7 @@ impl StagedHirModuleTransaction<'_> {
                 .lower_missing_statement_expression(
                     owner,
                     scope,
-                    missing.range().start(),
-                    ordinal,
-                    role,
+                    missing_slot(missing.range().start()),
                 ),
         }
     }

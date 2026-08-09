@@ -331,6 +331,7 @@ dependencies = [
  "arcweft-content-policy",
  "arcweft-lang-sema",
  "arcweft-runtime-driver",
+ "base64",
  "serde",
  "serde_json",
 ]
@@ -366,14 +367,15 @@ dependencies = [
 name = "arcweft-agent-protocol"
 version = "0.1.0"
 dependencies = [
+ "arcweft-character",
  "arcweft-core",
  "arcweft-dialogue",
+ "arcweft-id",
  "arcweft-layout",
- "arcweft-render-text",
  "arcweft-resource-model",
  "arcweft-source",
+ "arcweft-text-model",
  "arcweft-view",
- "base64",
  "blake3",
  "serde",
  "serde_json",
@@ -416,11 +418,9 @@ dependencies = [
  "arcweft-bundle",
  "arcweft-core",
  "arcweft-debug-model",
- "arcweft-dialogue",
  "arcweft-render-text",
- "arcweft-resource-model",
  "arcweft-source",
- "arcweft-view",
+ "arcweft-text-model",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
@@ -504,6 +504,7 @@ dependencies = [
  "arcweft-resource-model",
  "arcweft-serde-bridge",
  "arcweft-source",
+ "arcweft-text-model",
  "arcweft-view",
  "blake3",
  "ciborium",
@@ -608,6 +609,7 @@ dependencies = [
  "arcweft-source",
  "arcweft-test",
  "arcweft-text-layout",
+ "arcweft-text-model",
  "arcweft-tooling",
  "arcweft-verify",
  "arcweft-verify-oxiz",
@@ -740,6 +742,8 @@ dependencies = [
  "arcweft-resource-model",
  "arcweft-runtime-plan",
  "arcweft-source",
+ "arcweft-text-model",
+ "arcweft-verify",
  "arcweft-view",
  "blake3",
  "num-traits",
@@ -767,14 +771,21 @@ dependencies = [
 name = "arcweft-core"
 version = "0.1.0"
 dependencies = [
+ "arcweft-codec-binary",
+ "arcweft-codec-cbor",
+ "arcweft-codec-json",
+ "arcweft-codec-msgpack",
+ "arcweft-data",
  "arcweft-id",
  "arcweft-interaction-model",
  "arcweft-need",
+ "arcweft-serde-bridge",
  "arcweft-source",
  "blake3",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
+ "trybuild",
 ]
 
 [[package]]
@@ -877,6 +888,7 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-text-layout",
+ "arcweft-text-model",
  "blake3",
  "glyphon",
  "thiserror 2.0.18",
@@ -936,6 +948,7 @@ dependencies = [
  "arcweft-id",
  "arcweft-lang-syntax",
  "arcweft-source",
+ "blake3",
  "num-bigint",
  "serde",
  "thiserror 2.0.18",
@@ -958,10 +971,12 @@ version = "0.1.0"
 dependencies = [
  "arcweft-character",
  "arcweft-data",
+ "arcweft-dialogue",
  "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-syntax",
  "arcweft-presentation",
+ "arcweft-rich-text-schema",
  "arcweft-rust-abi",
  "arcweft-source",
  "arcweft-view",
@@ -1085,7 +1100,6 @@ dependencies = [
  "arcweft-core",
  "arcweft-desktop-contract",
  "arcweft-desktop-native",
- "arcweft-dialogue",
  "arcweft-host-adapter",
  "arcweft-id",
  "arcweft-interaction-model",
@@ -1095,13 +1109,12 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-render-wgpu",
- "arcweft-resource-model",
  "arcweft-runtime-driver",
  "arcweft-runtime-host",
  "arcweft-runtime-plan",
  "arcweft-save",
  "arcweft-source",
- "arcweft-view",
+ "arcweft-text-model",
  "clap",
  "num-traits",
  "png",
@@ -1130,10 +1143,10 @@ dependencies = [
  "arcweft-presentation",
  "arcweft-render-text",
  "arcweft-render-wgpu",
- "arcweft-resource-model",
  "arcweft-runtime-driver",
  "arcweft-source",
  "arcweft-text-layout",
+ "arcweft-text-model",
  "arcweft-view",
  "num-traits",
  "oxifont-webfont",
@@ -1174,6 +1187,7 @@ dependencies = [
  "arcweft-runtime-plan",
  "arcweft-source",
  "arcweft-text-layout",
+ "arcweft-text-model",
  "arcweft-view",
  "futures-channel",
  "js-sys",
@@ -1235,6 +1249,7 @@ dependencies = [
  "arcweft-render-text",
  "arcweft-resource-model",
  "arcweft-source",
+ "arcweft-text-model",
  "arcweft-view",
  "blake3",
  "ed25519-dalek",
@@ -1264,11 +1279,14 @@ dependencies = [
 name = "arcweft-render-text"
 version = "0.1.0"
 dependencies = [
+ "arcweft-character",
  "arcweft-core",
  "arcweft-dialogue",
+ "arcweft-id",
  "arcweft-presentation",
  "arcweft-resource-model",
  "arcweft-source",
+ "arcweft-text-model",
  "arcweft-view",
  "serde",
  "serde_json",
@@ -1291,6 +1309,7 @@ dependencies = [
 name = "arcweft-render-wgpu"
 version = "0.1.0"
 dependencies = [
+ "arcweft-character",
  "arcweft-core",
  "arcweft-dialogue",
  "arcweft-glyphon",
@@ -1298,9 +1317,9 @@ dependencies = [
  "arcweft-layout",
  "arcweft-presentation",
  "arcweft-render-text",
- "arcweft-resource-model",
  "arcweft-source",
  "arcweft-text-layout",
+ "arcweft-text-model",
  "arcweft-view",
  "bytemuck",
  "glyphon",
@@ -1375,6 +1394,7 @@ name = "arcweft-runtime-driver"
 version = "0.1.0"
 dependencies = [
  "arcweft-bundle",
+ "arcweft-character",
  "arcweft-core",
  "arcweft-dialogue",
  "arcweft-id",
@@ -1386,6 +1406,7 @@ dependencies = [
  "arcweft-runtime-plan",
  "arcweft-save",
  "arcweft-source",
+ "arcweft-text-model",
  "arcweft-view",
  "blake3",
  "serde",
@@ -1412,6 +1433,7 @@ dependencies = [
  "arcweft-runtime-plan",
  "arcweft-runtime-scheduler",
  "arcweft-source",
+ "arcweft-text-model",
  "arcweft-view",
  "num_cpus",
  "rayon",
@@ -1425,17 +1447,14 @@ name = "arcweft-runtime-plan"
 version = "0.1.0"
 dependencies = [
  "arcweft-core",
- "arcweft-dialogue",
+ "arcweft-id",
  "arcweft-interaction-model",
  "arcweft-lang-hir",
- "arcweft-lang-sema",
  "arcweft-lang-syntax",
- "arcweft-presentation",
- "arcweft-render-text",
- "arcweft-resource-model",
  "arcweft-source",
- "arcweft-view",
+ "arcweft-text-model",
  "blake3",
+ "serde",
  "thiserror 2.0.18",
  "trybuild",
 ]
@@ -1480,6 +1499,7 @@ dependencies = [
 name = "arcweft-save"
 version = "0.1.0"
 dependencies = [
+ "arcweft-core",
  "arcweft-data",
  "blake3",
  "serde",
@@ -1504,6 +1524,7 @@ dependencies = [
 name = "arcweft-source"
 version = "0.1.0"
 dependencies = [
+ "arcweft-id",
  "blake3",
  "serde",
  "serde_json",
@@ -1529,6 +1550,7 @@ name = "arcweft-text-layout"
 version = "0.1.0"
 dependencies = [
  "arcweft-render-text",
+ "arcweft-text-model",
  "blake3",
  "serde",
  "serde_json",
@@ -1538,13 +1560,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-text-model"
+version = "0.1.0"
+dependencies = [
+ "arcweft-character",
+ "arcweft-core",
+ "arcweft-dialogue",
+ "arcweft-id",
+ "arcweft-presentation",
+ "arcweft-resource-model",
+ "arcweft-source",
+ "arcweft-view",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-tooling"
 version = "0.1.0"
 dependencies = [
+ "arcweft-core",
  "arcweft-lang-hir",
- "arcweft-lang-sema",
  "arcweft-lang-syntax",
  "arcweft-presentation",
+ "arcweft-runtime-plan",
  "arcweft-source",
  "serde",
  "thiserror 2.0.18",
@@ -1555,8 +1595,6 @@ dependencies = [
 name = "arcweft-verify"
 version = "0.1.0"
 dependencies = [
- "arcweft-compiler",
- "arcweft-core",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",

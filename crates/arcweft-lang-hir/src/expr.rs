@@ -19,21 +19,21 @@ pub use self::basic::{
     HirTryForm, HirTupleExpr, HirUnaryExpr, HirUnaryOp,
 };
 pub use self::call::{
-    HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedReceiverError, HirCallArgument,
-    HirCallArgumentListTerminator, HirCallArgumentOrdinal, HirCallCallee, HirCallExpr,
-    HirCallIssue, HirCallTypeApplication, HirCallTypeApplicationSpelling,
-    HirCallTypeApplicationTerminator, HirCallTypeArgument, HirCallTypeArgumentOrdinal,
-    HirCallValue, HirRecoveredName, HirRequiredTokenState,
+    HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedReceiverError,
+    HirAssociatedSeparator, HirCallArgument, HirCallArgumentListTerminator, HirCallArgumentOrdinal,
+    HirCallCallee, HirCallExpr, HirCallIssue, HirCallTypeApplication,
+    HirCallTypeApplicationSpelling, HirCallTypeApplicationTerminator, HirCallTypeArgument,
+    HirCallTypeArgumentOrdinal, HirCallValue, HirRecoveredName, HirRequiredTokenState,
 };
 pub(crate) use self::call::{
     HirCallArgumentOrdinalError, HirCallBuildError, HirCallChildPoison, HirCallChildStates,
-    HirCallTypeArgumentOrdinalError,
 };
+pub(crate) use self::choice::HirChoiceRequiredExpressionSlot;
 pub use self::choice::{
     HirChoiceBody, HirChoiceCompactAction, HirChoiceCompactArm, HirChoiceExpr, HirChoiceFor,
     HirChoiceIf, HirChoiceIfBranch, HirChoiceItem, HirChoiceMatch, HirChoiceMatchArm,
     HirChoiceOption, HirChoiceOptionBody, HirChoiceOptionField, HirChoiceOptionFor, HirChoicePlan,
-    HirChoicePlanItem, HirChoiceView, HirChoiceViewEntry,
+    HirChoicePlanError, HirChoicePlanItem, HirChoiceView, HirChoiceViewEntry,
 };
 pub use self::control::{
     HirBlockExpr, HirClosureExpr, HirClosureParameter, HirComputationBlockExpr,
@@ -41,6 +41,7 @@ pub use self::control::{
     HirMatchArm, HirMatchExpr, HirNamedBlockExpr, HirNamedBlockName,
 };
 pub use self::for_synthetic::HirForSyntheticExpr;
+#[cfg(test)]
 pub(crate) use self::thread::HirThreadBodyInvariantError;
 pub use self::thread::{
     HirThreadBody, HirThreadBodyOwner, HirThreadExpr, HirThreadFlowItem, HirThreadIssue,
@@ -48,7 +49,8 @@ pub use self::thread::{
 };
 
 use crate::dialogue_application::{
-    HirDialogueContentApplication, HirDialogueIssue, HirPostfixBracket, HirRichTextIssue,
+    HirDialogueContentApplication, HirDialogueIssue, HirDialogueNodeKind, HirLinePlanItem,
+    HirPostfixBracket, HirPostfixBracketCandidates, HirRichTextIssue,
 };
 use crate::identity::{ExprId, HirModuleId, PatternId, ScopeId, StmtId, TypeId};
 use crate::leaf::{
@@ -58,6 +60,7 @@ use crate::leaf::{
     HirPathValue, HirShortVariantName, HirStringLiteral, HirTypeRegionIssue, HirUnitNumberLiteral,
 };
 use crate::source_index::HirExprSourceRole;
+use crate::stmt::HirTriggerPattern;
 
 /// One immutable expression-arena record.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -111,11 +114,11 @@ impl HirExpr {
     }
 
     /// Returns the semantic recovery state retained with this expression.
-    pub(crate) const fn state(&self) -> &HirPoisonState {
+    pub const fn state(&self) -> &HirPoisonState {
         &self.state
     }
 
-    pub(crate) const fn is_poisoned(&self) -> bool {
+    pub const fn is_poisoned(&self) -> bool {
         self.state.is_poisoned()
     }
 }
@@ -168,7 +171,212 @@ pub enum HirExprKind {
     ForSynthetic(HirForSyntheticExpr),
 }
 
+/// One exact semantic slot which may own a synthetic `RecoveryOperand`.
+///
+/// `SyntheticOnly` is limited to accepted invalid carriers whose public schema
+/// deliberately has no fabricated valid value. The synthetic key still owns
+/// the recovery expression at this exact ordinal.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) enum HirRecoveryOperandSlot {
+    Retained(ExprId),
+    SyntheticOnly,
+}
+
 impl HirExprKind {
+    /// Returns every expression-arena edge owned directly by this payload.
+    ///
+    /// This inventory is source-independent: synthetic children and children
+    /// without an authored span participate exactly like source-backed
+    /// children. Statement IDs retained by block, Choice, or line-plan bodies,
+    /// plus `FlowItem` owners retained by Thread/Choice bodies, are intentionally
+    /// not expanded here; those values remain roots in their own typed owner
+    /// inventory.
+    pub fn direct_expression_children(&self) -> Vec<ExprId> {
+        let mut children = Vec::new();
+        match self {
+            Self::Unit
+            | Self::Literal(_)
+            | Self::EntityReference(_)
+            | Self::LifetimePath(_)
+            | Self::Path(_)
+            | Self::ShortVariant(_)
+            | Self::Placeholder(_)
+            | Self::NumericBracketSequence(_)
+            | Self::Thread(_)
+            | Self::Error(_) => {}
+            Self::Tuple(expression) => children.extend_from_slice(expression.elements()),
+            Self::BracketSequence(expression) => {
+                children.extend_from_slice(expression.elements());
+            }
+            Self::ArrayRepeat(expression) => {
+                children.extend([expression.value(), expression.length()]);
+            }
+            Self::Call(expression) => {
+                children.extend(expression.callee().value_expression());
+                children.extend(expression.arguments().iter().map(HirCallArgument::value));
+            }
+            Self::Select(expression) => children.push(expression.target()),
+            Self::Index(expression) => {
+                children.extend([expression.target(), expression.index()]);
+            }
+            Self::Pipe(expression) => {
+                children.extend([expression.left(), expression.right()]);
+            }
+            Self::Try(expression) => children.push(expression.operand()),
+            Self::Await(expression) => children.push(expression.operand()),
+            Self::Choice(expression) => {
+                append_choice_expression_children(expression, &mut children);
+            }
+            Self::Range(expression) => {
+                children.extend(expression.start());
+                children.extend(expression.end());
+            }
+            Self::Record(expression) => {
+                children.extend(expression.fields().iter().filter_map(HirRecordField::value));
+            }
+            Self::RecordLiteral(expression) => {
+                children.extend(expression.fields().iter().filter_map(HirRecordField::value));
+            }
+            Self::Binary(expression) => {
+                children.extend([expression.left(), expression.right()]);
+            }
+            Self::Borrow(expression) => children.push(expression.operand()),
+            Self::Dereference(expression) => children.push(expression.operand()),
+            Self::Closure(expression) => children.push(expression.body()),
+            Self::Unary(expression) => children.push(expression.operand()),
+            Self::Block(expression) => children.push(expression.tail()),
+            Self::ComputationBlock(expression) => children.push(expression.tail()),
+            Self::NamedBlock(expression) => children.push(expression.tail()),
+            Self::If(expression) => children.extend([
+                expression.condition(),
+                expression.then_branch(),
+                expression.else_branch(),
+            ]),
+            Self::IfLet(expression) => {
+                children.push(expression.scrutinee());
+                children.extend(expression.guard());
+                children.extend([expression.then_branch(), expression.else_branch()]);
+            }
+            Self::Match(expression) => {
+                children.push(expression.scrutinee());
+                for arm in expression.arms() {
+                    children.extend(arm.guard());
+                    children.push(arm.value());
+                }
+            }
+            Self::DialogueContentApplication(expression) => {
+                append_dialogue_application_children(expression, &mut children);
+            }
+            Self::PostfixBracket(expression) => {
+                children.push(expression.target());
+                if let HirPostfixBracketCandidates::Ambiguous { index, dialogue } =
+                    expression.candidates()
+                {
+                    children.extend([*index, *dialogue]);
+                }
+            }
+            Self::ForSynthetic(expression) => children.push(expression.input()),
+        }
+        children
+    }
+
+    /// Resolves a `RecoveryOperand` ordinal through the semantic owner rather
+    /// than duplicating child order in source-index validation.
+    pub(crate) fn recovery_operand_slot(&self, ordinal: u32) -> Option<HirRecoveryOperandSlot> {
+        let ordinal = usize::try_from(ordinal).ok()?;
+        let retained = HirRecoveryOperandSlot::Retained;
+        match self {
+            Self::Tuple(expression) => expression.elements().get(ordinal).copied().map(retained),
+            Self::BracketSequence(expression) => {
+                expression.elements().get(ordinal).copied().map(retained)
+            }
+            Self::ArrayRepeat(expression) => match ordinal {
+                0 => Some(retained(expression.value())),
+                1 => Some(retained(expression.length())),
+                _ => None,
+            },
+            Self::Call(expression) => match ordinal {
+                0 => expression.callee().value_expression().map(retained),
+                _ => expression
+                    .arguments()
+                    .get(ordinal.checked_sub(1)?)
+                    .map(HirCallArgument::value)
+                    .map(retained),
+            },
+            Self::Select(expression) => (ordinal == 0).then(|| retained(expression.target())),
+            Self::Index(expression) => match ordinal {
+                0 => Some(retained(expression.target())),
+                1 => Some(retained(expression.index())),
+                _ => None,
+            },
+            Self::Pipe(expression) => match ordinal {
+                0 => Some(retained(expression.left())),
+                1 => Some(retained(expression.right())),
+                _ => None,
+            },
+            Self::Try(expression) => (ordinal == 0).then(|| retained(expression.operand())),
+            Self::Await(expression) => (ordinal == 0).then(|| retained(expression.operand())),
+            Self::Choice(expression) => expression
+                .required_expression_slots()
+                .get(ordinal)
+                .copied()
+                .and_then(|slot| match slot {
+                    HirChoiceRequiredExpressionSlot::Retained(expression) => {
+                        Some(retained(expression))
+                    }
+                    HirChoiceRequiredExpressionSlot::UnretainedInvalidAssignmentValue => None,
+                }),
+            Self::Range(expression) => match ordinal {
+                0 => expression.start().map(retained),
+                1 => expression.end().map(retained),
+                _ => None,
+            },
+            Self::Record(expression) => record_recovery_operand_slot(expression.fields(), ordinal),
+            Self::RecordLiteral(expression) => {
+                record_recovery_operand_slot(expression.fields(), ordinal)
+            }
+            Self::Binary(expression) => match ordinal {
+                0 => Some(retained(expression.left())),
+                1 => Some(retained(expression.right())),
+                _ => None,
+            },
+            Self::Borrow(expression) => (ordinal == 0).then(|| retained(expression.operand())),
+            Self::Dereference(expression) => (ordinal == 0).then(|| retained(expression.operand())),
+            Self::Closure(expression) => (ordinal == 0).then(|| retained(expression.body())),
+            Self::Unary(expression) => (ordinal == 0).then(|| retained(expression.operand())),
+            Self::If(expression) => match ordinal {
+                0 => Some(retained(expression.condition())),
+                1 => Some(retained(expression.then_branch())),
+                2 => Some(retained(expression.else_branch())),
+                _ => None,
+            },
+            Self::IfLet(expression) => match ordinal {
+                0 => Some(retained(expression.scrutinee())),
+                1 => expression.guard().map(retained),
+                2 => Some(retained(expression.then_branch())),
+                3 => Some(retained(expression.else_branch())),
+                _ => None,
+            },
+            Self::Unit
+            | Self::Literal(_)
+            | Self::EntityReference(_)
+            | Self::LifetimePath(_)
+            | Self::Path(_)
+            | Self::ShortVariant(_)
+            | Self::Placeholder(_)
+            | Self::NumericBracketSequence(_)
+            | Self::Thread(_)
+            | Self::NamedBlock(_)
+            | Self::Block(_)
+            | Self::ComputationBlock(_)
+            | Self::Match(_)
+            | Self::DialogueContentApplication(_)
+            | Self::PostfixBracket(_)
+            | Self::Error(_)
+            | Self::ForSynthetic(_) => None,
+        }
+    }
+
     pub(crate) fn thread_body_for_scope(&self, scope: ScopeId) -> Option<&HirThreadBody> {
         match self {
             Self::Thread(expression) => {
@@ -266,7 +474,6 @@ impl HirExprKind {
                     HirExpressionRecoveryIssue::Generic(HirGenericExprIssue::UnclassifiedSyntax),
                 ))
             }
-            Self::Unit | Self::Placeholder(_) => None,
             _ => None,
         }
     }
@@ -351,6 +558,176 @@ impl HirExprKind {
     }
 }
 
+fn record_recovery_operand_slot(
+    fields: &[HirRecordField],
+    ordinal: usize,
+) -> Option<HirRecoveryOperandSlot> {
+    matches!(
+        fields.get(ordinal),
+        Some(HirRecordField::Invalid {
+            issue: HirRecordFieldIssue::MissingValue,
+        })
+    )
+    .then_some(HirRecoveryOperandSlot::SyntheticOnly)
+}
+
+fn append_dialogue_application_children(
+    application: &HirDialogueContentApplication,
+    children: &mut Vec<ExprId>,
+) {
+    children.push(application.target());
+    children.extend(
+        application
+            .coordinates()
+            .iter()
+            .map(crate::dialogue_application::HirDialogueCoordinate::value),
+    );
+    children.extend(application.content().nodes().iter().filter_map(|node| {
+        let HirDialogueNodeKind::Interpolation(expression) = node.kind() else {
+            return None;
+        };
+        Some(*expression)
+    }));
+    children.extend(
+        application
+            .content()
+            .tags()
+            .iter()
+            .filter_map(|tag| tag.payload().expression()),
+    );
+    if let Some(plan) = application.plan() {
+        append_line_plan_expression_children(plan.items(), children);
+    }
+}
+
+fn append_line_plan_expression_children(items: &[HirLinePlanItem], children: &mut Vec<ExprId>) {
+    let mut pending = vec![items];
+    while let Some(items) = pending.pop() {
+        for item in items {
+            match item {
+                HirLinePlanItem::Option { value, .. }
+                | HirLinePlanItem::Let { value, .. }
+                | HirLinePlanItem::Out(value)
+                | HirLinePlanItem::TimelineAssert {
+                    condition: value, ..
+                }
+                | HirLinePlanItem::Expression(value) => children.push(*value),
+                HirLinePlanItem::TimedCue { anchor, body } => {
+                    children.extend([*anchor, *body]);
+                }
+                HirLinePlanItem::StartGroup(items) | HirLinePlanItem::TogetherGroup(items) => {
+                    pending.push(items);
+                }
+                HirLinePlanItem::Init(_)
+                | HirLinePlanItem::Thread(_)
+                | HirLinePlanItem::On(_)
+                | HirLinePlanItem::Statement(_)
+                | HirLinePlanItem::CancelRule(_)
+                | HirLinePlanItem::Error(_) => {}
+            }
+        }
+    }
+}
+
+fn append_choice_expression_children(expression: &HirChoiceExpr, children: &mut Vec<ExprId>) {
+    append_choice_body_expression_children(expression.body(), children);
+    if let Some(plan) = expression.plan() {
+        for item in plan.items() {
+            match item {
+                HirChoicePlanItem::Assignment { value, .. } => children.push(*value),
+                HirChoicePlanItem::Timeout { duration, .. } => children.push(*duration),
+                HirChoicePlanItem::Cancel { trigger, .. } => {
+                    append_trigger_expression_children(trigger, children);
+                }
+                HirChoicePlanItem::OnSelect { .. } | HirChoicePlanItem::Error(_) => {}
+            }
+        }
+    }
+}
+
+fn append_choice_body_expression_children(body: &HirChoiceBody, children: &mut Vec<ExprId>) {
+    let mut pending = vec![body];
+    while let Some(body) = pending.pop() {
+        for item in body.items() {
+            match item {
+                HirChoiceItem::Let(_) | HirChoiceItem::Error => {}
+                HirChoiceItem::If(expression) => {
+                    for branch in expression.branches() {
+                        children.push(branch.condition());
+                        pending.push(branch.body());
+                    }
+                    pending.extend(expression.else_body());
+                }
+                HirChoiceItem::For(expression) => {
+                    children.push(expression.source());
+                    pending.push(expression.body());
+                }
+                HirChoiceItem::Match(expression) => {
+                    children.push(expression.scrutinee());
+                    for arm in expression.arms() {
+                        children.extend(arm.guard());
+                        pending.push(arm.body());
+                    }
+                }
+                HirChoiceItem::Option(expression) => {
+                    children.push(expression.id());
+                    append_choice_option_expression_children(expression.body(), children);
+                }
+                HirChoiceItem::OptionFor(expression) => {
+                    children.push(expression.source());
+                    append_choice_option_expression_children(expression.body(), children);
+                }
+                HirChoiceItem::CompactArm(expression) => {
+                    children.push(expression.label());
+                    children.extend(expression.condition());
+                    if let HirChoiceCompactAction::Out(value) = expression.action() {
+                        children.push(*value);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn append_choice_option_expression_children(
+    body: &HirChoiceOptionBody,
+    children: &mut Vec<ExprId>,
+) {
+    for field in body.fields() {
+        match field {
+            HirChoiceOptionField::Label { value, .. }
+            | HirChoiceOptionField::Id(value)
+            | HirChoiceOptionField::Value(value)
+            | HirChoiceOptionField::Visible(value)
+            | HirChoiceOptionField::Enabled(value)
+            | HirChoiceOptionField::Order(value)
+            | HirChoiceOptionField::Hotkey(value) => children.push(*value),
+            HirChoiceOptionField::View(view) => {
+                for entry in view.entries() {
+                    children.extend([entry.key(), entry.value()]);
+                }
+            }
+            HirChoiceOptionField::Select(_)
+            | HirChoiceOptionField::Let(_)
+            | HirChoiceOptionField::Error => {}
+        }
+    }
+}
+
+fn append_trigger_expression_children(trigger: &HirTriggerPattern, children: &mut Vec<ExprId>) {
+    match trigger {
+        HirTriggerPattern::Signal { target, .. }
+        | HirTriggerPattern::Timeout(target)
+        | HirTriggerPattern::Expr(target) => children.push(*target),
+        HirTriggerPattern::Input(_)
+        | HirTriggerPattern::Event(_)
+        | HirTriggerPattern::Mark(_)
+        | HirTriggerPattern::Select(_)
+        | HirTriggerPattern::Task(_)
+        | HirTriggerPattern::Scope(_) => {}
+    }
+}
+
 /// Construction invariant rejected before an expression-arena publication.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub(crate) enum HirExprInvariantError {
@@ -373,20 +750,20 @@ pub(crate) enum HirExprInvariantError {
 
 /// Publication state for one semantic HIR expression.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirPoisonState {
+pub enum HirPoisonState {
     Clean,
     Poisoned(HirRecoveryIssue),
 }
 
 impl HirPoisonState {
-    pub(crate) const fn is_poisoned(&self) -> bool {
+    pub const fn is_poisoned(&self) -> bool {
         matches!(self, Self::Poisoned(_))
     }
 }
 
 /// Typed reason that a semantic HIR record retains recovery payload.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirRecoveryIssue {
+pub enum HirRecoveryIssue {
     MissingOperand { role: HirExprSourceRole },
     MissingRequiredTail,
     MalformedLiteral(HirLiteralIssue),
@@ -411,7 +788,7 @@ pub(crate) enum HirRecoveryIssue {
 /// Parser-owned Match body recovery retained without inventing a body child
 /// or a source role that is absent from the accepted E32 schema.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirMatchRecoveryIssue {
+pub enum HirMatchRecoveryIssue {
     MissingBody,
     UnclosedBody,
 }
@@ -419,7 +796,7 @@ pub(crate) enum HirMatchRecoveryIssue {
 /// Typed propagation retained when a source-backed expression is generic
 /// recovery or when a known expression family owns a poisoned authored child.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
-pub(crate) enum HirExpressionRecoveryIssue {
+pub enum HirExpressionRecoveryIssue {
     Generic(HirGenericExprIssue),
     RecoveredChild { role: HirExprSourceRole },
 }

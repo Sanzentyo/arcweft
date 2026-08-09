@@ -11,7 +11,7 @@ use crate::identity::{
     CaptureId, ExprId, HirLimit, LocalId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole,
 };
 use crate::leaf::{HirName, HirPath, HirPathRoot, HirPathSegment};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{CaptureAccess, HirCapture};
 use crate::source_index::{HirInsertionPoint, HirSourceSite};
 
@@ -128,6 +128,10 @@ impl StagedHirModuleTransaction<'_> {
         self.record_path_capture(scope, path, segment.source_span(), CaptureAccess::Read)
     }
 
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "capture publication owns and duplicates the exact first-use source span across every crossed closure frame"
+    )]
     pub(super) fn record_local_capture(
         &mut self,
         scope: ScopeId,

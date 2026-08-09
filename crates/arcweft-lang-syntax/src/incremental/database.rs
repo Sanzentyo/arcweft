@@ -7,14 +7,17 @@ use arcweft_source::identity::{SourceGeneration, SourceSnapshotId};
 use arcweft_source::{SourceDocument, SourceEdit, SourceName, SourceSpan};
 use thiserror::Error;
 
+use super::SyntaxParseStats;
 use super::bound::{ParsedSourceData, SyntaxDiagnostic};
 #[cfg(test)]
 use crate::attachment::SyntaxSnapshotData;
+use crate::attachment::node::SourceFileKind;
+use crate::attachment::source_file::SourceFileEntryNode;
 use crate::attachment::{
-    AstKind, AstNode, AttachedExpressionNode, AttachedPatternNode, AttachedTypeRefNode,
-    AttachmentFailure, StatementNode, SyntaxAccessError, SyntaxDatabaseId, SyntaxLineageId,
-    SyntaxLookupError, SyntaxNode, SyntaxNodeHandle, SyntaxNodeId, SyntaxSnapshotId,
-    TypedSyntaxTree,
+    AstKind, AstNode, AttachedExpressionNode, AttachedInnerAttribute, AttachedPatternNode,
+    AttachedTypeRefNode, AttachmentFailure, AttributeNode, StatementNode, SyntaxAccessError,
+    SyntaxDatabaseId, SyntaxLineageId, SyntaxLookupError, SyntaxNode, SyntaxNodeHandle,
+    SyntaxNodeId, SyntaxSnapshotId, TypedItemNode,
 };
 use crate::parser::fragment::{ParseCompletion, ParseOptions};
 use crate::parser::unbound_fragment::{AttachedFragment, FragmentKind, UnboundFragment};
@@ -57,17 +60,33 @@ impl ParsedSource {
         self.snapshot_id() == other.snapshot_id()
     }
 
-    /// Attached typed source-file root for this exact immutable snapshot.
-    ///
-    /// # Panics
-    ///
-    /// Panics only if crate-internal construction publishes a snapshot without
-    /// the source-file root validated before transaction commit.
-    pub fn tree(&self) -> TypedSyntaxTree {
-        self.0
-            .syntax()
-            .typed_tree()
+    fn source_file(&self) -> AstNode<SourceFileKind> {
+        self.root_syntax()
+            .cast()
             .expect("committed syntax snapshots retain a typed source-file root")
+    }
+
+    /// Returns every identity-bearing source-file child through this exact
+    /// accepted snapshot owner.
+    pub fn entries(&self) -> Result<Vec<SourceFileEntryNode>, SyntaxAccessError> {
+        self.source_file().entries()
+    }
+
+    /// Returns source-file attributes through this exact accepted snapshot
+    /// owner.
+    pub fn attributes(&self) -> Result<Vec<AttributeNode>, SyntaxAccessError> {
+        self.source_file().attributes()
+    }
+
+    /// Returns source-level inner attributes through this exact accepted
+    /// snapshot owner.
+    pub fn inner_attributes(&self) -> Result<Vec<AttachedInnerAttribute>, SyntaxAccessError> {
+        self.source_file().inner_attributes()
+    }
+
+    /// Returns source items through this exact accepted snapshot owner.
+    pub fn items(&self) -> Result<Vec<TypedItemNode>, SyntaxAccessError> {
+        self.source_file().items()
     }
 
     /// Attached raw source-file root for this exact immutable snapshot.
@@ -147,6 +166,11 @@ impl ParsedSource {
     /// Whether this snapshot is clean or contains recovered syntax.
     pub fn status(&self) -> ParseStatus {
         self.0.status()
+    }
+
+    /// Deterministic grammar work and publication statistics for this exact snapshot.
+    pub fn syntax_stats(&self) -> SyntaxParseStats {
+        self.0.stats()
     }
 
     #[cfg(test)]
@@ -253,19 +277,6 @@ pub enum SyntaxInvariantFailure {
     SnapshotOwnershipMismatch,
 }
 
-/// Private predecessor of the final public fragment-attachment error.
-#[derive(Clone, Debug, Eq, Error, PartialEq)]
-pub(crate) enum FragmentAttachmentFailure {
-    #[error("the fragment source identity or span does not match the target document")]
-    SourceMismatch,
-    #[error("only a complete standalone fragment can be attached: {completion:?}")]
-    FragmentNotComplete { completion: ParseCompletion },
-    #[error("the target source bytes do not exactly match the standalone fragment")]
-    FragmentTextMismatch,
-    #[error(transparent)]
-    Transaction(#[from] ParseFailure),
-}
-
 /// Failure to allocate a fresh syntax database session identity.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum SyntaxDatabaseCreateError {
@@ -302,6 +313,13 @@ impl SyntaxDatabase {
             .find(|candidate| candidate.current.snapshot_id().lineage() == lineage)
             .map(|candidate| candidate.current.clone())
             .ok_or(SyntaxLookupError::UnknownLineage { lineage })
+    }
+
+    /// Returns the exact current snapshot for a source name already owned by this session.
+    pub fn current_for_source(&self, name: &SourceName) -> Option<ParsedSource> {
+        self.lineages
+            .get(name)
+            .map(|lineage| lineage.current.clone())
     }
 
     /// Resolves a typed node only against the current generation of its lineage.
@@ -348,29 +366,26 @@ impl SyntaxDatabase {
         )
     }
 
-    /// Attaches one complete standalone fragment to a fresh private lineage.
+    /// Attaches one complete standalone fragment to a fresh lineage.
     ///
     /// Attachment projects the retained grammar events into the exact target
     /// span. It never parses the target document bytes again and cannot produce
     /// a whole-source [`ParsedSource`].
-    #[cfg_attr(
-        not(test),
-        allow(
-            dead_code,
-            reason = "the private fragment entrypoint precedes the atomic parser/tooling switch"
-        )
+    #[expect(
+        clippy::needless_pass_by_value,
+        reason = "the public transaction contract takes ownership of the snapshot, document, span, and fragment"
     )]
-    pub(crate) fn attach_fragment<K: FragmentKind>(
+    pub fn attach_fragment<K: FragmentKind>(
         &mut self,
-        snapshot: &SourceSnapshotId,
-        document: &Arc<SourceDocument>,
-        span: &SourceSpan,
+        snapshot: SourceSnapshotId,
+        document: Arc<SourceDocument>,
+        span: SourceSpan,
         fragment: UnboundFragment<K>,
-    ) -> Result<AttachedFragment<K>, FragmentAttachmentFailure> {
+    ) -> Result<AttachedFragment<K>, ParseFailure> {
         self.attach_fragment_with_transaction_fault(
-            snapshot,
-            document,
-            span,
+            &snapshot,
+            &document,
+            &span,
             fragment,
             transaction::TransactionFault::None,
         )
@@ -383,16 +398,16 @@ impl SyntaxDatabase {
         span: &SourceSpan,
         fragment: UnboundFragment<K>,
         transaction_fault: transaction::TransactionFault,
-    ) -> Result<AttachedFragment<K>, FragmentAttachmentFailure> {
+    ) -> Result<AttachedFragment<K>, ParseFailure> {
         if snapshot.name() != document.display_name() || span.validate_for(document).is_err() {
-            return Err(FragmentAttachmentFailure::SourceMismatch);
+            return Err(ParseFailure::SourceMismatch);
         }
         let (text, tree, completion) = fragment.into_parts();
         if completion != ParseCompletion::Complete {
-            return Err(FragmentAttachmentFailure::FragmentNotComplete { completion });
+            return Err(AttachmentFailure::FragmentNotComplete { completion }.into());
         }
         if &document.text()[span.range().as_range()] != text.as_ref() {
-            return Err(FragmentAttachmentFailure::FragmentTextMismatch);
+            return Err(AttachmentFailure::FragmentTextMismatch.into());
         }
         let staged = self.transaction.stage_fragment::<K>(
             snapshot,
@@ -523,6 +538,39 @@ impl SyntaxDatabase {
     }
 
     #[cfg(test)]
+    fn parse_initial_with_event_validation_failure(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: &Arc<SourceDocument>,
+    ) -> Result<ParsedSource, ParseFailure> {
+        self.parse_initial_with_transaction_fault(
+            snapshot,
+            document,
+            ParseOptions::default(),
+            transaction::TransactionFault::MalformedEvents,
+        )
+    }
+
+    #[cfg(test)]
+    fn parse_initial_with_global_count(
+        &mut self,
+        snapshot: &SourceSnapshotId,
+        document: &Arc<SourceDocument>,
+        limit: SyntaxLimit,
+        already_charged: usize,
+    ) -> Result<ParsedSource, ParseFailure> {
+        self.parse_initial_with_transaction_fault(
+            snapshot,
+            document,
+            ParseOptions::default(),
+            transaction::TransactionFault::GlobalCount {
+                limit,
+                already_charged,
+            },
+        )
+    }
+
+    #[cfg(test)]
     fn reparse_with_attachment_failure(
         &mut self,
         previous: &ParsedSource,
@@ -537,13 +585,46 @@ impl SyntaxDatabase {
     }
 
     #[cfg(test)]
+    fn reparse_with_event_validation_failure(
+        &mut self,
+        previous: &ParsedSource,
+        edits: &[SourceEdit],
+    ) -> Result<ParsedSource, ParseFailure> {
+        self.reparse_with_transaction_fault(
+            previous,
+            edits,
+            ParseOptions::default(),
+            transaction::TransactionFault::MalformedEvents,
+        )
+    }
+
+    #[cfg(test)]
+    fn reparse_with_global_count(
+        &mut self,
+        previous: &ParsedSource,
+        edits: &[SourceEdit],
+        limit: SyntaxLimit,
+        already_charged: usize,
+    ) -> Result<ParsedSource, ParseFailure> {
+        self.reparse_with_transaction_fault(
+            previous,
+            edits,
+            ParseOptions::default(),
+            transaction::TransactionFault::GlobalCount {
+                limit,
+                already_charged,
+            },
+        )
+    }
+
+    #[cfg(test)]
     fn attach_fragment_with_attachment_failure<K: FragmentKind>(
         &mut self,
         snapshot: &SourceSnapshotId,
         document: &Arc<SourceDocument>,
         span: &SourceSpan,
         fragment: UnboundFragment<K>,
-    ) -> Result<AttachedFragment<K>, FragmentAttachmentFailure> {
+    ) -> Result<AttachedFragment<K>, ParseFailure> {
         self.attach_fragment_with_transaction_fault(
             snapshot,
             document,

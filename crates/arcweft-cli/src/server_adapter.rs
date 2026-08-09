@@ -1,3 +1,4 @@
+use arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext;
 use arcweft_core::engine::{Engine, FlowExit, FlowFiberStatus};
 use arcweft_core::plan::{RuntimePlan, RuntimeRouteBindingSource, RuntimeRouteSpec};
 use arcweft_core::step::{
@@ -29,6 +30,24 @@ pub(crate) struct NativeHttpServerReport {
 pub(crate) struct NativeHttpResponse {
     pub(crate) status: u16,
     pub(crate) body: String,
+    pub(crate) assertion_diagnostics: Vec<NativeHttpRuntimeDiagnostic>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub(crate) struct NativeHttpRuntimeDiagnostic {
+    pub(crate) code: &'static str,
+    pub(crate) message: String,
+    pub(crate) identity: &'static str,
+}
+
+impl NativeHttpResponse {
+    fn new(status: u16, body: impl Into<String>) -> Self {
+        Self {
+            status,
+            body: body.into(),
+            assertion_diagnostics: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
@@ -45,12 +64,15 @@ pub(crate) enum ServerAdapterError {
     MissingHostCall(String),
     #[error("invalid HTTP request")]
     InvalidRequest,
+    #[error("fresh runtime assertion identity projection failed: {0}")]
+    AssertionProjection(String),
 }
 
 pub(crate) fn serve_native_http(
     plan: &RuntimePlan,
     routes: &[RuntimeRouteSpec],
     config: &NativeHttpServerConfig,
+    execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<NativeHttpServerReport, ServerAdapterError> {
     let listener = TcpListener::bind(config.listen).map_err(|error| ServerAdapterError::Bind {
         addr: config.listen,
@@ -71,6 +93,7 @@ pub(crate) fn serve_native_http(
             config.max_ops,
             config.pure_config,
             &config.host_policy,
+            execution_diagnostics,
         )?;
         handled_requests += 1;
         if config.once {
@@ -90,13 +113,25 @@ fn serve_stream(
     max_ops: usize,
     pure_config: RuntimePureAcceleratorConfig,
     host_policy: &HostCallPolicy,
+    assertion_projector: &impl NativeHttpAssertionProjector,
 ) -> Result<(), ServerAdapterError> {
     let mut buffer = vec![0_u8; 64 * 1024];
     let read = stream
         .read(&mut buffer)
         .map_err(|error| ServerAdapterError::Read(error.to_string()))?;
     let request = String::from_utf8_lossy(&buffer[..read]);
-    let response = handle_http_request(plan, routes, &request, max_ops, pure_config, host_policy)?;
+    let response = handle_http_request(
+        plan,
+        routes,
+        &request,
+        max_ops,
+        pure_config,
+        host_policy,
+        assertion_projector,
+    )?;
+    for diagnostic in &response.assertion_diagnostics {
+        eprintln!("error[{}]: {}", diagnostic.code, diagnostic.message);
+    }
     stream
         .write_all(http_response_bytes(&response).as_bytes())
         .map_err(|error| ServerAdapterError::Write(error.to_string()))
@@ -109,6 +144,7 @@ pub(crate) fn handle_http_request(
     max_ops: usize,
     pure_config: RuntimePureAcceleratorConfig,
     host_policy: &HostCallPolicy,
+    assertion_projector: &impl NativeHttpAssertionProjector,
 ) -> Result<NativeHttpResponse, ServerAdapterError> {
     require_host_call(host_policy, "http.respond")?;
     let parsed = parse_http_request(request)?;
@@ -116,19 +152,17 @@ pub(crate) fn handle_http_request(
         .iter()
         .find_map(|route| route_match(route, &parsed).map(|params| (route, params)))
     else {
-        return Ok(NativeHttpResponse {
-            status: 404,
-            body: "not found".to_owned(),
-        });
+        return Ok(NativeHttpResponse::new(404, "not found"));
     };
-    Ok(run_route_flow(
+    run_route_flow(
         plan,
         route,
         &parsed,
         &params,
         max_ops,
         pure_config,
-    ))
+        assertion_projector,
+    )
 }
 
 fn require_host_call(host_policy: &HostCallPolicy, id: &str) -> Result<(), ServerAdapterError> {
@@ -146,15 +180,16 @@ fn run_route_flow(
     params: &[(String, String)],
     max_ops: usize,
     pure_config: RuntimePureAcceleratorConfig,
-) -> NativeHttpResponse {
+    assertion_projector: &impl NativeHttpAssertionProjector,
+) -> Result<NativeHttpResponse, ServerAdapterError> {
     let mut pure = RuntimePureAccelerator::with_config(pure_config, &plan.pure_helpers);
     let mut executor = match Engine::for_flow(plan.clone(), &route.target) {
         Ok(executor) => executor,
         Err(error) => {
-            return NativeHttpResponse {
-                status: 500,
-                body: format!("failed to dispatch server route: {error}"),
-            };
+            return Ok(NativeHttpResponse::new(
+                500,
+                format!("failed to dispatch server route: {error}"),
+            ));
         }
     };
     let result = executor.step_with_pure_backend(
@@ -168,34 +203,65 @@ fn run_route_flow(
         },
         &mut pure,
     );
-    if let Some(diagnostic) = result.output.diagnostics.first() {
-        return NativeHttpResponse {
-            status: 500,
-            body: diagnostic.message.clone(),
-        };
-    }
-    match &executor.fiber().status {
-        FlowFiberStatus::Done(FlowExit::Return(value)) => NativeHttpResponse {
-            status: 200,
-            body: value.clone(),
-        },
-        FlowFiberStatus::Done(FlowExit::Done) => NativeHttpResponse {
-            status: 204,
-            body: String::new(),
-        },
-        FlowFiberStatus::Failed(message) => NativeHttpResponse {
-            status: 500,
-            body: message.clone(),
-        },
-        FlowFiberStatus::Running
-        | FlowFiberStatus::Dialogue(_)
-        | FlowFiberStatus::Waiting(_)
-        | FlowFiberStatus::WaitingMany(_)
-        | FlowFiberStatus::HostCall(_)
-        | FlowFiberStatus::Choice(_) => NativeHttpResponse {
-            status: 202,
-            body: "route did not complete in this server step".to_owned(),
-        },
+    let assertion_diagnostics = result
+        .output
+        .effects
+        .line
+        .iter()
+        .filter_map(|effect| match effect {
+            arcweft_core::effect::LineEffectRequest::Assert(assertion) => Some(
+                arcweft_core::effect::RuntimeAssertionFailure::new(assertion.clone()),
+            ),
+            _ => None,
+        })
+        .map(|failure| assertion_projector.project(failure))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut response = if let Some(diagnostic) = result.output.diagnostics.first() {
+        NativeHttpResponse::new(500, diagnostic.message.clone())
+    } else {
+        match &executor.fiber().status {
+            FlowFiberStatus::Done(FlowExit::Return(value)) => {
+                NativeHttpResponse::new(200, value.clone())
+            }
+            FlowFiberStatus::Done(FlowExit::Done) => NativeHttpResponse::new(204, String::new()),
+            FlowFiberStatus::Failed(message) => NativeHttpResponse::new(500, message.clone()),
+            FlowFiberStatus::Running
+            | FlowFiberStatus::Dialogue(_)
+            | FlowFiberStatus::Waiting(_)
+            | FlowFiberStatus::NeedWaiting(_)
+            | FlowFiberStatus::WaitingMany(_)
+            | FlowFiberStatus::HostCall(_)
+            | FlowFiberStatus::Choice(_) => {
+                NativeHttpResponse::new(202, "route did not complete in this server step")
+            }
+        }
+    };
+    response.assertion_diagnostics = assertion_diagnostics;
+    Ok(response)
+}
+
+pub(crate) trait NativeHttpAssertionProjector {
+    fn project(
+        &self,
+        failure: arcweft_core::effect::RuntimeAssertionFailure,
+    ) -> Result<NativeHttpRuntimeDiagnostic, ServerAdapterError>;
+}
+
+impl NativeHttpAssertionProjector for ExecutionDiagnosticContext {
+    fn project(
+        &self,
+        failure: arcweft_core::effect::RuntimeAssertionFailure,
+    ) -> Result<NativeHttpRuntimeDiagnostic, ServerAdapterError> {
+        let fault = self
+            .project_assertion_failure(failure)
+            .map_err(|error| ServerAdapterError::AssertionProjection(error.to_string()))?;
+        let diagnostic =
+            arcweft_tooling::runtime_diagnostic::project_runtime_assertion_fault(&fault);
+        Ok(NativeHttpRuntimeDiagnostic {
+            code: diagnostic.code(),
+            message: diagnostic.message().to_owned(),
+            identity: "session",
+        })
     }
 }
 
@@ -333,7 +399,25 @@ fn http_response_bytes(response: &NativeHttpResponse) -> String {
 mod tests {
     use super::*;
     use arcweft_adapter_context::standard;
+    use arcweft_core::effect::{
+        LineEffectRequest, RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
+    };
     use arcweft_core::plan::{FlowOp, FlowRuntimeId, RuntimeFlow};
+
+    struct SessionTestAssertionProjector;
+
+    impl NativeHttpAssertionProjector for SessionTestAssertionProjector {
+        fn project(
+            &self,
+            failure: arcweft_core::effect::RuntimeAssertionFailure,
+        ) -> Result<NativeHttpRuntimeDiagnostic, ServerAdapterError> {
+            Ok(NativeHttpRuntimeDiagnostic {
+                code: "runtime.assertion_failed",
+                message: failure.assertion().message().to_owned(),
+                identity: "session",
+            })
+        }
+    }
 
     #[test]
     fn native_http_adapter_routes_request_to_flow() {
@@ -353,6 +437,7 @@ mod tests {
             8,
             RuntimePureAcceleratorConfig::default(),
             &native_http_host_calls(),
+            &SessionTestAssertionProjector,
         )
         .expect("request is handled");
 
@@ -386,11 +471,60 @@ mod tests {
             8,
             RuntimePureAcceleratorConfig::default(),
             &native_http_host_calls(),
+            &SessionTestAssertionProjector,
         )
         .expect("request is handled");
 
         assert_eq!(response.status, 200);
         assert_eq!(response.body, "alice");
+    }
+
+    #[test]
+    fn native_http_adapter_reports_runtime_assertion_without_changing_flow_status() {
+        let plan = plan_with_flow(
+            "flow.assertion",
+            vec![
+                FlowOp::Effect(LineEffectRequest::Assert(RuntimeAssertion::new(
+                    RuntimeAssertionGuardId::try_from_bytes([0x41; 16])
+                        .expect("fixture assertion guard"),
+                    "ready".to_owned(),
+                    "runtime condition failed".to_owned(),
+                    RuntimeAssertionProfile::Always,
+                ))),
+                FlowOp::Return("ok".to_owned()),
+            ],
+        );
+        let routes = vec![RuntimeRouteSpec {
+            method: "GET".to_owned(),
+            path: "/assertion".to_owned(),
+            target: FlowRuntimeId::from_runtime_target_value("flow.assertion")
+                .expect("flow runtime id"),
+            bindings: Vec::new(),
+        }];
+
+        let response = handle_http_request(
+            &plan,
+            &routes,
+            "GET /assertion HTTP/1.1\r\nhost: localhost\r\n\r\n",
+            8,
+            RuntimePureAcceleratorConfig::default(),
+            &native_http_host_calls(),
+            &SessionTestAssertionProjector,
+        )
+        .expect("request is handled");
+
+        assert_eq!(response.status, 200);
+        assert_eq!(response.body, "ok");
+        assert_eq!(response.assertion_diagnostics.len(), 1);
+        assert_eq!(
+            response.assertion_diagnostics[0].code,
+            "runtime.assertion_failed"
+        );
+        assert_eq!(
+            response.assertion_diagnostics[0].message,
+            "runtime condition failed"
+        );
+        assert_eq!(response.assertion_diagnostics[0].identity, "session");
     }
 
     #[test]
@@ -411,6 +545,7 @@ mod tests {
             8,
             RuntimePureAcceleratorConfig::default(),
             &HostCallPolicy::default(),
+            &SessionTestAssertionProjector,
         )
         .expect_err("missing http.respond manifest is rejected");
 

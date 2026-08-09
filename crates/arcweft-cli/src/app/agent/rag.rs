@@ -1,15 +1,14 @@
 use super::{
-    AgentActionSignature, AgentPublicId, AgentRagCommand, AgentRagContextReadOptions,
-    AgentRagExplainOptions, AgentRagIndexOptions, AgentRagQueryOptions, AgentScriptTraceReport,
-    AgentTraceRecord, BTreeMap, BTreeSet, ChunkId, ChunkSourceKind, DebugChunk, DebugDiagnostic,
-    DebugGraphEdge, DebugGraphSymbol, DebugSession, DebugSessionStatus, DebugSourceAnchor,
-    DebugSourceFile, DebugStore, EmbeddingModelDescriptor, EntitySymbol, ExitCode, FusionConfig,
-    MAX_LOCAL_EMBEDDING_DIMENSIONS, Path, PathBuf, PrivacyClass, ProgramHash,
-    ProjectCallableSymbol, ProjectSemanticIndex, QualifiedName, RagContextItem, RagContextPack,
-    RagQuery, SearchChannel, SearchHit, SemaPublicId, SessionId, SourceAnchor, StableHash,
-    agent_trace_kind_name, fs, local_hash_query_embedding, print_json,
-    project_semantic_index_from_hir, read_and_validate_agent_trace_records, reciprocal_rank_fusion,
-    validate_agent_trace,
+    AgentPublicId, AgentRagCommand, AgentRagContextReadOptions, AgentRagExplainOptions,
+    AgentRagIndexOptions, AgentRagQueryOptions, AgentScriptTraceReport, AgentTraceRecord, BTreeMap,
+    BTreeSet, ChunkId, ChunkSourceKind, DebugChunk, DebugDiagnostic, DebugGraphEdge,
+    DebugGraphSymbol, DebugSession, DebugSessionStatus, DebugSourceAnchor, DebugSourceFile,
+    DebugStore, EmbeddingModelDescriptor, EntitySymbol, ExitCode, FusionConfig,
+    MAX_LOCAL_EMBEDDING_DIMENSIONS, Path, PathBuf, PrivacyClass, ProjectCallableSymbol,
+    ProjectSemanticIndex, RagContextItem, RagContextPack, RagQuery, SearchChannel, SearchHit,
+    SemaPublicId, SessionId, SourceAnchor, StableHash, agent_trace_kind_name, fs,
+    local_hash_query_embedding, print_json, read_and_validate_agent_trace_records,
+    reciprocal_rank_fusion, validate_agent_trace,
 };
 
 pub(in crate::app::agent) mod source_index;

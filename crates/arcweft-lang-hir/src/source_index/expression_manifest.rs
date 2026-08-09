@@ -8,12 +8,14 @@ pub(super) mod projection;
 mod requirements;
 
 use self::projection::{expression_children_match, expression_payload_matches};
-use self::requirements::expression_requirements;
+use self::requirements::{candidate_dialogue_requirements, expression_requirements};
 
 use std::collections::{BTreeMap, BTreeSet};
 
 use arcweft_lang_syntax::attachment::node::MissingExpressionKind;
-use arcweft_lang_syntax::attachment::{AstNode, AttachedExpressionNode};
+use arcweft_lang_syntax::attachment::{
+    AstNode, AttachedCandidateGraph, AttachedExpressionNode, RequiredStatementExpressionNode,
+};
 use arcweft_lang_syntax::expressions::{
     ExpressionComponentRole, ExpressionLiteralPart, ExpressionProjection,
     ExpressionRecordFieldPart, SyntaxCallArgumentPart, SyntaxCallTypeApplicationComponentRole,
@@ -29,13 +31,15 @@ use super::{
     HirCallArgumentSourcePart, HirCallTypeApplicationSourceRole, HirCallTypeArgumentSourcePart,
     HirClosureParameterSourcePart, HirDialogueNodeSourcePart, HirExprSourceRole,
     HirMatchArmSourcePart, HirRecordFieldSourcePart, HirRichTextArgumentSourcePart,
-    HirRichTextTagSourcePart, HirSourceCommitInvariantError, HirSourceIndex, HirSourceQuery,
-    HirSourceRequirement, HirSourceSite, StagedHirSourceIndex, validate_component_source,
+    HirRichTextTagSourcePart, HirSourceCommitInvariantError, HirSourceIndex, HirSourcePresence,
+    HirSourceQuery, HirSourceRequirement, HirSourceSite, StagedHirSourceIndex,
+    validate_component_source,
 };
 use crate::arena::ArenaSnapshot;
+use crate::dialogue_application::HirDialogueContentApplication;
 use crate::expr::{
-    HirCallArgument, HirCallArgumentOrdinal, HirCallTypeArgumentOrdinal, HirExpr, HirExprKind,
-    HirRecordField, HirRecordFieldIssue,
+    HirCallArgumentOrdinal, HirCallTypeArgumentOrdinal, HirExpr, HirExprKind, HirGenericExprIssue,
+    HirPoisonState, HirRecoveryIssue, HirRecoveryOperandSlot,
 };
 use crate::identity::{ExprId, ItemId, SyntheticOwner, SyntheticRole, TypeId};
 use crate::item::HirItem;
@@ -45,6 +49,10 @@ use crate::type_ref::HirType;
 impl StagedHirSourceIndex {
     /// Binds one zero-width parser-owned missing expression as a source-backed
     /// expression owner. Its whole insertion remains exclusively on the slot.
+    #[allow(
+        clippy::result_large_err,
+        reason = "missing-expression staging preserves complete typed owner and source evidence"
+    )]
     pub(crate) fn stage_attached_missing_expression(
         &mut self,
         parsed: &ParsedSource,
@@ -74,6 +82,10 @@ impl StagedHirSourceIndex {
 
     /// Projects one final leaf-expression manifest from the exact attached
     /// grammar transaction. `Whole` remains owned exclusively by slot metadata.
+    #[allow(
+        clippy::result_large_err,
+        reason = "expression staging preserves complete typed owner and source evidence"
+    )]
     pub(crate) fn stage_attached_expression(
         &mut self,
         parsed: &ParsedSource,
@@ -139,11 +151,113 @@ impl StagedHirSourceIndex {
         }
         Ok(())
     }
+
+    /// Freezes the source-role manifest for the Dialogue interpretation of an
+    /// ambiguous postfix expression.
+    ///
+    /// The final E33 candidate is keyed by its exact synthetic `ExprId`, while
+    /// every span is projected from the source-backed outer E34 owner. No
+    /// candidate syntax identity or reconstructed source reader is created.
+    #[allow(
+        clippy::result_large_err,
+        reason = "candidate staging preserves complete typed owner and source evidence"
+    )]
+    pub(crate) fn stage_candidate_dialogue_expression(
+        &mut self,
+        parsed: &ParsedSource,
+        outer: ExprId,
+        owner: ExprId,
+        attached: &AttachedExpressionNode,
+        graph: AttachedCandidateGraph<'_>,
+        application: &HirDialogueContentApplication,
+    ) -> Result<(), HirSourceCommitInvariantError> {
+        self.ensure_open()?;
+        if attached.snapshot_id() != parsed.snapshot_id() {
+            return self.reject(HirSourceCommitInvariantError::WrongSyntaxSnapshot {
+                expected: parsed.snapshot_id().clone(),
+                actual: attached.snapshot_id().clone(),
+            });
+        }
+        let Some(content) = graph.dialogue_content() else {
+            return self.reject(
+                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                    owner: SyntheticOwner::Expr(owner),
+                },
+            );
+        };
+        if outer == owner
+            || application.content().id().owner() != owner
+            || application.plan().is_some()
+            || !matches!(
+                attached.projection(),
+                ExpressionProjection::PostfixBracket(
+                    arcweft_lang_syntax::expressions::SyntaxPostfixBracketProjection::Ambiguous { .. }
+                )
+            )
+        {
+            return self.reject(
+                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                    owner: SyntheticOwner::Expr(owner),
+                },
+            );
+        }
+
+        let requirements = candidate_dialogue_requirements(application, content);
+        let components = match candidate_dialogue_component_sites(
+            &self.source,
+            |query| match self.component_presence(query) {
+                Some(HirSourcePresence::Present(site)) => Some(site.clone()),
+                Some(HirSourcePresence::AbsentOptional) | None => None,
+            },
+            parsed,
+            owner,
+            attached,
+            graph,
+            application,
+        ) {
+            Ok(components) => components,
+            Err(error) => return self.reject(error),
+        };
+        let present = components.keys().copied().collect::<BTreeSet<_>>();
+        if let Some(role) = present
+            .iter()
+            .find(|role| !requirements.contains_key(role))
+            .copied()
+        {
+            return self.reject(HirSourceCommitInvariantError::UndeclaredComponent {
+                query: HirSourceQuery::Expr { owner, role },
+            });
+        }
+        if let Some(role) = requirements
+            .iter()
+            .find(|(role, requirement)| {
+                **requirement == HirSourceRequirement::Required && !present.contains(role)
+            })
+            .map(|(role, _)| *role)
+        {
+            return self.reject(HirSourceCommitInvariantError::MissingRequiredComponent {
+                query: HirSourceQuery::Expr { owner, role },
+            });
+        }
+
+        for (role, requirement) in requirements {
+            self.require(&HirSourceQuery::Expr { owner, role }, requirement)?;
+        }
+        for (role, site) in components {
+            self.stage(&HirSourceQuery::Expr { owner, role }, site)?;
+        }
+        Ok(())
+    }
 }
 
 impl HirSourceIndex {
     /// Re-derives every source-backed expression manifest from the exact
     /// accepted syntax snapshot and rejects source rows on synthetic owners.
+    #[allow(
+        clippy::too_many_arguments,
+        clippy::too_many_lines,
+        reason = "one exhaustive projection validates every source-backed and synthetic expression owner across the complete arena context"
+    )]
     pub(crate) fn validates_attached_expressions(
         &self,
         parsed: &ParsedSource,
@@ -172,6 +286,7 @@ impl HirSourceIndex {
             return false;
         };
         let entries = entries.collect::<Vec<_>>();
+        let expression_rows = ExpressionManifestRows::from_index(self);
         let Some(retained_style_expressions) =
             super::item_projection::retained_style_expression_owners(items, slots)
         else {
@@ -179,6 +294,7 @@ impl HirSourceIndex {
         };
         let Some(candidate_expressions) = candidate_projection::validate_candidate_expressions(
             self,
+            &expression_rows,
             parsed,
             slots,
             expressions,
@@ -207,7 +323,7 @@ impl HirSourceIndex {
                                 == &HirSourceSite::Span(attached.whole_source_span())
                             && expression_payload_matches(payload.kind(), &attached)
                             && expression_manifest_matches(
-                                self,
+                                &expression_rows,
                                 parsed,
                                 owner,
                                 payload.kind(),
@@ -240,7 +356,7 @@ impl HirSourceIndex {
                                 && metadata.source_site() == &expected_site
                                 && matches!(expected_site, HirSourceSite::Insertion(_))
                                 && missing_expression_payload_matches(payload)
-                                && expression_owner_has_no_components(self, owner)
+                                && expression_rows.owner_has_no_rows(owner)
                         }),
                 },
                 HirOrigin::Synthetic(key) => {
@@ -249,8 +365,12 @@ impl HirSourceIndex {
                         SyntheticRole::PostfixIndexCandidateExpression
                             | SyntheticRole::DialogueContentCandidateExpression
                     );
+                    let candidate_dialogue_source = key.role()
+                        == SyntheticRole::DialogueContentCandidateExpression
+                        && key.ordinal() == 0
+                        && matches!(payload.kind(), HirExprKind::DialogueContentApplication(_));
                     (!candidate_role || candidate_expressions.contains(&owner))
-                        && !source_index_has_expression_owner(self, owner)
+                        && (expression_rows.has_owner(owner) == candidate_dialogue_source)
                 }
             }
         }) {
@@ -260,6 +380,88 @@ impl HirSourceIndex {
         entries.iter().all(|(child, _)| {
             expr_recovery_operand_is_referenced(parsed, slots, expressions, *child)
         })
+    }
+}
+
+/// Validation-local grouping of the immutable expression source rows.
+///
+/// The committed [`HirSourceIndex`] remains the only source authority. This
+/// borrowed projection prevents the exhaustive validator from rescanning every
+/// source row once per expression owner.
+pub(super) struct ExpressionManifestRows<'index> {
+    source: &'index SourceDocumentIdentity,
+    requirements: BTreeMap<ExprId, BTreeMap<HirExprSourceRole, HirSourceRequirement>>,
+    components: BTreeMap<ExprId, BTreeMap<HirExprSourceRole, &'index HirSourceSite>>,
+    source_owners: BTreeSet<SyntheticOwner>,
+}
+
+impl<'index> ExpressionManifestRows<'index> {
+    fn from_index(index: &'index HirSourceIndex) -> Self {
+        let mut rows = Self {
+            source: &index.source,
+            requirements: BTreeMap::new(),
+            components: BTreeMap::new(),
+            source_owners: index.syntax_owners.keys().copied().collect(),
+        };
+        for (query, requirement) in index.requirements.iter() {
+            rows.source_owners.insert(query.owner());
+            if let HirSourceQuery::Expr { owner, role } = query {
+                rows.requirements
+                    .entry(*owner)
+                    .or_default()
+                    .insert(*role, *requirement);
+            }
+        }
+        for (query, site) in index.components.iter() {
+            rows.source_owners.insert(query.owner());
+            if let HirSourceQuery::Expr { owner, role } = query {
+                rows.components
+                    .entry(*owner)
+                    .or_default()
+                    .insert(*role, site);
+            }
+        }
+        rows
+    }
+
+    fn owner_has_no_rows(&self, owner: ExprId) -> bool {
+        !self.requirements.contains_key(&owner) && !self.components.contains_key(&owner)
+    }
+
+    pub(super) fn has_typed_owner(&self, owner: SyntheticOwner) -> bool {
+        self.source_owners.contains(&owner)
+    }
+
+    fn has_owner(&self, owner: ExprId) -> bool {
+        self.has_typed_owner(SyntheticOwner::Expr(owner))
+    }
+
+    fn requirements_match(
+        &self,
+        owner: ExprId,
+        expected: &BTreeMap<HirExprSourceRole, HirSourceRequirement>,
+    ) -> bool {
+        self.requirements
+            .get(&owner)
+            .map_or_else(|| expected.is_empty(), |actual| actual == expected)
+    }
+
+    fn components_match(
+        &self,
+        owner: ExprId,
+        expected: &BTreeMap<HirExprSourceRole, HirSourceSite>,
+    ) -> bool {
+        self.components.get(&owner).map_or_else(
+            || expected.is_empty(),
+            |actual| {
+                actual.len() == expected.len()
+                    && expected.iter().all(|(role, expected_site)| {
+                        actual
+                            .get(role)
+                            .is_some_and(|actual_site| *actual_site == expected_site)
+                    })
+            },
+        )
     }
 }
 
@@ -273,15 +475,6 @@ fn missing_expression_payload_matches(payload: &HirExpr) -> bool {
             })
         ) if error.issue() == crate::expr::HirGenericExprIssue::TransactionalChildFailure
     )
-}
-
-fn expression_owner_has_no_components(index: &HirSourceIndex, owner: ExprId) -> bool {
-    let owner = SyntheticOwner::Expr(owner);
-    !index
-        .requirements
-        .keys()
-        .any(|query| query.owner() == owner)
-        && !index.components.keys().any(|query| query.owner() == owner)
 }
 
 fn expr_recovery_operand_is_referenced(
@@ -318,24 +511,58 @@ fn expr_recovery_operand_is_referenced(
     let Ok(child_payload) = expressions.resolve_prepared(slots, child) else {
         return false;
     };
-    let retained_by_parent = composite_child_at(parent_payload.kind(), key.ordinal())
-        == Some(child)
-        || record_missing_field_at(parent_payload.kind(), key.ordinal());
+    let parent_attached = match parent_metadata.origin() {
+        HirOrigin::Source(source) => parsed.attached_expression(source.syntax()).ok(),
+        HirOrigin::Synthetic(_) => None,
+    };
+    let choice_slot = match (parent_payload.kind(), parent_attached.as_ref()) {
+        (HirExprKind::Choice(_), Some(attached)) => attached.choice().and_then(|choice| {
+            let ordinal = usize::try_from(key.ordinal()).ok()?;
+            let syntax_slots = choice.required_expression_slots();
+            syntax_slots.get(ordinal).copied()
+        }),
+        _ => None,
+    };
+    let retained_by_parent = match parent_payload.kind().recovery_operand_slot(key.ordinal()) {
+        Some(HirRecoveryOperandSlot::Retained(expected)) => expected == child,
+        Some(HirRecoveryOperandSlot::SyntheticOnly) => true,
+        None => false,
+    };
     let expected_scope = match (parent_payload.kind(), key.ordinal()) {
         (HirExprKind::IfLet(expression), 1 | 2) => expression.scope(),
         _ => parent_payload.scope(),
     };
-    if !parent_payload.is_poisoned()
-        || expected_scope != child_payload.scope()
-        || !retained_by_parent
-    {
+    let scope_matches = matches!(parent_payload.kind(), HirExprKind::Choice(_))
+        || expected_scope == child_payload.scope();
+    if !parent_payload.is_poisoned() || !scope_matches || !retained_by_parent {
         return false;
     }
 
-    match parent_metadata.origin() {
-        HirOrigin::Synthetic(_) => true,
-        HirOrigin::Source(source) => {
-            let Ok(attached) = parsed.attached_expression(source.syntax()) else {
+    match (parent_metadata.origin(), choice_slot) {
+        (HirOrigin::Source(_), Some(RequiredStatementExpressionNode::Missing(missing))) => {
+            let Ok(expected_site) =
+                HirSourceSite::from_attached_span(parsed.document(), &missing.source_span())
+            else {
+                return false;
+            };
+            child_metadata.source_site() == &expected_site
+                && matches!(
+                    (child_payload.kind(), child_payload.state()),
+                    (
+                        HirExprKind::Error(error),
+                        HirPoisonState::Poisoned(HirRecoveryIssue::MissingOperand {
+                            role: HirExprSourceRole::Recovery,
+                        })
+                    ) if error.issue() == HirGenericExprIssue::TransactionalChildFailure
+                )
+        }
+        (HirOrigin::Source(_), Some(RequiredStatementExpressionNode::Expression(_))) => false,
+        (HirOrigin::Source(_), None) if matches!(parent_payload.kind(), HirExprKind::Choice(_)) => {
+            false
+        }
+        (HirOrigin::Synthetic(_), _) => true,
+        (HirOrigin::Source(_), None) => {
+            let Some(attached) = parent_attached else {
                 return false;
             };
             attached
@@ -347,75 +574,8 @@ fn expr_recovery_operand_is_referenced(
     }
 }
 
-fn record_missing_field_at(payload: &HirExprKind, ordinal: u32) -> bool {
-    let ordinal = usize::try_from(ordinal).ok();
-    let field = match payload {
-        HirExprKind::Record(expression) => {
-            ordinal.and_then(|ordinal| expression.fields().get(ordinal))
-        }
-        HirExprKind::RecordLiteral(expression) => {
-            ordinal.and_then(|ordinal| expression.fields().get(ordinal))
-        }
-        _ => None,
-    };
-    matches!(
-        field,
-        Some(HirRecordField::Invalid {
-            issue: HirRecordFieldIssue::MissingValue
-        })
-    )
-}
-
-fn composite_child_at(payload: &HirExprKind, ordinal: u32) -> Option<ExprId> {
-    let ordinal = usize::try_from(ordinal).ok()?;
-    match payload {
-        HirExprKind::Tuple(expression) => expression.elements().get(ordinal).copied(),
-        HirExprKind::BracketSequence(expression) => expression.elements().get(ordinal).copied(),
-        HirExprKind::ArrayRepeat(expression) if ordinal == 0 => Some(expression.value()),
-        HirExprKind::ArrayRepeat(expression) if ordinal == 1 => Some(expression.length()),
-        HirExprKind::Call(expression) if ordinal == 0 => expression.callee().value_expression(),
-        HirExprKind::Call(expression) => expression
-            .arguments()
-            .get(ordinal.checked_sub(1)?)
-            .map(HirCallArgument::value),
-        HirExprKind::Select(expression) if ordinal == 0 => Some(expression.target()),
-        HirExprKind::Index(expression) if ordinal == 0 => Some(expression.target()),
-        HirExprKind::Index(expression) if ordinal == 1 => Some(expression.index()),
-        HirExprKind::Pipe(expression) if ordinal == 0 => Some(expression.left()),
-        HirExprKind::Pipe(expression) if ordinal == 1 => Some(expression.right()),
-        HirExprKind::Try(expression) if ordinal == 0 => Some(expression.operand()),
-        HirExprKind::Await(expression) if ordinal == 0 => Some(expression.operand()),
-        HirExprKind::Borrow(expression) if ordinal == 0 => Some(expression.operand()),
-        HirExprKind::Dereference(expression) if ordinal == 0 => Some(expression.operand()),
-        HirExprKind::Unary(expression) if ordinal == 0 => Some(expression.operand()),
-        HirExprKind::Range(expression) if ordinal == 0 => expression.start(),
-        HirExprKind::Range(expression) if ordinal == 1 => expression.end(),
-        HirExprKind::Binary(expression) if ordinal == 0 => Some(expression.left()),
-        HirExprKind::Binary(expression) if ordinal == 1 => Some(expression.right()),
-        HirExprKind::If(expression) if ordinal == 0 => Some(expression.condition()),
-        HirExprKind::If(expression) if ordinal == 1 => Some(expression.then_branch()),
-        HirExprKind::If(expression) if ordinal == 2 => Some(expression.else_branch()),
-        HirExprKind::IfLet(expression) if ordinal == 0 => Some(expression.scrutinee()),
-        HirExprKind::IfLet(expression) if ordinal == 1 => expression.guard(),
-        HirExprKind::IfLet(expression) if ordinal == 2 => Some(expression.then_branch()),
-        HirExprKind::IfLet(expression) if ordinal == 3 => Some(expression.else_branch()),
-        HirExprKind::Closure(expression) if ordinal == 0 => Some(expression.body()),
-        _ => None,
-    }
-}
-
-fn source_index_has_expression_owner(index: &HirSourceIndex, owner: ExprId) -> bool {
-    let owner = SyntheticOwner::Expr(owner);
-    index.syntax_owners.contains_key(&owner)
-        || index
-            .requirements
-            .keys()
-            .any(|query| query.owner() == owner)
-        || index.components.keys().any(|query| query.owner() == owner)
-}
-
 fn expression_manifest_matches(
-    index: &HirSourceIndex,
+    rows: &ExpressionManifestRows<'_>,
     parsed: &ParsedSource,
     owner: ExprId,
     payload: &HirExprKind,
@@ -425,23 +585,12 @@ fn expression_manifest_matches(
     else {
         return false;
     };
-    let actual_requirements = index
-        .requirements
-        .iter()
-        .filter_map(|(query, requirement)| match *query {
-            HirSourceQuery::Expr {
-                owner: candidate,
-                role,
-            } if candidate == owner => Some((role, *requirement)),
-            _ => None,
-        })
-        .collect::<BTreeMap<_, _>>();
-    if actual_requirements != expected_requirements {
+    if !rows.requirements_match(owner, &expected_requirements) {
         return false;
     }
 
     let Ok(expected_components) =
-        expression_component_sites(&index.source, parsed, owner, payload, attached)
+        expression_component_sites(rows.source, parsed, owner, payload, attached)
     else {
         return false;
     };
@@ -451,23 +600,17 @@ fn expression_manifest_matches(
     {
         return false;
     }
-    let actual_components = index
-        .components
-        .iter()
-        .filter_map(|(query, site)| match *query {
-            HirSourceQuery::Expr {
-                owner: candidate,
-                role,
-            } if candidate == owner => Some((role, site.clone())),
-            _ => None,
-        })
-        .collect::<BTreeMap<_, _>>();
-    actual_components == expected_components
+    rows.components_match(owner, &expected_components)
         && expected_requirements.iter().all(|(role, requirement)| {
             *requirement != HirSourceRequirement::Required || expected_components.contains_key(role)
         })
 }
 
+#[allow(
+    clippy::result_large_err,
+    clippy::too_many_lines,
+    reason = "one expression-family projection owns the complete typed component-site and recovery matrix"
+)]
 fn expression_component_sites(
     source: &SourceDocumentIdentity,
     parsed: &ParsedSource,
@@ -628,6 +771,180 @@ fn expression_component_sites(
     Ok(sites)
 }
 
+#[allow(
+    clippy::result_large_err,
+    reason = "candidate component projection preserves complete typed source evidence"
+)]
+fn candidate_dialogue_component_sites(
+    source: &SourceDocumentIdentity,
+    mut component_site: impl FnMut(&HirSourceQuery) -> Option<HirSourceSite>,
+    parsed: &ParsedSource,
+    owner: ExprId,
+    attached: &AttachedExpressionNode,
+    graph: AttachedCandidateGraph<'_>,
+    application: &HirDialogueContentApplication,
+) -> Result<BTreeMap<HirExprSourceRole, HirSourceSite>, HirSourceCommitInvariantError> {
+    let mut sites = BTreeMap::new();
+    for syntax_role in [
+        ExpressionComponentRole::Target,
+        ExpressionComponentRole::OpenBracket,
+        ExpressionComponentRole::CloseBracket,
+        ExpressionComponentRole::Content,
+    ] {
+        let span = attached.component(syntax_role).ok_or(
+            HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                owner: SyntheticOwner::Expr(owner),
+            },
+        )?;
+        validate_component_source(source, span.source())?;
+        let role = expression_component_role(attached.projection(), syntax_role).ok_or(
+            HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                owner: SyntheticOwner::Expr(owner),
+            },
+        )?;
+        let site = HirSourceSite::from_attached_span(parsed.document(), &span)?;
+        insert_expression_site(&mut sites, owner, role, site)?;
+    }
+    let content = sites.get(&HirExprSourceRole::Content).cloned().ok_or(
+        HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+            owner: SyntheticOwner::Expr(owner),
+        },
+    )?;
+    insert_expression_site(&mut sites, owner, HirExprSourceRole::ContentBody, content)?;
+
+    let components = graph.dialogue_components().ok_or(
+        HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+            owner: SyntheticOwner::Expr(owner),
+        },
+    )?;
+    for component in components {
+        validate_component_source(source, component.source_span().source())?;
+        let role = expression_component_role(attached.projection(), component.role()).ok_or(
+            HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                owner: SyntheticOwner::Expr(owner),
+            },
+        )?;
+        if !matches!(
+            role,
+            HirExprSourceRole::DialogueNode { .. }
+                | HirExprSourceRole::RichTextTag { .. }
+                | HirExprSourceRole::RichTextArgument { .. }
+        ) {
+            return Err(
+                HirSourceCommitInvariantError::AttachedPayloadFamilyMismatch {
+                    owner: SyntheticOwner::Expr(owner),
+                },
+            );
+        }
+        let site = HirSourceSite::from_attached_span(parsed.document(), component.source_span())?;
+        insert_expression_site(&mut sites, owner, role, site)?;
+    }
+
+    for coordinate in application.coordinates() {
+        for part in [
+            HirCallArgumentSourcePart::Whole,
+            HirCallArgumentSourcePart::Name,
+            HirCallArgumentSourcePart::Value,
+        ] {
+            let source_query = HirSourceQuery::Expr {
+                owner: application.target(),
+                role: HirExprSourceRole::CallArgument {
+                    argument: coordinate.argument(),
+                    part,
+                },
+            };
+            let Some(site) = component_site(&source_query) else {
+                return Err(HirSourceCommitInvariantError::MissingRequiredComponent {
+                    query: source_query,
+                });
+            };
+            insert_expression_site(
+                &mut sites,
+                owner,
+                HirExprSourceRole::ConfigurationArgument {
+                    argument: coordinate.argument(),
+                    part,
+                },
+                site,
+            )?;
+        }
+    }
+    Ok(sites)
+}
+
+fn candidate_dialogue_manifest_matches(
+    index: &HirSourceIndex,
+    parsed: &ParsedSource,
+    owner: ExprId,
+    attached: &AttachedExpressionNode,
+    graph: AttachedCandidateGraph<'_>,
+    application: &HirDialogueContentApplication,
+) -> bool {
+    if index
+        .syntax_owners
+        .contains_key(&SyntheticOwner::Expr(owner))
+    {
+        return false;
+    }
+    let Some(content) = graph.dialogue_content() else {
+        return false;
+    };
+    let expected_requirements = candidate_dialogue_requirements(application, content);
+    let actual_requirements = index
+        .requirements
+        .iter()
+        .filter_map(|(query, requirement)| match *query {
+            HirSourceQuery::Expr {
+                owner: candidate,
+                role,
+            } if candidate == owner => Some((role, *requirement)),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    if actual_requirements != expected_requirements {
+        return false;
+    }
+    let Ok(expected_components) = candidate_dialogue_component_sites(
+        &index.source,
+        |query| match index.component_presence(query) {
+            Some(HirSourcePresence::Present(site)) => Some(site.clone()),
+            Some(HirSourcePresence::AbsentOptional) | None => None,
+        },
+        parsed,
+        owner,
+        attached,
+        graph,
+        application,
+    ) else {
+        return false;
+    };
+    if expected_components
+        .keys()
+        .any(|role| !expected_requirements.contains_key(role))
+    {
+        return false;
+    }
+    let actual_components = index
+        .components
+        .iter()
+        .filter_map(|(query, site)| match *query {
+            HirSourceQuery::Expr {
+                owner: candidate,
+                role,
+            } if candidate == owner => Some((role, site.clone())),
+            _ => None,
+        })
+        .collect::<BTreeMap<_, _>>();
+    actual_components == expected_components
+        && expected_requirements.iter().all(|(role, requirement)| {
+            *requirement != HirSourceRequirement::Required || expected_components.contains_key(role)
+        })
+}
+
+#[allow(
+    clippy::result_large_err,
+    reason = "component insertion preserves the complete conflicting typed source role"
+)]
 fn insert_expression_site(
     sites: &mut BTreeMap<HirExprSourceRole, HirSourceSite>,
     owner: ExprId,
@@ -643,6 +960,12 @@ fn insert_expression_site(
     }
 }
 
+#[allow(
+    clippy::match_same_arms,
+    clippy::result_large_err,
+    clippy::too_many_lines,
+    reason = "one exhaustive mapping owns every attached expression component and its final typed source role"
+)]
 pub(crate) fn expression_component_role(
     projection: &ExpressionProjection,
     role: ExpressionComponentRole,
@@ -799,8 +1122,6 @@ pub(crate) fn expression_component_role(
                     SyntaxDialogueNodeSourcePart::Interpolation => {
                         HirDialogueNodeSourcePart::Interpolation
                     }
-                    SyntaxDialogueNodeSourcePart::Control => HirDialogueNodeSourcePart::Control,
-                    SyntaxDialogueNodeSourcePart::Mark => HirDialogueNodeSourcePart::Mark,
                     SyntaxDialogueNodeSourcePart::LineBreak => HirDialogueNodeSourcePart::LineBreak,
                     SyntaxDialogueNodeSourcePart::Error => HirDialogueNodeSourcePart::Error,
                 },

@@ -7,11 +7,16 @@ use arcweft_source::identity::SourceGeneration;
 use super::family::AstNodeFamily;
 use super::{SyntaxDatabaseId, SyntaxLineageId, SyntaxNodeId, SyntaxSnapshotId};
 use crate::grammar::kinds::{AstTag, SyntaxKind, SyntaxRole, SyntaxRoleClass};
+use crate::parser::ParseCompletion;
 use crate::patterns::{PatternNodeStep, PatternTypeChildRelation};
 use crate::types::TypeRefNodeStep;
 
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum AttachmentFailure {
+    #[error("only a complete standalone fragment can be attached: {completion:?}")]
+    FragmentNotComplete { completion: ParseCompletion },
+    #[error("the target source bytes do not exactly match the standalone fragment")]
+    FragmentTextMismatch,
     #[error("the grammar index has no source-file root")]
     MissingRoot,
     #[error("the grammar identity map is missing an attachment identity")]
@@ -150,11 +155,9 @@ pub enum SyntaxAccessError {
     MissingSourceDeclarationProjection { id: SyntaxNodeId },
     #[error("syntax Source identity {id:?} carries an invalid semantic projection")]
     InvalidSourceDeclarationProjection { id: SyntaxNodeId },
-    #[error("syntax outer-attribute identity {id:?} has no semantic attribute projection")]
+    #[error("syntax attribute identity {id:?} has no semantic attribute projection")]
     MissingAttributeProjection { id: SyntaxNodeId },
-    #[error(
-        "syntax outer-attribute identity {id:?} carries an invalid semantic attribute projection"
-    )]
+    #[error("syntax attribute identity {id:?} carries an invalid semantic attribute projection")]
     InvalidAttributeProjection { id: SyntaxNodeId },
     #[error("syntax Pattern identity {id:?} has no semantic Pattern projection")]
     MissingPatternProjection { id: SyntaxNodeId },
@@ -209,6 +212,8 @@ pub enum SyntaxAccessError {
     InvalidLayerProjection { id: SyntaxNodeId },
     #[error("syntax View export identity {id:?} has no parser-owned structural projection")]
     MissingViewExportProjection { id: SyntaxNodeId },
+    #[error("syntax View fragment identity {id:?} has no parser-owned structural projection")]
+    MissingViewFragmentProjection { id: SyntaxNodeId },
     #[error("syntax View identity {id:?} carries an invalid declaration projection")]
     InvalidViewProjection { id: SyntaxNodeId },
     #[error("syntax Style identity {id:?} has no parser-owned declaration projection")]

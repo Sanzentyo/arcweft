@@ -1,9 +1,9 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::{GrammarBuildError, UnattachedGrammarEntry};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
-use crate::grammar::source_projection::PendingPathRoot;
+use crate::grammar::source_projection::{PendingPathRoot, PendingPathSegmentKind};
 use crate::incremental::SyntaxLimit;
 
 fn document(text: &str) -> SourceDocument {
@@ -43,8 +43,7 @@ fn module_and_use_families_emit_paths_groups_names_aliases_and_globs_losslessly(
         "use crate.game.prelude.*\n",
         "fn next() {}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -98,11 +97,37 @@ fn module_and_use_families_emit_paths_groups_names_aliases_and_globs_losslessly(
 }
 
 #[test]
+fn use_path_token_cursor_retains_external_project_segments_and_exact_ranges() {
+    let source = "use character.hero-pack.2d\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let path = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::Path)
+        .and_then(UnattachedGrammarEntry::path_projection)
+        .expect("use declaration owns one typed path projection");
+
+    assert_eq!(
+        path.segments()
+            .iter()
+            .map(|segment| (segment.kind(), &source[segment.source().as_range()]))
+            .collect::<Vec<_>>(),
+        [
+            (PendingPathSegmentKind::Keyword, "character"),
+            (PendingPathSegmentKind::ProjectSymbol, "hero-pack"),
+            (PendingPathSegmentKind::ProjectSymbol, "2d"),
+        ]
+    );
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+    assert_eq!(built.green().to_string(), source);
+}
+
+#[test]
 fn missing_group_close_synchronizes_before_the_following_declaration() {
     let source = "use crate.game.{Hero, Villain\nproof next() = ()\n";
     let next_start = source.find("proof next").unwrap();
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -135,8 +160,7 @@ fn missing_group_close_synchronizes_before_the_following_declaration() {
 #[test]
 fn missing_module_path_does_not_consume_the_following_use() {
     let source = "mod\nuse self.characters.alice\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -171,8 +195,7 @@ fn missing_module_path_does_not_consume_the_following_use() {
 #[test]
 fn missing_alias_name_is_typed_without_losing_the_import() {
     let source = "use crate.game.View as\n";
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -194,7 +217,7 @@ fn missing_alias_name_is_typed_without_losing_the_import() {
 #[test]
 fn grouped_use_member_limit_is_inclusive_and_one_over_is_fatal() {
     let exact = grouped_use(SyntaxLimit::DeclarationMembers.maximum());
-    let built = parse_shadow_document(&document(&exact), crate::parser::ParseOptions::default())
+    let built = parse_document(&document(&exact), crate::parser::ParseOptions::default())
         .expect("the exact grouped-use member limit builds");
     assert_eq!(
         built
@@ -208,7 +231,7 @@ fn grouped_use_member_limit_is_inclusive_and_one_over_is_fatal() {
 
     let one_over = grouped_use(SyntaxLimit::DeclarationMembers.maximum() + 1);
     assert!(matches!(
-        parse_shadow_document(&document(&one_over), crate::parser::ParseOptions::default(),),
+        parse_document(&document(&one_over), crate::parser::ParseOptions::default(),),
         Err(GrammarBuildError::LimitExceeded(
             SyntaxLimit::DeclarationMembers
         ))
@@ -224,8 +247,7 @@ fn source_header_phase_recovers_duplicate_and_late_headers_as_ordinary_items() {
         "mod crate.duplicate\n",
         "use self.late\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let module = built
         .index()
         .entries()
@@ -279,7 +301,7 @@ fn source_header_phase_recovers_duplicate_and_late_headers_as_ordinary_items() {
     assert_eq!(built.green().to_string(), source);
 
     let late_module_source = "use self.characters\nmod crate.late\n";
-    let late_module = parse_shadow_document(
+    let late_module = parse_document(
         &document(late_module_source),
         crate::parser::ParseOptions::default(),
     )
@@ -307,8 +329,7 @@ fn parent_root_normalizes_once_and_explicit_root_only_paths_recover_in_place() {
         "use parent.parent\n",
         "use super.super.route\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let paths = built
         .index()
         .entries()
@@ -333,7 +354,7 @@ fn parent_root_normalizes_once_and_explicit_root_only_paths_recover_in_place() {
     assert_eq!(built.green().to_string(), source);
 
     let root_only_source = concat!("mod crate\n", "use self\n", "use super\n", "use parent\n");
-    let root_only = parse_shadow_document(
+    let root_only = parse_document(
         &document(root_only_source),
         crate::parser::ParseOptions::default(),
     )
@@ -366,8 +387,7 @@ fn visibility_projection_is_typed_and_invalid_scopes_use_ordinary_recovery() {
         "pub(super) use crate.parent\n",
         "pub(other) use crate.invalid\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let visibilities = built
         .index()
         .entries()

@@ -7,15 +7,16 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-arcweft-lang-hir = { workspace = true }
-arcweft-lang-sema = { workspace = true }
+arcweft-core = { workspace = true }
 arcweft-lang-syntax = { workspace = true }
 arcweft-presentation = { workspace = true }
+arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true
 
 [dev-dependencies]
+arcweft-lang-hir = { workspace = true }
 trybuild.workspace = true
 
 [lib]

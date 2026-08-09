@@ -54,6 +54,17 @@ fallback. The counter, its aggregation, and its assertions are deleted with
 those two remaining routes in their public authority-switch cut. Removing only
 the counter here would hide live obsolete readers rather than remove them.
 
+### Subsequent final deletion
+
+The Proof public-switch working copy has now performed that later deletion.
+`FinalSemanticAnalysisWork` has no legacy-dispatch field or increment, the
+Speaker/SpeakerPreset and function-value fallback readers are absent, and only
+the shared-resolver accounting sealed into `CallTargetFacts` remains. Thus
+`old_dispatch_calls == 0` is no longer a runtime assertion or acceptance
+counter; physical absence plus exact resolver/candidate facts are the current
+evidence. This paragraph supersedes the temporary-state sentence above without
+rewriting the historical validation result of the original isolated cut.
+
 ## Validation evidence
 
 Passed against the exact isolated cut:

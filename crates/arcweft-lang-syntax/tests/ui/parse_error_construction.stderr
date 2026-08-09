@@ -1,36 +1,20 @@
-error[E0624]: associated function `new` is private
+error[E0599]: no associated function or constant named `new` found for struct `ParseError` in the current scope
  --> tests/ui/parse_error_construction.rs:7:32
   |
-7 |       let _generic = ParseError::new(
-  |                                  ^^^ private associated function
+7 |     let _generic = ParseError::new(
+  |                                ^^^ associated function or constant not found in `ParseError`
   |
- ::: src/parser/recovery.rs
+help: there is a method `ne` with a similar name, but with different arguments
+ --> $RUST/core/src/cmp.rs
   |
-  | /     pub(crate) fn new(
-  | |         range: TextRange,
-  | |         expected: Vec<String>,
-  | |         found: Option<String>,
-  | |         message: String,
-  | |         recovery: Vec<RecoverySuggestion>,
-  | |     ) -> Self {
-  | |_____________- private associated function defined here
+  |     fn ne(&self, other: &Rhs) -> bool {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-error[E0624]: associated function `new_with_kind` is private
+error[E0599]: no associated function or constant named `new_with_kind` found for struct `ParseError` in the current scope
   --> tests/ui/parse_error_construction.rs:14:30
    |
-14 |       let _typed = ParseError::new_with_kind(
-   |                                ^^^^^^^^^^^^^ private associated function
-   |
-  ::: src/parser/recovery.rs
-   |
-   | /     pub(crate) fn new_with_kind(
-   | |         kind: ParseErrorKind,
-   | |         range: TextRange,
-   | |         expected: Vec<String>,
-...  |
-   | |         recovery: Vec<RecoverySuggestion>,
-   | |     ) -> Self {
-   | |_____________- private associated function defined here
+14 |     let _typed = ParseError::new_with_kind(
+   |                              ^^^^^^^^^^^^^ associated function or constant not found in `ParseError`
 
 error: cannot construct `ParseError` with struct literal syntax due to private fields
   --> tests/ui/parse_error_construction.rs:22:20
@@ -51,35 +35,3 @@ error: cannot construct `ParseError` with struct literal syntax due to private f
    |         -------------------- private field
    |
    = note: ...and other private field `related` that was not provided
-help: you might have meant to use an associated function to build this type
-   |
-22 -     let _literal = ParseError {
-23 -         kind: ParseErrorKind::Generic,
-24 -         range: TextRange::new(0, 0),
-25 -         expected: Vec::new(),
-26 -         found: None,
-27 -         message: String::new(),
-28 -         recovery: Vec::new(),
-29 -     };
-22 +     let _literal = ParseError::new(_, _, _, _, _);
-   |
-22 -     let _literal = ParseError {
-23 -         kind: ParseErrorKind::Generic,
-24 -         range: TextRange::new(0, 0),
-25 -         expected: Vec::new(),
-26 -         found: None,
-27 -         message: String::new(),
-28 -         recovery: Vec::new(),
-29 -     };
-22 +     let _literal = ParseError::new_with_kind(_, _, _, _, _, _);
-   |
-22 -     let _literal = ParseError {
-23 -         kind: ParseErrorKind::Generic,
-24 -         range: TextRange::new(0, 0),
-25 -         expected: Vec::new(),
-26 -         found: None,
-27 -         message: String::new(),
-28 -         recovery: Vec::new(),
-29 -     };
-22 +     let _literal = ParseError::from_expression(_, _);
-   |

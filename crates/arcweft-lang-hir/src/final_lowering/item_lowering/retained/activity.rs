@@ -17,7 +17,7 @@ use crate::item::{
     HirItemFamily, HirItemIssue, HirItemKind,
 };
 use crate::leaf::HirName;
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirLocal, HirLocalKind};
 use crate::source_index::HirSourceSite;
 
@@ -32,6 +32,10 @@ enum ActivityPortDirection {
 }
 
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Activity lowering atomically projects its closed port, contract, scope, and local inventory"
+    )]
     pub(in crate::final_lowering::item_lowering) fn lower_activity_declaration(
         &mut self,
         owner: ItemId,

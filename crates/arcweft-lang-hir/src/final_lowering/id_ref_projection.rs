@@ -8,7 +8,7 @@ use crate::leaf::{
     HirEntityReference, HirFamilyRelativeId, HirIdFamily, HirIdRef, HirIdRefInvariantError,
     HirIdRefIssue, HirIdRefRecovery, HirIdRefShape, HirIdRefValue, HirIdSuffix, HirRelativeId,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 
 pub(crate) fn id_ref(value: &SyntaxIdRefSyntax) -> Result<HirIdRefValue, HirLowerFailure> {
     match value.value() {

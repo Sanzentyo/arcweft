@@ -7,7 +7,7 @@ use arcweft_lang_syntax::expressions::{
     SyntaxExpressionSlot, SyntaxMatchBodyTerminator, SyntaxRequiredTokenState,
 };
 
-use super::{CandidateValidationCursor, source_index_has_typed_owner};
+use super::CandidateValidationCursor;
 use crate::expr::{
     HirClosureExpr, HirExpressionRecoveryIssue, HirIfLetExpr, HirMatchExpr, HirMatchRecoveryIssue,
     HirPoisonState, HirRecoveryIssue,
@@ -368,7 +368,7 @@ impl CandidateValidationCursor<'_> {
             || payload.kind() != kind
             || payload.parent() != Some(parent)
             || payload.owner() != &HirScopeOwner::Expr(expression)
-            || source_index_has_typed_owner(self.index, SyntheticOwner::Scope(scope))
+            || self.source_index_has_typed_owner(SyntheticOwner::Scope(scope))
             || !self.expected.scopes.insert(scope)
         {
             return None;

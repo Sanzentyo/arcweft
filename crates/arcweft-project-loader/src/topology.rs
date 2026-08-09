@@ -10,7 +10,7 @@ pub use id::{
     ProfileTopologyIdError, ProfileTopologyLogicalPath, ProfileTopologyOwnerId,
     ProfileTopologyPathError, ProfileTopologyResourceId,
 };
-pub use loader::load_profile_topology;
+pub use loader::{load_profile_topology, reload_profile_topology};
 pub use model::{
     ExternalModuleFactsError, LoadedCharacterPackage, LoadedDocumentAccess,
     LoadedDocumentOwnership, LoadedExternalModuleMetadata, LoadedProfileTopology,

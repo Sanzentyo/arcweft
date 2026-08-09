@@ -2,23 +2,28 @@
 
 use std::collections::BTreeMap;
 
-use arcweft_lang_hir::symbol::{
-    ProjectSymbolTable,
-    nominal::{ProjectNominalDeclaration, ProjectNominalDeclarationId},
+use arcweft_lang_hir::{
+    identity::TypeId,
+    leaf::HirPath,
+    symbol::{
+        ProjectSymbolTable,
+        nominal::{ProjectNominalDeclaration, ProjectNominalDeclarationId},
+    },
 };
-use arcweft_lang_syntax::types::{AuthoredTypeRef, TypePath, TypeRefNodePath};
-use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
+use arcweft_source::SourceSpan;
 
 use crate::{
-    checker::TypeCheckReport,
-    nominal::{
-        AliasExpansionFact, NominalResolutionIndex, ResolvedTypeRefOutcome, TypeNameResolution,
-        TypePoisonRecord,
-    },
+    final_analysis::FinalSemanticAnalysis,
+    nominal::{AliasExpansionFact, ResolvedTypeRefOutcome, TypeNameResolution, TypePoisonRecord},
     types::TypeKind,
 };
 
 use super::ProjectSemanticIndexError;
+
+type CheckedProjectNominalInventory = (
+    BTreeMap<ProjectNominalDeclarationId, ProjectNominalIndexRecord>,
+    Box<[ProjectNominalReferenceEdge]>,
+);
 
 /// One accepted project nominal declaration and its checked poison evidence.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,33 +32,32 @@ pub struct ProjectNominalIndexRecord {
     poisons: Box<[TypePoisonRecord]>,
 }
 
-/// One exact authored type head resolved to a project nominal declaration.
+/// One exact final-HIR type head resolved to a project nominal declaration.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ProjectNominalReferenceEdge {
     declaration: ProjectNominalDeclarationId,
-    root: SourceSpan,
+    root: TypeId,
     source: SourceSpan,
     terminal_source: SourceSpan,
-    use_path: TypePath,
-    node: TypeRefNodePath,
+    use_path: HirPath,
+    node: TypeId,
     arguments: Box<[TypeKind]>,
     normalized: TypeKind,
     alias_expansions: Box<[AliasExpansionFact]>,
     poisons: Box<[TypePoisonRecord]>,
 }
 
-type CheckedProjectNominalInventory = (
-    BTreeMap<ProjectNominalDeclarationId, ProjectNominalIndexRecord>,
-    Box<[ProjectNominalReferenceEdge]>,
-);
-
-/// Source-bound lookup used when projecting an already checked authored type.
-pub(super) struct CheckedTypeProjection<'a> {
-    document: &'a SourceDocument,
-    resolutions: &'a NominalResolutionIndex,
-}
-
 impl ProjectNominalIndexRecord {
+    pub fn new(
+        declaration: ProjectNominalDeclaration,
+        poisons: impl Into<Box<[TypePoisonRecord]>>,
+    ) -> Self {
+        Self {
+            declaration,
+            poisons: poisons.into(),
+        }
+    }
+
     /// Canonical declaration identity shared with HIR and the resolver.
     pub const fn id(&self) -> &ProjectNominalDeclarationId {
         self.declaration.id()
@@ -64,21 +68,48 @@ impl ProjectNominalIndexRecord {
         &self.declaration
     }
 
-    /// Resolver poison records whose authored roots belong to this declaration.
+    /// Resolver poison records whose final-HIR roots belong to this declaration.
     pub fn poisons(&self) -> &[TypePoisonRecord] {
         &self.poisons
     }
 }
 
 impl ProjectNominalReferenceEdge {
-    /// Declaration selected for this exact authored type head.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        declaration: ProjectNominalDeclarationId,
+        root: TypeId,
+        source: SourceSpan,
+        terminal_source: SourceSpan,
+        use_path: HirPath,
+        node: TypeId,
+        arguments: impl Into<Box<[TypeKind]>>,
+        normalized: TypeKind,
+        alias_expansions: impl Into<Box<[AliasExpansionFact]>>,
+        poisons: impl Into<Box<[TypePoisonRecord]>>,
+    ) -> Self {
+        Self {
+            declaration,
+            root,
+            source,
+            terminal_source,
+            use_path,
+            node,
+            arguments: arguments.into(),
+            normalized,
+            alias_expansions: alias_expansions.into(),
+            poisons: poisons.into(),
+        }
+    }
+
+    /// Declaration selected for this exact final-HIR type head.
     pub const fn declaration(&self) -> &ProjectNominalDeclarationId {
         &self.declaration
     }
 
-    /// Exact authored type root whose report owns this edge.
-    pub const fn root(&self) -> &SourceSpan {
-        &self.root
+    /// Exact final-HIR type root whose report owns this edge.
+    pub const fn root(&self) -> TypeId {
+        self.root
     }
 
     /// Exact path or constructor head selected by nominal resolution.
@@ -91,14 +122,14 @@ impl ProjectNominalReferenceEdge {
         &self.terminal_source
     }
 
-    /// Validated authored path resolved by this edge.
-    pub const fn use_path(&self) -> &TypePath {
+    /// Root-preserving semantic path resolved by this edge.
+    pub const fn use_path(&self) -> &HirPath {
         &self.use_path
     }
 
     /// Structural node address within `root`.
-    pub const fn node(&self) -> &TypeRefNodePath {
-        &self.node
+    pub const fn node(&self) -> TypeId {
+        self.node
     }
 
     /// Checked generic arguments applied at this reference.
@@ -116,84 +147,57 @@ impl ProjectNominalReferenceEdge {
         &self.alias_expansions
     }
 
-    /// Poison evidence attached to the owning authored root.
+    /// Poison evidence attached to the owning final-HIR root.
     pub fn poisons(&self) -> &[TypePoisonRecord] {
         &self.poisons
     }
 }
 
-impl<'a> CheckedTypeProjection<'a> {
-    pub(super) const fn new(document: &'a SourceDocument, report: &'a TypeCheckReport) -> Self {
-        Self {
-            document,
-            resolutions: &report.nominal_resolutions,
-        }
-    }
-
-    pub(super) fn recovered(
-        &self,
-        authored: &AuthoredTypeRef,
-    ) -> Result<TypeKind, ProjectSemanticIndexError> {
-        let range = authored.root_source().whole();
-        let root = self
-            .document
-            .span(SourceRange::new(range.start(), range.end()))
-            .map_err(|error| ProjectSemanticIndexError::MissingCheckedType {
-                document: self.document.identity().clone(),
-                range: (range.start(), range.end()),
-                reason: error.to_string(),
-            })?;
-        self.resolutions
-            .recovered_type(&root)
-            .cloned()
-            .ok_or_else(|| ProjectSemanticIndexError::MissingCheckedType {
-                document: self.document.identity().clone(),
-                range: (range.start(), range.end()),
-                reason: "the accepted type-check report has no fact for this authored root"
-                    .to_owned(),
-            })
-    }
-}
-
+/// Projects tooling inventory from the exact nominal products retained by the
+/// final semantic generation. This never re-runs nominal resolution and never
+/// reconstructs a type path from source text.
 pub(super) fn checked_project_nominals(
     symbols: &ProjectSymbolTable,
-    report: &TypeCheckReport,
+    analysis: &FinalSemanticAnalysis,
 ) -> Result<CheckedProjectNominalInventory, ProjectSemanticIndexError> {
-    let resolutions = &report.nominal_resolutions;
     let records = symbols
         .nominal_symbols()
         .map(|declaration| {
-            let mut poisons = resolutions
-                .roots()
-                .filter(|root| span_contains(declaration.source().whole(), root))
-                .filter_map(|root| resolutions.report(root))
+            let mut poisons = analysis
+                .type_resolutions()
+                .filter_map(|(_, report)| {
+                    let product = report.outcome().product();
+                    let root = product
+                        .nodes()
+                        .iter()
+                        .find(|node| node.node() == product.root())?;
+                    root.source()
+                        .project()
+                        .is_some_and(|source| span_contains(declaration.source().whole(), source))
+                        .then_some(report)
+                })
                 .flat_map(|report| report.poisons().iter().cloned())
                 .collect::<Vec<_>>();
             poisons.sort_by_key(TypePoisonRecord::id);
             poisons.dedup_by_key(|poison| poison.id());
             (
                 declaration.id().clone(),
-                ProjectNominalIndexRecord {
-                    declaration: declaration.clone(),
-                    poisons: poisons.into_boxed_slice(),
-                },
+                ProjectNominalIndexRecord::new(declaration.clone(), poisons),
             )
         })
         .collect::<BTreeMap<_, _>>();
 
     let mut edges = Vec::new();
-    for (key, node) in resolutions.nodes() {
-        let (declaration, arguments, alias_expansions) = match node.outcome() {
-            TypeNameResolution::Project(project) => (
-                project.declaration().clone(),
-                project.arguments().to_vec().into_boxed_slice(),
-                Vec::new().into_boxed_slice(),
-            ),
-            TypeNameResolution::Alias(alias) => {
-                let report = resolutions.report(key.root()).ok_or_else(|| {
-                    missing_reference_evidence(key.root(), key.node(), "its owning report")
-                })?;
-                (
+    for (_, report) in analysis.type_resolutions() {
+        let product = report.outcome().product();
+        for node in product.nodes() {
+            let (declaration, arguments, alias_expansions) = match node.outcome() {
+                TypeNameResolution::Project(project) => (
+                    project.declaration().clone(),
+                    project.arguments().to_vec().into_boxed_slice(),
+                    Vec::<AliasExpansionFact>::new().into_boxed_slice(),
+                ),
+                TypeNameResolution::Alias(alias) => (
                     alias.declaration().clone(),
                     alias.arguments().to_vec().into_boxed_slice(),
                     alias_expansion_suffix(
@@ -201,68 +205,59 @@ pub(super) fn checked_project_nominals(
                         alias.declaration(),
                         alias.use_source().project(),
                     ),
-                )
-            }
-            _ => continue,
-        };
-        let source =
-            node.source().project().cloned().ok_or_else(|| {
-                missing_reference_evidence(key.root(), key.node(), "project source")
+                ),
+                _ => continue,
+            };
+            let source = node.source().project().cloned().ok_or_else(|| {
+                missing_reference_evidence(product.root(), node.node(), "project source")
             })?;
-        let terminal_source = node
-            .terminal_source()
-            .and_then(|source| source.project())
-            .cloned()
-            .ok_or_else(|| {
-                missing_reference_evidence(key.root(), key.node(), "terminal project source")
+            let terminal_source = node
+                .terminal_source()
+                .and_then(|source| source.project())
+                .cloned()
+                .ok_or_else(|| {
+                    missing_reference_evidence(
+                        product.root(),
+                        node.node(),
+                        "terminal project source",
+                    )
+                })?;
+            let use_path = node.reference_path().cloned().ok_or_else(|| {
+                missing_reference_evidence(product.root(), node.node(), "typed use path")
             })?;
-        let use_path = node
-            .reference_path()
-            .cloned()
-            .ok_or_else(|| missing_reference_evidence(key.root(), key.node(), "typed use path"))?;
-        let normalized = node
-            .recovered()
-            .cloned()
-            .ok_or_else(|| missing_reference_evidence(key.root(), key.node(), "recovered type"))?;
-        let poisons = resolutions
-            .report(key.root())
-            .ok_or_else(|| missing_reference_evidence(key.root(), key.node(), "its owning report"))?
-            .poisons()
-            .to_vec()
-            .into_boxed_slice();
-        edges.push(ProjectNominalReferenceEdge {
-            declaration,
-            root: key.root().clone(),
-            source,
-            terminal_source,
-            use_path,
-            node: key.node().clone(),
-            arguments,
-            normalized,
-            alias_expansions,
-            poisons,
-        });
+            let normalized = node.recovered().cloned().ok_or_else(|| {
+                missing_reference_evidence(product.root(), node.node(), "recovered type")
+            })?;
+            edges.push(ProjectNominalReferenceEdge::new(
+                declaration,
+                product.root(),
+                source,
+                terminal_source,
+                use_path,
+                node.node(),
+                arguments,
+                normalized,
+                alias_expansions,
+                report.poisons().to_vec(),
+            ));
+        }
     }
     edges.sort_by(|left, right| {
-        left.source
-            .cmp(&right.source)
-            .then_with(|| left.declaration.cmp(&right.declaration))
-            .then_with(|| left.node.cmp(&right.node))
+        left.source()
+            .cmp(right.source())
+            .then_with(|| left.declaration().cmp(right.declaration()))
+            .then_with(|| left.node().cmp(&right.node()))
     });
     edges.dedup();
     Ok((records, edges.into_boxed_slice()))
 }
 
 fn missing_reference_evidence(
-    root: &SourceSpan,
-    node: &TypeRefNodePath,
+    root: TypeId,
+    node: TypeId,
     reason: &'static str,
 ) -> ProjectSemanticIndexError {
-    ProjectSemanticIndexError::MissingNominalReferenceEvidence {
-        root: root.clone(),
-        node: format!("{:?}", node.steps()),
-        reason,
-    }
+    ProjectSemanticIndexError::MissingNominalReferenceEvidence { root, node, reason }
 }
 
 fn alias_expansion_suffix(
@@ -278,7 +273,7 @@ fn alias_expansion_suffix(
                 && source.is_some_and(|source| fact.use_source().project() == Some(source))
         })
         .map_or_else(
-            || Vec::new().into_boxed_slice(),
+            || Vec::<AliasExpansionFact>::new().into_boxed_slice(),
             |start| aliases[start..].to_vec().into_boxed_slice(),
         )
 }
@@ -287,32 +282,4 @@ fn span_contains(owner: &SourceSpan, candidate: &SourceSpan) -> bool {
     owner.source() == candidate.source()
         && owner.range().start() <= candidate.range().start()
         && candidate.range().end() <= owner.range().end()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::span_contains;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
-
-    #[test]
-    fn declaration_poison_membership_is_revision_and_range_exact() {
-        let first = SourceDocument::try_new(
-            SourceDocumentId::try_new("project://nominal").expect("id"),
-            SourceName::Generated,
-            "struct Boxed { value: Missing }",
-        )
-        .expect("source");
-        let owner = first.span(SourceRange::new(0, 31)).expect("owner");
-        let member = first.span(SourceRange::new(22, 29)).expect("member");
-        assert!(span_contains(&owner, &member));
-
-        let second = SourceDocument::try_new(
-            SourceDocumentId::try_new("project://nominal").expect("id"),
-            SourceName::Generated,
-            "struct Boxed { value: Present }",
-        )
-        .expect("source");
-        let stale = second.span(SourceRange::new(22, 29)).expect("stale");
-        assert!(!span_contains(&owner, &stale));
-    }
 }

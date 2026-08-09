@@ -12,7 +12,7 @@ use crate::expr::{
     HirChoiceOptionField, HirChoiceOptionFor, HirChoiceView, HirChoiceViewEntry,
 };
 use crate::identity::{HirLimit, LocalId, ScopeId};
-use crate::lower::HirLowerFailure;
+use crate::lowering::HirLowerFailure;
 use crate::scope::{HirPatternBindingPolicy, HirScopeOwner};
 
 use super::super::super::id_ref_projection::id_ref;
@@ -55,7 +55,7 @@ impl StagedHirModuleTransaction<'_> {
             state.mark_recovered();
         }
         let locals = pattern.locals.clone();
-        let body = self.finish_choice_option_body(prepared, pattern.locals, state)?;
+        let body = self.finish_choice_option_body(&prepared, pattern.locals, state)?;
         Ok(HirChoiceOptionFor::new(pattern.owner, source, body, locals))
     }
 
@@ -67,7 +67,7 @@ impl StagedHirModuleTransaction<'_> {
         state: &mut ChoiceLoweringState,
     ) -> Result<HirChoiceOptionBody, HirLowerFailure> {
         let prepared = self.prepare_required_choice_option_body(attached, parent_scope, state)?;
-        self.finish_choice_option_body(prepared, prefix_locals, state)
+        self.finish_choice_option_body(&prepared, prefix_locals, state)
     }
 
     fn prepare_required_choice_option_body<'attached>(
@@ -83,7 +83,7 @@ impl StagedHirModuleTransaction<'_> {
             AttachedRequiredChoiceOptionBody::Missing(missing) => {
                 let scope = self.allocate_choice_scope(
                     missing.id(),
-                    missing.source_span(),
+                    &missing.source_span(),
                     state.owner(),
                     parent_scope,
                 )?;
@@ -104,7 +104,7 @@ impl StagedHirModuleTransaction<'_> {
     ) -> Result<PreparedChoiceOptionBody<'attached>, HirLowerFailure> {
         let scope = self.allocate_choice_scope(
             attached.syntax().id(),
-            attached.syntax().source_span(),
+            &attached.syntax().source_span(),
             state.owner(),
             parent_scope,
         )?;
@@ -117,7 +117,7 @@ impl StagedHirModuleTransaction<'_> {
 
     fn finish_choice_option_body(
         &mut self,
-        prepared: PreparedChoiceOptionBody<'_>,
+        prepared: &PreparedChoiceOptionBody<'_>,
         prefix_locals: Box<[LocalId]>,
         state: &mut ChoiceLoweringState,
     ) -> Result<HirChoiceOptionBody, HirLowerFailure> {
@@ -151,6 +151,7 @@ impl StagedHirModuleTransaction<'_> {
                 text_key, value, ..
             } => {
                 let text_key = text_key
+                    .as_ref()
                     .as_ref()
                     .map(project_choice_entity_reference)
                     .transpose()?;

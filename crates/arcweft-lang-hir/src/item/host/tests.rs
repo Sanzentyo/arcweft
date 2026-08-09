@@ -88,6 +88,10 @@ fn style_names_admit_native_hyphens_without_becoming_ordinary_hir_names() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one clean Style fixture proves typed IDs, source order, and nested-body ownership together"
+)]
 fn clean_style_model_preserves_typed_ids_source_order_and_nested_body() {
     let local = module(1, 1);
     let token_type = typed_id::<TypeId>(local, 1);
@@ -218,6 +222,10 @@ fn clean_style_model_preserves_typed_ids_source_order_and_nested_body() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one recovery matrix proves every typed Style role poisons its owning item"
+)]
 fn every_typed_style_recovery_role_poison_propagates_to_the_item() {
     let local = module(2, 1);
     let token = HirStyleToken::try_new(
@@ -331,6 +339,10 @@ fn every_typed_style_recovery_role_poison_propagates_to_the_item() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "one nested recovery matrix proves every Style role marks the item recovered"
+)]
 fn each_nested_style_recovery_role_marks_the_item_recovered() {
     let local = module(5, 1);
     let value = typed_id::<ExprId>(local, 1);

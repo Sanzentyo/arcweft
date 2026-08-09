@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
 use crate::grammar::build::GrammarBuildError;
 use crate::grammar::build::{GrammarBuild, UnattachedGrammarEntry};
 use crate::grammar::kinds::SyntaxKind;
@@ -19,7 +19,7 @@ fn document(source: &str) -> SourceDocument {
 }
 
 fn parse(source: &str) -> GrammarBuild {
-    parse_shadow_document(&document(source), crate::parser::ParseOptions::default())
+    parse_document(&document(source), crate::parser::ParseOptions::default())
         .expect("Layer grammar builds")
 }
 
@@ -167,15 +167,15 @@ fn layer_reference_families_and_closed_policies_are_checked_in_the_typed_tree() 
 #[test]
 fn unknown_layer_members_share_the_exact_layer_limit_and_rollback_cleanly() {
     let accepted = layer_with_unknown_members(SyntaxLimit::LayerMembers.maximum());
-    assert!(parse_shadow_document(&document(&accepted), ParseOptions::default()).is_ok());
+    assert!(parse_document(&document(&accepted), ParseOptions::default()).is_ok());
 
     let rejected = layer_with_unknown_members(SyntaxLimit::LayerMembers.maximum() + 1);
     assert!(matches!(
-        parse_shadow_document(&document(&rejected), ParseOptions::default()),
+        parse_document(&document(&rejected), ParseOptions::default()),
         Err(GrammarBuildError::LimitExceeded(SyntaxLimit::LayerMembers))
     ));
     assert!(
-        parse_shadow_document(
+        parse_document(
             &document("layer Ready: overlay {}\n"),
             ParseOptions::default()
         )

@@ -1,11 +1,5 @@
-error[E0432]: unresolved import `arcweft_lang_hir::model::HirCapabilityPolicy`
- --> tests/ui/capability_policy_absent.rs:1:31
+error[E0432]: unresolved import `arcweft_lang_hir::model`
+ --> tests/ui/capability_policy_absent.rs:1:23
   |
 1 | use arcweft_lang_hir::model::{HirCapabilityPolicy, HirTopLevelDecl};
-  |                               ^^^^^^^^^^^^^^^^^^^ no `HirCapabilityPolicy` in `model`
-
-error[E0599]: no variant, associated function, or constant named `CapabilityPolicy` found for enum `HirTopLevelDecl` in the current scope
- --> tests/ui/capability_policy_absent.rs:4:29
-  |
-4 |     if let HirTopLevelDecl::CapabilityPolicy(_policy) = item {}
-  |                             ^^^^^^^^^^^^^^^^ variant, associated function, or constant not found in `HirTopLevelDecl`
+  |                       ^^^^^ could not find `model` in `arcweft_lang_hir`

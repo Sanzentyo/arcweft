@@ -1,17 +1,5 @@
-error[E0432]: unresolved import `arcweft_lang_hir::model::HirBorrow`
- --> tests/ui/removed_hir_borrow.rs:1:31
+error[E0432]: unresolved import `arcweft_lang_hir::model`
+ --> tests/ui/removed_hir_borrow.rs:1:23
   |
 1 | use arcweft_lang_hir::model::{HirBorrow, HirFlowItem};
-  |                               ^^^^^^^^^ no `HirBorrow` in `model`
-
-error[E0599]: no variant, associated function, or constant named `Borrow` found for enum `HirFlowItem` in the current scope
- --> tests/ui/removed_hir_borrow.rs:4:25
-  |
-4 |     if let HirFlowItem::Borrow(_borrow) = item {}
-  |                         ^^^^^^ variant, associated function, or constant not found in `HirFlowItem`
-  |
-help: there is a method `borrow` with a similar name
- --> $RUST/core/src/borrow.rs
-  |
-  |     fn borrow(&self) -> &Borrowed;
-  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |                       ^^^^^ could not find `model` in `arcweft_lang_hir`

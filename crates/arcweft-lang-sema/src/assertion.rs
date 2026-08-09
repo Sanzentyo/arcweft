@@ -1,7 +1,19 @@
 //! Semantic assertion policy shared by checking and runtime-plan lowering.
 
-use arcweft_lang_hir::identity::{ExprId, StmtId};
-use arcweft_lang_syntax::assertion::{AssertionFactClass, AssertionMode};
+use arcweft_lang_syntax::assertion::AssertionMode;
+
+/// Compiler-selected assertion profile for one accepted project transaction.
+///
+/// This is distinct from a launch profile: it controls whether debug-only
+/// assertion work is admitted into the executable semantic generation.
+#[derive(Clone, Copy, Debug, Default, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum AssertionBuildProfile {
+    /// Retain authored Debug assertions as runtime-only guards.
+    #[default]
+    Debug,
+    /// Omit every Debug assertion runtime effect while retaining source HIR.
+    Release,
+}
 
 /// Source context in which an assertion was authored.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -13,9 +25,8 @@ pub enum AssertionContext {
 }
 
 /// Runtime guard emitted after semantic assertion checks.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum AssertionRuntimePolicy {
-    None,
     AlwaysGuard,
     DebugGuard,
 }
@@ -31,57 +42,24 @@ impl AssertionContext {
     }
 }
 
-impl AssertionRuntimePolicy {
-    /// Derives runtime intent from the syntax-owned mode.
-    pub const fn for_mode(mode: AssertionMode) -> Self {
-        match mode {
-            AssertionMode::Prove => Self::None,
-            AssertionMode::Check => Self::AlwaysGuard,
-            AssertionMode::Debug => Self::DebugGuard,
+impl AssertionBuildProfile {
+    /// Stable spelling used by accepted build and artifact identities.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Debug => "debug",
+            Self::Release => "release",
         }
     }
-}
 
-/// Fully typed assertion ready for fact and runtime-plan lowering.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct CheckedAssertion {
-    stmt: StmtId,
-    mode: AssertionMode,
-    conditions: Box<[ExprId]>,
-    runtime: AssertionRuntimePolicy,
-    fact_class: AssertionFactClass,
-}
-
-impl CheckedAssertion {
-    /// Returns the statement identity used by faults and diagnostics.
-    pub const fn stmt(&self) -> StmtId {
-        self.stmt
-    }
-
-    /// Returns the selected source mode.
-    pub const fn mode(&self) -> AssertionMode {
-        self.mode
-    }
-
-    /// Returns condition identities in short-circuit evaluation order.
-    pub const fn conditions(&self) -> &[ExprId] {
-        &self.conditions
-    }
-
-    /// Returns the runtime guard policy.
-    pub const fn runtime(&self) -> AssertionRuntimePolicy {
-        self.runtime
-    }
-
-    /// Returns the release or debug-only fact domain.
-    pub const fn fact_class(&self) -> AssertionFactClass {
-        self.fact_class
+    /// Returns whether Debug assertions enter executable semantic facts.
+    pub const fn retains_debug_assertions(self) -> bool {
+        matches!(self, Self::Debug)
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{AssertionContext, AssertionRuntimePolicy};
+    use super::{AssertionBuildProfile, AssertionContext};
     use arcweft_lang_syntax::assertion::AssertionMode;
 
     #[test]
@@ -92,17 +70,9 @@ mod tests {
         assert!(!AssertionContext::PredicateBody.allows(AssertionMode::Prove));
         assert!(!AssertionContext::ConstOrType.allows(AssertionMode::Debug));
 
-        assert_eq!(
-            AssertionRuntimePolicy::for_mode(AssertionMode::Prove),
-            AssertionRuntimePolicy::None
-        );
-        assert_eq!(
-            AssertionRuntimePolicy::for_mode(AssertionMode::Check),
-            AssertionRuntimePolicy::AlwaysGuard
-        );
-        assert_eq!(
-            AssertionRuntimePolicy::for_mode(AssertionMode::Debug),
-            AssertionRuntimePolicy::DebugGuard
-        );
+        assert!(AssertionBuildProfile::Debug.retains_debug_assertions());
+        assert!(!AssertionBuildProfile::Release.retains_debug_assertions());
+        assert_eq!(AssertionBuildProfile::Debug.as_str(), "debug");
+        assert_eq!(AssertionBuildProfile::Release.as_str(), "release");
     }
 }

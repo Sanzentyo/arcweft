@@ -7,7 +7,7 @@ use arcweft_lang_syntax::types::TypeRefNodeStep;
 
 use crate::expr::HirPoisonState;
 use crate::identity::{ScopeId, SyntheticKey, SyntheticOwner, TypeId};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::HirSourceSite;
 use crate::type_ref::HirType;
 

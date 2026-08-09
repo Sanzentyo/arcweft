@@ -1,6 +1,6 @@
 //! Choice option-field grammar over the shared statement cursor.
 
-use super::super::super::cursor::ShadowDocumentParser;
+use super::super::super::cursor::DocumentParser;
 use super::super::super::expression::{emit_entity_reference, emit_expression};
 use super::super::super::shadow_recovery::{
     bump_until, emit_close_delimiter, emit_missing_delimiter, emit_open_delimiter,
@@ -39,7 +39,7 @@ pub(super) fn is_choice_option_field_head(
 }
 
 pub(super) fn emit_choice_option_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -47,7 +47,13 @@ pub(super) fn emit_choice_option_field(
     match parser.current_text() {
         Some("label") => emit_choice_label_field(parser, end, item_kind, ordinal),
         Some("id") => {
-            emit_choice_assignment_field(parser, end, item_kind, ordinal, SyntaxKind::ChoiceIdField)
+            emit_choice_assignment_field(
+                parser,
+                end,
+                item_kind,
+                ordinal,
+                SyntaxKind::ChoiceIdField,
+            );
         }
         Some("value") => emit_choice_assignment_field(
             parser,
@@ -105,7 +111,7 @@ pub(super) fn emit_choice_option_field(
 }
 
 fn emit_choice_assignment_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -129,7 +135,7 @@ fn emit_choice_assignment_field(
 }
 
 fn emit_choice_label_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -205,7 +211,7 @@ fn emit_choice_label_field(
 }
 
 fn emit_choice_view_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -230,11 +236,7 @@ fn emit_choice_view_field(
     parser.finish();
 }
 
-fn emit_choice_view_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    item_kind: SyntaxKind,
-) {
+fn emit_choice_view_body(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
     parser.start(SyntaxKind::ChoiceViewBody, SyntaxRole::Body);
     emit_open_delimiter(parser, SyntaxKind::OpenBraceNode, "{");
     let close = find_matching_close_before(parser, parser.cursor(), end, "{").unwrap_or(end);
@@ -286,7 +288,7 @@ fn emit_choice_view_body(
 }
 
 fn emit_choice_select_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,

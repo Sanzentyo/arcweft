@@ -1,11 +1,23 @@
-use arcweft_compiler::parse::lint_source_tree;
 use arcweft_lang_syntax::{
-    ast::common::TextRange,
-    lint::{SyntaxLint, SyntaxLintCode, SyntaxLintSeverity},
-    parser::{ParseOptions, parse_document_with_source, recovery::ParseErrorKind},
+    incremental::{ParsedSource, SyntaxDatabase},
+    lint::{SyntaxLint, SyntaxLintCode, SyntaxLintSeverity, lint_id_policy},
+    parser::ParseOptions,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{
+    SourceDocument, SourceDocumentId, SourceName, SourceRange, identity::SourceSnapshotId,
+};
 use std::sync::Arc;
+
+fn parse_fixture(document: Arc<SourceDocument>) -> ParsedSource {
+    let mut database = SyntaxDatabase::try_new().expect("test syntax database");
+    database
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            document,
+            ParseOptions::default(),
+        )
+        .expect("attached compiler syntax fixture")
+}
 
 #[test]
 fn syntax_parser_preserves_statement_error_owner() {
@@ -20,14 +32,13 @@ fn syntax_parser_preserves_statement_error_owner() {
         )
         .expect("statement error fixture source document"),
     );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    let [error] = parsed.errors() else {
-        panic!("expected one parser error");
+    let parsed = parse_fixture(Arc::clone(&document));
+    let [error] = parsed.diagnostics() else {
+        panic!("expected one parser error, got {:?}", parsed.diagnostics());
     };
 
-    assert_eq!(error.kind(), ParseErrorKind::AssertionUnknownMode);
     assert_eq!(error.code(), "syntax.assert.unknown_mode");
-    assert_eq!(error.range(), &TextRange::new(23, 29));
+    assert_eq!(error.primary().range(), SourceRange::new(23, 29));
     assert_eq!(error.message(), "unknown assertion mode");
 }
 
@@ -42,10 +53,10 @@ fn compiler_lint_facade_preserves_independent_lint_owner() {
         )
         .expect("lint fixture source document"),
     );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    assert!(parsed.errors().is_empty());
+    let parsed = parse_fixture(Arc::clone(&document));
+    assert!(parsed.diagnostics().is_empty());
 
-    let lints: Vec<SyntaxLint> = lint_source_tree(parsed.typed_tree());
+    let lints: Vec<SyntaxLint> = lint_id_policy(&parsed).expect("attached syntax lint projection");
     let lint = lints
         .iter()
         .find(|lint| lint.code() == SyntaxLintCode::ExplicitDeclId)

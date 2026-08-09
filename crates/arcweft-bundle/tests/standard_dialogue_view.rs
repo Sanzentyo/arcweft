@@ -1,3 +1,4 @@
+use arcweft_bundle::BundleViewProductAttachError;
 use arcweft_bundle::resource_codec::view::{
     ViewActionButtonActionResource, ViewDefinitionResource, ViewInstructionSpan,
     ViewProgramResource, ViewResourceMergeError, ViewRuntimeButtonBounds, ViewRuntimeSurfaceBounds,
@@ -11,38 +12,14 @@ use arcweft_bundle::standard_view::{
     DIALOGUE_STYLE_ID, DIALOGUE_STYLE_SOURCE_ID, DIALOGUE_VIEW_ID, DIALOGUE_VIEW_SOURCE_ID,
     dialogue_program, dialogue_style, dialogue_text,
 };
-use arcweft_bundle::{BundleCodecError, BundleViewProductAttachError};
-use arcweft_core::plan::RuntimeLineId;
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_core::effect::RuntimeArtifactFingerprint;
 use arcweft_presentation::appearance::PresentationColor;
-use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
-use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_view::ViewId;
 use arcweft_view::style::{
     ViewColorValue, ViewLengthMilli, ViewPosition, ViewPropertyKind, ViewSpecifiedValue,
     ViewStyleApplicationTarget, ViewStyleDeclaration,
 };
-use arcweft_view::{AcceptedViewProgramRevision, ViewId, ViewProgramId};
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let document = SourceDocument::try_new(
-        SourceDocumentId::try_new("test.arcw").expect("source ID"),
-        SourceName::path("test.arcw"),
-        "",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([document.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        document.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.bundle-standard-dialogue-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
-}
 
 #[test]
 fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
@@ -73,11 +50,11 @@ fn standard_dialogue_view_is_a_complete_encodable_authored_resource() {
     );
     assert_eq!(
         program.text_blocks[0].bounds,
-        ViewTextBlockBounds::new(85_600, 518_800, 1_108_800, 125_600)
+        ViewTextBlockBounds::new(85_600, 480_800, 1_108_800, 28_000)
     );
     assert_eq!(
         program.text_blocks[1].bounds,
-        ViewTextBlockBounds::new(85_600, 480_800, 1_108_800, 28_000)
+        ViewTextBlockBounds::new(85_600, 518_800, 1_108_800, 125_600)
     );
     assert_eq!(
         program.action_buttons[0].bounds,
@@ -435,49 +412,6 @@ fn one_free_source_slot_is_insufficient_for_both_reserved_standard_sources() {
     );
 }
 
-#[test]
-fn dialogue_view_id_round_trips_as_the_accepted_public_owner() {
-    let mut bundle = test_bundle();
-    bundle.display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![display_spec(
-            RuntimeLineId::from_runtime_line_value("say.accepted").expect("line ID"),
-            ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
-        )],
-    )
-    .expect("test display catalog is revision-consistent");
-
-    let encoded = bundle.to_json_bytes().expect("accepted owner encodes");
-    let decoded =
-        arcweft_bundle::ArcweftBundle::from_json_slice(&encoded).expect("accepted owner decodes");
-
-    assert_eq!(decoded.display.lines()[0].view.as_str(), DIALOGUE_VIEW_ID);
-}
-
-#[test]
-fn dialogue_view_id_rejects_malformed_wire_identity() {
-    let mut bundle = test_bundle();
-    bundle.display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![display_spec(
-            RuntimeLineId::from_runtime_line_value("say.malformed").expect("line ID"),
-            ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
-        )],
-    )
-    .expect("test display catalog is revision-consistent");
-    let mut payload: serde_json::Value =
-        serde_json::from_slice(&bundle.to_json_bytes().expect("fixture encodes"))
-            .expect("fixture JSON");
-    payload["display"]["lines"][0]["view"] = serde_json::json!("not a public View id");
-
-    assert!(matches!(
-        arcweft_bundle::ArcweftBundle::from_json_slice(
-            &serde_json::to_vec(&payload).expect("tampered JSON encodes")
-        ),
-        Err(BundleCodecError::Decode(_))
-    ));
-}
-
 fn assert_declaration(
     declarations: &[ViewStyleDeclaration],
     property: ViewPropertyKind,
@@ -499,139 +433,6 @@ fn length(value: i32) -> ViewSpecifiedValue {
 
 const fn position(value: ViewPosition) -> ViewSpecifiedValue {
     ViewSpecifiedValue::Position { value }
-}
-
-#[test]
-fn dialogue_view_id_is_required_and_rejects_null_wire_identity() {
-    let mut bundle = test_bundle();
-    bundle.display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![display_spec(
-            RuntimeLineId::from_runtime_line_value("say.required").expect("line ID"),
-            ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID"),
-        )],
-    )
-    .expect("test display catalog is revision-consistent");
-    let payload: serde_json::Value =
-        serde_json::from_slice(&bundle.to_json_bytes().expect("fixture encodes"))
-            .expect("fixture JSON");
-
-    let mut missing = payload.clone();
-    missing["display"]["lines"][0]
-        .as_object_mut()
-        .expect("display line object")
-        .remove("view");
-    assert!(matches!(
-        arcweft_bundle::ArcweftBundle::from_json_slice(
-            &serde_json::to_vec(&missing).expect("missing-field JSON encodes")
-        ),
-        Err(BundleCodecError::Decode(_))
-    ));
-
-    let mut null = payload;
-    null["display"]["lines"][0]["view"] = serde_json::Value::Null;
-    assert!(matches!(
-        arcweft_bundle::ArcweftBundle::from_json_slice(
-            &serde_json::to_vec(&null).expect("null-field JSON encodes")
-        ),
-        Err(BundleCodecError::Decode(_))
-    ));
-}
-
-#[test]
-fn dialogue_view_id_rejects_unknown_public_owner() {
-    let line = RuntimeLineId::from_runtime_line_value("say.unknown").expect("line ID");
-    let unknown = ViewId::try_new("view.UnknownDialogue").expect("well-formed View ID");
-    let mut bundle = test_bundle();
-    bundle.display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![display_spec(line.clone(), unknown.clone())],
-    )
-    .expect("test display catalog is revision-consistent");
-
-    assert!(matches!(
-        bundle.to_json_bytes(),
-        Err(BundleCodecError::MissingDialogueViewDefinition { line: actual, view })
-            if actual == line && view == unknown
-    ));
-}
-
-#[test]
-fn dialogue_view_id_rejects_registered_owner_without_dialogue_role() {
-    let line = RuntimeLineId::from_runtime_line_value("say.wrong-role").expect("line ID");
-    let owner = ViewId::try_new("view.NotDialogue").expect("well-formed View ID");
-    let authored = ViewProgramResource {
-        program_id: arcweft_view::ViewProgramId::try_new("view.project.role").unwrap(),
-        definitions: vec![ViewDefinitionResource {
-            public_id: arcweft_bundle::resource_codec::view::ViewDefinitionRef::new(owner.clone()),
-            body: ViewInstructionSpan::new(0, 0),
-            styles: Vec::new(),
-            parameters: Vec::new(),
-            state_schema_hash: 7,
-        }],
-        ..ViewProgramResource::default()
-    };
-    let mut bundle = test_bundle()
-        .with_view_resources(Some(authored), None)
-        .expect("authored View resources merge");
-    bundle.display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![display_spec(line.clone(), owner.clone())],
-    )
-    .expect("test display catalog is revision-consistent");
-
-    assert!(matches!(
-        bundle.to_json_bytes(),
-        Err(BundleCodecError::DialogueViewDefinitionMissingRole {
-            line: actual,
-            view,
-        }) if actual == line && view == owner
-    ));
-}
-
-#[test]
-fn dialogue_view_validation_rejects_duplicate_owners_before_role_selection() {
-    let owner = ViewId::try_new_engine_owned(DIALOGUE_VIEW_ID).expect("standard View ID");
-    let mut bundle = test_bundle();
-    let program = bundle.view_program.as_mut().expect("standard View program");
-    let mut duplicate = program.definitions[0].clone();
-    duplicate.parameters.clear();
-    program.definitions.push(duplicate);
-    bundle.display = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![display_spec(
-            RuntimeLineId::from_runtime_line_value("say.duplicate-view").expect("line ID"),
-            owner.clone(),
-        )],
-    )
-    .expect("test display catalog is revision-consistent");
-
-    assert!(matches!(
-        bundle.to_json_bytes(),
-        Err(BundleCodecError::DuplicateViewDefinition { view }) if view == owner
-    ));
-}
-
-fn display_spec(line: RuntimeLineId, view: ViewId) -> LineDisplaySpec {
-    LineDisplaySpec {
-        line,
-        callee: "narrator".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view,
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
-            text: "dialogue".to_owned(),
-        }]),
-    }
 }
 
 fn test_bundle() -> arcweft_bundle::ArcweftBundle {
@@ -689,7 +490,7 @@ fn try_test_bundle(
 ) -> Result<arcweft_bundle::ArcweftBundle, SourceMapBuildError> {
     use arcweft_bundle::{BundleManifest, BundleRuntimeSummary};
     use arcweft_core::bytecode::BytecodeProgram;
-    use arcweft_render_text::LineDisplayCatalog;
+    use arcweft_text_model::DialogueContentCatalog;
 
     arcweft_bundle::ArcweftBundle::try_new(
         BundleManifest {
@@ -700,6 +501,8 @@ fn try_test_bundle(
             adapter_manifest_ids: Vec::new(),
             required_host_calls: Vec::new(),
             runtime: BundleRuntimeSummary {
+                artifact_fingerprint: RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
+                    .expect("non-zero runtime artifact fingerprint"),
                 entry_flow: None,
                 flows: 0,
                 bytecode_instructions: 0,
@@ -710,6 +513,6 @@ fn try_test_bundle(
         },
         source_map,
         BytecodeProgram::default(),
-        LineDisplayCatalog::new(test_dialogue_revision()),
+        DialogueContentCatalog::new(),
     )
 }

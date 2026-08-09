@@ -74,17 +74,34 @@ pub enum RuntimeIdentityDecodeError {
 
 #[cfg(test)]
 mod tests {
-    use super::{RuntimeArtifactFingerprint, RuntimeAssertionGuardId, RuntimeIdentityDecodeError};
+    use super::{RuntimeArtifactFingerprint, RuntimeAssertionGuardId};
+    use crate::{
+        effect::{
+            LineEffectRequest, RuntimeAssertion, RuntimeAssertionFailure, RuntimeAssertionProfile,
+            RuntimeEffectExpr, RuntimeEffectMaterializeError,
+        },
+        value::{RuntimeExpr, RuntimeValue},
+    };
 
-    #[test]
-    fn checked_identity_constructors_reject_reserved_zero_values() {
+    fn failure_fixture() -> RuntimeAssertionFailure {
+        RuntimeAssertionFailure::new(RuntimeAssertion::new(
+            RuntimeAssertionGuardId::try_from_bytes([7; 16]).unwrap(),
+            "ready".to_owned(),
+            "must be ready".to_owned(),
+            RuntimeAssertionProfile::Always,
+        ))
+    }
+
+    fn assert_failure_payload(decoded: &RuntimeAssertionFailure) {
         assert_eq!(
-            RuntimeAssertionGuardId::try_from_bytes([0; 16]),
-            Err(RuntimeIdentityDecodeError::ZeroAssertionGuard)
+            decoded.assertion().guard(),
+            RuntimeAssertionGuardId::try_from_bytes([7; 16]).unwrap()
         );
+        assert_eq!(decoded.assertion().condition(), "ready");
+        assert_eq!(decoded.assertion().message(), "must be ready");
         assert_eq!(
-            RuntimeArtifactFingerprint::try_from_bytes([0; 32]),
-            Err(RuntimeIdentityDecodeError::ZeroArtifactFingerprint)
+            decoded.assertion().profile(),
+            RuntimeAssertionProfile::Always
         );
     }
 
@@ -109,6 +126,90 @@ mod tests {
         assert!(serde_json::from_str::<RuntimeAssertionGuardId>(&zero_guard_json).is_err());
         assert!(
             serde_json::from_str::<RuntimeArtifactFingerprint>(&zero_fingerprint_json).is_err()
+        );
+    }
+
+    #[test]
+    fn runtime_assertion_codec_retains_guard_without_session_identity() {
+        let failure = failure_fixture();
+
+        let encoded = serde_json::to_vec(&failure).unwrap();
+        let decoded: RuntimeAssertionFailure = serde_json::from_slice(&encoded).unwrap();
+
+        assert_eq!(decoded, failure);
+        assert_failure_payload(&decoded);
+    }
+
+    #[test]
+    fn runtime_effect_transport_retains_guard_through_descriptor_and_materialization() {
+        let guard = RuntimeAssertionGuardId::try_from_bytes([7; 16]).unwrap();
+        let effect = RuntimeEffectExpr::Assert {
+            guard,
+            condition: RuntimeExpr::Value(RuntimeValue::Bool(false)),
+            message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+            profile: RuntimeAssertionProfile::Always,
+        };
+
+        let LineEffectRequest::Assert(descriptor) = effect.descriptor() else {
+            panic!("assertion descriptor must retain its typed request kind");
+        };
+        assert_eq!(descriptor.guard(), guard);
+        assert!(descriptor.condition().is_empty());
+        assert!(descriptor.message().is_empty());
+
+        let Some(LineEffectRequest::Assert(materialized)) = effect
+            .materialize(&[
+                RuntimeValue::Bool(false),
+                RuntimeValue::String("must be ready".to_owned()),
+            ])
+            .expect("assertion payload materializes")
+        else {
+            panic!("materialized assertion must retain its typed request kind");
+        };
+        assert_eq!(materialized.guard(), guard);
+        assert_eq!(materialized.condition(), "false");
+        assert_eq!(materialized.message(), "must be ready");
+        assert_eq!(materialized.profile(), RuntimeAssertionProfile::Always);
+    }
+
+    #[test]
+    fn successful_runtime_assertion_materializes_no_host_request() {
+        let effect = RuntimeEffectExpr::Assert {
+            guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).unwrap(),
+            condition: RuntimeExpr::Value(RuntimeValue::Bool(true)),
+            message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+            profile: RuntimeAssertionProfile::Always,
+        };
+
+        let materialized = effect
+            .materialize(&[
+                RuntimeValue::Bool(true),
+                RuntimeValue::String("must be ready".to_owned()),
+            ])
+            .expect("typed assertion payload is valid");
+
+        assert_eq!(materialized, None);
+    }
+
+    #[test]
+    fn non_bool_runtime_assertion_is_a_typed_materialization_error() {
+        let effect = RuntimeEffectExpr::Assert {
+            guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).unwrap(),
+            condition: RuntimeExpr::Value(RuntimeValue::String("false".to_owned())),
+            message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+            profile: RuntimeAssertionProfile::Always,
+        };
+
+        let error = effect
+            .materialize(&[
+                RuntimeValue::String("false".to_owned()),
+                RuntimeValue::String("must be ready".to_owned()),
+            ])
+            .expect_err("string labels must not drive assertion truth");
+
+        assert_eq!(
+            error,
+            RuntimeEffectMaterializeError::AssertionConditionNotBool
         );
     }
 }

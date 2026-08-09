@@ -19,6 +19,7 @@ use arcweft_character::{
 };
 use arcweft_core::{
     entry::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash},
+    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
     plan::RuntimeLineId,
     value::{
         MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeFieldValue, RuntimeNominalRecordError,
@@ -145,11 +146,7 @@ fn fixture_with_style(
 }
 
 fn option_some(value: RuntimeValue) -> RuntimeValue {
-    RuntimeValue::Variant {
-        path: None,
-        name: "Some".to_owned(),
-        payload: Some(Box::new(value)),
-    }
+    RuntimeValue::option_some(value)
 }
 
 #[test]
@@ -339,7 +336,11 @@ fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
 fn structured_clear_rejects_non_option_some_leaf_atomically() {
     let layout = TypeLayoutHash::from_bytes([12; 32]);
     let non_option_some = RuntimeValue::Variant {
-        path: Some("custom.Choice".to_owned()),
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new("custom.Choice").expect("nominal owner"),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([12; 32]),
+        },
+        ordinal: 0,
         name: "Some".to_owned(),
         payload: Some(Box::new(RuntimeValue::Bool(true))),
     };

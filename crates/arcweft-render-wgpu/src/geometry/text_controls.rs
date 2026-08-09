@@ -23,13 +23,14 @@ use arcweft_presentation::text_input::{
     TextInputSessionId, TextRange, TextWritingMode,
 };
 use arcweft_render_text::{
-    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle,
-    RichTextPresentation, RichTextRange, TextColor, TextDocumentRevision, TextSlant, TextWeight,
+    ResolvedTextDocument, ResolvedTextRun, ResolvedTextRunSource, ResolvedTextStyle, TextColor,
+    TextDocumentRevision, TextSlant, TextWeight,
 };
 use arcweft_text_layout::{
     HorizontalWrap, LayoutPoint, LayoutRect, LayoutSize, TextLayout, TextLayoutGlyphSource,
     TextLayoutRequest, TextLayoutSourceMap, layout_document,
 };
+use arcweft_text_model::{RichTextPresentation, RichTextRange};
 
 const TEXT_INSET_X: f32 = 8.0;
 const TEXT_INSET_Y: f32 = 4.0;

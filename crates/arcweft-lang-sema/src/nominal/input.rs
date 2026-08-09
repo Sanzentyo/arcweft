@@ -1,16 +1,22 @@
-//! Validated inputs and lexical scopes for nominal type resolution.
+//! Validated final-HIR inputs and lexical scopes for nominal type resolution.
 
 use core::hash::Hasher;
-use std::{collections::BTreeMap, hash::Hash};
+use std::{collections::BTreeMap, hash::Hash, ptr};
 
-use arcweft_lang_hir::symbol::{
-    ExternalDeclarationId, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
-    nominal::SourceBackedTypeRef,
+use arcweft_lang_hir::{
+    identity::{HirSnapshotId, IdResolveError, TypeId},
+    lowering::HirModuleKey,
+    module::HirModule,
+    project::HirProjectView,
+    proof_return::{HirProofReturnHeaderModuleView, HirProofReturnHeaderProjectView},
+    source_index::{HirSourcePresence, HirSourceQuery, HirSourceSite, HirTypeSourceRole},
+    symbol::{
+        ExternalDeclarationId, ProjectSymbolRevision, ProjectSymbolTable, ProjectSymbolWorldId,
+    },
+    type_ref::HirType,
 };
-use arcweft_lang_syntax::{
-    ast::module_path::{CanonicalModulePath, ModuleSegment},
-    types::AuthoredTypeRef,
-};
+use arcweft_lang_syntax::ast::module_path::{CanonicalModulePath, ModuleSegment};
+use arcweft_lang_syntax::attachment::SyntaxSnapshotId;
 use arcweft_source::SourceDocumentIdentity;
 
 use crate::{
@@ -53,7 +59,7 @@ pub struct GenericTypeScope {
     fingerprint: GenericTypeScopeFingerprint,
 }
 
-/// Semantic `Self` available at the current authored type position.
+/// Semantic `Self` available at the current final-HIR type owner.
 #[derive(Clone, Debug)]
 pub enum SelfTypeScope {
     Absent,
@@ -65,9 +71,26 @@ pub enum SelfTypeScope {
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SelfTypeScopeFingerprint([u8; 32]);
 
-/// Accepted project proof or deliberately detached environment.
+/// Exact module reader used by the sole nominal resolver. The staged variant
+/// borrows the paused Proof-return transaction directly; it is not a second
+/// HIR database or a reconstructed header model.
+#[derive(Clone, Copy)]
+pub enum TypeResolutionModule<'a> {
+    Published(&'a HirModule),
+    ProofReturnHeader(HirProofReturnHeaderModuleView<'a, 'a>),
+}
+
+/// Exact project reader used by the sole nominal resolver.
+#[derive(Clone, Copy)]
+pub enum TypeResolutionProject<'a> {
+    Published(HirProjectView<'a>),
+    ProofReturnHeaders(HirProofReturnHeaderProjectView<'a, 'a>),
+}
+
+/// Accepted project proof or a final-HIR module resolved without project symbols.
 pub enum TypeResolutionWorld<'a> {
     Accepted {
+        project: TypeResolutionProject<'a>,
         symbols: &'a ProjectSymbolTable,
         environment: &'a AcceptedNominalWorld,
     },
@@ -76,16 +99,10 @@ pub enum TypeResolutionWorld<'a> {
     },
 }
 
-/// Source carrier selected for the current resolution world.
-pub enum AuthoredTypeInput<'a> {
-    Accepted(&'a SourceBackedTypeRef),
-    Detached(&'a AuthoredTypeRef),
-}
-
-/// Complete validated input for the one public resolution operation.
+/// Complete validated input for the one public final-HIR resolution operation.
 pub struct TypeResolutionInput<'a> {
-    authored: AuthoredTypeInput<'a>,
-    current_module: Option<&'a CanonicalModulePath>,
+    root: TypeId,
+    module: TypeResolutionModule<'a>,
     world: TypeResolutionWorld<'a>,
     generics: &'a GenericTypeScope,
     self_scope: SelfTypeScope,
@@ -106,10 +123,19 @@ pub enum TypeResolutionInputError {
     UnknownModule {
         module: Box<CanonicalModulePath>,
     },
+    StaleModuleLease {
+        module: Box<CanonicalModulePath>,
+        expected: HirSnapshotId,
+        actual: HirSnapshotId,
+    },
     SourceMismatch {
         module: Box<CanonicalModulePath>,
         expected: Box<SourceDocumentIdentity>,
         actual: Box<SourceDocumentIdentity>,
+    },
+    InvalidTypeOwner {
+        root: TypeId,
+        reason: IdResolveError,
     },
     RegisteredEnvironmentIntegrity {
         external: ExternalDeclarationId,
@@ -167,7 +193,6 @@ impl GenericTypeScopeError {
 }
 
 impl GenericTypeScope {
-    /// Empty generic scope for an authored position outside a generic owner.
     pub fn empty() -> Self {
         let bindings = BTreeMap::new();
         let fingerprint = fingerprint_generics(&bindings);
@@ -177,7 +202,6 @@ impl GenericTypeScope {
         }
     }
 
-    /// Freezes nearest visible bindings and rejects duplicate names.
     pub fn try_new(
         bindings: impl IntoIterator<Item = GenericTypeBinding>,
     ) -> Result<Self, GenericTypeScopeError> {
@@ -247,6 +271,13 @@ impl SelfTypeScopeFingerprint {
 }
 
 impl<'a> TypeResolutionWorld<'a> {
+    pub const fn project(&self) -> Option<TypeResolutionProject<'a>> {
+        match self {
+            Self::Accepted { project, .. } => Some(*project),
+            Self::Detached { .. } => None,
+        }
+    }
+
     pub const fn symbols(&self) -> Option<&'a ProjectSymbolTable> {
         match self {
             Self::Accepted { symbols, .. } => Some(*symbols),
@@ -269,18 +300,83 @@ impl<'a> TypeResolutionWorld<'a> {
     }
 }
 
-impl<'a> AuthoredTypeInput<'a> {
-    pub const fn authored(&self) -> &'a AuthoredTypeRef {
+impl<'a> TypeResolutionProject<'a> {
+    pub fn module(self, path: &CanonicalModulePath) -> Option<TypeResolutionModule<'a>> {
         match self {
-            Self::Accepted(source_backed) => source_backed.authored(),
-            Self::Detached(authored) => authored,
+            Self::Published(project) => project
+                .module(path)
+                .map(|module| TypeResolutionModule::Published(module.as_ref())),
+            Self::ProofReturnHeaders(project) => project
+                .module(path)
+                .map(TypeResolutionModule::ProofReturnHeader),
+        }
+    }
+}
+
+impl<'a> TypeResolutionModule<'a> {
+    pub fn key(self) -> &'a HirModuleKey {
+        match self {
+            Self::Published(module) => module.key(),
+            Self::ProofReturnHeader(module) => module.key(),
         }
     }
 
-    pub const fn source_backed(&self) -> Option<&'a SourceBackedTypeRef> {
+    pub fn snapshot_id(self) -> HirSnapshotId {
         match self {
-            Self::Accepted(source_backed) => Some(*source_backed),
-            Self::Detached(_) => None,
+            Self::Published(module) => module.snapshot_id(),
+            Self::ProofReturnHeader(module) => module.snapshot_id(),
+        }
+    }
+
+    pub fn syntax_snapshot(self) -> &'a SyntaxSnapshotId {
+        match self {
+            Self::Published(module) => module.provenance().syntax_snapshot(),
+            Self::ProofReturnHeader(module) => module.syntax_snapshot(),
+        }
+    }
+
+    pub fn source_identity(self) -> &'a SourceDocumentIdentity {
+        match self {
+            Self::Published(module) => module.provenance().source_identity(),
+            Self::ProofReturnHeader(module) => module.source_identity(),
+        }
+    }
+
+    pub fn resolve_type(self, owner: TypeId) -> Result<&'a HirType, IdResolveError> {
+        match self {
+            Self::Published(module) => module.resolve_type(owner),
+            Self::ProofReturnHeader(module) => module.resolve_type(owner),
+        }
+    }
+
+    pub fn type_source_site(
+        self,
+        owner: TypeId,
+        role: HirTypeSourceRole,
+    ) -> Option<&'a HirSourceSite> {
+        match self {
+            Self::Published(module) => module
+                .source_site(
+                    module.provenance().source_identity(),
+                    HirSourceQuery::Type { owner, role },
+                )
+                .ok()
+                .and_then(|lookup| match lookup.presence() {
+                    HirSourcePresence::Present(site) => Some(site),
+                    HirSourcePresence::AbsentOptional => None,
+                }),
+            Self::ProofReturnHeader(module) => module.type_source_site(owner, role),
+        }
+    }
+
+    fn same_lease(self, other: Self) -> bool {
+        match (self, other) {
+            (Self::Published(left), Self::Published(right)) => ptr::eq(left, right),
+            (Self::ProofReturnHeader(left), Self::ProofReturnHeader(right)) => {
+                left.same_transaction(right)
+            }
+            (Self::Published(_), Self::ProofReturnHeader(_))
+            | (Self::ProofReturnHeader(_), Self::Published(_)) => false,
         }
     }
 }
@@ -291,14 +387,17 @@ impl<'a> TypeResolutionInput<'a> {
         reason = "the final accepted resolver boundary requires every proof component explicitly"
     )]
     pub fn accepted(
-        authored: &'a SourceBackedTypeRef,
-        current_module: &'a CanonicalModulePath,
+        root: TypeId,
+        module: &'a HirModule,
+        project: HirProjectView<'a>,
         symbols: &'a ProjectSymbolTable,
         environment: &'a AcceptedNominalWorld,
         generics: &'a GenericTypeScope,
         self_scope: SelfTypeScope,
         limits: NominalResolutionLimits,
     ) -> Result<Self, TypeResolutionInputError> {
+        let module = TypeResolutionModule::Published(module);
+        validate_root(root, module)?;
         if symbols.world() != environment.world() {
             return Err(TypeResolutionInputError::StaleWorld {
                 symbol_world: Box::new(symbols.world().clone()),
@@ -311,31 +410,40 @@ impl<'a> TypeResolutionInput<'a> {
                 environment_revision: *environment.symbol_revision(),
             });
         }
-        let expected = symbols.source_identity(current_module).ok_or_else(|| {
+        let module_path = module.key().path();
+        let accepted =
+            project
+                .module(module_path)
+                .ok_or_else(|| TypeResolutionInputError::UnknownModule {
+                    module: Box::new(module_path.clone()),
+                })?;
+        let accepted = TypeResolutionModule::Published(accepted.as_ref());
+        if !accepted.same_lease(module) {
+            return Err(TypeResolutionInputError::StaleModuleLease {
+                module: Box::new(module_path.clone()),
+                expected: accepted.snapshot_id(),
+                actual: module.snapshot_id(),
+            });
+        }
+        let expected = symbols.source_identity(module_path).ok_or_else(|| {
             TypeResolutionInputError::UnknownModule {
-                module: Box::new(current_module.clone()),
+                module: Box::new(module_path.clone()),
             }
         })?;
-        for (_, source) in authored.spans().nodes() {
-            for span in core::iter::once(source.whole()).chain(
-                source
-                    .head()
-                    .map(arcweft_lang_syntax::types::TypeRefHeadSource::range),
-            ) {
-                if span.source() != expected {
-                    return Err(TypeResolutionInputError::SourceMismatch {
-                        module: Box::new(current_module.clone()),
-                        expected: Box::new(expected.clone()),
-                        actual: Box::new(span.source().clone()),
-                    });
-                }
-            }
+        let actual = module.source_identity();
+        if expected != actual {
+            return Err(TypeResolutionInputError::SourceMismatch {
+                module: Box::new(module_path.clone()),
+                expected: Box::new(expected.clone()),
+                actual: Box::new(actual.clone()),
+            });
         }
         validate_compiled_limits(limits)?;
         Ok(Self {
-            authored: AuthoredTypeInput::Accepted(authored),
-            current_module: Some(current_module),
+            root,
+            module,
             world: TypeResolutionWorld::Accepted {
+                project: TypeResolutionProject::Published(project),
                 symbols,
                 environment,
             },
@@ -347,32 +455,82 @@ impl<'a> TypeResolutionInput<'a> {
 
     #[allow(
         clippy::too_many_arguments,
-        reason = "detached resolution still requires every lexical and resource boundary explicitly"
+        reason = "the staged accepted resolver boundary requires every exact proof component explicitly"
     )]
-    pub const fn detached(
-        authored: &'a AuthoredTypeRef,
-        current_module: Option<&'a CanonicalModulePath>,
+    pub fn accepted_proof_return_header(
+        root: TypeId,
+        module: HirProofReturnHeaderModuleView<'a, 'a>,
+        project: HirProofReturnHeaderProjectView<'a, 'a>,
+        symbols: &'a ProjectSymbolTable,
+        environment: &'a AcceptedNominalWorld,
+        generics: &'a GenericTypeScope,
+        self_scope: SelfTypeScope,
+        limits: NominalResolutionLimits,
+    ) -> Result<Self, TypeResolutionInputError> {
+        let module = TypeResolutionModule::ProofReturnHeader(module);
+        validate_root(root, module)?;
+        validate_accepted_world(symbols, environment)?;
+        let module_path = module.key().path();
+        let accepted =
+            project
+                .module(module_path)
+                .ok_or_else(|| TypeResolutionInputError::UnknownModule {
+                    module: Box::new(module_path.clone()),
+                })?;
+        if !TypeResolutionModule::ProofReturnHeader(accepted).same_lease(module) {
+            return Err(TypeResolutionInputError::StaleModuleLease {
+                module: Box::new(module_path.clone()),
+                expected: accepted.snapshot_id(),
+                actual: module.snapshot_id(),
+            });
+        }
+        validate_source_identity(module, symbols)?;
+        validate_compiled_limits(limits)?;
+        Ok(Self {
+            root,
+            module,
+            world: TypeResolutionWorld::Accepted {
+                project: TypeResolutionProject::ProofReturnHeaders(project),
+                symbols,
+                environment,
+            },
+            generics,
+            self_scope,
+            limits,
+        })
+    }
+
+    pub fn detached(
+        root: TypeId,
+        module: &'a HirModule,
         environment: &'a TypeCheckEnv,
         generics: &'a GenericTypeScope,
         self_scope: SelfTypeScope,
         limits: NominalResolutionLimits,
-    ) -> Self {
-        Self {
-            authored: AuthoredTypeInput::Detached(authored),
-            current_module,
+    ) -> Result<Self, TypeResolutionInputError> {
+        let module = TypeResolutionModule::Published(module);
+        validate_root(root, module)?;
+        validate_compiled_limits(limits)?;
+        Ok(Self {
+            root,
+            module,
             world: TypeResolutionWorld::Detached { environment },
             generics,
             self_scope,
             limits,
-        }
+        })
     }
 
-    pub const fn authored(&self) -> &AuthoredTypeInput<'a> {
-        &self.authored
+    pub const fn root(&self) -> TypeId {
+        self.root
     }
 
-    pub const fn current_module(&self) -> Option<&'a CanonicalModulePath> {
-        self.current_module
+    pub const fn module(&self) -> TypeResolutionModule<'a> {
+        self.module
+    }
+
+    pub fn current_module(&self) -> &'a CanonicalModulePath {
+        self.module.key().path()
     }
 
     pub const fn world(&self) -> &TypeResolutionWorld<'a> {
@@ -390,6 +548,56 @@ impl<'a> TypeResolutionInput<'a> {
     pub const fn limits(&self) -> NominalResolutionLimits {
         self.limits
     }
+}
+
+fn validate_root(
+    root: TypeId,
+    module: TypeResolutionModule<'_>,
+) -> Result<(), TypeResolutionInputError> {
+    module
+        .resolve_type(root)
+        .map(|_| ())
+        .map_err(|reason| TypeResolutionInputError::InvalidTypeOwner { root, reason })
+}
+
+fn validate_accepted_world(
+    symbols: &ProjectSymbolTable,
+    environment: &AcceptedNominalWorld,
+) -> Result<(), TypeResolutionInputError> {
+    if symbols.world() != environment.world() {
+        return Err(TypeResolutionInputError::StaleWorld {
+            symbol_world: Box::new(symbols.world().clone()),
+            environment_world: Box::new(environment.world().clone()),
+        });
+    }
+    if symbols.revision() != environment.symbol_revision() {
+        return Err(TypeResolutionInputError::StaleRevision {
+            symbol_revision: *symbols.revision(),
+            environment_revision: *environment.symbol_revision(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_source_identity(
+    module: TypeResolutionModule<'_>,
+    symbols: &ProjectSymbolTable,
+) -> Result<(), TypeResolutionInputError> {
+    let module_path = module.key().path();
+    let expected = symbols.source_identity(module_path).ok_or_else(|| {
+        TypeResolutionInputError::UnknownModule {
+            module: Box::new(module_path.clone()),
+        }
+    })?;
+    let actual = module.source_identity();
+    if expected != actual {
+        return Err(TypeResolutionInputError::SourceMismatch {
+            module: Box::new(module_path.clone()),
+            expected: Box::new(expected.clone()),
+            actual: Box::new(actual.clone()),
+        });
+    }
+    Ok(())
 }
 
 fn validate_compiled_limits(
@@ -455,7 +663,7 @@ fn validate_compiled_limits(
 fn fingerprint_generics(
     bindings: &BTreeMap<ModuleSegment, GenericTypeBinding>,
 ) -> GenericTypeScopeFingerprint {
-    let mut hasher = Blake3Hasher::new(b"arcweft-generic-type-scope-v1\0");
+    let mut hasher = Blake3Hasher::new(b"arcweft-generic-type-scope-v2\0");
     hasher.write_usize(bindings.len());
     for (name, binding) in bindings {
         name.hash(&mut hasher);
@@ -491,56 +699,5 @@ impl Hasher for Blake3Hasher {
 
     fn write(&mut self, bytes: &[u8]) {
         self.0.update(bytes);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use arcweft_lang_syntax::ast::{common::TextRange, module_path::ModuleSegment};
-
-    use crate::types::{DetachedTypeOwnerId, GenericTypeOwnerId};
-
-    use super::*;
-
-    fn binding(name: &str, ordinal: u16, start: usize) -> GenericTypeBinding {
-        GenericTypeBinding::new(
-            GenericTypeParameterId::new(
-                GenericTypeOwnerId::Detached(DetachedTypeOwnerId::new(9)),
-                ordinal,
-            ),
-            ModuleSegment::new(name).expect("generic name"),
-            TypeSourceEvidence::new(TextRange::new(start, start + name.len()), None),
-        )
-    }
-
-    #[test]
-    fn generic_scope_fingerprint_is_insertion_order_independent() {
-        let first =
-            GenericTypeScope::try_new([binding("T", 0, 0), binding("E", 1, 3)]).expect("scope");
-        let second =
-            GenericTypeScope::try_new([binding("E", 1, 3), binding("T", 0, 0)]).expect("scope");
-        assert_eq!(first.fingerprint(), second.fingerprint());
-        assert_eq!(first.bindings().len(), 2);
-    }
-
-    #[test]
-    fn generic_scope_rejects_duplicate_nearest_bindings() {
-        let error = GenericTypeScope::try_new([binding("T", 0, 0), binding("T", 1, 5)])
-            .expect_err("duplicate generic must fail");
-        assert_eq!(error.name().as_str(), "T");
-        assert_eq!(error.first().local(), TextRange::new(0, 1));
-        assert_eq!(error.duplicate().local(), TextRange::new(5, 6));
-    }
-
-    #[test]
-    fn self_scope_fingerprint_distinguishes_absent_known_and_poisoned() {
-        assert_ne!(
-            SelfTypeScope::Absent.fingerprint(),
-            SelfTypeScope::Known(TypeKind::Bool).fingerprint()
-        );
-        assert_ne!(
-            SelfTypeScope::Known(TypeKind::Bool).fingerprint(),
-            SelfTypeScope::Poisoned(TypePoisonId::from_index(1)).fingerprint()
-        );
     }
 }

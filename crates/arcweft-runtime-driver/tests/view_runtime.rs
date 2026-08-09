@@ -6,23 +6,22 @@ use arcweft_bundle::resource_codec::view::{
     ViewTextSourceRecord,
 };
 use arcweft_bundle::resource_codec::{
-    ProductSourceRef, SourceMapSection, SourceRangeRef, ValidatedViewProduct,
-    ViewCallArgumentBindingRef, ViewDefinitionResource, ViewDisplayFrameResource,
-    ViewInstructionSpan, ViewLocalizedTextResource, ViewParameterResource,
-    ViewProductValidationLimits, ViewProgramResource, ViewRichTextDocumentResource,
-    ViewStyleResource, ViewTextBlockBounds, ViewTextBlockResource, ViewTextResource,
-    ViewValueInputNamespace, ViewValueInputResource, ViewValueInputSource,
+    SourceMapSection, SourceRangeRef, ValidatedViewProduct, ViewCallArgumentBindingRef,
+    ViewDefinitionResource, ViewDisplayFrameResource, ViewInstructionSpan,
+    ViewLocalizedTextResource, ViewParameterResource, ViewProductValidationLimits,
+    ViewProgramResource, ViewRichTextDocumentResource, ViewStyleResource, ViewTextBlockBounds,
+    ViewTextBlockResource, ViewTextResource, ViewValueInputNamespace, ViewValueInputResource,
+    ViewValueInputSource,
 };
-use arcweft_core::plan::RuntimeLineId;
+use arcweft_character::id::CharacterId;
 use arcweft_core::value::{RuntimeBinding, RuntimeInt, RuntimeValue};
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
+use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::TextKey;
 use arcweft_presentation::fx::{
     FxContextSlot, FxRuntimeType, FxRuntimeValue, ValueInstruction, ValueProgramSchema,
 };
-use arcweft_render_text::{
-    LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode, RuntimeLineContext,
-};
-use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_render_text::{RuntimeLineContext, resolve_frame};
 use arcweft_runtime_driver::dialogue::{
     DialoguePageIndex, DialoguePresentationOperation, DialoguePresentationStore,
     DialogueViewDefinition, DialogueViewInput, DialogueViewOccurrence, DialogueViewPrimaryAction,
@@ -39,7 +38,11 @@ use arcweft_runtime_driver::view_runtime::{
     BundleViewTextValue, SavedViewOwner, ViewOwnerEvidence, ViewProgramReplacementError,
     ViewProgramReplacementOutcome,
 };
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::{
+    CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
+    LineDisplayFrame, RichTextDocument, RichTextNode,
+};
 use arcweft_view::{
     AcceptedViewProgramRevision, DialogueEntryId, DialogueInstanceId, DialoguePresentationId,
     DialogueStageIndex, EventKind, RustViewId, ViewDescriptor, ViewId, ViewImplementation,
@@ -47,29 +50,9 @@ use arcweft_view::{
     ViewRegistryError, ViewSchemaId,
 };
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 struct BundleViewRuntime;
-
-fn test_dialogue_revision() -> DialogueProfileRevision {
-    let manifest = SourceDocument::try_new(
-        SourceDocumentId::try_new("runtime-driver-view-runtime-test").expect("document ID"),
-        SourceName::Memory,
-        "test manifest",
-    )
-    .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-driver-view-runtime-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
-}
 
 impl BundleViewRuntime {
     fn try_new(
@@ -97,33 +80,6 @@ impl BundleViewRuntime {
         )?;
         AcceptedBundleViewRuntime::try_new(product, text)
     }
-
-    fn try_new_with_dialogue_display(
-        program: Option<ViewProgramResource>,
-        text: Option<ViewTextResource>,
-        style: Option<&ViewStyleResource>,
-        display: &LineDisplayCatalog,
-    ) -> Result<AcceptedBundleViewRuntime, BundleViewRuntimeError> {
-        let source_map = if style.is_some() {
-            let source = arcweft_bundle::standard_view::dialogue_style_source_document();
-            Some(
-                SourceMapSection::try_from_documents(&[&source])
-                    .expect("standard dialogue Style source map"),
-            )
-        } else {
-            program
-                .as_ref()
-                .is_some_and(|program| !program.source_refs.is_empty())
-                .then(view_source_map)
-        };
-        let product = ValidatedViewProduct::try_new(
-            source_map,
-            program,
-            style.cloned(),
-            ViewProductValidationLimits::default(),
-        )?;
-        AcceptedBundleViewRuntime::try_new_with_dialogue_display(product, text, display)
-    }
 }
 
 fn program_id(value: &str) -> ViewProgramId {
@@ -132,6 +88,59 @@ fn program_id(value: &str) -> ViewProgramId {
 
 fn view_id(value: &str) -> ViewId {
     ViewId::parse_public(value).unwrap()
+}
+
+fn dialogue_source_ref() -> ProductSourceRef {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("runtime-driver-view-runtime-dialogue-test")
+            .expect("document ID"),
+        SourceName::Memory,
+        "dialogue frame",
+    )
+    .expect("source document");
+    ProductSourceRef::try_for_identity(source.identity()).expect("product source identity")
+}
+
+fn dialogue_frame(
+    line: &str,
+    view: &str,
+    display_name: &str,
+    nodes: Vec<RichTextNode>,
+) -> LineDisplayFrame {
+    let spec = DialogueContentSpec::new(
+        RuntimeLineId::from_runtime_line_value(line).expect("runtime line identity"),
+        TextKey::try_new(line.replacen("say.", "text.", 1)).expect("text key"),
+        RichTextDocument::new(nodes),
+        Vec::new(),
+        dialogue_source_ref(),
+    );
+    resolve_frame(
+        &spec,
+        &RuntimeLineContext::new(
+            Vec::new(),
+            DialoguePresentationCharacter {
+                id: CharacterId::try_new("character.test").expect("character identity"),
+                display_name: display_name.to_owned(),
+            },
+            CharacterDialoguePresentationConfig {
+                view: view_id(view),
+                voice: None,
+                look: None,
+                stage: None,
+                portrait: None,
+                focus: None,
+                cleanup: None,
+                source_locale: None,
+                hooks: Vec::new(),
+                inline_failure: InlineFailurePolicy::FailLine,
+                custom: BTreeMap::new(),
+                config_digest: RuntimeValueDigest::ZERO,
+            },
+            Vec::new(),
+            Vec::new(),
+        ),
+    )
+    .expect("final dialogue content resolves with explicit runtime context")
 }
 
 fn definition_ref(value: &str) -> ViewDefinitionRef {
@@ -168,8 +177,8 @@ fn handle(id: &str, view: &str) -> PresentationHandleRecord {
 fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
     assert_eq!(
         arcweft_runtime_driver::session_save::BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
-        1,
-        "the corrected unpublished payload remains the initial save schema"
+        2,
+        "the final dialogue-content generation identity is a breaking unpublished save schema"
     );
     let runtime = BundleViewRuntime::try_new(None, None, None).unwrap();
     let snapshot = runtime.snapshot().unwrap();
@@ -720,7 +729,7 @@ fn exported_part(
 fn view_source_refs() -> Vec<ProductSourceRef> {
     view_source_map()
         .documents()
-        .map(ProductSourceRef::from_document)
+        .map(arcweft_bundle::resource_codec::SourceMapDocument::product_source_ref)
         .collect()
 }
 
@@ -751,12 +760,13 @@ fn styled_product(
     mut style: ViewStyleResource,
 ) -> ValidatedViewProduct {
     let source_map = SourceMapSection::try_from_documents(&[source]).unwrap();
-    style.source_refs = vec![ProductSourceRef::from_document(
+    style.source_refs = vec![
         source_map
             .documents()
             .next()
-            .expect("Style source map is non-empty"),
-    )];
+            .expect("Style source map is non-empty")
+            .product_source_ref(),
+    ];
     ValidatedViewProduct::try_new(
         Some(source_map),
         Some(program),
@@ -776,7 +786,7 @@ fn sourced_product(label: &str, text: &str) -> ValidatedViewProduct {
     let source_map = SourceMapSection::try_from_documents(&[&document]).expect("source map");
     let source_refs = source_map
         .documents()
-        .map(ProductSourceRef::from_document)
+        .map(arcweft_bundle::resource_codec::SourceMapDocument::product_source_ref)
         .collect::<Vec<_>>();
     let source = source_refs[0].clone();
     let mut program = minimal_program("view.program.source-only", "view.SourceOnly", 1);
@@ -2245,28 +2255,14 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
         base: "夢".to_owned(),
         ruby: "ゆめ".to_owned(),
     }]);
-    let display_document = RichTextDocument::new(vec![RichTextNode::Text {
-        text: "Display stage".to_owned(),
-    }]);
-    let display_frame = LineDisplaySpec {
-        line: RuntimeLineId::from_runtime_line_value("say.typed_text.display").unwrap(),
-        callee: "narrator".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: view_id("view.TypedText"),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: display_document,
-    }
-    .resolve_frame(&RuntimeLineContext::new(Vec::new()))
-    .unwrap();
+    let display_frame = dialogue_frame(
+        "say.typed_text.display",
+        "view.TypedText",
+        "Narrator",
+        vec![RichTextNode::Text {
+            text: "Display stage".to_owned(),
+        }],
+    );
     let text = ViewTextResource {
         sources: vec![
             ViewTextSourceRecord {
@@ -2349,13 +2345,7 @@ fn typed_text_stores_resolve_localized_rich_and_display_sources_without_string_f
 #[test]
 fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence() {
     let (program, text) = typed_dialogue_view_resources();
-    let display_spec = typed_dialogue_display_spec();
-    let display_frame = display_spec
-        .clone()
-        .resolve_frame(&RuntimeLineContext::new(Vec::new()))
-        .unwrap();
-    let display = LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
-        .expect("test display catalog is revision-consistent");
+    let display_frame = typed_dialogue_display_frame();
     let dialogue_view = view_id("view.Dialogue");
     let first_handle = PresentationHandleId::try_new("dialogue.40").unwrap();
     let first_inputs = [DialogueViewInput {
@@ -2364,13 +2354,8 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
         frame: &display_frame,
         state: dialogue_view_state(40),
     }];
-    let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
-        Some(program.clone()),
-        Some(text.clone()),
-        None,
-        &display,
-    )
-    .expect("dialogue View runtime builds");
+    let mut runtime = BundleViewRuntime::try_new(Some(program.clone()), Some(text.clone()), None)
+        .expect("dialogue View runtime builds");
     let first = runtime.evaluate_with_dialogue(&[], &first_inputs, &[], false);
     assert!(first.diagnostics.is_empty(), "{first:#?}");
     assert_eq!(first.mounts.len(), 1);
@@ -2378,7 +2363,7 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
     assert_eq!(first.mounts[0].dialogue, Some(dialogue_view_state(40)));
     assert!(matches!(
         &first.mounts[0].text[0].value,
-        BundleViewTextValue::DialogueSpeaker { label, frame }
+        BundleViewTextValue::DialogueCharacterDisplayName { label, frame }
             if label == "Hero" && frame.as_ref() == &display_frame
     ));
     assert!(matches!(
@@ -2389,9 +2374,7 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
     let first_mount = first.mounts[0].mount;
 
     let snapshot = runtime.snapshot().unwrap();
-    let mut restored =
-        BundleViewRuntime::try_new_with_dialogue_display(Some(program), Some(text), None, &display)
-            .unwrap();
+    let mut restored = BundleViewRuntime::try_new(Some(program), Some(text), None).unwrap();
     let restored_handle = handle("dialogue.40", "view.Dialogue");
     restored
         .restore(&snapshot, std::slice::from_ref(&restored_handle))
@@ -2429,18 +2412,10 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
 #[test]
 fn replacement_cannot_remove_or_retype_a_live_dialogue_view_owner() {
     let (program, text) = typed_dialogue_view_resources();
-    let display_spec = typed_dialogue_display_spec();
-    let display_frame = display_spec
-        .clone()
-        .resolve_frame(&RuntimeLineContext::new(Vec::new()))
-        .unwrap();
-    let mut runtime = AcceptedBundleViewRuntime::try_new_with_dialogue_display(
-        validated_product(program.clone()),
-        Some(text),
-        &LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
-            .expect("test display catalog is revision-consistent"),
-    )
-    .expect("dialogue View runtime builds");
+    let display_frame = typed_dialogue_display_frame();
+    let mut runtime =
+        AcceptedBundleViewRuntime::try_new(validated_product(program.clone()), Some(text))
+            .expect("dialogue View runtime builds");
     let dialogue_view = view_id("view.Dialogue");
     let inputs = [DialogueViewInput {
         handle: PresentationHandleId::try_new("dialogue.replacement").unwrap(),
@@ -2542,7 +2517,7 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
             "text.dialogue.speaker",
             ViewTextSourceKind::Dialogue {
                 parameter: "dialogue".to_owned(),
-                projection: DialogueTextProjection::Speaker,
+                projection: DialogueTextProjection::CharacterDisplayName,
             },
         ),
         (
@@ -2556,27 +2531,16 @@ fn typed_dialogue_view_resources() -> (ViewProgramResource, ViewTextResource) {
     (program, text)
 }
 
-fn typed_dialogue_display_spec() -> LineDisplaySpec {
-    LineDisplaySpec {
-        line: RuntimeLineId::from_runtime_line_value("say.dialogue.typed").unwrap(),
-        callee: "character.hero".to_owned(),
-        speaker_label: Some("Hero".to_owned()),
-        text_key: None,
-        view: view_id("view.Dialogue"),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Ruby {
+fn typed_dialogue_display_frame() -> LineDisplayFrame {
+    dialogue_frame(
+        "say.dialogue.typed",
+        "view.Dialogue",
+        "Hero",
+        vec![RichTextNode::Ruby {
             base: "夢".to_owned(),
             ruby: "ゆめ".to_owned(),
-        }]),
-    }
+        }],
+    )
 }
 
 fn dialogue_view_state(identity: u64) -> DialogueViewState {
@@ -2599,29 +2563,14 @@ fn dialogue_view_state(identity: u64) -> DialogueViewState {
 
 #[test]
 fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
-    let display_spec = LineDisplaySpec {
-        line: RuntimeLineId::from_runtime_line_value("say.standard.dialogue").unwrap(),
-        callee: "narrator".to_owned(),
-        speaker_label: Some("Narrator".to_owned()),
-        text_key: None,
-        view: view_id(arcweft_bundle::standard_view::DIALOGUE_VIEW_ID),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
+    let frame = dialogue_frame(
+        "say.standard.dialogue",
+        arcweft_bundle::standard_view::DIALOGUE_VIEW_ID,
+        "Narrator",
+        vec![RichTextNode::Text {
             text: "Standard authored View".to_owned(),
-        }]),
-    };
-    let frame = display_spec
-        .clone()
-        .resolve_frame(&RuntimeLineContext::new(Vec::new()))
-        .unwrap();
+        }],
+    );
     let mut dialogue = DialoguePresentationStore::default();
     dialogue
         .apply_operations(&[DialoguePresentationOperation::append(
@@ -2634,12 +2583,10 @@ fn standard_dialogue_resource_uses_the_same_typed_mount_path() {
             &RuntimeLineId::from_runtime_line_value("say.standard.dialogue").unwrap(),
         ))
         .unwrap();
-    let mut runtime = BundleViewRuntime::try_new_with_dialogue_display(
+    let mut runtime = BundleViewRuntime::try_new(
         Some(arcweft_bundle::standard_view::dialogue_program()),
         Some(arcweft_bundle::standard_view::dialogue_text()),
         Some(&arcweft_bundle::standard_view::dialogue_style()),
-        &LineDisplayCatalog::try_from_lines(test_dialogue_revision(), vec![display_spec])
-            .expect("test display catalog is revision-consistent"),
     )
     .unwrap();
     let output = runtime.evaluate_with_dialogue(&[], &dialogue.view_inputs(), &[], false);

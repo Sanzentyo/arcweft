@@ -1,14 +1,20 @@
 use super::*;
 
+use crate::expr::{HirExprKind, HirThreadBodyOwner, HirThreadFlowItem};
 use crate::item::{
     HirContractMode, HirFlowContractClause, HirFlowIdentity, HirFlowIssueClass, HirFlowIssueOwner,
-    HirFlowItem, HirFlowReturn,
+    HirFlowItem, HirFlowReturn, HirFunctionBody,
 };
+use crate::module::HirModuleStatus;
+use crate::scope::LocalLookup;
 use crate::source_index::{
-    HirFlowContractSourcePart, HirFlowParameterSourcePart, HirFlowReturnSourcePart,
-    HirFlowSourceRole, HirItemSourceRole, HirSourceCommitInvariantError, HirSourceLookup,
-    HirSourceOwnerStatus, HirSourcePresence, HirSourceQuery, HirSourceQueryError,
-    HirThreadBodySourceRole, HirThreadFlowItemSourcePart,
+    HirExprSourceRole, HirFlowContractSourcePart, HirFlowParameterSourcePart,
+    HirFlowReturnSourcePart, HirFlowSourceRole, HirItemSourceRole, HirSourceCommitInvariantError,
+    HirSourceLookup, HirSourceOwnerStatus, HirSourcePresence, HirSourceQuery, HirSourceQueryError,
+    HirSourceRequirement, HirStmtSourceRole, HirThreadBodySourceRole, HirThreadFlowItemSourcePart,
+};
+use crate::stmt::{
+    HirStmtChildRole, HirStmtKind, HirStmtMatchArmBody, HirStmtPoisonState, HirStmtRecoveryIssue,
 };
 
 fn resolve_flow(
@@ -52,6 +58,10 @@ const fn flow_source_query(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the ordinary Flow test asserts one complete signature/contract/body/source owner graph"
+)]
 fn ordinary_flow_lowers_one_shared_signature_contract_and_body_graph() {
     let source = concat!(
         "pub flow @flow.ordered ordered<T>(value: T) -> T where T: Bound\n",
@@ -112,6 +122,35 @@ fn ordinary_flow_lowers_one_shared_signature_contract_and_body_graph() {
         flow.contracts()[5],
         HirFlowContractClause::NoEffect { .. }
     ));
+    let HirFlowContractClause::Effects(effects) = &flow.contracts()[1] else {
+        panic!("second Flow contract must be the authored effects clause")
+    };
+    let HirFlowContractClause::NoEffect {
+        expression: no_effect,
+    } = &flow.contracts()[5]
+    else {
+        unreachable!("checked above")
+    };
+    assert_eq!(
+        item.kind().effect_expression_roots(),
+        effects
+            .operands()
+            .iter()
+            .copied()
+            .chain(std::iter::once(*no_effect))
+            .collect::<Vec<_>>(),
+        "only effects/no_effect operands enter the central effect-identity inventory"
+    );
+    assert_eq!(
+        flow.contracts()
+            .iter()
+            .filter_map(HirFlowContractClause::admitted_effect_operands)
+            .flatten()
+            .copied()
+            .collect::<Vec<_>>(),
+        effects.operands(),
+        "only effects operands enter the Flow's exposed effect row"
+    );
     assert!(flow.body().items().is_empty());
 
     let callable = module
@@ -189,6 +228,416 @@ fn ordinary_flow_lowers_one_shared_signature_contract_and_body_graph() {
         panic!("both authored no-effect keywords must retain exact source sites")
     };
     assert_ne!(clause_keyword, no_effect_keyword);
+    let operand = flow_query(
+        &module,
+        &parsed,
+        owner,
+        HirFlowSourceRole::ContractClause {
+            ordinal: 5,
+            part: HirFlowContractSourcePart::Operand { ordinal: 0 },
+        },
+    );
+    let operand_expression = module
+        .source_site(
+            parsed.document().identity(),
+            HirSourceQuery::Expr {
+                owner: *no_effect,
+                role: HirExprSourceRole::Whole,
+            },
+        )
+        .expect("NoEffect operand expression source");
+    let HirSourcePresence::Present(operand_site) = operand.presence() else {
+        panic!("NoEffect operand must retain its authored source component")
+    };
+    assert_eq!(operand.presence(), operand_expression.presence());
+    assert_ne!(clause_keyword, operand_site);
+    assert_ne!(no_effect_keyword, operand_site);
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn root_and_nested_scope_kinds_are_allocated_exactly() {
+    let source = concat!(
+        "fn scoped()\n",
+        "requires true\n",
+        "ensures result == ()\n",
+        "{\n",
+        "    let conditional = if let value = source when ready { value } else { 0 };\n",
+        "    let selected = match source { value => { value } };\n",
+        "    let worker = thread { loop {} };\n",
+        "    || ()\n",
+        "}\n",
+        "flow directed() {}\n",
+        "predicate valid() = true\n",
+        "proof checked() = ()\n",
+    );
+    let parsed = parse("arcweft-test://proof/final-hir-scope-kind-matrix", source);
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "unexpected syntax diagnostics: {:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    assert!(
+        module.diagnostics().is_empty(),
+        "{:#?}",
+        module.diagnostics()
+    );
+
+    let [function_owner, flow_owner, predicate_owner, proof_owner] = module.source_ordered_items()
+    else {
+        panic!("scope fixture must retain four source-ordered callable items");
+    };
+    let function_item = module.resolve_item(*function_owner).unwrap();
+    let flow_item = module.resolve_item(*flow_owner).unwrap();
+    let predicate_item = module.resolve_item(*predicate_owner).unwrap();
+    let proof_item = module.resolve_item(*proof_owner).unwrap();
+    let HirItemKind::Function(function) = function_item.kind() else {
+        panic!("first scope fixture item must be a Function");
+    };
+    let HirItemKind::Flow(flow) = flow_item.kind() else {
+        panic!("second scope fixture item must be a Flow");
+    };
+    let HirItemKind::Predicate(predicate) = predicate_item.kind() else {
+        panic!("third scope fixture item must be a Predicate");
+    };
+    let HirItemKind::Proof(proof) = proof_item.kind() else {
+        panic!("fourth scope fixture item must be a Proof");
+    };
+
+    let root_id = function_item.scope();
+    assert_eq!(flow_item.scope(), root_id);
+    assert_eq!(predicate_item.scope(), root_id);
+    assert_eq!(proof_item.scope(), root_id);
+    let roots = module
+        .scopes()
+        .filter(|(_, scope)| scope.parent().is_none())
+        .collect::<Vec<_>>();
+    let [(resolved_root_id, root)] = roots.as_slice() else {
+        panic!("accepted module must own exactly one root scope");
+    };
+    assert_eq!(*resolved_root_id, root_id);
+    assert_eq!(root.kind(), HirScopeKind::Module);
+    assert_eq!(root.owner(), &HirScopeOwner::Module(root_id.module()));
+    assert_eq!(
+        root.children(),
+        [
+            function.callable_scope(),
+            flow.callable_scope(),
+            predicate.callable_scope(),
+            proof.callable_scope(),
+        ]
+    );
+
+    let HirFunctionBody::Block {
+        scope: function_body,
+        ..
+    } = function.body()
+    else {
+        panic!("scope fixture Function must retain its authored block");
+    };
+    let callable_rows = [
+        (
+            function.callable_scope(),
+            *function_owner,
+            function.requires_scope(),
+            function.ensures_scope(),
+            *function_body,
+            HirScopeKind::Block,
+        ),
+        (
+            flow.callable_scope(),
+            *flow_owner,
+            flow.requires_scope(),
+            flow.ensures_scope(),
+            flow.body_scope(),
+            HirScopeKind::Flow,
+        ),
+        (
+            predicate.callable_scope(),
+            *predicate_owner,
+            predicate.requires_scope(),
+            predicate.ensures_scope(),
+            predicate.body().scope(),
+            HirScopeKind::Predicate,
+        ),
+        (
+            proof.callable_scope(),
+            *proof_owner,
+            proof.requires_scope(),
+            proof.ensures_scope(),
+            proof.body().scope(),
+            HirScopeKind::Proof,
+        ),
+    ];
+    for (callable_id, owner, requires_id, ensures_id, body_id, body_kind) in callable_rows {
+        let callable = module.resolve_scope(callable_id).unwrap();
+        assert_eq!(callable.kind(), HirScopeKind::Callable);
+        assert_eq!(callable.parent(), Some(root_id));
+        assert_eq!(callable.owner(), &HirScopeOwner::Item(owner));
+        assert_eq!(callable.children(), [requires_id, ensures_id, body_id]);
+
+        let requires = module.resolve_scope(requires_id).unwrap();
+        let ensures = module.resolve_scope(ensures_id).unwrap();
+        let body = module.resolve_scope(body_id).unwrap();
+        assert_eq!(requires.kind(), HirScopeKind::ContractRequires);
+        assert_eq!(ensures.kind(), HirScopeKind::ContractEnsures);
+        assert_eq!(body.kind(), body_kind);
+        for child in [requires, ensures, body] {
+            assert_eq!(child.parent(), Some(callable_id));
+            assert_eq!(child.owner(), &HirScopeOwner::Item(owner));
+        }
+    }
+
+    let (thread_id, thread) = module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Thread(thread) => Some((owner, thread)),
+            _ => None,
+        })
+        .expect("scope fixture Thread expression");
+    let (closure_id, closure) = module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Closure(closure) => Some((owner, closure)),
+            _ => None,
+        })
+        .expect("scope fixture closure expression");
+    let function_body_scope = module.resolve_scope(*function_body).unwrap();
+    let (if_owner, if_let) = module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::IfLet(if_let) => Some((owner, if_let)),
+            _ => None,
+        })
+        .expect("IfLet scope owner");
+    let conditional_scope = if_let.scope();
+    let HirExprKind::Block(then_block) = module.resolve_expr(if_let.then_branch()).unwrap().kind()
+    else {
+        panic!("IfLet then branch must retain its authored Block scope")
+    };
+    let HirExprKind::Block(else_block) = module.resolve_expr(if_let.else_branch()).unwrap().kind()
+    else {
+        panic!("IfLet else branch must retain its authored Block scope")
+    };
+    let (match_owner, match_expression) = module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Match(match_expression) => Some((owner, match_expression)),
+            _ => None,
+        })
+        .expect("Match scope owner");
+    let [match_arm] = match_expression.arms() else {
+        panic!("scope fixture Match must retain one arm")
+    };
+    let match_scope = match_arm.scope();
+    let HirExprKind::Block(match_value_block) =
+        module.resolve_expr(match_arm.value()).unwrap().kind()
+    else {
+        panic!("Match arm value must retain its authored Block scope")
+    };
+    assert_eq!(
+        function_body_scope.children(),
+        [
+            conditional_scope,
+            else_block.scope(),
+            match_scope,
+            thread.scope(),
+            closure.scope()
+        ]
+    );
+    for (scope_id, kind, owner) in [
+        (
+            conditional_scope,
+            HirScopeKind::Conditional,
+            HirScopeOwner::Expr(if_owner),
+        ),
+        (
+            else_block.scope(),
+            HirScopeKind::Block,
+            HirScopeOwner::Expr(if_let.else_branch()),
+        ),
+        (
+            match_scope,
+            HirScopeKind::MatchArm,
+            HirScopeOwner::Expr(match_owner),
+        ),
+        (
+            thread.scope(),
+            HirScopeKind::Block,
+            HirScopeOwner::Expr(thread_id),
+        ),
+        (
+            closure.scope(),
+            HirScopeKind::Closure,
+            HirScopeOwner::Expr(closure_id),
+        ),
+    ] {
+        let scope = module.resolve_scope(scope_id).unwrap();
+        assert_eq!(scope.kind(), kind);
+        assert_eq!(scope.parent(), Some(*function_body));
+        assert_eq!(scope.owner(), &owner);
+    }
+    for (scope_id, parent, owner) in [
+        (then_block.scope(), conditional_scope, if_let.then_branch()),
+        (match_value_block.scope(), match_scope, match_arm.value()),
+    ] {
+        let scope = module.resolve_scope(scope_id).unwrap();
+        assert_eq!(scope.kind(), HirScopeKind::Block);
+        assert_eq!(scope.parent(), Some(parent));
+        assert_eq!(scope.owner(), &HirScopeOwner::Expr(owner));
+    }
+
+    let [HirThreadFlowItem::Loop(loop_owner)] = thread.body().items() else {
+        panic!("Thread fixture must retain one Loop statement");
+    };
+    let loop_statement = module.resolve_stmt(*loop_owner).unwrap();
+    let HirStmtKind::Loop(loop_statement) = loop_statement.kind() else {
+        panic!("Thread Loop item must retain its statement payload");
+    };
+    let loop_scope = module.resolve_scope(loop_statement.body().scope()).unwrap();
+    assert_eq!(loop_scope.kind(), HirScopeKind::Block);
+    assert_eq!(loop_scope.parent(), Some(thread.scope()));
+    assert_eq!(loop_scope.owner(), &HirScopeOwner::Stmt(*loop_owner));
+    assert_eq!(
+        module.resolve_scope(thread.scope()).unwrap().children(),
+        [loop_statement.body().scope()]
+    );
+}
+
+#[test]
+#[allow(clippy::too_many_lines)]
+fn postcondition_result_is_ensures_only() {
+    let source = concat!(
+        "flow counted() -> I32\n",
+        "requires ready\n",
+        "ensures result > 0\n",
+        "{}\n",
+        "flow unit()\n",
+        "requires ready\n",
+        "ensures result == ()\n",
+        "{}\n",
+        "flow no_postcondition() -> I32\n",
+        "requires ready\n",
+        "{}\n",
+    );
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-postcondition-result-scope",
+        source,
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+
+    let (_, _, counted) = resolve_flow(&module, 0);
+    let result_id = counted
+        .result_local()
+        .expect("non-Unit Flow with ensures owns result")
+        .local();
+    let result = module.resolve_local(result_id).unwrap();
+    assert_eq!(result.kind(), HirLocalKind::PostconditionResult);
+    assert_eq!(result.name().as_str(), "result");
+    assert_eq!(result.scope(), counted.ensures_scope());
+    assert_eq!(result.generation(), LocalGeneration::FIRST);
+    assert!(!result.is_mutable_binding());
+    assert_eq!(result.annotation(), counted.result().authored_type());
+    assert!(
+        module
+            .resolve_scope(counted.callable_scope())
+            .unwrap()
+            .locals()
+            .is_empty()
+    );
+    assert!(
+        module
+            .resolve_scope(counted.requires_scope())
+            .unwrap()
+            .locals()
+            .is_empty()
+    );
+    assert!(
+        module
+            .resolve_scope(counted.body_scope())
+            .unwrap()
+            .locals()
+            .is_empty()
+    );
+    assert_eq!(
+        module
+            .resolve_scope(counted.ensures_scope())
+            .unwrap()
+            .locals(),
+        [result_id]
+    );
+
+    let requires = counted
+        .contracts()
+        .iter()
+        .find_map(|contract| match contract {
+            HirFlowContractClause::Requires(condition) => Some(condition.expression()),
+            _ => None,
+        })
+        .expect("counted requires expression");
+    let ensures = counted
+        .contracts()
+        .iter()
+        .find_map(|contract| match contract {
+            HirFlowContractClause::Ensures(condition) => Some(condition.expression()),
+            _ => None,
+        })
+        .expect("counted ensures expression");
+    let source_span = |expression| match module.metadata(expression).unwrap().source_site() {
+        HirSourceSite::Span(span) => span.clone(),
+        HirSourceSite::Insertion(_) => panic!("authored contract expression must own a span"),
+    };
+    assert_eq!(
+        module.lookup_local(
+            counted.requires_scope(),
+            result.name(),
+            source_span(requires)
+        ),
+        Ok(LocalLookup::NotFound)
+    );
+    assert_eq!(
+        module.lookup_local(counted.ensures_scope(), result.name(), source_span(ensures)),
+        Ok(LocalLookup::Found(result_id))
+    );
+    let body_start = source.find("{}\nflow unit").unwrap();
+    let body_span = parsed
+        .document()
+        .span(SourceRange::new(body_start, body_start + 1))
+        .unwrap();
+    assert_eq!(
+        module.lookup_local(counted.body_scope(), result.name(), body_span),
+        Ok(LocalLookup::NotFound)
+    );
+
+    let (_, _, unit) = resolve_flow(&module, 1);
+    let unit_result = unit
+        .result_local()
+        .expect("ensures allocates result even for omitted semantic Unit")
+        .local();
+    let unit_result = module.resolve_local(unit_result).unwrap();
+    assert_eq!(unit_result.scope(), unit.ensures_scope());
+    assert_eq!(unit_result.annotation(), None);
+    assert_eq!(unit_result.kind(), HirLocalKind::PostconditionResult);
+
+    let (_, _, no_postcondition) = resolve_flow(&module, 2);
+    assert!(no_postcondition.result_local().is_none());
+    assert!(
+        module
+            .resolve_scope(no_postcondition.ensures_scope())
+            .unwrap()
+            .locals()
+            .is_empty()
+    );
 }
 
 #[test]
@@ -212,9 +661,7 @@ fn ordinary_flow_identity_matrix_retains_raw_ids_and_typed_poison() {
         let key = module_key(&parsed);
         let mut database = HirDatabase::try_new().unwrap();
         let mut transaction = stage(&database, &parsed, &key);
-        transaction
-            .lower_attached_source_file_items(&parsed.tree())
-            .unwrap();
+        transaction.lower_parsed_source_items(&parsed).unwrap();
         let module = transaction
             .finish(&mut database)
             .unwrap_or_else(|error| panic!("{source}: {error:?}"))
@@ -291,14 +738,16 @@ fn flow_reserved_result_and_missing_body_commit_roleful_recovery() {
     assert!(parameter_local.is_poisoned());
     assert!(flow.result_local().is_some());
 
-    let parsed = parse(
-        "arcweft-test://proof/final-hir-flow-missing-body",
-        "flow unfinished",
-    );
+    let source = "flow unfinished";
+    let parsed = parse("arcweft-test://proof/final-hir-flow-missing-body", source);
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &key);
     let (owner, item, flow) = resolve_flow(&module, 0);
+    assert_eq!(module.source_ordered_items(), [owner]);
+    assert_eq!(module.status(), HirModuleStatus::Recovered);
+    assert!(!module.is_executable());
+    assert!(!module.is_cache_eligible());
     assert_eq!(
         item.state(),
         &HirItemPoisonState::Poisoned(HirItemIssue::MissingBody)
@@ -308,19 +757,45 @@ fn flow_reserved_result_and_missing_body_commit_roleful_recovery() {
         HirFlowIssueClass::MissingBody
     );
     assert!(flow.body().items().is_empty());
+    assert_eq!(flow.body().scope(), flow.body_scope());
+
+    let callable = module.resolve_scope(flow.callable_scope()).unwrap();
+    assert_eq!(callable.kind(), HirScopeKind::Callable);
+    assert_eq!(callable.parent(), Some(item.scope()));
+    assert_eq!(callable.owner(), &HirScopeOwner::Item(owner));
     assert_eq!(
-        module
-            .arenas()
-            .scopes()
-            .resolve(module.slots(), flow.body_scope())
-            .unwrap()
-            .kind(),
-        HirScopeKind::Flow
+        callable.children(),
+        [
+            flow.requires_scope(),
+            flow.ensures_scope(),
+            flow.body_scope()
+        ]
     );
-    assert!(matches!(
-        flow_query(&module, &parsed, owner, HirFlowSourceRole::Body).presence(),
-        HirSourcePresence::Present(HirSourceSite::Insertion(_))
-    ));
+    for (scope, kind) in [
+        (flow.requires_scope(), HirScopeKind::ContractRequires),
+        (flow.ensures_scope(), HirScopeKind::ContractEnsures),
+        (flow.body_scope(), HirScopeKind::Flow),
+    ] {
+        let scope = module.resolve_scope(scope).unwrap();
+        assert_eq!(scope.kind(), kind);
+        assert_eq!(scope.parent(), Some(flow.callable_scope()));
+        assert_eq!(scope.owner(), &HirScopeOwner::Item(owner));
+    }
+
+    let body_query = flow_source_query(owner, HirFlowSourceRole::Body);
+    assert_eq!(
+        module.source_components().requirement(&body_query),
+        Some(HirSourceRequirement::Required)
+    );
+    let body_source = module
+        .source_site(parsed.document().identity(), body_query)
+        .unwrap();
+    let HirSourcePresence::Present(HirSourceSite::Insertion(insertion)) = body_source.presence()
+    else {
+        panic!("missing required Flow body must publish its checked insertion")
+    };
+    assert_eq!(insertion.offset(), source.len());
+    assert_eq!(insertion.source_identity(), parsed.document().identity());
 }
 
 #[test]
@@ -515,7 +990,7 @@ fn flow_body_projects_the_shared_sixteen_variant_inventory_without_a_tail() {
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let module = lower(&mut database, &parsed, &key);
-    let (_, item, flow) = resolve_flow(&module, 0);
+    let (flow_owner, item, flow) = resolve_flow(&module, 0);
     assert!(item.is_poisoned(), "the Error row is recovery-only");
     assert_eq!(flow.body().items().len(), 16);
     assert_eq!(
@@ -534,6 +1009,135 @@ fn flow_body_projects_the_shared_sixteen_variant_inventory_without_a_tail() {
         flow.body().items()[15],
         crate::expr::HirThreadFlowItem::Error(_)
     ));
+
+    let Some(HirThreadFlowItem::Match(match_owner)) = flow.body().items().get(5) else {
+        panic!("Flow body ordinal 5 must retain its typed Match statement ID");
+    };
+    let statement = module
+        .resolve_stmt(*match_owner)
+        .expect("Flow Match statement at ordinal 5");
+    let HirStmtKind::Match(matched) = statement.kind() else {
+        panic!("Flow body ordinal 5 must resolve to the Match statement family");
+    };
+    let [arm] = matched.arms() else {
+        panic!("Flow matrix Match must retain one source-ordered arm");
+    };
+    let arm_scope = module
+        .resolve_scope(arm.scope())
+        .expect("Flow Match braced-arm scope");
+    assert_eq!(arm_scope.kind(), HirScopeKind::Block);
+    assert_eq!(arm_scope.parent(), Some(flow.body().scope()));
+    assert_eq!(arm_scope.owner(), &HirScopeOwner::Stmt(*match_owner));
+    let HirStmtMatchArmBody::Body(body) = arm.body() else {
+        panic!("Flow Match braced arm must retain one contextual body");
+    };
+    assert_eq!(body.scope(), arm.scope());
+    assert_eq!(
+        body.thread_body()
+            .expect("Flow Match braced arm uses the shared nested body owner")
+            .scope(),
+        arm.scope()
+    );
+
+    let item_query = HirSourceQuery::ThreadBody {
+        owner: HirThreadBodyOwner::Flow(flow_owner),
+        role: HirThreadBodySourceRole::Item {
+            ordinal: 5,
+            part: HirThreadFlowItemSourcePart::Whole,
+        },
+    };
+    let child_query = HirSourceQuery::ThreadBody {
+        owner: HirThreadBodyOwner::Flow(flow_owner),
+        role: HirThreadBodySourceRole::Item {
+            ordinal: 5,
+            part: HirThreadFlowItemSourcePart::ChildWhole,
+        },
+    };
+    let statement_query = HirSourceQuery::Stmt {
+        owner: *match_owner,
+        role: HirStmtSourceRole::Whole,
+    };
+    let item_source = module
+        .source_site(parsed.document().identity(), item_query)
+        .expect("Flow ordinal 5 source component");
+    let child_source = module
+        .source_site(parsed.document().identity(), child_query)
+        .expect("Flow ordinal 5 child source relation");
+    let statement_source = module
+        .source_site(parsed.document().identity(), statement_query)
+        .expect("Flow Match statement Whole source relation");
+    assert_eq!(item_source.presence(), statement_source.presence());
+    assert_eq!(child_source.presence(), statement_source.presence());
+    let HirSourcePresence::Present(HirSourceSite::Span(match_span)) = item_source.presence() else {
+        panic!("Flow Match ordinal must retain its authored source span");
+    };
+    assert_eq!(
+        match_span.range().start(),
+        source
+            .find("match value")
+            .expect("Flow Match source offset")
+    );
+}
+
+#[test]
+fn flow_match_missing_arm_body_retains_typed_child_and_roleful_recovery() {
+    let source = "flow recovered {\n    match subject { value => }\n}\n";
+    let parsed = parse("arcweft-test://proof/final-hir-flow-match-recovery", source);
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let (flow_owner, item, flow) = resolve_flow(&module, 0);
+
+    assert!(item.is_poisoned());
+    let [HirThreadFlowItem::Match(match_owner)] = flow.body().items() else {
+        panic!("malformed Flow Match must retain its typed statement item");
+    };
+    let statement = module
+        .resolve_stmt(*match_owner)
+        .expect("recovered Flow Match statement");
+    let HirStmtKind::Match(matched) = statement.kind() else {
+        panic!("malformed Flow Match must not collapse to Error or raw source");
+    };
+    assert_eq!(
+        statement.state(),
+        &HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::RecoveredChild {
+            role: HirStmtChildRole::MatchArmBody { arm: 0 },
+        })
+    );
+    let [arm] = matched.arms() else {
+        panic!("recovered Flow Match must retain one typed arm");
+    };
+    let HirStmtMatchArmBody::Expression(body) = arm.body() else {
+        panic!("missing Flow Match arm body must retain a typed expression recovery");
+    };
+    assert!(matches!(
+        module
+            .slots()
+            .resolve(*body)
+            .expect("missing Flow Match arm body slot")
+            .origin(),
+        HirOrigin::Synthetic(key)
+            if key.owner() == SyntheticOwner::Scope(arm.scope())
+                && key.role() == SyntheticRole::MissingRequiredTail
+                && key.ordinal() == 0
+    ));
+
+    let issue = flow
+        .poison()
+        .primary()
+        .expect("malformed Flow Match publishes one roleful body-child issue");
+    assert_eq!(issue.class(), HirFlowIssueClass::BodyChild);
+    assert_eq!(issue.owner(), HirFlowIssueOwner::Stmt(*match_owner));
+    assert_eq!(
+        issue.source(),
+        &HirSourceQuery::ThreadBody {
+            owner: HirThreadBodyOwner::Flow(flow_owner),
+            role: HirThreadBodySourceRole::Item {
+                ordinal: 0,
+                part: HirThreadFlowItemSourcePart::ChildWhole,
+            },
+        }
+    );
 }
 
 #[test]
@@ -667,7 +1271,7 @@ fn flow_source_freeze_rejects_typed_component_substitution_and_retries_determini
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
     transaction
-        .lower_attached_source_file_items(&parsed.tree())
+        .lower_parsed_source_items(&parsed)
         .expect("valid Flow lowers before source substitution");
     let [failed_owner] = transaction.staged_source_ordered_items() else {
         panic!("source-freeze fixture must stage one ordinary Flow")
@@ -675,7 +1279,7 @@ fn flow_source_freeze_rejects_typed_component_substitution_and_retries_determini
     let failed_owner = *failed_owner;
     let failed_snapshot = transaction.snapshot_id();
 
-    let items = parsed.tree().items().unwrap();
+    let items = parsed.items().unwrap();
     let [attached_flow @ TypedItemNode::Flow(_)] = items.as_slice() else {
         panic!("source-freeze fixture must retain one typed Flow item")
     };
@@ -699,7 +1303,7 @@ fn flow_source_freeze_rejects_typed_component_substitution_and_retries_determini
     let mut retry = stage(&database, &parsed, &key);
     assert_eq!(retry.snapshot_id(), failed_snapshot);
     retry
-        .lower_attached_source_file_items(&parsed.tree())
+        .lower_parsed_source_items(&parsed)
         .expect("valid Flow retry after rejected source substitution");
     assert_eq!(retry.staged_source_ordered_items(), [failed_owner]);
     let accepted = retry.finish(&mut database).unwrap().into_module();
@@ -794,13 +1398,13 @@ fn rejected_flow_revision_preserves_prior_publication_and_retry_identity() {
     let prior_name_site =
         match flow_query(&prior, &initial, prior_owner, HirFlowSourceRole::Name).presence() {
             HirSourcePresence::Present(site) => site.clone(),
-            presence => panic!("accepted Flow name must be present, got {presence:?}"),
+            HirSourcePresence::AbsentOptional => panic!("accepted Flow name must be present"),
         };
     let before = database.test_state();
 
     let mut rejected = stage(&database, &revised, &key);
     rejected
-        .lower_attached_source_file_items(&revised.tree())
+        .lower_parsed_source_items(&revised)
         .expect("revised Flow lowers before source-manifest rejection");
     let [failed_owner] = rejected.staged_source_ordered_items() else {
         panic!("revised fixture must stage one ordinary Flow")
@@ -843,7 +1447,7 @@ fn rejected_flow_revision_preserves_prior_publication_and_retry_identity() {
     let mut retry = stage(&database, &revised, &key);
     assert_eq!(retry.snapshot_id(), failed_snapshot);
     retry
-        .lower_attached_source_file_items(&revised.tree())
+        .lower_parsed_source_items(&revised)
         .expect("valid Flow retry after rejected publication");
     assert_eq!(retry.staged_source_ordered_items(), [failed_owner]);
     let output = retry.finish(&mut database).unwrap();

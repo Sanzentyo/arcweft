@@ -15,7 +15,7 @@ use crate::grammar::event::{PendingSyntaxDiagnostic, SyntaxEvent};
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::literal::{SyntaxLiteralIssue, SyntaxLiteralValue};
 use crate::name::{SyntaxName, SyntaxNameIssue};
-use crate::parser::cursor::ShadowDocumentParser;
+use crate::parser::cursor::DocumentParser;
 use crate::parser::lexer::{LiteralLexemePart, typed_literal};
 use crate::parser::pattern::emit_pattern;
 use crate::parser::shadow_recovery::{
@@ -25,7 +25,7 @@ use crate::parser::shadow_recovery::{
 use crate::parser::type_ref::emit_type;
 
 pub(super) fn emit_parenthesized(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -33,7 +33,7 @@ pub(super) fn emit_parenthesized(
         .unwrap_or(end)
         .min(end);
     let first = first_significant(parser, parser.cursor() + 1, close);
-    let comma = find_top_level_boundary(parser, parser.cursor() + 1, &[",", ")"]);
+    let comma = find_top_level_boundary(parser, parser.cursor() + 1, close, &[",", ")"]);
     if first.is_some() && comma >= close {
         return emit_delimited_group(parser, close, role);
     }
@@ -41,14 +41,14 @@ pub(super) fn emit_parenthesized(
 }
 
 fn emit_delimited_group(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
     let start_event = parser.event_position();
     parser.start_transparent_expression_group(role);
     emit_open_delimiter(parser, SyntaxKind::OpenParenNode, "(");
-    parser.bump_trivia();
+    parser.bump_trivia_before(close);
     emit_expression(parser, close, SyntaxRole::Operand);
     bump_until(parser, close);
     emit_close_delimiter(
@@ -62,7 +62,7 @@ fn emit_delimited_group(
 }
 
 fn emit_tuple(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     role: SyntaxRole,
     unit: bool,
@@ -75,11 +75,11 @@ fn emit_tuple(
     let mut components = Vec::new();
     let mut ordinal = 0_u32;
     loop {
-        parser.bump_trivia();
+        parser.bump_trivia_before(close);
         if parser.cursor() >= close || parser.at(")") {
             break;
         }
-        let element_end = find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
+        let element_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", ")"]);
         let (slot, range) = expression_slot(parser, element_end);
         emit_expression(parser, element_end, SyntaxRole::Element(ordinal));
         bump_until(parser, element_end);
@@ -118,7 +118,7 @@ fn emit_tuple(
 }
 
 pub(super) fn emit_bracket_sequence(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -127,7 +127,7 @@ pub(super) fn emit_bracket_sequence(
         .unwrap_or(end)
         .min(end);
     let content_start = parser.cursor() + 1;
-    let separator = find_top_level_boundary(parser, content_start, &[";", "]"]);
+    let separator = find_top_level_boundary(parser, content_start, close, &[";", "]"]);
     let has_repeat_separator = separator < close && token_text(parser, separator) == Some(";");
     let numeric = (!has_repeat_separator)
         .then(|| numeric_sequence_projection(parser, content_start, close))
@@ -177,19 +177,18 @@ pub(super) fn emit_bracket_sequence(
 }
 
 fn emit_bracket_elements(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
 ) -> (Vec<SyntaxExpressionSlot>, Vec<PendingExpressionComponent>) {
     let mut slots = Vec::new();
     let mut components = Vec::new();
     let mut ordinal = 0_u32;
     loop {
-        parser.bump_trivia();
+        parser.bump_trivia_before(close);
         if parser.cursor() >= close || parser.at("]") {
             break;
         }
-        let element_end =
-            find_top_level_boundary(parser, parser.cursor(), &[",", ";", "]"]).min(close);
+        let element_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", ";", "]"]);
         let (slot, range) = expression_slot(parser, element_end);
         emit_expression(parser, element_end, SyntaxRole::Element(ordinal));
         bump_until(parser, element_end);
@@ -209,11 +208,11 @@ fn emit_bracket_elements(
 }
 
 fn emit_array_repeat_elements(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     separator: usize,
     close: usize,
 ) -> ([SyntaxExpressionSlot; 2], Vec<PendingExpressionComponent>) {
-    parser.bump_trivia();
+    parser.bump_trivia_before(separator);
     let (value, value_range) = expression_slot(parser, separator);
     emit_expression(parser, separator, SyntaxRole::Element(0));
     bump_until(parser, separator);
@@ -221,7 +220,7 @@ fn emit_array_repeat_elements(
         parser.bump();
     }
 
-    parser.bump_trivia();
+    parser.bump_trivia_before(close);
     let (length, length_range) = expression_slot(parser, close);
     emit_expression(parser, close, SyntaxRole::Element(1));
     bump_until(parser, close);
@@ -236,7 +235,7 @@ fn emit_array_repeat_elements(
 }
 
 pub(in crate::parser) fn expression_slot(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
 ) -> (SyntaxExpressionSlot, SourceRange) {
     let start = parser.cursor();
@@ -260,37 +259,11 @@ pub(in crate::parser) fn expression_slot(
 }
 
 fn numeric_sequence_projection(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<(SyntaxNumericSequence, Vec<PendingExpressionComponent>)> {
-    let significant = (start..end)
-        .filter(|index| {
-            parser.token_at(*index).is_some_and(|token| {
-                !matches!(
-                    token.kind(),
-                    SyntaxKind::WhitespaceToken
-                        | SyntaxKind::NewlineToken
-                        | SyntaxKind::CommentToken
-                )
-            })
-        })
-        .collect::<Vec<_>>();
-    if significant.is_empty()
-        || significant.iter().enumerate().any(|(position, index)| {
-            let token = parser
-                .token_at(*index)
-                .expect("significant token index remains in the shared cursor");
-            if position % 2 == 0 {
-                token.kind() != SyntaxKind::NumberToken
-            } else {
-                parser.text_of(token) != ","
-            }
-        })
-    {
-        return None;
-    }
-
+    let significant = numeric_sequence_tokens(parser, start, end)?;
     let trailing_separator = significant.len() % 2 == 0;
     let mut elements = Vec::new();
     let mut components = Vec::new();
@@ -371,8 +344,42 @@ fn numeric_sequence_projection(
     Some((sequence, components))
 }
 
+fn numeric_sequence_tokens(
+    parser: &DocumentParser<'_, '_>,
+    start: usize,
+    end: usize,
+) -> Option<Vec<usize>> {
+    let significant = (start..end)
+        .filter(|index| {
+            parser.token_at(*index).is_some_and(|token| {
+                !matches!(
+                    token.kind(),
+                    SyntaxKind::WhitespaceToken
+                        | SyntaxKind::NewlineToken
+                        | SyntaxKind::CommentToken
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    if significant.is_empty()
+        || significant.iter().enumerate().any(|(position, index)| {
+            let token = parser
+                .token_at(*index)
+                .expect("significant token index remains in the shared cursor");
+            if position % 2 == 0 {
+                token.kind() != SyntaxKind::NumberToken
+            } else {
+                parser.text_of(token) != ","
+            }
+        })
+    {
+        return None;
+    }
+    Some(significant)
+}
+
 pub(super) fn emit_closure(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -430,7 +437,7 @@ pub(super) fn emit_closure(
         (parameters, components, terminator)
     };
     parser.finish();
-    parser.bump_trivia();
+    parser.bump_trivia_before(end);
 
     let result_type = if parser.at("->") {
         let source = emit_closure_return_type(parser, end);
@@ -438,7 +445,7 @@ pub(super) fn emit_closure(
             ExpressionComponentRole::ReturnType,
             source,
         ));
-        parser.bump_trivia();
+        parser.bump_trivia_before(end);
         true
     } else {
         false
@@ -470,18 +477,18 @@ pub(super) fn emit_closure(
 }
 
 fn emit_closure_parameters(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
 ) -> (
     Vec<SyntaxClosureParameterProjection>,
     Vec<PendingExpressionComponent>,
 ) {
-    let close = find_top_level_boundary(parser, parser.cursor(), &["|"]).min(end);
+    let close = find_top_level_boundary(parser, parser.cursor(), end, &["|"]);
     emit_closure_parameters_until(parser, close)
 }
 
 pub(super) fn emit_closure_parameters_until(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
 ) -> (
     Vec<SyntaxClosureParameterProjection>,
@@ -491,14 +498,13 @@ pub(super) fn emit_closure_parameters_until(
     let mut parameters = Vec::new();
     let mut components = Vec::new();
     loop {
-        parser.bump_trivia();
+        parser.bump_trivia_before(close);
         if parser.cursor() >= close || parser.at("|") {
             break;
         }
-        let parameter_end =
-            find_top_level_boundary(parser, parser.cursor(), &[",", "|"]).min(close);
+        let parameter_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", "|"]);
         let type_separator =
-            find_top_level_boundary(parser, parser.cursor(), &[":", ",", "|"]).min(parameter_end);
+            find_top_level_boundary(parser, parser.cursor(), parameter_end, &[":", ",", "|"]);
         let parameter_range = token_interval_range(parser, parser.cursor(), parameter_end);
         let pattern_range = token_interval_range(parser, parser.cursor(), type_separator);
         parser.start(SyntaxKind::ClosureParameter, SyntaxRole::Parameter(ordinal));
@@ -527,7 +533,7 @@ pub(super) fn emit_closure_parameters_until(
                 .expect("typed closure parameter retains its colon")
                 .range();
             parser.bump();
-            parser.bump_trivia();
+            parser.bump_trivia_before(parameter_end);
             let type_range = token_interval_range(parser, parser.cursor(), parameter_end);
             emit_type(parser, parameter_end, SyntaxRole::ParameterType);
             bump_until(parser, parameter_end);
@@ -570,7 +576,7 @@ pub(super) fn emit_closure_parameters_until(
     (parameters, components)
 }
 
-fn emit_closure_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) -> SourceRange {
+fn emit_closure_return_type(parser: &mut DocumentParser<'_, '_>, end: usize) -> SourceRange {
     parser.start(SyntaxKind::ReturnType, SyntaxRole::ReturnType);
     emit_required_punctuation(
         parser,
@@ -580,8 +586,8 @@ fn emit_closure_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usiz
         "syntax.return.missing_arrow",
         "authored return type requires `->`",
     );
-    parser.bump_trivia();
-    let body = find_top_level_boundary(parser, parser.cursor(), &["{"]).min(end);
+    parser.bump_trivia_before(end);
+    let body = find_top_level_boundary(parser, parser.cursor(), end, &["{"]);
     let type_end = trimmed_end(parser, parser.cursor(), body);
     let source = token_interval_range(parser, parser.cursor(), type_end);
     emit_type(parser, type_end, SyntaxRole::Type);
@@ -590,11 +596,7 @@ fn emit_closure_return_type(parser: &mut ShadowDocumentParser<'_, '_>, end: usiz
     source
 }
 
-fn token_interval_range(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> SourceRange {
+fn token_interval_range(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
     let start = first_significant(parser, start, end).unwrap_or(end);
     let end = trimmed_end(parser, start, end);
     if start >= end {
@@ -617,11 +619,11 @@ fn token_interval_range(
     )
 }
 
-pub(super) fn has_braced_body(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> bool {
+pub(super) fn has_braced_body(parser: &DocumentParser<'_, '_>, end: usize) -> bool {
     block_open(parser, end).is_some()
 }
 
-pub(super) fn is_nominal_record_head(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> bool {
+pub(super) fn is_nominal_record_head(parser: &DocumentParser<'_, '_>, end: usize) -> bool {
     let Some(open) = block_open(parser, end) else {
         return false;
     };
@@ -640,7 +642,7 @@ pub(super) fn is_nominal_record_head(parser: &ShadowDocumentParser<'_, '_>, end:
 }
 
 pub(super) fn emit_braced_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -655,7 +657,7 @@ pub(super) fn emit_braced_expression(
 }
 
 pub(super) fn emit_record_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -687,7 +689,7 @@ pub(super) fn emit_record_expression(
 }
 
 fn emit_record_literal(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -706,7 +708,7 @@ fn emit_record_literal(
 }
 
 fn emit_record_fields(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
 ) -> (Vec<SyntaxRecordField>, Vec<PendingExpressionComponent>) {
     debug_assert!(parser.at("{"));
@@ -719,7 +721,7 @@ fn emit_record_fields(
     let mut fields = Vec::new();
     let mut components = Vec::new();
     loop {
-        parser.bump_trivia();
+        parser.bump_trivia_before(close);
         if parser.cursor() >= close || parser.at("}") {
             break;
         }
@@ -747,7 +749,7 @@ fn emit_record_fields(
     (fields, components)
 }
 
-fn record_field_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
+fn record_field_boundary(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let mut depth = 0_usize;
     for index in start..end {
         let Some(token) = parser.token_at(index) else {
@@ -767,14 +769,14 @@ fn record_field_boundary(parser: &ShadowDocumentParser<'_, '_>, start: usize, en
 }
 
 fn emit_record_field(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     ordinal: u16,
 ) -> (SyntaxRecordField, Vec<PendingExpressionComponent>) {
     let (_, whole_range) = expression_slot(parser, end);
     let field = u32::from(ordinal);
     parser.start(SyntaxKind::RecordField, SyntaxRole::Field(ordinal));
-    let separator = find_top_level_boundary(parser, parser.cursor(), &["=", ":"]).min(end);
+    let separator = find_top_level_boundary(parser, parser.cursor(), end, &["=", ":"]);
     let name_end = if separator < end { separator } else { end };
     let (name, name_range) = source_name(parser, parser.cursor(), name_end);
     parser.start(
@@ -810,7 +812,7 @@ fn emit_record_field(
             .expect("record separator was found in the token cursor")
             .range();
         parser.bump();
-        parser.bump_trivia();
+        parser.bump_trivia_before(end);
         let (value, value_range) = expression_slot(parser, end);
         emit_expression(parser, end, SyntaxRole::Initializer);
         bump_until(parser, end);
@@ -837,7 +839,7 @@ fn emit_record_field(
 }
 
 fn source_name(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> (Result<SyntaxName, SyntaxNameIssue>, SourceRange) {
@@ -865,7 +867,7 @@ fn source_name(
 }
 
 pub(super) fn emit_computation_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -895,7 +897,7 @@ pub(super) fn emit_computation_block(
 }
 
 pub(super) fn emit_named_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -903,7 +905,7 @@ pub(super) fn emit_named_block(
     let open = block_open(parser, end).unwrap_or(end);
     let owner = parser.start_projected_owner(SyntaxKind::NamedBlockExpression, role);
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(open);
     let name_start = parser.cursor();
     let name_end = trimmed_end(parser, name_start, open);
     let (name, name_range) = source_name(parser, name_start, name_end);
@@ -935,7 +937,7 @@ pub(super) fn emit_named_block(
 
 /// Emits a named block whose owner has already admitted the current name token.
 pub(super) fn emit_owner_named_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -951,7 +953,7 @@ pub(super) fn emit_owner_named_block(
     parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
     parser.bump();
     parser.finish();
-    parser.bump_trivia();
+    parser.bump_trivia_before(open);
     bump_until(parser, open);
     if parser.at("{") {
         control::emit_block_contents(parser, SyntaxRole::Body);
@@ -972,7 +974,7 @@ pub(super) fn emit_owner_named_block(
 }
 
 pub(super) fn emit_thread_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) -> CompletedNode {
@@ -980,7 +982,7 @@ pub(super) fn emit_thread_expression(
     let open = block_open(parser, end).unwrap_or(end);
     let owner = parser.start_projected_owner(SyntaxKind::ThreadExpression, role);
     parser.bump();
-    parser.bump_trivia();
+    parser.bump_trivia_before(open);
     let mut components = Vec::with_capacity(2);
     let mode = if parser.at("detached") {
         let source = parser
@@ -988,7 +990,7 @@ pub(super) fn emit_thread_expression(
             .expect("detached Thread mode retains its token")
             .range();
         parser.bump();
-        parser.bump_trivia();
+        parser.bump_trivia_before(open);
         components.push(PendingExpressionComponent::new(
             ExpressionComponentRole::ThreadMode,
             source,
@@ -1010,7 +1012,7 @@ pub(super) fn emit_thread_expression(
             ExpressionComponentRole::Name,
             source,
         ));
-        parser.bump_trivia();
+        parser.bump_trivia_before(open);
         if parser.cursor() < open {
             parser.start(SyntaxKind::ErrorNode, SyntaxRole::Recovery(0));
             bump_until(parser, trimmed_end(parser, parser.cursor(), open));
@@ -1051,22 +1053,18 @@ pub(super) fn emit_thread_expression(
     CompletedNode { start_event }
 }
 
-fn block_open(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> Option<usize> {
-    let open = find_top_level_boundary(parser, parser.cursor(), &["{"]).min(end);
+fn block_open(parser: &DocumentParser<'_, '_>, end: usize) -> Option<usize> {
+    let open = find_top_level_boundary(parser, parser.cursor(), end, &["{"]);
     (open < end && token_text(parser, open) == Some("{")).then_some(open)
 }
 
-fn looks_like_record_literal(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> bool {
+fn looks_like_record_literal(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> bool {
     let Some(first) = first_significant(parser, start, end) else {
         return false;
     };
     if token_text(parser, first).is_some_and(crate::parser::statement::is_statement_head) {
         return false;
     }
-    let boundary = find_top_level_boundary(parser, first, &["=", ":", ",", ";"]);
+    let boundary = find_top_level_boundary(parser, first, end, &["=", ":", ",", ";"]);
     boundary < end && token_text(parser, boundary) != Some(";")
 }

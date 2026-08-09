@@ -3,12 +3,13 @@
 use arcweft_id::PublicId;
 
 use crate::identity::{ExprId, HirModuleId, LocalId, PatternId, ScopeId, StmtId, TypeId};
+use crate::proof_return::HirProofReturnSemanticClass;
 
 use super::{
-    HirItemInvariantError, HirRequiredName, validate_contract_scopes, validate_function_body,
-    validate_function_signature, validate_locals, validate_optional_expr, validate_parameters,
-    validate_predicate_body, validate_proof_body, validate_signature, validate_type,
-    validate_types,
+    HirContractOperandList, HirItemInvariantError, HirRequiredName, validate_contract_scopes,
+    validate_function_body, validate_function_signature, validate_locals, validate_optional_expr,
+    validate_parameters, validate_predicate_body, validate_proof_body, validate_signature,
+    validate_type, validate_types,
 };
 
 /// One final generic parameter.
@@ -212,10 +213,15 @@ pub struct HirFunctionSignature {
     where_predicates: Box<[HirWherePredicate]>,
     requires: Box<[ExprId]>,
     ensures: Box<[ExprId]>,
+    effects: Box<[HirContractOperandList]>,
     return_type: Option<TypeId>,
 }
 
 impl HirFunctionSignature {
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the constructor validates every field of the closed ordinary-function signature schema"
+    )]
     pub(crate) fn try_new(
         expected: HirModuleId,
         generic_parameters: Box<[HirGenericParameter]>,
@@ -223,6 +229,7 @@ impl HirFunctionSignature {
         where_predicates: Box<[HirWherePredicate]>,
         requires: Box<[ExprId]>,
         ensures: Box<[ExprId]>,
+        effects: Box<[HirContractOperandList]>,
         return_type: Option<TypeId>,
     ) -> Result<Self, HirItemInvariantError> {
         validate_function_signature(
@@ -232,6 +239,7 @@ impl HirFunctionSignature {
             &where_predicates,
             &requires,
             &ensures,
+            &effects,
             return_type,
         )?;
         Ok(Self {
@@ -240,6 +248,7 @@ impl HirFunctionSignature {
             where_predicates,
             requires,
             ensures,
+            effects,
             return_type,
         })
     }
@@ -296,6 +305,7 @@ pub struct HirFunctionItem {
     where_predicates: Box<[HirWherePredicate]>,
     requires: Box<[ExprId]>,
     ensures: Box<[ExprId]>,
+    effects: Box<[HirContractOperandList]>,
     return_type: Option<TypeId>,
     body: HirFunctionBody,
     callable_scope: ScopeId,
@@ -318,6 +328,7 @@ impl HirFunctionItem {
             &signature.where_predicates,
             &signature.requires,
             &signature.ensures,
+            &signature.effects,
             signature.return_type,
         )?;
         validate_function_body(expected, &body)?;
@@ -329,6 +340,7 @@ impl HirFunctionItem {
             where_predicates: signature.where_predicates,
             requires: signature.requires,
             ensures: signature.ensures,
+            effects: signature.effects,
             return_type: signature.return_type,
             body,
             callable_scope: scopes.callable,
@@ -359,6 +371,14 @@ impl HirFunctionItem {
 
     pub const fn ensures(&self) -> &[ExprId] {
         &self.ensures
+    }
+
+    /// Authored effect upper-bound clauses in exact source order.
+    ///
+    /// An empty slice means the row was omitted (infer-only). One empty
+    /// operand list means an explicit closed empty `effects {}` row.
+    pub const fn effect_clauses(&self) -> &[HirContractOperandList] {
+        &self.effects
     }
 
     pub const fn return_type(&self) -> Option<TypeId> {
@@ -392,6 +412,7 @@ impl HirFunctionItem {
             &self.where_predicates,
             &self.requires,
             &self.ensures,
+            &self.effects,
             self.return_type,
         )?;
         validate_contract_scopes(
@@ -539,6 +560,69 @@ impl HirPredicateBody {
     }
 }
 
+/// Non-blank decoded justification carried by semantic trusted Proof metadata.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct TrustReason(Box<str>);
+
+impl TrustReason {
+    /// Admits one decoded reason when Unicode trimming leaves content.
+    pub fn try_new(decoded: impl Into<Box<str>>) -> Result<Self, TrustReasonError> {
+        let decoded = decoded.into();
+        if decoded.trim().is_empty() {
+            return Err(TrustReasonError::Empty);
+        }
+        Ok(Self(decoded))
+    }
+
+    /// Returns the exact decoded reason bytes without normalization.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+/// Invalid semantic trusted-Proof reason.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum TrustReasonError {
+    /// The decoded reason was empty or Unicode whitespace only.
+    Empty,
+}
+
+/// Semantic Proof trust. Exact attribute and reason coordinates live only in
+/// `HirSourceIndex`; `Recovery` is an explicit poisoned metadata state and is
+/// never equivalent to ordinary verification.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ProofTrust {
+    /// Ordinary Proof whose body must be verified.
+    Verified,
+    /// Proof admitted directly with a non-blank justification.
+    Trusted {
+        /// Exact decoded non-blank justification.
+        reason: TrustReason,
+    },
+    /// Malformed trust metadata retained as explicit poisoned recovery.
+    Recovery,
+}
+
+impl ProofTrust {
+    /// Whether this Proof is admitted directly instead of through verification.
+    pub const fn is_directly_trusted(&self) -> bool {
+        matches!(self, Self::Trusted { .. })
+    }
+
+    /// Returns the direct-trust reason when one is retained.
+    pub const fn reason(&self) -> Option<&TrustReason> {
+        match self {
+            Self::Trusted { reason } => Some(reason),
+            Self::Verified | Self::Recovery => None,
+        }
+    }
+
+    /// Whether malformed trust metadata poisoned this Proof.
+    pub const fn is_recovery(&self) -> bool {
+        matches!(self, Self::Recovery)
+    }
+}
+
 /// Final proof record with its three distinct contract scopes.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct HirProof {
@@ -550,6 +634,8 @@ pub struct HirProof {
     requires: Box<[ExprId]>,
     ensures: Box<[ExprId]>,
     return_type: TypeId,
+    return_semantic_class: HirProofReturnSemanticClass,
+    trust: ProofTrust,
     body: HirProofBody,
     callable_scope: ScopeId,
     requires_scope: ScopeId,
@@ -561,6 +647,8 @@ impl HirProof {
         name: HirRequiredName,
         public_id: Option<PublicId>,
         signature: HirCallableSignature,
+        return_semantic_class: HirProofReturnSemanticClass,
+        trust: ProofTrust,
         body: HirProofBody,
         scopes: HirContractScopes,
     ) -> Result<Self, HirItemInvariantError> {
@@ -576,6 +664,8 @@ impl HirProof {
             requires: signature.requires,
             ensures: signature.ensures,
             return_type: signature.return_type,
+            return_semantic_class,
+            trust,
             body,
             callable_scope: scopes.callable,
             requires_scope: scopes.requires,
@@ -613,6 +703,16 @@ impl HirProof {
 
     pub const fn return_type(&self) -> TypeId {
         self.return_type
+    }
+
+    /// Sema-owned return classification retained by the final HIR snapshot.
+    pub const fn return_semantic_class(&self) -> HirProofReturnSemanticClass {
+        self.return_semantic_class
+    }
+
+    /// Returns the semantic trust classification without source coordinates.
+    pub const fn trust(&self) -> &ProofTrust {
+        &self.trust
     }
 
     pub const fn body(&self) -> &HirProofBody {

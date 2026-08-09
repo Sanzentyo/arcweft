@@ -14,7 +14,7 @@ use arcweft_agent_repl::{
 use arcweft_agent_runner::config::{AgentControllerRunConfig, AgentRunnerConfig};
 use arcweft_agent_runner::session::{AgentSession, NoopRagService};
 use arcweft_debug_model::sink::NullDebugEventSink;
-use arcweft_lang_sema::project_index::{ProgramHash, ProjectSemanticIndex};
+use arcweft_lang_sema::project_index::ProgramHash;
 
 #[test]
 fn repl_tiering_warm_without_backend_is_deterministic_vm_fallback() {
@@ -113,9 +113,11 @@ fn repl_tiering_immediate_vm_execution_remains_available_after_status_only_reque
 
 fn test_repl(program_hash: &str) -> ReplSession {
     ReplSession::new(
-        ReplBaseSnapshot::from_project(
+        ReplBaseSnapshot::new(
             "tiering.test",
-            ProjectSemanticIndex::new(ProgramHash::new(program_hash)),
+            &ProgramHash::new(program_hash),
+            std::sync::Arc::new(arcweft_lang_sema::env::TypeCheckEnv::standard()),
+            [],
         ),
         ReplSessionOptions::default(),
     )

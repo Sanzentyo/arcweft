@@ -8,7 +8,7 @@ use crate::item::{
     HirStyleEnvironmentComparison, HirStyleEnvironmentField, HirStyleItem, HirStyleRule,
     HirStyleSelector, HirStyleSelectorSequence, HirStyleToken,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::{
     HirItemSourceRole, HirSourceQuery, HirStyleSourceRole, HirStyleTokenSourcePart,
     StagedHirSourceIndex,
@@ -42,7 +42,7 @@ fn assert_style_payload_tamper_rejected(
     let mut database = HirDatabase::try_new().expect("Style freeze database");
     let mut transaction = stage(&database, &parsed, &key);
     transaction
-        .lower_attached_source_file_items(&parsed.tree())
+        .lower_parsed_source_items(&parsed)
         .expect("Style lowers before payload tamper");
     let [owner] = transaction.staged_source_ordered_items() else {
         panic!("one source-ordered Style item")
@@ -95,7 +95,7 @@ fn assert_style_manifest_tamper_rejected(
     let mut database = HirDatabase::try_new().expect("Style manifest freeze database");
     let mut transaction = stage(&database, &parsed, &key);
     transaction
-        .lower_attached_source_file_items(&parsed.tree())
+        .lower_parsed_source_items(&parsed)
         .expect("Style lowers before manifest tamper");
     let [owner] = transaction.staged_source_ordered_items() else {
         panic!("one source-ordered Style item")

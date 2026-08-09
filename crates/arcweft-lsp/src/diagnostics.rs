@@ -1,27 +1,18 @@
 use crate::documents::DocumentSnapshot;
-use crate::positions::{LineIndex, PositionEncoding};
+use crate::positions::LineIndex;
 use crate::profiles::LspProfile;
-use arcweft_lang_hir::lower::lower_document_to_hir;
-use arcweft_lang_sema::{
-    check::{analyze_types, validate_typecheck_ready},
-    diagnostics::{TypeCheckError, TypeCheckReadinessError, TypeCheckWarning},
-    resolve::{NameResolutionError, registry_from_hir, validate_hir_references},
-};
 use arcweft_lang_syntax::{
+    attachment::SyntaxAccessError,
+    incremental::{ParsedSource, SyntaxDiagnostic},
     lint::{SyntaxLint, lint_id_policy},
-    parser::{ParseOptions, parse_document_with_source, recovery::ParseError},
 };
 use arcweft_source::{
-    Diagnostic as ArcDiagnostic, DiagnosticLabelStyle, DiagnosticSeverity as ArcDiagnosticSeverity,
-    SourceDocument, SourceSpan, SourceSpanValidationError,
+    Diagnostic as ArcDiagnostic, DiagnosticCommand, DiagnosticLabel, DiagnosticLabelStyle,
+    DiagnosticSeverity as ArcDiagnosticSeverity, SourceDocument, SourceSpan,
+    SourceSpanValidationError,
 };
-use arcweft_verify::{
-    BackendKind, VerificationMode, VerificationPolicy, VerificationReport, verify_module_with_env,
-};
-use arcweft_verify_lsp::{
-    LspPositionMapper, diagnostics_from_report_with_mapper,
-    profile_manifest_conformance_diagnostics,
-};
+use arcweft_verify::VerificationReport;
+use arcweft_verify_lsp::{LspPositionMapper, profile_manifest_conformance_diagnostics};
 use lsp_types::{
     Diagnostic, DiagnosticRelatedInformation, DiagnosticSeverity, Location, NumberOrString,
     Position, PublishDiagnosticsParams, Range, Uri,
@@ -32,6 +23,7 @@ use std::sync::Arc;
 #[derive(Clone, Debug)]
 pub struct DocumentAnalysis {
     diagnostics: Vec<Diagnostic>,
+    compiler_commands: Vec<DiagnosticCommand>,
     line_index: LineIndex,
     verification_report: Option<VerificationReport>,
     document: Arc<SourceDocument>,
@@ -67,83 +59,59 @@ impl<'a> DiagnosticProjector<'a> {
 }
 
 impl DocumentAnalysis {
-    fn analyze_document(
-        document: Arc<SourceDocument>,
+    fn analyze_parsed_source(
+        parsed: &ParsedSource,
         line_index: LineIndex,
         profile: &LspProfile,
     ) -> Self {
+        let document = Arc::clone(parsed.document_lease());
         let source_document = document.as_ref();
-        let mut verification_report = None;
-        let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
         let mut diagnostics = parsed
-            .errors()
+            .diagnostics()
             .iter()
             .filter_map(|error| {
-                lsp_diagnostic_from_parse_error(error, &line_index, source_document).ok()
+                lsp_diagnostic_from_syntax_diagnostic(error, &line_index, source_document).ok()
             })
             .collect::<Vec<_>>();
 
-        if parsed.errors().is_empty() {
-            diagnostics.extend(syntax_lint_diagnostics(
-                &lint_id_policy(parsed.typed_tree()),
-                &line_index,
-                source_document,
-            ));
-            match lower_document_to_hir(source_document, parsed.typed_tree()) {
-                Ok(hir) => {
-                    let env = profile.typecheck_env();
-                    let resolve = resolve_diagnostics(&hir, &line_index, source_document);
-                    if resolve.is_empty() {
-                        let readiness = readiness_diagnostics(&hir, &line_index, source_document);
-                        if readiness.is_empty() {
-                            let typecheck_report = analyze_types(&hir, &env);
-                            diagnostics.extend(typecheck_diagnostics(
-                                &typecheck_report.diagnostics,
-                                &line_index,
-                                source_document,
-                            ));
-                            diagnostics.extend(typecheck_warnings(
-                                &typecheck_report.warnings,
-                                source_document,
-                            ));
-                            if typecheck_report.diagnostics.is_empty() {
-                                let report = verify_module_with_env(
-                                    &hir,
-                                    &env,
-                                    VerificationPolicy {
-                                        mode: VerificationMode::Dev,
-                                        backend: BackendKind::Emit,
-                                        allow_trusted_proofs: true,
-                                    },
-                                );
-                                diagnostics.extend(diagnostics_from_report_with_mapper(
-                                    &report,
-                                    &line_index,
-                                ));
-                                verification_report = Some(report);
-                            }
-                        } else {
-                            diagnostics.extend(readiness);
-                        }
-                    } else {
-                        diagnostics.extend(resolve);
-                    }
+        if parsed.diagnostics().is_empty() {
+            match lint_id_policy(parsed) {
+                Ok(lints) => {
+                    diagnostics.extend(syntax_lint_diagnostics(
+                        &lints,
+                        &line_index,
+                        source_document,
+                    ));
                 }
-                Err(errors) => {
-                    diagnostics.extend(errors.into_iter().filter_map(|error| {
-                        lsp_diagnostic_from_arcweft(
-                            &error.diagnostic(source_document),
-                            &line_index,
-                            source_document,
-                        )
-                        .ok()
-                    }));
+                Err(error) => {
+                    diagnostics.extend(lsp_lint_projection_diagnostic(parsed, &error, &line_index));
                 }
             }
         }
+        diagnostics.extend(project_compile_diagnostics(
+            profile,
+            source_document,
+            &line_index,
+        ));
+        let compiler_commands = project_compile_diagnostic_commands(profile, source_document);
+
+        let verification_report = profile.accepted_environment().and_then(|accepted| {
+            let accepted_source = accepted.project().sources().get(document.identity())?;
+            if !Arc::ptr_eq(accepted_source.document(), &document) {
+                return None;
+            }
+            let executable = accepted.executable()?;
+            diagnostics.extend(executable.final_analysis().diagnostics().iter().filter_map(
+                |diagnostic| {
+                    lsp_diagnostic_from_arcweft(diagnostic, &line_index, source_document).ok()
+                },
+            ));
+            Some(executable.verification().as_ref().clone())
+        });
 
         Self {
             diagnostics,
+            compiler_commands,
             line_index,
             verification_report,
             document,
@@ -153,8 +121,8 @@ impl DocumentAnalysis {
     /// Runs analysis against the exact source document and negotiated line index of an open
     /// snapshot.
     pub fn analyze_snapshot(snapshot: &DocumentSnapshot, profile: &LspProfile) -> Self {
-        Self::analyze_document(
-            Arc::clone(snapshot.source_document()),
+        Self::analyze_parsed_source(
+            snapshot.parsed_source(),
             snapshot.line_index().clone(),
             profile,
         )
@@ -163,6 +131,11 @@ impl DocumentAnalysis {
     /// Diagnostics emitted for the analyzed document.
     pub fn diagnostics(&self) -> &[Diagnostic] {
         &self.diagnostics
+    }
+
+    /// Compiler/verifier commands retained from exact source-backed project diagnostics.
+    pub(crate) fn compiler_commands(&self) -> &[DiagnosticCommand] {
+        &self.compiler_commands
     }
 
     /// Line index used for source-aware LSP feature conversion.
@@ -179,6 +152,20 @@ impl DocumentAnalysis {
     pub(crate) const fn source_document(&self) -> &Arc<SourceDocument> {
         &self.document
     }
+}
+
+fn lsp_lint_projection_diagnostic(
+    parsed: &ParsedSource,
+    error: &SyntaxAccessError,
+    line_index: &LineIndex,
+) -> Option<Diagnostic> {
+    let diagnostic = ArcDiagnostic::new(ArcDiagnosticSeverity::Error, error.to_string())
+        .with_code("syntax.lint.projection")
+        .with_label(DiagnosticLabel::primary(
+            parsed.root_syntax().source_span(),
+            Some("attached syntax lint projection failed".to_owned()),
+        ));
+    lsp_diagnostic_from_arcweft(&diagnostic, line_index, parsed.document()).ok()
 }
 
 fn syntax_lint_diagnostics(
@@ -201,7 +188,6 @@ pub fn publish_diagnostics_from_analysis(
     analysis: &DocumentAnalysis,
 ) -> PublishDiagnosticsParams {
     let mut diagnostics = analysis.diagnostics.clone();
-    reconcile_accepted_nominal_diagnostics(snapshot, profile, &mut diagnostics);
     diagnostics.extend(profile_diagnostics(profile));
     PublishDiagnosticsParams::new(
         snapshot.uri().clone(),
@@ -210,138 +196,81 @@ pub fn publish_diagnostics_from_analysis(
     )
 }
 
-fn reconcile_accepted_nominal_diagnostics(
-    snapshot: &DocumentSnapshot,
-    profile: &LspProfile,
-    diagnostics: &mut Vec<Diagnostic>,
-) {
-    let Some(accepted) = profile.accepted_environment() else {
-        return;
-    };
-    let project = accepted.project();
-    let Some(source) = project.sources().by_uri(snapshot.uri()) else {
-        return;
-    };
-    if source.document().text() != snapshot.text() {
-        return;
-    }
-
-    diagnostics.retain(|diagnostic| {
-        !matches!(
-            diagnostic.code.as_ref(),
-            Some(NumberOrString::String(code)) if code.starts_with("sema.nominal.")
-        )
-    });
-    let projector = DiagnosticProjector::new(source.document(), snapshot.line_index());
-    diagnostics.extend(
-        project
-            .typecheck()
-            .nominal_resolutions
-            .diagnostics()
-            .iter()
-            .filter_map(arcweft_lang_sema::nominal::NominalTypeDiagnostic::to_source_diagnostic)
-            .filter_map(|diagnostic| projector.project(&diagnostic).ok()),
-    );
-}
-
-fn resolve_diagnostics(
-    hir: &arcweft_lang_hir::model::HirModule,
-    line_index: &LineIndex,
-    document: &SourceDocument,
-) -> Vec<Diagnostic> {
-    let registry = registry_from_hir(hir);
-    validate_hir_references(hir, &registry).map_or_else(
-        |errors| {
-            errors
-                .iter()
-                .enumerate()
-                .filter_map(|(index, error)| {
-                    name_resolution_diagnostic(error, index + 1, line_index, document).ok()
-                })
-                .collect()
-        },
-        |()| Vec::new(),
-    )
-}
-
-fn readiness_diagnostics(
-    hir: &arcweft_lang_hir::model::HirModule,
-    line_index: &LineIndex,
-    document: &SourceDocument,
-) -> Vec<Diagnostic> {
-    validate_typecheck_ready(hir).map_or_else(
-        |errors| {
-            errors
-                .iter()
-                .enumerate()
-                .filter_map(|(index, error)| {
-                    readiness_diagnostic(error, index + 1, line_index, document).ok()
-                })
-                .collect()
-        },
-        |()| Vec::new(),
-    )
-}
-
-fn name_resolution_diagnostic(
-    error: &NameResolutionError,
-    _index: usize,
-    line_index: &LineIndex,
-    document: &SourceDocument,
-) -> Result<Diagnostic, SourceSpanValidationError> {
-    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document)
-}
-
-fn readiness_diagnostic(
-    error: &TypeCheckReadinessError,
-    _index: usize,
-    line_index: &LineIndex,
-    document: &SourceDocument,
-) -> Result<Diagnostic, SourceSpanValidationError> {
-    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document)
-}
-
-fn typecheck_diagnostics(
-    errors: &[TypeCheckError],
-    line_index: &LineIndex,
-    document: &SourceDocument,
-) -> Vec<Diagnostic> {
-    errors
-        .iter()
-        .filter_map(|error| {
-            lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document).ok()
-        })
-        .collect()
-}
-
-fn typecheck_warnings(warnings: &[TypeCheckWarning], document: &SourceDocument) -> Vec<Diagnostic> {
-    let line_index = LineIndex::new(String::new(), PositionEncoding::Utf16);
-    warnings
-        .iter()
-        .filter_map(|warning| {
-            lsp_diagnostic_from_arcweft(&warning.diagnostic(), &line_index, document).ok()
-        })
-        .collect()
-}
-
 fn profile_diagnostics(profile: &LspProfile) -> Vec<Diagnostic> {
-    let mut diagnostics = profile
-        .diagnostics()
-        .iter()
-        .map(|diagnostic| Diagnostic {
-            range: start_range(),
-            severity: Some(DiagnosticSeverity::WARNING),
-            code: Some(NumberOrString::String(diagnostic.kind().code().to_owned())),
-            source: Some("arcweft-lsp-profile".to_owned()),
-            message: diagnostic.message().to_owned(),
-            ..Diagnostic::default()
-        })
-        .collect::<Vec<_>>();
+    let mut diagnostics = Vec::new();
+    for diagnostic in profile.diagnostics() {
+        let compiler = diagnostic.project_compile_diagnostics();
+        if compiler.is_empty() {
+            diagnostics.push(profile_diagnostic(diagnostic));
+            continue;
+        }
+        if compiler.iter().all(|diagnostic| {
+            let source_diagnostic = diagnostic.syntax_diagnostic().map_or_else(
+                || diagnostic.diagnostic().clone(),
+                SyntaxDiagnostic::diagnostic,
+            );
+            primary_span(&source_diagnostic).is_none()
+        }) {
+            diagnostics.push(profile_diagnostic(diagnostic));
+        }
+    }
     diagnostics.extend(profile_manifest_conformance_diagnostics(
         &profile.context(),
         profile.declared_manifests(),
     ));
     diagnostics
+}
+
+fn project_compile_diagnostics(
+    profile: &LspProfile,
+    document: &SourceDocument,
+    line_index: &LineIndex,
+) -> Vec<Diagnostic> {
+    let projector = DiagnosticProjector::new(document, line_index);
+    profile
+        .diagnostics()
+        .iter()
+        .flat_map(crate::profiles::LspProfileDiagnostic::project_compile_diagnostics)
+        .filter_map(|diagnostic| {
+            let source_diagnostic = diagnostic.syntax_diagnostic().map_or_else(
+                || diagnostic.diagnostic().clone(),
+                SyntaxDiagnostic::diagnostic,
+            );
+            projector.project(&source_diagnostic).ok()
+        })
+        .collect()
+}
+
+fn project_compile_diagnostic_commands(
+    profile: &LspProfile,
+    document: &SourceDocument,
+) -> Vec<DiagnosticCommand> {
+    profile
+        .diagnostics()
+        .iter()
+        .flat_map(crate::profiles::LspProfileDiagnostic::project_compile_diagnostics)
+        .filter_map(|diagnostic| {
+            let source_diagnostic = diagnostic.syntax_diagnostic().map_or_else(
+                || diagnostic.diagnostic().clone(),
+                SyntaxDiagnostic::diagnostic,
+            );
+            (primary_span(&source_diagnostic).is_some()
+                && source_diagnostic.validate_source(document).is_ok())
+            .then_some(source_diagnostic)
+        })
+        .flat_map(|diagnostic| diagnostic.commands().to_vec())
+        .collect()
+}
+
+fn profile_diagnostic(diagnostic: &crate::profiles::LspProfileDiagnostic) -> Diagnostic {
+    Diagnostic {
+        range: start_range(),
+        severity: Some(DiagnosticSeverity::WARNING),
+        code: Some(NumberOrString::String(diagnostic.kind().code().to_owned())),
+        source: Some("arcweft-lsp-profile".to_owned()),
+        message: diagnostic.message().to_owned(),
+        ..Diagnostic::default()
+    }
 }
 
 fn lsp_diagnostic_from_arcweft(
@@ -352,12 +281,12 @@ fn lsp_diagnostic_from_arcweft(
     DiagnosticProjector::new(document, line_index).project(diagnostic)
 }
 
-fn lsp_diagnostic_from_parse_error(
-    error: &ParseError,
+fn lsp_diagnostic_from_syntax_diagnostic(
+    error: &SyntaxDiagnostic,
     line_index: &LineIndex,
     document: &SourceDocument,
 ) -> Result<Diagnostic, SourceSpanValidationError> {
-    lsp_diagnostic_from_arcweft(&error.diagnostic(document), line_index, document)
+    lsp_diagnostic_from_arcweft(&error.diagnostic(), line_index, document)
 }
 
 fn lsp_diagnostic_from_arcweft_with_source(
@@ -490,17 +419,42 @@ fn start_range() -> Range {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::documents::{AcceptedOpenDocument, DocumentStore};
+    use crate::positions::PositionEncoding;
+    use crate::profiles::{LspProfileResolver, LspProfileTestHarness};
     use arcweft_adapter_context::manifest::{
         AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
         AdapterCallableParameterIndex, AdapterCallablePath, AdapterFunctionParam,
         AdapterFunctionSignature, AdapterManifest, AdapterParameterGroup, AdapterParameterPassing,
         AdapterParameterPresence, AdapterTypeKind,
     };
+    use arcweft_core::effect::{
+        RuntimeAssertion, RuntimeAssertionFailure, RuntimeAssertionGuardId, RuntimeAssertionProfile,
+    };
+    use arcweft_lang_syntax::{incremental::SyntaxDatabase, parser::ParseOptions};
     use arcweft_runtime_host::RuntimeHostRunnerKind;
     use arcweft_source::{
         DiagnosticApplicability, DiagnosticLabel, DiagnosticSuggestion, SourceDocumentId,
-        SourceEdit, SourceName, SourceRange,
+        SourceEdit, SourceName, SourceRange, identity::SourceSnapshotId,
     };
+    use arcweft_tooling::runtime_diagnostic::project_persisted_assertion_failure;
+    use lsp_types::{DidOpenTextDocumentParams, TextDocumentItem};
+    use std::{
+        fs,
+        path::Path,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn parse_fixture(document: Arc<SourceDocument>) -> ParsedSource {
+        let mut database = SyntaxDatabase::try_new().expect("test syntax database");
+        database
+            .parse_initial(
+                SourceSnapshotId::initial(document.display_name().clone()),
+                document,
+                ParseOptions::default(),
+            )
+            .expect("attached LSP syntax fixture")
+    }
 
     fn analyze_fixture(
         source: &str,
@@ -517,7 +471,88 @@ mod tests {
             .expect("fixture source document"),
         );
         let line_index = LineIndex::new(document.text(), encoding);
-        DocumentAnalysis::analyze_document(document, line_index, profile)
+        let parsed = parse_fixture(document);
+        DocumentAnalysis::analyze_parsed_source(&parsed, line_index, profile)
+    }
+
+    fn analyze_project_fixture(source: &str, encoding: PositionEncoding) -> DocumentAnalysis {
+        analyze_project_fixture_with_adapter(source, encoding, None)
+    }
+
+    fn analyze_project_fixture_with_adapter(
+        source: &str,
+        encoding: PositionEncoding,
+        adapter: Option<AdapterManifest>,
+    ) -> DocumentAnalysis {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("clock")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("arcweft-lsp-diagnostics-{unique}"));
+        let source_path = root.join("src/main.arcw");
+        fs::create_dir_all(source_path.parent().expect("source parent")).expect("project root");
+        fs::write(
+            root.join("arcw.toml"),
+            r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.lsp-diagnostics"
+version = "0.1.0"
+
+[profiles.agent]
+kind = "agent"
+entry = "@entry.agent.main"
+source = "src/main.arcw"
+"#,
+        )
+        .expect("manifest");
+        let source = format!(
+            "{source}\nfn lsp_test_controller() -> Result<Unit, AgentError>\neffects {{}}\n{{\n    Ok(())\n}}\n\nentry agent @entry.agent.main {{\n    controller = lsp_test_controller\n}}\n"
+        );
+        fs::write(&source_path, &source).expect("source");
+        let profile = LspProfileTestHarness::new(LspProfileResolver::new(
+            RuntimeHostRunnerKind::Native,
+            Some("agent".to_owned()),
+        ))
+        .resolve_for_document_path(&source_path)
+        .expect("profile construction")
+        .publish_for_test();
+        let profile = match adapter {
+            Some(adapter) => profile.with_adapter_for_test(adapter),
+            None => profile,
+        };
+        let uri = file_uri(&source_path);
+        let accepted = profile.accepted_environment().expect("accepted profile");
+        let accepted_source = accepted
+            .project()
+            .sources()
+            .by_uri(&uri)
+            .expect("accepted source");
+        let authority = AcceptedOpenDocument::new(Arc::clone(accepted_source.document()), None);
+        let mut store = DocumentStore::default();
+        let document = store
+            .open_with_authority(
+                DidOpenTextDocumentParams {
+                    text_document: TextDocumentItem::new(uri, "arcweft".to_owned(), 1, source),
+                },
+                encoding,
+                Some(&authority),
+            )
+            .expect("accepted document open");
+        let analysis = DocumentAnalysis::analyze_snapshot(&document, &profile);
+        let _ = fs::remove_dir_all(root);
+        analysis
+    }
+
+    fn file_uri(path: &Path) -> Uri {
+        format!(
+            "file:///{}",
+            path.to_string_lossy()
+                .replace('\\', "/")
+                .trim_start_matches('/')
+        )
+        .parse()
+        .expect("file URI")
     }
 
     #[test]
@@ -532,13 +567,58 @@ mod tests {
             .expect("fixture source document"),
         );
 
-        let analysis = DocumentAnalysis::analyze_document(
-            Arc::clone(&document),
+        let parsed = parse_fixture(Arc::clone(&document));
+        let analysis = DocumentAnalysis::analyze_parsed_source(
+            &parsed,
             LineIndex::new(document.text(), PositionEncoding::Utf16),
             &LspProfile::default_for_runner(RuntimeHostRunnerKind::Native),
         );
 
         assert!(Arc::ptr_eq(analysis.source_document(), &document));
+    }
+
+    #[test]
+    fn lsp_projector_consumes_shared_runtime_assertion_diagnostic() {
+        let source = "flow checks { assert.check(ready) }\n";
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new("file:///workspace/runtime-assertion.arcw")
+                .expect("fixture document ID"),
+            SourceName::path("runtime-assertion.arcw"),
+            source,
+        )
+        .expect("fixture document");
+        let condition_start = source.find("ready").expect("condition source");
+        let condition_span = document
+            .span(SourceRange::new(
+                condition_start,
+                condition_start + "ready".len(),
+            ))
+            .expect("condition span");
+        let failure = RuntimeAssertionFailure::new(RuntimeAssertion::new(
+            RuntimeAssertionGuardId::try_from_bytes([0x51; 16]).expect("fixture guard"),
+            "ready".to_owned(),
+            "runtime condition failed".to_owned(),
+            RuntimeAssertionProfile::Always,
+        ));
+        let diagnostic = project_persisted_assertion_failure(&failure, Some(condition_span))
+            .to_source_diagnostic();
+        let line_index = LineIndex::new(source, PositionEncoding::Utf16);
+        let projected = DiagnosticProjector::new(&document, &line_index)
+            .project(&diagnostic)
+            .expect("runtime diagnostic belongs to exact source revision");
+
+        assert_eq!(
+            projected.code,
+            Some(NumberOrString::String(
+                "runtime.assertion_failed".to_owned()
+            ))
+        );
+        assert_eq!(projected.source.as_deref(), Some("arcweft-runtime"));
+        assert_eq!(projected.range.start.line, 0);
+        assert_eq!(
+            projected.range.end.character - projected.range.start.character,
+            5
+        );
     }
 
     #[test]
@@ -679,7 +759,6 @@ mod tests {
 
     #[test]
     fn propagation_diagnostics_project_exact_try_and_await_operators() {
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
         for (parameter_type, expression, code, utf16, utf8) in [
             (
                 "Result<i64, String>",
@@ -699,19 +778,19 @@ mod tests {
                 "Need<i64, String>",
                 "try await value",
                 "sema.await.error_mismatch",
-                12..15,
-                14..17,
+                12..21,
+                14..23,
             ),
             (
                 "Need<i64, String>",
                 "await? value",
                 "sema.await.error_mismatch",
-                17..18,
-                19..20,
+                12..18,
+                14..20,
             ),
         ] {
             let source = format!(
-                "fn demo(value: {parameter_type}) -> Result<i64, i64> {{\n    let 前 = {expression}\n    Ok(前)\n}}\n"
+                "fn demo(value: {parameter_type}) -> Result<i64, i64> {{\n    /* 前 */ {expression}\n}}\n"
             );
             let result_start = source
                 .find("Result<i64, i64>")
@@ -723,7 +802,7 @@ mod tests {
                 (PositionEncoding::Utf16, utf16.clone()),
                 (PositionEncoding::Utf8, utf8.clone()),
             ] {
-                let analysis = analyze_fixture(&source, encoding, &profile);
+                let analysis = analyze_project_fixture(&source, encoding);
                 let diagnostic = analysis
                     .diagnostics()
                     .iter()
@@ -767,12 +846,11 @@ mod tests {
     #[test]
     fn diagnostics_do_not_bypass_registered_callable_catalog() {
         let source = r#"
-flow @.main main {
+flow @flow.main main {
     let value = custom_echo("hello")
 }
 "#;
-        let default_profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let default_analysis = analyze_fixture(source, PositionEncoding::Utf16, &default_profile);
+        let default_analysis = analyze_project_fixture(source, PositionEncoding::Utf16);
         assert!(default_analysis.diagnostics().iter().any(|diagnostic| {
             diagnostic
                 .message
@@ -810,8 +888,8 @@ flow @.main main {
             .expect("valid callable signature"),
             [],
         );
-        let profile = LspProfile::new(adapter, RuntimeHostRunnerKind::Native);
-        let profile_analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
+        let profile_analysis =
+            analyze_project_fixture_with_adapter(source, PositionEncoding::Utf16, Some(adapter));
 
         assert!(
             profile_analysis.diagnostics().iter().any(|diagnostic| {
@@ -833,8 +911,7 @@ flow @flow.opening opening {
     let shape: DataShape = data.shape(decoded)
 }
 "#;
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_project_fixture(source, PositionEncoding::Utf16);
 
         assert!(
             !analysis.diagnostics().iter().any(|diagnostic| {
@@ -855,8 +932,7 @@ flow @flow.closure_numeric_fallback closure_numeric_fallback {
     let fallback = || 1
 }
 ";
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_project_fixture(source, PositionEncoding::Utf16);
         let diagnostic = analysis
             .diagnostics()
             .iter()
@@ -870,7 +946,7 @@ flow @flow.closure_numeric_fallback closure_numeric_fallback {
 
         assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::WARNING));
         assert_eq!(diagnostic.source.as_deref(), Some("arcweft-sema"));
-        assert!(diagnostic.message.contains("defaults to I32"));
+        assert!(diagnostic.message.contains("defaults to i32"));
     }
 
     #[test]
@@ -970,31 +1046,6 @@ flow @flow.opening start {
     }
 
     #[test]
-    fn statement_unknown_mode_projects_as_parser_diagnostic() {
-        let source = "flow demo {\n    assert.assume(true)\n}\n";
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
-        let [diagnostic] = analysis.diagnostics() else {
-            panic!(
-                "expected one parser diagnostic, got {:?}",
-                analysis.diagnostics()
-            );
-        };
-
-        assert_eq!(
-            diagnostic.code,
-            Some(NumberOrString::String(
-                "syntax.assert.unknown_mode".to_owned()
-            ))
-        );
-        assert_eq!(diagnostic.message, "unknown assertion mode");
-        assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
-        assert_eq!(diagnostic.source.as_deref(), Some("arcweft-syntax"));
-        assert_eq!(diagnostic.range.start, Position::new(1, 11));
-        assert_eq!(diagnostic.range.end, Position::new(1, 17));
-    }
-
-    #[test]
     fn bare_flow_item_uses_generic_declaration_only_syntax_diagnostics() {
         let source = "alice: hello\npub character bob {}\n";
         let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
@@ -1091,9 +1142,7 @@ flow @flow.opening start {
         let source = r"
 pub type Payload = String | Bytes
 ";
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
-
+        let analysis = analyze_project_fixture(source, PositionEncoding::Utf16);
         let diagnostic = analysis
             .diagnostics()
             .iter()
@@ -1110,15 +1159,28 @@ pub type Payload = String | Bytes
 
     #[test]
     fn diagnostics_surface_upper_bound_exceeded_effect_error() {
-        let source = r"
-flow @flow.opening opening
+        let source = r#"
+extern capability fs {
+    fn read_text(path: String) -> String effects { fs.read }
+    fn read_metadata(path: String) -> String effects { fs.read }
+    fn read_dormant(path: String) -> String effects { fs.read }
+}
+
+fn unrelated_read() -> String effects { fs.read } {
+    fs.read_metadata(path = "unrelated.arcw")
+}
+
+fn unused_factory() -> ((Unit) -> String effects { fs.read }) {
+    |_unit: Unit| -> String { fs.read_dormant(path = "dormant.arcw") }
+}
+
+fn load_story() -> String
 effects {}
 {
-    'flow.flags.seen <- 1i32
+    fs.read_text(path = "story.arcw")
 }
-";
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
+"#;
+        let analysis = analyze_project_fixture(source, PositionEncoding::Utf16);
 
         let diagnostic = analysis
             .diagnostics()
@@ -1128,7 +1190,7 @@ effects {}
             })
             .expect("upper-bound effect error is surfaced");
         assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
-        assert!(diagnostic.message.contains("state.write(flow)"));
+        assert!(diagnostic.message.contains("fs.read"));
     }
 
     #[test]
@@ -1138,8 +1200,10 @@ extern capability fs {
     fn read_text(path: String) -> String effects { fs.read }
 }
 
-fn make_loader(load: String -> String) -> Unit -> String {
-    return |_unit: Unit| -> String { load("story.arcw") }
+fn make_loader(
+    load: (String) -> String effects { fs.read }
+) -> ((Unit) -> String effects { fs.read }) {
+    |_unit: Unit| -> String { load("story.arcw") }
 }
 
 flow @flow.returned_closure_callback_call returned_closure_callback_call
@@ -1151,8 +1215,7 @@ effects { }
     let body = loader(())
 }
 "#;
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_project_fixture(source, PositionEncoding::Utf16);
 
         let diagnostic = analysis
             .diagnostics()
@@ -1160,7 +1223,12 @@ effects { }
             .find(|diagnostic| {
                 diagnostic.code == Some(NumberOrString::String("AWF-EFX-001".to_owned()))
             })
-            .expect("returned closure effect error is surfaced");
+            .unwrap_or_else(|| {
+                panic!(
+                    "returned closure effect error is surfaced: {:#?}",
+                    analysis.diagnostics()
+                )
+            });
         assert_eq!(diagnostic.severity, Some(DiagnosticSeverity::ERROR));
         assert!(
             diagnostic
@@ -1198,23 +1266,20 @@ effects { }
             rendered.contains("call `fs.read_text`"),
             "trace related information was:\n{rendered}"
         );
+        assert!(!rendered.contains("fs.read_metadata"), "{rendered}");
+        assert!(!rendered.contains("fs.read_dormant"), "{rendered}");
     }
 
     #[test]
     fn diagnostics_surface_performed_effect_trace() {
         let source = r"
-extern capability assets {
-    fn load_avatar() -> Need<String, AssetError>
-}
-
-flow @flow.await_avatar await_avatar
+fn await_avatar(avatar: Need<String, String>) -> Result<String, String>
 effects { }
 {
-    let avatar = await assets.load_avatar()
+    await avatar
 }
 ";
-        let profile = LspProfile::default_for_runner(RuntimeHostRunnerKind::Native);
-        let analysis = analyze_fixture(source, PositionEncoding::Utf16, &profile);
+        let analysis = analyze_project_fixture(source, PositionEncoding::Utf16);
 
         let diagnostic = analysis
             .diagnostics()
@@ -1240,7 +1305,7 @@ effects { }
             "trace related information was:\n{rendered}"
         );
         assert!(
-            rendered.contains("`flow.await_avatar` performs `control.suspend`"),
+            rendered.contains("`await_avatar` performs `control.suspend`"),
             "trace related information was:\n{rendered}"
         );
         assert!(

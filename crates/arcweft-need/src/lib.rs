@@ -52,6 +52,11 @@ impl<T, E> Need<T, E> {
         matches!(self, Self::Pending(_))
     }
 
+    /// Whether this state has committed its single terminal outcome.
+    pub const fn is_terminal(&self) -> bool {
+        matches!(self, Self::Ready(_) | Self::Err(_) | Self::Cancelled)
+    }
+
     pub fn ready(self) -> Option<T> {
         match self {
             Self::Ready(value) => Some(value),
@@ -98,5 +103,16 @@ mod tests {
         let pending =
             Need::<u8, ()>::Pending(Progress::new(0.5).expect("valid progress")).map(u16::from);
         assert!(pending.is_pending());
+    }
+
+    #[test]
+    fn terminal_need_states_are_exactly_ready_err_and_cancelled() {
+        assert!(!Need::<u8, u8>::NotStarted.is_terminal());
+        assert!(
+            !Need::<u8, u8>::Pending(Progress::new(0.5).expect("valid progress")).is_terminal()
+        );
+        assert!(Need::<u8, u8>::Ready(1).is_terminal());
+        assert!(Need::<u8, u8>::Err(2).is_terminal());
+        assert!(Need::<u8, u8>::Cancelled.is_terminal());
     }
 }

@@ -1,0 +1,37 @@
+error[E0425]: cannot find type `AttachedSelectExpr` in module `arcweft_lang_syntax::attachment`
+ --> tests/ui/final_select_removed_api.rs:4:58
+  |
+4 | fn standalone_select(_: arcweft_lang_syntax::attachment::AttachedSelectExpr) {}
+  |                                                          ^^^^^^^^^^^^^^^^^^
+  |
+ ::: $WORKSPACE/crates/arcweft-lang-syntax/src/attachment/thread_statement.rs
+  |
+  | pub enum AttachedSelectBranch {
+  | ----------------------------- similarly named enum `AttachedSelectBranch` defined here
+  |
+help: an enum with a similar name exists
+  |
+4 - fn standalone_select(_: arcweft_lang_syntax::attachment::AttachedSelectExpr) {}
+4 + fn standalone_select(_: arcweft_lang_syntax::attachment::AttachedSelectBranch) {}
+  |
+
+error[E0425]: cannot find type `OptionalDot` in module `arcweft_lang_syntax::expressions`
+ --> tests/ui/final_select_removed_api.rs:6:63
+  |
+6 | fn combined_optional_dot(_: arcweft_lang_syntax::expressions::OptionalDot) {}
+  |                                                               ^^^^^^^^^^^ not found in `arcweft_lang_syntax::expressions`
+
+error[E0599]: no variant, associated function, or constant named `Invalid` found for enum `HirSelectedMember` in the current scope
+ --> tests/ui/final_select_removed_api.rs:9:31
+  |
+9 |     if let HirSelectedMember::Invalid(_) = member {}
+  |                               ^^^^^^^ variant, associated function, or constant not found in `HirSelectedMember`
+
+error[E0026]: variant `arcweft_lang_syntax::expressions::ExpressionProjection::Select` does not have a field named `optional`
+  --> tests/ui/final_select_removed_api.rs:13:43
+   |
+13 |     if let ExpressionProjection::Select { optional: _, .. } = projection {}
+   |                                           ^^^^^^^^
+   |                                           |
+   |                                           variant `arcweft_lang_syntax::expressions::ExpressionProjection::Select` does not have this field
+   |                                           help: `arcweft_lang_syntax::expressions::ExpressionProjection::Select` has a field named `0`

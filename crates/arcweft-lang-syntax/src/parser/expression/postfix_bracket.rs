@@ -12,7 +12,7 @@ use crate::expressions::{
 };
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 use crate::parser::cursor::{
-    CandidateTokenInterval, ShadowDocumentParser, StagedParserEvents, is_trivia_kind,
+    CandidateTokenInterval, DocumentParser, StagedParserEvents, is_trivia_kind,
 };
 use crate::parser::rich_text_grammar::emit_dialogue_content;
 use crate::parser::shadow_recovery::{
@@ -20,7 +20,7 @@ use crate::parser::shadow_recovery::{
 };
 
 pub(super) fn emit_postfix_bracket(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     left: CompletedNode,
     role: SyntaxRole,
@@ -36,7 +36,7 @@ pub(super) fn emit_postfix_bracket(
         parser.insert_projected_start(left.start_event, SyntaxKind::PostfixBracketExpression, role);
     parser.set_start_role(left.start_event + 1, SyntaxRole::Target);
     emit_open_delimiter(parser, SyntaxKind::OpenBracketNode, "[");
-    let payload_end = find_top_level_boundary(parser, parser.cursor(), &["]"]).min(end);
+    let payload_end = find_top_level_boundary(parser, parser.cursor(), end, &["]"]);
     let interval = parser
         .candidate_interval(payload_end)
         .expect("postfix candidates share one validated lexer interval");
@@ -70,17 +70,7 @@ pub(super) fn emit_postfix_bracket(
 
     let index = stage_index_candidate(parser, interval);
     if matches!(index, StagedIndexAttempt::LimitExceeded) {
-        parser.emit_raw_interval(interval);
-        emit_close_delimiter(
-            parser,
-            SyntaxKind::CloseBracketNode,
-            "]",
-            "syntax.expression.missing_postfix_bracket_close",
-        );
-        parser.finish();
-        return CompletedNode {
-            start_event: left.start_event,
-        };
+        return finish_postfix_limit(parser, interval, left);
     }
     let missing_content_boundary = if matches!(terminator, SyntaxBracketTerminator::Closed) {
         SyntaxDialogueContentRecoveryBoundary::CloseBracket { range: close_range }
@@ -91,131 +81,16 @@ pub(super) fn emit_postfix_bracket(
     };
     let dialogue = stage_dialogue_candidate(parser, interval, missing_content_boundary);
     if matches!(dialogue, StagedDialogueAttempt::LimitExceeded) {
-        parser.emit_raw_interval(interval);
-        emit_close_delimiter(
-            parser,
-            SyntaxKind::CloseBracketNode,
-            "]",
-            "syntax.expression.missing_postfix_bracket_close",
-        );
-        parser.finish();
-        return CompletedNode {
-            start_event: left.start_event,
-        };
+        return finish_postfix_limit(parser, interval, left);
     }
-
-    let projection = match (index, dialogue) {
-        (
-            StagedIndexAttempt::Viable {
-                events,
-                index,
-                range,
-                ..
-            },
-            StagedDialogueAttempt::Failed(_),
-        ) => {
-            parser.commit_selected(events);
-            PendingExpressionProjection::new(
-                ExpressionProjection::Index(SyntaxIndexProjection::new(
-                    SyntaxExpressionSlot::Authored,
-                    index,
-                    terminator.clone(),
-                )),
-                vec![
-                    PendingExpressionComponent::new(ExpressionComponentRole::Target, target_range),
-                    PendingExpressionComponent::new(ExpressionComponentRole::Index, range),
-                ],
-            )
-        }
-        (
-            StagedIndexAttempt::Failed(_),
-            StagedDialogueAttempt::Viable {
-                events,
-                content,
-                components,
-                ..
-            },
-        ) => {
-            parser.commit_selected(events);
-            let mut source_components = vec![
-                PendingExpressionComponent::new(ExpressionComponentRole::Target, target_range),
-                PendingExpressionComponent::new(ExpressionComponentRole::OpenBracket, open_range),
-                PendingExpressionComponent::new(ExpressionComponentRole::CloseBracket, close_range),
-                PendingExpressionComponent::new(ExpressionComponentRole::Content, payload_range),
-                PendingExpressionComponent::new(
-                    ExpressionComponentRole::ContentBody,
-                    payload_range,
-                ),
-            ];
-            source_components.extend(components);
-            PendingExpressionProjection::new(
-                ExpressionProjection::DialogueContentApplication(
-                    SyntaxDialogueApplicationProjection::new(
-                        SyntaxDialogueApplicationForm::Bracket {
-                            terminator: terminator.clone(),
-                        },
-                        content,
-                        false,
-                    ),
-                ),
-                source_components,
-            )
-        }
-        (
-            StagedIndexAttempt::Viable {
-                events: index_events,
-                quality: index_quality,
-                ..
-            },
-            StagedDialogueAttempt::Viable {
-                events: dialogue_events,
-                quality: dialogue_quality,
-                content,
-                components,
-            },
-        ) => {
-            let index_graph = index_events.into_candidate_graph();
-            let index_node = *index_graph
-                .roots()
-                .first()
-                .expect("viable index candidate retains one root expression");
-            let dialogue_graph = dialogue_events.into_candidate_graph();
-            parser.start(SyntaxKind::PostfixBracketPayload, SyntaxRole::Payload);
-            parser.emit_raw_interval(interval);
-            parser.finish();
-            PendingExpressionProjection::new(
-                ExpressionProjection::PostfixBracket(SyntaxPostfixBracketProjection::Ambiguous {
-                    index: Box::new(SyntaxPostfixIndexCandidate::new(
-                        index_quality,
-                        index_node,
-                        index_graph,
-                    )),
-                    dialogue: Box::new(SyntaxPostfixDialogueCandidate::new(
-                        dialogue_quality,
-                        content,
-                        components,
-                        dialogue_graph,
-                    )),
-                }),
-                postfix_bracket_components(target_range, open_range, close_range, payload_range),
-            )
-        }
-        (StagedIndexAttempt::Failed(index), StagedDialogueAttempt::Failed(dialogue)) => {
-            parser.start(SyntaxKind::PostfixBracketPayload, SyntaxRole::Payload);
-            parser.emit_raw_interval(interval);
-            parser.finish();
-            PendingExpressionProjection::new(
-                ExpressionProjection::PostfixBracket(SyntaxPostfixBracketProjection::Invalid {
-                    index,
-                    dialogue,
-                }),
-                postfix_bracket_components(target_range, open_range, close_range, payload_range),
-            )
-        }
-        (StagedIndexAttempt::LimitExceeded, _) | (_, StagedDialogueAttempt::LimitExceeded) => {
-            unreachable!("candidate limit exhaustion returns before classification")
-        }
+    let sources = PostfixBracketSources {
+        target: target_range,
+        open: open_range,
+        close: close_range,
+        payload: payload_range,
+        terminator,
     };
+    let projection = select_postfix_bracket_projection(parser, interval, index, dialogue, &sources);
     emit_close_delimiter(
         parser,
         SyntaxKind::CloseBracketNode,
@@ -230,6 +105,180 @@ pub(super) fn emit_postfix_bracket(
         parser.set_start_kind(owner, SyntaxKind::DialogueContentApplicationExpression);
     }
     parser.set_expression_projection(owner, projection);
+    parser.finish();
+    CompletedNode {
+        start_event: left.start_event,
+    }
+}
+
+struct PostfixBracketSources {
+    target: SourceRange,
+    open: SourceRange,
+    close: SourceRange,
+    payload: SourceRange,
+    terminator: SyntaxBracketTerminator,
+}
+
+fn select_postfix_bracket_projection(
+    parser: &mut DocumentParser<'_, '_>,
+    interval: CandidateTokenInterval,
+    index: StagedIndexAttempt,
+    dialogue: StagedDialogueAttempt,
+    sources: &PostfixBracketSources,
+) -> PendingExpressionProjection {
+    match (index, dialogue) {
+        (
+            StagedIndexAttempt::Viable {
+                events,
+                index,
+                range,
+                ..
+            },
+            StagedDialogueAttempt::Failed(_),
+        ) => {
+            parser.commit_selected(events);
+            PendingExpressionProjection::new(
+                ExpressionProjection::Index(SyntaxIndexProjection::new(
+                    SyntaxExpressionSlot::Authored,
+                    index,
+                    sources.terminator.clone(),
+                )),
+                vec![
+                    PendingExpressionComponent::new(
+                        ExpressionComponentRole::Target,
+                        sources.target,
+                    ),
+                    PendingExpressionComponent::new(ExpressionComponentRole::Index, range),
+                ],
+            )
+        }
+        (
+            StagedIndexAttempt::Failed(_),
+            StagedDialogueAttempt::Viable {
+                events,
+                content,
+                components,
+                ..
+            },
+        ) => {
+            parser.commit_selected(events);
+            let mut source_components = dialogue_application_components(sources);
+            source_components.extend(components);
+            PendingExpressionProjection::new(
+                ExpressionProjection::DialogueContentApplication(
+                    SyntaxDialogueApplicationProjection::new(
+                        SyntaxDialogueApplicationForm::Bracket {
+                            terminator: sources.terminator.clone(),
+                        },
+                        content,
+                        false,
+                    ),
+                ),
+                source_components,
+            )
+        }
+        (
+            index @ StagedIndexAttempt::Viable { .. },
+            dialogue @ StagedDialogueAttempt::Viable { .. },
+        ) => select_ambiguous_postfix_projection(parser, interval, index, dialogue, sources),
+        (StagedIndexAttempt::Failed(index), StagedDialogueAttempt::Failed(dialogue)) => {
+            parser.start(SyntaxKind::PostfixBracketPayload, SyntaxRole::Payload);
+            parser.emit_raw_interval(interval);
+            parser.finish();
+            PendingExpressionProjection::new(
+                ExpressionProjection::PostfixBracket(SyntaxPostfixBracketProjection::Invalid {
+                    index,
+                    dialogue,
+                }),
+                postfix_bracket_components(
+                    sources.target,
+                    sources.open,
+                    sources.close,
+                    sources.payload,
+                ),
+            )
+        }
+        (StagedIndexAttempt::LimitExceeded, _) | (_, StagedDialogueAttempt::LimitExceeded) => {
+            unreachable!("candidate limit exhaustion returns before classification")
+        }
+    }
+}
+
+fn select_ambiguous_postfix_projection(
+    parser: &mut DocumentParser<'_, '_>,
+    interval: CandidateTokenInterval,
+    index: StagedIndexAttempt,
+    dialogue: StagedDialogueAttempt,
+    sources: &PostfixBracketSources,
+) -> PendingExpressionProjection {
+    let StagedIndexAttempt::Viable {
+        events: index_events,
+        quality: index_quality,
+        ..
+    } = index
+    else {
+        unreachable!("ambiguous postfix selection requires a viable index candidate")
+    };
+    let StagedDialogueAttempt::Viable {
+        events: dialogue_events,
+        quality: dialogue_quality,
+        content,
+        components,
+    } = dialogue
+    else {
+        unreachable!("ambiguous postfix selection requires a viable dialogue candidate")
+    };
+    let index_graph = index_events.into_candidate_graph();
+    let index_node = *index_graph
+        .roots()
+        .first()
+        .expect("viable index candidate retains one root expression");
+    let dialogue_graph = dialogue_events.into_candidate_graph();
+    parser.start(SyntaxKind::PostfixBracketPayload, SyntaxRole::Payload);
+    parser.emit_raw_interval(interval);
+    parser.finish();
+    PendingExpressionProjection::new(
+        ExpressionProjection::PostfixBracket(SyntaxPostfixBracketProjection::Ambiguous {
+            index: Box::new(SyntaxPostfixIndexCandidate::new(
+                index_quality,
+                index_node,
+                index_graph,
+            )),
+            dialogue: Box::new(SyntaxPostfixDialogueCandidate::new(
+                dialogue_quality,
+                content,
+                components,
+                dialogue_graph,
+            )),
+        }),
+        postfix_bracket_components(sources.target, sources.open, sources.close, sources.payload),
+    )
+}
+
+fn dialogue_application_components(
+    sources: &PostfixBracketSources,
+) -> Vec<PendingExpressionComponent> {
+    vec![
+        PendingExpressionComponent::new(ExpressionComponentRole::Target, sources.target),
+        PendingExpressionComponent::new(ExpressionComponentRole::OpenBracket, sources.open),
+        PendingExpressionComponent::new(ExpressionComponentRole::CloseBracket, sources.close),
+        PendingExpressionComponent::new(ExpressionComponentRole::Content, sources.payload),
+        PendingExpressionComponent::new(ExpressionComponentRole::ContentBody, sources.payload),
+    ]
+}
+
+fn finish_postfix_limit(
+    parser: &mut DocumentParser<'_, '_>,
+    interval: CandidateTokenInterval,
+    left: CompletedNode,
+) -> CompletedNode {
+    parser.emit_raw_interval(interval);
+    emit_close_delimiter(
+        parser,
+        SyntaxKind::CloseBracketNode,
+        "]",
+        "syntax.expression.missing_postfix_bracket_close",
+    );
     parser.finish();
     CompletedNode {
         start_event: left.start_event,
@@ -259,7 +308,7 @@ enum StagedDialogueAttempt {
 }
 
 fn stage_index_candidate(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     interval: CandidateTokenInterval,
 ) -> StagedIndexAttempt {
     let checkpoint = parser.checkpoint_candidate(interval);
@@ -339,7 +388,7 @@ fn stage_index_candidate(
 }
 
 fn stage_dialogue_candidate(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     interval: CandidateTokenInterval,
     missing_boundary: SyntaxDialogueContentRecoveryBoundary,
 ) -> StagedDialogueAttempt {
@@ -392,7 +441,7 @@ fn stage_dialogue_candidate(
     }
 }
 
-fn bump_candidate_trivia(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn bump_candidate_trivia(parser: &mut DocumentParser<'_, '_>, end: usize) {
     while parser.cursor() < end && parser.current_kind().is_some_and(is_trivia_kind) {
         let _ = parser.bump();
     }

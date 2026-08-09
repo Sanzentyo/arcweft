@@ -294,7 +294,7 @@ pub enum AttachedSourceMember {
         syntax: AstNode<AssignmentStatementKind>,
         source_ordinal: u32,
         assignment: AttachedSourcePunctuation,
-        policy: AttachedSourceBackpressurePolicy,
+        policy: Box<AttachedSourceBackpressurePolicy>,
         duplicate: bool,
     },
     Replay {
@@ -619,6 +619,10 @@ fn attach_source_body(
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "the exhaustive Source member projection keeps each typed member family in one closed dispatcher"
+)]
 fn attach_source_member(
     syntax: SyntaxNodeHandle,
     pending: &PendingSourceMemberProjection,
@@ -649,23 +653,14 @@ fn attach_source_member(
         } if syntax.kind() == SyntaxKind::AssignmentStatement
             && syntax.role() == SyntaxRole::Statement(*statement_ordinal) =>
         {
-            let expression = if matches!(policy, PendingSourceBackpressurePolicy::Bounded { .. }) {
-                attach_bounded_policy_expression(&syntax, declaration)?
-            } else {
-                attach_expression(
-                    &syntax,
-                    SyntaxRole::Initializer,
-                    pending_backpressure_state(policy),
-                    declaration,
-                )?
-            };
-            Ok(AttachedSourceMember::Backpressure {
-                syntax: syntax.cast()?,
-                source_ordinal: *source_ordinal,
-                assignment: attach_punctuation(&syntax, *assignment, declaration)?,
-                policy: attach_backpressure_policy(&expression, policy, declaration)?,
-                duplicate: *duplicate,
-            })
+            attach_backpressure_member(
+                &syntax,
+                *source_ordinal,
+                *assignment,
+                policy,
+                *duplicate,
+                declaration,
+            )
         }
         PendingSourceMemberProjection::Replay {
             source_ordinal,
@@ -722,13 +717,7 @@ fn attach_source_member(
         } if syntax.kind() == SyntaxKind::OnStatement
             && syntax.role() == SyntaxRole::Statement(*statement_ordinal) =>
         {
-            Ok(AttachedSourceMember::Handler {
-                syntax: syntax.clone().cast()?,
-                source_ordinal: *source_ordinal,
-                event: attach_handler_event(&syntax, event, declaration)?,
-                arrow: attach_punctuation(&syntax, *arrow, declaration)?,
-                body: attach_handler_body(&syntax, *body, declaration)?,
-            })
+            attach_handler_member(&syntax, *source_ordinal, event, *arrow, *body, declaration)
         }
         PendingSourceMemberProjection::UnsupportedContract {
             source_ordinal,
@@ -738,7 +727,7 @@ fn attach_source_member(
             condition,
             out_of_order,
         } => attach_contract(
-            syntax,
+            &syntax,
             *source_ordinal,
             *contract_ordinal,
             *family,
@@ -758,6 +747,54 @@ fn attach_source_member(
         }
         _ => Err(invalid_source(declaration)),
     }
+}
+
+fn attach_backpressure_member(
+    syntax: &SyntaxNodeHandle,
+    source_ordinal: u32,
+    assignment: PendingSourcePunctuation,
+    policy: &PendingSourceBackpressurePolicy,
+    duplicate: bool,
+    declaration: SyntaxNodeId,
+) -> Result<AttachedSourceMember, SyntaxAccessError> {
+    let expression = if matches!(policy, PendingSourceBackpressurePolicy::Bounded { .. }) {
+        attach_bounded_policy_expression(syntax, declaration)?
+    } else {
+        attach_expression(
+            syntax,
+            SyntaxRole::Initializer,
+            pending_backpressure_state(policy),
+            declaration,
+        )?
+    };
+    Ok(AttachedSourceMember::Backpressure {
+        syntax: syntax.clone().cast()?,
+        source_ordinal,
+        assignment: attach_punctuation(syntax, assignment, declaration)?,
+        policy: Box::new(attach_backpressure_policy(
+            &expression,
+            policy,
+            declaration,
+        )?),
+        duplicate,
+    })
+}
+
+fn attach_handler_member(
+    syntax: &SyntaxNodeHandle,
+    source_ordinal: u32,
+    event: &PendingSourceHandlerEvent,
+    arrow: PendingSourcePunctuation,
+    body: PendingSourceHandlerBody,
+    declaration: SyntaxNodeId,
+) -> Result<AttachedSourceMember, SyntaxAccessError> {
+    Ok(AttachedSourceMember::Handler {
+        syntax: syntax.clone().cast()?,
+        source_ordinal,
+        event: attach_handler_event(syntax, event, declaration)?,
+        arrow: attach_punctuation(syntax, arrow, declaration)?,
+        body: attach_handler_body(syntax, body, declaration)?,
+    })
 }
 
 fn attach_expression(
@@ -876,8 +913,8 @@ fn attach_backpressure_policy(
             let arguments = call.arguments()?;
             AttachedSourceBackpressurePolicy::Bounded {
                 expression: expression.clone(),
-                capacity: attach_bounded_argument(&arguments, *capacity, declaration)?,
-                overflow: attach_overflow_policy(&arguments, overflow, declaration)?,
+                capacity: Box::new(attach_bounded_argument(&arguments, *capacity, declaration)?),
+                overflow: Box::new(attach_overflow_policy(&arguments, overflow, declaration)?),
                 unexpected_arguments: *unexpected_arguments,
                 recovered_call: *recovered_call,
             }
@@ -922,7 +959,7 @@ fn attach_bounded_argument(
     Ok(AttachedSourceBoundedArgument::Present {
         syntax,
         ordinal,
-        value: attached_value,
+        value: Box::new(attached_value),
         duplicate,
     })
 }
@@ -1137,7 +1174,7 @@ fn attach_handler_body(
 
 #[allow(clippy::too_many_arguments)]
 fn attach_contract(
-    syntax: SyntaxNodeHandle,
+    syntax: &SyntaxNodeHandle,
     source_ordinal: u32,
     contract_ordinal: u16,
     family: SourceContractSyntaxKind,
@@ -1161,7 +1198,7 @@ fn attach_contract(
     };
     Ok(AttachedSourceMember::UnsupportedContract {
         condition: attach_expression(
-            &syntax,
+            syntax,
             SyntaxRole::ContractOperand(0),
             condition,
             declaration,

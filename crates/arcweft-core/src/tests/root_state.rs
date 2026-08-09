@@ -7,6 +7,7 @@ use crate::entry::{
     RuntimeFlowExecutableParameter, RuntimeFlowParameterMode, RuntimeFlowRole, RuntimeNominalRole,
     RuntimeNominalTypeId, RuntimeStatefulEntryRoles, RuntimeTypeSchema,
 };
+use crate::pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity};
 use crate::plan::{
     FlowOp, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget, RuntimeFlow, RuntimePlan,
     RuntimePlanError, RuntimePureHelper, RuntimePureHelperId, RuntimePureHelperOrigin,
@@ -30,23 +31,27 @@ fn reducer_ok(state: RuntimeValue) -> RuntimeValue {
 }
 
 fn reducer_ok_with_commands(state: RuntimeValue, commands: Vec<RuntimeValue>) -> RuntimeValue {
+    RuntimeValue::result_ok(RuntimeValue::Record(vec![
+        RuntimeFieldValue {
+            name: "state".to_owned(),
+            value: state,
+        },
+        RuntimeFieldValue {
+            name: "commands".to_owned(),
+            value: RuntimeValue::Seq(RuntimeSeq::values(commands)),
+        },
+    ]))
+}
+
+fn nominal_variant(owner: &str, name: &str, payload: Option<RuntimeValue>) -> RuntimeValue {
     RuntimeValue::Variant {
-        path: Some("Result".to_owned()),
-        name: "Ok".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Variant {
-            path: Some("Reduction".to_owned()),
-            name: "Reduction".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Record(vec![
-                RuntimeFieldValue {
-                    name: "state".to_owned(),
-                    value: state,
-                },
-                RuntimeFieldValue {
-                    name: "commands".to_owned(),
-                    value: RuntimeValue::Seq(RuntimeSeq::values(commands)),
-                },
-            ]))),
-        })),
+        owner: RuntimeVariantIdentity::Nominal {
+            nominal: RuntimeNominalTypeId::try_new(owner).expect("nominal identity"),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([0x52; 32]),
+        },
+        ordinal: 0,
+        name: name.to_owned(),
+        payload: payload.map(Box::new),
     }
 }
 
@@ -193,31 +198,27 @@ fn stateful_plan_with(
 }
 
 fn reducer_rejection() -> RuntimeValue {
-    RuntimeValue::Variant {
-        path: Some("Result".to_owned()),
-        name: "Err".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Variant {
-            path: Some("ReducerError".to_owned()),
-            name: "ReducerError".to_owned(),
-            payload: Some(Box::new(RuntimeValue::Record(vec![
-                RuntimeFieldValue {
-                    name: "code".to_owned(),
-                    value: RuntimeValue::String("not_allowed".to_owned()),
-                },
-                RuntimeFieldValue {
-                    name: "message".to_owned(),
-                    value: RuntimeValue::String("transition rejected".to_owned()),
-                },
-            ]))),
-        })),
-    }
+    RuntimeValue::result_err(nominal_variant(
+        "ReducerError",
+        "ReducerError",
+        Some(RuntimeValue::Record(vec![
+            RuntimeFieldValue {
+                name: "code".to_owned(),
+                value: RuntimeValue::String("not_allowed".to_owned()),
+            },
+            RuntimeFieldValue {
+                name: "message".to_owned(),
+                value: RuntimeValue::String("transition rejected".to_owned()),
+            },
+        ])),
+    ))
 }
 
 fn command_value(payload: RuntimeValue) -> RuntimeValue {
-    RuntimeValue::Variant {
-        path: Some("Command".to_owned()),
-        name: "Command".to_owned(),
-        payload: Some(Box::new(RuntimeValue::Record(vec![
+    nominal_variant(
+        "Command",
+        "Command",
+        Some(RuntimeValue::Record(vec![
             RuntimeFieldValue {
                 name: "constructor".to_owned(),
                 value: RuntimeValue::EntityRef("command.save".to_owned()),
@@ -230,8 +231,8 @@ fn command_value(payload: RuntimeValue) -> RuntimeValue {
                 name: "payload".to_owned(),
                 value: payload,
             },
-        ]))),
-    }
+        ])),
+    )
 }
 
 fn string_command_policy(limits: RootExecutionLimits) -> RuntimeCommandPolicy {

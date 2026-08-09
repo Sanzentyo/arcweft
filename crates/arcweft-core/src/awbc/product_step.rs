@@ -19,13 +19,13 @@ use self::execution::{
     input_choice_selection, run_function, source_id_for, stream_id_for,
 };
 use self::mapping::{MappedEffect, content_request, source_diagnostic, task_spec};
-use self::runtime_id::{flow_id_from_awbc_public_id, line_id_from_awbc_public_id};
+use self::runtime_id::line_id_from_awbc_public_id;
 pub use self::snapshot::{
     AwbcProductActiveChoiceSnapshot, AwbcProductActiveDialogueSnapshot,
     AwbcProductExecutorSnapshot, AwbcProductPendingHostCallSnapshot,
 };
 use crate::awbc::fiber::{
-    FiberAwaitManyInFlight, FiberBudget, FiberCursor, FiberState, FiberStatus,
+    FiberAwaitManyInFlight, FiberAwaitTarget, FiberBudget, FiberCursor, FiberState, FiberStatus,
     FiberSuspensionReason, FiberTerminalValue, FiberTrap,
 };
 use crate::awbc::schema::{
@@ -55,8 +55,9 @@ use crate::step::{
 };
 use crate::stream::{RuntimeStreamEvent, StreamRuntimeState};
 use crate::task::{
-    AwaitManyTarget, AwaitTarget, HostTaskRequestTemplate, NeedId, TaskEvent, TaskEventKind,
-    TaskId, TaskKey, TaskSequence, normalize_task_events,
+    AwaitManyTarget, AwaitTarget, HostTaskRequestTemplate, NeedId, RuntimeNeedState, TaskEvent,
+    TaskEventKind, TaskId, TaskKey, TaskSequence, normalize_runtime_need_states,
+    normalize_task_events, resolved_runtime_need_state,
 };
 use crate::time::LogicalDuration;
 use crate::value::{
@@ -410,8 +411,10 @@ impl AwbcProductStepExecutor {
             .root_events_next_step
             .extend(deferred_root_events);
 
+        let need_states = normalize_runtime_need_states(std::mem::take(&mut input.need_states));
         let task_events = normalize_task_events(std::mem::take(&mut input.task_events));
         let source_events = normalize_source_events(std::mem::take(&mut input.source_events));
+        let need_states_in = need_states.len();
         let task_events_in = task_events.len();
         let source_events_in = source_events.len();
         output.diagnostics.extend(task_events.iter().map(|event| {
@@ -442,8 +445,13 @@ impl AwbcProductStepExecutor {
         let max_ops = options.budget.max_ops;
         while executed_ops < max_ops && self.has_attemptable_work() {
             if self.fiber.status == FiberStatus::Suspended {
-                let progressed =
-                    self.resume_main_suspension(&input, &task_events, &mut output, pure_backend);
+                let progressed = self.resume_main_suspension(
+                    &input,
+                    &need_states,
+                    &task_events,
+                    &mut output,
+                    pure_backend,
+                );
                 executed_ops = executed_ops.saturating_add(usize::from(progressed));
                 if !progressed || self.should_return_to_host(options.mode, &output, executed_ops) {
                     break;
@@ -453,7 +461,7 @@ impl AwbcProductStepExecutor {
 
             if self.fiber.status == FiberStatus::Running {
                 let line_effects_before = output.effects.line.len();
-                let step = self.step_main_vm(&mut output, pure_backend);
+                let step = self.step_main_vm(&need_states, &mut output, pure_backend);
                 executed_ops = executed_ops.saturating_add(step);
                 self.apply_control_effects(&mut output, line_effects_before);
             } else {
@@ -485,6 +493,7 @@ impl AwbcProductStepExecutor {
                 .saturating_delta(pure_before)
                 .saturating_add(self.compact_pure_stats.saturating_delta(local_pure_before)),
             task_events_in,
+            need_states_in,
             source_events_in,
             root_events_in,
             root_transitions: output.root_transitions.len(),
@@ -530,6 +539,7 @@ impl AwbcProductStepExecutor {
 
     fn step_main_vm(
         &mut self,
+        need_states: &[RuntimeNeedState],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> usize {
@@ -550,7 +560,7 @@ impl AwbcProductStepExecutor {
                 match vm_output.exit {
                     VmExit::Suspended(_) => {
                         self.sync_facade();
-                        self.initialize_suspension(output, pure_backend);
+                        self.initialize_suspension(need_states, output, pure_backend);
                     }
                     VmExit::Returned(value) => Self::record_return(value.as_ref(), output),
                     VmExit::Running
@@ -707,12 +717,14 @@ impl AwbcProductStepExecutor {
 
     fn initialize_suspension(
         &mut self,
+        need_states: &[RuntimeNeedState],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
     ) {
         let Some(suspension) = self.fiber.suspension.clone() else {
             return;
         };
+        let declared_resume = suspension.declared_resume();
         match suspension.reason {
             FiberSuspensionReason::Dialogue {
                 content,
@@ -721,7 +733,14 @@ impl AwbcProductStepExecutor {
             FiberSuspensionReason::Choice { choice, .. } => {
                 self.present_choice(choice, output, pure_backend);
             }
-            FiberSuspensionReason::Await { task, .. } => self.ensure_await_started(&task, output),
+            FiberSuspensionReason::Await { target, binding } => match target {
+                FiberAwaitTarget::Task(task) => self.ensure_await_started(&task, output),
+                FiberAwaitTarget::Need(need) => {
+                    if let Some(resume) = declared_resume {
+                        self.resume_need(&need, binding, resume, need_states, output);
+                    }
+                }
+            },
             FiberSuspensionReason::AwaitMany(_) => self.fill_await_many(output),
             FiberSuspensionReason::HostCall { call, args, .. } => {
                 self.emit_host_call(call, &args, output);
@@ -733,6 +752,7 @@ impl AwbcProductStepExecutor {
     fn resume_main_suspension(
         &mut self,
         input: &RuntimeStepInput,
+        need_states: &[RuntimeNeedState],
         task_events: &[TaskEvent],
         output: &mut RuntimeStepOutput,
         pure_backend: &mut impl RuntimeCallBackend,
@@ -761,9 +781,14 @@ impl AwbcProductStepExecutor {
                 choice,
                 destination,
             } => self.resume_choice(choice, destination, resume, input, output, pure_backend),
-            FiberSuspensionReason::Await { task, binding } => {
-                self.resume_await(&task, binding, resume, task_events, output)
-            }
+            FiberSuspensionReason::Await { target, binding } => match target {
+                FiberAwaitTarget::Task(task) => {
+                    self.resume_await(&task, binding, resume, task_events, output)
+                }
+                FiberAwaitTarget::Need(need) => {
+                    self.resume_need(&need, binding, resume, need_states, output)
+                }
+            },
             FiberSuspensionReason::AwaitMany(state) => {
                 self.resume_await_many(state, resume, task_events, output)
             }
@@ -1136,8 +1161,7 @@ impl AwbcProductStepExecutor {
                 self.fail_with_error(ProductStepError::Internal(error.to_string()), output);
                 return false;
             }
-            let public_id = self.function_public_id(target);
-            let target = match flow_id_from_awbc_public_id(&public_id) {
+            let target = match self.flow_identity_for_function(target) {
                 Ok(target) => target,
                 Err(error) => {
                     self.fail_with_error(error, output);

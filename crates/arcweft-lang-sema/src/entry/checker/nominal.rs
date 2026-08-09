@@ -2,16 +2,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fmt;
 
 use arcweft_data::{BytesFormat, FieldShape, TypeShape, VariantShape};
-use arcweft_lang_hir::symbol::{
-    ProjectSymbolTable,
-    nominal::{
-        ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId,
-        ProjectNominalDeclarationKind, SourceBackedTypeRef,
+use arcweft_lang_hir::{
+    identity::TypeId,
+    symbol::{
+        ProjectSymbolTable,
+        nominal::{
+            ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId,
+            ProjectNominalDeclarationKind,
+        },
     },
 };
 
 use crate::{
-    nominal::NominalResolutionIndex,
+    final_analysis::FinalSemanticAnalysis,
     types::{GenericTypeOwnerId, GenericTypeParameterId, MapKind, TypeKind},
 };
 
@@ -23,7 +26,7 @@ use crate::{
 /// entry; it never resolves authored paths itself.
 pub(super) struct NominalSchemaExpander<'a> {
     symbols: &'a ProjectSymbolTable,
-    resolutions: &'a NominalResolutionIndex,
+    analysis: &'a FinalSemanticAnalysis,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -59,12 +62,9 @@ impl fmt::Display for NominalSchemaError {
 impl<'a> NominalSchemaExpander<'a> {
     pub(super) const fn new(
         symbols: &'a ProjectSymbolTable,
-        resolutions: &'a NominalResolutionIndex,
+        analysis: &'a FinalSemanticAnalysis,
     ) -> Self {
-        Self {
-            symbols,
-            resolutions,
-        }
+        Self { symbols, analysis }
     }
 
     pub(super) fn schema(
@@ -152,18 +152,13 @@ impl<'a> NominalSchemaExpander<'a> {
 
     fn resolved_shape(
         &self,
-        authored: &SourceBackedTypeRef,
+        root: TypeId,
         substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
         stack: &mut BTreeSet<ProjectNominalDeclarationId>,
     ) -> Result<TypeShape, NominalSchemaError> {
-        let root = authored
-            .spans()
-            .source_at(&arcweft_lang_syntax::types::TypeRefNodePath::root())
-            .expect("bound nominal type source maps contain their root")
-            .whole();
-        let ty = self.resolutions.recovered_type(root).ok_or_else(|| {
+        let ty = self.analysis.ty(root).ok_or_else(|| {
             NominalSchemaError::new(format!(
-                "accepted type-check report has no nominal-resolution fact for {root:?}"
+                "accepted final semantic analysis has no type fact for {root:?}"
             ))
         })?;
         self.type_shape(ty, substitutions, stack, &mut BTreeSet::new())

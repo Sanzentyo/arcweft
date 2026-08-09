@@ -10,13 +10,13 @@ repository.workspace = true
 arcweft-agent-protocol = { workspace = true }
 arcweft-agent-runner = { workspace = true }
 arcweft-lang-hir = { workspace = true }
-arcweft-lang-syntax = { workspace = true }
+arcweft-source = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-arcweft-source = { workspace = true }
+arcweft-lang-syntax = { workspace = true }
 
 [lints]
 workspace = true

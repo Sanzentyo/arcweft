@@ -25,20 +25,23 @@ pub(crate) fn mutated_environment(
 ) -> Arc<AcceptedProfileEnvironment> {
     let mut generation = current.generation;
     let mut profile = current.profile.clone();
-    let mut world = Arc::clone(&current.world);
+    let executable = current.executable.clone();
+    let mut stamp_world_override = current.stamp_world_override.clone();
     let mut project = Arc::clone(&current.project);
     match mutation {
         AcceptedEnvironmentStampMutation::Allocation => {}
         AcceptedEnvironmentStampMutation::Generation(replacement) => generation = replacement,
         AcceptedEnvironmentStampMutation::Profile(replacement) => profile = replacement,
-        AcceptedEnvironmentStampMutation::World(replacement) => world = replacement,
+        AcceptedEnvironmentStampMutation::World(replacement) => {
+            stamp_world_override = Some(replacement);
+        }
         AcceptedEnvironmentStampMutation::Project(replacement) => project = replacement,
     }
     Arc::new(AcceptedProfileEnvironment {
         generation,
         profile,
-        compiled: Arc::clone(&current.compiled),
-        world,
+        executable,
+        stamp_world_override,
         project,
         overlays: current.overlays.clone(),
         caches: ProfileSemanticCaches::default(),

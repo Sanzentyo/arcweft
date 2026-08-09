@@ -7,9 +7,13 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-character = { workspace = true }
 arcweft-core = { workspace = true }
 arcweft-dialogue = { workspace = true }
+arcweft-id = { workspace = true }
 arcweft-presentation = { workspace = true }
+arcweft-source = { workspace = true }
+arcweft-text-model = { workspace = true }
 arcweft-view = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror.workspace = true

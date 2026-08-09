@@ -12,12 +12,12 @@ use super::*;
 use arcweft_agent_protocol::rich_text::{AgentGlyphOrientation, AgentGlyphVerticalForm};
 use arcweft_glyphon::PreparedTextItem;
 use arcweft_presentation::hit::HitRect;
-use arcweft_render_text::{
+use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind};
+use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect, TextLayoutGlyph};
+use arcweft_text_model::{
     RichTextControl, RichTextNode, RichTextObjectProxy, RichTextPresentation,
     RichTextRubyAnnotation, RichTextTextRun, RichTextTextSource,
 };
-use arcweft_render_wgpu::geometry::{PreparedFrame, PreparedTextOwner, PreparedTextOwnerKind};
-use arcweft_text_layout::{GlyphOrientation, GlyphVerticalForm, LayoutRect, TextLayoutGlyph};
 
 pub(super) fn agent_view_prepared_text_root_id(owner: &PreparedTextOwner) -> Option<String> {
     let PreparedTextOwnerKind::View { mount } = owner.kind else {
@@ -106,7 +106,7 @@ fn dialogue_view_object(
     let source = AgentCaptureSourceIdentity::Object {
         id: object_id.clone(),
         parent_id: parent_id.clone(),
-        entity: Some(frame.callee.clone()),
+        entity: Some(frame.character.id.as_str().to_owned()),
         layer: "dialogue".to_owned(),
         role: AGENT_ROLE_DIALOGUE_VIEW.to_owned(),
         object_layer: None,
@@ -116,7 +116,7 @@ fn dialogue_view_object(
     Ok(AgentObservedObject {
         id: object_id.clone(),
         parent_id,
-        entity: Some(frame.callee.clone()),
+        entity: Some(frame.character.id.as_str().to_owned()),
         layer: "dialogue".to_owned(),
         role: AGENT_ROLE_DIALOGUE_VIEW.to_owned(),
         visible: true,
@@ -777,16 +777,14 @@ fn dialogue_child_object(
 fn child_frame(parent: &LineDisplayFrame, text: String) -> LineDisplayFrame {
     LineDisplayFrame {
         line: parent.line.clone(),
-        callee: parent.callee.clone(),
-        speaker_label: parent.speaker_label.clone(),
+        character: parent.character.clone(),
+        text_key: parent.text_key.clone(),
+        effective: parent.effective.clone(),
         text: text.clone(),
         base_styles: parent.base_styles.clone(),
-        profile_style: parent.profile_style.clone(),
-        dialogue_revision: parent.dialogue_revision.clone(),
-        inline_failure: parent.inline_failure.clone(),
         style_contributions: parent.style_contributions.clone(),
         nodes: vec![RichTextNode::Text { text }],
-        display_map: arcweft_render_text::RichTextDisplayMap::default(),
+        display_map: arcweft_text_model::RichTextDisplayMap::default(),
         host_events: Vec::new(),
         inline_failures: Vec::new(),
         unresolved: Vec::new(),
@@ -1059,6 +1057,8 @@ fn agent_hit_region(
         proxy_id: None,
         proxy_type: None,
         proxy_declaration: None,
+        proxy_schema: None,
+        proxy_fields: Vec::new(),
         proxy_role: None,
         proxy_layer: None,
         depth: None,
@@ -1118,10 +1118,12 @@ fn proxy_hit_region(
         proxy_id: Some(proxy.id.clone()),
         proxy_type: proxy.type_name.clone(),
         proxy_declaration: proxy.declaration.clone(),
+        proxy_schema: proxy.schema.clone(),
+        proxy_fields: proxy.fields.clone(),
         proxy_role: proxy.role.clone(),
         proxy_layer: proxy.layer.clone().or_else(|| presentation.layer.clone()),
         depth: proxy.depth.map(|depth| depth.0),
-        proxy_params: proxy.params.clone(),
+        proxy_params: BTreeMap::new(),
     }
 }
 

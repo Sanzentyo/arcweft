@@ -33,12 +33,12 @@ use crate::expr::{
 };
 use crate::identity::{ExprId, ScopeId, SyntheticKey, SyntheticOwner, SyntheticRole};
 use crate::leaf::{HirPathValue, HirShortVariantName};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::source_index::{
     HirExprSourceRole, HirInsertionPoint, HirSourceSite, expression_component_role,
 };
 
-use super::{postfix_failure, project_node, project_tag};
+use super::{paired_start_tags, postfix_failure, project_node, project_tag};
 use crate::final_lowering::StagedHirModuleTransaction;
 use crate::final_lowering::id_ref_projection::id_ref;
 use crate::final_lowering::literal_projection::literal;
@@ -51,6 +51,15 @@ use super::super::{
     await_propagation, binary_operator, borrow_kind, project_lifetime_path,
     project_numeric_sequence, try_form, unary_operator,
 };
+
+struct DialogueCandidateInput<'attached> {
+    attached: Option<&'attached AttachedExpressionNode>,
+    scope: ScopeId,
+    target: ExprId,
+    graph: AttachedCandidateGraph<'attached>,
+    root_site: HirSourceSite,
+    root_ordinal: u32,
+}
 
 impl StagedHirModuleTransaction<'_> {
     pub(super) fn lower_ambiguous_postfix_candidates(
@@ -81,12 +90,15 @@ impl StagedHirModuleTransaction<'_> {
         let mut dialogue_cursor =
             CandidateCursor::new(owner, SyntheticRole::DialogueContentCandidateExpression);
         let dialogue = self.lower_dialogue_candidate(
-            scope,
-            target,
-            dialogue,
-            root_site,
+            DialogueCandidateInput {
+                attached: Some(attached),
+                scope,
+                target,
+                graph: dialogue,
+                root_site,
+                root_ordinal: 0,
+            },
             &mut dialogue_cursor,
-            0,
         )?;
         Ok(HirPostfixBracketCandidates::Ambiguous { index, dialogue })
     }
@@ -134,9 +146,7 @@ impl StagedHirModuleTransaction<'_> {
         } else {
             None
         };
-        let state = recovery
-            .map(HirPoisonState::Poisoned)
-            .unwrap_or(HirPoisonState::Clean);
+        let state = recovery.map_or(HirPoisonState::Clean, HirPoisonState::Poisoned);
         let payload = HirExpr::try_new(
             scope,
             HirExprKind::Index(HirIndexExpr::new(target, index)),
@@ -154,13 +164,17 @@ impl StagedHirModuleTransaction<'_> {
 
     fn lower_dialogue_candidate(
         &mut self,
-        scope: ScopeId,
-        target: ExprId,
-        graph: AttachedCandidateGraph<'_>,
-        root_site: HirSourceSite,
+        input: DialogueCandidateInput<'_>,
         cursor: &mut CandidateCursor,
-        root_ordinal: u32,
     ) -> Result<ExprId, HirLowerFailure> {
+        let DialogueCandidateInput {
+            attached,
+            scope,
+            target,
+            graph,
+            root_site,
+            root_ordinal,
+        } = input;
         let key = SyntheticKey::try_new(
             SyntheticOwner::Expr(cursor.owner),
             cursor.role,
@@ -209,9 +223,17 @@ impl StagedHirModuleTransaction<'_> {
         let application =
             HirDialogueContentApplication::try_new(root, target, content, None, coordinates)
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
-        let state = recovery
-            .map(HirPoisonState::Poisoned)
-            .unwrap_or(HirPoisonState::Clean);
+        if let Some(attached) = attached {
+            self.source_components.stage_candidate_dialogue_expression(
+                self.request.source(),
+                cursor.owner,
+                root,
+                attached,
+                graph,
+                &application,
+            )?;
+        }
+        let state = recovery.map_or(HirPoisonState::Clean, HirPoisonState::Poisoned);
         let payload = HirExpr::try_new(
             scope,
             HirExprKind::DialogueContentApplication(application),
@@ -302,13 +324,21 @@ impl StagedHirModuleTransaction<'_> {
                 recovery,
             )?);
         }
+        let paired_starts = paired_start_tags(source, &tags)?;
         let mut nodes = Vec::with_capacity(source.nodes().len());
         for (ordinal, source_node) in source.nodes().iter().enumerate() {
             let id = HirDialogueNodeId::try_new(content, ordinal)
                 .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
             nodes.push(HirDialogueNode::new(
                 id,
-                project_node(content, &tags, source_node, node_values[ordinal], recovery)?,
+                project_node(
+                    content,
+                    &tags,
+                    source_node,
+                    paired_starts[ordinal],
+                    node_values[ordinal],
+                    recovery,
+                )?,
             ));
         }
         HirDialogueContent::try_new(content, nodes.into_boxed_slice(), tags.into_boxed_slice())
@@ -341,16 +371,23 @@ impl StagedHirModuleTransaction<'_> {
         )?;
         let dialogue_ordinal = cursor.take_expression_ordinal()?;
         let dialogue = self.lower_dialogue_candidate(
-            scope,
-            target,
-            dialogue,
-            root_site,
+            DialogueCandidateInput {
+                attached: None,
+                scope,
+                target,
+                graph: dialogue,
+                root_site,
+                root_ordinal: dialogue_ordinal,
+            },
             cursor,
-            dialogue_ordinal,
         )?;
         Ok(HirPostfixBracketCandidates::Ambiguous { index, dialogue })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "this is the exhaustive candidate-node projection into the same closed final expression payload family"
+    )]
     fn lower_candidate_expression(
         &mut self,
         node: AttachedCandidateNode<'_>,
@@ -748,9 +785,7 @@ impl StagedHirModuleTransaction<'_> {
                 (HirExprKind::NamedBlock(block), recovery)
             }
         };
-        let state = recovery
-            .map(HirPoisonState::Poisoned)
-            .unwrap_or(HirPoisonState::Clean);
+        let state = recovery.map_or(HirPoisonState::Clean, HirPoisonState::Poisoned);
         let payload = HirExpr::try_new(scope, kind, state)
             .map_err(|_| HirInvariantFailure::InvalidArenaCommit)?;
         if payload.is_poisoned() {

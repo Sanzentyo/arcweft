@@ -7,6 +7,7 @@ mod reconcile;
 mod shape;
 mod transaction;
 
+pub use crate::grammar::budget::SyntaxParseStats;
 pub use bound::SyntaxDiagnostic;
 pub use database::{
     InvalidEditSet, ParseFailure, ParseStatus, ParsedSource, SyntaxDatabase,

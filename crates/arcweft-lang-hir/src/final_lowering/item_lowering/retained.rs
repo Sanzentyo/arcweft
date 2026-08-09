@@ -18,7 +18,7 @@ use crate::item::{
     HirRetainedHeader, HirRetainedName, HirRetainedPublicId, HirRetainedPublicIdIssue,
     HirSignalDeclaration,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::HirPatternBindingPolicy;
 
 use super::super::{StagedHirModuleTransaction, require_limit};
@@ -33,6 +33,10 @@ mod view;
 pub(super) use self::view::preflight_view_exports;
 
 impl StagedHirModuleTransaction<'_> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Character lowering atomically projects its closed header, member, and initializer inventory"
+    )]
     pub(super) fn lower_character_declaration(
         &mut self,
         owner: ItemId,

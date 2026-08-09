@@ -2,6 +2,7 @@ use super::executor::RuntimeExecutorInstance;
 use super::options::{CliRuntimeExecutorTier, CliRuntimeStepMode, RuntimeRunOptions};
 use super::parse::step_options;
 use crate::output::RuntimeStepRunSummary;
+use arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext;
 use arcweft_core::engine::FlowFiberStatus;
 use arcweft_core::plan::{EntryRuntimeId, RuntimePlan};
 use arcweft_core::step::RuntimeStepInput;
@@ -14,15 +15,15 @@ use arcweft_runtime_host::{
 };
 use std::path::Path;
 use std::process::ExitCode;
+use thiserror::Error;
 
 pub(in crate::app) fn run_runtime_steps(
     plan: RuntimePlan,
     entry: &EntryRuntimeId,
-    source: Option<NativeRunSource<'_>>,
+    host_config: NativeRunHost<'_>,
     config: RuntimeStepRunConfig,
-    host_policy: &HostCallPolicy,
-    adapter_registrars: &[NativeAdapterRegistrar],
     values: &[RuntimeBinding],
+    execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, ExitCode> {
     let mut executor =
         RuntimeExecutorInstance::new(plan, entry, config.executor, config.pure_config).map_err(
@@ -36,15 +37,12 @@ pub(in crate::app) fn run_runtime_steps(
         )?;
     run_runtime_steps_with_executor(
         &mut executor,
-        NativeRunHost {
-            source,
-            policy: host_policy,
-            adapter_registrars,
-        },
+        host_config,
         config.steps,
         config.mode,
         config.max_ops,
         values,
+        execution_diagnostics,
     )
 }
 
@@ -55,12 +53,21 @@ pub(in crate::app) fn run_runtime_steps_with_executor(
     mode: CliRuntimeStepMode,
     max_ops: usize,
     values: &[RuntimeBinding],
+    execution_diagnostics: &ExecutionDiagnosticContext,
 ) -> Result<RuntimeRunTrace, ExitCode> {
-    try_run_runtime_steps_with_executor(executor, host_config, steps, mode, max_ops, values)
-        .map_err(|error| {
-            eprintln!("error: {error}");
-            ExitCode::FAILURE
-        })
+    try_run_runtime_steps_with_executor(
+        executor,
+        host_config,
+        steps,
+        mode,
+        max_ops,
+        values,
+        execution_diagnostics,
+    )
+    .map_err(|error| {
+        eprintln!("error: {error}");
+        ExitCode::FAILURE
+    })
 }
 
 fn try_run_runtime_steps_with_executor(
@@ -70,7 +77,8 @@ fn try_run_runtime_steps_with_executor(
     mode: CliRuntimeStepMode,
     max_ops: usize,
     values: &[RuntimeBinding],
-) -> Result<RuntimeRunTrace, arcweft_host_adapter::HostAdapterError> {
+    execution_diagnostics: &ExecutionDiagnosticContext,
+) -> Result<RuntimeRunTrace, RuntimeStepRunError> {
     let mut host = host_config
         .source
         .map(|source| {
@@ -97,7 +105,8 @@ fn try_run_runtime_steps_with_executor(
             step_index,
             result,
             executor.fiber(),
-        );
+            execution_diagnostics,
+        )?;
         let done = matches!(
             executor.fiber().status,
             FlowFiberStatus::Done(_) | FlowFiberStatus::Failed(_)
@@ -118,6 +127,14 @@ fn try_run_runtime_steps_with_executor(
             .as_ref()
             .map_or_else(NativeTaskStats::default, NativeTaskBridge::stats),
     })
+}
+
+#[derive(Debug, Error)]
+enum RuntimeStepRunError {
+    #[error(transparent)]
+    Host(#[from] arcweft_host_adapter::HostAdapterError),
+    #[error("fresh runtime assertion identity projection failed: {0}")]
+    Assertion(#[from] arcweft_runtime_plan::assertion_identity::RuntimeAssertionProjectionError),
 }
 
 pub(in crate::app) struct RuntimeRunTrace {

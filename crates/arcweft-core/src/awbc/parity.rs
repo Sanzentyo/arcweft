@@ -230,6 +230,7 @@ fn fiber_status(status: &FlowFiberStatus) -> String {
         FlowFiberStatus::Running => "running".to_owned(),
         FlowFiberStatus::Dialogue(_) => "dialogue".to_owned(),
         FlowFiberStatus::Waiting(_) => "waiting".to_owned(),
+        FlowFiberStatus::NeedWaiting(_) => "need_waiting".to_owned(),
         FlowFiberStatus::WaitingMany(_) => "waiting_many".to_owned(),
         FlowFiberStatus::HostCall(_) => "host_call".to_owned(),
         FlowFiberStatus::Choice(_) => "choice".to_owned(),

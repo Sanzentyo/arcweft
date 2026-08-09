@@ -1,20 +1,25 @@
-use super::AwbcProductStepExecutor;
+use super::{ActiveChoice, AwbcProductStepBuildError, AwbcProductStepExecutor};
+use crate::awbc::fiber::FiberTerminalValue;
 use crate::awbc::product_step::mapping::MappedEffect;
 use crate::awbc::schema::{
     AwbcAudioArg, AwbcAudioCommand, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlock, AwbcBlockId,
-    AwbcConstant, AwbcContentUnit, AwbcEffectKind, AwbcEffectPlan, AwbcEffectPlanId,
-    AwbcEffectSetId, AwbcEntryId, AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot,
-    AwbcFrameSlotRole, AwbcFunction, AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind,
-    AwbcHostCall, AwbcHostCallId, AwbcHostCallMode, AwbcInstruction, AwbcProgram, AwbcRegisterId,
-    AwbcResumePoint, AwbcResumePointId, AwbcSafePointKind, AwbcSignature, AwbcSignatureId,
-    AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
+    AwbcChoice, AwbcChoiceId, AwbcChoiceOption, AwbcConstant, AwbcContentUnit, AwbcEffectKind,
+    AwbcEffectPlan, AwbcEffectPlanId, AwbcEffectSetId, AwbcEntryId, AwbcFlowBinding,
+    AwbcFrameLayout, AwbcFrameLayoutId, AwbcFrameSlot, AwbcFrameSlotRole, AwbcFunction,
+    AwbcFunctionFlags, AwbcFunctionId, AwbcFunctionKind, AwbcHostCall, AwbcHostCallId,
+    AwbcHostCallMode, AwbcInstruction, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRegisterId,
+    AwbcResumePoint, AwbcResumePointId, AwbcRuntimeType, AwbcSafePointKind, AwbcSignature,
+    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTerminator, AwbcTrapCode, AwbcTypeId,
 };
+use crate::effect::{LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile};
 use crate::engine::{FlowExit, FlowFiberStatus};
 use crate::step::{
     RuntimeDiagnosticCategory, RuntimeHostCallId, RuntimeHostCallMode, RuntimeHostCallResult,
     RuntimeStepInput, RuntimeStepOptions, RuntimeStepStopReason,
 };
-use crate::value::{RuntimePayload, RuntimeValue};
+use crate::task::{LogicalEpoch, NeedId, RuntimeNeedState, TaskSequence};
+use crate::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
+use arcweft_need::{Need, Progress};
 
 #[test]
 fn minimal_return_program_finishes_without_diagnostics() {
@@ -32,10 +37,125 @@ fn minimal_return_program_finishes_without_diagnostics() {
     assert!(matches!(result.fiber_status, FlowFiberStatus::Done(_)));
 }
 
+#[test]
+fn snapshot_restore_and_hot_swap_require_exact_semantic_flow_identity() {
+    let program = return_program();
+    let original = program.flow_bindings[0].flow.clone();
+    let replacement =
+        crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x52; 32], "flow.main")
+            .expect("replacement Flow identity is valid");
+    let mut executor = AwbcProductStepExecutor::for_entry(program.clone(), AwbcEntryId(0), 64)
+        .expect("product executor starts");
+    let snapshot = executor.snapshot();
+
+    let mut replacement_program = program;
+    replacement_program.flow_bindings[0].flow = replacement.clone();
+    let error = executor
+        .replace_program_preserving_state(replacement_program)
+        .expect_err("same-label declaration replacement must not preserve live state");
+    assert!(matches!(
+        error,
+        AwbcProductStepBuildError::RestoreSnapshot { ref message }
+            if message.contains("no longer owns AWBC function 0")
+    ));
+    assert_eq!(executor.program.flow_bindings[0].flow, original);
+
+    let mut tampered = snapshot;
+    tampered.live_flow_bindings[0].flow = replacement;
+    let error = executor
+        .restore_snapshot(tampered)
+        .expect_err("snapshot identity must not be inferred from a matching public label");
+    assert!(matches!(
+        error,
+        AwbcProductStepBuildError::RestoreSnapshot { ref message }
+            if message.contains("no longer owns AWBC function 0")
+    ));
+}
+
+#[test]
+fn snapshot_restore_rejects_same_label_choice_target_substitution() {
+    let first =
+        crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x61; 32], "flow.main")
+            .expect("first Flow identity");
+    let second =
+        crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x62; 32], "flow.main")
+            .expect("second Flow identity");
+    let mut program = return_program();
+    program.flow_bindings[0].flow = first.clone();
+    let mut second_function = program.functions[0].clone();
+    second_function.blocks = AwbcTableRange::new(1, 1);
+    second_function.entry_block = AwbcBlockId(1);
+    program.functions.push(second_function);
+    let mut second_block = program.blocks[0].clone();
+    second_block.owner = AwbcFunctionId(1);
+    program.blocks.push(second_block);
+    program.flow_bindings.push(AwbcFlowBinding {
+        flow: second.clone(),
+        function: AwbcFunctionId(1),
+    });
+    let label = AwbcStringId(u32::try_from(program.strings.len()).expect("test string index"));
+    program.strings.push("zz.continue".to_owned());
+    program.choices.push(AwbcChoice {
+        public_id: None,
+        options: AwbcTableRange::new(0, 1),
+    });
+    program.choice_options.push(AwbcChoiceOption {
+        public_id: None,
+        label,
+        condition: None,
+        target: Some(AwbcFunctionId(0)),
+        out_effect: None,
+        effects: Vec::new(),
+    });
+    let mut executor = AwbcProductStepExecutor::for_entry(program, AwbcEntryId(0), 64)
+        .expect("choice snapshot executor starts");
+    let option = executor.choice_runtime_option(&executor.program.choice_options[0]);
+    executor.active_choice = Some(ActiveChoice {
+        choice: AwbcChoiceId(0),
+        public_id: None,
+        options: vec![option],
+        option_indices: vec![0],
+    });
+    let mut snapshot = executor.snapshot();
+    snapshot
+        .live_flow_bindings
+        .push(executor.program.flow_bindings[1].clone());
+    snapshot
+        .active_choice
+        .as_mut()
+        .expect("active choice")
+        .options[0]
+        .target = Some(second);
+
+    let error = executor
+        .restore_snapshot(snapshot)
+        .expect_err("same-label target substitution must not restore");
+    assert!(matches!(
+        error,
+        AwbcProductStepBuildError::RestoreSnapshot { ref message }
+            if message.contains("does not match its exact typed source option")
+    ));
+    assert_eq!(
+        executor
+            .active_choice
+            .as_ref()
+            .and_then(|choice| choice.options[0].target.as_ref()),
+        Some(&first)
+    );
+}
+
 fn return_program() -> AwbcProgram {
     let mut program = trap_program(AwbcTrapCode::InternalInvariant, "unused");
     program.blocks[0].terminator = AwbcTerminator::Return { value: None };
     program
+}
+
+fn test_flow_binding() -> AwbcFlowBinding {
+    AwbcFlowBinding {
+        flow: crate::plan::FlowRuntimeId::from_checked_declaration_digest([0x51; 32], "flow.main")
+            .expect("test Flow identity is valid"),
+        function: AwbcFunctionId(0),
+    }
 }
 
 #[test]
@@ -83,6 +203,115 @@ fn host_call_request_and_result_resume_at_runtime_step_boundary() {
         third.fiber_status,
         FlowFiberStatus::Done(FlowExit::Return("host-ok".to_owned()))
     );
+}
+
+#[test]
+fn ready_direct_need_materializes_result_and_returns_in_the_same_step() {
+    let expected = RuntimeValue::result_ok(RuntimeValue::String("profile-ready".to_owned()));
+    let (mut executor, input) = direct_need_executor_and_input(vec![runtime_need_state(
+        0,
+        Need::Ready(RuntimePayload(RuntimeValue::String(
+            "profile-ready".to_owned(),
+        ))),
+    )]);
+
+    let result = executor.step(input, direct_need_step_options());
+
+    assert_eq!(
+        executor.fiber.terminal,
+        Some(FiberTerminalValue::Returned(Some(expected)))
+    );
+    assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
+    assert_eq!(result.stats.need_states_in, 1);
+    assert!(result.output.requests.tasks.is_empty());
+    assert!(result.output.flow_events.iter().all(|event| !matches!(
+        event,
+        crate::plan::FlowEvent::AwaitStarted { .. }
+            | crate::plan::FlowEvent::AwaitReady { .. }
+            | crate::plan::FlowEvent::AwaitProgress { .. }
+    )));
+}
+
+#[test]
+fn errored_direct_need_materializes_result_err_without_trapping() {
+    let expected = RuntimeValue::result_err(RuntimeValue::String("profile-error".to_owned()));
+    let (mut executor, input) = direct_need_executor_and_input(vec![runtime_need_state(
+        0,
+        Need::Err(RuntimePayload(RuntimeValue::String(
+            "profile-error".to_owned(),
+        ))),
+    )]);
+
+    let result = executor.step(input, direct_need_step_options());
+
+    assert_eq!(
+        executor.fiber.terminal,
+        Some(FiberTerminalValue::Returned(Some(expected)))
+    );
+    assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
+    assert!(result.output.diagnostics.is_empty());
+    assert!(result.output.requests.tasks.is_empty());
+}
+
+#[test]
+fn unresolved_direct_need_blocks_without_inventing_a_task_request() {
+    let unresolved = [
+        Need::NotStarted,
+        Need::Pending(Progress::new(0.5).expect("fixture progress is valid")),
+    ];
+    for state in unresolved {
+        let (mut executor, input) =
+            direct_need_executor_and_input(vec![runtime_need_state(0, state)]);
+
+        let result = executor.step(input, direct_need_step_options());
+
+        assert_eq!(
+            result.fiber_status,
+            FlowFiberStatus::NeedWaiting(NeedId("need.profile".to_owned()))
+        );
+        assert_eq!(result.stop_reason, RuntimeStepStopReason::Blocked);
+        assert!(result.output.requests.tasks.is_empty());
+        assert!(result.output.flow_events.is_empty());
+    }
+}
+
+#[test]
+fn cancelled_direct_need_unwinds_to_a_terminal_fiber() {
+    let (mut executor, input) =
+        direct_need_executor_and_input(vec![runtime_need_state(0, Need::Cancelled)]);
+
+    let result = executor.step(input, direct_need_step_options());
+
+    assert_eq!(executor.fiber.terminal, Some(FiberTerminalValue::Cancelled));
+    assert_eq!(result.stop_reason, RuntimeStepStopReason::Done);
+    assert!(result.output.requests.tasks.is_empty());
+    assert!(result.output.diagnostics.is_empty());
+}
+
+#[test]
+fn direct_need_uses_the_first_terminal_sequence() {
+    let expected = RuntimeValue::result_ok(RuntimeValue::String("first".to_owned()));
+    let states = vec![
+        runtime_need_state(
+            2,
+            Need::Err(RuntimePayload(RuntimeValue::String("late".to_owned()))),
+        ),
+        runtime_need_state(0, Need::NotStarted),
+        runtime_need_state(
+            1,
+            Need::Ready(RuntimePayload(RuntimeValue::String("first".to_owned()))),
+        ),
+    ];
+    let (mut executor, input) = direct_need_executor_and_input(states);
+
+    let result = executor.step(input, direct_need_step_options());
+
+    assert_eq!(
+        executor.fiber.terminal,
+        Some(FiberTerminalValue::Returned(Some(expected)))
+    );
+    assert_eq!(result.stats.need_states_in, 3);
+    assert!(result.output.requests.tasks.is_empty());
 }
 
 #[test]
@@ -211,6 +440,103 @@ fn effect_mapping_table_covers_every_awbc_effect_kind() {
 }
 
 #[test]
+fn assertion_effect_mapping_retains_typed_guard_and_payload() {
+    let mut program = AwbcProgram::default();
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
+
+    let mapped = AwbcEffectKind::Assert.map_product_effect(
+        &program,
+        effect,
+        &[
+            RuntimeValue::Bool(false),
+            RuntimeValue::String("must be ready".to_owned()),
+        ],
+    );
+    let MappedEffect::Line(LineEffectRequest::Assert(assertion)) = mapped else {
+        panic!("well-formed assertion effect must map to typed core assertion data");
+    };
+    assert_eq!(
+        assertion.guard(),
+        RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard")
+    );
+    assert_eq!(assertion.condition(), "false");
+    assert_eq!(assertion.message(), "must be ready");
+    assert_eq!(assertion.profile(), RuntimeAssertionProfile::Always);
+}
+
+#[test]
+fn pre_materialized_assertion_effect_retains_its_condition_label() {
+    let mut program = AwbcProgram::default();
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
+    let condition = constant_string(&mut program, "debug_flag");
+    program.effect_plans[effect.index()].static_args[1] = condition;
+
+    let mapped = AwbcEffectKind::Assert.map_product_effect(&program, effect, &[]);
+    let MappedEffect::Line(LineEffectRequest::Assert(assertion)) = mapped else {
+        panic!("pre-materialized assertion request must remain a typed line effect");
+    };
+    assert_eq!(assertion.condition(), "debug_flag");
+    assert_eq!(assertion.message(), "arg2");
+}
+
+#[test]
+fn assertion_effect_mapping_omits_true_condition() {
+    let mut program = AwbcProgram::default();
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
+
+    let mapped = AwbcEffectKind::Assert.map_product_effect(
+        &program,
+        effect,
+        &[
+            RuntimeValue::Bool(true),
+            RuntimeValue::String("must be ready".to_owned()),
+        ],
+    );
+
+    assert!(matches!(mapped, MappedEffect::Omitted));
+}
+
+#[test]
+fn assertion_effect_mapping_rejects_non_bool_condition() {
+    let mut program = AwbcProgram::default();
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
+
+    let mapped = AwbcEffectKind::Assert.map_product_effect(
+        &program,
+        effect,
+        &[
+            RuntimeValue::String("false".to_owned()),
+            RuntimeValue::String("must be ready".to_owned()),
+        ],
+    );
+
+    let MappedEffect::Unsupported(diagnostic) = mapped else {
+        panic!("non-Bool assertion conditions must be rejected before label materialization");
+    };
+    assert_eq!(diagnostic.category, RuntimeDiagnosticCategory::Type);
+    assert_eq!(
+        diagnostic.message,
+        "AWBC assertion condition must evaluate to Bool"
+    );
+}
+
+#[test]
+fn assertion_effect_mapping_rejects_unknown_profile_without_fallback() {
+    let mut program = AwbcProgram::default();
+    let effect = push_effect_plan(&mut program, AwbcEffectKind::Assert);
+    let invalid_profile = constant_string(&mut program, "legacy_profile");
+    program.effect_plans[effect.index()].static_args[3] = invalid_profile;
+
+    let mapped = AwbcEffectKind::Assert.map_product_effect(&program, effect, &[]);
+
+    let MappedEffect::Unsupported(diagnostic) = mapped else {
+        panic!("unknown assertion profiles must not fall back to the always profile");
+    };
+    assert_eq!(diagnostic.category, RuntimeDiagnosticCategory::Internal);
+    assert_eq!(diagnostic.message, "malformed AWBC assertion profile");
+}
+
+#[test]
 fn audio_effect_mapping_without_typed_payload_is_typed_internal_diagnostic() {
     let mut program = AwbcProgram::default();
     let effect = push_effect_plan(&mut program, AwbcEffectKind::Audio);
@@ -295,6 +621,7 @@ fn trap_program(code: AwbcTrapCode, message: &str) -> AwbcProgram {
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags::default(),
         }],
+        flow_bindings: vec![test_flow_binding()],
         entries: vec![crate::awbc::schema::AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
@@ -349,6 +676,7 @@ fn content_ensure_program() -> AwbcProgram {
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags::default(),
         }],
+        flow_bindings: vec![test_flow_binding()],
         entries: vec![crate::awbc::schema::AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
@@ -434,6 +762,129 @@ fn host_call_program() -> AwbcProgram {
             entry_block: AwbcBlockId(0),
             flags: AwbcFunctionFlags(AwbcFunctionFlags::MAY_SUSPEND),
         }],
+        flow_bindings: vec![test_flow_binding()],
+        entries: vec![crate::awbc::schema::AwbcEntry {
+            runtime_id: crate::plan::EntryRuntimeId::canonical("main")
+                .expect("test entry runtime ID is valid"),
+            binding: crate::entry::EntryBindingIdentity::from_bytes([1; 32]),
+            public_id: AwbcStringId(0),
+            kind: crate::awbc::schema::AwbcEntryKind::Cli,
+            signature: AwbcSignatureId(0),
+            target: crate::awbc::schema::AwbcEntryTarget::Function(AwbcFunctionId(0)),
+            roles: crate::entry::RuntimeEntryRoles::None,
+        }],
+        ..AwbcProgram::default()
+    }
+}
+
+fn direct_need_executor_and_input(
+    need_states: Vec<RuntimeNeedState>,
+) -> (AwbcProductStepExecutor, RuntimeStepInput) {
+    let executor = AwbcProductStepExecutor::for_entry(direct_need_program(), AwbcEntryId(0), 64)
+        .expect("direct Need product executor starts");
+    let input = RuntimeStepInput {
+        bindings: vec![RuntimeBinding {
+            name: "need".to_owned(),
+            value: RuntimeValue::String("need.profile".to_owned()),
+        }],
+        need_states,
+        ..RuntimeStepInput::default()
+    };
+    (executor, input)
+}
+
+fn direct_need_step_options() -> RuntimeStepOptions {
+    RuntimeStepOptions {
+        mode: crate::step::RuntimeStepMode::Drain,
+        budget: crate::step::RuntimeStepBudget { max_ops: 64 },
+    }
+}
+
+fn runtime_need_state(
+    sequence: u64,
+    state: Need<RuntimePayload, RuntimePayload>,
+) -> RuntimeNeedState {
+    RuntimeNeedState::new(
+        LogicalEpoch(7),
+        NeedId("need.profile".to_owned()),
+        TaskSequence(sequence),
+        state,
+    )
+}
+
+fn direct_need_program() -> AwbcProgram {
+    let need_ty = AwbcTypeId(0);
+    let dynamic_ty = AwbcTypeId(1);
+    AwbcProgram {
+        strings: vec!["entry.main".to_owned(), "need".to_owned()],
+        runtime_types: vec![AwbcRuntimeType::NeedHandle, AwbcRuntimeType::Dynamic],
+        signatures: vec![AwbcSignature {
+            params: vec![need_ty],
+            result: Some(dynamic_ty),
+            effects: AwbcEffectSetId(0),
+        }],
+        frame_layouts: vec![AwbcFrameLayout {
+            slots: vec![
+                AwbcFrameSlot {
+                    name: Some(AwbcStringId(1)),
+                    ty: need_ty,
+                    role: AwbcFrameSlotRole::Parameter,
+                    scope_depth: 0,
+                },
+                AwbcFrameSlot {
+                    name: None,
+                    ty: dynamic_ty,
+                    role: AwbcFrameSlotRole::ReturnValue,
+                    scope_depth: 0,
+                },
+            ],
+            max_scope_depth: 0,
+        }],
+        patterns: vec![AwbcPattern::Bind {
+            target: AwbcRegisterId(1),
+            mutable: false,
+            expected: Some(dynamic_ty),
+        }],
+        resume_points: vec![AwbcResumePoint {
+            function: AwbcFunctionId(0),
+            block: AwbcBlockId(1),
+            frame_layout: AwbcFrameLayoutId(0),
+            kind: AwbcSafePointKind::Await,
+        }],
+        blocks: vec![
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Await {
+                    handle: AwbcRegisterId(0),
+                    binding: Some(AwbcPatternId(0)),
+                    resume: AwbcResumePointId(0),
+                },
+                safe_point: AwbcSafePointKind::FlowEntry,
+                source_map: None,
+            },
+            AwbcBlock {
+                owner: AwbcFunctionId(0),
+                instructions: AwbcTableRange::new(0, 0),
+                terminator: AwbcTerminator::Return {
+                    value: Some(AwbcRegisterId(1)),
+                },
+                safe_point: AwbcSafePointKind::Return,
+                source_map: None,
+            },
+        ],
+        functions: vec![AwbcFunction {
+            public_id: Some(AwbcStringId(0)),
+            kind: AwbcFunctionKind::Flow,
+            signature: AwbcSignatureId(0),
+            frame_layout: AwbcFrameLayoutId(0),
+            blocks: AwbcTableRange::new(0, 2),
+            entry_block: AwbcBlockId(0),
+            flags: AwbcFunctionFlags(
+                AwbcFunctionFlags::DETERMINISTIC | AwbcFunctionFlags::MAY_SUSPEND,
+            ),
+        }],
+        flow_bindings: vec![test_flow_binding()],
         entries: vec![crate::awbc::schema::AwbcEntry {
             runtime_id: crate::plan::EntryRuntimeId::canonical("main")
                 .expect("test entry runtime ID is valid"),
@@ -458,8 +909,8 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
         | AwbcEffectKind::Out
         | AwbcEffectKind::Ensure
         | AwbcEffectKind::Break => 2,
-        AwbcEffectKind::Log => 4,
-        AwbcEffectKind::EmitEvent | AwbcEffectKind::Assert => 3,
+        AwbcEffectKind::Log | AwbcEffectKind::Assert => 4,
+        AwbcEffectKind::EmitEvent => 3,
         AwbcEffectKind::DropHandle
         | AwbcEffectKind::Wait
         | AwbcEffectKind::Return
@@ -473,7 +924,13 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
     };
     let static_args = (0..static_arg_count)
         .map(|index| {
-            let value = if kind == AwbcEffectKind::Assert && index == 2 {
+            if kind == AwbcEffectKind::Assert && index == 0 {
+                return constant_bytes(program, &[7; 16]);
+            }
+            if kind == AwbcEffectKind::Assert && index == 1 {
+                return constant_bool(program, false);
+            }
+            let value = if kind == AwbcEffectKind::Assert && index == 3 {
                 "always".to_owned()
             } else {
                 format!("arg{index}")
@@ -493,6 +950,24 @@ fn push_effect_plan(program: &mut AwbcProgram, kind: AwbcEffectKind) -> AwbcEffe
         resources: Vec::new(),
     });
     effect
+}
+
+fn constant_bytes(program: &mut AwbcProgram, value: &[u8]) -> crate::awbc::schema::AwbcConstantId {
+    let id = crate::awbc::schema::AwbcConstantId(
+        u32::try_from(program.constants.len()).expect("test constant index fits u32"),
+    );
+    program
+        .constants
+        .push(crate::awbc::schema::AwbcConstant::Bytes(value.to_vec()));
+    id
+}
+
+fn constant_bool(program: &mut AwbcProgram, value: bool) -> crate::awbc::schema::AwbcConstantId {
+    let id = crate::awbc::schema::AwbcConstantId(
+        u32::try_from(program.constants.len()).expect("test constant index fits u32"),
+    );
+    program.constants.push(AwbcConstant::Bool(value));
+    id
 }
 
 fn constant_string(program: &mut AwbcProgram, value: &str) -> crate::awbc::schema::AwbcConstantId {

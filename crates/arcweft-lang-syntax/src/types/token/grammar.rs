@@ -1175,9 +1175,18 @@ fn parse_generic(
     let raw_parts = split_top_level_with_separators(tokens, open + 1, close, |kind| {
         matches!(kind, TypeTokenKind::Comma)
     });
+    if matches!(raw_parts.as_slice(), [(part_start, part_end, None)] if part_start == part_end) {
+        return Err(TypeParseError::at(
+            "syntax.type.invalid",
+            "generic argument list requires at least one type",
+            tokens[close].range,
+        ));
+    }
     let trailing = raw_parts
         .last()
-        .is_some_and(|(part_start, part_end, _)| part_start == part_end);
+        .is_some_and(|(part_start, part_end, separator)| {
+            part_start == part_end && separator.is_some()
+        });
     let part_count = raw_parts.len().saturating_sub(usize::from(trailing));
     let ParsedGenericArguments {
         is_trait,

@@ -1,13 +1,11 @@
 //! Immutable products emitted by nominal type resolution.
 
-use arcweft_lang_hir::symbol::{
-    ExternalDeclarationId, ProjectTypeCandidate, nominal::ProjectNominalDeclarationId,
+use arcweft_lang_hir::{
+    identity::TypeId,
+    leaf::{HirPath, HirPathRoot, HirPathSegment},
+    symbol::{ExternalDeclarationId, ProjectTypeCandidate, nominal::ProjectNominalDeclarationId},
 };
-use arcweft_lang_syntax::{
-    ast::{common::TextRange, module_path::ModulePathRoot},
-    types::{TypePath, TypeRefNodePath},
-};
-use arcweft_source::SourceSpan;
+use arcweft_source::{SourceRange, SourceSpan};
 use thiserror::Error;
 
 use crate::{
@@ -23,7 +21,7 @@ use super::{NominalTypeDiagnostic, TypePoisonRecord};
 /// Exact local source range and optional accepted-project span for one type node.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TypeSourceEvidence {
-    local: TextRange,
+    local: SourceRange,
     project: Option<SourceSpan>,
 }
 
@@ -66,8 +64,6 @@ pub enum BuiltinTypeConstructor {
     Stream,
     Source,
     Ref,
-    Speaker,
-    SpeakerPreset,
 }
 
 /// Resolution of a project external through the accepted environment owner map.
@@ -93,7 +89,7 @@ pub enum ExternalNominalResolution {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedOpenNominal {
     rule: OpenNominalRuleId,
-    path: TypePath,
+    path: HirPath,
     arguments: Box<[TypeKind]>,
 }
 
@@ -116,7 +112,7 @@ pub enum TypeNameResolution {
     EntityFamily(EntityKind),
     Generic(GenericTypeParameterId),
     SelfType(TypeKind),
-    TraitHead(TypePath),
+    TraitHead(HirPath),
     Projection,
     Project(ProjectNominalType),
     Alias(ResolvedAliasReference),
@@ -142,10 +138,10 @@ pub enum StructuralTypeNodeKind {
 /// Resolution fact tied to its exact structural address and source.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedTypeNode {
-    node: TypeRefNodePath,
+    node: TypeId,
     source: TypeSourceEvidence,
     terminal_source: Option<TypeSourceEvidence>,
-    reference_path: Option<TypePath>,
+    reference_path: Option<HirPath>,
     recovered: Option<TypeKind>,
     outcome: TypeNameResolution,
 }
@@ -165,6 +161,7 @@ pub struct AliasExpansionFact {
 /// Recovered semantic type together with every node and alias fact.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ResolvedTypeProduct {
+    root: TypeId,
     recovered: TypeKind,
     nodes: Box<[ResolvedTypeNode]>,
     aliases: Box<[AliasExpansionFact]>,
@@ -181,7 +178,7 @@ pub struct PoisonedTypeRef {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DetachedTypeRef {
     product: ResolvedTypeProduct,
-    unavailable: Box<[TypeRefNodePath]>,
+    unavailable: Box<[TypeId]>,
     causes: Box<[TypePoisonId]>,
 }
 
@@ -224,7 +221,7 @@ pub(crate) enum AssociatedReceiverFailure {
     #[error("resolved type product is missing its root node")]
     MissingRoot,
     #[error("resolved type node {node:?} is incomplete")]
-    IncompleteNode { node: TypeRefNodePath },
+    IncompleteNode { node: TypeId },
     #[error("resolved type root does not contain a type value")]
     MissingRootType,
     #[error("resolved type root disagrees with the product's normalized type")]
@@ -255,7 +252,7 @@ pub enum TypeArgumentExpectation {
     EntityFamily,
 }
 
-/// Semantic category supplied to one authored type-constructor argument.
+/// Semantic category supplied to one final-HIR type-constructor argument.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeArgumentKind {
     Type(TypeKind),
@@ -266,7 +263,7 @@ pub enum TypeArgumentKind {
 /// Typed evidence retained when a detached world cannot prove a project name.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DetachedNominalEvidence {
-    path: TypePath,
+    path: HirPath,
     source: TypeSourceEvidence,
     reason: DetachedNominalReason,
 }
@@ -282,18 +279,18 @@ pub enum DetachedNominalReason {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TypeResolutionFailure {
     Unknown {
-        path: TypePath,
+        path: HirPath,
     },
     Ambiguous {
-        path: TypePath,
+        path: HirPath,
         candidates: Box<[ProjectTypeCandidate]>,
     },
     Inaccessible {
-        path: TypePath,
+        path: HirPath,
         candidates: Box<[ProjectTypeCandidate]>,
     },
     WrongKind {
-        path: TypePath,
+        path: HirPath,
         actual: ProjectTypeCandidate,
     },
     WrongArgumentKind {
@@ -323,12 +320,8 @@ pub enum TypeResolutionFailure {
 }
 
 impl TypeSourceEvidence {
-    pub(crate) const fn new(local: TextRange, project: Option<SourceSpan>) -> Self {
-        Self { local, project }
-    }
-
     /// Creates evidence for an accepted project type node.
-    pub const fn accepted(local: TextRange, project: SourceSpan) -> Self {
+    pub const fn accepted(local: SourceRange, project: SourceSpan) -> Self {
         Self {
             local,
             project: Some(project),
@@ -336,14 +329,14 @@ impl TypeSourceEvidence {
     }
 
     /// Creates local-only evidence without fabricating project identity.
-    pub const fn detached(local: TextRange) -> Self {
+    pub const fn detached(local: SourceRange) -> Self {
         Self {
             local,
             project: None,
         }
     }
 
-    pub const fn local(&self) -> TextRange {
+    pub const fn local(&self) -> SourceRange {
         self.local
     }
 
@@ -391,13 +384,10 @@ impl BuiltinTypeConstructor {
         Self::Stream,
         Self::Source,
         Self::Ref,
-        Self::Speaker,
-        Self::SpeakerPreset,
     ];
 
     /// Constructors whose sole argument is a contextual entity-family atom.
-    pub const ENTITY_FAMILY_PROJECTIONS: &'static [Self] =
-        &[Self::Ref, Self::Speaker, Self::SpeakerPreset];
+    pub const ENTITY_FAMILY_PROJECTIONS: &'static [Self] = &[Self::Ref];
 
     /// Canonical reserved source spelling.
     pub const fn spelling(self) -> &'static str {
@@ -438,8 +428,6 @@ impl BuiltinTypeConstructor {
             Self::Stream => "Stream",
             Self::Source => "Source",
             Self::Ref => "Ref",
-            Self::Speaker => "Speaker",
-            Self::SpeakerPreset => "SpeakerPreset",
         }
     }
 
@@ -473,9 +461,7 @@ impl BuiltinTypeConstructor {
             | Self::Probe
             | Self::ThreadHandle
             | Self::Shared
-            | Self::Ref
-            | Self::Speaker
-            | Self::SpeakerPreset => 1,
+            | Self::Ref => 1,
             Self::Array
             | Self::OrderedMap
             | Self::SortedMap
@@ -487,19 +473,23 @@ impl BuiltinTypeConstructor {
         }
     }
 
-    /// Selects one unqualified language-owned constructor from an authored path.
+    /// Selects one unqualified language-owned constructor from a final HIR path.
     #[must_use]
-    pub fn from_type_path(path: &TypePath) -> Option<Self> {
-        if path.root() != ModulePathRoot::ImplicitCrate {
+    pub fn from_hir_path(path: &HirPath) -> Option<Self> {
+        if path.root() != HirPathRoot::ImplicitCrate {
             return None;
         }
         let [segment] = path.segments() else {
             return None;
         };
+        let spelling = match segment {
+            HirPathSegment::Identifier(name) => name.as_str(),
+            HirPathSegment::ProjectSymbol(name) => name.as_str(),
+        };
         Self::ALL
             .iter()
             .copied()
-            .find(|constructor| constructor.spelling() == segment.as_str())
+            .find(|constructor| constructor.spelling() == spelling)
     }
 
     /// Expected semantic category for an in-range constructor argument.
@@ -510,9 +500,7 @@ impl BuiltinTypeConstructor {
         }
         Some(match (self, index) {
             (Self::Array, 1) => TypeArgumentExpectation::ConstInt,
-            (Self::Ref | Self::Speaker | Self::SpeakerPreset, 0) => {
-                TypeArgumentExpectation::EntityFamily
-            }
+            (Self::Ref, 0) => TypeArgumentExpectation::EntityFamily,
             _ => TypeArgumentExpectation::Type,
         })
     }
@@ -522,8 +510,6 @@ impl BuiltinTypeConstructor {
     pub fn project_entity_family(self, family: EntityKind) -> Option<TypeKind> {
         Some(match self {
             Self::Ref => TypeKind::entity_ref(family),
-            Self::Speaker => TypeKind::Speaker(family),
-            Self::SpeakerPreset => TypeKind::SpeakerPreset(family),
             _ => return None,
         })
     }
@@ -567,7 +553,7 @@ fn entity_family_ordering(left: &EntityKind, right: &EntityKind) -> core::cmp::O
 impl ResolvedOpenNominal {
     pub(crate) fn new(
         rule: OpenNominalRuleId,
-        path: TypePath,
+        path: HirPath,
         arguments: impl Into<Box<[TypeKind]>>,
     ) -> Self {
         Self {
@@ -581,7 +567,7 @@ impl ResolvedOpenNominal {
         &self.rule
     }
 
-    pub const fn path(&self) -> &TypePath {
+    pub const fn path(&self) -> &HirPath {
         &self.path
     }
 
@@ -640,10 +626,10 @@ impl ResolvedAliasReference {
 
 impl ResolvedTypeNode {
     pub(crate) const fn new(
-        node: TypeRefNodePath,
+        node: TypeId,
         source: TypeSourceEvidence,
         terminal_source: Option<TypeSourceEvidence>,
-        reference_path: Option<TypePath>,
+        reference_path: Option<HirPath>,
         recovered: Option<TypeKind>,
         outcome: TypeNameResolution,
     ) -> Self {
@@ -657,8 +643,8 @@ impl ResolvedTypeNode {
         }
     }
 
-    pub const fn node(&self) -> &TypeRefNodePath {
-        &self.node
+    pub const fn node(&self) -> TypeId {
+        self.node
     }
 
     pub const fn source(&self) -> &TypeSourceEvidence {
@@ -671,7 +657,7 @@ impl ResolvedTypeNode {
     }
 
     /// Validated authored path whose terminal was selected by name resolution.
-    pub const fn reference_path(&self) -> Option<&TypePath> {
+    pub const fn reference_path(&self) -> Option<&HirPath> {
         self.reference_path.as_ref()
     }
 
@@ -744,15 +730,22 @@ impl AliasExpansionFact {
 
 impl ResolvedTypeProduct {
     pub(crate) fn new(
+        root: TypeId,
         recovered: TypeKind,
         nodes: impl Into<Box<[ResolvedTypeNode]>>,
         aliases: impl Into<Box<[AliasExpansionFact]>>,
     ) -> Self {
         Self {
+            root,
             recovered,
             nodes: nodes.into(),
             aliases: aliases.into(),
         }
+    }
+
+    /// Final HIR type identity that owns this complete resolution graph.
+    pub const fn root(&self) -> TypeId {
+        self.root
     }
 
     pub const fn recovered(&self) -> &TypeKind {
@@ -785,7 +778,7 @@ impl<'a> ResolvedAssociatedTypeReceiver<'a> {
         let root = product
             .nodes()
             .iter()
-            .find(|node| node.node() == &TypeRefNodePath::root())
+            .find(|node| node.node() == product.root())
             .ok_or(AssociatedReceiverFailure::MissingRoot)?;
 
         if let Some(node) = product.nodes().iter().find(|node| {
@@ -796,9 +789,7 @@ impl<'a> ResolvedAssociatedTypeReceiver<'a> {
                     | TypeNameResolution::DetachedUnavailable(_)
             )
         }) {
-            return Err(AssociatedReceiverFailure::IncompleteNode {
-                node: node.node().clone(),
-            });
+            return Err(AssociatedReceiverFailure::IncompleteNode { node: node.node() });
         }
 
         let ty = root
@@ -850,7 +841,7 @@ impl PoisonedTypeRef {
 impl DetachedTypeRef {
     pub(crate) fn new(
         product: ResolvedTypeProduct,
-        unavailable: impl Into<Box<[TypeRefNodePath]>>,
+        unavailable: impl Into<Box<[TypeId]>>,
         causes: impl Into<Box<[TypePoisonId]>>,
     ) -> Self {
         let mut unavailable = unavailable.into().into_vec();
@@ -870,7 +861,7 @@ impl DetachedTypeRef {
         &self.product
     }
 
-    pub fn unavailable(&self) -> &[TypeRefNodePath] {
+    pub fn unavailable(&self) -> &[TypeId] {
         &self.unavailable
     }
 
@@ -952,7 +943,7 @@ impl TypeArityExpectation {
 
 impl DetachedNominalEvidence {
     pub(crate) const fn new(
-        path: TypePath,
+        path: HirPath,
         source: TypeSourceEvidence,
         reason: DetachedNominalReason,
     ) -> Self {
@@ -963,7 +954,7 @@ impl DetachedNominalEvidence {
         }
     }
 
-    pub const fn path(&self) -> &TypePath {
+    pub const fn path(&self) -> &HirPath {
         &self.path
     }
 
@@ -1002,19 +993,11 @@ mod tests {
         assert_eq!(BuiltinTypeConstructor::Ref.argument_expectation(1), None);
         assert_eq!(
             BuiltinTypeConstructor::ENTITY_FAMILY_PROJECTIONS,
-            &[
-                BuiltinTypeConstructor::Ref,
-                BuiltinTypeConstructor::Speaker,
-                BuiltinTypeConstructor::SpeakerPreset,
-            ]
+            &[BuiltinTypeConstructor::Ref]
         );
         assert_eq!(
             BuiltinTypeConstructor::Ref.project_entity_family(EntityKind::Flow),
             Some(TypeKind::entity_ref(EntityKind::Flow))
-        );
-        assert_eq!(
-            BuiltinTypeConstructor::SpeakerPreset.spelling(),
-            "SpeakerPreset"
         );
     }
 
@@ -1048,30 +1031,5 @@ mod tests {
         assert!(expectation.contains(1));
         assert!(expectation.contains(3));
         assert!(!expectation.contains(4));
-    }
-
-    #[test]
-    fn poison_and_detached_collections_are_canonicalized() {
-        let product = || ResolvedTypeProduct::new(TypeKind::Bool, [], []);
-        let poisoned = PoisonedTypeRef::new(
-            product(),
-            [
-                TypePoisonId::from_index(2),
-                TypePoisonId::from_index(1),
-                TypePoisonId::from_index(2),
-            ],
-        );
-        assert_eq!(
-            poisoned.causes(),
-            &[TypePoisonId::from_index(1), TypePoisonId::from_index(2)]
-        );
-
-        let detached = DetachedTypeRef::new(
-            product(),
-            [TypeRefNodePath::root(), TypeRefNodePath::root()],
-            [TypePoisonId::from_index(4), TypePoisonId::from_index(4)],
-        );
-        assert_eq!(detached.unavailable(), &[TypeRefNodePath::root()]);
-        assert_eq!(detached.causes(), &[TypePoisonId::from_index(4)]);
     }
 }

@@ -10,7 +10,7 @@ use crate::identity::{
     StmtId, TypeId,
 };
 use crate::item::HirItem;
-use crate::leaf::HirName;
+use crate::leaf::{HirName, HirPath};
 use crate::pattern::HirPattern;
 use crate::scope::{HirCapture, HirLocal, HirScope, LocalLookup};
 use crate::slot::{HirSlotError, HirSlotMetadata};
@@ -21,20 +21,32 @@ use crate::type_ref::HirType;
 use super::{HirLocalResolver, HirModule};
 
 impl HirModule {
-    pub(crate) fn resolve_item(&self, id: ItemId) -> Result<&HirItem, IdResolveError> {
+    /// Resolves one item ID against this exact immutable module revision.
+    pub fn resolve_item(&self, id: ItemId) -> Result<&HirItem, IdResolveError> {
         self.resolve_arena(&self.arenas.items, id)
     }
 
-    pub(crate) fn resolve_scope(&self, id: ScopeId) -> Result<&HirScope, IdResolveError> {
+    /// Resolves one scope ID against this exact immutable module revision.
+    pub fn resolve_scope(&self, id: ScopeId) -> Result<&HirScope, IdResolveError> {
         self.resolve_arena(&self.arenas.scopes, id)
     }
 
-    pub(crate) fn resolve_local(&self, id: LocalId) -> Result<&HirLocal, IdResolveError> {
+    /// Resolves one local ID against this exact immutable module revision.
+    pub fn resolve_local(&self, id: LocalId) -> Result<&HirLocal, IdResolveError> {
         self.resolve_arena(&self.arenas.locals, id)
     }
 
     /// Resolves the nearest source-visible lexical local before one exact use
     /// site without reconstructing a binding point from authored name text.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if this already accepted module contains an invalid local
+    /// inventory or an incomplete or cyclic scope graph.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "the lookup boundary consumes the exact use-site span while retaining no caller-owned source carrier"
+    )]
     pub fn lookup_local(
         &self,
         scope: ScopeId,
@@ -50,27 +62,65 @@ impl HirModule {
         )
         .expect("accepted module local-resolution inventory remains valid");
         Ok(resolver
+            .lookup(scope, name.as_str(), before.range().start())
+            .expect("accepted module scope graph remains acyclic and complete"))
+    }
+
+    /// Resolves a one-segment implicit path through the lexical-local graph.
+    ///
+    /// This is the path-owned counterpart of [`Self::lookup_local`]. It
+    /// preserves parser segment classification, including keyword receivers,
+    /// while rejecting explicit module roots and qualified paths before local
+    /// lookup.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if this already accepted module contains an invalid local
+    /// inventory or an incomplete or cyclic scope graph.
+    pub fn lookup_path_local(
+        &self,
+        scope: ScopeId,
+        path: &HirPath,
+        before: &SourceSpan,
+    ) -> Result<LocalLookup, IdResolveError> {
+        let Some(name) = path.lexical_name() else {
+            return Ok(LocalLookup::NotFound);
+        };
+        self.resolve_scope(scope)?;
+        let resolver = HirLocalResolver::published(
+            &self.slots,
+            &self.arenas.scopes,
+            &self.arenas.locals,
+            &self.arenas.statements,
+        )
+        .expect("accepted module local-resolution inventory remains valid");
+        Ok(resolver
             .lookup(scope, name, before.range().start())
             .expect("accepted module scope graph remains acyclic and complete"))
     }
 
-    pub(crate) fn resolve_expr(&self, id: ExprId) -> Result<&HirExpr, IdResolveError> {
+    /// Resolves one expression ID against this exact immutable module revision.
+    pub fn resolve_expr(&self, id: ExprId) -> Result<&HirExpr, IdResolveError> {
         self.resolve_arena(&self.arenas.expressions, id)
     }
 
-    pub(crate) fn resolve_stmt(&self, id: StmtId) -> Result<&HirStmt, IdResolveError> {
+    /// Resolves one statement ID against this exact immutable module revision.
+    pub fn resolve_stmt(&self, id: StmtId) -> Result<&HirStmt, IdResolveError> {
         self.resolve_arena(&self.arenas.statements, id)
     }
 
-    pub(crate) fn resolve_type(&self, id: TypeId) -> Result<&HirType, IdResolveError> {
+    /// Resolves one type ID against this exact immutable module revision.
+    pub fn resolve_type(&self, id: TypeId) -> Result<&HirType, IdResolveError> {
         self.resolve_arena(&self.arenas.types, id)
     }
 
-    pub(crate) fn resolve_pattern(&self, id: PatternId) -> Result<&HirPattern, IdResolveError> {
+    /// Resolves one pattern ID against this exact immutable module revision.
+    pub fn resolve_pattern(&self, id: PatternId) -> Result<&HirPattern, IdResolveError> {
         self.resolve_arena(&self.arenas.patterns, id)
     }
 
-    pub(crate) fn resolve_capture(&self, id: CaptureId) -> Result<&HirCapture, IdResolveError> {
+    /// Resolves one capture ID against this exact immutable module revision.
+    pub fn resolve_capture(&self, id: CaptureId) -> Result<&HirCapture, IdResolveError> {
         self.resolve_arena(&self.arenas.captures, id)
     }
 
@@ -87,81 +137,78 @@ impl HirModule {
         }
     }
 
-    pub(crate) fn items(&self) -> ArenaIter<'_, HirItem, ItemId> {
+    /// Iterates live item slots in arena order, not authored source order.
+    pub fn items(&self) -> impl ExactSizeIterator<Item = (ItemId, &HirItem)> + '_ {
         self.iter_arena(&self.arenas.items)
     }
 
-    pub(crate) fn scopes(&self) -> ArenaIter<'_, HirScope, ScopeId> {
+    /// Iterates live scope slots in arena order.
+    pub fn scopes(&self) -> impl ExactSizeIterator<Item = (ScopeId, &HirScope)> + '_ {
         self.iter_arena(&self.arenas.scopes)
     }
 
-    pub(crate) fn locals(&self) -> ArenaIter<'_, HirLocal, LocalId> {
+    /// Iterates live local slots in arena order.
+    pub fn locals(&self) -> impl ExactSizeIterator<Item = (LocalId, &HirLocal)> + '_ {
         self.iter_arena(&self.arenas.locals)
     }
 
-    pub(crate) fn expressions(&self) -> ArenaIter<'_, HirExpr, ExprId> {
+    /// Iterates live expression slots in arena order.
+    pub fn expressions(&self) -> impl ExactSizeIterator<Item = (ExprId, &HirExpr)> + '_ {
         self.iter_arena(&self.arenas.expressions)
     }
 
-    pub(crate) fn statements(&self) -> ArenaIter<'_, HirStmt, StmtId> {
+    /// Iterates live statement slots in arena order.
+    pub fn statements(&self) -> impl ExactSizeIterator<Item = (StmtId, &HirStmt)> + '_ {
         self.iter_arena(&self.arenas.statements)
     }
 
-    pub(crate) fn types(&self) -> ArenaIter<'_, HirType, TypeId> {
+    /// Iterates live type slots in arena order.
+    pub fn types(&self) -> impl ExactSizeIterator<Item = (TypeId, &HirType)> + '_ {
         self.iter_arena(&self.arenas.types)
     }
 
-    pub(crate) fn patterns(&self) -> ArenaIter<'_, HirPattern, PatternId> {
+    /// Iterates live pattern slots in arena order.
+    pub fn patterns(&self) -> impl ExactSizeIterator<Item = (PatternId, &HirPattern)> + '_ {
         self.iter_arena(&self.arenas.patterns)
     }
 
-    pub(crate) fn captures(&self) -> ArenaIter<'_, HirCapture, CaptureId> {
+    /// Iterates live capture slots in arena order.
+    pub fn captures(&self) -> impl ExactSizeIterator<Item = (CaptureId, &HirCapture)> + '_ {
         self.iter_arena(&self.arenas.captures)
     }
 
-    pub(crate) fn item_for_syntax(
-        &self,
-        syntax: SyntaxNodeId,
-    ) -> Result<ItemId, HirSourceLookupError> {
+    /// Projects an attached syntax node to its final item identity.
+    pub fn item_for_syntax(&self, syntax: SyntaxNodeId) -> Result<ItemId, HirSourceLookupError> {
         self.source_owner(syntax)
     }
 
-    pub(crate) fn scope_for_syntax(
-        &self,
-        syntax: SyntaxNodeId,
-    ) -> Result<ScopeId, HirSourceLookupError> {
+    /// Projects an attached syntax node to its final scope identity.
+    pub fn scope_for_syntax(&self, syntax: SyntaxNodeId) -> Result<ScopeId, HirSourceLookupError> {
         self.source_owner(syntax)
     }
 
-    pub(crate) fn local_for_syntax(
-        &self,
-        syntax: SyntaxNodeId,
-    ) -> Result<LocalId, HirSourceLookupError> {
+    /// Projects an attached syntax node to its final local identity.
+    pub fn local_for_syntax(&self, syntax: SyntaxNodeId) -> Result<LocalId, HirSourceLookupError> {
         self.source_owner(syntax)
     }
 
-    pub(crate) fn expr_for_syntax(
-        &self,
-        syntax: SyntaxNodeId,
-    ) -> Result<ExprId, HirSourceLookupError> {
+    /// Projects an attached syntax node to its final expression identity.
+    pub fn expr_for_syntax(&self, syntax: SyntaxNodeId) -> Result<ExprId, HirSourceLookupError> {
         self.source_owner(syntax)
     }
 
-    pub(crate) fn stmt_for_syntax(
-        &self,
-        syntax: SyntaxNodeId,
-    ) -> Result<StmtId, HirSourceLookupError> {
+    /// Projects an attached syntax node to its final statement identity.
+    pub fn stmt_for_syntax(&self, syntax: SyntaxNodeId) -> Result<StmtId, HirSourceLookupError> {
         self.source_owner(syntax)
     }
 
-    pub(crate) fn type_for_syntax(
-        &self,
-        syntax: SyntaxNodeId,
-    ) -> Result<TypeId, HirSourceLookupError> {
+    /// Projects an attached syntax node to its final type identity.
+    pub fn type_for_syntax(&self, syntax: SyntaxNodeId) -> Result<TypeId, HirSourceLookupError> {
         self.source_owner(syntax)
     }
 
-    pub(crate) fn pattern_for_syntax(
+    /// Projects an attached syntax node to its final pattern identity.
+    pub fn pattern_for_syntax(
         &self,
         syntax: SyntaxNodeId,
     ) -> Result<PatternId, HirSourceLookupError> {

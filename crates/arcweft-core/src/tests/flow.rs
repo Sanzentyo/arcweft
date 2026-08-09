@@ -1,7 +1,84 @@
 use super::call;
 use crate::{
-    engine::*, line_task::*, pattern::*, plan::*, step::*, task::*, time::LogicalDuration, value::*,
+    effect::{
+        LineEffectRequest, RuntimeAssertionGuardId, RuntimeAssertionProfile, RuntimeEffectExpr,
+    },
+    engine::*,
+    entry::{RuntimeNominalTypeId, TypeLayoutHash},
+    line_task::*,
+    pattern::*,
+    plan::*,
+    step::*,
+    task::*,
+    time::LogicalDuration,
+    value::*,
 };
+
+fn runtime_assertion_effect(condition: RuntimeValue) -> RuntimeEffectExpr {
+    RuntimeEffectExpr::Assert {
+        guard: RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard"),
+        condition: RuntimeExpr::Value(condition),
+        message: RuntimeExpr::Value(RuntimeValue::String("must be ready".to_owned())),
+        profile: RuntimeAssertionProfile::Always,
+    }
+}
+
+fn runtime_assertion_engine(condition: RuntimeValue) -> Engine {
+    let entry = super::flow_id("flow.assertion");
+    let plan = super::runtime_plan(
+        Some(entry.clone()),
+        vec![RuntimeFlow {
+            id: entry,
+            ops: vec![FlowOp::EvaluatedEffect(runtime_assertion_effect(condition))],
+        }],
+        Vec::new(),
+    )
+    .expect("runtime assertion plan is valid");
+    super::engine_for_test_plan(plan)
+}
+
+#[test]
+fn successful_runtime_assertion_emits_no_host_request() {
+    let mut engine = runtime_assertion_engine(RuntimeValue::Bool(true));
+
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
+
+    assert!(output.effects.line.is_empty());
+    assert!(output.diagnostics.is_empty());
+}
+
+#[test]
+fn failed_runtime_assertion_emits_exact_typed_failure_request() {
+    let mut engine = runtime_assertion_engine(RuntimeValue::Bool(false));
+
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
+
+    let [LineEffectRequest::Assert(assertion)] = output.effects.line.as_slice() else {
+        panic!("false assertion must emit exactly one typed failure request");
+    };
+    assert_eq!(
+        assertion.guard(),
+        RuntimeAssertionGuardId::try_from_bytes([7; 16]).expect("fixture guard")
+    );
+    assert_eq!(assertion.condition(), "false");
+    assert_eq!(assertion.message(), "must be ready");
+    assert!(output.diagnostics.is_empty());
+}
+
+#[test]
+fn non_bool_runtime_assertion_fails_without_emitting_a_request() {
+    let mut engine = runtime_assertion_engine(RuntimeValue::String("false".to_owned()));
+
+    let output = super::runtime_step(&mut engine, RuntimeStepInput::default());
+
+    assert!(output.effects.line.is_empty());
+    assert_eq!(output.diagnostics.len(), 1);
+    assert_eq!(
+        output.diagnostics[0].message,
+        "runtime effect error: runtime assertion condition must evaluate to Bool"
+    );
+    assert!(matches!(engine.fiber().status, FlowFiberStatus::Failed(_)));
+}
 
 #[test]
 fn engine_steps_flow_ops_and_applies_goto() {
@@ -322,14 +399,20 @@ fn counter_next_body() -> RuntimeExpr {
                     rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
                 }),
                 body: Box::new(RuntimeExpr::Variant {
-                    path: None,
+                    owner: RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Signed(
+                        RuntimeSignedIntWidth::I64,
+                    ))),
+                    ordinal: 0,
                     name: "Some".to_owned(),
                     payload: Some(Box::new(RuntimeExpr::Local("value".to_owned()))),
                 }),
             }),
         }),
         else_expr: Box::new(RuntimeExpr::Variant {
-            path: None,
+            owner: RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::Signed(
+                RuntimeSignedIntWidth::I64,
+            ))),
+            ordinal: 1,
             name: "None".to_owned(),
             payload: None,
         }),
@@ -1920,6 +2003,89 @@ fn engine_runs_if_and_match_blocks_from_runtime_values() {
 }
 
 #[test]
+fn match_evaluates_scrutinee_once_and_discards_rejected_arm_bindings() {
+    let state = RuntimeValue::Record(vec![RuntimeFieldValue {
+        name: "count".to_owned(),
+        value: RuntimeValue::i64(0),
+    }]);
+    let incremented_count = RuntimeExpr::Binary {
+        lhs: Box::new(RuntimeExpr::Field {
+            target: Box::new(RuntimeExpr::Local("state".to_owned())),
+            field: "count".to_owned(),
+        }),
+        op: RuntimeBinaryOp::Add,
+        rhs: Box::new(RuntimeExpr::Value(RuntimeValue::i64(1))),
+    };
+    let scrutinee = RuntimeExpr::AssignField {
+        target: Box::new(RuntimeExpr::Local("state".to_owned())),
+        field: "count".to_owned(),
+        expr: Box::new(incremented_count),
+        body: Box::new(RuntimeExpr::Value(RuntimeValue::Bool(true))),
+    };
+    let entry = super::flow_id("flow.match.once");
+    let plan = super::runtime_plan(
+        Some(entry.clone()),
+        vec![RuntimeFlow {
+            id: entry,
+            ops: vec![FlowOp::Match {
+                scrutinee,
+                arms: vec![
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Ident("rejected".to_owned()),
+                        guard: Some(RuntimeExpr::Value(RuntimeValue::Bool(false))),
+                        ops: vec![FlowOp::Return("wrong-arm".to_owned())],
+                    },
+                    RuntimeMatchArm {
+                        pattern: RuntimePattern::Discard,
+                        guard: None,
+                        ops: vec![FlowOp::Return("fallback".to_owned())],
+                    },
+                ],
+            }],
+        }],
+        Vec::new(),
+    )
+    .expect("match ownership plan is valid");
+    let mut engine = super::engine_for_test_plan(plan);
+    let mut returned = Vec::new();
+
+    for step in 0..8 {
+        let output = super::runtime_step(
+            &mut engine,
+            RuntimeStepInput {
+                bindings: (step == 0)
+                    .then(|| RuntimeBinding {
+                        name: "state".to_owned(),
+                        value: state.clone(),
+                    })
+                    .into_iter()
+                    .collect(),
+                ..RuntimeStepInput::default()
+            },
+        );
+        returned.extend(output.flow_events);
+        if matches!(engine.fiber().status, FlowFiberStatus::Done(_)) {
+            break;
+        }
+    }
+
+    assert_eq!(
+        returned,
+        vec![FlowEvent::Return {
+            value: "fallback".to_owned(),
+        }]
+    );
+    assert_eq!(
+        engine.fiber().env.get("state"),
+        Some(&RuntimeValue::Record(vec![RuntimeFieldValue {
+            name: "count".to_owned(),
+            value: RuntimeValue::i64(1),
+        }]))
+    );
+    assert!(engine.fiber().env.get("rejected").is_none());
+}
+
+#[test]
 fn loop_break_exits_to_next_flow_op_without_running_remaining_body() {
     let plan = super::runtime_plan(
         Some(super::flow_id("flow.loop")),
@@ -2053,7 +2219,10 @@ fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
             ops: vec![
                 FlowOp::IfLet {
                     pattern: RuntimePattern::Variant {
-                        path: None,
+                        owner: RuntimeCheckedType::Option(Box::new(
+                            RuntimeCheckedType::EntityReference,
+                        )),
+                        ordinal: 0,
                         name: "Some".to_owned(),
                         payload: Some(Box::new(RuntimePattern::Ident("route".to_owned()))),
                     },
@@ -2076,7 +2245,8 @@ fn branch_pattern_bindings_do_not_leak_after_branch_scope() {
             bindings: vec![RuntimeBinding {
                 name: "opt".to_owned(),
                 value: RuntimeValue::Variant {
-                    path: None,
+                    owner: RuntimeVariantIdentity::Option,
+                    ordinal: 0,
                     name: "Some".to_owned(),
                     payload: Some(Box::new(RuntimeValue::EntityRef("flow.next".to_owned()))),
                 },
@@ -2142,11 +2312,12 @@ fn runtime_pattern_binding_capacity_counts_nested_bindings() {
         RuntimePattern::Whole {
             name: "whole".to_owned(),
             pattern: Box::new(RuntimePattern::Variant {
-                path: None,
+                owner: RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::String)),
+                ordinal: 0,
                 name: "Some".to_owned(),
                 payload: Some(Box::new(RuntimePattern::Typed {
                     name: "payload".to_owned(),
-                    ty: "String".to_owned(),
+                    ty: RuntimeCheckedType::String,
                 })),
             }),
         },
@@ -2167,7 +2338,7 @@ fn typed_runtime_patterns_match_value_shape() {
                     RuntimeMatchArm {
                         pattern: RuntimePattern::Typed {
                             name: "text".to_owned(),
-                            ty: "String".to_owned(),
+                            ty: RuntimeCheckedType::String,
                         },
                         guard: None,
                         ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Local("text".to_owned()))],
@@ -2175,7 +2346,7 @@ fn typed_runtime_patterns_match_value_shape() {
                     RuntimeMatchArm {
                         pattern: RuntimePattern::Typed {
                             name: "bytes".to_owned(),
-                            ty: "Bytes".to_owned(),
+                            ty: RuntimeCheckedType::Bytes,
                         },
                         guard: None,
                         ops: vec![FlowOp::Return("bytes".to_owned())],
@@ -2219,22 +2390,14 @@ fn typed_runtime_patterns_match_value_shape() {
 }
 
 #[test]
-fn typed_runtime_patterns_use_canonical_primitive_labels() {
+fn typed_runtime_patterns_use_closed_primitive_shapes() {
     let bool_pattern = RuntimePattern::Typed {
         name: "ok".to_owned(),
-        ty: "bool".to_owned(),
-    };
-    let old_bool_pattern = RuntimePattern::Typed {
-        name: "ok".to_owned(),
-        ty: "Bool".to_owned(),
+        ty: RuntimeCheckedType::Bool,
     };
     let char_pattern = RuntimePattern::Typed {
         name: "ch".to_owned(),
-        ty: "char".to_owned(),
-    };
-    let old_char_pattern = RuntimePattern::Typed {
-        name: "ch".to_owned(),
-        ty: "Char".to_owned(),
+        ty: RuntimeCheckedType::Char,
     };
 
     assert!(
@@ -2243,19 +2406,115 @@ fn typed_runtime_patterns_use_canonical_primitive_labels() {
             .is_some()
     );
     assert!(
-        match_runtime_pattern(&old_bool_pattern, &RuntimeValue::Bool(true))
-            .expect("old Bool label is still a valid typed pattern")
-            .is_none()
-    );
-    assert!(
         match_runtime_pattern(&char_pattern, &RuntimeValue::Char('a'))
-            .expect("canonical char typed pattern matches")
+            .expect("typed char pattern matches")
             .is_some()
     );
     assert!(
-        match_runtime_pattern(&old_char_pattern, &RuntimeValue::Char('a'))
-            .expect("old Char label is still a valid typed pattern")
+        match_runtime_pattern(&bool_pattern, &RuntimeValue::String("true".to_owned()))
+            .expect("typed Bool mismatch is deterministic")
             .is_none()
+    );
+}
+
+#[test]
+fn typed_runtime_patterns_match_result_option_choice_and_nominal_shapes() {
+    let agent_error = RuntimeCheckedType::Nominal {
+        nominal: RuntimeNominalTypeId::try_new("AgentError").expect("nominal identity"),
+        semantic_identity: RuntimeSemanticTypeId::from_bytes([7; 32]),
+    };
+    let result = RuntimePattern::Typed {
+        name: "result".to_owned(),
+        ty: RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Unit),
+            error: Box::new(agent_error),
+        },
+    };
+    assert!(
+        match_runtime_pattern(&result, &RuntimeValue::result_ok(RuntimeValue::Unit))
+            .expect("typed Result::Ok pattern matches")
+            .is_some()
+    );
+    assert!(
+        match_runtime_pattern(
+            &result,
+            &RuntimeValue::Variant {
+                owner: RuntimeVariantIdentity::Nominal {
+                    nominal: RuntimeNominalTypeId::try_new("Other").expect("nominal identity"),
+                    semantic_identity: RuntimeSemanticTypeId::from_bytes([8; 32]),
+                },
+                ordinal: 0,
+                name: "Ok".to_owned(),
+                payload: Some(Box::new(RuntimeValue::Unit)),
+            },
+        )
+        .expect("foreign result owner mismatch is deterministic")
+        .is_none()
+    );
+
+    let option = RuntimePattern::Typed {
+        name: "option".to_owned(),
+        ty: RuntimeCheckedType::Option(Box::new(RuntimeCheckedType::String)),
+    };
+    assert!(
+        match_runtime_pattern(
+            &option,
+            &RuntimeValue::Variant {
+                owner: RuntimeVariantIdentity::Option,
+                ordinal: 0,
+                name: "Some".to_owned(),
+                payload: Some(Box::new(RuntimeValue::String("x".to_owned()))),
+            },
+        )
+        .expect("typed Option::Some pattern matches")
+        .is_some()
+    );
+    assert!(
+        match_runtime_pattern(
+            &option,
+            &RuntimeValue::Variant {
+                owner: RuntimeVariantIdentity::Option,
+                ordinal: 1,
+                name: "None".to_owned(),
+                payload: None,
+            },
+        )
+        .expect("typed Option::None pattern matches")
+        .is_some()
+    );
+
+    let choice = RuntimePattern::Typed {
+        name: "choice".to_owned(),
+        ty: RuntimeCheckedType::Choice(vec![RuntimeCheckedType::Bool, RuntimeCheckedType::String]),
+    };
+    assert!(
+        match_runtime_pattern(&choice, &RuntimeValue::String("selected".to_owned()))
+            .expect("typed Choice pattern matches one structural alternative")
+            .is_some()
+    );
+    assert!(
+        match_runtime_pattern(&choice, &RuntimeValue::Unit)
+            .expect("typed Choice mismatch is deterministic")
+            .is_none()
+    );
+
+    let nominal_id = RuntimeNominalTypeId::try_new("game.State").expect("nominal identity");
+    let nominal = RuntimePattern::Typed {
+        name: "state".to_owned(),
+        ty: RuntimeCheckedType::Nominal {
+            nominal: nominal_id.clone(),
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([9; 32]),
+        },
+    };
+    let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+        nominal_id,
+        TypeLayoutHash::from_bytes([11; 32]),
+        Vec::new(),
+    ));
+    assert!(
+        match_runtime_pattern(&nominal, &value)
+            .expect("typed nominal pattern matches exact runtime identity")
+            .is_some()
     );
 }
 
@@ -2448,7 +2707,11 @@ fn custom_host_request_preserves_nested_record_variant_and_refs() {
         RuntimeFieldValue {
             name: "state".to_owned(),
             value: RuntimeValue::Variant {
-                path: Some("Emotion".to_owned()),
+                owner: RuntimeVariantIdentity::Nominal {
+                    nominal: RuntimeNominalTypeId::try_new("Emotion").expect("nominal identity"),
+                    semantic_identity: RuntimeSemanticTypeId::from_bytes([10; 32]),
+                },
+                ordinal: 0,
                 name: "Focused".to_owned(),
                 payload: Some(Box::new(RuntimeValue::Tuple(vec![
                     RuntimeValue::i32(3),
@@ -2502,26 +2765,35 @@ fn custom_host_request_preserves_nested_record_variant_and_refs() {
 fn if_let_expression_binds_only_success_branch() {
     let plan = super::runtime_plan(
         Some(super::flow_id("flow.if_let")),
-        vec![RuntimeFlow {
-            id: super::flow_id("flow.if_let"),
-            ops: vec![
-                FlowOp::Let {
-                    pattern: RuntimePattern::Ident("target".to_owned()),
-                    expr: RuntimeExpr::IfLet {
-                        pattern: RuntimePattern::Variant {
-                            path: None,
-                            name: "Some".to_owned(),
-                            payload: Some(Box::new(RuntimePattern::Ident("route".to_owned()))),
+        vec![
+            RuntimeFlow {
+                id: super::flow_id("flow.if_let"),
+                ops: vec![
+                    FlowOp::Let {
+                        pattern: RuntimePattern::Ident("target".to_owned()),
+                        expr: RuntimeExpr::IfLet {
+                            pattern: RuntimePattern::Variant {
+                                owner: RuntimeCheckedType::Option(Box::new(
+                                    RuntimeCheckedType::EntityReference,
+                                )),
+                                ordinal: 0,
+                                name: "Some".to_owned(),
+                                payload: Some(Box::new(RuntimePattern::Ident("route".to_owned()))),
+                            },
+                            expr: Box::new(RuntimeExpr::Local("opt".to_owned())),
+                            guard: None,
+                            then_expr: Box::new(RuntimeExpr::Local("route".to_owned())),
+                            else_expr: Box::new(RuntimeExpr::EntityRef("flow.fallback".to_owned())),
                         },
-                        expr: Box::new(RuntimeExpr::Local("opt".to_owned())),
-                        guard: None,
-                        then_expr: Box::new(RuntimeExpr::Local("route".to_owned())),
-                        else_expr: Box::new(RuntimeExpr::EntityRef("flow.fallback".to_owned())),
                     },
-                },
-                FlowOp::GotoExpr(RuntimeExpr::Local("target".to_owned())),
-            ],
-        }],
+                    FlowOp::GotoExpr(RuntimeExpr::Local("target".to_owned())),
+                ],
+            },
+            RuntimeFlow {
+                id: super::flow_id("flow.next"),
+                ops: Vec::new(),
+            },
+        ],
         Vec::new(),
     )
     .expect("if-let runtime plan is valid");
@@ -2533,7 +2805,8 @@ fn if_let_expression_binds_only_success_branch() {
             bindings: vec![RuntimeBinding {
                 name: "opt".to_owned(),
                 value: RuntimeValue::Variant {
-                    path: None,
+                    owner: RuntimeVariantIdentity::Option,
+                    ordinal: 0,
                     name: "Some".to_owned(),
                     payload: Some(Box::new(RuntimeValue::EntityRef("flow.next".to_owned()))),
                 },

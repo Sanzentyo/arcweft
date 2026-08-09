@@ -27,7 +27,6 @@ fn resource(
 
 fn attached_resource(parsed: &ParsedSource) -> AttachedResourceDeclaration {
     parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -54,9 +53,7 @@ fn assert_resource_freeze_rejects(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     let (slots, arenas) = transaction.storage_mut();
     let original = arenas.items().resolve_staged(slots, owner).unwrap().clone();

@@ -1,0 +1,5 @@
+error[E0432]: unresolved import `arcweft_lang_syntax::types::parse_type_ref`
+ --> tests/ui/removed_parse_type_ref.rs:1:5
+  |
+1 | use arcweft_lang_syntax::types::parse_type_ref;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ no `parse_type_ref` in `types`

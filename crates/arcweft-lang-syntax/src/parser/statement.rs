@@ -7,7 +7,7 @@ mod trigger;
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::expression::{
     emit_entity_reference, emit_expression, emit_expression_node, expression_is_call,
 };
@@ -29,7 +29,7 @@ use crate::grammar::keyword_statement_projection::{
 use crate::grammar::kinds::{SyntaxKind, SyntaxRole};
 
 pub(super) fn emit_block_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     item_kind: SyntaxKind,
     body_kind: SyntaxKind,
     keyword: &str,
@@ -55,7 +55,7 @@ pub(super) fn emit_block_body(
 }
 
 pub(super) fn emit_braced_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
     role: SyntaxRole,
@@ -66,7 +66,7 @@ pub(super) fn emit_braced_block(
 }
 
 pub(super) fn emit_braced_block_until(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
@@ -89,7 +89,7 @@ pub(super) fn emit_braced_block_until(
 /// Source handlers use this boundary because they never own a value tail.
 /// The return value records whether the closing brace was authored.
 pub(super) fn emit_braced_statement_block_until(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
@@ -108,7 +108,7 @@ pub(super) fn emit_braced_statement_block_until(
 }
 
 pub(super) fn emit_braced_statement_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
     role: SyntaxRole,
@@ -133,7 +133,7 @@ pub(super) fn emit_braced_statement_block(
 /// other expression-shaped item is wrapped once as an `ExpressionStatement`;
 /// no value tail or omitted-tail marker is produced.
 pub(super) fn emit_braced_thread_flow_block_until(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
@@ -152,7 +152,7 @@ pub(super) fn emit_braced_thread_flow_block_until(
 }
 
 pub(super) fn emit_braced_thread_flow_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
     role: SyntaxRole,
@@ -170,7 +170,7 @@ pub(super) fn emit_braced_thread_flow_block(
 }
 
 fn emit_braced_block_until_with_kind(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
@@ -212,7 +212,7 @@ fn emit_braced_block_until_with_kind(
 /// surrounding brace. The Block owns only the ordered body statements and
 /// tail; the callback Closure remains the sole delimiter owner.
 pub(super) fn emit_unbraced_block_until(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     block_kind: SyntaxKind,
@@ -232,7 +232,7 @@ enum BlockSequenceKind {
 }
 
 fn emit_block_sequence(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     item_kind: SyntaxKind,
     sequence_kind: BlockSequenceKind,
@@ -315,7 +315,7 @@ fn emit_block_sequence(
 }
 
 fn emit_thread_flow_item(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -343,7 +343,7 @@ fn emit_thread_flow_item(
     parser.finish();
 }
 
-fn emit_unsafe_audit_trivia(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_unsafe_audit_trivia(parser: &mut DocumentParser<'_, '_>) {
     loop {
         match parser.current_kind() {
             Some(SyntaxKind::DocCommentToken)
@@ -376,7 +376,7 @@ fn is_safety_documentation(spelling: &str) -> bool {
 }
 
 fn emit_statement(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -387,7 +387,7 @@ fn emit_statement(
 /// Emits one ordinary statement fragment without inventing a declaration
 /// owner. Proof/predicate restrictions remain owned by their document item.
 pub(super) fn emit_statement_fragment(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
 ) {
@@ -396,7 +396,7 @@ pub(super) fn emit_statement_fragment(
 }
 
 fn emit_statement_with_role(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     role: SyntaxRole,
@@ -406,7 +406,7 @@ fn emit_statement_with_role(
 }
 
 fn emit_statement_kind(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     role: SyntaxRole,
@@ -445,8 +445,7 @@ fn emit_statement_kind(
         }
         SyntaxKind::WaitStatement => emit_wait_children(parser, child_end),
         SyntaxKind::OnStatement => emit_on_children(parser, child_end, item_kind),
-        SyntaxKind::ThreadStatement
-        | SyntaxKind::DeferBlockStatement
+        SyntaxKind::DeferBlockStatement
         | SyntaxKind::UnsafeLifetimeStatement
         | SyntaxKind::IfStatement
         | SyntaxKind::LoopStatement
@@ -511,7 +510,7 @@ fn emit_statement_kind(
 }
 
 fn classify_thread_flow_item(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) -> SyntaxKind {
@@ -523,7 +522,7 @@ fn classify_thread_flow_item(
         {
             SyntaxKind::SourceLocaleStatement
         }
-        Some("scope") | Some("{") => SyntaxKind::ScopeStatement,
+        Some("scope" | "{") => SyntaxKind::ScopeStatement,
         Some("include") => SyntaxKind::IncludeStatement,
         Some("await") if top_level_operator(parser, start, end, "with").is_some() => {
             SyntaxKind::AwaitWithStatement
@@ -539,7 +538,7 @@ fn classify_thread_flow_item(
 }
 
 fn emit_choice_statement_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     _item_kind: SyntaxKind,
 ) {
@@ -547,7 +546,7 @@ fn emit_choice_statement_children(
 }
 
 fn emit_source_locale_statement_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) -> PendingKeywordStatementProjection {
@@ -611,7 +610,7 @@ fn emit_source_locale_statement_children(
 }
 
 fn emit_scope_statement_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) -> PendingKeywordStatementProjection {
@@ -659,7 +658,7 @@ fn emit_scope_statement_children(
     PendingKeywordStatementProjection::Scope { name }
 }
 
-fn emit_include_statement_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_include_statement_children(parser: &mut DocumentParser<'_, '_>, end: usize) {
     parser.bump();
     parser.bump_trivia();
     if parser.current_kind() == Some(SyntaxKind::EntityReferenceToken) {
@@ -683,7 +682,7 @@ fn emit_include_statement_children(parser: &mut ShadowDocumentParser<'_, '_>, en
 }
 
 fn emit_await_with_statement_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) -> PendingKeywordStatementProjection {
@@ -714,13 +713,12 @@ fn emit_await_with_statement_children(
             propagation,
             branches: branches.into_boxed_slice(),
         };
-    } else {
-        emit_required_statement_body_recovery(
-            parser,
-            "syntax.await_with.missing_body",
-            "missing AwaitWith branch body",
-        );
     }
+    emit_required_statement_body_recovery(
+        parser,
+        "syntax.await_with.missing_body",
+        "missing AwaitWith branch body",
+    );
     PendingKeywordStatementProjection::AwaitWith {
         propagation,
         branches: Box::new([]),
@@ -728,7 +726,7 @@ fn emit_await_with_statement_children(
 }
 
 fn emit_select_statement_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) -> PendingKeywordStatementProjection {
@@ -751,7 +749,7 @@ fn emit_select_statement_children(
 }
 
 fn emit_select_branch_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) -> Vec<PendingSelectBranchProjection> {
@@ -806,7 +804,7 @@ fn emit_select_branch_block(
 }
 
 fn emit_select_branch_head(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     arrow: usize,
     item_kind: SyntaxKind,
 ) -> PendingSelectBranchProjection {
@@ -877,7 +875,7 @@ fn emit_select_branch_head(
 }
 
 fn emit_await_with_branch_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) -> Vec<PendingAwaitBranchProjection> {
@@ -950,7 +948,7 @@ fn emit_await_with_branch_block(
 }
 
 fn emit_invalid_await_branch(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     ordinal: u32,
     code: &'static str,
@@ -962,7 +960,7 @@ fn emit_invalid_await_branch(
 }
 
 fn find_branch_separator(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     block_end: usize,
 ) -> Option<usize> {
@@ -972,7 +970,7 @@ fn find_branch_separator(
 }
 
 fn emit_invalid_branch(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     kind: SyntaxKind,
     ordinal: u32,
@@ -986,7 +984,7 @@ fn emit_invalid_branch(
 }
 
 fn emit_invalid_branch_contents(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     code: &'static str,
     message: &'static str,
@@ -1012,7 +1010,7 @@ fn emit_invalid_branch_contents(
 }
 
 fn emit_required_branch_body(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     missing_code: &'static str,
@@ -1034,7 +1032,7 @@ fn emit_required_branch_body(
 }
 
 fn finish_thread_branch_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     close: usize,
     missing_close_code: &'static str,
     missing_close_message: &'static str,
@@ -1058,7 +1056,7 @@ fn finish_thread_branch_block(
 }
 
 fn emit_required_statement_body_recovery(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     code: &'static str,
     message: &'static str,
 ) {
@@ -1073,7 +1071,7 @@ fn emit_required_statement_body_recovery(
 }
 
 fn classify_statement(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) -> SyntaxKind {
@@ -1094,7 +1092,11 @@ fn classify_statement(
         Some("return") => SyntaxKind::ReturnStatement,
         Some("out") => SyntaxKind::OutStatement,
         Some("goto") => SyntaxKind::GotoStatement,
-        Some("thread") => SyntaxKind::ThreadStatement,
+        // Thread is an ordinary expression in statement position. Keeping a
+        // dedicated statement production here would create a second source
+        // owner beside `ThreadExpression` and force final HIR to special-case
+        // an otherwise ordinary `HirStmtKind::Expression`.
+        Some("thread") => SyntaxKind::ExpressionStatement,
         Some("defer") if find_statement_open_brace(parser, start, end).is_some() => {
             SyntaxKind::DeferBlockStatement
         }
@@ -1150,8 +1152,7 @@ pub(super) fn parse_test_statement_block(
     assert!(budget.start(SyntaxKind::SourceFile, SyntaxRole::Root));
     events.push(SyntaxEvent::start(SyntaxKind::SourceFile, SyntaxRole::Root));
     {
-        let mut parser =
-            ShadowDocumentParser::new(document.text(), &tokens, &mut events, &mut budget);
+        let mut parser = DocumentParser::new(document.text(), &tokens, &mut events, &mut budget);
         emit_braced_block(
             &mut parser,
             SyntaxKind::FunctionItem,
@@ -1172,7 +1173,7 @@ pub(super) fn parse_test_statement_block(
     crate::grammar::build::build_grammar(document, &events)
 }
 
-fn classify_let_statement(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> SyntaxKind {
+fn classify_let_statement(parser: &DocumentParser<'_, '_>, end: usize) -> SyntaxKind {
     let Some(equals) = top_level_operator(parser, parser.cursor(), end, "=") else {
         return SyntaxKind::LetStatement;
     };
@@ -1192,7 +1193,7 @@ fn classify_let_statement(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> 
 }
 
 fn let_choice_initializer_start(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<usize> {
@@ -1205,13 +1206,13 @@ fn let_choice_initializer_start(
 }
 
 fn emit_let_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     kind: SyntaxKind,
     item_kind: SyntaxKind,
 ) {
     parser.bump();
-    let equals = find_top_level_boundary(parser, parser.cursor(), &["="]).min(end);
+    let equals = find_top_level_boundary(parser, parser.cursor(), end, &["="]);
     indentation::bump_trivia_before(parser, equals);
     emit_pattern(parser, equals, SyntaxRole::Pattern);
     bump_until(parser, equals);
@@ -1242,10 +1243,19 @@ fn emit_let_children(
 }
 
 fn emit_assertion_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
 ) -> PendingAssertionProjection {
-    let mode = assertion_mode(parser, end);
+    let (mode, mode_range) = assertion_mode(parser, end);
+    if mode.is_none()
+        && let Some(range) = mode_range
+    {
+        parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
+            "syntax.assert.unknown_mode",
+            range,
+            "unknown assertion mode",
+        )));
+    }
     parser.bump();
     parser.bump_trivia();
     if parser.at(".") {
@@ -1255,7 +1265,10 @@ fn emit_assertion_children(
         parser.finish();
     }
     parser.bump_trivia();
-    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+    if matches!(
+        parser.current_kind(),
+        Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
+    ) {
         parser.start(SyntaxKind::NameReference, SyntaxRole::Name);
         parser.bump();
         parser.finish();
@@ -1282,8 +1295,7 @@ fn emit_assertion_children(
         if parser.cursor() >= close {
             break;
         }
-        let condition_end =
-            find_top_level_boundary(parser, parser.cursor(), &[",", ")"]).min(close);
+        let condition_end = find_top_level_boundary(parser, parser.cursor(), close, &[",", ")"]);
         parser.charge_assertion_condition();
         emit_expression(parser, condition_end, SyntaxRole::Condition);
         bump_until(parser, condition_end);
@@ -1312,18 +1324,36 @@ fn emit_assertion_children(
     PendingAssertionProjection::new(mode)
 }
 
-fn assertion_mode(parser: &ShadowDocumentParser<'_, '_>, end: usize) -> Option<AssertionMode> {
-    let first = first_significant(parser, parser.cursor().checked_add(1)?, end)?;
+fn assertion_mode(
+    parser: &DocumentParser<'_, '_>,
+    end: usize,
+) -> (Option<AssertionMode>, Option<SourceRange>) {
+    let Some(after_assert) = parser.cursor().checked_add(1) else {
+        return (None, None);
+    };
+    let Some(first) = first_significant(parser, after_assert, end) else {
+        return (None, None);
+    };
     let mode = if token_text(parser, first) == Some(".") {
-        first_significant(parser, first.checked_add(1)?, end)?
+        let Some(after_dot) = first.checked_add(1) else {
+            return (None, None);
+        };
+        let Some(mode) = first_significant(parser, after_dot, end) else {
+            return (None, None);
+        };
+        mode
     } else {
         first
     };
-    AssertionMode::from_keyword(token_text(parser, mode)?)
+    let range = parser.token_at(mode).map(super::lexer::LexToken::range);
+    (
+        token_text(parser, mode).and_then(AssertionMode::from_keyword),
+        range,
+    )
 }
 
 fn emit_assignment_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) {
@@ -1340,7 +1370,7 @@ fn emit_assignment_children(
 }
 
 fn emit_required_keyword_operand(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
 ) {
@@ -1349,7 +1379,7 @@ fn emit_required_keyword_operand(
     emit_item_expression(parser, end, SyntaxRole::Operand, item_kind);
 }
 
-fn emit_wait_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_wait_children(parser: &mut DocumentParser<'_, '_>, end: usize) {
     parser.bump();
     parser.bump_trivia();
     emit_required_punctuation(
@@ -1372,7 +1402,7 @@ fn emit_wait_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
     );
 }
 
-fn emit_on_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
+fn emit_on_children(parser: &mut DocumentParser<'_, '_>, end: usize, item_kind: SyntaxKind) {
     parser.bump();
     parser.bump_trivia();
     let arrow = top_level_operator(parser, parser.cursor(), end, "=>").unwrap_or(end);
@@ -1386,7 +1416,7 @@ fn emit_on_children(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, item_
 }
 
 fn emit_control_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     kind: SyntaxKind,
@@ -1477,7 +1507,7 @@ fn emit_control_children(
 }
 
 fn emit_unsafe_lifetime_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     open: Option<usize>,
     end: usize,
     item_kind: SyntaxKind,
@@ -1550,7 +1580,7 @@ fn emit_unsafe_lifetime_children(
 }
 
 fn emit_braced_unsafe_audit_statement_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     item_kind: SyntaxKind,
     end: usize,
 ) {
@@ -1587,7 +1617,7 @@ fn emit_braced_unsafe_audit_statement_block(
 }
 
 fn emit_if_children(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     open: usize,
     end: usize,
     item_kind: SyntaxKind,
@@ -1636,7 +1666,7 @@ fn emit_if_children(
 }
 
 fn emit_expression_head(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     keyword: &str,
     role: SyntaxRole,
@@ -1647,11 +1677,7 @@ fn emit_expression_head(
     emit_expression(parser, end, role);
 }
 
-fn emit_pattern_condition_head(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-    end: usize,
-    keyword: &str,
-) {
+fn emit_pattern_condition_head(parser: &mut DocumentParser<'_, '_>, end: usize, keyword: &str) {
     debug_assert!(parser.at(keyword));
     parser.bump();
     parser.bump_trivia();
@@ -1678,7 +1704,7 @@ fn emit_pattern_condition_head(
     }
 }
 
-fn emit_for_head(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn emit_for_head(parser: &mut DocumentParser<'_, '_>, end: usize) {
     parser.bump();
     parser.bump_trivia();
     let separator = top_level_operator(parser, parser.cursor(), end, "in");
@@ -1699,7 +1725,7 @@ fn emit_for_head(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
 }
 
 fn emit_match_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     thread_flow_context: bool,
@@ -1735,7 +1761,7 @@ fn emit_match_block(
 }
 
 fn emit_match_arm(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     ordinal: u32,
@@ -1774,7 +1800,7 @@ fn emit_match_arm(
 }
 
 fn emit_nested_control_block(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     item_kind: SyntaxKind,
     role: SyntaxRole,
@@ -1803,7 +1829,7 @@ fn emit_nested_control_block(
 }
 
 fn emit_item_expression(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     end: usize,
     role: SyntaxRole,
     _item_kind: SyntaxKind,
@@ -1811,7 +1837,7 @@ fn emit_item_expression(
     emit_expression(parser, end, role);
 }
 
-fn find_match_arm_end(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> usize {
+fn find_match_arm_end(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let mut depth = 0_usize;
     for index in start..end {
         let Some(token) = parser.token_at(index) else {
@@ -1831,7 +1857,7 @@ fn find_match_arm_end(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: 
 }
 
 fn top_level_operator(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
     spelling: &str,
@@ -1853,7 +1879,7 @@ fn top_level_operator(
 }
 
 fn next_significant_text<'a>(
-    parser: &'a ShadowDocumentParser<'_, '_>,
+    parser: &'a DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<&'a str> {
@@ -1861,7 +1887,7 @@ fn next_significant_text<'a>(
 }
 
 fn find_statement_open_brace(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     start: usize,
     end: usize,
 ) -> Option<usize> {
@@ -1910,7 +1936,7 @@ pub(super) fn is_statement_head(spelling: &str) -> bool {
     )
 }
 
-fn expression_statement_start(parser: &ShadowDocumentParser<'_, '_>) -> bool {
+fn expression_statement_start(parser: &DocumentParser<'_, '_>) -> bool {
     matches!(
         parser.current_kind(),
         Some(

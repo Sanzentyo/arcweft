@@ -91,6 +91,7 @@ pub enum RuntimeEffectExpr {
         message: RuntimeExpr,
     },
     Assert {
+        guard: RuntimeAssertionGuardId,
         condition: RuntimeExpr,
         message: RuntimeExpr,
         profile: RuntimeAssertionProfile,
@@ -106,10 +107,11 @@ pub struct RuntimeEffectFieldExpr {
 
 /// Failure to materialize a typed effect from evaluated runtime values.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
-#[error("runtime effect expected {expected} evaluated arguments, found {actual}")]
-pub struct RuntimeEffectMaterializeError {
-    expected: usize,
-    actual: usize,
+pub enum RuntimeEffectMaterializeError {
+    #[error("runtime effect expected {expected} evaluated arguments, found {actual}")]
+    ArgumentCount { expected: usize, actual: usize },
+    #[error("runtime assertion condition must evaluate to Bool")]
+    AssertionConditionNotBool,
 }
 
 impl RuntimeEffectExpr {
@@ -186,29 +188,39 @@ impl RuntimeEffectExpr {
                 condition: String::new(),
                 message: String::new(),
             },
-            Self::Assert { profile, .. } => LineEffectRequest::Assert(RuntimeAssertion {
-                condition: String::new(),
-                message: String::new(),
-                profile: *profile,
-            }),
+            Self::Assert { guard, profile, .. } => LineEffectRequest::Assert(
+                RuntimeAssertion::new(*guard, String::new(), String::new(), *profile),
+            ),
         }
     }
 
     /// Materializes the host-facing effect after its arguments have been
     /// evaluated by the current fiber.
+    ///
+    /// A successful assertion produces no host request. A failed assertion is
+    /// the only path that materializes `LineEffectRequest::Assert`; hosts can
+    /// therefore construct failure data without parsing the condition label.
     pub fn materialize(
         &self,
         values: &[RuntimeValue],
-    ) -> Result<LineEffectRequest, RuntimeEffectMaterializeError> {
+    ) -> Result<Option<LineEffectRequest>, RuntimeEffectMaterializeError> {
         let expected = self.argument_exprs().len();
         if values.len() != expected {
-            return Err(RuntimeEffectMaterializeError {
+            return Err(RuntimeEffectMaterializeError::ArgumentCount {
                 expected,
                 actual: values.len(),
             });
         }
+        if matches!(self, Self::Assert { .. }) {
+            let RuntimeValue::Bool(condition) = &values[0] else {
+                return Err(RuntimeEffectMaterializeError::AssertionConditionNotBool);
+            };
+            if *condition {
+                return Ok(None);
+            }
+        }
         let labels = values.iter().map(runtime_value_label).collect::<Vec<_>>();
-        Ok(match self {
+        Ok(Some(match self {
             Self::Log { level, fields, .. } => LineEffectRequest::Log(RuntimeLog {
                 level: level.clone(),
                 message: labels[0].clone(),
@@ -233,12 +245,10 @@ impl RuntimeEffectExpr {
                 condition: labels[0].clone(),
                 message: labels[1].clone(),
             },
-            Self::Assert { profile, .. } => LineEffectRequest::Assert(RuntimeAssertion {
-                condition: labels[0].clone(),
-                message: labels[1].clone(),
-                profile: *profile,
-            }),
-        })
+            Self::Assert { guard, profile, .. } => LineEffectRequest::Assert(
+                RuntimeAssertion::new(*guard, labels[0].clone(), labels[1].clone(), *profile),
+            ),
+        }))
     }
 }
 
@@ -270,20 +280,73 @@ fn materialized_fields(fields: &[RuntimeEffectFieldExpr], labels: &[String]) -> 
         .collect()
 }
 
-/// Runtime assertion request emitted by ordinary `assert(...)` calls.
+/// Failed runtime assertion request emitted by ordinary `assert(...)` calls.
 ///
-/// The core remains Sans I/O: this data says when an assertion should be
-/// enforced, while the host/test runner chooses how assertion failures are
+/// Typed condition evaluation happens before this host boundary. The core
+/// remains Sans I/O, while the host/test runner chooses how the failure is
 /// logged, traced, or surfaced.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct RuntimeAssertion {
-    pub condition: String,
-    pub message: String,
-    pub profile: RuntimeAssertionProfile,
+    guard: RuntimeAssertionGuardId,
+    condition: String,
+    message: String,
+    profile: RuntimeAssertionProfile,
+}
+
+impl RuntimeAssertion {
+    pub fn new(
+        guard: RuntimeAssertionGuardId,
+        condition: String,
+        message: String,
+        profile: RuntimeAssertionProfile,
+    ) -> Self {
+        Self {
+            guard,
+            condition,
+            message,
+            profile,
+        }
+    }
+
+    pub const fn guard(&self) -> RuntimeAssertionGuardId {
+        self.guard
+    }
+
+    pub fn condition(&self) -> &str {
+        &self.condition
+    }
+
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    pub const fn profile(&self) -> RuntimeAssertionProfile {
+        self.profile
+    }
+}
+
+/// Persistable assertion failure produced by a runtime host.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeAssertionFailure {
+    assertion: RuntimeAssertion,
+}
+
+impl RuntimeAssertionFailure {
+    pub const fn new(assertion: RuntimeAssertion) -> Self {
+        Self { assertion }
+    }
+
+    pub const fn assertion(&self) -> &RuntimeAssertion {
+        &self.assertion
+    }
+
+    pub fn into_assertion(self) -> RuntimeAssertion {
+        self.assertion
+    }
 }
 
 /// Profile policy for runtime assertions.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub enum RuntimeAssertionProfile {
     Always,
     DebugOnly,

@@ -5,7 +5,7 @@ use std::sync::Arc;
 use thiserror::Error;
 
 use crate::{
-    documents::rebind_overlay,
+    documents::{ParsedSourceAdoption, ParsedSourceAdoptionError},
     profiles::state::{
         AcceptedEnvironmentReplaceError, AcceptedProfileCandidate, AcceptedProfileEnvironment,
         LspProfileState, ProfileEnvironmentLifecycle,
@@ -35,6 +35,8 @@ pub(crate) enum AcceptedPublicationError {
         extra: Box<[LspUriKey]>,
         mismatched: Box<[LspUriKey]>,
     },
+    #[error(transparent)]
+    ParsedSourceAuthority(#[from] ParsedSourceAdoptionError),
     #[error("accepted environment generation overflowed")]
     GenerationOverflow,
 }
@@ -71,6 +73,26 @@ impl ArcweftLspSession {
             return Err(AcceptedPublicationError::ProfileKeyMismatch);
         }
 
+        let syntax_adoptions = self
+            .documents
+            .snapshots()
+            .filter_map(|snapshot| {
+                let source = candidate.project().sources().by_uri(snapshot.uri())?;
+                let key = candidate
+                    .project()
+                    .module_key(source.document().identity())?;
+                let parsed = candidate.project().parsed_source(&key)?.clone();
+                Some(ParsedSourceAdoption::new(
+                    LspUriKey::from_uri(snapshot.uri()),
+                    snapshot.version(),
+                    parsed,
+                ))
+            })
+            .collect::<Vec<_>>();
+        let syntax_adoptions = self
+            .documents
+            .validate_parsed_source_adoptions(syntax_adoptions)?;
+
         let mut missing = Vec::new();
         let mut mismatched = Vec::new();
         let mut expected_uris = std::collections::BTreeSet::new();
@@ -84,8 +106,8 @@ impl ArcweftLspSession {
                 missing.push(uri);
                 continue;
             };
-            let identity_matches = rebind_overlay(snapshot, accepted_source)
-                .is_ok_and(|document| document.identity() == overlay.logical_identity());
+            let identity_matches = accepted_source.document().text() == snapshot.text()
+                && accepted_source.document().identity() == overlay.logical_identity();
             if overlay.version() != snapshot.version() || !identity_matches {
                 mismatched.push(uri);
             }
@@ -104,7 +126,7 @@ impl ArcweftLspSession {
             });
         }
 
-        state
+        let accepted = state
             .replace_accepted_with(expected, candidate, |current| {
                 if let Some(current) = current {
                     requests
@@ -122,7 +144,10 @@ impl ArcweftLspSession {
                 AcceptedEnvironmentReplaceError::GenerationOverflow => {
                     AcceptedPublicationError::GenerationOverflow
                 }
-            })
+            })?;
+        self.documents
+            .commit_parsed_source_adoptions(syntax_adoptions);
+        Ok(accepted)
     }
 
     pub(crate) fn remove_workspace(&mut self, workspace: &LspUriKey, requests: &RequestRegistry) {

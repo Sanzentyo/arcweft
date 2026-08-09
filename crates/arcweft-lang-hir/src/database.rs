@@ -1,7 +1,7 @@
 //! Transactional publication of immutable HIR module snapshots.
 
 use core::num::{NonZeroU32, NonZeroU64};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use thiserror::Error;
@@ -10,7 +10,7 @@ use crate::identity::{
     HirDatabaseCreateError, HirDatabaseId, HirLimit, HirModuleId, HirRevision, HirSnapshotId,
     ItemId,
 };
-use crate::lower::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
+use crate::lowering::{HirInvariantFailure, HirLimitError, HirLowerFailure, HirModuleKey};
 use crate::module::HirModule;
 use crate::slot::PreparedSlotCommit;
 #[cfg(test)]
@@ -123,6 +123,26 @@ pub(crate) struct StagedModuleCommit {
     previous: Option<Arc<HirModule>>,
 }
 
+pub(crate) struct PreparedHirModuleCommit {
+    plan: StagedModuleCommit,
+    slots: PreparedSlotCommit,
+    module: Arc<HirModule>,
+}
+
+impl PreparedHirModuleCommit {
+    pub(crate) fn new(
+        plan: StagedModuleCommit,
+        slots: PreparedSlotCommit,
+        module: Arc<HirModule>,
+    ) -> Self {
+        Self {
+            plan,
+            slots,
+            module,
+        }
+    }
+}
+
 impl StagedModuleCommit {
     pub(crate) const fn module_id(&self) -> HirModuleId {
         self.snapshot.module()
@@ -162,18 +182,6 @@ pub struct HirInvalidationSet {
 }
 
 impl HirInvalidationSet {
-    fn empty(current: HirSnapshotId) -> Self {
-        Self {
-            module: current.module(),
-            previous: Some(current),
-            current,
-            changed_items: Box::new([]),
-            retired_items: Box::new([]),
-            symbol_revision_changed: false,
-            executable_status_changed: false,
-        }
-    }
-
     pub const fn module(&self) -> HirModuleId {
         self.module
     }
@@ -229,7 +237,7 @@ impl HirInvalidationSet {
                     .arenas()
                     .items()
                     .try_iter(module.slots())
-                    .map(|items| items.collect::<BTreeMap<_, _>>())
+                    .map(std::iter::Iterator::collect::<BTreeMap<_, _>>)
                     .map_err(|_| HirInvariantFailure::InvalidModuleCommit)
             })
             .transpose()?
@@ -384,18 +392,6 @@ impl HirDatabase {
         }
     }
 
-    /// Returns the exact accepted lease with database-derived empty facts.
-    ///
-    /// The lowering owner calls this only after its source/schema no-op check;
-    /// it cannot pair a stale or unrelated module with fabricated facts.
-    pub(crate) fn unchanged(&self, key: &HirModuleKey) -> Option<HirLowerOutput> {
-        self.modules.get(key).map(|state| {
-            let module = Arc::clone(&state.current);
-            let invalidations = HirInvalidationSet::empty(module.snapshot_id());
-            HirLowerOutput::new(module, invalidations)
-        })
-    }
-
     /// Returns one retained immutable snapshot without rebasing its IDs.
     pub fn snapshot(&self, id: HirSnapshotId) -> Result<Arc<HirModule>, HirSnapshotLookupError> {
         let actual = id.module().database();
@@ -421,6 +417,7 @@ impl HirDatabase {
         )
     }
 
+    #[cfg(test)]
     pub(crate) fn stage_module(
         &self,
         key: &HirModuleKey,
@@ -480,12 +477,101 @@ impl HirDatabase {
         })
     }
 
+    /// Proposes every module identity/revision for one unpublished project in
+    /// deterministic key order. New modules receive distinct consecutive
+    /// identities without mutating the database during reservation.
+    pub(crate) fn stage_project_modules(
+        &self,
+        keys: impl IntoIterator<Item = HirModuleKey>,
+    ) -> Result<Vec<StagedModuleCommit>, HirLowerFailure> {
+        let mut keys = keys.into_iter().collect::<Vec<_>>();
+        if keys.is_empty() {
+            return Err(HirLowerFailure::EmptyProjectTransaction);
+        }
+        keys.sort();
+        let mut unique = BTreeSet::new();
+        for key in &keys {
+            if !unique.insert(key.clone()) {
+                return Err(HirLowerFailure::DuplicateModuleRequest {
+                    module: key.path().clone(),
+                });
+            }
+        }
+        let new_count = keys
+            .iter()
+            .filter(|key| !self.modules.contains_key(*key))
+            .count();
+        let observed = self.modules.len().saturating_add(new_count);
+        if observed > self.module_limit {
+            return Err(HirLimitError::with_maximum(
+                HirLimit::ModulesPerDatabase,
+                observed,
+                self.module_limit,
+            )
+            .into());
+        }
+
+        let mut next_new_slot = self.next_module_slot;
+        let mut plans = Vec::with_capacity(keys.len());
+        for key in keys {
+            if let Some(state) = self.modules.get(&key) {
+                let revision = state
+                    .current
+                    .snapshot_id()
+                    .revision()
+                    .checked_next()
+                    .ok_or(HirLowerFailure::RevisionExhausted {
+                        module: state.module,
+                    })?;
+                let invalidation_epoch = state
+                    .current
+                    .invalidation_epoch()
+                    .get()
+                    .checked_add(1)
+                    .and_then(NonZeroU64::new)
+                    .ok_or(HirLowerFailure::CacheEpochExhausted {
+                        module: state.module,
+                    })?;
+                plans.push(StagedModuleCommit {
+                    key,
+                    snapshot: HirSnapshotId::new(state.module, revision),
+                    invalidation_epoch,
+                    previous: Some(Arc::clone(&state.current)),
+                });
+                continue;
+            }
+            if self
+                .modules
+                .values()
+                .any(|state| state.module.slot() == next_new_slot)
+            {
+                return Err(HirLowerFailure::ModuleIdentityExhausted);
+            }
+            plans.push(StagedModuleCommit {
+                key,
+                snapshot: HirSnapshotId::new(
+                    HirModuleId::new(self.id, next_new_slot),
+                    HirRevision::INITIAL,
+                ),
+                invalidation_epoch: NonZeroU64::MIN,
+                previous: None,
+            });
+            next_new_slot = next_new_slot
+                .get()
+                .checked_add(1)
+                .and_then(NonZeroU32::new)
+                .ok_or(HirLowerFailure::ModuleIdentityExhausted)?;
+        }
+        Ok(plans)
+    }
+
     /// Publishes one fully frozen module and its slot-lifetime ledger as the
     /// database's only observable mutation.
     ///
     /// Every fallible database, module, slot, and invalidation check runs
     /// before the shared lifetime ledger changes. After that ledger accepts
     /// the proposal, inserting the already validated module is infallible.
+    #[cfg(test)]
     pub(crate) fn publish_module(
         &mut self,
         plan: StagedModuleCommit,
@@ -507,8 +593,89 @@ impl HirDatabase {
             .publish()
             .map_err(|_| HirInvariantFailure::InvalidModuleCommit)?;
         debug_assert!(Arc::ptr_eq(module.slots(), &published_slots));
-        self.insert_validated_module(plan, Arc::clone(&module));
+        self.insert_validated_module(plan, &module);
         Ok(HirLowerOutput::new(module, invalidations))
+    }
+
+    /// Atomically publishes every already-frozen module in one project
+    /// transaction. All database, ancestry, invalidation, and lifetime-ledger
+    /// checks complete before the first observable mutation.
+    pub(crate) fn publish_project_modules(
+        &mut self,
+        prepared: Vec<PreparedHirModuleCommit>,
+    ) -> Result<Vec<HirLowerOutput>, HirLowerFailure> {
+        if prepared.is_empty() {
+            return Err(HirLowerFailure::EmptyProjectTransaction);
+        }
+        let mut keys = BTreeSet::new();
+        let mut new_module_slot = self.next_module_slot;
+        let mut invalidations = Vec::with_capacity(prepared.len());
+        for commit in &prepared {
+            if !keys.insert(commit.plan.key().clone()) {
+                return Err(HirLowerFailure::DuplicateModuleRequest {
+                    module: commit.plan.key().path().clone(),
+                });
+            }
+            if self.modules.contains_key(commit.plan.key()) {
+                self.validate_module_commit(&commit.plan, &commit.module)?;
+            } else {
+                if commit.plan.previous().is_some()
+                    || commit.plan.module_id().database() != self.id
+                    || commit.plan.module_id().slot() != new_module_slot
+                    || commit.plan.revision() != HirRevision::INITIAL
+                    || commit.module.key() != commit.plan.key()
+                    || commit.module.snapshot_id() != commit.plan.snapshot_id()
+                    || commit.module.invalidation_epoch() != commit.plan.invalidation_epoch()
+                {
+                    return Err(HirInvariantFailure::InvalidModuleCommit.into());
+                }
+                new_module_slot = new_module_slot
+                    .get()
+                    .checked_add(1)
+                    .and_then(NonZeroU32::new)
+                    .ok_or(HirLowerFailure::ModuleIdentityExhausted)?;
+            }
+            if !Arc::ptr_eq(commit.module.slots(), commit.slots.snapshot()) {
+                return Err(HirInvariantFailure::InvalidModuleCommit.into());
+            }
+            let previous_slots = commit
+                .plan
+                .previous()
+                .map(|previous| previous.slots().as_ref());
+            if !commit.slots.validates_ancestry(previous_slots) {
+                return Err(HirInvariantFailure::InvalidModuleCommit.into());
+            }
+            commit
+                .slots
+                .validate_publish()
+                .map_err(|_| HirInvariantFailure::InvalidModuleCommit)?;
+            let previous = self
+                .modules
+                .get(commit.plan.key())
+                .map(|state| &state.current);
+            invalidations.push(HirInvalidationSet::derive(previous, &commit.module)?);
+        }
+
+        let mut outputs = Vec::with_capacity(prepared.len());
+        for (commit, invalidations) in prepared.into_iter().zip(invalidations) {
+            let published_slots = commit
+                .slots
+                .publish()
+                .expect("project slot proposals were prevalidated before publication");
+            debug_assert!(Arc::ptr_eq(commit.module.slots(), &published_slots));
+            let module = Arc::clone(&commit.module);
+            self.insert_validated_module(commit.plan, &module);
+            outputs.push(HirLowerOutput::new(module, invalidations));
+        }
+        Ok(outputs)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn publish_prepared_module(
+        &mut self,
+        commit: PreparedHirModuleCommit,
+    ) -> Result<HirLowerOutput, HirLowerFailure> {
+        self.publish_module(commit.plan, commit.slots, commit.module)
     }
 
     fn validate_module_commit(
@@ -542,33 +709,31 @@ impl HirDatabase {
             {
                 return Err(HirInvariantFailure::InvalidModuleCommit.into());
             }
-        } else {
-            if plan.previous.is_some()
-                || plan.module_id().database() != self.id
-                || plan.module_id().slot() != self.next_module_slot
-                || plan.revision() != HirRevision::INITIAL
-            {
-                return Err(HirInvariantFailure::InvalidModuleCommit.into());
-            }
+        } else if plan.previous.is_some()
+            || plan.module_id().database() != self.id
+            || plan.module_id().slot() != self.next_module_slot
+            || plan.revision() != HirRevision::INITIAL
+        {
+            return Err(HirInvariantFailure::InvalidModuleCommit.into());
         }
 
         Ok(())
     }
 
-    fn insert_validated_module(&mut self, plan: StagedModuleCommit, module: Arc<HirModule>) {
+    fn insert_validated_module(&mut self, plan: StagedModuleCommit, module: &Arc<HirModule>) {
         if let Some(state) = self.modules.get_mut(&plan.key) {
-            state.snapshots.insert(plan.revision(), Arc::clone(&module));
-            state.current = Arc::clone(&module);
+            state.snapshots.insert(plan.revision(), Arc::clone(module));
+            state.current = Arc::clone(module);
         } else {
             let module_id = plan.module_id();
             let revision = plan.revision();
             let mut snapshots = BTreeMap::new();
-            snapshots.insert(revision, Arc::clone(&module));
+            snapshots.insert(revision, Arc::clone(module));
             self.modules.insert(
                 plan.key,
                 ModuleState {
                     module: module_id,
-                    current: Arc::clone(&module),
+                    current: Arc::clone(module),
                     snapshots,
                 },
             );
@@ -590,7 +755,7 @@ impl HirDatabase {
         module: Arc<HirModule>,
     ) -> Result<Arc<HirModule>, HirLowerFailure> {
         self.validate_module_commit(&plan, &module)?;
-        self.insert_validated_module(plan, Arc::clone(&module));
+        self.insert_validated_module(plan, &module);
         Ok(module)
     }
 

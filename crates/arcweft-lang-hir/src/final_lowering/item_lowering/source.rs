@@ -23,7 +23,7 @@ use crate::item::{
     HirSourcePrivacyPolicy, HirSourcePrivacyValue, HirSourcePunctuationState,
     HirSourceReplayPolicy, HirSourceReplayValue, HirSourceRequiredSlot,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 use crate::scope::{HirPatternBindingPolicy, HirScopeKind};
 
 use super::super::{StagedHirModuleTransaction, id_ref_projection, name_projection, require_limit};
@@ -108,6 +108,10 @@ impl StagedHirModuleTransaction<'_> {
         })
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "Source body lowering selects and seals the closed header/handler inventory in source order"
+    )]
     fn lower_source_body(
         &mut self,
         owner: ItemId,
@@ -143,9 +147,7 @@ impl StagedHirModuleTransaction<'_> {
                         continue;
                     }
                     let (value, poisoned) = self.lower_source_from(value, parent_scope)?;
-                    if value.has_recovery() {
-                        issue.get_or_insert(HirItemIssue::InvalidMember);
-                    } else if poisoned {
+                    if value.has_recovery() || poisoned {
                         issue.get_or_insert(HirItemIssue::InvalidMember);
                     }
                     from = Some(SelectedHeader {
@@ -165,9 +167,8 @@ impl StagedHirModuleTransaction<'_> {
                         self.lower_source_backpressure(assignment, policy, parent_scope)?;
                     if matches!(value.assignment(), HirSourcePunctuationState::Missing)
                         || value.value().has_recovery()
+                        || poisoned
                     {
-                        issue.get_or_insert(HirItemIssue::InvalidMember);
-                    } else if poisoned {
                         issue.get_or_insert(HirItemIssue::InvalidMember);
                     }
                     backpressure = Some(SelectedHeader {
@@ -815,13 +816,11 @@ fn required_slot<T>(
     selected: Option<SelectedHeader<T>>,
     issue: &mut Option<HirItemIssue>,
 ) -> HirSourceRequiredSlot<T> {
-    match selected {
-        Some(selected) => HirSourceRequiredSlot::authored(selected.value, selected.duplicate),
-        None => {
-            issue.get_or_insert(HirItemIssue::InvalidMember);
-            HirSourceRequiredSlot::Missing
-        }
-    }
+    let Some(selected) = selected else {
+        issue.get_or_insert(HirItemIssue::InvalidMember);
+        return HirSourceRequiredSlot::Missing;
+    };
+    HirSourceRequiredSlot::authored(selected.value, selected.duplicate)
 }
 
 fn missing_headers() -> HirSourceHeaders {

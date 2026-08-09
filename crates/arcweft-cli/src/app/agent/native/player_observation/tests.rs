@@ -22,6 +22,77 @@ use arcweft_presentation::semantic::{SemanticNode, SemanticTree};
 use arcweft_render_wgpu::geometry::RenderImageFrame;
 
 #[test]
+fn native_agent_runtime_assertion_projection_uses_compiled_session_capability() {
+    let unique = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("system clock follows the Unix epoch")
+        .as_nanos();
+    let source_path = std::env::temp_dir().join(format!(
+        "arcweft-native-agent-runtime-assertion-{}-{unique}.arcw",
+        std::process::id()
+    ));
+    std::fs::write(
+        &source_path,
+        r"
+entry cli @entry.main { goto @flow.checks }
+
+flow checks {
+    assert.check(false)
+}
+",
+    )
+    .expect("runtime assertion source writes");
+    let selection = crate::app::project::SourceSelection::Direct {
+        path: source_path.clone(),
+    };
+    let mut phases = Vec::new();
+    let compiled = compile_bundle_for_selection(&selection, Vec::new(), &mut phases)
+        .expect("runtime assertion source compiles through the ordinary bundle owner");
+    let mut session = BundleSession::new(
+        &compiled.bundle,
+        BundleSessionOptions {
+            entry: Some(
+                EntryRuntimeId::from_source_entity_body("entry.main")
+                    .expect("fixture entry identity"),
+            ),
+            ..BundleSessionOptions::default()
+        },
+    )
+    .expect("compiled assertion bundle starts");
+    let step = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("fixture clock"),
+        BundleStepInput::default(),
+    );
+    let [failure] = step.assertion_failures.as_slice() else {
+        panic!(
+            "compiled false assertion must produce one typed failure: {:?}",
+            step.assertion_failures
+        );
+    };
+    assert_eq!(failure.assertion().condition(), "false");
+    assert_eq!(
+        failure.assertion().message(),
+        "assert.check condition 0 failed"
+    );
+
+    let diagnostic = agent_runtime_assertion_diagnostic(
+        step.index,
+        failure,
+        compiled.execution_diagnostics.as_ref(),
+    )
+    .expect("fresh-session assertion inventory projects the compiled guard");
+
+    assert_eq!(diagnostic.step, step.index);
+    assert_eq!(diagnostic.severity, AgentDiagnosticSeverity::Error);
+    assert_eq!(diagnostic.source.as_deref(), Some("runtime"));
+    assert_eq!(diagnostic.code.as_deref(), Some("runtime.assertion_failed"));
+    assert_eq!(diagnostic.effect_id, None);
+    assert_eq!(diagnostic.message, "assert.check condition 0 failed");
+
+    std::fs::remove_file(source_path).expect("runtime assertion source removes");
+}
+
+#[test]
 fn player_semantic_objects_preserve_runtime_view_parent() {
     let presentation = BundlePresentationSnapshot {
         text_inputs: vec![runtime_text_control("input.visitor_name")],

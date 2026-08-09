@@ -1,6 +1,6 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::{MAX_SOURCE_MAP_DOCUMENTS, ProductSourceId, SourceMapCodecError, SourceMapSection};
+use super::{MAX_SOURCE_MAP_DOCUMENTS, SourceMapCodecError, SourceMapSection};
 use crate::resource_codec::budget::SectionCodecBudget;
 use crate::resource_codec::codec_io::{Cursor, u32_from_usize, usize_from_u32, usize_from_u64};
 use crate::resource_codec::field::{
@@ -11,6 +11,7 @@ use crate::resource_codec::table::{
     EnumRegistry, PublicIdRef, PublicIdTable, StringId, StringTable,
 };
 use crate::resource_codec::wire::ProductResourceEnvelope;
+use arcweft_source::ProductSourceId;
 
 const SOURCE_MAP_SCHEMA: u32 = 3;
 const FIELD_SOURCE_MAP_TRANSCRIPT: FieldId = FieldId(1);
@@ -227,7 +228,8 @@ fn decode_document(
     let product_text = envelope.public_ids.get(product_ref)?.to_owned();
     let actual_product = ProductSourceId::try_from_encoded(product_text.clone())
         .map_err(|_| SourceMapCodecError::InvalidProductSourceId(product_text))?;
-    let expected_product = ProductSourceId::try_for_document_id(&document_id)?;
+    let expected_product = ProductSourceId::try_for_document_id(&document_id)
+        .map_err(|_| SourceMapCodecError::ArithmeticOverflow)?;
     if actual_product != expected_product {
         return Err(SourceMapCodecError::ProductSourceIdMismatch {
             document: document_id,

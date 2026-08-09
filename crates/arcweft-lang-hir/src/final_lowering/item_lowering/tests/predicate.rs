@@ -45,7 +45,6 @@ fn assert_predicate_body_scope(
     predicate: &HirPredicate,
 ) -> ScopeId {
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -106,9 +105,7 @@ fn assert_predicate_freeze_rejects(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     tamper(&parsed, &mut transaction, owner);
     assert!(
@@ -292,6 +289,10 @@ fn tamper_first_parameter_local(
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical Predicate test asserts one complete signature/contract/body/synthetic owner graph"
+)]
 fn canonical_predicate_freezes_signature_contracts_assertion_body_and_synthetic_owners() {
     let source = concat!(
         "pub predicate ordered<T>((left, right): (T, T), cmp: Comparator<T>)\n",
@@ -315,10 +316,7 @@ fn canonical_predicate_freezes_signature_contracts_assertion_body_and_synthetic_
     let (owner, item, predicate) = predicate(&module, 0);
     let body_scope = assert_predicate_body_scope(&module, &parsed, 0, owner, predicate);
 
-    assert_eq!(
-        item.state(),
-        &HirItemPoisonState::Poisoned(HirItemIssue::Recovery)
-    );
+    assert_eq!(item.state(), &HirItemPoisonState::Clean);
     assert!(matches!(
         predicate.name(),
         HirRequiredName::Resolved(name) if name.as_str() == "ordered"
@@ -375,7 +373,7 @@ fn canonical_predicate_freezes_signature_contracts_assertion_body_and_synthetic_
         bool_type.kind(),
         HirTypeKind::Path(path)
             if path.root() == HirPathRoot::ImplicitCrate
-                && path_spellings(path) == ["Bool"]
+                && path_spellings(path) == ["bool"]
     ));
     let return_metadata = module.slots().resolve(predicate.return_type()).unwrap();
     assert!(matches!(
@@ -427,10 +425,7 @@ fn canonical_predicate_freezes_signature_contracts_assertion_body_and_synthetic_
             conditions,
         } if conditions.len() == 1
     ));
-    assert_eq!(
-        assertion.state(),
-        &HirStmtPoisonState::Poisoned(HirStmtRecoveryIssue::PredicateAssertionNotAllowed)
-    );
+    assert_eq!(assertion.state(), &HirStmtPoisonState::Clean);
     assert_eq!(
         module
             .arenas()
@@ -441,6 +436,52 @@ fn canonical_predicate_freezes_signature_contracts_assertion_body_and_synthetic_
         *scope
     );
     assert_item_slot_whole(&module, &parsed, owner);
+}
+
+#[test]
+fn predicate_has_implicit_bool_and_rejects_authored_arrow() {
+    let source = "predicate p(x: Int) -> Bool = x > 0\n";
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-predicate-authored-return-recovery",
+        source,
+    );
+    parsed
+        .diagnostics()
+        .iter()
+        .find(|diagnostic| diagnostic.code() == "syntax.predicate.return_not_allowed")
+        .expect("authored Predicate return must report current recovery");
+    let attached_items = parsed.items().unwrap();
+    let TypedItemNode::Predicate(attached) = &attached_items[0] else {
+        panic!("expected attached Predicate")
+    };
+    let attached = attached.semantics().unwrap();
+    let authored = attached
+        .authored_return()
+        .expect("forbidden return remains typed recovery evidence");
+    assert_eq!(authored.syntax().range(), SourceRange::new(20, 27));
+    assert_eq!(authored.ty().syntax().source_text(), "Bool");
+
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+    let (owner, item, predicate) = predicate(&module, 0);
+    assert_eq!(
+        item.state(),
+        &HirItemPoisonState::Poisoned(HirItemIssue::MalformedHeader)
+    );
+    let implicit = module.resolve_type(predicate.return_type()).unwrap();
+    assert!(matches!(
+        implicit.kind(),
+        HirTypeKind::Path(path)
+            if path.root() == HirPathRoot::ImplicitCrate
+                && path_spellings(path) == ["bool"]
+    ));
+    assert!(matches!(
+        module.slots().resolve(predicate.return_type()).unwrap().origin(),
+        HirOrigin::Synthetic(synthetic)
+            if synthetic.owner() == SyntheticOwner::Item(owner)
+                && synthetic.role() == SyntheticRole::PredicateBoolReturn
+    ));
 }
 
 #[test]
@@ -592,6 +633,10 @@ fn predicate_missing_and_omitted_tails_retain_typed_recovery_while_scoped_expres
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Predicate freeze test exhausts return, contract, result-local, and assertion tampering"
+)]
 fn predicate_freeze_rejects_bool_contract_result_and_assertion_tampering_atomically() {
     let source = concat!(
         "predicate guarded(value: Bool)\n",
@@ -814,7 +859,6 @@ fn predicate_freeze_rejects_wrong_synthetic_return_key_site_and_authored_return_
                 predicate.callable_scope()
             };
             let attached = parsed
-                .tree()
                 .items()
                 .unwrap()
                 .into_iter()
@@ -905,9 +949,7 @@ fn predicate_parameter_local_poison_is_rederived_and_sealed() {
     let key = module_key(&parsed);
     let database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     let (local, payload) = {
         let (slots, arenas) = transaction.storage_mut();
@@ -1093,6 +1135,10 @@ fn predicate_freeze_rejects_callable_children_outside_source_order() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the incremental Predicate/Proof test asserts the complete reorder and scope-child matrix"
+)]
 fn incremental_predicate_proof_reorder_keeps_body_scopes_but_reorders_scope_children() {
     let name = SourceName::path("proof/predicate-proof-scope-order.arcw");
     let document_id = "arcweft-test://proof/predicate-proof-scope-order";

@@ -1,6 +1,7 @@
 //! Persistent runtime schemas, canonical value bytes, and validation.
 
 use super::identity::{RuntimeValueDigest, TypeLayoutHash};
+use crate::pattern::RuntimeVariantIdentity;
 use crate::value::{RuntimeInt, RuntimePayload, RuntimeUInt, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet};
@@ -411,12 +412,14 @@ impl CanonicalRuntimeValueBytes {
                 Ok(())
             }
             RuntimeValue::Variant {
-                path,
+                owner,
+                ordinal,
                 name,
                 payload,
             } => {
                 self.u8(14)?;
-                self.option(path.as_ref(), |bytes, path| bytes.string(path))?;
+                self.variant_identity(owner)?;
+                self.u32(*ordinal)?;
                 self.string(name)?;
                 self.option(payload.as_deref(), Self::value)
             }
@@ -429,6 +432,24 @@ impl CanonicalRuntimeValueBytes {
             | RuntimeValue::Function(_) => Err(RuntimeSchemaError::Encoding {
                 message: "runtime-only value has no replay/save encoding".to_owned(),
             }),
+        }
+    }
+
+    fn variant_identity(
+        &mut self,
+        identity: &RuntimeVariantIdentity,
+    ) -> Result<(), RuntimeSchemaError> {
+        match identity {
+            RuntimeVariantIdentity::Nominal {
+                nominal,
+                semantic_identity,
+            } => {
+                self.u8(0)?;
+                self.string(nominal.as_str())?;
+                self.extend(semantic_identity.as_bytes())
+            }
+            RuntimeVariantIdentity::Option => self.u8(1),
+            RuntimeVariantIdentity::Result => self.u8(2),
         }
     }
 }
@@ -627,6 +648,10 @@ struct SchemaValidationState<'a> {
 }
 
 impl<'a> SchemaValidationState<'a> {
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one recursive schema validator owns the shared depth/node budget and closed variant matrix"
+    )]
     fn validate(
         &mut self,
         schema: &'a RuntimeTypeSchema,
@@ -683,17 +708,23 @@ impl<'a> SchemaValidationState<'a> {
                 let values = sequence.clone().into_values();
                 self.validate_sequence(&RuntimeTypeSchema::U8, &values, path, depth)
             }
-            (RuntimeTypeSchema::Option(inner), RuntimeValue::Variant { name, payload, .. }) => {
-                match (name.as_str(), payload.as_deref()) {
-                    ("None", None) => Ok(()),
-                    ("Some", Some(payload)) => {
-                        self.validate(inner, payload, &format!("{path}.Some"), depth + 1)
-                    }
-                    _ => Err(RuntimeSchemaError::VariantPayload {
-                        path: path.to_owned(),
-                    }),
+            (
+                RuntimeTypeSchema::Option(inner),
+                RuntimeValue::Variant {
+                    owner: RuntimeVariantIdentity::Option,
+                    ordinal,
+                    name,
+                    payload,
+                },
+            ) => match (*ordinal, name.as_str(), payload.as_deref()) {
+                (1, "None", None) => Ok(()),
+                (0, "Some", Some(payload)) => {
+                    self.validate(inner, payload, &format!("{path}.Some"), depth + 1)
                 }
-            }
+                _ => Err(RuntimeSchemaError::VariantPayload {
+                    path: path.to_owned(),
+                }),
+            },
             (RuntimeTypeSchema::Seq(inner), RuntimeValue::Seq(sequence)) => {
                 let values = sequence.clone().into_values();
                 self.validate_sequence(inner, &values, path, depth)
@@ -706,9 +737,20 @@ impl<'a> SchemaValidationState<'a> {
                 self.validate_record(fields, values, path, depth)
             }
             (
-                RuntimeTypeSchema::Enum { variants, .. },
-                RuntimeValue::Variant { name, payload, .. },
-            ) => self.validate_enum(variants, name, payload.as_deref(), path, depth),
+                RuntimeTypeSchema::Enum {
+                    name: owner_name,
+                    variants,
+                    ..
+                },
+                RuntimeValue::Variant {
+                    owner: RuntimeVariantIdentity::Nominal { nominal, .. },
+                    ordinal,
+                    name,
+                    payload,
+                },
+            ) if nominal.as_str() == owner_name => {
+                self.validate_enum(variants, *ordinal, name, payload.as_deref(), path, depth)
+            }
             (RuntimeTypeSchema::Named(name), _) => {
                 let schema = self
                     .definitions
@@ -808,14 +850,16 @@ impl<'a> SchemaValidationState<'a> {
     fn validate_enum(
         &mut self,
         variants: &'a [RuntimeSchemaVariant],
+        ordinal: u32,
         name: &str,
         payload: Option<&RuntimeValue>,
         path: &str,
         depth: usize,
     ) -> Result<(), RuntimeSchemaError> {
-        let variant = variants
-            .iter()
-            .find(|variant| variant.rust_name == name)
+        let variant = usize::try_from(ordinal)
+            .ok()
+            .and_then(|ordinal| variants.get(ordinal))
+            .filter(|variant| variant.rust_name == name)
             .ok_or_else(|| RuntimeSchemaError::UnknownVariant {
                 path: path.to_owned(),
                 variant: name.to_owned(),

@@ -126,7 +126,8 @@ impl Engine {
             }
             SourceOp::EvaluatedEffect(effect) => {
                 match self.evaluate_effect_expr(effect, pure_backend) {
-                    Ok(effect) => self.emit_line_effect(effect, output, pure_backend),
+                    Ok(Some(effect)) => self.emit_line_effect(effect, output, pure_backend),
+                    Ok(None) => {}
                     Err(error) => Self::diagnose_runtime_error(error, output),
                 }
             }

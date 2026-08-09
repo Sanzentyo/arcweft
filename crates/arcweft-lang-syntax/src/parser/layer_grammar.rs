@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use arcweft_id::DeclarationIdentityFamily;
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::emit_retained_declaration_header;
 use super::expression::emit_expression;
 use super::lexer::{LexToken, typed_entity_reference};
@@ -32,7 +32,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     let owner = parser.start_projected_owner(SyntaxKind::LayerDeclarationItem, role);
     let (colon, kind) = emit_retained_declaration_header(
         &mut parser,
@@ -49,9 +49,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_layer_kind(
-    parser: &mut ShadowDocumentParser<'_, '_>,
-) -> (PendingLayerColon, PendingLayerKind) {
+fn emit_layer_kind(parser: &mut DocumentParser<'_, '_>) -> (PendingLayerColon, PendingLayerKind) {
     parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
     let colon = if parser.at(":") {
         let range = parser
@@ -133,7 +131,7 @@ fn emit_layer_kind(
     (colon, state)
 }
 
-fn emit_layer_body(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingLayerBodyProjection {
+fn emit_layer_body(parser: &mut DocumentParser<'_, '_>) -> PendingLayerBodyProjection {
     if !parser.at("{") {
         emit_missing_body(parser);
         return PendingLayerBodyProjection::Missing;
@@ -158,7 +156,7 @@ fn emit_layer_body(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingLayerBod
     }
 }
 
-fn emit_missing_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_body(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
     parser.push(SyntaxEvent::MissingToken {
@@ -174,7 +172,7 @@ fn emit_missing_body(parser: &mut ShadowDocumentParser<'_, '_>) {
 }
 
 fn emit_layer_members(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     body_end: usize,
 ) -> Vec<PendingLayerMemberProjection> {
     let mut first_members = BTreeMap::<LayerMemberSyntaxKind, SourceRange>::new();
@@ -231,7 +229,7 @@ fn emit_layer_members(
 }
 
 fn emit_layer_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
     ordinal: u16,
     kind: LayerMemberSyntaxKind,
@@ -300,7 +298,7 @@ fn emit_layer_member(
 }
 
 fn emit_reference_value(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
     role: SyntaxRole,
     expected_family: DeclarationIdentityFamily,
@@ -364,7 +362,7 @@ fn absolute_reference_conflicts_with(
 }
 
 fn emit_policy_value(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
     member: LayerMemberSyntaxKind,
 ) -> (PendingLayerMemberValue, bool) {
@@ -456,7 +454,7 @@ fn emit_policy_value(
 }
 
 fn emit_expression_value(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
 ) -> PendingLayerMemberValue {
     let expression_end = trimmed_end(parser, parser.cursor(), entry_end);
@@ -473,7 +471,7 @@ fn emit_expression_value(
     }
 }
 
-fn reject_extra_member_value(parser: &mut ShadowDocumentParser<'_, '_>, entry_end: usize) -> bool {
+fn reject_extra_member_value(parser: &mut DocumentParser<'_, '_>, entry_end: usize) -> bool {
     parser.bump_trivia();
     if parser.cursor() >= trimmed_end(parser, parser.cursor(), entry_end) {
         return false;
@@ -491,7 +489,7 @@ fn reject_extra_member_value(parser: &mut ShadowDocumentParser<'_, '_>, entry_en
 }
 
 fn emit_unknown_member(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     entry_end: usize,
     ordinal: u16,
     range: SourceRange,
@@ -512,7 +510,7 @@ fn emit_unknown_member(
     }
 }
 
-fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingLayerAssignment {
+fn emit_assignment(parser: &mut DocumentParser<'_, '_>) -> PendingLayerAssignment {
     parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
     let assignment = if parser.at("=") {
         let range = parser
@@ -539,7 +537,7 @@ fn emit_assignment(parser: &mut ShadowDocumentParser<'_, '_>) -> PendingLayerAss
 }
 
 fn emit_missing_value(
-    parser: &mut ShadowDocumentParser<'_, '_>,
+    parser: &mut DocumentParser<'_, '_>,
     code: &'static str,
     message: &'static str,
 ) {
@@ -553,7 +551,7 @@ fn emit_missing_value(
     )));
 }
 
-fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) -> bool {
+fn emit_trailing_recovery(parser: &mut DocumentParser<'_, '_>) -> bool {
     parser.bump_trivia();
     if parser.is_at_end() {
         return false;

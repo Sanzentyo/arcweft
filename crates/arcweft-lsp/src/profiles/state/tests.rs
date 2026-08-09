@@ -14,13 +14,17 @@ use arcweft_character::{
     },
     registration_catalog::SourceBackedCharacterCatalog,
 };
-use arcweft_compiler::project::{CompiledProject, ProjectCompilationContext, compile_project};
+use arcweft_compiler::project::{
+    CompiledProject, ProjectCompilationContext, ProjectCompilationSession, compile_project,
+};
 use arcweft_lang_hir::{
-    lower::lower_document_to_hir,
+    database::HirDatabase,
+    lowering::{HirModuleKey, LoweringRequest},
     project::{HirProject, HirProjectModule},
+    proof_return::HirProofReturnSemanticFactSet,
     symbol::{
         CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolLinkError,
-        ProjectSymbolWorldId,
+        ProjectSymbolRevision, ProjectSymbolWorldId,
     },
 };
 use arcweft_lang_sema::{
@@ -39,13 +43,10 @@ use arcweft_lang_sema::{
         EnvironmentCallablePublicationRecordInput, EnvironmentCallableSignatureInput,
         EnvironmentManifestDigest, EnvironmentParameterGroupInput, EnvironmentPublicationItemId,
         EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode, ExternalRegistrationFact,
-        ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredTypeCheckEnv,
-        SourceBackedEnvironmentRegistrationInput,
+        ProjectRegistrationFacts, RegisteredExternalOwner, RegisteredSemanticWorld,
+        RegisteredTypeCheckEnv, SourceBackedEnvironmentRegistrationInput,
     },
-    signature::{
-        SignatureQuery, SignatureQueryControl, SignatureQueryOutcome, SignatureRecovery,
-        query_signature,
-    },
+    signature::SignatureQueryOutcome,
     types::TypeKind,
 };
 use arcweft_lang_syntax::{
@@ -54,16 +55,19 @@ use arcweft_lang_syntax::{
         module_path::{CanonicalModulePath, ModulePathRoot},
         symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
     },
-    parser::{ParseOptions, parse_document_with_source},
+    incremental::SyntaxDatabase,
+    parser::ParseOptions,
 };
 use arcweft_launch::ProfileId;
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
 use arcweft_resource_model::registry::ResourceTypeRegistry;
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange};
+use arcweft_source::{
+    SourceDocument, SourceDocumentId, SourceName, SourceRange, identity::SourceSnapshotId,
+};
 use std::{
-    sync::{Barrier, atomic::AtomicBool, mpsc},
+    collections::BTreeMap,
+    sync::{Barrier, mpsc},
     thread,
     time::{Duration, Instant},
 };
@@ -251,8 +255,18 @@ fn compile_fixture(
         previous.cloned().map(Arc::new),
         None,
     );
+    let mut syntax = SyntaxDatabase::try_new().expect("test syntax database");
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            Arc::clone(document),
+            ParseOptions::default(),
+        )
+        .expect("attached test source");
+    let parsed_sources = BTreeMap::from([(CanonicalModulePath::crate_root(), parsed)]);
+    let mut compiler = ProjectCompilationSession::try_new().expect("test HIR database");
     Arc::new(
-        compile_project(&sources, &context, &RuntimePlanLowerOptions::default())
+        compile_project(&mut compiler, &sources, &parsed_sources, &context)
             .expect("compiled test project"),
     )
 }
@@ -268,42 +282,88 @@ fn project_fixture() -> (Arc<SourceDocument>, Arc<HirProject>) {
         )
         .expect("source document"),
     );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    assert!(parsed.errors().is_empty(), "{:?}", parsed.errors());
-    let hir = lower_document_to_hir(&document, parsed.typed_tree()).expect("lowered HIR");
-    let project = Arc::new(
-        HirProject::new(
-            "cache.tests",
-            [HirProjectModule::try_new(
-                CanonicalModulePath::crate_root(),
-                document.identity().clone(),
-                hir,
-            )
-            .expect("cache fixture module binding")],
-        )
-        .expect("HIR project"),
-    );
+    let (_, project) = attached_project(&document);
     (document, project)
+}
+
+fn attached_project(
+    document: &Arc<SourceDocument>,
+) -> (
+    arcweft_lang_syntax::incremental::ParsedSource,
+    Arc<HirProject>,
+) {
+    let mut syntax = SyntaxDatabase::try_new().expect("test syntax database");
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            Arc::clone(document),
+            ParseOptions::default(),
+        )
+        .expect("attached test source");
+    let package = CallablePackageId::try_new("cache.tests").expect("package");
+    let path = CanonicalModulePath::crate_root();
+    let key = HirModuleKey::new(
+        package.clone(),
+        path.clone(),
+        document.identity().id().clone(),
+    );
+    let mut database = HirDatabase::try_new().expect("test HIR database");
+    let world = ProjectSymbolWorldId::try_new(
+        package.clone(),
+        document.identity().id().clone(),
+        "lsp-profile-state-tests",
+    )
+    .expect("test symbol world");
+    let revision = ProjectSymbolRevision::try_for_documents([document.identity()])
+        .expect("test symbol revision");
+    let transaction = database
+        .stage_proof_return_project(
+            [LoweringRequest::try_new(key, &parsed).expect("attached lowering request")],
+            world,
+            revision,
+            [document.identity()],
+            arcweft_lang_hir::lowering::HirLoweringControl::new(),
+        )
+        .expect("attached project stages");
+    let facts = HirProofReturnSemanticFactSet::try_new(
+        Arc::clone(transaction.generation()),
+        transaction.headers().cloned(),
+        [],
+    )
+    .expect("profile fixture has no authored Proof return headers");
+    let mut outputs = transaction
+        .publish_with_semantic_facts(&mut database, facts)
+        .expect("attached project publishes");
+    let hir = outputs
+        .pop()
+        .expect("one profile fixture module")
+        .into_module();
+    assert!(outputs.is_empty());
+    let bound = HirProjectModule::try_new(&database, &package, &path, document.identity(), hir)
+        .expect("final HIR module binding");
+    let project =
+        Arc::new(HirProject::try_new(&database, package, [bound]).expect("final HIR project"));
+    (parsed, project)
 }
 
 fn accepted_candidate(compiled: Arc<CompiledProject>) -> AcceptedProfileCandidate {
     let root = CanonicalModulePath::crate_root();
-    let document = Arc::new(
+    let document = Arc::clone(
         compiled
             .hir_project()
+            .view()
             .module(&root)
             .expect("compiled root HIR module")
-            .source_document()
-            .cloned()
-            .expect("compiled source document"),
+            .provenance()
+            .document(),
     );
     let source_uri = "file:///workspace/cache-tests/src/main.arcw"
         .parse::<Uri>()
         .expect("source URI");
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            Arc::clone(compiled.hir_project()),
-            compiled.registered_world(),
+            Arc::clone(compiled.tooling_lease()),
+            Some(compiled.as_ref()),
             vec![AcceptedSourceDocumentSeed::new(
                 document,
                 AcceptedSourceLocator::Uri { uri: source_uri },
@@ -325,7 +385,7 @@ fn accepted_candidate(compiled: Arc<CompiledProject>) -> AcceptedProfileCandidat
             &manifest_uri,
             ProfileId::new("test").expect("valid test profile ID"),
         ),
-        compiled,
+        Some(compiled),
         project,
         AcceptedOverlaySet::default(),
     )
@@ -345,8 +405,8 @@ fn accepted_character_candidate(
         .expect("manifest URI");
     let project = Arc::new(
         AcceptedProjectSnapshot::try_new(
-            Arc::clone(compiled.hir_project()),
-            compiled.registered_world(),
+            Arc::clone(compiled.tooling_lease()),
+            Some(compiled.as_ref()),
             vec![
                 AcceptedSourceDocumentSeed::new(
                     root,
@@ -376,98 +436,11 @@ fn accepted_character_candidate(
             &profile_manifest_uri,
             ProfileId::new("test").expect("profile"),
         ),
-        compiled,
+        Some(compiled),
         project,
         AcceptedOverlaySet::default(),
     )
     .expect("accepted character candidate")
-}
-
-#[allow(
-    clippy::too_many_lines,
-    reason = "the test fixture constructs one exact recovered source/HIR/world/cache identity"
-)]
-fn recovered_signature_candidate() -> (AcceptedProfileCandidate, Arc<SignatureQueryOutcome>, usize)
-{
-    let source = r"
-fn project_int(value: i32) -> i32 {
-    value
-}
-
-fn main() -> Unit {
-    let value: i32 = project_int(1i32
-    ()
-}
-";
-    let document = Arc::new(
-        SourceDocument::try_new(
-            SourceDocumentId::try_new("arcweft-project://cache-tests/src/recovered-signature.arcw")
-                .expect("document id"),
-            SourceName::path("src/recovered-signature.arcw"),
-            source,
-        )
-        .expect("recovered source document"),
-    );
-    let parsed = parse_document_with_source(Arc::clone(&document), ParseOptions::default());
-    assert!(!parsed.errors().is_empty(), "recovery fixture diagnostic");
-    let hir = lower_document_to_hir(&document, parsed.typed_tree())
-        .expect("recovered source lowers to HIR");
-    let project = Arc::new(
-        HirProject::new(
-            "cache.tests",
-            [HirProjectModule::try_new(
-                CanonicalModulePath::crate_root(),
-                document.identity().clone(),
-                hir,
-            )
-            .expect("recovered module")],
-        )
-        .expect("recovered HIR project"),
-    );
-    let world_id = ProjectSymbolWorldId::try_new(
-        CallablePackageId::try_new("cache.tests").expect("package"),
-        document.identity().id().clone(),
-        "test",
-    )
-    .expect("world");
-    let facts = ProjectRegistrationFacts::try_new(
-        world_id,
-        vec![Arc::clone(&document)],
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-    )
-    .expect("recovered registration facts");
-    let world = Arc::new(
-        CharacterRegistrar::register(CharacterRegistrationRequest::new(
-            Arc::new(TypeCheckEnv::standard()),
-            project.as_ref(),
-            &facts,
-            None,
-        ))
-        .expect("recovered semantic world"),
-    );
-    let cursor = source.find("1i32").expect("recovered argument");
-    let hir = project.linked_module();
-    let cancelled = AtomicBool::new(false);
-    let outcome = Arc::new(
-        query_signature(
-            SignatureQuery::production(
-                &world,
-                &document,
-                &hir,
-                cursor,
-                SignatureQueryControl::new(&cancelled, None),
-            )
-            .expect("exact recovered query tuple"),
-        )
-        .expect("recovered signature outcome"),
-    );
-    // Recovery is a request-local overlay concern. The accepted generation
-    // remains the last fully compiled project and only its cache namespace is
-    // used to retain this typed recovery result.
-    let candidate = accepted_candidate(registered_world());
-    (candidate, outcome, cursor)
 }
 
 fn external_registration_fact(
@@ -554,7 +527,7 @@ fn colliding_typed_binding_registration()
 
     CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(base),
-        project.as_ref(),
+        project.view(),
         &facts,
         None,
     ))
@@ -684,7 +657,7 @@ fn callable_catalog_failure_registration(
 
     CharacterRegistrar::register(CharacterRegistrationRequest::new(
         Arc::new(TypeCheckEnv::standard()),
-        project.as_ref(),
+        project.view(),
         &facts,
         Some(previous),
     ))
@@ -796,6 +769,18 @@ fn cache_snapshot(environment: &AcceptedProfileEnvironment) -> SignatureCacheTes
     environment.signature_cache_snapshot_for_test()
 }
 
+fn accepted_executable(environment: &AcceptedProfileEnvironment) -> &Arc<CompiledProject> {
+    environment
+        .executable()
+        .expect("test environment is executable")
+}
+
+fn accepted_world_arc(environment: &AcceptedProfileEnvironment) -> Arc<RegisteredSemanticWorld> {
+    environment
+        .registered_world_arc()
+        .expect("test environment has a registered world")
+}
+
 #[test]
 fn successful_identical_rebuild_increments_generation() {
     let state = LspProfileState::new();
@@ -804,16 +789,24 @@ fn successful_identical_rebuild_increments_generation() {
         .replace_accepted(accepted_candidate(Arc::clone(&world)))
         .expect("first accepted environment");
     assert!(Arc::ptr_eq(
-        first.compiled().hir_project(),
+        accepted_executable(&first).hir_project(),
         first.project().hir_project()
+    ));
+    assert!(Arc::ptr_eq(
+        accepted_executable(&first).tooling_lease(),
+        first.project().tooling_lease()
     ));
     insert_signature_cache(&first);
     let second = state
         .replace_accepted(accepted_candidate(world))
         .expect("identical complete rebuild is still a new generation");
     assert!(Arc::ptr_eq(
-        second.compiled().hir_project(),
+        accepted_executable(&second).hir_project(),
         second.project().hir_project()
+    ));
+    assert!(Arc::ptr_eq(
+        accepted_executable(&second).tooling_lease(),
+        second.project().tooling_lease()
     ));
     assert_eq!(first.generation().get(), 1);
     assert_eq!(second.generation().get(), 2);
@@ -846,49 +839,6 @@ fn unrepresentable_complete_entry_size_returns_outcome_without_caching() {
         )
     );
     assert_eq!(accepted.signature_cache_snapshot_for_test().entries, 0);
-}
-
-#[test]
-fn recovered_help_reuses_only_the_exact_recovery_source_and_stamp_key() {
-    let state = LspProfileState::new();
-    let (candidate, outcome, cursor) = recovered_signature_candidate();
-    let accepted = state
-        .replace_accepted(candidate)
-        .expect("accepted recovered environment");
-    let SignatureQueryOutcome::Help(help) = outcome.as_ref() else {
-        panic!("recovered call must produce help")
-    };
-    assert_eq!(
-        help.recovery(),
-        SignatureRecovery::Recovered {
-            missing_close_delimiter: true,
-            nodes: 1,
-        }
-    );
-    let key = accepted.signature_cache_key_for_test(cursor);
-    let insertion = accepted.signature_cache().insert(
-        key.clone(),
-        Arc::clone(&outcome),
-        accepted.project().footprint().source_bytes(),
-    );
-    assert_eq!(insertion, SignatureCacheInsertion::Cached);
-
-    let cached = accepted
-        .signature_cache()
-        .cached(&key)
-        .expect("exact recovered cache hit");
-    assert!(Arc::ptr_eq(&cached, &outcome));
-    let SignatureQueryOutcome::Help(cached) = cached.as_ref() else {
-        panic!("cached recovery remains help")
-    };
-    assert_eq!(cached.recovery(), help.recovery());
-    assert!(
-        accepted
-            .signature_cache()
-            .cached(&accepted.signature_cache_key_for_test(cursor + 1))
-            .is_none(),
-        "another call-site position must not reuse recovered help",
-    );
 }
 
 #[test]
@@ -1096,7 +1046,7 @@ fn failed_typed_binding_collision_preserves_accepted_pointer_and_caches() {
         .expect("baseline accepted environment");
     insert_signature_cache(&accepted);
     let cache = cache_snapshot(&accepted);
-    let accepted_world = Arc::clone(accepted.world());
+    let accepted_world = accepted_world_arc(&accepted);
 
     let report = colliding_typed_binding_registration();
     assert!(
@@ -1111,23 +1061,24 @@ fn failed_typed_binding_collision_preserves_accepted_pointer_and_caches() {
         report.diagnostics()
     );
     let retained = state.current().expect("baseline remains accepted");
+    let retained_world = accepted_world_arc(&retained);
     assert!(Arc::ptr_eq(&retained, &accepted));
-    assert!(Arc::ptr_eq(retained.world(), &accepted_world));
+    assert!(Arc::ptr_eq(&retained_world, &accepted_world));
     assert!(std::ptr::eq(
-        retained.world().symbols(),
-        accepted.world().symbols()
+        retained_world.symbols(),
+        accepted_world.symbols()
     ));
     assert!(std::ptr::eq(
-        retained.world().environment(),
-        accepted.world().environment()
+        retained_world.environment(),
+        accepted_world.environment()
     ));
     assert!(std::ptr::eq(
-        retained.world().environment().callable_catalog(),
-        accepted.world().environment().callable_catalog()
+        retained_world.environment().callable_catalog(),
+        accepted_world.environment().callable_catalog()
     ));
     assert!(std::ptr::eq(
-        retained.world().character_definition_index(),
-        accepted.world().character_definition_index()
+        retained_world.character_definition_index(),
+        accepted_world.character_definition_index()
     ));
     assert_eq!(retained.generation().get(), 1);
     assert_eq!(cache_snapshot(&retained), cache);
@@ -1148,9 +1099,9 @@ fn every_build_error_preserves_prior_arc() {
         .expect("baseline accepted environment");
     insert_signature_cache(&accepted);
     let accepted_cache = cache_snapshot(&accepted);
-    let accepted_compiled = Arc::clone(accepted.compiled());
+    let accepted_compiled = Arc::clone(accepted_executable(&accepted));
     let accepted_project = Arc::clone(accepted.project());
-    let accepted_world = Arc::clone(accepted.world());
+    let accepted_world = accepted_world_arc(&accepted);
 
     for fixture in [
         CallableCatalogFailureFixture::ProjectWorldPackageMismatch,
@@ -1173,41 +1124,39 @@ fn every_build_error_preserves_prior_arc() {
         );
 
         let retained = state.current().expect("baseline remains accepted");
+        let retained_world = accepted_world_arc(&retained);
         assert!(Arc::ptr_eq(&retained, &accepted), "{fixture:?}");
         assert!(
-            Arc::ptr_eq(retained.compiled(), &accepted_compiled),
+            Arc::ptr_eq(accepted_executable(&retained), &accepted_compiled),
             "{fixture:?}"
         );
         assert!(
             Arc::ptr_eq(retained.project(), &accepted_project),
             "{fixture:?}"
         );
-        assert!(
-            Arc::ptr_eq(retained.world(), &accepted_world),
-            "{fixture:?}"
-        );
+        assert!(Arc::ptr_eq(&retained_world, &accepted_world), "{fixture:?}");
         assert!(
             std::ptr::eq(retained.project().sources(), accepted_project.sources()),
             "{fixture:?}"
         );
         assert!(
-            std::ptr::eq(retained.world().symbols(), accepted_world.symbols()),
+            std::ptr::eq(retained_world.symbols(), accepted_world.symbols()),
             "{fixture:?}"
         );
         assert!(
-            std::ptr::eq(retained.world().environment(), accepted_world.environment()),
+            std::ptr::eq(retained_world.environment(), accepted_world.environment()),
             "{fixture:?}"
         );
         assert!(
             std::ptr::eq(
-                retained.world().environment().callable_catalog(),
+                retained_world.environment().callable_catalog(),
                 accepted_world.environment().callable_catalog()
             ),
             "{fixture:?}"
         );
         assert!(
             std::ptr::eq(
-                retained.world().character_definition_index(),
+                retained_world.character_definition_index(),
                 accepted_world.character_definition_index()
             ),
             "{fixture:?}"
@@ -1293,16 +1242,15 @@ fn generation_overflow_preserves_state() {
     let state = LspProfileState::new();
     let AcceptedProfileCandidate {
         profile,
-        compiled,
-        world,
+        executable,
         project,
         overlays,
     } = accepted_candidate(registered_world());
     let previous = Arc::new(AcceptedProfileEnvironment {
         generation: AcceptedEnvironmentGeneration::for_test(u64::MAX),
         profile,
-        compiled,
-        world,
+        executable,
+        stamp_world_override: None,
         project,
         overlays,
         caches: ProfileSemanticCaches::default(),

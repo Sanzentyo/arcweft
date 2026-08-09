@@ -76,6 +76,7 @@ impl Engine {
             child_fibers: self.child_fiber_count(),
             pure: pure_backend.stats().saturating_delta(pure_stats_before),
             task_events_in: 0,
+            need_states_in: 0,
             source_events_in: 0,
             root_events_in: 0,
             root_transitions: 0,

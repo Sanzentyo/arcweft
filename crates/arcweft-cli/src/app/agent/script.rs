@@ -9,28 +9,35 @@ use super::{
     CaptureRequest, CaptureResult, DebugEvent, DebugEventKind, DebugEventSink, DebugScriptRun,
     DebugScriptRunFinish, DebugScriptRunOutcome, DebugSession, DebugSessionStatus, DebugStore,
     EntityKind, EntitySymbol, EntityType, ExitCode, Infallible, NativeAdapterRegistrar,
-    NoopRagService, ObservationEnvelope, ObserveRequest, Path, PathBuf, ProgramHash,
-    ProjectSemanticIndex, RequiredEntity, RuntimeAgentCapability, RuntimeAgentPolicy, SemaPublicId,
-    SemanticHash, SessionId, SourceAnchor, StableHash, SystemTime, TypeKind, UNIX_EPOCH, agent,
-    agent_project, fs, print_json,
+    NoopRagService, ObservationEnvelope, ObserveRequest, Path, PathBuf, ProjectSemanticIndex,
+    RequiredEntity, RuntimeAgentCapability, RuntimeAgentPolicy, SemaPublicId, SemanticHash,
+    SessionId, SourceAnchor, StableHash, SystemTime, TypeKind, UNIX_EPOCH, agent, agent_project,
+    fs, print_json,
 };
-use arcweft_compiler::project::{
-    ProjectCompilationContext, ProjectCompileError, ProjectEntrySelection,
-    ProjectEntrySelectionKind, compile_project,
+use arcweft_compiler::{
+    incremental::{BuildSnapshotRequest, runtime_plan_artifact_key, snapshot_compiled_project},
+    project::{
+        ProjectCompilationContext, ProjectCompilationSession, ProjectCompileError,
+        ProjectEntrySelection, ProjectEntrySelectionKind, compile_project,
+    },
 };
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
-use arcweft_lang_sema::registration::ProjectRegistrationFacts;
-use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
+use arcweft_lang_sema::{
+    env::TypeCheckEnv, project_index::ProjectEntityId, registration::ProjectRegistrationFacts,
+};
+use arcweft_lang_syntax::{
+    ast::module_path::CanonicalModulePath, incremental::SyntaxDatabase, parser::ParseOptions,
+};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::sources::{ProjectSourceFile, ProjectSources};
-use arcweft_runtime_plan::flow::RuntimePlanLowerOptions;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, identity::SourceSnapshotId};
+use arcweft_tooling::runtime_diagnostic::{
+    project_persisted_assertion_failure, project_runtime_assertion_fault,
+};
 use std::sync::Arc;
 
 #[cfg(feature = "native-capture")]
-use super::{
-    load_and_check_selection, native, project_semantic_index_from_hir, resolve_source_selection,
-};
+use super::{load_and_check_selection, native, resolve_source_selection};
 
 pub(super) fn agent_script_command(
     command: AgentScriptCommand,
@@ -67,12 +74,28 @@ pub(super) struct AgentScriptBuildReport {
     pub(super) error: Option<String>,
 }
 
+#[derive(Clone)]
+pub(super) struct AgentScriptCompileTarget {
+    typecheck_environment: Arc<TypeCheckEnv>,
+    target_entities: Vec<EntitySymbol>,
+    accepted_index: Option<Arc<ProjectSemanticIndex>>,
+}
+
+pub(super) struct CompiledAgentScriptSource {
+    pub(super) artifact: arcweft_compiler::types::CompiledAgentBundle,
+    semantic_index: ProjectSemanticIndex,
+}
+
+#[expect(
+    clippy::too_many_lines,
+    reason = "Agent script compilation publishes one atomic typed project and artifact transaction"
+)]
 pub(super) fn compile_agent_script_source(
     source_name: &Path,
     source: String,
     selected_entry: &str,
-    target_project: &ProjectSemanticIndex,
-) -> Result<arcweft_compiler::types::CompiledAgentBundle, String> {
+    target: &AgentScriptCompileTarget,
+) -> Result<CompiledAgentScriptSource, String> {
     const PACKAGE_NAME: &str = "org.arcweft.tool.agent-script";
 
     let selected_entry =
@@ -88,6 +111,15 @@ pub(super) fn compile_agent_script_source(
         )
         .map_err(|error| error.to_string())?,
     );
+    let mut syntax = SyntaxDatabase::try_new().map_err(|error| error.to_string())?;
+    let parsed = syntax
+        .parse_initial(
+            SourceSnapshotId::initial(document.display_name().clone()),
+            Arc::clone(&document),
+            ParseOptions::default(),
+        )
+        .map_err(|error| error.to_string())?;
+    let parsed_sources = BTreeMap::from([(CanonicalModulePath::crate_root(), parsed)]);
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),
         PathBuf::new(),
@@ -135,7 +167,7 @@ pub(super) fn compile_agent_script_source(
             .join("; ")
     })?;
     let context = ProjectCompilationContext::new(
-        Arc::new(target_project.typecheck_env()),
+        Arc::clone(&target.typecheck_environment),
         Arc::new(facts),
         Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         None,
@@ -144,13 +176,43 @@ pub(super) fn compile_agent_script_source(
             ProjectEntrySelectionKind::Agent,
         )),
     );
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
-        .map_err(|error| project_compile_message(&error))?;
-    let artifact_project = target_project
-        .clone()
-        .with_checked_entry_catalog(compiled.checked_entries());
-    agent::compile_agent_project_bundle(&compiled, &selected_entry, &artifact_project)
-        .map_err(|error| error.to_string())
+    let mut compilation_session =
+        ProjectCompilationSession::try_new().map_err(|error| error.to_string())?;
+    let compiled = compile_project(
+        &mut compilation_session,
+        &project,
+        &parsed_sources,
+        &context,
+    )
+    .map_err(|error| project_compile_message(&error))?;
+    let semantic_index = target.target_entities.iter().cloned().fold(
+        compiled.semantic_index().as_ref().clone(),
+        ProjectSemanticIndex::with_entity,
+    );
+    let snapshot = snapshot_compiled_project(
+        &project,
+        &compiled,
+        BuildSnapshotRequest {
+            build_id: compiled.program_hash().as_str().to_owned(),
+            compiler_build_id: env!("CARGO_PKG_VERSION").to_owned(),
+            target_triple: format!("{}-{}", std::env::consts::ARCH, std::env::consts::OS),
+            target_features: Vec::new(),
+            profile: "agent-script".to_owned(),
+            selected_entries: vec![selected_entry.as_str().to_owned()],
+        },
+    );
+    let runtime_plan_artifact_key = runtime_plan_artifact_key(&snapshot, &compiled);
+    let artifact = agent::compile_agent_project_bundle(
+        &compiled,
+        &selected_entry,
+        &semantic_index,
+        runtime_plan_artifact_key,
+    )
+    .map_err(|error| error.to_string())?;
+    Ok(CompiledAgentScriptSource {
+        artifact,
+        semantic_index,
+    })
 }
 
 fn project_compile_message(error: &ProjectCompileError) -> String {
@@ -225,10 +287,11 @@ pub(super) fn agent_script_build_report(
 ) -> Result<AgentScriptBuildReport, String> {
     let source = fs::read_to_string(&options.path)
         .map_err(|error| format!("failed to read {}: {error}", options.path.display()))?;
-    let project = agent_script_project_index(&options.signals)?;
+    let target = agent_script_standalone_compile_target(&options.signals)?;
     let compiled =
-        compile_agent_script_source(&options.path, source, &options.controller_entry, &project)?;
+        compile_agent_script_source(&options.path, source, &options.controller_entry, &target)?;
     let bytes = compiled
+        .artifact
         .bundle
         .to_json_bytes()
         .map_err(|error| error.to_string())?;
@@ -238,18 +301,23 @@ pub(super) fn agent_script_build_report(
         output: options.output.display().to_string(),
         ok: true,
         agent_entries: 1,
-        entry_id: Some(compiled.manifest.entry_id.as_str().to_owned()),
-        controller_id: Some(compiled.manifest.controller_id.as_str().to_owned()),
-        bundle_kind: Some(compiled.bundle.bundle_kind.to_string()),
-        bytecode_instructions: compiled.bundle.manifest.runtime.bytecode_instructions,
+        entry_id: Some(compiled.artifact.manifest.entry_id.as_str().to_owned()),
+        controller_id: Some(compiled.artifact.manifest.controller_id.as_str().to_owned()),
+        bundle_kind: Some(compiled.artifact.bundle.bundle_kind.to_string()),
+        bytecode_instructions: compiled
+            .artifact
+            .bundle
+            .manifest
+            .runtime
+            .bytecode_instructions,
         bytes: bytes.len(),
         error: None,
     })
 }
 
-pub(super) fn agent_script_compile_project_index(
+fn agent_script_compile_target(
     options: &AgentScriptRunOptions,
-) -> Result<ProjectSemanticIndex, String> {
+) -> Result<AgentScriptCompileTarget, String> {
     #[cfg(feature = "native-capture")]
     if agent_script_run_uses_native_session(options) {
         let selection =
@@ -259,21 +327,39 @@ pub(super) fn agent_script_compile_project_index(
                 })?;
         let checked = load_and_check_selection(&selection, None)
             .map_err(|code| format!("failed to check native source for Agent Script: {code:?}"))?;
-        let mut project = project_semantic_index_from_hir(
-            &checked.hir,
-            ProgramHash::new(format!("native-source:{}", selection.path().display())),
-            &checked.source_document,
-        )
-        .map_err(|error| error.to_string())?;
+        let typecheck_environment = Arc::new(
+            checked
+                .compiled
+                .registered_environment()
+                .typecheck_env()
+                .clone(),
+        );
+        let mut project = checked.compiled.semantic_index().as_ref().clone();
         for signal in &options.signals {
             let id = SemaPublicId::try_new(signal.id.clone()).map_err(|error| error.to_string())?;
-            if project.entity(&id).is_none() {
+            let identity = ProjectEntityId::public(id.clone());
+            if project.entity(&identity).is_none() {
                 project = project.with_entity(agent_script_signal_symbol(signal, id));
             }
         }
-        return Ok(project);
+        let target_entities = project.entities().values().cloned().collect();
+        return Ok(AgentScriptCompileTarget {
+            typecheck_environment,
+            target_entities,
+            accepted_index: Some(Arc::new(project)),
+        });
     }
-    agent_script_project_index(&options.signals)
+    agent_script_standalone_compile_target(&options.signals)
+}
+
+pub(super) fn agent_script_standalone_compile_target(
+    signals: &[AgentScriptSignalArg],
+) -> Result<AgentScriptCompileTarget, String> {
+    Ok(AgentScriptCompileTarget {
+        typecheck_environment: Arc::new(TypeCheckEnv::standard()),
+        target_entities: agent_script_signal_symbols(signals)?,
+        accepted_index: None,
+    })
 }
 
 pub(super) fn write_agent_bundle(path: &Path, bytes: &[u8]) -> Result<(), String> {
@@ -298,7 +384,7 @@ pub(super) fn agent_script_check_command(
         eprintln!("error: failed to read {}: {error}", options.path.display());
         ExitCode::FAILURE
     })?;
-    let project = agent_script_project_index(&[]).map_err(|error| {
+    let target = agent_script_standalone_compile_target(&[]).map_err(|error| {
         eprintln!("error: {error}");
         ExitCode::FAILURE
     })?;
@@ -306,7 +392,7 @@ pub(super) fn agent_script_check_command(
         &options.path,
         source,
         &options.controller_entry,
-        &project,
+        &target,
     ) {
         Ok(_) => AgentScriptCheckReport {
             path: options.path.display().to_string(),
@@ -354,7 +440,15 @@ pub(super) struct AgentScriptRunReport {
     pub(super) blobs_written: usize,
     pub(super) blob_bytes: u64,
     pub(super) responses: Vec<AgentHostResponse>,
+    pub(super) assertion_diagnostics: Vec<AgentScriptRuntimeDiagnostic>,
     pub(super) error: Option<String>,
+}
+
+#[derive(serde::Serialize)]
+pub(super) struct AgentScriptRuntimeDiagnostic {
+    pub(super) code: &'static str,
+    pub(super) message: String,
+    pub(super) identity: &'static str,
 }
 
 pub(in crate::app) struct AgentScriptRunInput {
@@ -364,6 +458,10 @@ pub(in crate::app) struct AgentScriptRunInput {
     pub(super) project_entities: Vec<RequiredEntity>,
     pub(super) project_graph: AgentProjectGraph,
     pub(super) bundle: ArcweftBundle,
+    /// Present only when this process compiled the exact bundle generation.
+    /// Decoded bundles intentionally retain persisted-only diagnostics.
+    pub(super) execution_diagnostics:
+        Option<Arc<arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext>>,
 }
 
 pub(super) struct AgentScriptDebugRunFinishContext<'a> {
@@ -467,6 +565,7 @@ pub(super) fn agent_script_run_command(
             blobs_written: 0,
             blob_bytes: 0,
             responses: Vec::new(),
+            assertion_diagnostics: Vec::new(),
             error: Some(error),
         },
     };
@@ -477,6 +576,9 @@ pub(super) fn agent_script_run_command(
             "{}: ok ({} step(s), {} host call(s))",
             report.path, report.steps, report.host_calls
         );
+        for diagnostic in &report.assertion_diagnostics {
+            eprintln!("error[{}]: {}", diagnostic.code, diagnostic.message);
+        }
     } else if let Some(error) = &report.error {
         eprintln!("{}: {error}", report.path);
     }
@@ -507,19 +609,20 @@ pub(super) fn agent_script_run_source_input(
 ) -> Result<AgentScriptRunInput, String> {
     let source = fs::read_to_string(&options.path)
         .map_err(|error| format!("failed to read {}: {error}", options.path.display()))?;
-    let project = agent_script_compile_project_index(options)?;
-    let program_hash = project.program_hash().as_str().to_owned();
-    let project_entities = agent_project_entities(&project)?;
-    let project_graph = agent_project_graph(&project)?;
+    let target = agent_script_compile_target(options)?;
     let compiled =
-        compile_agent_script_source(&options.path, source, &options.controller_entry, &project)?;
+        compile_agent_script_source(&options.path, source, &options.controller_entry, &target)?;
+    let program_hash = compiled.semantic_index.program_hash().as_str().to_owned();
+    let project_entities = agent_project_entities(&compiled.semantic_index)?;
+    let project_graph = agent_project_graph(&compiled.semantic_index)?;
     Ok(AgentScriptRunInput {
         path: options.path.display().to_string(),
         agent_entries: 1,
         program_hash,
         project_entities,
         project_graph,
-        bundle: compiled.bundle,
+        execution_diagnostics: Some(Arc::clone(&compiled.artifact.execution_diagnostics)),
+        bundle: compiled.artifact.bundle,
     })
 }
 
@@ -538,10 +641,32 @@ pub(super) fn agent_script_run_bundle_input(
             bundle.bundle_kind
         ));
     }
-    let project = agent_script_compile_project_index(options)?;
-    let program_hash = project.program_hash().as_str().to_owned();
-    let project_entities = agent_project_entities(&project)?;
-    let project_graph = agent_project_graph(&project)?;
+    let target = agent_script_compile_target(options)?;
+    let manifest = bundle
+        .agent
+        .as_ref()
+        .expect("agent_controller bundles retain an Agent artifact manifest");
+    let (program_hash, project_entities, project_graph) =
+        if let Some(project) = target.accepted_index.as_deref() {
+            (
+                project.program_hash().as_str().to_owned(),
+                agent_project_entities(project)?,
+                agent_project_graph(project)?,
+            )
+        } else {
+            let entities =
+                agent_project::agent_required_entities_from_symbols(target.target_entities.iter())
+                    .map_err(|error| error.to_string())?;
+            (
+                manifest.project_binding.program_hash.as_str().to_owned(),
+                if entities.is_empty() {
+                    manifest.project_binding.required_entities.clone()
+                } else {
+                    entities
+                },
+                AgentProjectGraph::default(),
+            )
+        };
     let agent_entries = usize::from(bundle.agent.is_some());
     Ok(AgentScriptRunInput {
         path: path.display().to_string(),
@@ -549,6 +674,7 @@ pub(super) fn agent_script_run_bundle_input(
         program_hash,
         project_entities,
         project_graph,
+        execution_diagnostics: None,
         bundle,
     })
 }
@@ -669,7 +795,8 @@ pub(super) fn agent_script_run_report_from_result(
             trace_path,
             trace_records.len(),
             blob_report,
-        ),
+            input.execution_diagnostics.as_deref(),
+        )?,
         (Err(error), Ok(trace_path), Ok(blob_report)) => agent_script_run_error_report(
             &input.path,
             input.agent_entries,
@@ -942,6 +1069,10 @@ pub(super) fn agent_script_finish_debug_run(
         serde_json::json!(report.events_emitted),
     );
     run_metadata.insert(
+        "assertion_diagnostics".to_owned(),
+        serde_json::json!(&report.assertion_diagnostics),
+    );
+    run_metadata.insert(
         "trace_records".to_owned(),
         serde_json::json!(report.trace_records),
     );
@@ -1094,8 +1225,37 @@ pub(super) fn agent_script_run_success_report(
     trace_path: Option<String>,
     trace_records: usize,
     blob_report: AgentBlobWriteReport,
-) -> AgentScriptRunReport {
-    AgentScriptRunReport {
+    execution_diagnostics: Option<
+        &arcweft_compiler::runtime_diagnostics::ExecutionDiagnosticContext,
+    >,
+) -> Result<AgentScriptRunReport, String> {
+    let assertion_diagnostics = run
+        .assertion_failures
+        .iter()
+        .map(|failure| {
+            let diagnostic = if let Some(context) = execution_diagnostics {
+                let fault =
+                    context
+                        .project_assertion_failure(failure.clone())
+                        .map_err(|error| {
+                            format!("fresh Agent assertion identity projection failed: {error}")
+                        })?;
+                project_runtime_assertion_fault(&fault)
+            } else {
+                project_persisted_assertion_failure(failure, None)
+            };
+            Ok(AgentScriptRuntimeDiagnostic {
+                code: diagnostic.code(),
+                message: diagnostic.message().to_owned(),
+                identity: if execution_diagnostics.is_some() {
+                    "session"
+                } else {
+                    "persisted_only"
+                },
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(AgentScriptRunReport {
         path: path.to_owned(),
         ok: true,
         agent_entries,
@@ -1110,8 +1270,9 @@ pub(super) fn agent_script_run_success_report(
         blobs_written: blob_report.count,
         blob_bytes: blob_report.bytes,
         responses: run.responses,
+        assertion_diagnostics,
         error: None,
-    }
+    })
 }
 
 pub(super) fn agent_script_run_error_report(
@@ -1137,6 +1298,7 @@ pub(super) fn agent_script_run_error_report(
         blobs_written: blob_report.count,
         blob_bytes: blob_report.bytes,
         responses: Vec::new(),
+        assertion_diagnostics: Vec::new(),
         error: Some(error),
     }
 }
@@ -1793,16 +1955,6 @@ pub(super) fn write_agent_trace(path: &Path, records: &[AgentTraceRecord]) -> Re
     fs::write(path, bytes).map_err(|error| format!("failed to write {}: {error}", path.display()))
 }
 
-pub(super) fn agent_script_project_index(
-    signals: &[AgentScriptSignalArg],
-) -> Result<ProjectSemanticIndex, String> {
-    let mut project = ProjectSemanticIndex::new(ProgramHash::new("cli-agent-run"));
-    for signal in agent_script_signal_symbols(signals)? {
-        project = project.with_entity(signal);
-    }
-    Ok(project)
-}
-
 pub(super) fn agent_project_entities(
     project: &ProjectSemanticIndex,
 ) -> Result<Vec<RequiredEntity>, String> {
@@ -1847,7 +1999,7 @@ pub(super) fn agent_script_signal_symbol(
             .expect("the empty range belongs to the generated document"),
     );
     EntitySymbol::new(
-        id,
+        ProjectEntityId::public(id),
         EntityType::new(EntityKind::Signal, Some(signal.ty.clone())),
         source,
         SemanticHash::new(format!("cli-signal:{}", signal.id)),
@@ -2033,25 +2185,77 @@ pub(super) fn agent_value_to_json(value: &AgentValue) -> serde_json::Value {
 #[cfg(test)]
 mod removed_role_tests {
     use super::*;
+    use arcweft_core::{
+        effect::{
+            RuntimeAssertion, RuntimeAssertionFailure, RuntimeAssertionGuardId,
+            RuntimeAssertionProfile,
+        },
+        engine::{FlowExit, FlowFiberStatus},
+    };
 
     #[test]
     fn awfagent_compiler_consumer_rejects_removed_role_declarations() {
+        let target = agent_script_standalone_compile_target(&[]).expect("standalone target");
         for source in [
             "state GameState {\n    value: i32\n}\n",
             "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
             "agent @agent.smoke smoke() {\n    Ok(())\n}\n",
         ] {
-            let error = compile_agent_script_source(
+            let Err(error) = compile_agent_script_source(
                 Path::new("removed.awfagent"),
                 source.to_owned(),
                 "entry.agent.main",
-                &ProjectSemanticIndex::new(ProgramHash::new("removed-role-test")),
-            )
-            .expect_err("removed declaration must fail the .awfagent compiler consumer");
+                &target,
+            ) else {
+                panic!("removed declaration must fail the .awfagent compiler consumer");
+            };
             assert!(
                 error.starts_with("parse:"),
                 "removed declaration must fail at parse, got: {error}"
             );
         }
+    }
+
+    #[test]
+    fn decoded_agent_bundle_projects_persisted_runtime_assertion_without_changing_status() {
+        let failure = RuntimeAssertionFailure::new(RuntimeAssertion::new(
+            RuntimeAssertionGuardId::try_from_bytes([0x73; 16]).expect("fixture assertion guard"),
+            "ready".to_owned(),
+            "runtime condition failed".to_owned(),
+            RuntimeAssertionProfile::Always,
+        ));
+        let report = agent_script_run_success_report(
+            "assertion.awfagent",
+            1,
+            AgentControllerRunReport {
+                steps: 1,
+                host_calls: 0,
+                responses: Vec::new(),
+                assertion_failures: vec![failure],
+                events_emitted: 0,
+                final_status: Some(FlowFiberStatus::Done(FlowExit::Return("done".to_owned()))),
+            },
+            None,
+            0,
+            AgentBlobWriteReport::default(),
+            None,
+        )
+        .expect("persisted assertion diagnostic projects");
+
+        assert!(report.ok);
+        assert_eq!(report.assertion_diagnostics.len(), 1);
+        assert_eq!(
+            report.assertion_diagnostics[0].code,
+            "runtime.assertion_failed"
+        );
+        assert_eq!(
+            report.assertion_diagnostics[0].message,
+            "runtime condition failed"
+        );
+        assert_eq!(report.assertion_diagnostics[0].identity, "persisted_only");
+        assert_eq!(
+            report.final_status.as_deref(),
+            Some("Done(Return(\"done\"))")
+        );
     }
 }

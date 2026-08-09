@@ -2,7 +2,7 @@
 
 use arcweft_source::SourceRange;
 
-use super::cursor::{ShadowDocumentParser, is_trivia_kind};
+use super::cursor::{DocumentParser, is_trivia_kind};
 use super::declaration::{emit_outer_prefixes, emit_visibility};
 use super::expression::{emit_entity_reference, emit_expression};
 use super::lexer::LexToken;
@@ -29,7 +29,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::ResourceDeclarationItem, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -54,7 +54,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_explicit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_explicit_public_id(parser: &mut DocumentParser<'_, '_>) {
     if parser.current_kind() != Some(SyntaxKind::EntityReferenceToken) {
         return;
     }
@@ -75,7 +75,7 @@ fn emit_explicit_public_id(parser: &mut ShadowDocumentParser<'_, '_>) {
     }
 }
 
-fn emit_resource_name(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_resource_name(parser: &mut DocumentParser<'_, '_>) {
     if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
         parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
         parser.bump();
@@ -97,7 +97,7 @@ fn emit_resource_name(parser: &mut ShadowDocumentParser<'_, '_>) {
     )));
 }
 
-fn emit_colon(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_colon(parser: &mut DocumentParser<'_, '_>) {
     parser.start(SyntaxKind::ColonNode, SyntaxRole::Colon);
     if parser.at(":") {
         parser.bump();
@@ -118,8 +118,8 @@ fn emit_colon(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_resource_type(parser: &mut ShadowDocumentParser<'_, '_>) {
-    let body = find_top_level_boundary(parser, parser.cursor(), &["{"]);
+fn emit_resource_type(parser: &mut DocumentParser<'_, '_>) {
+    let body = find_top_level_boundary(parser, parser.cursor(), token_count(parser), &["{"]);
     let end = trimmed_end(parser, parser.cursor(), body);
     if parser.cursor() >= end {
         let at = parser.current_offset();
@@ -147,7 +147,7 @@ fn emit_resource_type(parser: &mut ShadowDocumentParser<'_, '_>) {
     bump_until(parser, end);
 }
 
-fn emit_resource_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_resource_body(parser: &mut DocumentParser<'_, '_>) {
     if !parser.at("{") {
         let at = parser.current_offset();
         parser.start(SyntaxKind::MissingBody, SyntaxRole::Body);
@@ -195,7 +195,7 @@ fn emit_resource_body(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_resource_fields(parser: &mut ShadowDocumentParser<'_, '_>, close: usize) {
+fn emit_resource_fields(parser: &mut DocumentParser<'_, '_>, close: usize) {
     let mut ordinal = 0_u16;
     while parser.cursor() < close {
         parser.bump_trivia();
@@ -217,7 +217,7 @@ fn emit_resource_fields(parser: &mut ShadowDocumentParser<'_, '_>, close: usize)
     }
 }
 
-fn emit_resource_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, ordinal: u16) {
+fn emit_resource_field(parser: &mut DocumentParser<'_, '_>, end: usize, ordinal: u16) {
     let field_start = parser.cursor();
     parser.start(
         SyntaxKind::ResourceFieldInitializer,
@@ -248,7 +248,7 @@ fn emit_resource_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, or
     }
     bump_trivia_before(parser, significant_end);
 
-    let equals = find_top_level_boundary(parser, parser.cursor(), &["="]).min(significant_end);
+    let equals = find_top_level_boundary(parser, parser.cursor(), significant_end, &["="]);
     if equals == significant_end || token_text(parser, equals) != Some("=") {
         emit_missing_assignment(parser);
         emit_malformed_field(parser, field_start, significant_end);
@@ -306,7 +306,7 @@ fn emit_resource_field(parser: &mut ShadowDocumentParser<'_, '_>, end: usize, or
     parser.finish();
 }
 
-fn emit_missing_field_name(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_field_name(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::MissingName, SyntaxRole::Name);
     parser.push(SyntaxEvent::MissingToken {
@@ -316,7 +316,7 @@ fn emit_missing_field_name(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_missing_assignment(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_missing_assignment(parser: &mut DocumentParser<'_, '_>) {
     let at = parser.current_offset();
     parser.start(SyntaxKind::EqualsNode, SyntaxRole::Equals);
     parser.push(SyntaxEvent::MissingToken {
@@ -326,7 +326,7 @@ fn emit_missing_assignment(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_malformed_field(parser: &mut ShadowDocumentParser<'_, '_>, start: usize, end: usize) {
+fn emit_malformed_field(parser: &mut DocumentParser<'_, '_>, start: usize, end: usize) {
     parser.push(SyntaxEvent::Diagnostic(PendingSyntaxDiagnostic::new(
         "syntax.resource.malformed_field",
         token_range(parser, start, end),
@@ -334,11 +334,7 @@ fn emit_malformed_field(parser: &mut ShadowDocumentParser<'_, '_>, start: usize,
     )));
 }
 
-fn resource_field_boundary(
-    parser: &ShadowDocumentParser<'_, '_>,
-    start: usize,
-    end: usize,
-) -> usize {
+fn resource_field_boundary(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> usize {
     let mut paren_depth = 0_usize;
     let mut bracket_depth = 0_usize;
     let mut brace_depth = 0_usize;
@@ -381,7 +377,7 @@ fn resource_field_boundary(
 }
 
 fn opens_top_level_type_application(
-    parser: &ShadowDocumentParser<'_, '_>,
+    parser: &DocumentParser<'_, '_>,
     open: usize,
     end: usize,
 ) -> bool {
@@ -434,7 +430,7 @@ fn opens_top_level_type_application(
 }
 
 fn next_significant_text<'source>(
-    parser: &ShadowDocumentParser<'source, '_>,
+    parser: &DocumentParser<'source, '_>,
     start: usize,
     end: usize,
 ) -> Option<&'source str> {
@@ -446,13 +442,13 @@ fn next_significant_text<'source>(
     })
 }
 
-fn bump_trivia_before(parser: &mut ShadowDocumentParser<'_, '_>, end: usize) {
+fn bump_trivia_before(parser: &mut DocumentParser<'_, '_>, end: usize) {
     while parser.cursor() < end && parser.current_kind().is_some_and(is_trivia_kind) {
         parser.bump();
     }
 }
 
-fn token_range(parser: &ShadowDocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
+fn token_range(parser: &DocumentParser<'_, '_>, start: usize, end: usize) -> SourceRange {
     let start_offset = parser
         .token_at(start)
         .map_or_else(|| parser.current_offset(), |token| token.range().start());

@@ -2,12 +2,12 @@
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::{
     FixedParameterGrammar, emit_callable_contract_clauses, emit_declaration_identity,
     emit_extra_parameter_group_recovery, emit_fixed_parameters, emit_generic_parameters,
-    emit_missing_parameter_group, emit_outer_prefixes, emit_return_type, emit_visibility,
-    emit_where_clause,
+    emit_missing_parameter_group, emit_outer_prefixes, emit_proof_outer_prefixes, emit_return_type,
+    emit_visibility, emit_where_clause,
 };
 use super::expression::emit_expression;
 use super::lexer::LexToken;
@@ -29,9 +29,13 @@ pub(super) fn emit_declaration(
         kind,
         SyntaxKind::PredicateItem | SyntaxKind::ProofItem
     ));
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     let owner = parser.start_projected_owner(kind, role);
-    emit_outer_prefixes(&mut parser);
+    if kind == SyntaxKind::ProofItem {
+        emit_proof_outer_prefixes(&mut parser);
+    } else {
+        emit_outer_prefixes(&mut parser);
+    }
     parser.bump_trivia();
     emit_visibility(&mut parser);
     parser.bump_trivia();
@@ -43,7 +47,7 @@ pub(super) fn emit_declaration(
     };
     let keyword_range = parser.current().map_or_else(
         || SourceRange::new(parser.current_offset(), parser.current_offset()),
-        |token| token.range(),
+        super::lexer::LexToken::range,
     );
     if parser.at(keyword) {
         parser.bump();
@@ -103,7 +107,7 @@ pub(super) fn emit_declaration(
     parser.finish();
 }
 
-fn emit_body(parser: &mut ShadowDocumentParser<'_, '_>, item_kind: SyntaxKind, keyword: &str) {
+fn emit_body(parser: &mut DocumentParser<'_, '_>, item_kind: SyntaxKind, keyword: &str) {
     let body_kind = if item_kind == SyntaxKind::PredicateItem {
         SyntaxKind::PredicateBody
     } else {

@@ -1,16 +1,23 @@
-use std::collections::BTreeSet;
-
-use arcweft_lang_hir::symbol::{
-    ExternalSymbol,
-    nominal::{ProjectNominalDeclaration, ProjectNominalDeclarationId},
+use arcweft_lang_hir::{
+    leaf::{HirPath, HirPathRoot, HirPathSegment},
+    symbol::{
+        ExternalSymbol,
+        nominal::{ProjectNominalDeclaration, ProjectNominalDeclarationId},
+    },
 };
 use arcweft_lang_syntax::{
-    ast::{common::TextRange, module_path::ModulePathRoot},
-    types::{TypePath, TypeRef},
+    ast::module_path::{CanonicalModulePath, ModulePathRoot},
+    types::TypePath,
 };
 use arcweft_source::SourceSpan;
 
-use crate::{env::nominal::OpenNominalArity, types::TypePoisonId};
+use crate::{
+    env::nominal::{
+        OpenNominalArity, OpenNominalEnvironment, OpenNominalPattern, OpenNominalRule,
+        OpenNominalScope,
+    },
+    types::TypePoisonId,
+};
 
 use super::{
     NameResult, NominalDiagnosticRelated, NominalTypeDiagnostic, NominalTypeDiagnosticKind,
@@ -28,15 +35,109 @@ pub(super) enum ProjectNameLookup {
     Failed(Box<NameResult>),
 }
 
-pub(super) fn direct_name(path: &TypePath) -> Option<&str> {
-    direct_segment(path).map(arcweft_lang_syntax::ast::symbol_path::ProjectSymbolSegment::as_str)
+pub(super) fn direct_name(path: &HirPath) -> Option<&str> {
+    if path.root() != HirPathRoot::ImplicitCrate {
+        return None;
+    }
+    let [segment] = path.segments() else {
+        return None;
+    };
+    Some(match segment {
+        HirPathSegment::Identifier(name) => name.as_str(),
+        HirPathSegment::ProjectSymbol(name) => name.as_str(),
+    })
 }
 
-pub(super) fn direct_segment(
-    path: &TypePath,
-) -> Option<&arcweft_lang_syntax::ast::symbol_path::ProjectSymbolSegment> {
-    (path.root() == ModulePathRoot::ImplicitCrate && path.segments().len() == 1)
-        .then(|| &path.segments()[0])
+pub(super) fn hir_path_matches_type_path(actual: &HirPath, expected: &TypePath) -> bool {
+    let root_matches = matches!(
+        (actual.root(), expected.root()),
+        (HirPathRoot::ImplicitCrate, ModulePathRoot::ImplicitCrate)
+            | (HirPathRoot::Crate, ModulePathRoot::Crate)
+            | (HirPathRoot::SelfModule, ModulePathRoot::SelfModule)
+    ) || matches!(
+        (actual.root(), expected.root()),
+        (HirPathRoot::Super { depth: actual }, ModulePathRoot::Super(expected)) if actual == expected
+    );
+    root_matches
+        && actual.segments().len() == expected.segments().len()
+        && actual
+            .segments()
+            .iter()
+            .zip(expected.segments())
+            .all(|(actual, expected)| {
+                let actual = match actual {
+                    HirPathSegment::Identifier(name) => name.as_str(),
+                    HirPathSegment::ProjectSymbol(name) => name.as_str(),
+                };
+                actual == expected.as_str()
+            })
+}
+
+pub(super) fn open_rule_matches_hir(
+    rule: &OpenNominalRule,
+    environment: OpenNominalEnvironment,
+    current_module: &CanonicalModulePath,
+    path: &HirPath,
+    arity: u16,
+) -> bool {
+    scope_matches(rule.scope(), environment, current_module)
+        && pattern_matches(rule.pattern(), path)
+        && rule.arity().contains(arity)
+}
+
+fn scope_matches(
+    scope: &OpenNominalScope,
+    environment: OpenNominalEnvironment,
+    current_module: &CanonicalModulePath,
+) -> bool {
+    match scope {
+        OpenNominalScope::AcceptedWorld => environment == OpenNominalEnvironment::Accepted,
+        OpenNominalScope::DetachedOnly => environment == OpenNominalEnvironment::Detached,
+        OpenNominalScope::ExactModule(module) => current_module == module,
+        OpenNominalScope::ModuleSubtree(root) => {
+            current_module.segments().starts_with(root.segments())
+        }
+    }
+}
+
+fn pattern_matches(pattern: &OpenNominalPattern, path: &HirPath) -> bool {
+    match pattern {
+        OpenNominalPattern::Exact(expected) => hir_path_matches_type_path(path, expected),
+        OpenNominalPattern::Namespace {
+            prefix,
+            min_tail_segments,
+            max_tail_segments,
+        } => hir_path_tail_length(prefix, path).is_some_and(|tail| {
+            usize::from(*min_tail_segments) <= tail && tail <= usize::from(*max_tail_segments)
+        }),
+    }
+}
+
+fn hir_path_tail_length(prefix: &TypePath, path: &HirPath) -> Option<usize> {
+    let root_matches = matches!(
+        (path.root(), prefix.root()),
+        (HirPathRoot::ImplicitCrate, ModulePathRoot::ImplicitCrate)
+            | (HirPathRoot::Crate, ModulePathRoot::Crate)
+            | (HirPathRoot::SelfModule, ModulePathRoot::SelfModule)
+    ) || matches!(
+        (path.root(), prefix.root()),
+        (HirPathRoot::Super { depth: actual }, ModulePathRoot::Super(expected)) if actual == expected
+    );
+    if !root_matches || path.segments().len() < prefix.segments().len() {
+        return None;
+    }
+    let prefix_matches = path
+        .segments()
+        .iter()
+        .zip(prefix.segments())
+        .all(|(actual, expected)| {
+            let actual = match actual {
+                HirPathSegment::Identifier(name) => name.as_str(),
+                HirPathSegment::ProjectSymbol(name) => name.as_str(),
+            };
+            actual == expected.as_str()
+        });
+    prefix_matches.then(|| path.segments().len() - prefix.segments().len())
 }
 
 pub(super) fn open_expectation(arity: OpenNominalArity) -> TypeArityExpectation {
@@ -111,44 +212,6 @@ pub(super) fn diagnostic_kind(failure: &TypeResolutionFailure) -> NominalTypeDia
     }
 }
 
-pub(super) fn collect_recovery_poisons(value: &TypeRef, output: &mut BTreeSet<u32>) {
-    let mut pending = vec![value];
-    while let Some(value) = pending.pop() {
-        match value {
-            TypeRef::Recovery(recovery) => {
-                output.insert(recovery.index());
-            }
-            TypeRef::Tuple(items) | TypeRef::Choice(items) => {
-                pending.extend(items.iter().rev());
-            }
-            TypeRef::Function {
-                params,
-                return_type,
-                ..
-            } => {
-                pending.push(return_type);
-                pending.extend(params.iter().rev());
-            }
-            TypeRef::Generic { args, .. } => pending.extend(args.iter().rev()),
-            TypeRef::TraitBound(bound) => {
-                pending.extend(
-                    bound
-                        .associated()
-                        .iter()
-                        .rev()
-                        .map(arcweft_lang_syntax::types::AssociatedTypeBinding::value),
-                );
-                pending.extend(bound.args().iter().rev());
-            }
-            TypeRef::Projection { subject, .. } | TypeRef::Slice(subject) => {
-                pending.push(subject);
-            }
-            TypeRef::Reference(reference) => pending.push(reference.referent()),
-            TypeRef::Never | TypeRef::ConstInt(_) | TypeRef::Path(_) => {}
-        }
-    }
-}
-
 pub(super) fn canonical_cycle(
     mut cycle: Vec<ProjectNominalDeclarationId>,
 ) -> Box<[ProjectNominalDeclarationId]> {
@@ -168,10 +231,7 @@ pub(super) fn canonical_poisons(
 }
 
 pub(super) fn evidence_from_project(source: SourceSpan) -> TypeSourceEvidence {
-    TypeSourceEvidence::accepted(
-        TextRange::new(source.range().start(), source.range().end()),
-        source,
-    )
+    TypeSourceEvidence::accepted(source.range(), source)
 }
 
 pub(super) fn diagnostic_ordering(

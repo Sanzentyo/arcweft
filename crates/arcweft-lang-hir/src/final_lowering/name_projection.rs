@@ -5,7 +5,7 @@ use arcweft_lang_syntax::name::{SyntaxName, SyntaxNameIssue};
 use crate::expr::HirRecoveredName;
 use crate::identity::HirLimit;
 use crate::leaf::{HirName, HirNameInvariantError};
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 
 use super::require_limit;
 

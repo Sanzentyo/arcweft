@@ -1,0 +1,10 @@
+error[E0624]: associated function `new` is private
+ --> tests/ui/typed_node_constructor_is_private.rs:4:32
+  |
+4 |     AstNode::<SourceFileKind>::new(handle).unwrap()
+  |                                ^^^ private associated function
+  |
+ ::: src/attachment/node.rs
+  |
+  |     pub(super) fn new(syntax: SyntaxNodeHandle) -> Result<Self, SyntaxLookupError> {
+  |     ------------------------------------------------------------------------------ private associated function defined here

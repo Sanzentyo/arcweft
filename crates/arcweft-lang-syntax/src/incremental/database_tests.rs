@@ -1,4 +1,4 @@
-use super::{FragmentAttachmentFailure, ParseFailure, ParsedSource, SyntaxDatabase};
+use super::{ParseFailure, ParsedSource, SyntaxDatabase};
 use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceEdit, SourceName, SourceRange};
 use core::num::NonZeroU64;
@@ -8,13 +8,21 @@ use std::sync::Arc;
 
 use crate::assertion::AssertionMode;
 use crate::attachment::node::{
-    AssertionStatementKind, PathExpressionKind, PathTypeKind, TypedBindingPatternKind,
+    AssertionStatementKind, BinaryExpressionKind, BindingPatternKind, BlockExpressionKind,
+    CallArgumentKind, CallExpressionKind, CloseAngleKind, CloseBraceKind, CloseParenKind,
+    ColonKind, EnsuresClauseKind, ExpressionBodyKind, FixedParameterGroupKind,
+    GenericParameterGroupKind, GenericParameterKind, LetStatementKind, LiteralExpressionKind,
+    NameDefinitionKind, OmittedBlockTailKind, OpenAngleKind, OpenBraceKind, OpenParenKind,
+    ParameterKind, PathExpressionKind, PathKind, PathTypeKind, PredicateBlockKind,
+    PredicateBodyKind, ProofBlockKind, ProofBodyKind, ProofCallStatementKind, ProofItemKind,
+    RequiresClauseKind, ReturnTypeKind, ThinArrowKind, TypeParameterKind, TypedBindingPatternKind,
+    WhereClauseKind, WherePredicateKind,
 };
 use crate::attachment::{
     AttachedAssertionMode, AttachedExternCapabilityBody, AttachedPatternComponent,
-    AttachedTypeFamily, PatternComponentRole, PatternLiteralPart, PredicateItemKind,
-    SourceFileKind, SyntaxAccessError, SyntaxLineageId, SyntaxLookupError, SyntaxNodeHandle,
-    TypedItemNode, VariantPatternHeadPart,
+    AttachedTypeFamily, AttachmentFailure, BlockTailNode, PatternComponentRole, PatternLiteralPart,
+    PredicateItemKind, SourceFileKind, SyntaxAccessError, SyntaxLineageId, SyntaxLookupError,
+    SyntaxNodeHandle, SyntaxNodeId, TypedItemNode, VariantPatternHeadPart,
 };
 use crate::expressions::{ExpressionComponentRole, ExpressionLiteralPart, ExpressionProjection};
 use crate::grammar::kinds::SyntaxKind as GrammarKind;
@@ -27,6 +35,8 @@ use crate::parser::unbound_fragment::{
 use crate::patterns::{PatternSyntaxFamily, PatternTypeChildRelation};
 use crate::types::TypeRefComponentRole;
 
+#[path = "database_tests/atomicity.rs"]
+mod atomicity;
 #[path = "database_tests/choice.rs"]
 mod choice;
 
@@ -68,7 +78,7 @@ fn attach_exact_fragment<K: FragmentKind>(
         SourceRange::new(start, start + fragment_text.len()),
     );
     let attached = database
-        .attach_fragment(snapshot, document, &span, fragment)
+        .attach_fragment(snapshot.clone(), Arc::clone(document), span, fragment)
         .expect("complete exact-byte fragment attaches");
     assert_eq!(attached.root().kind(), expected_kind);
     assert_eq!(
@@ -76,10 +86,16 @@ fn attach_exact_fragment<K: FragmentKind>(
         SourceRange::new(start, start + fragment_text.len())
     );
     assert_eq!(
-        attached.syntax().root_handle().rowan().to_string(),
+        attached
+            .root()
+            .syntax()
+            .parent()
+            .expect("fragment source-file root")
+            .rowan()
+            .to_string(),
         document.text()
     );
-    assert_eq!(attached.syntax().document().identity(), document.identity());
+    assert_eq!(attached.root().source_span().source(), document.identity());
     attached
 }
 
@@ -98,7 +114,7 @@ fn source_edit(
 }
 
 #[test]
-fn no_op_replacements_return_the_exact_current_snapshot() {
+fn syntax_no_op_returns_exact_arc_and_consumes_nothing() {
     let name = SourceName::path("story.arcw");
     let mut database = syntax_database();
     let document = source_document(&name, "flow story {}\n");
@@ -110,6 +126,15 @@ fn no_op_replacements_return_the_exact_current_snapshot() {
         )
         .expect("initial parse");
     let initial_stats = initial.data().stats();
+    let initial_diagnostics = initial.diagnostics().to_vec();
+    let initial_ids = identity_ids(&initial);
+    let next_lineage = database.transaction.next_lineage_for_test();
+    let next_node = database
+        .lineages
+        .get(&name)
+        .expect("committed lineage")
+        .transaction
+        .next_node_for_test();
     assert!(Arc::ptr_eq(initial.data().document(), &document));
     let unchanged = database
         .reparse(
@@ -120,15 +145,51 @@ fn no_op_replacements_return_the_exact_current_snapshot() {
         .expect("no-op reparse");
     assert!(initial.is_same_snapshot(&unchanged));
     assert!(Arc::ptr_eq(initial.data(), unchanged.data()));
+    assert!(Arc::ptr_eq(initial.attached(), unchanged.attached()));
+    assert!(Arc::ptr_eq(
+        initial.document_lease(),
+        unchanged.document_lease()
+    ));
+    assert_eq!(unchanged.snapshot_id(), initial.snapshot_id());
+    assert_eq!(unchanged.diagnostics(), initial_diagnostics);
+    assert_eq!(identity_ids(&unchanged), initial_ids);
     assert_eq!(unchanged.data().stats(), initial_stats);
     assert_eq!(unchanged.source_snapshot_id().generation().get(), 1);
+    assert_eq!(database.transaction.next_lineage_for_test(), next_lineage);
+    assert_eq!(
+        database
+            .lineages
+            .get(&name)
+            .expect("unchanged lineage")
+            .transaction
+            .next_node_for_test(),
+        next_node
+    );
 
     let empty = database
         .reparse(&initial, &[], crate::parser::ParseOptions::default())
         .expect("an empty edit transaction is a no-op");
     assert!(initial.is_same_snapshot(&empty));
     assert!(Arc::ptr_eq(initial.data(), empty.data()));
+    assert!(Arc::ptr_eq(initial.attached(), empty.attached()));
+    assert!(Arc::ptr_eq(
+        initial.document_lease(),
+        empty.document_lease()
+    ));
+    assert_eq!(empty.snapshot_id(), initial.snapshot_id());
+    assert_eq!(empty.diagnostics(), initial_diagnostics);
+    assert_eq!(identity_ids(&empty), initial_ids);
     assert_eq!(empty.data().stats(), initial_stats);
+    assert_eq!(database.transaction.next_lineage_for_test(), next_lineage);
+    assert_eq!(
+        database
+            .lineages
+            .get(&name)
+            .expect("unchanged lineage")
+            .transaction
+            .next_node_for_test(),
+        next_node
+    );
 }
 
 #[test]
@@ -147,6 +208,15 @@ fn current_returns_only_the_registered_lineage_snapshot() {
         .current(initial.snapshot_id().lineage())
         .expect("registered lineage has a current snapshot");
     assert!(current.is_same_snapshot(&initial));
+    let named = database
+        .current_for_source(&name)
+        .expect("registered source name has a current snapshot");
+    assert!(named.is_same_snapshot(&initial));
+    assert!(
+        database
+            .current_for_source(&SourceName::path("absent.arcw"))
+            .is_none()
+    );
 
     let foreign = syntax_database();
     assert!(matches!(
@@ -169,7 +239,7 @@ fn current_returns_only_the_registered_lineage_snapshot() {
 }
 
 #[test]
-fn resolve_current_rejects_an_old_generation_before_node_lookup() {
+fn stale_generation_current_resolution_is_typed_error() {
     let name = SourceName::path("resolve-current.arcw");
     let mut database = syntax_database();
     let initial = database
@@ -179,7 +249,9 @@ fn resolve_current_rejects_an_old_generation_before_node_lookup() {
             ParseOptions::default(),
         )
         .expect("initial parse");
-    let old_root = initial.tree().root().clone();
+    let old_name = only_node_with_kind(&initial, GrammarKind::NameDefinition)
+        .cast::<NameDefinitionKind>()
+        .expect("initial typed proof name");
     let current = database
         .reparse(
             &initial,
@@ -193,18 +265,104 @@ fn resolve_current_rejects_an_old_generation_before_node_lookup() {
         .expect("current generation");
 
     assert_eq!(
-        database.resolve_current(&old_root),
+        current.syntax_node(old_name.id()),
+        Err(SyntaxLookupError::MissingNode { id: old_name.id() })
+    );
+    assert_eq!(
+        database.resolve_current(&old_name),
         Err(SyntaxLookupError::StaleGeneration {
             current: current.source_snapshot_id().generation(),
             supplied: initial.source_snapshot_id().generation(),
         })
     );
-    let current_root = current.tree().root().clone();
+    let current_name = only_node_with_kind(&current, GrammarKind::NameDefinition)
+        .cast::<NameDefinitionKind>()
+        .expect("current typed proof name");
+    assert_ne!(current_name.id(), old_name.id());
     assert_eq!(
         database
-            .resolve_current(&current_root)
+            .resolve_current(&current_name)
             .expect("current typed node resolves"),
-        current_root
+        current_name
+    );
+}
+
+#[test]
+fn exact_snapshot_operation_rejects_wrong_snapshot() {
+    let name = SourceName::path("exact-snapshot.arcw");
+    let mut database = syntax_database();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, "proof stable() = ()\n"),
+            ParseOptions::default(),
+        )
+        .expect("initial snapshot");
+    let old_raw = initial.root_syntax();
+    let old_typed = old_raw
+        .cast::<SourceFileKind>()
+        .expect("typed initial source-file root");
+    let current = database
+        .reparse(
+            &initial,
+            &[source_edit(&initial, SourceRange::new(0, 0), "  ")],
+            ParseOptions::default(),
+        )
+        .expect("new source generation");
+    let expected = current.snapshot_id().clone();
+    let actual = initial.snapshot_id().clone();
+
+    assert_eq!(
+        current.resolve_exact(&old_typed),
+        Err(SyntaxLookupError::WrongSnapshot {
+            expected: expected.clone(),
+            actual: actual.clone(),
+        })
+    );
+    assert_eq!(
+        current.resolve_exact_syntax(&old_raw),
+        Err(SyntaxLookupError::WrongSnapshot { expected, actual })
+    );
+
+    let current_raw = current
+        .syntax_node(old_raw.id())
+        .expect("stable identity resolves through the receiver snapshot");
+    assert_eq!(current_raw.id(), old_raw.id());
+    assert_eq!(current_raw.snapshot_id(), current.snapshot_id());
+    assert_eq!(
+        current_raw.range(),
+        SourceRange::new(0, current.source().len())
+    );
+}
+
+#[test]
+fn wrong_typed_kind_returns_kind_mismatch() {
+    let name = SourceName::path("wrong-typed-kind.arcw");
+    let mut database = syntax_database();
+    let parsed = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, "predicate ready() = true\n"),
+            ParseOptions::default(),
+        )
+        .expect("predicate snapshot");
+    let predicate = parsed
+        .items()
+        .expect("typed item inventory")
+        .into_iter()
+        .find_map(|item| match item {
+            TypedItemNode::Predicate(node) => Some(node),
+            _ => None,
+        })
+        .expect("typed Predicate item");
+
+    assert_eq!(
+        parsed.typed_node::<ProofItemKind>(predicate.id()),
+        Err(SyntaxLookupError::KindMismatch {
+            id: predicate.id(),
+            expected: GrammarKind::ProofItem,
+            actual: GrammarKind::PredicateItem,
+        })
     );
 }
 
@@ -236,9 +394,10 @@ fn parsed_source_public_lease_owns_one_typed_source_file_and_all_lowering_famili
     );
     assert!(Arc::ptr_eq(parsed.document_lease(), &document));
 
-    let tree = parsed.tree();
-    let root = tree.root();
     let root_syntax = parsed.root_syntax();
+    let root = parsed
+        .typed_node::<SourceFileKind>(root_syntax.id())
+        .expect("typed source-file root");
     assert_eq!(root.id(), root_syntax.id());
     assert_eq!(root.source_text(), source);
     assert_eq!(root.source_span().source(), document.identity());
@@ -247,7 +406,7 @@ fn parsed_source_public_lease_owns_one_typed_source_file_and_all_lowering_famili
         root.clone()
     );
     assert_eq!(parsed.bind_rowan(root_syntax.rowan()).unwrap(), root_syntax);
-    assert_eq!(tree.items().unwrap().len(), 1);
+    assert_eq!(parsed.items().unwrap().len(), 1);
 
     for (kind, assert_typed) in [
         (GrammarKind::TypedBindingPattern, 0_u8),
@@ -732,7 +891,7 @@ fn extern_capability_member_limit_accepts_exactly_1024_and_rolls_back_one_over()
         )
         .expect("the exact external-capability member limit commits");
     assert_eq!(exact.status(), super::ParseStatus::Clean);
-    let items = exact.tree().items().unwrap();
+    let items = exact.items().unwrap();
     let [TypedItemNode::ExternCapability(capability)] = items.as_slice() else {
         panic!("one typed ExternCapability item")
     };
@@ -800,7 +959,7 @@ fn trait_member_limit_accepts_exactly_1024_and_rolls_back_one_over() {
         )
         .expect("the exact Trait member limit commits");
     assert_eq!(exact.status(), super::ParseStatus::Clean);
-    let items = exact.tree().items().unwrap();
+    let items = exact.items().unwrap();
     let [TypedItemNode::Trait(declaration)] = items.as_slice() else {
         panic!("one typed Trait item")
     };
@@ -1141,7 +1300,11 @@ fn source_generation_exhaustion_rolls_back_the_transaction() {
 }
 
 #[test]
-fn invalid_edits_and_exhausted_allocation_commit_nothing() {
+#[allow(
+    clippy::too_many_lines,
+    reason = "identity exhaustion and rollback form one atomicity proof"
+)]
+fn syntax_identity_exhaustion_is_atomic() {
     let name = SourceName::path("story.arcw");
     let initial_source = "flow story {}\n";
     let addition = "flow final {}\n";
@@ -1162,6 +1325,12 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
         ParseOptions::default(),
     );
     assert!(matches!(invalid, Err(ParseFailure::InvalidEdits(_))));
+    assert!(
+        database
+            .current_for_source(&name)
+            .expect("invalid edit retains current snapshot")
+            .is_same_snapshot(&initial)
+    );
 
     let mut control = syntax_database();
     let control_initial = control
@@ -1222,6 +1391,17 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
             crate::parser::ParseOptions::default(),
         )
         .expect("the final non-zero ID is usable");
+    let accepted_ids = identity_ids(&with_last_id);
+    let accepted_diagnostics = with_last_id.diagnostics().to_vec();
+    let accepted_status = with_last_id.status();
+    let accepted_syntax_stats = with_last_id.syntax_stats();
+    let next_node = database
+        .lineages
+        .get(&name)
+        .expect("accepted lineage")
+        .transaction
+        .next_node_for_test();
+    let next_lineage = database.transaction.next_lineage_for_test();
     let failed = database.reparse(
         &with_last_id,
         &[source_edit(
@@ -1234,13 +1414,31 @@ fn invalid_edits_and_exhausted_allocation_commit_nothing() {
     assert!(matches!(failed, Err(ParseFailure::NodeIdentityExhausted)));
     let current = database.lineages.get(&name).expect("lineage current");
     assert!(current.current.is_same_snapshot(&with_last_id));
+    assert!(Arc::ptr_eq(current.current.data(), with_last_id.data()));
+    assert!(Arc::ptr_eq(
+        current.transaction.current(),
+        with_last_id.data()
+    ));
     assert_eq!(current.current.source_snapshot_id().generation().get(), 2);
+    assert_eq!(current.current.diagnostics(), accepted_diagnostics);
+    assert_eq!(current.current.status(), accepted_status);
+    assert_eq!(current.current.syntax_stats(), accepted_syntax_stats);
+    assert_eq!(identity_ids(&current.current), accepted_ids);
+    assert_eq!(current.transaction.next_node_for_test(), next_node);
+    assert_eq!(database.transaction.next_lineage_for_test(), next_lineage);
 }
 
 #[test]
-fn same_line_descendants_receive_distinct_private_grammar_ids() {
+#[allow(
+    clippy::too_many_lines,
+    reason = "same-line descendant identity cases form one collision matrix"
+)]
+fn same_line_descendants_receive_distinct_syntax_ids() {
     let name = SourceName::path("identity.arcw");
-    let source = "proof distinct((a, b): (Int, Int), c: Int) = a + b + c\n";
+    let source = concat!(
+        "predicate same((a, b): (Int, Int), c: Int) ",
+        "requires a < c ensures b < c = (a + c) == (b + c)\n",
+    );
     let mut database = syntax_database();
     let parsed = database
         .parse_initial(
@@ -1248,7 +1446,7 @@ fn same_line_descendants_receive_distinct_private_grammar_ids() {
             source_document(&name, source),
             crate::parser::ParseOptions::default(),
         )
-        .expect("same-line predicate attaches");
+        .expect("same-line Predicate attaches");
 
     let nodes = parsed.attached().nodes().collect::<Vec<_>>();
     let ids = nodes
@@ -1256,35 +1454,371 @@ fn same_line_descendants_receive_distinct_private_grammar_ids() {
         .map(SyntaxNodeHandle::id)
         .collect::<HashSet<_>>();
     assert_eq!(ids.len(), nodes.len());
-    assert!(
-        nodes
-            .iter()
-            .filter(|node| node.kind() == GrammarKind::Parameter)
-            .count()
-            >= 2
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::FixedParameterGroup,
+        &[SourceRange::new(14, 42)],
     );
-    assert!(
-        nodes
-            .iter()
-            .filter(|node| node.kind() == GrammarKind::BindingPattern)
-            .count()
-            >= 3
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::Parameter,
+        &[SourceRange::new(15, 33), SourceRange::new(35, 41)],
     );
-    assert!(
-        nodes
-            .iter()
-            .filter(|node| node.kind() == GrammarKind::PathType)
-            .count()
-            >= 3
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::TuplePattern,
+        &[SourceRange::new(15, 21)],
     );
-    assert!(
-        nodes
-            .iter()
-            .filter(|node| node.kind() == GrammarKind::PathExpression)
-            .count()
-            >= 2
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::BindingPattern,
+        &[
+            SourceRange::new(16, 17),
+            SourceRange::new(19, 20),
+            SourceRange::new(35, 36),
+        ],
+    );
+    assert_ranges_for_kind(&parsed, GrammarKind::TupleType, &[SourceRange::new(23, 33)]);
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::PathType,
+        &[
+            SourceRange::new(24, 27),
+            SourceRange::new(29, 32),
+            SourceRange::new(38, 41),
+        ],
+    );
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::RequiresClause,
+        &[SourceRange::new(43, 57)],
+    );
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::EnsuresClause,
+        &[SourceRange::new(58, 71)],
+    );
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::PredicateBody,
+        &[SourceRange::new(72, 92)],
+    );
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::ExpressionBody,
+        &[SourceRange::new(72, 92)],
+    );
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::BinaryExpression,
+        &[
+            SourceRange::new(52, 57),
+            SourceRange::new(66, 71),
+            SourceRange::new(74, 92),
+            SourceRange::new(75, 80),
+            SourceRange::new(86, 91),
+        ],
+    );
+    assert_ranges_for_kind(
+        &parsed,
+        GrammarKind::PathExpression,
+        &[
+            SourceRange::new(52, 53),
+            SourceRange::new(56, 57),
+            SourceRange::new(66, 67),
+            SourceRange::new(70, 71),
+            SourceRange::new(75, 76),
+            SourceRange::new(79, 80),
+            SourceRange::new(86, 87),
+            SourceRange::new(90, 91),
+        ],
+    );
+    assert_eq!(
+        node_with_kind_and_range(
+            &parsed,
+            GrammarKind::NameDefinition,
+            SourceRange::new(10, 14),
+        )
+        .range(),
+        SourceRange::new(10, 14)
     );
     assert!(nodes.iter().all(|node| node.range().end() <= source.len()));
+    assert!(nodes.iter().all(|node| {
+        node.kind().identity_class() == crate::grammar::kinds::IdentityClass::IdentityBearing
+    }));
+}
+
+#[test]
+fn lossless_root_round_trips_every_utf8_byte() {
+    let name = SourceName::path("lossless-utf8.arcw");
+    let source = concat!(
+        "/// 語りの文書\r\n",
+        "\r\n",
+        "flow café {\r\n",
+        "    // 注釈と空白\r\n",
+        "    ??? === `未完\r\n",
+        "}\r\n",
+    );
+    let document = source_document(&name, source);
+    let mut database = syntax_database();
+    let parsed = database
+        .parse_initial(
+            SourceSnapshotId::initial(name),
+            Arc::clone(&document),
+            ParseOptions::default(),
+        )
+        .expect("malformed UTF-8-safe source remains lossless and recoverable");
+    let root = parsed.root_syntax();
+
+    assert_eq!(parsed.status(), super::ParseStatus::Recovered);
+    assert_eq!(parsed.source().as_bytes(), source.as_bytes());
+    assert_eq!(parsed.document().text().as_bytes(), source.as_bytes());
+    assert_eq!(root.rowan().to_string().as_bytes(), source.as_bytes());
+    assert_eq!(root.source_text().as_bytes(), source.as_bytes());
+    assert_eq!(root.range(), SourceRange::new(0, source.len()));
+    assert_eq!(root.source_span().source(), document.identity());
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "typed/Rowan round-trip rows form one exhaustive ownership matrix"
+)]
+fn typed_to_rowan_and_rowan_to_typed_round_trip() {
+    let name = SourceName::path("typed-rowan-round-trip.arcw");
+    let source = concat!(
+        "predicate expression(value: Bool) = value\n",
+        "predicate ready<T>(value: T) where T: Ord\n",
+        "requires value == value\n",
+        "ensures result\n",
+        "{ let checked: Bool = true; checked }\n",
+        "proof checked(value: Bool) -> Bool\n",
+        "requires verify(value)\n",
+        "ensures result\n",
+        "{ let typed: Bool = verify(value); assert.check(typed); verify_nested(typed); }\n",
+    );
+    let mut database = syntax_database();
+    let parsed = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+            ParseOptions::default(),
+        )
+        .expect("typed source snapshot");
+    assert_eq!(parsed.status(), super::ParseStatus::Clean);
+
+    for typed_syntax in parsed.attached().nodes() {
+        assert_eq!(
+            typed_syntax.kind().identity_class(),
+            crate::grammar::kinds::IdentityClass::IdentityBearing
+        );
+        let rebound = parsed
+            .bind_rowan(typed_syntax.rowan())
+            .expect("Rowan node binds only through its exact snapshot owner");
+        assert_eq!(rebound, typed_syntax);
+        assert_eq!(
+            parsed
+                .syntax_node(rebound.id())
+                .expect("stable identity resolves to the same typed syntax"),
+            typed_syntax
+        );
+    }
+
+    macro_rules! assert_round_trip_matrix {
+        ($($marker:ty => $kind:ident),+ $(,)?) => {
+            $(assert_exact_typed_round_trip::<$marker>(&parsed, GrammarKind::$kind);)+
+        };
+    }
+    assert_round_trip_matrix! {
+        SourceFileKind => SourceFile,
+        PredicateItemKind => PredicateItem,
+        ProofItemKind => ProofItem,
+        NameDefinitionKind => NameDefinition,
+        GenericParameterGroupKind => GenericParameterGroup,
+        GenericParameterKind => GenericParameter,
+        TypeParameterKind => TypeParameter,
+        FixedParameterGroupKind => FixedParameterGroup,
+        ParameterKind => Parameter,
+        BindingPatternKind => BindingPattern,
+        TypedBindingPatternKind => TypedBindingPattern,
+        PathTypeKind => PathType,
+        WhereClauseKind => WhereClause,
+        WherePredicateKind => WherePredicate,
+        ReturnTypeKind => ReturnType,
+        RequiresClauseKind => RequiresClause,
+        EnsuresClauseKind => EnsuresClause,
+        ExpressionBodyKind => ExpressionBody,
+        PredicateBodyKind => PredicateBody,
+        ProofBodyKind => ProofBody,
+        PredicateBlockKind => PredicateBlock,
+        ProofBlockKind => ProofBlock,
+        OpenAngleKind => OpenAngleNode,
+        CloseAngleKind => CloseAngleNode,
+        OpenParenKind => OpenParenNode,
+        CloseParenKind => CloseParenNode,
+        ColonKind => ColonNode,
+        ThinArrowKind => ThinArrowNode,
+        OpenBraceKind => OpenBraceNode,
+        CloseBraceKind => CloseBraceNode,
+        LetStatementKind => LetStatement,
+        AssertionStatementKind => AssertionStatement,
+        ProofCallStatementKind => ProofCallStatement,
+        BinaryExpressionKind => BinaryExpression,
+        LiteralExpressionKind => LiteralExpression,
+        CallExpressionKind => CallExpression,
+        CallArgumentKind => CallArgument,
+        PathExpressionKind => PathExpression,
+        PathKind => Path,
+        OmittedBlockTailKind => OmittedBlockTail,
+    }
+
+    let predicate_block = only_node_with_kind(&parsed, GrammarKind::PredicateBlock)
+        .cast::<PredicateBlockKind>()
+        .expect("typed Predicate block");
+    assert_eq!(
+        predicate_block
+            .statements()
+            .expect("typed Predicate statement list")
+            .iter()
+            .map(crate::attachment::family::FamilyNode::kind)
+            .collect::<Vec<_>>(),
+        [GrammarKind::LetStatement]
+    );
+    assert!(matches!(
+        predicate_block.tail().expect("typed Predicate tail"),
+        BlockTailNode::Expression(_)
+    ));
+
+    let proof_block = only_node_with_kind(&parsed, GrammarKind::ProofBlock)
+        .cast::<ProofBlockKind>()
+        .expect("typed Proof block");
+    assert_eq!(
+        proof_block
+            .statements()
+            .expect("typed Proof statement list")
+            .iter()
+            .map(crate::attachment::family::FamilyNode::kind)
+            .collect::<Vec<_>>(),
+        [
+            GrammarKind::LetStatement,
+            GrammarKind::AssertionStatement,
+            GrammarKind::ProofCallStatement,
+        ]
+    );
+    assert!(matches!(
+        proof_block.tail().expect("typed Proof tail"),
+        BlockTailNode::Omitted(_)
+    ));
+    assert_eq!(
+        GrammarKind::StatementList.identity_class(),
+        crate::grammar::kinds::IdentityClass::StructuralWrapper
+    );
+}
+
+#[test]
+fn missing_child_identity_is_role_and_anchor_specific() {
+    let name = SourceName::path("missing-child-identity.arcw");
+    let source = "proof unit() {";
+    let mut database = syntax_database();
+    let initial = database
+        .parse_initial(
+            SourceSnapshotId::initial(name.clone()),
+            source_document(&name, source),
+            ParseOptions::default(),
+        )
+        .expect("missing Proof children recover");
+    assert_eq!(initial.status(), super::ParseStatus::Recovered);
+    let old_close = only_node_with_kind(&initial, GrammarKind::CloseBraceNode);
+    let old_tail = only_node_with_kind(&initial, GrammarKind::OmittedBlockTail);
+    assert_eq!(old_close.range(), SourceRange::new(14, 14));
+    assert_eq!(old_tail.range(), SourceRange::new(14, 14));
+    assert_eq!(
+        old_close.role(),
+        crate::grammar::kinds::SyntaxRole::CloseDelimiter
+    );
+    assert_eq!(old_tail.role(), crate::grammar::kinds::SyntaxRole::Tail);
+    assert_ne!(old_close.id(), old_tail.id());
+    assert_eq!(
+        old_close.parent().expect("ProofBlock close owner").id(),
+        old_tail.parent().expect("ProofBlock tail owner").id()
+    );
+    old_close
+        .cast::<CloseBraceKind>()
+        .expect("typed missing close brace");
+    old_tail
+        .cast::<OmittedBlockTailKind>()
+        .expect("typed omitted tail");
+
+    let trivia = database
+        .reparse(
+            &initial,
+            &[source_edit(&initial, SourceRange::new(13, 13), "  ")],
+            ParseOptions::default(),
+        )
+        .expect("trivia-only missing-child reparse");
+    let trivia_close = only_node_with_kind(&trivia, GrammarKind::CloseBraceNode);
+    let trivia_tail = only_node_with_kind(&trivia, GrammarKind::OmittedBlockTail);
+    assert_eq!(trivia_close.id(), old_close.id());
+    assert_eq!(trivia_tail.id(), old_tail.id());
+    assert_eq!(trivia_close.range(), SourceRange::new(16, 16));
+    assert_eq!(trivia_tail.range(), SourceRange::new(16, 16));
+
+    let different_parent_source = "proof unit() {}\nproof other() {";
+    let different_parent = database
+        .reparse(
+            &trivia,
+            &[source_edit(
+                &trivia,
+                SourceRange::new(0, trivia.source().len()),
+                different_parent_source,
+            )],
+            ParseOptions::default(),
+        )
+        .expect("same missing role under a different semantic parent recovers");
+    let different_parent_close = node_with_kind_and_range(
+        &different_parent,
+        GrammarKind::CloseBraceNode,
+        SourceRange::new(different_parent_source.len(), different_parent_source.len()),
+    );
+    assert_eq!(
+        different_parent_close.role(),
+        crate::grammar::kinds::SyntaxRole::CloseDelimiter
+    );
+    assert_ne!(
+        different_parent_close
+            .parent()
+            .expect("new ProofBlock close owner")
+            .id(),
+        old_close.parent().expect("old ProofBlock close owner").id()
+    );
+    assert_ne!(different_parent_close.id(), old_close.id());
+
+    let changed_source = "proof unit() = (";
+    let changed = database
+        .reparse(
+            &different_parent,
+            &[source_edit(
+                &different_parent,
+                SourceRange::new(0, different_parent.source().len()),
+                changed_source,
+            )],
+            ParseOptions::default(),
+        )
+        .expect("different expected delimiter class recovers");
+    let changed_close = node_with_kind_and_range(
+        &changed,
+        GrammarKind::CloseParenNode,
+        SourceRange::new(16, 16),
+    );
+    assert_eq!(changed_close.range(), SourceRange::new(16, 16));
+    assert_ne!(changed_close.id(), old_close.id());
+    changed_close
+        .cast::<CloseParenKind>()
+        .expect("typed missing close parenthesis");
+    assert!(matches!(
+        changed.syntax_node(old_close.id()),
+        Err(SyntaxLookupError::MissingNode { id }) if id == old_close.id()
+    ));
 }
 
 #[test]
@@ -1433,7 +1967,12 @@ fn attached_expression_fragment_owns_one_fresh_lineage_and_exact_source_span() {
     assert_eq!(unbound.completion(), &ParseCompletion::Complete);
     assert!(unbound.diagnostics().is_empty());
     let fragment = database
-        .attach_fragment(&snapshot, &document, &span, unbound)
+        .attach_fragment(
+            snapshot.clone(),
+            Arc::clone(&document),
+            span.clone(),
+            unbound,
+        )
         .expect("complete expression attaches without reparsing");
 
     assert_eq!(fragment.snapshot_id().source(), &snapshot);
@@ -1451,13 +1990,22 @@ fn attached_expression_fragment_owns_one_fresh_lineage_and_exact_source_span() {
             .kind(),
         GrammarKind::SourceFile
     );
-    assert_eq!(fragment.syntax().root_handle().rowan().to_string(), source);
+    assert_eq!(
+        fragment
+            .root()
+            .syntax()
+            .parent()
+            .expect("fragment source-file root")
+            .rowan()
+            .to_string(),
+        source
+    );
 
     let second = database
         .attach_fragment(
-            &snapshot,
-            &document,
-            &span,
+            snapshot.clone(),
+            Arc::clone(&document),
+            span,
             parse_expression_fragment(fragment_text, ParseOptions::default()),
         )
         .expect("each explicit attachment owns a fresh lineage");
@@ -1482,9 +2030,9 @@ fn grouped_expression_fragment_selects_inner_identity_and_retains_outer_span() {
 
     let fragment = database
         .attach_fragment(
-            &snapshot,
-            &document,
-            &span,
+            snapshot,
+            Arc::clone(&document),
+            span.clone(),
             parse_expression_fragment(fragment_text, ParseOptions::default()),
         )
         .expect("grouped expression attaches through its semantic root");
@@ -2317,16 +2865,18 @@ fn incomplete_invalid_mismatched_and_foreign_fragments_commit_no_lineage() {
         ParseCompletion::Incomplete { .. }
     ));
     let rejected = database.attach_fragment(
-        &snapshot,
-        &incomplete_document,
-        &incomplete_span,
+        snapshot.clone(),
+        Arc::clone(&incomplete_document),
+        incomplete_span,
         incomplete,
     );
     assert!(matches!(
         rejected,
-        Err(FragmentAttachmentFailure::FragmentNotComplete {
-            completion: ParseCompletion::Incomplete { .. }
-        })
+        Err(ParseFailure::Attachment(
+            AttachmentFailure::FragmentNotComplete {
+                completion: ParseCompletion::Incomplete { .. }
+            }
+        ))
     ));
     assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
@@ -2334,16 +2884,18 @@ fn incomplete_invalid_mismatched_and_foreign_fragments_commit_no_lineage() {
     let invalid_document = source_document(&name, invalid_source);
     let invalid_span = source_span(&invalid_document, SourceRange::new(0, invalid_source.len()));
     let rejected = database.attach_fragment(
-        &snapshot,
-        &invalid_document,
-        &invalid_span,
+        snapshot.clone(),
+        Arc::clone(&invalid_document),
+        invalid_span,
         parse_expression_fragment(invalid_source, ParseOptions::default()),
     );
     assert!(matches!(
         rejected,
-        Err(FragmentAttachmentFailure::FragmentNotComplete {
-            completion: ParseCompletion::Invalid
-        })
+        Err(ParseFailure::Attachment(
+            AttachmentFailure::FragmentNotComplete {
+                completion: ParseCompletion::Invalid
+            }
+        ))
     ));
     assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
@@ -2351,14 +2903,16 @@ fn incomplete_invalid_mismatched_and_foreign_fragments_commit_no_lineage() {
     let mismatch_document = source_document(&name, "other");
     let mismatch_span = source_span(&mismatch_document, SourceRange::new(0, mismatch_text.len()));
     let rejected = database.attach_fragment(
-        &snapshot,
-        &mismatch_document,
-        &mismatch_span,
+        snapshot.clone(),
+        Arc::clone(&mismatch_document),
+        mismatch_span,
         parse_expression_fragment(mismatch_text, ParseOptions::default()),
     );
     assert!(matches!(
         rejected,
-        Err(FragmentAttachmentFailure::FragmentTextMismatch)
+        Err(ParseFailure::Attachment(
+            AttachmentFailure::FragmentTextMismatch
+        ))
     ));
     assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
@@ -2367,15 +2921,12 @@ fn incomplete_invalid_mismatched_and_foreign_fragments_commit_no_lineage() {
     let foreign_document = source_document(&foreign_name, mismatch_text);
     let foreign_span = source_span(&foreign_document, SourceRange::new(0, mismatch_text.len()));
     let rejected = database.attach_fragment(
-        &snapshot,
-        &exact_document,
-        &foreign_span,
+        snapshot.clone(),
+        Arc::clone(&exact_document),
+        foreign_span,
         parse_expression_fragment(mismatch_text, ParseOptions::default()),
     );
-    assert!(matches!(
-        rejected,
-        Err(FragmentAttachmentFailure::SourceMismatch)
-    ));
+    assert!(matches!(rejected, Err(ParseFailure::SourceMismatch)));
     assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 }
 
@@ -2395,28 +2946,23 @@ fn fragment_attachment_failure_consumes_no_lineage_or_node_identity() {
         &span,
         parse_expression_fragment(source, ParseOptions::default()),
     );
-    assert!(matches!(
-        failed,
-        Err(FragmentAttachmentFailure::Transaction(
-            ParseFailure::Attachment(_)
-        ))
-    ));
+    assert!(matches!(failed, Err(ParseFailure::Attachment(_))));
     assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
 
     let accepted = database
         .attach_fragment(
-            &snapshot,
-            &document,
-            &span,
+            snapshot.clone(),
+            Arc::clone(&document),
+            span.clone(),
             parse_expression_fragment(source, ParseOptions::default()),
         )
         .expect("valid retry uses the unconsumed lineage");
     let mut control = syntax_database();
     let control = control
         .attach_fragment(
-            &snapshot,
-            &document,
-            &span,
+            snapshot,
+            document,
+            span,
             parse_expression_fragment(source, ParseOptions::default()),
         )
         .expect("control fragment");
@@ -2424,7 +2970,7 @@ fn fragment_attachment_failure_consumes_no_lineage_or_node_identity() {
 }
 
 #[test]
-fn independent_databases_cannot_resolve_equal_private_raw_slots() {
+fn independent_databases_cannot_resolve_equal_raw_slots() {
     let name = SourceName::path("same.arcw");
     let snapshot = SourceSnapshotId::initial(name.clone());
     let mut first_database = syntax_database();
@@ -2448,16 +2994,99 @@ fn independent_databases_cannot_resolve_equal_private_raw_slots() {
 
     assert_eq!(first_root.id().slot(), second_root.id().slot());
     assert_ne!(first_root.id(), second_root.id());
-    assert!(matches!(
-        first.attached().syntax_node(second_root.id()),
-        Err(SyntaxLookupError::WrongDatabase { .. })
-    ));
+    assert_eq!(
+        first.syntax_node(second_root.id()),
+        Err(SyntaxLookupError::WrongDatabase {
+            expected: first_database.database_id(),
+            actual: second_database.database_id(),
+        })
+    );
+    assert_eq!(
+        first.typed_node::<SourceFileKind>(second_root.id()),
+        Err(SyntaxLookupError::WrongDatabase {
+            expected: first_database.database_id(),
+            actual: second_database.database_id(),
+        })
+    );
+    assert_eq!(
+        first.bind_rowan(second_root.rowan()),
+        Err(SyntaxLookupError::ForeignRowanRoot {
+            expected: first.snapshot_id().clone(),
+        })
+    );
+    assert_eq!(
+        first
+            .bind_rowan(first_root.rowan())
+            .expect("first Rowan allocation binds in its owner"),
+        first_root
+    );
+    assert_eq!(
+        second
+            .bind_rowan(second_root.rowan())
+            .expect("second Rowan allocation binds in its owner"),
+        second_root
+    );
 }
 
 #[test]
-fn trivia_reparse_preserves_private_descendant_ids_and_old_snapshot_ranges() {
-    let name = SourceName::path("predicate.arcw");
-    let source = "predicate ready(value: Int) requires value > 0 = value == 1\n";
+fn foreign_lineage_in_same_database_is_rejected() {
+    let first_name = SourceName::path("first-lineage.arcw");
+    let second_name = SourceName::path("second-lineage.arcw");
+    let source = "proof same() = ()\n";
+    let mut database = syntax_database();
+    let first = database
+        .parse_initial(
+            SourceSnapshotId::initial(first_name.clone()),
+            source_document(&first_name, source),
+            ParseOptions::default(),
+        )
+        .expect("first lineage");
+    let second = database
+        .parse_initial(
+            SourceSnapshotId::initial(second_name.clone()),
+            source_document(&second_name, source),
+            ParseOptions::default(),
+        )
+        .expect("second lineage");
+    let first_root = first.root_syntax();
+    let second_root = second.root_syntax();
+
+    assert_eq!(first_root.id().slot(), second_root.id().slot());
+    assert_eq!(
+        first.syntax_node(second_root.id()),
+        Err(SyntaxLookupError::WrongLineage {
+            expected: first.snapshot_id().lineage(),
+            actual: second.snapshot_id().lineage(),
+        })
+    );
+    assert_eq!(
+        second.typed_node::<SourceFileKind>(first_root.id()),
+        Err(SyntaxLookupError::WrongLineage {
+            expected: second.snapshot_id().lineage(),
+            actual: first.snapshot_id().lineage(),
+        })
+    );
+}
+
+#[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "trivia reparse identity and range rows form one transactional matrix"
+)]
+fn trivia_only_reparse_preserves_predicate_proof_descendant_ids_and_updates_ranges() {
+    let name = SourceName::path("predicate-proof-trivia.arcw");
+    let source = concat!(
+        "/// predicate docs\n",
+        "predicate ready(value: Int)\n",
+        "requires value > 0\n",
+        "ensures value > 0\n",
+        "= value == 1\n",
+        "/// proof docs\n",
+        "proof checked(value: Int) {\n",
+        "    assert.check(value > 0);\n",
+        "    value == 1\n",
+        "}\n",
+    );
     let mut database = syntax_database();
     let initial = database
         .parse_initial(
@@ -2465,54 +3094,122 @@ fn trivia_reparse_preserves_private_descendant_ids_and_old_snapshot_ranges() {
             source_document(&name, source),
             crate::parser::ParseOptions::default(),
         )
-        .expect("initial predicate");
+        .expect("initial Predicate and Proof");
     let old_nodes = initial.attached().nodes().collect::<Vec<_>>();
-    let old_item = old_nodes
+    let old_ranges = old_nodes
         .iter()
-        .find(|node| node.kind() == GrammarKind::PredicateItem)
-        .expect("predicate item")
-        .clone();
-    let old_typed = initial
-        .attached()
-        .typed_node::<PredicateItemKind>(old_item.id())
-        .unwrap();
-    let old_range = old_typed.range();
+        .map(|node| (node.clone(), node.range()))
+        .collect::<Vec<_>>();
+    let old_ids = identity_ids(&initial);
+    let old_items = initial.items().expect("initial typed item inventory");
+    let old_predicate = typed_predicate_item(&old_items);
+    let old_proof = typed_proof_item(&old_items);
+    let old_names = [
+        old_predicate
+            .semantics()
+            .expect("initial Predicate semantics")
+            .name()
+            .syntax()
+            .syntax(),
+        old_proof
+            .semantics()
+            .expect("initial Proof semantics")
+            .name()
+            .syntax()
+            .syntax(),
+    ];
+    assert_eq!(
+        old_names
+            .iter()
+            .map(SyntaxNodeHandle::range)
+            .collect::<Vec<_>>(),
+        [SourceRange::new(29, 34), SourceRange::new(118, 125)]
+    );
+
+    let trivia_source = concat!(
+        "  /// predicate docs\n",
+        "predicate ready( value: Int )\n",
+        "requires   value > 0\n",
+        "// retained comment\n",
+        "ensures value > 0\n",
+        "= value == 1\n",
+        "\n",
+        "    /// proof docs\n",
+        "proof checked(value: Int) {\n",
+        "        assert.check(value > 0);\n",
+        "        value == 1\n",
+        "}\n",
+    );
 
     let reparsed = database
         .reparse(
             &initial,
-            &[source_edit(&initial, SourceRange::new(9, 9), "  ")],
+            &[source_edit(
+                &initial,
+                SourceRange::new(0, source.len()),
+                trivia_source,
+            )],
             crate::parser::ParseOptions::default(),
         )
         .expect("trivia reparse");
-    let new_nodes = reparsed.attached().nodes().collect::<Vec<_>>();
+    assert_eq!(initial.source_snapshot_id().generation().get(), 1);
+    assert_eq!(reparsed.source_snapshot_id().generation().get(), 2);
+    assert_eq!(identity_ids(&reparsed), old_ids);
+
+    for (old_node, old_range) in old_ranges {
+        assert_eq!(old_node.range(), old_range);
+        assert_eq!(
+            old_node.source_span().source(),
+            initial.document().identity()
+        );
+        let new_node = reparsed
+            .syntax_node(old_node.id())
+            .expect("every Predicate/Proof descendant survives trivia-only reparse");
+        assert_eq!(new_node.kind(), old_node.kind());
+        assert_eq!(new_node.role(), old_node.role());
+        assert_eq!(
+            new_node.source_span().source(),
+            reparsed.document().identity()
+        );
+    }
+
+    let new_items = reparsed.items().expect("reparsed typed item inventory");
+    let new_predicate = typed_predicate_item(&new_items);
+    let new_proof = typed_proof_item(&new_items);
+    assert!(old_predicate.is_same_reconciled_node(&new_predicate));
+    assert!(old_proof.is_same_reconciled_node(&new_proof));
+    let new_names = [
+        new_predicate
+            .semantics()
+            .expect("reparsed Predicate semantics")
+            .name()
+            .syntax()
+            .syntax(),
+        new_proof
+            .semantics()
+            .expect("reparsed Proof semantics")
+            .name()
+            .syntax()
+            .syntax(),
+    ];
     assert_eq!(
-        old_nodes
+        new_names
             .iter()
-            .map(SyntaxNodeHandle::id)
+            .map(SyntaxNodeHandle::range)
             .collect::<Vec<_>>(),
-        new_nodes
-            .iter()
-            .map(SyntaxNodeHandle::id)
-            .collect::<Vec<_>>()
+        [SourceRange::new(31, 36), SourceRange::new(149, 156)]
     );
-    let new_item = new_nodes
-        .iter()
-        .find(|node| node.kind() == GrammarKind::PredicateItem)
-        .expect("reparsed predicate item")
-        .clone();
-    let new_typed = reparsed
-        .attached()
-        .typed_node::<PredicateItemKind>(new_item.id())
-        .unwrap();
-    assert!(old_typed.is_same_reconciled_node(&new_typed));
-    assert_eq!(old_typed.range(), old_range);
-    assert_eq!(new_typed.range().start(), old_range.start());
-    assert_eq!(new_typed.range().end(), old_range.end() + 2);
-    assert!(matches!(
-        reparsed.attached().resolve_exact(&old_item),
-        Err(SyntaxLookupError::WrongSnapshot { .. })
-    ));
+    assert_eq!(new_names[0].id(), old_names[0].id());
+    assert_eq!(new_names[1].id(), old_names[1].id());
+    assert_eq!(old_names[0].range(), SourceRange::new(29, 34));
+    assert_eq!(old_names[1].range(), SourceRange::new(118, 125));
+    assert_eq!(
+        reparsed.resolve_exact_syntax(&old_names[0]),
+        Err(SyntaxLookupError::WrongSnapshot {
+            expected: reparsed.snapshot_id().clone(),
+            actual: initial.snapshot_id().clone(),
+        })
+    );
 }
 
 #[test]
@@ -2577,9 +3274,9 @@ fn source_trivia_reparse_preserves_attached_header_type_and_handler_identities()
 }
 
 #[test]
-fn unique_private_grammar_siblings_retain_ids_when_reordered() {
-    let name = SourceName::path("reordered-proofs.arcw");
-    let source = "proof first() = 1\nproof second() = 2\n";
+fn same_parent_unique_reorder_preserves_ids() {
+    let name = SourceName::path("reordered-proof-calls.arcw");
+    let source = "proof order() { first(); second(); }\n";
     let mut database = syntax_database();
     let initial = database
         .parse_initial(
@@ -2587,10 +3284,28 @@ fn unique_private_grammar_siblings_retain_ids_when_reordered() {
             source_document(&name, source),
             crate::parser::ParseOptions::default(),
         )
-        .expect("initial proofs");
-    let first = private_id_containing(&initial, GrammarKind::ProofItem, "proof first");
-    let second = private_id_containing(&initial, GrammarKind::ProofItem, "proof second");
-    let reordered_source = "proof second() = 2\nproof first() = 1\n";
+        .expect("initial Proof call statements");
+    let old_block = only_node_with_kind(&initial, GrammarKind::ProofBlock)
+        .cast::<ProofBlockKind>()
+        .expect("typed Proof block");
+    let old_statements = old_block
+        .statements()
+        .expect("typed statement iterator")
+        .into_iter()
+        .map(|statement| {
+            statement
+                .cast::<ProofCallStatementKind>()
+                .expect("Proof block contains only proof-call statements")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(old_statements.len(), 2);
+    assert_eq!(old_statements[0].range(), SourceRange::new(16, 24));
+    assert_eq!(old_statements[1].range(), SourceRange::new(25, 34));
+    let old_subtrees = old_statements
+        .iter()
+        .map(|statement| subtree_ids(&statement.syntax()))
+        .collect::<Vec<_>>();
+    let reordered_source = "proof order() { second(); first(); }\n";
 
     let reordered = database
         .reparse(
@@ -2602,22 +3317,34 @@ fn unique_private_grammar_siblings_retain_ids_when_reordered() {
             )],
             crate::parser::ParseOptions::default(),
         )
-        .expect("reordered proofs");
-
-    assert_eq!(
-        private_id_containing(&reordered, GrammarKind::ProofItem, "proof first"),
-        first
-    );
-    assert_eq!(
-        private_id_containing(&reordered, GrammarKind::ProofItem, "proof second"),
-        second
-    );
+        .expect("reordered Proof call statements");
+    let new_block = only_node_with_kind(&reordered, GrammarKind::ProofBlock)
+        .cast::<ProofBlockKind>()
+        .expect("typed reordered Proof block");
+    let new_statements = new_block
+        .statements()
+        .expect("typed reordered statement iterator")
+        .into_iter()
+        .map(|statement| {
+            statement
+                .cast::<ProofCallStatementKind>()
+                .expect("reordered statement remains a proof call")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(new_statements.len(), 2);
+    assert_eq!(new_statements[0].range(), SourceRange::new(16, 25));
+    assert_eq!(new_statements[1].range(), SourceRange::new(26, 34));
+    assert_eq!(new_statements[0].id(), old_statements[1].id());
+    assert_eq!(new_statements[1].id(), old_statements[0].id());
+    assert_eq!(subtree_ids(&new_statements[0].syntax()), old_subtrees[1]);
+    assert_eq!(subtree_ids(&new_statements[1].syntax()), old_subtrees[0]);
+    assert_eq!(new_block.id(), old_block.id());
 }
 
 #[test]
-fn a_private_grammar_copy_is_fresh_while_the_original_retains_its_id() {
-    let name = SourceName::path("copied-proof.arcw");
-    let source = "proof same() = ()\n";
+fn copied_subtree_preserves_one_original_and_allocates_fresh_copy() {
+    let name = SourceName::path("copied-assertion-condition.arcw");
+    let source = "flow copied { assert.check(first == second) }\n";
     let mut database = syntax_database();
     let initial = database
         .parse_initial(
@@ -2625,10 +3352,17 @@ fn a_private_grammar_copy_is_fresh_while_the_original_retains_its_id() {
             source_document(&name, source),
             crate::parser::ParseOptions::default(),
         )
-        .expect("initial proof");
-    let original = private_ids_containing(&initial, GrammarKind::ProofItem, "proof same");
-    assert_eq!(original.len(), 1);
-    let copied_source = "proof same() = ()\nproof same() = ()\n";
+        .expect("initial assertion condition");
+    let old_assertion = only_node_with_kind(&initial, GrammarKind::AssertionStatement)
+        .cast::<AssertionStatementKind>()
+        .expect("typed assertion statement");
+    let old_conditions = old_assertion
+        .conditions()
+        .expect("typed assertion conditions");
+    assert_eq!(old_conditions.len(), 1);
+    assert_eq!(old_conditions[0].range(), SourceRange::new(27, 42));
+    let original_ids = subtree_ids(&old_conditions[0].syntax());
+    let copied_source = "flow copied { assert.check(first == second, first == second) }\n";
 
     let copied = database
         .reparse(
@@ -2640,19 +3374,35 @@ fn a_private_grammar_copy_is_fresh_while_the_original_retains_its_id() {
             )],
             crate::parser::ParseOptions::default(),
         )
-        .expect("copied proof");
-    let copied_ids = private_ids_containing(&copied, GrammarKind::ProofItem, "proof same");
-
-    assert_eq!(copied_ids.len(), 2);
-    assert_eq!(copied_ids[0], original[0]);
-    assert_ne!(copied_ids[1], original[0]);
+        .expect("copied assertion condition");
+    let new_assertion = only_node_with_kind(&copied, GrammarKind::AssertionStatement)
+        .cast::<AssertionStatementKind>()
+        .expect("typed copied assertion statement");
+    let new_conditions = new_assertion.conditions().expect("typed copied conditions");
+    assert_eq!(new_conditions.len(), 2);
+    assert_eq!(new_conditions[0].range(), SourceRange::new(27, 42));
+    assert_eq!(new_conditions[1].range(), SourceRange::new(44, 59));
+    assert_eq!(subtree_ids(&new_conditions[0].syntax()), original_ids);
+    let copied_ids = subtree_ids(&new_conditions[1].syntax());
+    assert!(copied_ids.iter().all(|id| !original_ids.contains(id)));
+    assert_eq!(
+        identity_ids(&copied).len(),
+        identity_ids(&copied)
+            .into_iter()
+            .collect::<HashSet<_>>()
+            .len()
+    );
 }
 
 #[test]
-fn moving_a_private_grammar_node_across_block_parents_allocates_a_fresh_id() {
-    let name = SourceName::path("moved-expression.arcw");
-    let source =
-        "proof relocate() -> Int { let first: Int = { target() }; let second: Int = { 0 }; 0 }\n";
+fn cross_parent_move_allocates_fresh_ids() {
+    let name = SourceName::path("moved-let-statement.arcw");
+    let source = concat!(
+        "proof relocate() -> Int { ",
+        "let first: Int = { let moved: Int = 1; 0 }; ",
+        "let second: Int = { 0 }; ",
+        "let third: Int = { let stay: Int = 2; 0 }; 0 }\n",
+    );
     let mut database = syntax_database();
     let initial = database
         .parse_initial(
@@ -2660,10 +3410,36 @@ fn moving_a_private_grammar_node_across_block_parents_allocates_a_fresh_id() {
             source_document(&name, source),
             crate::parser::ParseOptions::default(),
         )
-        .expect("initial nested expression");
-    let target = private_id_containing(&initial, GrammarKind::CallExpression, "target()");
-    let moved_source =
-        "proof relocate() -> Int { let first: Int = { 0 }; let second: Int = { target() }; 0 }\n";
+        .expect("initial nested let statements");
+    let old_moved = node_with_kind_and_range(
+        &initial,
+        GrammarKind::LetStatement,
+        SourceRange::new(45, 64),
+    )
+    .cast::<LetStatementKind>()
+    .expect("typed moved let statement");
+    let old_stay = node_with_kind_and_range(
+        &initial,
+        GrammarKind::LetStatement,
+        SourceRange::new(114, 132),
+    )
+    .cast::<LetStatementKind>()
+    .expect("typed unaffected let statement");
+    let old_unaffected_block = node_with_kind_and_range(
+        &initial,
+        GrammarKind::BlockExpression,
+        SourceRange::new(112, 136),
+    )
+    .cast::<BlockExpressionKind>()
+    .expect("typed unaffected block expression");
+    let old_moved_ids = subtree_ids(&old_moved.syntax());
+    let old_stay_ids = subtree_ids(&old_stay.syntax());
+    let moved_source = concat!(
+        "proof relocate() -> Int { ",
+        "let first: Int = { 0 }; ",
+        "let second: Int = { let moved: Int = 1; 0 }; ",
+        "let third: Int = { let stay: Int = 2; 0 }; 0 }\n",
+    );
 
     let moved = database
         .reparse(
@@ -2675,18 +3451,44 @@ fn moving_a_private_grammar_node_across_block_parents_allocates_a_fresh_id() {
             )],
             crate::parser::ParseOptions::default(),
         )
-        .expect("moved nested expression");
+        .expect("cross-parent let move");
+    let new_moved =
+        node_with_kind_and_range(&moved, GrammarKind::LetStatement, SourceRange::new(70, 89))
+            .cast::<LetStatementKind>()
+            .expect("typed moved let statement in new parent");
+    let new_stay = node_with_kind_and_range(
+        &moved,
+        GrammarKind::LetStatement,
+        SourceRange::new(114, 132),
+    )
+    .cast::<LetStatementKind>()
+    .expect("typed unaffected let statement after move");
+    let new_unaffected_block = node_with_kind_and_range(
+        &moved,
+        GrammarKind::BlockExpression,
+        SourceRange::new(112, 136),
+    )
+    .cast::<BlockExpressionKind>()
+    .expect("typed unaffected block expression after move");
 
+    assert_ne!(new_moved.id(), old_moved.id());
     assert_ne!(
-        private_id_containing(&moved, GrammarKind::CallExpression, "target()"),
-        target
+        new_moved.syntax().parent().expect("new block parent").id(),
+        old_moved.syntax().parent().expect("old block parent").id()
     );
+    assert!(
+        subtree_ids(&new_moved.syntax())
+            .iter()
+            .all(|id| !old_moved_ids.contains(id))
+    );
+    assert_eq!(subtree_ids(&new_stay.syntax()), old_stay_ids);
+    assert_eq!(new_unaffected_block.id(), old_unaffected_block.id());
 }
 
 #[test]
-fn changed_private_grammar_node_is_fresh_while_its_sibling_survives() {
+fn changed_grammar_node_gets_fresh_id_while_unchanged_siblings_survive() {
     let name = SourceName::path("changed-proof.arcw");
-    let source = "proof first() = ()\nproof second() = ()\n";
+    let source = "proof changed() { let first: Int = 1; let second: Int = 2; () }\n";
     let mut database = syntax_database();
     let initial = database
         .parse_initial(
@@ -2694,37 +3496,67 @@ fn changed_private_grammar_node_is_fresh_while_its_sibling_survives() {
             source_document(&name, source),
             crate::parser::ParseOptions::default(),
         )
-        .expect("initial proofs");
-    let first_name = private_id_containing(&initial, GrammarKind::NameDefinition, "first");
-    let second = private_id_containing(&initial, GrammarKind::ProofItem, "proof second");
-    let first_start = source.find("first").expect("first proof name");
+        .expect("initial sibling statements");
+    let old_first = node_with_kind_and_range(
+        &initial,
+        GrammarKind::LetStatement,
+        SourceRange::new(18, 37),
+    );
+    let old_literal = node_with_kind_and_range(
+        &initial,
+        GrammarKind::LiteralExpression,
+        SourceRange::new(35, 36),
+    )
+    .cast::<LiteralExpressionKind>()
+    .expect("typed changed literal");
+    let old_second = node_with_kind_and_range(
+        &initial,
+        GrammarKind::LetStatement,
+        SourceRange::new(38, 58),
+    );
+    let old_second_ids = subtree_ids(&old_second);
 
     let changed = database
         .reparse(
             &initial,
-            &[source_edit(
-                &initial,
-                SourceRange::new(first_start, first_start + "first".len()),
-                "changed",
-            )],
+            &[source_edit(&initial, SourceRange::new(35, 36), "first + 1")],
             crate::parser::ParseOptions::default(),
         )
-        .expect("renamed proof");
+        .expect("changed initializer grammar");
+    let new_first = node_with_kind_and_range(
+        &changed,
+        GrammarKind::LetStatement,
+        SourceRange::new(18, 45),
+    );
+    let new_binary = node_with_kind_and_range(
+        &changed,
+        GrammarKind::BinaryExpression,
+        SourceRange::new(35, 44),
+    )
+    .cast::<BinaryExpressionKind>()
+    .expect("typed changed binary initializer");
+    let new_second = node_with_kind_and_range(
+        &changed,
+        GrammarKind::LetStatement,
+        SourceRange::new(46, 66),
+    );
 
-    assert_ne!(
-        private_id_containing(&changed, GrammarKind::NameDefinition, "changed"),
-        first_name
-    );
-    assert_eq!(
-        private_id_containing(&changed, GrammarKind::ProofItem, "proof second"),
-        second
-    );
+    assert_ne!(new_first.id(), old_first.id());
+    assert_ne!(new_binary.id(), old_literal.id());
+    assert!(matches!(
+        changed.syntax_node(old_literal.id()),
+        Err(SyntaxLookupError::MissingNode { id }) if id == old_literal.id()
+    ));
+    assert_eq!(new_second.id(), old_second.id());
+    assert_eq!(subtree_ids(&new_second), old_second_ids);
+    assert_eq!(new_second.range(), SourceRange::new(46, 66));
+    assert_eq!(old_second.range(), SourceRange::new(38, 58));
 }
 
 #[test]
-fn missing_and_error_nodes_reconcile_by_recovery_role() {
-    let name = SourceName::path("recovery.arcw");
-    let source = "proof () = ()\nunknown surface\n";
+fn recovered_equivalent_node_survives_trivia_change() {
+    let name = SourceName::path("recovered-expression-trivia.arcw");
+    let source = "proof broken() = target.42\n";
     let mut database = syntax_database();
     let initial = database
         .parse_initial(
@@ -2732,58 +3564,125 @@ fn missing_and_error_nodes_reconcile_by_recovery_role() {
             source_document(&name, source),
             crate::parser::ParseOptions::default(),
         )
-        .expect("recovered source attaches");
-    let old_recovery = recovery_ids(&initial);
-    assert!(old_recovery.len() >= 2);
+        .expect("current-grammar recovery attaches");
+    assert_eq!(initial.status(), super::ParseStatus::Recovered);
+
+    let old_error = only_node_with_kind(&initial, GrammarKind::ErrorExpression);
+    let old_missing = only_node_with_kind(&initial, GrammarKind::MissingName);
+    assert_eq!(old_error.role(), crate::grammar::kinds::SyntaxRole::Body);
+    assert_eq!(old_error.range(), SourceRange::new(17, 26));
     assert_eq!(
-        old_recovery.iter().copied().collect::<HashSet<_>>().len(),
-        old_recovery.len()
+        old_missing.role(),
+        crate::grammar::kinds::SyntaxRole::Field(0)
     );
+    assert_eq!(old_missing.range(), SourceRange::new(24, 24));
+    let old_select = old_missing
+        .parent()
+        .expect("missing member remains attached to its Select owner");
+    assert_eq!(old_select.kind(), GrammarKind::SelectExpression);
+    assert_eq!(
+        old_select
+            .parent()
+            .expect("Select remains attached to its generic recovery owner")
+            .id(),
+        old_error.id()
+    );
+    let old_error_id = old_error.id();
+    let old_missing_id = old_missing.id();
 
     let reparsed = database
         .reparse(
             &initial,
-            &[source_edit(&initial, SourceRange::new(0, 0), " ")],
+            &[source_edit(&initial, SourceRange::new(0, 0), "  ")],
             crate::parser::ParseOptions::default(),
         )
-        .expect("recovered trivia reparse");
-    assert_eq!(recovery_ids(&reparsed), old_recovery);
+        .expect("equivalent recovered expression reparses after trivia");
+    assert_eq!(reparsed.status(), super::ParseStatus::Recovered);
+
+    let new_error = only_node_with_kind(&reparsed, GrammarKind::ErrorExpression);
+    let new_missing = only_node_with_kind(&reparsed, GrammarKind::MissingName);
+    assert_eq!(new_error.id(), old_error_id);
+    assert_eq!(new_missing.id(), old_missing_id);
+    assert_eq!(new_error.role(), old_error.role());
+    assert_eq!(new_missing.role(), old_missing.role());
+    let new_select = new_missing
+        .parent()
+        .expect("reconciled missing member remains attached to its Select owner");
+    assert_eq!(new_select.kind(), GrammarKind::SelectExpression);
+    assert_eq!(new_select.id(), old_select.id());
+    assert_eq!(
+        new_select
+            .parent()
+            .expect("reconciled Select remains attached to generic recovery")
+            .id(),
+        new_error.id()
+    );
+    assert_eq!(old_error.range(), SourceRange::new(17, 26));
+    assert_eq!(old_missing.range(), SourceRange::new(24, 24));
+    assert_eq!(new_error.range(), SourceRange::new(19, 28));
+    assert_eq!(new_missing.range(), SourceRange::new(26, 26));
 }
 
 #[test]
-fn fatal_private_attachment_failure_rolls_back_initial_transaction() {
-    let name = SourceName::path("attachment-failure.arcw");
+fn generic_error_nodes_are_distinct_and_deterministic() {
+    let name = SourceName::path("deterministic-error-statements.arcw");
+    let source = "proof broken() { ???; ???; }\n";
     let mut database = syntax_database();
-    let lineage_before = database.transaction.next_lineage_for_test();
-    let failed = database.parse_initial_with_attachment_failure(
-        &SourceSnapshotId::initial(name.clone()),
-        &source_document(&name, "proof invalid() = ()\n"),
-    );
-
-    assert!(matches!(failed, Err(ParseFailure::Attachment(_))));
-    assert!(database.lineages.is_empty());
-    assert_eq!(database.transaction.next_lineage_for_test(), lineage_before);
-
-    let accepted = database
+    let initial = database
         .parse_initial(
             SourceSnapshotId::initial(name.clone()),
-            source_document(&name, "proof valid() = ()\n"),
+            source_document(&name, source),
             crate::parser::ParseOptions::default(),
         )
-        .expect("next valid transaction uses the unconsumed lineage");
-    let control_name = SourceName::path("control.arcw");
-    let mut control = syntax_database();
-    let control = control
-        .parse_initial(
-            SourceSnapshotId::initial(control_name.clone()),
-            source_document(&control_name, "proof valid() = ()\n"),
-            crate::parser::ParseOptions::default(),
-        )
-        .expect("control transaction");
+        .expect("two generic statement recoveries attach");
+    assert_eq!(initial.status(), super::ParseStatus::Recovered);
+    let old_errors = initial
+        .attached()
+        .nodes()
+        .filter(|node| node.kind() == GrammarKind::ErrorStatement)
+        .collect::<Vec<_>>();
+    assert_eq!(old_errors.len(), 2);
+    assert_ne!(old_errors[0].id(), old_errors[1].id());
     assert_eq!(
-        accepted.attached().root_handle().id().slot(),
-        control.attached().root_handle().id().slot()
+        old_errors[0].role(),
+        crate::grammar::kinds::SyntaxRole::Statement(0)
     );
+    assert_eq!(
+        old_errors[1].role(),
+        crate::grammar::kinds::SyntaxRole::Statement(1)
+    );
+    assert_eq!(old_errors[0].range(), SourceRange::new(17, 21));
+    assert_eq!(old_errors[1].range(), SourceRange::new(22, 26));
+    let old_ids = old_errors
+        .iter()
+        .map(SyntaxNodeHandle::id)
+        .collect::<Vec<_>>();
+
+    let reparsed = database
+        .reparse(
+            &initial,
+            &[source_edit(&initial, SourceRange::new(0, 0), "  ")],
+            crate::parser::ParseOptions::default(),
+        )
+        .expect("identical generic recoveries reparse after trivia");
+    assert_eq!(reparsed.status(), super::ParseStatus::Recovered);
+    let new_errors = reparsed
+        .attached()
+        .nodes()
+        .filter(|node| node.kind() == GrammarKind::ErrorStatement)
+        .collect::<Vec<_>>();
+    assert_eq!(new_errors.len(), 2);
+    assert_eq!(
+        new_errors
+            .iter()
+            .map(SyntaxNodeHandle::id)
+            .collect::<Vec<_>>(),
+        old_ids
+    );
+    assert_eq!(new_errors[0].range(), SourceRange::new(19, 23));
+    assert_eq!(new_errors[1].range(), SourceRange::new(24, 28));
+    assert_eq!(old_errors[0].range(), SourceRange::new(17, 21));
+    assert_eq!(old_errors[1].range(), SourceRange::new(22, 26));
 }
 
 #[test]
@@ -2842,71 +3741,104 @@ fn rich_text_attachment_failure_rolls_back_lineage_and_node_slots() {
     assert_eq!(slots(&accepted), slots(&control));
 }
 
-#[test]
-fn fatal_private_attachment_failure_rolls_back_reparse_transaction() {
-    let name = SourceName::path("reparse-attachment-failure.arcw");
-    let source = "proof first() = ()\n";
-    let addition = "proof second() = ()\n";
-    let mut database = syntax_database();
-    let initial = database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-            crate::parser::ParseOptions::default(),
-        )
-        .expect("initial source");
-    let edit = source_edit(
-        &initial,
-        SourceRange::new(source.len(), source.len()),
-        addition,
-    );
-    let next_before = database
-        .lineages
-        .get(&name)
-        .expect("lineage")
-        .transaction
-        .next_node_for_test();
-
-    let failed = database.reparse_with_attachment_failure(&initial, std::slice::from_ref(&edit));
-    assert!(matches!(failed, Err(ParseFailure::Attachment(_))));
-    let current = database.lineages.get(&name).expect("lineage");
-    assert!(current.current.is_same_snapshot(&initial));
-    assert!(Arc::ptr_eq(current.transaction.current(), initial.data()));
-    assert_eq!(current.transaction.next_node_for_test(), next_before);
-
-    let accepted = database
-        .reparse(&initial, &[edit], crate::parser::ParseOptions::default())
-        .expect("valid retry after failed attachment");
-    let mut control_database = syntax_database();
-    let control_initial = control_database
-        .parse_initial(
-            SourceSnapshotId::initial(name.clone()),
-            source_document(&name, source),
-            crate::parser::ParseOptions::default(),
-        )
-        .expect("control initial");
-    let control_edit = source_edit(
-        &control_initial,
-        SourceRange::new(source.len(), source.len()),
-        addition,
-    );
-    let control = control_database
-        .reparse(
-            &control_initial,
-            &[control_edit],
-            crate::parser::ParseOptions::default(),
-        )
-        .expect("control reparse");
-    assert_eq!(private_slots(&accepted), private_slots(&control));
-}
-
-fn recovery_ids(source: &super::ParsedSource) -> Vec<crate::attachment::SyntaxNodeId> {
-    source
+fn identity_ids(source: &ParsedSource) -> Vec<SyntaxNodeId> {
+    let mut ids = source
         .attached()
         .nodes()
-        .filter(|node| node.kind().is_missing_node() || node.kind().is_error_node())
         .map(|node| node.id())
-        .collect()
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
+}
+
+fn nodes_with_kind(source: &ParsedSource, kind: GrammarKind) -> Vec<SyntaxNodeHandle> {
+    let mut nodes = source
+        .attached()
+        .nodes()
+        .filter(|node| node.kind() == kind)
+        .collect::<Vec<_>>();
+    nodes.sort_by_key(|node| (node.range().start(), node.range().end(), node.id().slot()));
+    nodes
+}
+
+fn node_with_kind_and_range(
+    source: &ParsedSource,
+    kind: GrammarKind,
+    range: SourceRange,
+) -> SyntaxNodeHandle {
+    let mut nodes = source
+        .attached()
+        .nodes()
+        .filter(|node| node.kind() == kind && node.range() == range);
+    let node = nodes
+        .next()
+        .unwrap_or_else(|| panic!("missing exact {kind:?} at {range:?}"));
+    assert!(
+        nodes.next().is_none(),
+        "expected exactly one {kind:?} at {range:?}"
+    );
+    node
+}
+
+fn subtree_ids(root: &SyntaxNodeHandle) -> Vec<SyntaxNodeId> {
+    fn collect(node: &SyntaxNodeHandle, ids: &mut Vec<SyntaxNodeId>) {
+        ids.push(node.id());
+        for child in node.children() {
+            collect(&child, ids);
+        }
+    }
+
+    let mut ids = Vec::new();
+    collect(root, &mut ids);
+    ids
+}
+
+fn assert_ranges_for_kind(source: &ParsedSource, kind: GrammarKind, expected: &[SourceRange]) {
+    let actual = nodes_with_kind(source, kind)
+        .iter()
+        .map(SyntaxNodeHandle::range)
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected, "unexpected ranges for {kind:?}");
+}
+
+fn assert_exact_typed_round_trip<K: crate::attachment::ExactAstKind>(
+    source: &ParsedSource,
+    kind: GrammarKind,
+) {
+    let nodes = nodes_with_kind(source, kind);
+    assert!(!nodes.is_empty(), "missing {kind:?} round-trip fixture");
+    for syntax in nodes {
+        let typed = syntax.cast::<K>().expect("exact typed cast");
+        assert_eq!(typed.id(), syntax.id());
+        let typed_syntax = typed.syntax();
+        let rebound_syntax = source
+            .bind_rowan(typed_syntax.rowan())
+            .expect("typed Rowan node binds through exact snapshot");
+        let rebound = rebound_syntax
+            .cast::<K>()
+            .expect("rebound Rowan node retains exact typed kind");
+        assert_eq!(rebound, typed);
+    }
+}
+
+fn typed_predicate_item(items: &[TypedItemNode]) -> crate::attachment::AstNode<PredicateItemKind> {
+    items
+        .iter()
+        .find_map(|item| match item {
+            TypedItemNode::Predicate(node) => Some(node.clone()),
+            _ => None,
+        })
+        .expect("typed Predicate item")
+}
+
+fn typed_proof_item(items: &[TypedItemNode]) -> crate::attachment::AstNode<ProofItemKind> {
+    items
+        .iter()
+        .find_map(|item| match item {
+            TypedItemNode::Proof(node) => Some(node.clone()),
+            _ => None,
+        })
+        .expect("typed Proof item")
 }
 
 fn private_slots(source: &super::ParsedSource) -> Vec<NonZeroU64> {
@@ -2915,6 +3847,18 @@ fn private_slots(source: &super::ParsedSource) -> Vec<NonZeroU64> {
         .nodes()
         .map(|node| node.id().slot())
         .collect()
+}
+
+fn only_node_with_kind(source: &ParsedSource, kind: GrammarKind) -> SyntaxNodeHandle {
+    let mut nodes = source.attached().nodes().filter(|node| node.kind() == kind);
+    let node = nodes
+        .next()
+        .unwrap_or_else(|| panic!("missing exact {kind:?} test node"));
+    assert!(
+        nodes.next().is_none(),
+        "expected exactly one {kind:?} test node"
+    );
+    node
 }
 
 fn private_id_containing(

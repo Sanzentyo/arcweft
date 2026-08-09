@@ -136,6 +136,25 @@ impl HirFlowContractClause {
         matches!(self, Self::Ensures(_))
     }
 
+    /// Returns the authored effects admitted by this clause.
+    ///
+    /// `no_effect` is a prohibition and therefore participates in typed
+    /// effect-identity validation without becoming part of the Flow's exposed
+    /// effect row.
+    pub const fn admitted_effect_operands(&self) -> Option<&[ExprId]> {
+        match self {
+            Self::Effects(operands) => Some(operands.operands()),
+            Self::Requires(_)
+            | Self::Ensures(_)
+            | Self::Invariant(_)
+            | Self::Assume { .. }
+            | Self::Reads(_)
+            | Self::NoEffect { .. }
+            | Self::Modifies(_)
+            | Self::Decreases { .. } => None,
+        }
+    }
+
     fn validate_module(&self, expected: HirModuleId) -> Result<(), HirItemInvariantError> {
         match self {
             Self::Requires(condition) | Self::Ensures(condition) | Self::Invariant(condition) => {

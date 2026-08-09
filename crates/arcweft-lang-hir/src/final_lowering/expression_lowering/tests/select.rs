@@ -112,6 +112,10 @@ fn has_recovery_query(module: &HirModule, owner: ExprId, role: HirExprSourceRole
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is the closed E13 payload, poison, source-component, and diagnostic acceptance matrix"
+)]
 fn attached_e13_select_publishes_typed_member_poison_and_exact_sources() {
     let parsed = parsed_source(
         "select-matrix",
@@ -397,6 +401,10 @@ fn e13_negative_forms_never_create_an_invalid_selected_member() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test validates one nested numeric-member recovery graph and both inner and outer source authorities"
+)]
 fn e13_numeric_member_recovery_keeps_the_inner_select_and_generic_outer_error() {
     for (document_id, fixture, insertion) in [
         ("select-numeric-member", "target.42", 7),
@@ -734,6 +742,10 @@ fn e13_failed_freeze_retries_with_stable_owner_and_deduplicates_repeated_lowerin
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test validates the complete canonical source-component insertion order at projection and freeze"
+)]
 fn e13_component_insertion_order_is_canonical_at_projection_and_freeze() {
     let parsed = parsed_source("select-component-order", &["target.member".into()]);
     let (canonical, canonical_owners, _) = lower_and_publish(&parsed);
@@ -856,6 +868,10 @@ fn e13_component_insertion_order_is_canonical_at_projection_and_freeze() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test is a closed atomic tamper matrix for E13 payload, diagnostic, and source ownership"
+)]
 fn e13_freeze_rejects_payload_diagnostic_and_source_tampering() {
     let payload = parsed_source("select-payload-tamper", &["target.member".into()]);
     let attached = attached_expressions(&payload).pop().unwrap();
@@ -964,6 +980,10 @@ fn e13_freeze_rejects_payload_diagnostic_and_source_tampering() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "this test exercises the complete exact diagnostic-obligation matrix for missing and recovered E13 children"
+)]
 fn e13_freeze_enforces_exact_missing_and_descendant_diagnostic_obligations() {
     let missing = parsed_source("select-missing-diagnostic", &["target.".into()]);
     let attached = attached_expressions(&missing).pop().unwrap();

@@ -7,7 +7,6 @@ fn nominal_identity_and_lookup_p0_matrix() {
         "use crate.models.Structure\n",
         "use crate.models.Enumeration as ImportedEnumeration\n",
         "use crate.facade.*\n",
-        "fn callable() -> Unit { () }\n",
     );
     let model_source = concat!(
         "pub struct Structure { value: i32 }\n",
@@ -24,7 +23,7 @@ fn nominal_identity_and_lookup_p0_matrix() {
         ("facade", "pub use crate.models.*\n"),
     ]);
     let table = ProjectSymbolTable::link(
-        &project,
+        project.view(),
         &empty_declarations(&documents, "p0-nominal-identity-lookup"),
     )
     .unwrap_or_else(|error| panic!("{TEST_ID}: fixture must link: {error:?}"))
@@ -57,7 +56,7 @@ fn nominal_identity_and_lookup_p0_matrix() {
         ("", root_source),
     ]);
     let reordered = ProjectSymbolTable::link(
-        &reordered_project,
+        reordered_project.view(),
         &empty_declarations(&documents, "p0-nominal-identity-lookup"),
     )
     .unwrap_or_else(|error| panic!("ID-HASH-ORDER: reordered fixture must link: {error:?}"))
@@ -89,7 +88,7 @@ fn nominal_lookup_failure_p0_matrix() {
     let (documents, project) = project_modules(&[
         (
             "",
-            "use crate.left.*\nuse crate.right.*\nfn callable() -> Unit { () }\n",
+            "use crate.left.*\nuse crate.right.*\npredicate ordinary_callable() = true\n",
         ),
         ("left", "pub struct Common {}\nstruct Hidden {}\n"),
         ("right", "pub enum Common { Value }\n"),
@@ -103,20 +102,15 @@ fn nominal_lookup_failure_p0_matrix() {
         )],
         "p0-nominal-lookup-failures-resolvable",
     );
-    let table = ProjectSymbolTable::link(&project, &declarations)
+    let table = ProjectSymbolTable::link(project.view(), &declarations)
         .unwrap_or_else(|error| panic!("RES-AMBIG-GLOB: fixture must link: {error:?}"))
         .into_table();
     let root = CanonicalModulePath::crate_root();
     let source = documents[0]
         .span(SourceRange::new(0, 3))
         .unwrap_or_else(|_| panic!("RES-AMBIG-GLOB: root reference span must exist"));
-    let lookup = |test_id: &'static str, spelling: &str| {
-        let authored = parse_type_ref(spelling)
-            .unwrap_or_else(|error| panic!("{test_id}: `{spelling}` must parse: {error:?}"));
-        let TypeRef::Path(path) = authored.value() else {
-            panic!("{test_id}: `{spelling}` must remain a typed path");
-        };
-        table.resolve_type_target(&root, path, source.clone())
+    let lookup = |_test_id: &'static str, spelling: &str| {
+        table.resolve_hir_type_target(&root, &type_path(spelling), source.clone())
     };
 
     assert!(
@@ -135,7 +129,7 @@ fn nominal_lookup_failure_p0_matrix() {
     );
     assert!(
         matches!(
-            lookup("RES-WRONG-CALLABLE", "callable"),
+            lookup("RES-WRONG-CALLABLE", "ordinary_callable"),
             Err(ProjectTypeLookupError::WrongKind { actual, .. })
                 if matches!(actual.target(), ProjectSymbolTargetId::Callable(_))
         ),
@@ -163,23 +157,5 @@ fn nominal_lookup_failure_p0_matrix() {
             Err(ProjectTypeLookupError::WrongKind { .. })
         ),
         "RES-WRONG-MODULE: a module cannot occupy type position"
-    );
-}
-
-#[test]
-fn duplicate_module_document_is_rejected_by_project_publication() {
-    const TEST_ID: &str = "SRC-DUPLICATE-MODULE-DOCUMENT";
-    let (document, project) = project("fn main() -> Unit { () }\n");
-    let root = CanonicalModulePath::crate_root();
-    let module = HirProjectModule::try_new(
-        root.clone(),
-        document.identity().clone(),
-        project.linked_module(),
-    )
-    .unwrap_or_else(|error| panic!("{TEST_ID}: duplicate fixture module must bind: {error:?}"));
-    assert_eq!(
-        HirProject::new("duplicate-module-project", [module.clone(), module]),
-        Err(HirProjectError::DuplicateModule { module: root }),
-        "{TEST_ID}: duplicate canonical module is rejected even with the same document identity",
     );
 }

@@ -25,6 +25,7 @@ pub use entry_inventory::{
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::sync::Arc;
+use thiserror::Error;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct RuntimePlan {
@@ -43,6 +44,22 @@ pub struct RuntimePlan {
 #[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 pub struct FlowRuntimeId {
     path: RuntimeIdPath,
+    public_label: RuntimePublicLabel,
+}
+
+/// Dynamic runtime Flow target lookup failure.
+///
+/// Runtime-authored text may select an accepted manual canonical identity
+/// exactly, or select one checked/generated declaration through its unique
+/// public label. It never reconstructs a checked/generated semantic identity.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeFlowTargetError {
+    #[error(transparent)]
+    Invalid(#[from] RuntimeIdError),
+    #[error("runtime Flow target `{target}` is not present in the accepted plan")]
+    Missing { target: String },
+    #[error("runtime Flow target `{target}` matches {matches} accepted declarations")]
+    Ambiguous { target: String, matches: usize },
 }
 
 /// Runtime identifier for a lowered dialogue line.
@@ -60,7 +77,7 @@ pub struct RuntimeFlow {
 
 impl FlowRuntimeId {
     pub fn canonical(value: &str) -> Result<Self, RuntimeIdError> {
-        RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Flow, value).map(|path| Self { path })
+        RuntimeIdPath::from_canonical_str(RuntimeIdFamily::Flow, value).map(Self::from_runtime_path)
     }
 
     pub fn from_source_entity_body(value: &str) -> Result<Self, RuntimeIdError> {
@@ -69,7 +86,7 @@ impl FlowRuntimeId {
             value,
             RuntimeIdFamily::flow_source_families(),
         )
-        .map(|path| Self { path })
+        .map(Self::from_runtime_path)
     }
 
     pub fn from_runtime_target_value(value: &str) -> Result<Self, RuntimeIdError> {
@@ -83,9 +100,26 @@ impl FlowRuntimeId {
         }
     }
 
-    pub(crate) fn from_runtime_contract(value: &str) -> Result<Self, RuntimeIdError> {
-        RuntimeIdPath::from_runtime_contract_str(RuntimeIdFamily::Flow, value)
-            .map(|path| Self { path })
+    /// Projects one accepted structural Flow declaration into a one-way
+    /// runtime identity while retaining its separately selected public label.
+    pub fn from_checked_declaration_digest(
+        digest: [u8; 32],
+        public_id: &str,
+    ) -> Result<Self, RuntimeIdError> {
+        let public_label = Self::from_source_entity_body(public_id)?.public_label;
+        Ok(Self {
+            path: RuntimeIdPath::for_checked_flow_declaration(digest),
+            public_label,
+        })
+    }
+
+    pub(crate) fn from_runtime_contract(
+        identity: &str,
+        public_id: &str,
+    ) -> Result<Self, RuntimeIdError> {
+        let path = RuntimeIdPath::from_runtime_contract_str(RuntimeIdFamily::Flow, identity)?;
+        let public_label = Self::from_source_entity_body(public_id)?.public_label;
+        Ok(Self { path, public_label })
     }
 
     #[must_use]
@@ -100,7 +134,47 @@ impl FlowRuntimeId {
 
     #[must_use]
     pub fn public_label(&self) -> RuntimePublicLabel {
-        RuntimePublicLabel::for_family(RuntimeIdFamily::Flow, &self.path)
+        self.public_label.clone()
+    }
+
+    /// Selects one exact accepted Flow identity for a runtime-authored target.
+    ///
+    /// Canonical identities admitted by the public/manual `RuntimePlan`
+    /// boundary remain exact. Public labels select only when exactly one
+    /// accepted declaration owns that label; checked/generated semantic
+    /// identity is never reconstructed from runtime-authored text.
+    pub fn resolve_runtime_target<'a>(
+        value: &str,
+        candidates: impl IntoIterator<Item = &'a Self>,
+    ) -> Result<&'a Self, RuntimeFlowTargetError> {
+        let projected = Self::from_runtime_target_value(value)?;
+        let public_label = projected.public_label();
+        let mut public_match = None;
+        let mut public_matches = 0_usize;
+        for candidate in candidates {
+            if *candidate == projected {
+                return Ok(candidate);
+            }
+            if candidate.public_label() == public_label {
+                public_matches = public_matches.saturating_add(1);
+                public_match.get_or_insert(candidate);
+            }
+        }
+        match (public_match, public_matches) {
+            (Some(candidate), 1) => Ok(candidate),
+            (None, _) => Err(RuntimeFlowTargetError::Missing {
+                target: value.to_owned(),
+            }),
+            (Some(_), matches) => Err(RuntimeFlowTargetError::Ambiguous {
+                target: value.to_owned(),
+                matches,
+            }),
+        }
+    }
+
+    fn from_runtime_path(path: RuntimeIdPath) -> Self {
+        let public_label = RuntimePublicLabel::for_family(RuntimeIdFamily::Flow, &path);
+        Self { path, public_label }
     }
 }
 
@@ -656,5 +730,18 @@ impl RuntimePlan {
             && self.line_task_groups.is_empty()
             && self.stream_plans.is_empty()
             && self.source_plans.is_empty()
+    }
+
+    /// Resolves one dynamic target against the exact accepted Flow inventory.
+    ///
+    /// A legacy canonical runtime ID still selects itself exactly. Otherwise
+    /// the validated public label must identify one and only one accepted Flow;
+    /// duplicate module-local labels are a terminal ambiguity.
+    pub fn resolve_flow_target_value(
+        &self,
+        value: &str,
+    ) -> Result<FlowRuntimeId, RuntimeFlowTargetError> {
+        FlowRuntimeId::resolve_runtime_target(value, self.flows.iter().map(|flow| &flow.id))
+            .cloned()
     }
 }

@@ -1,7 +1,6 @@
-use arcweft_source::{SourceDocumentId, SourceRevision};
+use arcweft_source::{ProductSourceId, SourceDocumentId, SourceRevision};
 use thiserror::Error;
 
-use super::ProductSourceId;
 use crate::resource_codec::SectionCodecError;
 
 /// Candidate-construction failures for one complete product source map.

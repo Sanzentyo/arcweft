@@ -1,0 +1,5 @@
+error[E0599]: no method named `tail` found for reference `&HirThreadBody` in the current scope
+ --> tests/ui/removed_flow_tail_accessor.rs:4:25
+  |
+4 |     let _ = flow.body().tail();
+  |                         ^^^^ method not found in `&HirThreadBody`

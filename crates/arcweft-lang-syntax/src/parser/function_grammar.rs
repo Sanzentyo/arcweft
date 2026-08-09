@@ -2,9 +2,9 @@
 
 use arcweft_source::SourceRange;
 
-use super::cursor::ShadowDocumentParser;
+use super::cursor::DocumentParser;
 use super::declaration::{
-    FixedParameterGrammar, emit_callable_contract_clauses, emit_fixed_parameters,
+    FixedParameterGrammar, emit_fixed_parameters, emit_function_contract_clauses,
     emit_generic_parameters, emit_missing_parameter_group, emit_name, emit_outer_prefixes,
     emit_return_type, emit_visibility, emit_where_clause,
 };
@@ -21,7 +21,7 @@ pub(super) fn emit_declaration(
     events: &mut Vec<SyntaxEvent>,
     budget: &mut GrammarBudget,
 ) {
-    let mut parser = ShadowDocumentParser::new(source, tokens, events, budget);
+    let mut parser = DocumentParser::new(source, tokens, events, budget);
     parser.start(SyntaxKind::FunctionItem, role);
     emit_outer_prefixes(&mut parser);
     parser.bump_trivia();
@@ -65,13 +65,13 @@ pub(super) fn emit_declaration(
         parser.bump_trivia();
     }
 
-    emit_callable_contract_clauses(&mut parser);
+    emit_function_contract_clauses(&mut parser);
     emit_body(&mut parser);
     emit_trailing_recovery(&mut parser);
     parser.finish();
 }
 
-fn emit_body(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_body(parser: &mut DocumentParser<'_, '_>) {
     if parser.at("{") {
         parser.start(SyntaxKind::FunctionBody, SyntaxRole::Body);
         emit_braced_block(
@@ -97,7 +97,7 @@ fn emit_body(parser: &mut ShadowDocumentParser<'_, '_>) {
     parser.finish();
 }
 
-fn emit_trailing_recovery(parser: &mut ShadowDocumentParser<'_, '_>) {
+fn emit_trailing_recovery(parser: &mut DocumentParser<'_, '_>) {
     parser.bump_trivia();
     if parser.is_at_end() {
         return;

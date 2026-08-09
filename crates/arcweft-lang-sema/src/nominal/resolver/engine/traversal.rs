@@ -1,12 +1,15 @@
-use arcweft_lang_syntax::{
-    expr::LifetimeScopeKind,
-    types::{TypePath, TypeRef, TypeRefNodePath, TypeRefNodeStep},
+use arcweft_lang_hir::{
+    expr::HirBorrowKind,
+    identity::TypeId,
+    leaf::HirTypeRegion,
+    type_ref::{HirFunctionType, HirGenericType, HirReferenceType, HirTraitBoundType, HirTypeKind},
 };
+use arcweft_lang_syntax::reference::BorrowKind;
 
 use crate::{
     effect_row::EffectRow,
     effects::EffectSet,
-    types::{EntityKind, TypeKind, TypePoisonId},
+    types::{EntityKind, LifetimeScopeKind, TypeKind},
 };
 
 use super::{
@@ -15,154 +18,94 @@ use super::{
     TypePoisonOrigin, TypeResolutionFailure, TypeResolutionInputError,
 };
 
-struct SingleArgumentGenericFrame<'a> {
-    path: TypeRefNodePath,
-    child: TypeRefNodePath,
-    base: &'a TypePath,
-    depth: u16,
-    argument_expectation: Option<TypeArgumentExpectation>,
-}
-
 impl Resolver<'_, '_> {
     pub(super) fn resolve_node(
         &mut self,
         context: &SourceContext<'_>,
-        value: &TypeRef,
-        path: &TypeRefNodePath,
+        owner: TypeId,
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
-        if matches!(value, TypeRef::Generic { args, .. } if args.len() == 1) {
-            return self.resolve_single_argument_generic_chain(context, value, path, depth);
-        }
-        if let Some(halted) = self.begin_node(context, path, depth) {
+        if let Some(halted) = self.begin_node(context, owner, depth) {
             return Ok(halted);
         }
+        let ty = context
+            .module
+            .resolve_type(owner)
+            .expect("validated final-HIR type identity remains live");
+        let kind = ty.kind().clone();
+        let self_poison = ty.is_poisoned().then(|| {
+            let poison = self.allocate_poison();
+            self.record_poison(
+                poison,
+                TypePoisonOrigin::SyntaxTypeDiagnostic,
+                context.evidence(owner, true),
+                true,
+            );
+            poison
+        });
 
-        match value {
-            TypeRef::Never => Ok(self.finish_node(
+        let mut value = match kind {
+            HirTypeKind::Never => self.finish_node(
                 context,
-                path,
+                owner,
                 NodeValue::typed(TypeKind::Never, []),
                 TypeNameResolution::Builtin(BuiltinTypeConstructor::Never),
-            )),
-            TypeRef::ConstInt(value) => Ok(self.finish_node(
+            ),
+            HirTypeKind::ConstInt(value) => self.finish_node(
                 context,
-                path,
-                NodeValue::constant(*value),
+                owner,
+                NodeValue::constant(value),
                 TypeNameResolution::Structural(StructuralTypeNodeKind::ConstInt),
-            )),
-            TypeRef::Path(type_path) => {
-                let result = self.resolve_name(context, path, type_path, Vec::new(), depth)?;
-                Ok(self.finish_node(context, path, result.value, result.outcome))
+            ),
+            HirTypeKind::Path(path) => {
+                let result = self.resolve_name(context, owner, &path, Vec::new(), depth)?;
+                self.finish_node(context, owner, result.value, result.outcome)
             }
-            TypeRef::Tuple(items) => self.resolve_tuple(context, path, items, depth),
-            TypeRef::Function {
-                params,
-                return_type,
-                effects,
-            } => self.resolve_function(context, path, params, return_type, effects.as_ref(), depth),
-            TypeRef::Choice(alternatives) => {
-                self.resolve_choice(context, path, alternatives, depth)
+            HirTypeKind::Tuple(items) => self.resolve_tuple(context, owner, &items, depth)?,
+            HirTypeKind::Function(function) => {
+                self.resolve_function(context, owner, &function, depth)?
             }
-            TypeRef::Generic { base, args } => {
-                self.resolve_generic(context, path, base, args, depth)
+            HirTypeKind::Choice(alternatives) => {
+                self.resolve_choice(context, owner, &alternatives, depth)?
             }
-            TypeRef::TraitBound(bound) => self.resolve_trait_bound(context, path, bound, depth),
-            TypeRef::Projection { subject, assoc } => {
-                self.resolve_projection(context, path, subject, assoc.as_str(), depth)
+            HirTypeKind::Generic(generic) => {
+                self.resolve_generic(context, owner, &generic, depth)?
             }
-            TypeRef::Reference(reference) => {
-                self.resolve_reference(context, path, reference, depth)
+            HirTypeKind::TraitBound(bound) => {
+                self.resolve_trait_bound(context, owner, &bound, depth)?
             }
-            TypeRef::Slice(item) => self.resolve_slice(context, path, item, depth),
-            TypeRef::Recovery(recovery) => {
-                let poison = TypePoisonId::from_index(recovery.index());
-                self.record_poison(
-                    poison,
-                    TypePoisonOrigin::SyntaxTypeDiagnostic,
-                    context.evidence(path, true),
-                    true,
-                );
-                Ok(self.finish_node(
+            HirTypeKind::Projection(projection) => self.resolve_projection(
+                context,
+                owner,
+                projection.subject(),
+                projection.associated().as_str(),
+                depth,
+            )?,
+            HirTypeKind::Reference(reference) => {
+                self.resolve_reference(context, owner, &reference, depth)?
+            }
+            HirTypeKind::Slice(item) => self.resolve_slice(context, owner, item, depth)?,
+            HirTypeKind::Recovery(_) => {
+                let poison = self_poison.unwrap_or_else(|| {
+                    let poison = self.allocate_poison();
+                    self.record_poison(
+                        poison,
+                        TypePoisonOrigin::SyntaxTypeDiagnostic,
+                        context.evidence(owner, true),
+                        true,
+                    );
+                    poison
+                });
+                return Ok(self.finish_node(
                     context,
-                    path,
+                    owner,
                     NodeValue::error(poison, []),
                     TypeNameResolution::Poisoned(poison),
-                ))
+                ));
             }
-        }
-    }
-
-    /// Resolves unary constructor chains without consuming one host stack frame
-    /// per authored type layer. The ordinary node resolver remains responsible
-    /// for the first non-unary child, and completed constructor frames unwind in
-    /// the same leaf-to-root order as recursive resolution.
-    fn resolve_single_argument_generic_chain(
-        &mut self,
-        context: &SourceContext<'_>,
-        mut value: &TypeRef,
-        path: &TypeRefNodePath,
-        mut depth: u16,
-    ) -> Result<NodeValue, TypeResolutionInputError> {
-        let mut path = path.clone();
-        let mut frames = Vec::new();
-
-        while let TypeRef::Generic { base, args } = value {
-            if args.len() != 1 {
-                break;
-            }
-            if let Some(halted) = self.begin_node(context, &path, depth) {
-                return self.finish_single_argument_generic_frames(context, frames, halted);
-            }
-            if args.len() > usize::from(self.input.limits().generic_arguments_per_application()) {
-                let failure = TypeResolutionFailure::Limit {
-                    kind: NominalResolutionLimitKind::GenericArgumentsPerApplication,
-                    observed: args.len() as u64,
-                    maximum: u64::from(self.input.limits().generic_arguments_per_application()),
-                };
-                let failed = self.failed_node(context, &path, failure, Vec::new());
-                return self.finish_single_argument_generic_frames(context, frames, failed);
-            }
-
-            let child = context.child_path(&path, TypeRefNodeStep::GenericArgument(0));
-            frames.push(SingleArgumentGenericFrame {
-                path,
-                child: child.clone(),
-                base,
-                depth,
-                argument_expectation: BuiltinTypeConstructor::from_type_path(base)
-                    .and_then(|constructor| constructor.argument_expectation(0)),
-            });
-            path = child;
-            value = &args[0];
-            depth = depth.saturating_add(1);
-        }
-
-        let resolved = if frames.last().is_some_and(|frame| {
-            frame.argument_expectation == Some(TypeArgumentExpectation::EntityFamily)
-        }) {
-            self.resolve_entity_family_node(context, value, &path, depth)?
-        } else {
-            self.resolve_node(context, value, &path, depth)?
         };
-        self.finish_single_argument_generic_frames(context, frames, resolved)
-    }
-
-    fn finish_single_argument_generic_frames(
-        &mut self,
-        context: &SourceContext<'_>,
-        frames: Vec<SingleArgumentGenericFrame<'_>>,
-        mut value: NodeValue,
-    ) -> Result<NodeValue, TypeResolutionInputError> {
-        for frame in frames.into_iter().rev() {
-            let result = self.resolve_name(
-                context,
-                &frame.path,
-                frame.base,
-                vec![(frame.child, value)],
-                frame.depth,
-            )?;
-            value = self.finish_node(context, &frame.path, result.value, result.outcome);
+        if let Some(poison) = self_poison {
+            value.causes = super::canonical_poisons(value.causes.into_iter().chain([poison]));
         }
         Ok(value)
     }
@@ -170,25 +113,26 @@ impl Resolver<'_, '_> {
     fn resolve_tuple(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
-        items: &[TypeRef],
+        owner: TypeId,
+        items: &[TypeId],
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
         let mut recovered = Vec::with_capacity(items.len());
         let mut causes = Vec::new();
-        for (index, item) in items.iter().enumerate() {
-            let child = context.child_path(
-                path,
-                TypeRefNodeStep::TupleItem(u16::try_from(index).expect("parser cap")),
-            );
-            let resolved = self.resolve_node(context, item, &child, depth + 1)?;
+        for child in items.iter().copied() {
+            let resolved = self.resolve_node(context, child, depth.saturating_add(1))?;
             causes.extend(&resolved.causes);
-            recovered.push(self.require_type(context, &child, resolved));
+            recovered.push(self.require_type(context, child, resolved));
         }
+        let semantic_type = if recovered.is_empty() {
+            TypeKind::Unit
+        } else {
+            TypeKind::Tuple(recovered)
+        };
         Ok(self.finish_node(
             context,
-            path,
-            NodeValue::typed(TypeKind::Tuple(recovered), causes),
+            owner,
+            NodeValue::typed(semantic_type, causes),
             TypeNameResolution::Structural(StructuralTypeNodeKind::Tuple),
         ))
     }
@@ -196,34 +140,35 @@ impl Resolver<'_, '_> {
     fn resolve_function(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
-        params: &[TypeRef],
-        return_type: &TypeRef,
-        effects: Option<&arcweft_lang_syntax::types::TypeEffectRow>,
+        owner: TypeId,
+        function: &HirFunctionType,
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
-        let mut recovered = Vec::with_capacity(params.len());
+        let mut recovered = Vec::with_capacity(function.parameters().len());
         let mut causes = Vec::new();
-        for (index, param) in params.iter().enumerate() {
-            let child = context.child_path(
-                path,
-                TypeRefNodeStep::FunctionParameter(u16::try_from(index).expect("parser cap")),
-            );
-            let resolved = self.resolve_node(context, param, &child, depth + 1)?;
+        for child in function.parameters().iter().copied() {
+            let resolved = self.resolve_node(context, child, depth.saturating_add(1))?;
             causes.extend(&resolved.causes);
-            recovered.push(self.require_type(context, &child, resolved));
+            recovered.push(self.require_type(context, child, resolved));
         }
-        let return_path = context.child_path(path, TypeRefNodeStep::FunctionReturn);
-        let resolved_return = self.resolve_node(context, return_type, &return_path, depth + 1)?;
+        let return_owner = function.return_type();
+        let resolved_return = self.resolve_node(context, return_owner, depth.saturating_add(1))?;
         causes.extend(&resolved_return.causes);
-        let return_type = self.require_type(context, &return_path, resolved_return);
-        let effects = effects.map_or_else(EffectRow::unknown, |effects| {
-            EffectSet::from_labels(effects.effects())
+        let return_type = self.require_type(context, return_owner, resolved_return);
+        let effects = function
+            .effects()
+            .map_or_else(EffectRow::unknown, |effects| {
+                EffectSet::from_labels(
+                    effects
+                        .effects()
+                        .iter()
+                        .map(arcweft_lang_hir::type_ref::HirEffectName::as_str),
+                )
                 .map_or_else(|_| EffectRow::unknown(), EffectRow::closed)
-        });
+            });
         Ok(self.finish_node(
             context,
-            path,
+            owner,
             NodeValue::typed(
                 TypeKind::Function {
                     params: recovered,
@@ -239,24 +184,20 @@ impl Resolver<'_, '_> {
     fn resolve_choice(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
-        alternatives: &[TypeRef],
+        owner: TypeId,
+        alternatives: &[TypeId],
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
         let mut recovered = Vec::with_capacity(alternatives.len());
         let mut causes = Vec::new();
-        for (index, alternative) in alternatives.iter().enumerate() {
-            let child = context.child_path(
-                path,
-                TypeRefNodeStep::ChoiceAlternative(u16::try_from(index).expect("parser cap")),
-            );
-            let resolved = self.resolve_node(context, alternative, &child, depth + 1)?;
+        for child in alternatives.iter().copied() {
+            let resolved = self.resolve_node(context, child, depth.saturating_add(1))?;
             causes.extend(&resolved.causes);
-            recovered.push(self.require_type(context, &child, resolved));
+            recovered.push(self.require_type(context, child, resolved));
         }
         Ok(self.finish_node(
             context,
-            path,
+            owner,
             NodeValue::typed(TypeKind::Choice(recovered), causes),
             TypeNameResolution::Structural(StructuralTypeNodeKind::Choice),
         ))
@@ -265,92 +206,81 @@ impl Resolver<'_, '_> {
     fn resolve_generic(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
-        base: &arcweft_lang_syntax::types::TypePath,
-        args: &[TypeRef],
+        owner: TypeId,
+        generic: &HirGenericType,
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
-        if args.len() > usize::from(self.input.limits().generic_arguments_per_application()) {
+        if generic.arguments().len()
+            > usize::from(self.input.limits().generic_arguments_per_application())
+        {
             let failure = TypeResolutionFailure::Limit {
                 kind: NominalResolutionLimitKind::GenericArgumentsPerApplication,
-                observed: args.len() as u64,
+                observed: generic.arguments().len() as u64,
                 maximum: u64::from(self.input.limits().generic_arguments_per_application()),
             };
-            return Ok(self.failed_node(context, path, failure, Vec::new()));
+            return Ok(self.failed_node(context, owner, failure, Vec::new()));
         }
-        let mut resolved_args = Vec::with_capacity(args.len());
-        let constructor = BuiltinTypeConstructor::from_type_path(base);
-        for (index, argument) in args.iter().enumerate() {
-            let child = context.child_path(
-                path,
-                TypeRefNodeStep::GenericArgument(u16::try_from(index).expect("parser cap")),
-            );
+        let constructor = BuiltinTypeConstructor::from_hir_path(generic.base());
+        let mut resolved_args = Vec::with_capacity(generic.arguments().len());
+        for (index, child) in generic.arguments().iter().copied().enumerate() {
             let expectation = u16::try_from(index)
                 .ok()
                 .and_then(|index| constructor.and_then(|value| value.argument_expectation(index)));
             let resolved = if expectation == Some(TypeArgumentExpectation::EntityFamily) {
-                self.resolve_entity_family_node(context, argument, &child, depth + 1)?
+                self.resolve_entity_family_node(context, child, depth.saturating_add(1))?
             } else {
-                self.resolve_node(context, argument, &child, depth + 1)?
+                self.resolve_node(context, child, depth.saturating_add(1))?
             };
             resolved_args.push((child, resolved));
         }
-        let result = self.resolve_name(context, path, base, resolved_args, depth)?;
-        Ok(self.finish_node(context, path, result.value, result.outcome))
+        let result = self.resolve_name(context, owner, generic.base(), resolved_args, depth)?;
+        Ok(self.finish_node(context, owner, result.value, result.outcome))
     }
 
     fn resolve_trait_bound(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
-        bound: &arcweft_lang_syntax::types::TraitBound,
+        owner: TypeId,
+        bound: &HirTraitBoundType,
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
         let mut causes = Vec::new();
-        for (index, argument) in bound.args().iter().enumerate() {
-            let child = context.child_path(
-                path,
-                TypeRefNodeStep::TraitArgument(u16::try_from(index).expect("parser cap")),
-            );
-            let resolved = self.resolve_node(context, argument, &child, depth + 1)?;
-            causes.extend(resolved.causes);
-        }
-        for (index, binding) in bound.associated().iter().enumerate() {
-            let child = context.child_path(
-                path,
-                TypeRefNodeStep::AssociatedBinding(u16::try_from(index).expect("parser cap")),
-            );
-            let resolved = self.resolve_node(context, binding.value(), &child, depth + 1)?;
+        for child in bound.arguments().iter().copied().chain(
+            bound
+                .associated()
+                .iter()
+                .map(arcweft_lang_hir::type_ref::HirAssociatedTypeBinding::value),
+        ) {
+            let resolved = self.resolve_node(context, child, depth.saturating_add(1))?;
             causes.extend(resolved.causes);
         }
         Ok(self.finish_node(
             context,
-            path,
+            owner,
             NodeValue::typed(TypeKind::Unit, causes),
-            TypeNameResolution::TraitHead(bound.path().clone()),
+            TypeNameResolution::TraitHead(bound.base().clone()),
         ))
     }
 
     fn resolve_projection(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
-        subject: &TypeRef,
-        assoc: &str,
+        owner: TypeId,
+        subject: TypeId,
+        associated: &str,
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
-        let child = context.child_path(path, TypeRefNodeStep::ProjectionSubject);
-        let resolved = self.resolve_node(context, subject, &child, depth + 1)?;
+        let resolved = self.resolve_node(context, subject, depth.saturating_add(1))?;
         let causes = resolved.causes.clone();
-        let subject = self.require_type(context, &child, resolved);
+        let subject = self.require_type(context, subject, resolved);
         Ok(self.finish_node(
             context,
-            path,
+            owner,
             NodeValue::typed(
                 TypeKind::Projection {
                     subject: Box::new(subject),
                     trait_name: None,
-                    assoc: assoc.to_owned(),
+                    assoc: associated.to_owned(),
                 },
                 causes,
             ),
@@ -361,24 +291,31 @@ impl Resolver<'_, '_> {
     fn resolve_reference(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
-        reference: &arcweft_lang_syntax::reference::ReferenceType,
+        owner: TypeId,
+        reference: &HirReferenceType,
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
-        let child = context.child_path(path, TypeRefNodeStep::ReferenceReferent);
-        let resolved = self.resolve_node(context, reference.referent(), &child, depth + 1)?;
+        let child = reference.referent();
+        let resolved = self.resolve_node(context, child, depth.saturating_add(1))?;
         let causes = resolved.causes.clone();
-        let inner = self.require_type(context, &child, resolved);
+        let inner = self.require_type(context, child, resolved);
+        let kind = match reference.kind() {
+            HirBorrowKind::Shared => BorrowKind::Shared,
+            HirBorrowKind::Mutable => BorrowKind::Mutable,
+        };
+        let lifetime = match reference.region() {
+            Some(HirTypeRegion::Named(region)) => {
+                Some(LifetimeScopeKind::parse(region.name().as_str()))
+            }
+            Some(HirTypeRegion::Elided(_)) | None => None,
+        };
         Ok(self.finish_node(
             context,
-            path,
+            owner,
             NodeValue::typed(
                 TypeKind::BorrowRef {
-                    kind: reference.kind(),
-                    lifetime: reference
-                        .region()
-                        .name()
-                        .map(|name| LifetimeScopeKind::parse(name.name())),
+                    kind,
+                    lifetime,
                     inner: Box::new(inner),
                 },
                 causes,
@@ -390,17 +327,16 @@ impl Resolver<'_, '_> {
     fn resolve_slice(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
-        item: &TypeRef,
+        owner: TypeId,
+        item: TypeId,
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
-        let child = context.child_path(path, TypeRefNodeStep::SliceItem);
-        let resolved = self.resolve_node(context, item, &child, depth + 1)?;
+        let resolved = self.resolve_node(context, item, depth.saturating_add(1))?;
         let causes = resolved.causes.clone();
-        let item = self.require_type(context, &child, resolved);
+        let item = self.require_type(context, item, resolved);
         Ok(self.finish_node(
             context,
-            path,
+            owner,
             NodeValue::typed(TypeKind::Slice(Box::new(item)), causes),
             TypeNameResolution::Structural(StructuralTypeNodeKind::Slice),
         ))
@@ -409,65 +345,68 @@ impl Resolver<'_, '_> {
     fn resolve_entity_family_node(
         &mut self,
         context: &SourceContext<'_>,
-        value: &TypeRef,
-        path: &TypeRefNodePath,
+        owner: TypeId,
         depth: u16,
     ) -> Result<NodeValue, TypeResolutionInputError> {
-        if let TypeRef::Path(type_path) = value
-            && let Some(family) = super::direct_name(type_path).and_then(EntityKind::from_type_name)
+        let ty = context
+            .module
+            .resolve_type(owner)
+            .expect("validated final-HIR type identity remains live");
+        if let HirTypeKind::Path(path) = ty.kind()
+            && let Some(family) = super::direct_name(path).and_then(EntityKind::from_type_name)
         {
-            if let Some(halted) = self.begin_node(context, path, depth) {
+            if let Some(halted) = self.begin_node(context, owner, depth) {
                 return Ok(halted);
             }
             return Ok(self.finish_node(
                 context,
-                path,
+                owner,
                 NodeValue::entity_family(family.clone()),
                 TypeNameResolution::EntityFamily(family),
             ));
         }
-        self.resolve_node(context, value, path, depth)
+        self.resolve_node(context, owner, depth)
     }
 
     fn begin_node(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
+        owner: TypeId,
         depth: u16,
     ) -> Option<NodeValue> {
         if let Some(poison) = self.global_halt {
             self.nodes.push(ResolvedTypeNode::new(
-                path.clone(),
-                context.evidence(path, false),
-                context.terminal_evidence(path),
-                context.reference_path(path),
+                owner,
+                context.evidence(owner, false),
+                context.terminal_evidence(owner),
+                context.reference_path(owner),
                 Some(TypeKind::Error(poison)),
                 TypeNameResolution::Poisoned(poison),
             ));
             return Some(NodeValue::error(poison, []));
         }
         if let Err((attempted, maximum)) = self.charge(if context.alias_target { 2 } else { 1 }) {
-            return Some(self.work_overflow_node(context, path, attempted, maximum));
+            return Some(self.work_overflow_node(context, owner, attempted, maximum));
         }
         if context.alias_target {
-            self.alias_nodes += 1;
+            self.alias_nodes = self.alias_nodes.saturating_add(1);
             if self.alias_nodes > self.input.limits().alias_expansion_nodes() {
                 let failure = TypeResolutionFailure::Limit {
                     kind: NominalResolutionLimitKind::AliasExpansionNodes,
                     observed: self.alias_nodes,
                     maximum: self.input.limits().alias_expansion_nodes(),
                 };
-                return Some(self.failed_node(context, path, failure, Vec::new()));
+                return Some(self.failed_node(context, owner, failure, Vec::new()));
             }
         } else {
-            self.type_nodes += 1;
+            self.type_nodes = self.type_nodes.saturating_add(1);
             if self.type_nodes > self.input.limits().type_nodes_per_reference() {
                 let failure = TypeResolutionFailure::Limit {
                     kind: NominalResolutionLimitKind::TypeNodesPerReference,
                     observed: self.type_nodes,
                     maximum: self.input.limits().type_nodes_per_reference(),
                 };
-                let failed = self.failed_node(context, path, failure, Vec::new());
+                let failed = self.failed_node(context, owner, failure, Vec::new());
                 self.global_halt = failed.causes.first().copied();
                 return Some(failed);
             }
@@ -478,7 +417,7 @@ impl Resolver<'_, '_> {
                 observed: u64::from(depth),
                 maximum: u64::from(self.input.limits().recursive_type_depth()),
             };
-            return Some(self.failed_node(context, path, failure, Vec::new()));
+            return Some(self.failed_node(context, owner, failure, Vec::new()));
         }
         None
     }
@@ -486,16 +425,16 @@ impl Resolver<'_, '_> {
     fn finish_node(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
+        owner: TypeId,
         value: NodeValue,
         outcome: TypeNameResolution,
     ) -> NodeValue {
         let recovered = value.ty.clone();
         self.nodes.push(ResolvedTypeNode::new(
-            path.clone(),
-            context.evidence(path, false),
-            context.terminal_evidence(path),
-            context.reference_path(path),
+            owner,
+            context.evidence(owner, false),
+            context.terminal_evidence(owner),
+            context.reference_path(owner),
             recovered,
             outcome,
         ));
@@ -505,7 +444,7 @@ impl Resolver<'_, '_> {
     pub(super) fn require_type(
         &mut self,
         context: &SourceContext<'_>,
-        path: &TypeRefNodePath,
+        owner: TypeId,
         value: NodeValue,
     ) -> TypeKind {
         value.ty.unwrap_or_else(|| {
@@ -513,7 +452,7 @@ impl Resolver<'_, '_> {
             self.record_poison(
                 poison,
                 TypePoisonOrigin::UpstreamTypeDiagnostic,
-                context.evidence(path, true),
+                context.evidence(owner, true),
                 false,
             );
             TypeKind::Error(poison)

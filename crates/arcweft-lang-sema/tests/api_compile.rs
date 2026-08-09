@@ -3,6 +3,7 @@ fn removed_character_classifier_and_mutation_bypasses_do_not_compile() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/character_nominal_*.rs");
     cases.compile_fail("tests/ui/typecheck_env_character_builder_removed.rs");
+    cases.compile_fail("tests/ui/typecheck_env_callable_mutation_removed.rs");
 }
 
 #[test]
@@ -54,4 +55,10 @@ fn removed_zero_consumer_nominal_index_helper_is_unavailable() {
 fn internal_checker_modules_are_unavailable() {
     let cases = trybuild::TestCases::new();
     cases.compile_fail("tests/ui/internal_checker_modules_private.rs");
+}
+
+#[test]
+fn detached_source_expression_effect_reader_is_unavailable() {
+    let cases = trybuild::TestCases::new();
+    cases.compile_fail("tests/ui/removed_source_string_effect.rs");
 }

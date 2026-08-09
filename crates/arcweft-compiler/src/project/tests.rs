@@ -2,23 +2,56 @@ use super::*;
 use arcweft_lang_hir::symbol::{
     CallablePackageId, ExternalDeclarationSeed, ProjectDirectBinding, ProjectSymbolWorldId,
 };
+use arcweft_lang_hir::{
+    expr::HirExprKind,
+    item::{HirItemKind, HirProofBody},
+    proof_return::HirProofReturnSemanticClass,
+};
 use arcweft_lang_sema::{
     env::identity::EnvironmentBindingId,
     registration::{ExternalRegistrationFact, RegisteredExternalOwner},
 };
 use arcweft_lang_syntax::ast::{
     common::Visibility,
-    module_path::{CanonicalModulePath, ModulePathRoot},
+    module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
     symbol_path::{ProjectSymbolPath, ProjectSymbolSegment, SymbolPath},
 };
 use arcweft_lang_syntax::{
+    incremental::{ParsedSource, SyntaxDatabase},
     lint::{SyntaxLintCode, SyntaxLintSeverity},
-    parser::recovery::ParseErrorKind,
+    parser::ParseOptions,
 };
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
+use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::ProjectSourceFile;
-use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange};
-use std::path::PathBuf;
+use arcweft_source::{DiagnosticLabel, SourceDocument, SourceRange, identity::SourceSnapshotId};
+use std::{collections::BTreeMap, path::PathBuf};
+
+fn compilation_state(
+    project: &ProjectSources,
+) -> (
+    ProjectCompilationSession,
+    BTreeMap<CanonicalModulePath, ParsedSource>,
+) {
+    let mut syntax = SyntaxDatabase::try_new().expect("test syntax database");
+    let parsed = project
+        .modules()
+        .map(|source| {
+            let parsed = syntax
+                .parse_initial(
+                    SourceSnapshotId::initial(source.document().display_name().clone()),
+                    Arc::clone(source.document()),
+                    ParseOptions::default(),
+                )
+                .expect("attached test project source");
+            (source.module().clone(), parsed)
+        })
+        .collect();
+    (
+        ProjectCompilationSession::try_new().expect("test HIR database"),
+        parsed,
+    )
+}
 
 fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilationContext) {
     let source_path = PathBuf::from("src/main.arcw");
@@ -89,22 +122,52 @@ fn manifest_document(name: &str) -> Arc<SourceDocument> {
 }
 
 #[test]
-fn project_compiler_entrypoints_reject_removed_role_declarations_at_parse() {
+fn recovered_source_commits_poisoned_hir_for_tooling() {
     for source in [
         "state GameState {\n    value: i32\n}\n",
         "reducer update(state: GameState, event: GameEvent) -> GameState {\n    state\n}\n",
         "agent @agent.smoke smoke() {\n    Ok(())\n}\n",
     ] {
         let (project, context) = removed_role_project(source);
-        let options = RuntimePlanLowerOptions::default();
-        let error = compile_project(&project, &context, &options)
-            .expect_err("removed declaration must fail project compilation");
-        assert_eq!(error.stage(), ProjectCompileStage::Parse.as_str());
+        let (mut compiler, parsed_sources) = compilation_state(&project);
+        let error = compile_project(&mut compiler, &project, &parsed_sources, &context)
+            .expect_err("recovered declaration remains non-executable");
+        assert_eq!(error.stage(), ProjectCompileStage::Readiness.as_str());
+        let tooling = error
+            .tooling_lease()
+            .expect("recovered final HIR publishes one tooling lease");
+        assert_eq!(tooling.modules().len(), 1);
+        let module = &tooling.modules()[0];
+        assert!(!module.hir().is_executable());
+        assert!(!module.hir().is_cache_eligible());
+        assert!(Arc::ptr_eq(
+            module.hir(),
+            tooling
+                .hir_project()
+                .view()
+                .module(module.module())
+                .expect("tooling project retains the exact recovered module")
+        ));
+        assert!(
+            tooling
+                .diagnostics()
+                .iter()
+                .any(|diagnostic| diagnostic.syntax_diagnostic().is_some()),
+            "syntax recovery diagnostics remain attached to the tooling lease"
+        );
 
+        let (mut compiler, parsed_sources) = compilation_state(&project);
         let mut cache = InMemoryProjectCompileCache::default();
-        let error = compile_project_with_cache(&project, &context, &options, &mut cache)
-            .expect_err("cached project compilation must reject removed declaration");
-        assert_eq!(error.stage(), ProjectCompileStage::Parse.as_str());
+        let error = compile_project_with_cache(
+            &mut compiler,
+            &project,
+            &parsed_sources,
+            &context,
+            &mut cache,
+        )
+        .expect_err("cached compilation must not execute recovered HIR");
+        assert_eq!(error.stage(), ProjectCompileStage::Readiness.as_str());
+        assert!(error.tooling_lease().is_some());
     }
 }
 
@@ -141,7 +204,7 @@ fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
     );
 
     let diagnostic = error.diagnostics().first().expect("diagnostic");
-    assert!(diagnostic.parse_error().is_none());
+    assert!(diagnostic.syntax_diagnostic().is_none());
     assert_eq!(
         diagnostic.module(),
         Some(&CanonicalModulePath::crate_root())
@@ -164,7 +227,8 @@ fn project_compile_diagnostics_own_typed_diagnostic_and_source_snapshot() {
 #[test]
 fn compiled_project_modules_retain_typed_non_blocking_lints() {
     let (project, context) = removed_role_project("flow @flow.opening opening {\n}\n");
-    let compiled = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
         .expect("valid project with a non-blocking syntax warning compiles");
     let lint = compiled.modules()[0]
         .syntax_lints()
@@ -187,37 +251,223 @@ fn compiled_project_modules_retain_typed_non_blocking_lints() {
 }
 
 #[test]
-fn project_parse_diagnostics_retain_the_original_typed_parser_payload() {
+fn multi_module_authored_proof_alias_to_unit_uses_one_semantic_project_transaction() {
+    let aliases = CanonicalModulePath::crate_root()
+        .join(ModuleSegment::new("aliases").expect("module segment"));
+    let root_document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://proof-return/src/main.arcw")
+                .expect("root document ID"),
+            SourceName::path("src/main.arcw"),
+            "use crate.aliases.ProofUnit\nproof root_checked() -> ProofUnit {}\n",
+        )
+        .expect("root source document"),
+    );
+    let alias_document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://proof-return/src/aliases.arcw")
+                .expect("alias document ID"),
+            SourceName::path("src/aliases.arcw"),
+            "pub type ProofUnit = Unit\nproof alias_checked() -> Unit {}\n",
+        )
+        .expect("alias source document"),
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        package("org.arcweft.proof-return"),
+        BuildSpec::default(),
+        manifest_document("proof-return"),
+        [
+            ProjectSourceFile::new(
+                CanonicalModulePath::crate_root(),
+                PathBuf::from("src/main.arcw"),
+                Arc::clone(&root_document),
+                [ModuleDependency::new(aliases.clone())],
+            ),
+            ProjectSourceFile::new(
+                aliases,
+                PathBuf::from("src/aliases.arcw"),
+                Arc::clone(&alias_document),
+                [],
+            ),
+        ],
+    )
+    .expect("multi-module project sources");
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(project.package().id.as_str()).expect("package"),
+        root_document.identity().id().clone(),
+        "proof-return-test",
+    )
+    .expect("symbol world");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&root_document), Arc::clone(&alias_document)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registration facts");
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        None,
+        None,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("semantic Unit aliases admit omitted Proof tails");
+
+    let tooling = compiled.tooling_lease();
+    assert!(Arc::ptr_eq(tooling.hir_project(), compiled.hir_project()));
+    assert!(std::ptr::eq(
+        tooling.project_symbols(),
+        compiled.registered_world().symbols()
+    ));
+    assert_eq!(compiled.modules().len(), 2);
+    assert_eq!(
+        compiled.hir_project().database_id(),
+        session.hir_database_id()
+    );
+    let mut proofs = 0_usize;
+    for module in compiled.modules() {
+        for &item_id in module.hir().source_ordered_items() {
+            let item = module.hir().resolve_item(item_id).expect("published item");
+            let HirItemKind::Proof(proof) = item.kind() else {
+                continue;
+            };
+            proofs += 1;
+            assert_eq!(
+                proof.return_semantic_class(),
+                HirProofReturnSemanticClass::Unit
+            );
+            let HirProofBody::Block { tail, .. } = proof.body() else {
+                panic!("fixture Proof must retain its authored block")
+            };
+            assert!(matches!(
+                module.hir().resolve_expr(*tail).expect("Proof tail").kind(),
+                HirExprKind::Unit
+            ));
+        }
+    }
+    assert_eq!(proofs, 2);
+}
+
+#[test]
+fn project_parse_diagnostics_retain_the_attached_source_payload() {
     let source = r"pub view Card() {
     export part as card.heading
     Panel().part(header)
 }
 ";
     let (project, context) = removed_role_project(source);
-    let error = compile_project(&project, &context, &RuntimePlanLowerOptions::default())
-        .expect_err("malformed View export must fail project parsing");
-    assert_eq!(error.stage(), ProjectCompileStage::Parse.as_str());
+    let (mut compiler, parsed_sources) = compilation_state(&project);
+    let error = compile_project(&mut compiler, &project, &parsed_sources, &context)
+        .expect_err("malformed View export must remain non-executable");
+    assert_eq!(error.stage(), ProjectCompileStage::Readiness.as_str());
+    let tooling = error
+        .tooling_lease()
+        .expect("recovered View retains a tooling project");
+    assert_eq!(tooling.modules().len(), 1);
+    assert!(Arc::ptr_eq(
+        tooling.modules()[0].parsed().document_lease(),
+        tooling.modules()[0].hir().provenance().document()
+    ));
 
     let diagnostic = error
         .diagnostics()
         .iter()
         .find(|diagnostic| {
             diagnostic
-                .parse_error()
-                .is_some_and(|error| error.kind() == ParseErrorKind::ViewExportPartMissingLocal)
+                .syntax_diagnostic()
+                .is_some_and(|error| error.code() == "syntax.view.export_missing_local")
         })
-        .expect("typed missing-local parser diagnostic");
-    let parse_error = diagnostic.parse_error().expect("parser payload");
-    assert_eq!(parse_error.code(), "view::export_part_missing_local");
-    assert_eq!(&source[parse_error.range().as_range()], "as");
+        .expect("attached missing-local parser diagnostic");
+    let syntax_diagnostic = diagnostic
+        .syntax_diagnostic()
+        .expect("attached parser payload");
+    assert_eq!(
+        diagnostic.source().expect("attached source").text(),
+        Some(source)
+    );
+    let alias_start = source.find("as card.heading").expect("alias keyword");
+    assert_eq!(
+        syntax_diagnostic.primary().range(),
+        SourceRange::new(alias_start, alias_start)
+    );
     assert_eq!(
         diagnostic
             .diagnostic()
             .code()
             .expect("diagnostic code")
             .as_str(),
-        parse_error.code()
+        syntax_diagnostic.code()
     );
+}
+
+#[test]
+fn fatal_pre_hir_failure_exposes_no_tooling_lease() {
+    let (project, context) = removed_role_project("fn main() -> Unit { () }\n");
+    let (mut compiler, mut parsed_sources) = compilation_state(&project);
+    parsed_sources.clear();
+
+    let error = compile_project(&mut compiler, &project, &parsed_sources, &context)
+        .expect_err("missing accepted ParsedSource is fatal before HIR publication");
+
+    assert_eq!(error.stage(), ProjectCompileStage::Parse.as_str());
+    assert!(error.tooling_lease().is_none());
+}
+
+#[test]
+fn recovered_module_never_enters_runtime_plan_or_compile_cache() {
+    #[derive(Default)]
+    struct RecordingCache {
+        stores: usize,
+    }
+
+    impl ProjectCompileCache for RecordingCache {
+        fn load(
+            &mut self,
+            _fingerprint: ProjectCompileUnitFingerprint,
+        ) -> Option<Vec<CompiledProjectModule>> {
+            None
+        }
+
+        fn store(
+            &mut self,
+            _fingerprint: ProjectCompileUnitFingerprint,
+            _modules: &[CompiledProjectModule],
+        ) {
+            self.stores += 1;
+        }
+    }
+
+    let (project, context) = removed_role_project("fn {\n");
+    let (mut compiler, parsed_sources) = compilation_state(&project);
+    let mut cache = RecordingCache::default();
+    let error = compile_project_with_cache(
+        &mut compiler,
+        &project,
+        &parsed_sources,
+        &context,
+        &mut cache,
+    )
+    .expect_err("recovered module cannot reach executable products");
+
+    assert_eq!(error.stage(), ProjectCompileStage::Readiness.as_str());
+    let tooling = error
+        .tooling_lease()
+        .expect("recovered module retains tooling evidence");
+    assert!(
+        tooling
+            .modules()
+            .iter()
+            .all(|module| { !module.hir().is_executable() && !module.hir().is_cache_eligible() })
+    );
+    assert!(tooling.hir_project().executable_view().is_err());
+    assert_eq!(cache.stores, 0);
 }
 
 #[test]
@@ -422,15 +672,21 @@ fn pending_stores_discard_on_registration_error() {
         None,
     );
     let mut cache = RecordingCache::default();
+    let (mut compiler, parsed_sources) = compilation_state(&project);
 
     let error = compile_project_with_cache(
+        &mut compiler,
         &project,
+        &parsed_sources,
         &context,
-        &RuntimePlanLowerOptions::default(),
         &mut cache,
     )
     .expect_err("unknown character owner rejects project");
     assert_eq!(error.stage(), ProjectCompileStage::Registration.as_str());
+    assert!(
+        error.tooling_lease().is_none(),
+        "registration prelude rejection occurs before a complete tooling lease exists"
+    );
     assert_eq!(cache.stores, 0);
     assert!(error.diagnostics().iter().any(|diagnostic| {
         diagnostic
@@ -443,4 +699,108 @@ fn pending_stores_discard_on_registration_error() {
 #[test]
 fn registration_failure_discards_project() {
     pending_stores_discard_on_registration_error();
+}
+
+#[test]
+fn agent_project_graph_preserves_same_public_flow_label_across_modules() {
+    let child = CanonicalModulePath::crate_root()
+        .join(ModuleSegment::new("child").expect("module segment"));
+    let root_document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://agent-flow-identity/src/main.arcw")
+                .expect("root document ID"),
+            SourceName::path("src/main.arcw"),
+            "flow opening {\n}\n",
+        )
+        .expect("root source document"),
+    );
+    let child_document = Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("arcweft-project://agent-flow-identity/src/child.arcw")
+                .expect("child document ID"),
+            SourceName::path("src/child.arcw"),
+            "flow opening {\n}\n",
+        )
+        .expect("child source document"),
+    );
+    let project = ProjectSources::new(
+        PathBuf::from("arcw.toml"),
+        PathBuf::new(),
+        package("org.arcweft.agent-flow-identity"),
+        BuildSpec::default(),
+        manifest_document("agent-flow-identity"),
+        [
+            ProjectSourceFile::new(
+                CanonicalModulePath::crate_root(),
+                PathBuf::from("src/main.arcw"),
+                Arc::clone(&root_document),
+                [ModuleDependency::new(child.clone())],
+            ),
+            ProjectSourceFile::new(
+                child,
+                PathBuf::from("src/child.arcw"),
+                Arc::clone(&child_document),
+                [],
+            ),
+        ],
+    )
+    .expect("multi-module project sources");
+    let world = ProjectSymbolWorldId::try_new(
+        CallablePackageId::try_new(project.package().id.as_str()).expect("package"),
+        root_document.identity().id().clone(),
+        "agent-flow-identity-test",
+    )
+    .expect("symbol world");
+    let facts = ProjectRegistrationFacts::try_new(
+        world,
+        vec![Arc::clone(&root_document), Arc::clone(&child_document)],
+        Vec::new(),
+        Vec::new(),
+        Vec::new(),
+    )
+    .expect("registration facts");
+    let context = ProjectCompilationContext::new(
+        Arc::new(TypeCheckEnv::standard()),
+        Arc::new(facts),
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        None,
+        None,
+    );
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let compiled = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("same-labeled module Flow project compiles");
+
+    let graph = crate::agent_project::agent_project_graph_from_project(compiled.semantic_index())
+        .expect("typed Agent project graph");
+    let flow_symbols = graph
+        .symbols
+        .iter()
+        .filter(|symbol| {
+            symbol
+                .public_id
+                .as_ref()
+                .is_some_and(|id| id.as_str() == "flow.opening")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(flow_symbols.len(), 2);
+    assert!(flow_symbols.iter().all(|symbol| {
+        symbol
+            .symbol_id
+            .as_str()
+            .starts_with("project:entity:flow:v1:")
+    }));
+    assert_ne!(flow_symbols[0].symbol_id, flow_symbols[1].symbol_id);
+    assert_ne!(
+        flow_symbols[0].qualified_name,
+        flow_symbols[1].qualified_name
+    );
+
+    let compatibility_entities =
+        crate::agent_project::agent_required_entities_from_project(compiled.semantic_index())
+            .expect("public compatibility entity projection");
+    assert!(
+        compatibility_entities
+            .iter()
+            .all(|entity| { entity.public_id.as_str() != "flow.opening" })
+    );
 }

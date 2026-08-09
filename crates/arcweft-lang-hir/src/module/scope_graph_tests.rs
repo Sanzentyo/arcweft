@@ -8,13 +8,15 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use crate::database::HirDatabase;
 use crate::expr::{HirExpr, HirExprKind, HirPoisonState};
-use crate::final_lowering::StagedHirModuleTransaction;
+use crate::final_lowering::{
+    StagedHirModuleTransaction, stage_unpublished_module_for_invariant_test,
+};
 use crate::identity::{
     HirIdKind, HirTypedId, ItemId, LocalId, RawHirId, ScopeId, SyntheticKey, SyntheticOwner,
     SyntheticRole,
 };
 use crate::item::HirItemKind;
-use crate::lower::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
 use crate::scope::{HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::HirSourceSite;
 use crate::stmt::{HirStmt, HirStmtKind};
@@ -62,10 +64,13 @@ fn assert_graph_rejected(
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let request = LoweringRequest::try_new(key.clone(), &parsed).unwrap();
-    let mut transaction = database.stage_final_hir(request).unwrap();
-    let root = transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    let mut transaction = stage_unpublished_module_for_invariant_test(
+        &database,
+        request,
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .unwrap();
+    let root = transaction.lower_parsed_source_items(&parsed).unwrap();
     let items = transaction.staged_source_ordered_items().to_vec();
     tamper(&parsed, &mut transaction, root, &items);
 
@@ -129,10 +134,13 @@ fn central_scope_graph_preserves_valid_owner_and_source_ordered_membership() {
     );
     let mut database = HirDatabase::try_new().unwrap();
     let request = LoweringRequest::try_new(module_key(&parsed), &parsed).unwrap();
-    let mut transaction = database.stage_final_hir(request).unwrap();
-    let root = transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    let mut transaction = stage_unpublished_module_for_invariant_test(
+        &database,
+        request,
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .unwrap();
+    let root = transaction.lower_parsed_source_items(&parsed).unwrap();
     let items = transaction.staged_source_ordered_items().to_vec();
     let output = transaction.finish(&mut database).unwrap();
     let module = output.module();
@@ -419,7 +427,7 @@ fn expression_and_statement_owned_scopes_require_the_owner_lexical_parent() {
                 let key = match owner {
                     HirScopeOwner::Expr(owner) => SyntheticKey::try_new(
                         SyntheticOwner::Expr(owner),
-                        SyntheticRole::DesugaredTemporary,
+                        SyntheticRole::RecoveryOperand,
                         0,
                     )
                     .unwrap(),

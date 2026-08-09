@@ -1,36 +1,30 @@
-use arcweft_core::plan::{FlowEvent, RuntimeLineId};
-use arcweft_dialogue::{DialogueProfileRevision, InlineFailurePolicy};
-use arcweft_render_text::{LineDisplayCatalog, LineDisplaySpec, RichTextDocument, RichTextNode};
-use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_character::id::CharacterId;
+use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
+use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_id::TextKey;
+use arcweft_render_text::{RuntimeLineContext, resolve_frame};
 use arcweft_runtime_driver::dialogue::{
     DialoguePresentationOperation, DialoguePresentationStore, DialogueViewDefinition,
 };
-use arcweft_runtime_driver::display::resolve_display_frames;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
-use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
+use arcweft_text_model::{
+    CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
+    LineDisplayFrame, RichTextDocument, RichTextNode,
+};
+use std::collections::BTreeMap;
 
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
 }
 
-fn test_dialogue_revision() -> DialogueProfileRevision {
+fn source_ref() -> ProductSourceRef {
     let manifest = SourceDocument::try_new(
         SourceDocumentId::try_new("runtime-driver-dialogue-view-store-test").expect("document ID"),
         SourceName::Memory,
         "test manifest",
     )
     .expect("test document");
-    let sources =
-        SourceSetRevision::try_for_identities([manifest.identity()]).expect("test source revision");
-    DialogueProfileRevision::from_admitted_parts(
-        manifest.identity().clone(),
-        sources,
-        sources,
-        ViewProgramId::try_new("view_program.runtime-driver-dialogue-view-store-test")
-            .expect("View program ID"),
-        AcceptedViewProgramRevision::try_from_bytes([0x5a; 32]).expect("View program revision"),
-        ResourceTypeRegistry::empty().digest(),
-    )
+    ProductSourceRef::try_for_identity(manifest.identity()).expect("product source identity")
 }
 
 fn view_definition(value: &str) -> DialogueViewDefinition {
@@ -39,78 +33,63 @@ fn view_definition(value: &str) -> DialogueViewDefinition {
     )
 }
 
-fn display_spec(line: &str, view: &str, text: &str) -> LineDisplaySpec {
-    LineDisplaySpec {
-        line: line_id(line),
-        callee: "narrator".to_owned(),
-        speaker_label: None,
-        text_key: None,
-        view: arcweft_view::ViewId::try_new(view).expect("test View ID is valid"),
-        profile_style: None,
-        dialogue_revision: test_dialogue_revision(),
-        voice: None,
-        look: None,
-        style: None,
-        base_styles: Vec::new(),
-        inline_failure: InlineFailurePolicy::FailLine,
-        style_contributions: Vec::new(),
-        args: Vec::new(),
-        content: RichTextDocument::new(vec![RichTextNode::Text {
-            text: text.to_owned(),
-        }]),
-    }
+fn runtime_context(view: &str) -> RuntimeLineContext {
+    RuntimeLineContext::new(
+        Vec::new(),
+        DialoguePresentationCharacter {
+            id: CharacterId::try_new("character.narrator").expect("character identity"),
+            display_name: "Narrator".to_owned(),
+        },
+        CharacterDialoguePresentationConfig {
+            view: arcweft_view::ViewId::try_new(view).expect("test View ID is valid"),
+            voice: None,
+            look: None,
+            stage: None,
+            portrait: None,
+            focus: None,
+            cleanup: None,
+            source_locale: None,
+            hooks: Vec::new(),
+            inline_failure: InlineFailurePolicy::FailLine,
+            custom: BTreeMap::new(),
+            config_digest: RuntimeValueDigest::ZERO,
+        },
+        Vec::new(),
+        Vec::new(),
+    )
 }
 
-fn resolved_frame(line: &str, view: &str, text: &str) -> arcweft_render_text::LineDisplayFrame {
-    let catalog = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![display_spec(line, view, text)],
+fn content_spec(line: &str, text: &str) -> DialogueContentSpec {
+    DialogueContentSpec::new(
+        line_id(line),
+        TextKey::try_new(line.replace("line.", "text.")).expect("text key"),
+        RichTextDocument::new(vec![RichTextNode::Text {
+            text: text.to_owned(),
+        }]),
+        Vec::new(),
+        source_ref(),
     )
-    .expect("test display catalog is revision-consistent");
-    let resolution = resolve_display_frames(
-        &catalog,
-        &[FlowEvent::DialogueLine {
-            line: line_id(line),
-            bindings: Vec::new(),
-        }],
-    );
-    let DialoguePresentationOperation::Append { frame, .. } = resolution
-        .dialogue_operations
-        .into_iter()
-        .next()
-        .expect("one resolved operation")
-    else {
-        panic!("ordinary dialogue resolves to append")
-    };
-    frame
+}
+
+fn resolved_frame(line: &str, view: &str, text: &str) -> LineDisplayFrame {
+    resolve_frame(&content_spec(line, text), &runtime_context(view))
+        .expect("final dialogue content resolves with explicit runtime context")
 }
 
 #[test]
 fn same_view_history_mounts_only_its_active_occurrence() {
-    let catalog = LineDisplayCatalog::try_from_lines(
-        test_dialogue_revision(),
-        vec![
-            display_spec("line.first", "view.Dialogue", "first"),
-            display_spec("line.second", "view.Dialogue", "second"),
-        ],
-    )
-    .expect("test display catalog is revision-consistent");
-    let resolution = resolve_display_frames(
-        &catalog,
-        &[
-            FlowEvent::DialogueLine {
-                line: line_id("line.first"),
-                bindings: Vec::new(),
-            },
-            FlowEvent::DialogueLine {
-                line: line_id("line.second"),
-                bindings: Vec::new(),
-            },
-        ],
-    );
     let mut store = DialoguePresentationStore::default();
     store
-        .apply_operations(&resolution.dialogue_operations)
+        .apply_operations(&[
+            DialoguePresentationOperation::append(
+                view_definition("view.Dialogue"),
+                resolved_frame("line.first", "view.Dialogue", "first"),
+            ),
+            DialoguePresentationOperation::append(
+                view_definition("view.Dialogue"),
+                resolved_frame("line.second", "view.Dialogue", "second"),
+            ),
+        ])
         .expect("ordered operations apply");
 
     let dialogue = store

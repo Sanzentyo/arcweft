@@ -15,10 +15,12 @@ use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 use crate::database::HirDatabase;
 use crate::dialogue_application::HirPostfixBracketCandidates;
 use crate::expr::HirExprKind;
-use crate::final_lowering::StagedHirModuleTransaction;
+use crate::final_lowering::{
+    StagedHirModuleTransaction, stage_unpublished_module_for_invariant_test,
+};
 use crate::identity::{ExprId, LocalGeneration, LocalId, ScopeId};
 use crate::leaf::HirName;
-use crate::lower::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
 use crate::scope::{HirLocal, HirScope, HirScopeKind, HirScopeOwner};
 use crate::source_index::HirSourceSite;
 use crate::stmt::{HirStmt, HirStmtKind};
@@ -469,7 +471,6 @@ fn parsed_source_with_expression(document_id: &str, expression: &str) -> ParsedS
 
 fn attached_expression(parsed: &ParsedSource) -> AttachedExpressionNode {
     let item = parsed
-        .tree()
         .items()
         .expect("source item inventory")
         .into_iter()
@@ -515,11 +516,12 @@ fn stage<'source>(
     database: &HirDatabase,
     parsed: &'source ParsedSource,
 ) -> StagedHirModuleTransaction<'source> {
-    database
-        .stage_final_hir(
-            LoweringRequest::try_new(module_key(parsed), parsed).expect("lowering request"),
-        )
-        .expect("staged candidate module")
+    stage_unpublished_module_for_invariant_test(
+        database,
+        LoweringRequest::try_new(module_key(parsed), parsed).expect("lowering request"),
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .expect("staged candidate module")
 }
 
 fn allocate_module_scope(

@@ -1,14 +1,14 @@
 //! Canonical post-resolution text and style boundary.
 
-use crate::{
-    DialogueHostEvent, LineDisplayFrame, LineDisplayFrameValidationError, LineDisplayStage,
-    RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily, RichTextInlineDirection,
-    RichTextNode, RichTextPresentation, RichTextRange, RichTextRubyPosition, RichTextStyle,
-    RichTextWritingMode, presentation_from_styles,
-};
 use arcweft_core::locale::LocaleId;
 use arcweft_presentation::fx::FxColor;
-use arcweft_presentation::rich_text::canonical_tag_name;
+use arcweft_text_model::{
+    DialogueHostEvent, LineDisplayFrame, LineDisplayFrameValidationError, LineDisplayStage,
+    RichTextAngle, RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily,
+    RichTextInlineDirection, RichTextNode, RichTextPresentation, RichTextRange,
+    RichTextRubyPosition, RichTextSpanKind, RichTextStyle, RichTextWritingMode,
+    presentation_from_styles,
+};
 use serde::{Deserialize, Serialize};
 use std::fmt::{self, Write};
 use thiserror::Error;
@@ -124,7 +124,7 @@ pub enum TextSlant {
     Upright,
     Italic,
     Oblique {
-        angle: crate::RichTextAngle,
+        angle: RichTextAngle,
     },
 }
 
@@ -186,15 +186,10 @@ impl Default for TextColor {
 impl From<&RichTextColor> for TextColor {
     fn from(value: &RichTextColor) -> Self {
         match value {
-            RichTextColor::Rgb { red, green, blue } => Self::rgba(*red, *green, *blue, 255),
-            RichTextColor::Named { name } => match name.as_str() {
-                "red" => Self::rgba(240, 110, 110, 255),
-                "green" => Self::rgba(120, 220, 150, 255),
-                "blue" => Self::rgba(130, 180, 255, 255),
-                "yellow" => Self::rgba(240, 220, 120, 255),
-                "muted" | "quiet" => Self::rgba(170, 170, 170, 255),
-                _ => Self::default(),
-            },
+            RichTextColor::Rgba8 { value } => Self::rgba(value[0], value[1], value[2], value[3]),
+            // Resource-backed colors are resolved by the resource/style owner,
+            // not by guessing authoring names inside the text renderer.
+            RichTextColor::Resource { .. } => Self::default(),
         }
     }
 }
@@ -360,23 +355,22 @@ impl ResolvedTextStyle {
 
     fn apply(&mut self, rich_style: &RichTextStyle) {
         match rich_style {
-            RichTextStyle::Em { .. } | RichTextStyle::Italic { .. } => {
+            RichTextStyle::Em | RichTextStyle::Italic => {
                 self.slant = TextSlant::Italic;
             }
-            RichTextStyle::Oblique { angle, .. } => {
+            RichTextStyle::Oblique { angle } => {
                 self.slant = TextSlant::Oblique { angle: *angle };
             }
-            RichTextStyle::Strong { .. } => self.weight = TextWeight::Bold,
+            RichTextStyle::Strong => self.weight = TextWeight::Bold,
             RichTextStyle::Color { value } => self.color = TextColor::from(value),
             RichTextStyle::Font { family } => {
                 self.font_families = vec![TextFontFamily::from(family)];
             }
-            RichTextStyle::Size {
-                points: Some(points),
-                ..
-            } => {
-                self.font_size_milli = u32::from(*points) * 1_000;
-                self.line_height_milli = u32::from(*points) * 1_350;
+            RichTextStyle::Size { milli_points } => {
+                if let Ok(milli_points) = u32::try_from(milli_points.0) {
+                    self.font_size_milli = milli_points;
+                    self.line_height_milli = milli_points.saturating_mul(1_350) / 1_000;
+                }
             }
             RichTextStyle::Layout { layout } => {
                 if !matches!(layout.writing_mode, RichTextWritingMode::HorizontalTb)
@@ -388,13 +382,12 @@ impl ResolvedTextStyle {
                     self.direction = layout.direction;
                 }
             }
-            RichTextStyle::Size { points: None, .. }
+            RichTextStyle::Ruby { .. }
             | RichTextStyle::Speed { .. }
             | RichTextStyle::Transform { .. }
             | RichTextStyle::Fx { .. }
             | RichTextStyle::Object { .. }
-            | RichTextStyle::Presentation { .. }
-            | RichTextStyle::Unknown { .. } => {}
+            | RichTextStyle::Presentation { .. } => {}
         }
     }
 
@@ -843,125 +836,152 @@ pub enum TextResolveError {
     InvalidLanguageTag { value: String },
 }
 
-impl LineDisplayFrame {
-    /// Borrows one stage slice and rebases its clipped metadata.
-    pub fn resolve_stage_document<'a>(
-        &'a self,
-        stage: LineDisplayStage<'a>,
-        cascade: &TextStyleCascade,
-    ) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
-        if !std::ptr::eq(self, stage.frame()) {
-            return Err(TextResolveError::StageOwnerMismatch);
-        }
-        self.validate()?;
-        let source_extent = stage.text_range();
-        let text = stage.text();
-        let runs = self
-            .display_map
-            .text_runs
-            .iter()
-            .filter_map(|run| intersect(run.range, source_extent).map(|range| (run, range)))
-            .map(|(run, source_range)| {
-                let style = cascade.resolve_style(run.styles.iter())?;
-                ResolvedTextRun::new(
-                    rebase(source_range, source_extent.start),
-                    source_range,
-                    style,
-                    cascade.resolve_presentation(&run.presentation),
-                    ResolvedTextRunSource::Dialogue {
-                        node_index: run.node_index,
-                    },
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let ruby = self
-            .display_map
-            .ruby_annotations
-            .iter()
-            .filter(|ruby| contains(source_extent, ruby.base_range))
-            .map(|ruby| {
-                let style = cascade.resolve_style(ruby.styles.iter())?;
-                ResolvedTextRuby::new(
-                    rebase(ruby.base_range, source_extent.start),
-                    ruby.base_range,
-                    ruby.ruby.clone(),
-                    style,
-                    cascade.resolve_presentation(&ruby.presentation),
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        ResolvedTextDocument::new(
-            text,
-            source_extent.start,
-            runs,
-            ruby,
-            TextDocumentRevision::for_source(self),
-        )
+/// Borrows one stage slice and rebases its clipped metadata.
+pub fn resolve_stage_document<'a>(
+    frame: &'a LineDisplayFrame,
+    stage: LineDisplayStage<'a>,
+    cascade: &TextStyleCascade,
+) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
+    if !std::ptr::eq(frame, stage.frame()) {
+        return Err(TextResolveError::StageOwnerMismatch);
     }
+    frame.validate()?;
+    let source_extent = stage.text_range();
+    let text = stage.text();
+    let runs = frame
+        .display_map
+        .text_runs
+        .iter()
+        .filter_map(|run| intersect(run.range, source_extent).map(|range| (run, range)))
+        .map(|(run, source_range)| {
+            let style = cascade.resolve_style(run.styles.iter())?;
+            ResolvedTextRun::new(
+                rebase(source_range, source_extent.start),
+                source_range,
+                style,
+                cascade.resolve_presentation(&run.presentation),
+                ResolvedTextRunSource::Dialogue {
+                    node_index: run.node_index,
+                },
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let ruby = frame
+        .display_map
+        .ruby_annotations
+        .iter()
+        .filter(|ruby| contains(source_extent, ruby.base_range))
+        .map(|ruby| {
+            let style = cascade.resolve_style(ruby.styles.iter())?;
+            ResolvedTextRuby::new(
+                rebase(ruby.base_range, source_extent.start),
+                ruby.base_range,
+                ruby.ruby.clone(),
+                style,
+                cascade.resolve_presentation(&ruby.presentation),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    ResolvedTextDocument::new(
+        text,
+        source_extent.start,
+        runs,
+        ruby,
+        TextDocumentRevision::for_source(frame),
+    )
 }
 
-impl RichTextDocument {
-    /// Resolves a static rich-text document into the canonical borrowed model.
-    pub fn resolve_document<'a>(
-        &'a self,
-        cascade: &TextStyleCascade,
-    ) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
-        self.resolve_document_with_source(cascade, ResolvedTextRunSource::Generated)
-    }
+/// Resolves a static rich-text document into the canonical borrowed model.
+pub fn resolve_document<'a>(
+    document: &'a RichTextDocument,
+    cascade: &TextStyleCascade,
+) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
+    resolve_document_with_source(document, cascade, ResolvedTextRunSource::Generated)
+}
 
-    /// Resolves a static document while retaining its shared source category.
-    pub fn resolve_document_with_source<'a>(
-        &'a self,
-        cascade: &TextStyleCascade,
-        source: ResolvedTextRunSource,
-    ) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
-        let mut active_styles = Vec::new();
-        let mut ruby = Vec::new();
-        let mut resolver = StaticDocumentResolver::new(self.resolved_text(), cascade, source);
-        for (node_index, node) in self.nodes.iter().enumerate() {
-            match node {
-                RichTextNode::Text { text }
-                | RichTextNode::Control {
-                    control: RichTextControl::Raw { text },
-                } => {
-                    resolver.push_text(text, node_index, &active_styles)?;
-                }
-                RichTextNode::Ruby { base, ruby: text } => {
-                    let range = resolver.push_text(base, node_index, &active_styles)?;
-                    if !base.is_empty() {
-                        let presentation = presentation_from_styles(active_styles.iter());
-                        let style = cascade.resolve_style(active_styles.iter())?;
-                        ruby.push(ResolvedTextRuby::new(
-                            range,
-                            range,
-                            text.clone(),
-                            style,
-                            cascade.resolve_presentation(&presentation),
-                        )?);
-                    }
-                }
-                RichTextNode::StyleStart { style } => active_styles.push(style.clone()),
-                RichTextNode::StyleEnd { name } => remove_style(&mut active_styles, name),
-                RichTextNode::Control {
-                    control: RichTextControl::HardBreak,
-                } => {
-                    resolver.push_text("\n", node_index, &active_styles)?;
-                }
-                RichTextNode::Interpolation { .. }
-                | RichTextNode::HostEvent {
-                    event: DialogueHostEvent::Conditional { .. },
-                } => return Err(TextResolveError::DynamicNode { node_index }),
-                RichTextNode::Control { .. } | RichTextNode::HostEvent { .. } => {}
+/// Resolves a static document while retaining its shared source category.
+pub fn resolve_document_with_source<'a>(
+    document: &'a RichTextDocument,
+    cascade: &TextStyleCascade,
+    source: ResolvedTextRunSource,
+) -> Result<ResolvedTextDocument<'a>, TextResolveError> {
+    let mut active_styles = Vec::new();
+    let mut ruby = Vec::new();
+    let mut resolver = StaticDocumentResolver::new(document.resolved_text(), cascade, source);
+    for (node_index, node) in document.nodes.iter().enumerate() {
+        match node {
+            RichTextNode::Text { text }
+            | RichTextNode::Control {
+                control: RichTextControl::Raw { text },
+            } => {
+                let range = resolver.push_text(text, node_index, &active_styles)?;
+                push_active_ruby(&mut ruby, range, &active_styles, cascade)?;
             }
+            RichTextNode::Ruby { base, ruby: text } => {
+                let range = resolver.push_text(base, node_index, &active_styles)?;
+                if !base.is_empty() {
+                    let presentation = presentation_from_styles(active_styles.iter());
+                    let style = cascade.resolve_style(active_styles.iter())?;
+                    ruby.push(ResolvedTextRuby::new(
+                        range,
+                        range,
+                        text.clone(),
+                        style,
+                        cascade.resolve_presentation(&presentation),
+                    )?);
+                }
+            }
+            RichTextNode::StyleStart { style } => active_styles.push(style.clone()),
+            RichTextNode::StyleEnd { span } => remove_style(&mut active_styles, *span),
+            RichTextNode::Control {
+                control: RichTextControl::HardBreak,
+            } => {
+                resolver.push_text("\n", node_index, &active_styles)?;
+            }
+            RichTextNode::Interpolation { .. }
+            | RichTextNode::HostEvent {
+                event:
+                    DialogueHostEvent::ConditionalStart { .. }
+                    | DialogueHostEvent::ConditionalElse
+                    | DialogueHostEvent::ConditionalEnd,
+            } => return Err(TextResolveError::DynamicNode { node_index }),
+            RichTextNode::Control { .. } | RichTextNode::HostEvent { .. } => {}
         }
-        ResolvedTextDocument::new(
-            self.resolved_text(),
-            0,
-            resolver.runs,
-            ruby,
-            TextDocumentRevision::for_source(self),
-        )
     }
+    ResolvedTextDocument::new(
+        document.resolved_text(),
+        0,
+        resolver.runs,
+        ruby,
+        TextDocumentRevision::for_source(document),
+    )
+}
+
+fn push_active_ruby(
+    ruby: &mut Vec<ResolvedTextRuby>,
+    range: RichTextRange,
+    active_styles: &[RichTextStyle],
+    cascade: &TextStyleCascade,
+) -> Result<(), TextResolveError> {
+    let Some(annotation) = active_styles.iter().rev().find_map(|style| match style {
+        RichTextStyle::Ruby { annotation } => Some(annotation),
+        _ => None,
+    }) else {
+        return Ok(());
+    };
+    if range.start == range.end {
+        return Ok(());
+    }
+    let presentation = presentation_from_styles(active_styles.iter());
+    let style = cascade.resolve_style(active_styles.iter())?;
+    ruby.push(ResolvedTextRuby::new(
+        range,
+        range,
+        annotation.clone(),
+        style,
+        cascade.resolve_presentation(&presentation),
+    )?);
+    Ok(())
 }
 
 struct StaticDocumentResolver<'a> {
@@ -1017,15 +1037,10 @@ impl<'a> StaticDocumentResolver<'a> {
     }
 }
 
-fn remove_style(active_styles: &mut Vec<RichTextStyle>, name: &str) {
-    if name == "/" {
-        active_styles.pop();
-        return;
-    }
-    let name = canonical_tag_name(name);
+fn remove_style(active_styles: &mut Vec<RichTextStyle>, kind: RichTextSpanKind) {
     if let Some(index) = active_styles
         .iter()
-        .rposition(|style| style.tag_name() == name)
+        .rposition(|style| style.span_kind() == kind)
     {
         active_styles.remove(index);
     }

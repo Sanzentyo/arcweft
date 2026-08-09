@@ -5,18 +5,25 @@ use std::{
 };
 
 use arcweft_lang_hir::{
-    callable_source::HirCallableSignatureSource,
-    project::HirProject,
-    symbol::{CallableDeclarationOwner, ProjectSymbolTable, ProjectSymbolTargetId},
-};
-use arcweft_lang_syntax::{
-    ast::pattern::Pattern,
-    types::{FnParam, FnParamGroup, FnParamKind},
+    item::{
+        HirCapabilityFunction, HirCapabilityMember, HirFlowItem, HirFunctionItem, HirImplFunction,
+        HirImplMember, HirItem, HirItemPrefix, HirMethodParameter, HirMethodParameterGroup,
+        HirParameter, HirParameterKind, HirPredicate, HirProof, HirTraitFunction, HirTraitMember,
+    },
+    module::HirModule,
+    pattern::{HirPatternBinding, HirPatternKind},
+    project::HirProjectView,
+    source_index::{
+        HirCallableParameterSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
+        HirFlowParameterSourcePart, HirFlowReturnSourcePart, HirFlowSourceRole, HirItemSourceRole,
+        HirSourcePresence, HirSourceQuery, HirSourceSite,
+    },
+    symbol::{CallableSymbol, ProjectSymbolTable, ProjectSymbolTargetId},
 };
 
 use crate::{
     effect_row::EffectRow,
-    effects::EffectSet,
+    effects::{EffectId, EffectSet},
     env::{FunctionSignature, TypeCheckEnv},
     nominal::{CheckedTypeReferenceCache, NominalResolutionIndex},
     registration::{AcceptedNominalWorld, AcceptedNominalWorldStamp, EnvironmentManifestDigest},
@@ -27,20 +34,19 @@ use super::digest::CanonicalEncoder;
 use super::limits::CatalogBuildWork;
 use super::nominal_signature::ProjectSignatureResolver;
 use super::{
-    CallableArgumentPolicy, CallableAuthorityRank, CallableBuildLimitError, CallableCandidateId,
-    CallableCatalogBuildError, CallableDocumentation, CallableEffectSchema, CallableGroupIndex,
-    CallableGroupKind, CallableLimits, CallableLookupKey, CallableName, CallableOverloadIndex,
-    CallableParameter, CallableParameterDocumentation, CallableParameterGroup,
-    CallableParameterIndex, CallableParameterPassing, CallableParameterPresence,
-    CallableParameterSource, CallableParameterType, CallablePath, CallablePathError,
-    CallableProviderId, CallableRecord, CallableSignatureSchema, CallableSource, CallableValidator,
-    CatalogCallableEntry, DocumentationProvenance, EnvironmentCallableCatalog,
-    EnvironmentCallableId, EnvironmentCallableKind, EnvironmentCallableOwner,
-    EnvironmentCallablePublication, EnvironmentCallablePublicationRecord,
-    EnvironmentDeclarationOrdinal, EquivalentCallableSource, NonEmptyCallableSet,
-    ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding, RegisteredCallableCatalog,
-    RegisteredProjectModuleCallables, SignatureOrigin, SpreadArgumentPolicy, StandardEnvironmentId,
-    UnknownNamedArgumentPolicy,
+    CallableAccess, CallableArgumentPolicy, CallableAuthorityRank, CallableBuildLimitError,
+    CallableCandidateId, CallableCatalogBuildError, CallableDocumentation, CallableEffectSchema,
+    CallableGroupIndex, CallableGroupKind, CallableLimits, CallableLookupKey, CallableName,
+    CallableOverloadIndex, CallableParameter, CallableParameterGroup, CallableParameterIndex,
+    CallableParameterPassing, CallableParameterPresence, CallableParameterSource,
+    CallableParameterType, CallablePath, CallablePathError, CallableProviderId, CallableRecord,
+    CallableSignatureSchema, CallableSource, CallableValidator, CatalogCallableEntry,
+    DocumentationProvenance, EnvironmentCallableCatalog, EnvironmentCallableId,
+    EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublication,
+    EnvironmentCallablePublicationRecord, EnvironmentDeclarationOrdinal, EquivalentCallableSource,
+    NonEmptyCallableSet, ProjectCallableCatalog, ProjectCallablePath, ProjectNameBinding,
+    RegisteredCallableCatalog, RegisteredProjectModuleCallables, SignatureOrigin,
+    SpreadArgumentPolicy, StandardEnvironmentId, UnknownNamedArgumentPolicy,
 };
 
 pub(crate) struct RegisteredCallableCatalogBuilder {
@@ -57,8 +63,44 @@ pub(crate) struct RegisteredCallableCatalogBuilder {
 
 struct ProjectParameterPublication {
     groups: Vec<CallableParameterGroup>,
-    documentation: Vec<CallableParameterDocumentation>,
     sources: Vec<CallableParameterSource>,
+}
+
+enum FinalProjectCallable<'a> {
+    Flow {
+        item: &'a HirItem,
+        callable: &'a HirFlowItem,
+    },
+    Function {
+        item: &'a HirItem,
+        callable: &'a HirFunctionItem,
+    },
+    Predicate {
+        item: &'a HirItem,
+        callable: &'a HirPredicate,
+    },
+    Proof {
+        item: &'a HirItem,
+        callable: &'a HirProof,
+    },
+    ExternCapability {
+        callable: &'a HirCapabilityFunction,
+    },
+    TraitMethod {
+        item: &'a HirItem,
+        callable: &'a HirTraitFunction,
+    },
+    ImplMethod {
+        item: &'a HirItem,
+        callable: &'a HirImplFunction,
+    },
+}
+
+#[derive(Clone, Copy)]
+enum FinalProjectParameter<'a> {
+    Ordinary(&'a HirParameter),
+    Receiver,
+    TypedMethod(&'a HirParameter),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -102,14 +144,6 @@ impl StandardEnvironmentMethodProjection {
         Ok(Self { id, schema })
     }
 
-    pub(crate) const fn id(&self) -> &EnvironmentCallableId {
-        &self.id
-    }
-
-    pub(crate) const fn schema(&self) -> &CallableSignatureSchema {
-        &self.schema
-    }
-
     fn into_publication_record(
         self,
         ordinal: usize,
@@ -145,7 +179,7 @@ impl RegisteredCallableCatalogBuilder {
 
     pub(crate) fn add_project(
         &mut self,
-        project: &HirProject,
+        project: HirProjectView<'_>,
         symbols: &ProjectSymbolTable,
         nominal_world: &AcceptedNominalWorld,
     ) -> Result<(), CallableCatalogBuildError> {
@@ -163,45 +197,24 @@ impl RegisteredCallableCatalogBuilder {
             }
             .into());
         }
-        for (module, _) in project.modules() {
+        for (module_path, module) in project.modules() {
             self.work.charge(1)?;
-            let source = project.source(module).ok_or_else(|| {
-                CallableCatalogBuildError::MissingProjectModuleSource {
-                    module: module.clone(),
-                }
-            })?;
-            let sources = project
-                .module_callable_signature_sources(module)
-                .ok_or_else(|| CallableCatalogBuildError::MissingProjectModuleSource {
-                    module: module.clone(),
-                })?;
-            let mut declarations = Vec::with_capacity(sources.len());
-            for source_record in sources {
+            let module_symbols = symbols
+                .callable_symbols()
+                .filter(|symbol| symbol.declaration().module() == module_path)
+                .collect::<Vec<_>>();
+            let mut declarations = Vec::with_capacity(module_symbols.len());
+            for symbol in module_symbols {
                 let ordinal = self.project_records.len();
                 let record = Arc::new(self.project_record(
-                    source_record,
+                    symbol,
+                    module,
                     ordinal,
                     project,
                     symbols,
                     nominal_world,
                 )?);
-                declarations.push(source_record.declaration().clone());
-                if source_record.declaration().owner() == CallableDeclarationOwner::ExternCapability
-                {
-                    let CallableLookupKey::Free(path) = record.key() else {
-                        return Err(CallableCatalogBuildError::InvalidRecord(
-                            super::CallableCatalogError::IdKeyMismatch,
-                        ));
-                    };
-                    self.project_bindings.push((
-                        ProjectCallablePath::new(
-                            project.package().clone(),
-                            module.clone(),
-                            path.clone(),
-                        ),
-                        ProjectNameBinding::Callable(source_record.declaration().clone()),
-                    ));
-                }
+                declarations.push(symbol.declaration().clone());
                 self.project_records.push(record);
                 let record_count = self
                     .environment_publications
@@ -219,8 +232,8 @@ impl RegisteredCallableCatalogBuilder {
             }
             self.project_modules
                 .push(RegisteredProjectModuleCallables::new(
-                    module.clone(),
-                    source.clone(),
+                    module_path.clone(),
+                    module.provenance().source_identity().clone(),
                     declarations,
                 ));
         }
@@ -229,19 +242,20 @@ impl RegisteredCallableCatalogBuilder {
 
     fn project_record(
         &mut self,
-        source: &HirCallableSignatureSource,
+        symbol: &CallableSymbol,
+        module: &HirModule,
         ordinal: usize,
-        project: &HirProject,
+        project: HirProjectView<'_>,
         symbols: &ProjectSymbolTable,
         nominal_world: &AcceptedNominalWorld,
     ) -> Result<CallableRecord, CallableCatalogBuildError> {
         self.work.charge(1)?;
-        let path_segment_count = source
-            .path()
-            .qualifiers()
-            .len()
-            .checked_add(1)
-            .ok_or(CallableCatalogBuildError::WorkOverflow)?;
+        let path_segment_count = match symbol.declaration() {
+            arcweft_lang_hir::symbol::CallableDeclarationKey::Flow(flow) => {
+                flow.public_id().as_str().split('.').count()
+            }
+            declaration => declaration.module().segments().len().saturating_add(1),
+        };
         self.work.charge(
             u64::try_from(path_segment_count)
                 .map_err(|_| CallableCatalogBuildError::WorkOverflow)?,
@@ -253,26 +267,33 @@ impl RegisteredCallableCatalogBuilder {
             &mut self.nominal_resolutions,
             &mut self.nominal_cache,
         )
-        .resolve_project_signature(source)?;
+        .resolve_project_signature(symbol)?;
+        let callable = final_project_callable(module, symbol)?;
         let parameters = project_parameters(
-            source,
+            module,
+            symbol,
+            &callable,
             &resolved.parameter_types,
             &self.limits,
             &mut self.work,
         )?;
-        let declared = EffectSet::from_labels(
-            source
-                .effects()
-                .declared()
-                .iter()
-                .map(arcweft_lang_hir::callable_source::HirEffectName::as_str),
-        )
-        .map_err(|_| identity_mismatch(source))?;
-        let effects = if source.declaration().owner() == CallableDeclarationOwner::ExternCapability
-        {
+        let effects = if matches!(callable, FinalProjectCallable::ExternCapability { .. }) {
+            let declared = effect_set(module, symbol, &callable, &mut self.work)?;
             CallableEffectSchema::fixed(EffectRow::closed(declared))
         } else {
-            CallableEffectSchema::project(source.declaration().clone(), EffectRow::closed(declared))
+            CallableEffectSchema::project(symbol.declaration().clone())
+        };
+        let validator = match symbol.owner() {
+            arcweft_lang_hir::symbol::CallableDeclarationOwner::TraitRequirement => {
+                CallableValidator::Method(super::CallableMethodRole::TraitRequirement)
+            }
+            arcweft_lang_hir::symbol::CallableDeclarationOwner::TraitImplementation => {
+                CallableValidator::Method(super::CallableMethodRole::TraitImplementation)
+            }
+            arcweft_lang_hir::symbol::CallableDeclarationOwner::InherentMethod => {
+                CallableValidator::Method(super::CallableMethodRole::Inherent)
+            }
+            _ => CallableValidator::Ordinary,
         };
         let schema = Arc::new(CallableSignatureSchema::try_new(
             parameters.groups,
@@ -280,42 +301,44 @@ impl RegisteredCallableCatalogBuilder {
             effects,
             CallableArgumentPolicy::new(
                 UnknownNamedArgumentPolicy::Reject,
-                if source
-                    .signature()
-                    .param_groups()
-                    .iter()
-                    .flat_map(FnParamGroup::params)
-                    .any(FnParam::is_rest)
-                {
+                if callable.has_rest_parameter() {
                     SpreadArgumentPolicy::TypedRest
                 } else {
-                    SpreadArgumentPolicy::Reject
+                    SpreadArgumentPolicy::FixedLiteralOnly
                 },
             ),
-            CallableValidator::Ordinary,
+            validator,
             &self.limits,
         )?);
-        let documentation = project_documentation(source, parameters.documentation)?;
+        let documentation = project_documentation(symbol, callable.prefix().documentation())?;
+        let signature_span = project_signature_span(module, symbol, &callable)?;
+        let name_span = project_name_span(module, symbol, &callable)?;
+        let identity_span = project_identity_span(module, symbol, &callable)?;
+        if &identity_span != symbol.name_span() {
+            return Err(identity_mismatch(symbol));
+        }
+        let result_span = project_result_span(module, symbol, &callable)?;
         let callable_source = CallableSource::try_new(
-            Some(source.declaration().clone()),
-            Some(source.signature_span().clone()),
-            Some(source.name_span().clone()),
-            source.result_span().cloned(),
+            Some(symbol.declaration().clone()),
+            Some(signature_span),
+            name_span,
+            result_span,
             parameters.sources,
         )
-        .map_err(|_| identity_mismatch(source))?;
+        .map_err(|_| identity_mismatch(symbol))?;
         CallableRecord::try_new(
-            CallableCandidateId::Project(source.declaration().clone()),
-            CallableLookupKey::Free(callable_path(source)?),
+            CallableCandidateId::Project(symbol.declaration().clone()),
+            project_lookup_key(symbol, &schema)?,
             CallableAuthorityRank::Project,
-            CallableProviderId::Project(source.package().clone()),
+            CallableProviderId::Project(symbol.declaration().package().clone()),
+            project_access(symbol),
             schema,
             documentation,
             Some(callable_source),
             None,
             None,
             EnvironmentDeclarationOrdinal::try_from_usize(ordinal)
-                .map_err(|_| identity_mismatch(source))?,
+                .map_err(|_| identity_mismatch(symbol))?,
         )
         .map_err(CallableCatalogBuildError::InvalidRecord)
     }
@@ -324,7 +347,7 @@ impl RegisteredCallableCatalogBuilder {
     /// assigned exact semantic types to non-callable external owners.
     pub(crate) fn add_project_bindings(
         &mut self,
-        project: &HirProject,
+        project: HirProjectView<'_>,
         symbols: &ProjectSymbolTable,
         mut non_callable_type: impl FnMut(&ProjectSymbolTargetId) -> Option<TypeKind>,
     ) -> Result<(), CallableCatalogBuildError> {
@@ -354,8 +377,10 @@ impl RegisteredCallableCatalogBuilder {
                 ProjectSymbolTargetId::Callable(declaration) => {
                     ProjectNameBinding::Callable(declaration.clone())
                 }
+                ProjectSymbolTargetId::StructuralCallable(_) => continue,
                 ProjectSymbolTargetId::External(_)
                 | ProjectSymbolTargetId::Nominal(_)
+                | ProjectSymbolTargetId::Retained(_)
                 | ProjectSymbolTargetId::Module(_) => ProjectNameBinding::NonCallable {
                     path: path.clone(),
                     ty: non_callable_type(target).ok_or_else(|| {
@@ -420,72 +445,379 @@ impl RegisteredCallableCatalogBuilder {
     }
 }
 
+impl FinalProjectCallable<'_> {
+    fn prefix(&self) -> &HirItemPrefix {
+        match self {
+            Self::Flow { item, .. }
+            | Self::Function { item, .. }
+            | Self::Predicate { item, .. }
+            | Self::Proof { item, .. }
+            | Self::TraitMethod { item, .. }
+            | Self::ImplMethod { item, .. } => item.prefix(),
+            Self::ExternCapability { callable } => callable.prefix(),
+        }
+    }
+
+    fn parameter_groups(&self) -> Vec<Vec<FinalProjectParameter<'_>>> {
+        match self {
+            Self::Flow { callable, .. } => vec![
+                callable
+                    .parameters()
+                    .iter()
+                    .map(FinalProjectParameter::Ordinary)
+                    .collect(),
+            ],
+            Self::Function { callable, .. } => callable
+                .parameter_groups()
+                .iter()
+                .map(|group| {
+                    group
+                        .parameters()
+                        .iter()
+                        .map(FinalProjectParameter::Ordinary)
+                        .collect()
+                })
+                .collect(),
+            Self::Predicate { callable, .. } => vec![
+                callable
+                    .parameters()
+                    .iter()
+                    .map(FinalProjectParameter::Ordinary)
+                    .collect(),
+            ],
+            Self::Proof { callable, .. } => vec![
+                callable
+                    .parameters()
+                    .iter()
+                    .map(FinalProjectParameter::Ordinary)
+                    .collect(),
+            ],
+            Self::ExternCapability { callable } => callable
+                .parameter_groups()
+                .iter()
+                .map(|group| {
+                    group
+                        .parameters()
+                        .iter()
+                        .map(FinalProjectParameter::Ordinary)
+                        .collect()
+                })
+                .collect(),
+            Self::TraitMethod { callable, .. } => callable
+                .parameter_groups()
+                .iter()
+                .map(method_parameters)
+                .collect(),
+            Self::ImplMethod { callable, .. } => callable
+                .parameter_groups()
+                .iter()
+                .map(method_parameters)
+                .collect(),
+        }
+    }
+
+    fn has_rest_parameter(&self) -> bool {
+        self.parameter_groups()
+            .into_iter()
+            .flatten()
+            .any(|parameter| {
+                matches!(
+                    parameter,
+                    FinalProjectParameter::Ordinary(parameter)
+                        | FinalProjectParameter::TypedMethod(parameter)
+                        if parameter.kind() == HirParameterKind::RestPositional
+                )
+            })
+    }
+}
+
+fn method_parameters(group: &HirMethodParameterGroup) -> Vec<FinalProjectParameter<'_>> {
+    group
+        .parameters()
+        .iter()
+        .map(|parameter| match parameter {
+            HirMethodParameter::Receiver(_) => FinalProjectParameter::Receiver,
+            HirMethodParameter::Typed(parameter) => FinalProjectParameter::TypedMethod(parameter),
+        })
+        .collect()
+}
+
+fn final_project_callable<'a>(
+    module: &'a HirModule,
+    symbol: &CallableSymbol,
+) -> Result<FinalProjectCallable<'a>, CallableCatalogBuildError> {
+    if symbol.source_snapshot() != module.snapshot_id() {
+        return Err(identity_mismatch(symbol));
+    }
+    let item = module
+        .resolve_item(symbol.source_item())
+        .map_err(|_| identity_mismatch(symbol))?;
+    match (symbol.source_owner(), item.kind()) {
+        (HirCallableSourceOwner::Item, arcweft_lang_hir::item::HirItemKind::Flow(callable)) => {
+            Ok(FinalProjectCallable::Flow { item, callable })
+        }
+        (HirCallableSourceOwner::Item, arcweft_lang_hir::item::HirItemKind::Function(callable)) => {
+            Ok(FinalProjectCallable::Function { item, callable })
+        }
+        (
+            HirCallableSourceOwner::Item,
+            arcweft_lang_hir::item::HirItemKind::Predicate(callable),
+        ) => Ok(FinalProjectCallable::Predicate { item, callable }),
+        (HirCallableSourceOwner::Item, arcweft_lang_hir::item::HirItemKind::Proof(callable)) => {
+            Ok(FinalProjectCallable::Proof { item, callable })
+        }
+        (
+            HirCallableSourceOwner::ExternCapabilityFunction { member },
+            arcweft_lang_hir::item::HirItemKind::ExternCapability(capability),
+        ) => match capability.members().get(usize::from(member)) {
+            Some(HirCapabilityMember::Function(callable)) => {
+                Ok(FinalProjectCallable::ExternCapability { callable })
+            }
+            _ => Err(identity_mismatch(symbol)),
+        },
+        (
+            HirCallableSourceOwner::TraitFunction { member },
+            arcweft_lang_hir::item::HirItemKind::Trait(trait_item),
+        ) => match trait_item.members().get(usize::from(member)) {
+            Some(HirTraitMember::Function(callable)) => {
+                Ok(FinalProjectCallable::TraitMethod { item, callable })
+            }
+            _ => Err(identity_mismatch(symbol)),
+        },
+        (
+            HirCallableSourceOwner::ImplFunction { member },
+            arcweft_lang_hir::item::HirItemKind::Impl(impl_item),
+        ) => match impl_item.members().get(usize::from(member)) {
+            Some(HirImplMember::Function(callable)) => {
+                Ok(FinalProjectCallable::ImplMethod { item, callable })
+            }
+            _ => Err(identity_mismatch(symbol)),
+        },
+        _ => Err(identity_mismatch(symbol)),
+    }
+}
+
+fn callable_span(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    role: HirCallableSourceRole,
+) -> Result<Option<arcweft_source::SourceSpan>, CallableCatalogBuildError> {
+    let lookup = module
+        .source_site(
+            module.provenance().source_identity(),
+            HirSourceQuery::Item {
+                owner: symbol.source_item(),
+                role: HirItemSourceRole::Callable(role),
+            },
+        )
+        .map_err(|_| identity_mismatch(symbol))?;
+    Ok(match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(span)) => Some(span.clone()),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+        | HirSourcePresence::AbsentOptional => None,
+    })
+}
+
+fn required_callable_span(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    role: HirCallableSourceRole,
+) -> Result<arcweft_source::SourceSpan, CallableCatalogBuildError> {
+    callable_span(module, symbol, role)?.ok_or_else(|| identity_mismatch(symbol))
+}
+
+fn flow_span(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    role: HirFlowSourceRole,
+) -> Result<Option<arcweft_source::SourceSpan>, CallableCatalogBuildError> {
+    let lookup = module
+        .source_site(
+            module.provenance().source_identity(),
+            HirSourceQuery::Item {
+                owner: symbol.source_item(),
+                role: HirItemSourceRole::Flow(role),
+            },
+        )
+        .map_err(|_| identity_mismatch(symbol))?;
+    Ok(match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(span)) => Some(span.clone()),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+        | HirSourcePresence::AbsentOptional => None,
+    })
+}
+
+fn required_flow_span(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    role: HirFlowSourceRole,
+) -> Result<arcweft_source::SourceSpan, CallableCatalogBuildError> {
+    flow_span(module, symbol, role)?.ok_or_else(|| identity_mismatch(symbol))
+}
+
+fn project_signature_span(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    callable: &FinalProjectCallable<'_>,
+) -> Result<arcweft_source::SourceSpan, CallableCatalogBuildError> {
+    match callable {
+        FinalProjectCallable::Flow { .. } => {
+            required_flow_span(module, symbol, HirFlowSourceRole::Whole)
+        }
+        _ => required_callable_span(
+            module,
+            symbol,
+            HirCallableSourceRole::Signature {
+                owner: symbol.source_owner(),
+            },
+        ),
+    }
+}
+
+fn project_name_span(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    callable: &FinalProjectCallable<'_>,
+) -> Result<Option<arcweft_source::SourceSpan>, CallableCatalogBuildError> {
+    match callable {
+        FinalProjectCallable::Flow { callable, .. } => callable
+            .identity()
+            .name()
+            .map(|_| required_flow_span(module, symbol, HirFlowSourceRole::Name))
+            .transpose(),
+        _ => required_callable_span(
+            module,
+            symbol,
+            HirCallableSourceRole::Name {
+                owner: symbol.source_owner(),
+            },
+        )
+        .map(Some),
+    }
+}
+
+fn project_identity_span(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    callable: &FinalProjectCallable<'_>,
+) -> Result<arcweft_source::SourceSpan, CallableCatalogBuildError> {
+    match callable {
+        FinalProjectCallable::Flow { callable, .. } => required_flow_span(
+            module,
+            symbol,
+            if callable.identity().name().is_some() {
+                HirFlowSourceRole::Name
+            } else {
+                HirFlowSourceRole::PublicId
+            },
+        ),
+        _ => project_name_span(module, symbol, callable)?.ok_or_else(|| identity_mismatch(symbol)),
+    }
+}
+
+fn project_result_span(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    callable: &FinalProjectCallable<'_>,
+) -> Result<Option<arcweft_source::SourceSpan>, CallableCatalogBuildError> {
+    match callable {
+        FinalProjectCallable::Flow { callable, .. } => callable
+            .result()
+            .authored_type()
+            .map(|_| {
+                required_flow_span(
+                    module,
+                    symbol,
+                    HirFlowSourceRole::Return {
+                        part: HirFlowReturnSourcePart::Whole,
+                    },
+                )
+            })
+            .transpose(),
+        _ => callable_span(
+            module,
+            symbol,
+            HirCallableSourceRole::Result {
+                owner: symbol.source_owner(),
+            },
+        ),
+    }
+}
+
+fn effect_set(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    callable: &FinalProjectCallable<'_>,
+    work: &mut CatalogBuildWork,
+) -> Result<EffectSet, CallableCatalogBuildError> {
+    let FinalProjectCallable::ExternCapability { callable } = callable else {
+        return Ok(EffectSet::new());
+    };
+    callable
+        .effects()
+        .iter()
+        .map(|effect| {
+            work.charge(1)?;
+            EffectId::try_from_hir_expression(module, *effect)
+                .map(|(effect, _)| effect)
+                .map_err(|_| identity_mismatch(symbol))
+        })
+        .collect()
+}
+
 fn project_parameters(
-    source: &HirCallableSignatureSource,
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    callable: &FinalProjectCallable<'_>,
     resolved_groups: &[Vec<TypeKind>],
     limits: &CallableLimits,
     work: &mut CatalogBuildWork,
 ) -> Result<ProjectParameterPublication, CallableCatalogBuildError> {
-    let mut groups = Vec::with_capacity(source.signature().param_groups().len());
-    let mut documentation = Vec::new();
+    let parameter_groups = callable.parameter_groups();
+    let mut groups = Vec::with_capacity(parameter_groups.len());
     let mut sources = Vec::new();
-    for (group_index, group) in source.signature().param_groups().iter().enumerate() {
+    for (group_index, group) in parameter_groups.iter().enumerate() {
         work.charge(1)?;
         let group_id = CallableGroupIndex::try_from_usize(group_index)
-            .map_err(|_| identity_mismatch(source))?;
-        let mut parameters = Vec::with_capacity(group.params().len());
-        for (parameter_index, parameter) in group.params().iter().enumerate() {
+            .map_err(|_| identity_mismatch(symbol))?;
+        let group_source_index =
+            u16::try_from(group_index).map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
+        let mut parameters = Vec::with_capacity(group.len());
+        for (parameter_index, parameter) in group.iter().enumerate() {
             work.charge(1)?;
             let parameter_id = CallableParameterIndex::try_from_usize(parameter_index)
-                .map_err(|_| identity_mismatch(source))?;
-            let source_parameter = source
-                .parameter_spans()
-                .iter()
-                .find(|candidate| {
-                    usize::from(candidate.group()) == group_index
-                        && usize::from(candidate.parameter()) == parameter_index
-                })
-                .ok_or_else(|| identity_mismatch(source))?;
-            let parameter_source = CallableParameterSource::try_new(
+                .map_err(|_| identity_mismatch(symbol))?;
+            let parameter_source_index = u16::try_from(parameter_index)
+                .map_err(|_| CallableCatalogBuildError::WorkOverflow)?;
+            let parameter_source = project_parameter_source(
+                module,
+                symbol,
+                callable,
                 group_id,
                 parameter_id,
-                source_parameter.whole().clone(),
-                source_parameter.name().cloned(),
-                source_parameter.ty().cloned(),
-                source_parameter.default().cloned(),
+                group_source_index,
+                parameter_source_index,
             )
-            .map_err(|_| identity_mismatch(source))?;
+            .map_err(|_| identity_mismatch(symbol))?;
             sources.push(parameter_source.clone());
-            let parameter_documentation = parameter.doc().map(|doc| Arc::<str>::from(doc.text()));
-            if let Some(parameter_documentation) = &parameter_documentation {
-                work.charge(1)?;
-                documentation.push(
-                    CallableParameterDocumentation::try_new(
-                        group_id,
-                        parameter_id,
-                        Arc::clone(parameter_documentation),
-                    )
-                    .map_err(|_| identity_mismatch(source))?,
-                );
-            }
             parameters.push(
                 CallableParameter::try_new(
                     parameter_id,
-                    parameter_name(parameter).map_err(|_| identity_mismatch(source))?,
+                    parameter_name(module, *parameter, symbol)?,
                     CallableParameterType::Exact(
                         resolved_groups
                             .get(group_index)
                             .and_then(|group| group.get(parameter_index))
                             .cloned()
-                            .ok_or_else(|| identity_mismatch(source))?,
+                            .ok_or_else(|| identity_mismatch(symbol))?,
                     ),
-                    parameter_passing(parameter),
+                    parameter_passing(module, *parameter, symbol)?,
                     if parameter.default().is_some() {
                         CallableParameterPresence::Defaulted
                     } else {
                         CallableParameterPresence::Required
                     },
-                    parameter_documentation,
+                    None,
                     Some(parameter_source),
                 )
                 .map_err(CallableCatalogBuildError::InvalidSchema)?,
@@ -502,68 +834,207 @@ fn project_parameters(
             limits,
         )?);
     }
-    Ok(ProjectParameterPublication {
-        groups,
-        documentation,
-        sources,
-    })
+    Ok(ProjectParameterPublication { groups, sources })
 }
 
-fn callable_path(
-    source: &HirCallableSignatureSource,
-) -> Result<CallablePath, CallableCatalogBuildError> {
-    let segments = source
-        .path()
-        .qualifiers()
-        .iter()
-        .map(|segment| CallableName::try_new(segment.as_str()))
-        .chain(std::iter::once(CallableName::try_new(source.path().leaf())))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| identity_mismatch(source))?;
-    CallablePath::try_new(segments).map_err(|_| identity_mismatch(source))
+#[allow(
+    clippy::too_many_arguments,
+    reason = "one typed parameter source retains both semantic and source ordinals"
+)]
+fn project_parameter_source(
+    module: &HirModule,
+    symbol: &CallableSymbol,
+    callable: &FinalProjectCallable<'_>,
+    group: CallableGroupIndex,
+    parameter: CallableParameterIndex,
+    source_group: u16,
+    source_parameter: u16,
+) -> Result<CallableParameterSource, CallableCatalogBuildError> {
+    if matches!(callable, FinalProjectCallable::Flow { .. }) {
+        if source_group != 0 {
+            return Err(identity_mismatch(symbol));
+        }
+        let role = |part| HirFlowSourceRole::Parameter {
+            ordinal: source_parameter,
+            part,
+        };
+        return CallableParameterSource::try_new(
+            group,
+            parameter,
+            required_flow_span(module, symbol, role(HirFlowParameterSourcePart::Whole))?,
+            flow_span(module, symbol, role(HirFlowParameterSourcePart::Pattern))?,
+            flow_span(module, symbol, role(HirFlowParameterSourcePart::Type))?,
+            None,
+        )
+        .map_err(|_| identity_mismatch(symbol));
+    }
+    let role = |part| HirCallableSourceRole::Parameter {
+        owner: symbol.source_owner(),
+        group: source_group,
+        parameter: source_parameter,
+        part,
+    };
+    CallableParameterSource::try_new(
+        group,
+        parameter,
+        required_callable_span(module, symbol, role(HirCallableParameterSourcePart::Whole))?,
+        callable_span(module, symbol, role(HirCallableParameterSourcePart::Name))?,
+        callable_span(module, symbol, role(HirCallableParameterSourcePart::Type))?,
+        callable_span(
+            module,
+            symbol,
+            role(HirCallableParameterSourcePart::Default),
+        )?,
+    )
+    .map_err(|_| identity_mismatch(symbol))
 }
 
-fn parameter_name(parameter: &FnParam) -> Result<Option<CallableName>, super::CallableScalarError> {
-    let name = parameter
-        .pattern()
-        .simple_binding_name()
-        .or_else(|| parameter.receiver_kind().is_some().then_some("self"));
-    name.map(CallableName::try_new).transpose()
+fn callable_path(symbol: &CallableSymbol) -> Result<CallablePath, CallableCatalogBuildError> {
+    let segments = match symbol.declaration() {
+        arcweft_lang_hir::symbol::CallableDeclarationKey::Existing(declaration) => declaration
+            .owner_path()
+            .iter()
+            .map(|segment| CallableName::try_new(segment.as_str()))
+            .chain(std::iter::once(CallableName::try_new(declaration.name())))
+            .collect::<Result<Vec<_>, _>>(),
+        arcweft_lang_hir::symbol::CallableDeclarationKey::Flow(declaration) => declaration
+            .public_id()
+            .as_str()
+            .split('.')
+            .map(CallableName::try_new)
+            .collect::<Result<Vec<_>, _>>(),
+        arcweft_lang_hir::symbol::CallableDeclarationKey::TraitRequirement(_)
+        | arcweft_lang_hir::symbol::CallableDeclarationKey::ImplMethod(_) => {
+            return Err(identity_mismatch(symbol));
+        }
+    }
+    .map_err(|_| identity_mismatch(symbol))?;
+    CallablePath::try_new(segments).map_err(|_| identity_mismatch(symbol))
 }
 
-fn parameter_passing(parameter: &FnParam) -> CallableParameterPassing {
-    if parameter.kind() == FnParamKind::Rest {
-        CallableParameterPassing::RestPositional
-    } else if matches!(
-        parameter.pattern(),
-        Pattern::Ident(_) | Pattern::MutIdent(_)
-    ) {
+fn project_lookup_key(
+    symbol: &CallableSymbol,
+    schema: &CallableSignatureSchema,
+) -> Result<CallableLookupKey, CallableCatalogBuildError> {
+    if !symbol.owner().is_method() {
+        return callable_path(symbol).map(CallableLookupKey::Free);
+    }
+    let receiver = schema
+        .groups()
+        .first()
+        .and_then(|group| group.parameters().first())
+        .and_then(|parameter| match parameter.ty() {
+            CallableParameterType::Exact(receiver) => Some(receiver.clone()),
+            CallableParameterType::Unchecked => None,
+        })
+        .ok_or_else(|| identity_mismatch(symbol))?;
+    let method = CallableName::try_new(symbol.declaration().name())
+        .map_err(|_| identity_mismatch(symbol))?;
+    Ok(CallableLookupKey::Method(super::ReceiverMethodKey::new(
+        receiver, method,
+    )))
+}
+
+fn project_access(symbol: &CallableSymbol) -> CallableAccess {
+    match symbol.declaration() {
+        arcweft_lang_hir::symbol::CallableDeclarationKey::Existing(_) => CallableAccess::Direct {
+            declaration_visibility: symbol.visibility(),
+        },
+        arcweft_lang_hir::symbol::CallableDeclarationKey::Flow(_) => CallableAccess::Structural,
+        arcweft_lang_hir::symbol::CallableDeclarationKey::TraitRequirement(requirement) => {
+            CallableAccess::TraitRequirement {
+                trait_declaration: requirement.trait_declaration().clone(),
+                trait_visibility: symbol.visibility(),
+            }
+        }
+        arcweft_lang_hir::symbol::CallableDeclarationKey::ImplMethod(method) => {
+            match method.kind() {
+                arcweft_lang_hir::symbol::ImplMethodKind::Trait => {
+                    CallableAccess::TraitImplementation
+                }
+                arcweft_lang_hir::symbol::ImplMethodKind::Inherent => {
+                    CallableAccess::InherentMethod {
+                        owner_module: method.implementation().module().clone(),
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn parameter_name(
+    module: &HirModule,
+    parameter: FinalProjectParameter<'_>,
+    symbol: &CallableSymbol,
+) -> Result<Option<CallableName>, CallableCatalogBuildError> {
+    if matches!(parameter, FinalProjectParameter::Receiver) {
+        return CallableName::try_new("self")
+            .map(Some)
+            .map_err(|_| identity_mismatch(symbol));
+    }
+    let parameter = parameter
+        .typed()
+        .expect("non-receiver final project parameter is typed");
+    let pattern = module
+        .resolve_pattern(parameter.pattern())
+        .map_err(|_| identity_mismatch(symbol))?;
+    let name = match pattern.kind() {
+        HirPatternKind::Binding(HirPatternBinding::Bound { name, .. })
+        | HirPatternKind::MutableBinding(HirPatternBinding::Bound { name, .. }) => Some(name),
+        _ => None,
+    };
+    name.map(|name| CallableName::try_new(name.as_str()))
+        .transpose()
+        .map_err(|_| identity_mismatch(symbol))
+}
+
+fn parameter_passing(
+    module: &HirModule,
+    parameter: FinalProjectParameter<'_>,
+    symbol: &CallableSymbol,
+) -> Result<CallableParameterPassing, CallableCatalogBuildError> {
+    if matches!(parameter, FinalProjectParameter::Receiver) {
+        return Ok(CallableParameterPassing::PositionalOnly);
+    }
+    let typed = parameter
+        .typed()
+        .expect("non-receiver final project parameter is typed");
+    if typed.kind() == HirParameterKind::RestPositional {
+        return Ok(CallableParameterPassing::RestPositional);
+    }
+    Ok(if parameter_name(module, parameter, symbol)?.is_some() {
         CallableParameterPassing::PositionalOrNamed
     } else {
         CallableParameterPassing::PositionalOnly
+    })
+}
+
+impl<'a> FinalProjectParameter<'a> {
+    const fn typed(self) -> Option<&'a HirParameter> {
+        match self {
+            Self::Ordinary(parameter) | Self::TypedMethod(parameter) => Some(parameter),
+            Self::Receiver => None,
+        }
+    }
+
+    const fn default(self) -> Option<arcweft_lang_hir::identity::ExprId> {
+        match self.typed() {
+            Some(parameter) => parameter.default(),
+            None => None,
+        }
     }
 }
 
 fn project_documentation(
-    source: &HirCallableSignatureSource,
-    parameters: Vec<CallableParameterDocumentation>,
+    symbol: &CallableSymbol,
+    documentation: Option<&arcweft_lang_hir::item::HirDocumentation>,
 ) -> Result<CallableDocumentation, CallableCatalogBuildError> {
-    let Some(doc) = source.documentation() else {
-        if parameters.is_empty() {
-            return Ok(CallableDocumentation::missing());
-        }
-        return CallableDocumentation::try_new(
-            None,
-            None,
-            parameters,
-            DocumentationProvenance::ProjectSource {
-                declaration: source.declaration().clone(),
-            },
-        )
-        .map_err(|_| identity_mismatch(source));
+    let Some(documentation) = documentation else {
+        return Ok(CallableDocumentation::missing());
     };
-    let (summary, details) = doc.text().split_once('\n').map_or_else(
-        || (Some(Arc::<str>::from(doc.text())), None),
+    let markdown = documentation.markdown();
+    let (summary, details) = markdown.split_once('\n').map_or_else(
+        || (Some(Arc::<str>::from(markdown)), None),
         |(summary, details)| {
             (
                 (!summary.is_empty()).then(|| Arc::<str>::from(summary)),
@@ -574,17 +1045,17 @@ fn project_documentation(
     CallableDocumentation::try_new(
         summary,
         details,
-        parameters,
+        Vec::new(),
         DocumentationProvenance::ProjectSource {
-            declaration: source.declaration().clone(),
+            declaration: symbol.declaration().clone(),
         },
     )
-    .map_err(|_| identity_mismatch(source))
+    .map_err(|_| identity_mismatch(symbol))
 }
 
-fn identity_mismatch(source: &HirCallableSignatureSource) -> CallableCatalogBuildError {
+fn identity_mismatch(symbol: &CallableSymbol) -> CallableCatalogBuildError {
     CallableCatalogBuildError::ProjectIdentityMismatch {
-        declaration: source.declaration().clone(),
+        declaration: symbol.declaration().clone(),
     }
 }
 
@@ -678,7 +1149,7 @@ fn merge_project_value_binding(
 }
 
 fn ambiguous_project_callables(
-    declarations: impl IntoIterator<Item = arcweft_lang_hir::symbol::CallableDeclarationId>,
+    declarations: impl IntoIterator<Item = arcweft_lang_hir::symbol::CallableDeclarationKey>,
 ) -> ProjectNameBinding {
     let mut declarations = declarations.into_iter().collect::<Vec<_>>();
     declarations.sort();
@@ -718,6 +1189,7 @@ fn finish_environment(
                 publication_record.key().clone(),
                 publication.owner().authority(),
                 publication.owner().provider(),
+                CallableAccess::Environment,
                 Arc::new(publication_record.schema().clone()),
                 publication_record.documentation().clone(),
                 publication_record.source().cloned(),
@@ -908,21 +1380,6 @@ fn environment_origin(record: &CallableRecord) -> SignatureOrigin {
 }
 
 impl TypeCheckEnv {
-    pub(crate) fn standard_method_projection(
-        &self,
-        receiver: &TypeKind,
-        member: &CallableName,
-        limits: &CallableLimits,
-    ) -> Result<Option<StandardEnvironmentMethodProjection>, super::CallablePublicationError> {
-        self.method_signature(receiver, member.as_str())
-            .map(|signature| {
-                StandardEnvironmentMethodProjection::try_from_signature(
-                    receiver, member, signature, limits,
-                )
-            })
-            .transpose()
-    }
-
     pub(crate) fn standard_callable_publication(
         &self,
         nominal_world: AcceptedNominalWorldStamp,
@@ -930,49 +1387,30 @@ impl TypeCheckEnv {
     ) -> Result<EnvironmentCallablePublication, super::CallablePublicationError> {
         let owner = EnvironmentCallableOwner::Standard(StandardEnvironmentId::Core);
         let mut records = Vec::new();
-        let mut functions = self
-            .functions
-            .iter()
-            .map(|(path, result)| {
-                (
-                    path.clone(),
-                    self.function_signatures
-                        .get(path)
-                        .cloned()
-                        .unwrap_or_else(|| FunctionSignature::return_only(result.clone())),
-                )
-            })
-            .collect::<Vec<_>>();
-        functions.extend(
-            self.function_signatures
-                .iter()
-                .filter(|(path, _)| !self.functions.contains_key(*path))
-                .map(|(path, signature)| (path.clone(), signature.clone())),
-        );
-        functions.sort_by(|(left, _), (right, _)| left.cmp(right));
-        for (ordinal, (path, signature)) in functions.into_iter().enumerate() {
-            let key = CallableLookupKey::Free(callable_path_from_storage(&path)?);
+        let mut functions = self.standard_functions().iter().collect::<Vec<_>>();
+        functions.sort_by(|left, right| left.path.cmp(&right.path));
+        for (ordinal, function) in functions.into_iter().enumerate() {
+            let key = CallableLookupKey::Free(function.path.clone());
             records.push(environment_record_from_signature(
                 EnvironmentCallableKind::Function,
                 key,
-                &signature,
-                self.function_effects.get(&path).map(Vec::as_slice),
+                &function.signature,
+                Some(function.effects.as_slice()),
                 ordinal,
                 limits,
             )?);
         }
         let offset = records.len();
-        let mut methods = self.methods.iter().collect::<Vec<_>>();
-        methods.sort_by(|((left_ty, left), _), ((right_ty, right), _)| {
-            left.cmp(right)
-                .then_with(|| left_ty.stable_ordering(right_ty))
+        let mut methods = self.standard_methods().iter().collect::<Vec<_>>();
+        methods.sort_by(|left, right| {
+            left.member
+                .cmp(&right.member)
+                .then_with(|| left.receiver.stable_ordering(&right.receiver))
         });
-        for (ordinal, ((receiver, name), method)) in methods.into_iter().enumerate() {
-            let member = CallableName::try_new(name.as_str())
-                .map_err(|_| super::CallablePublicationError::InvalidOverload)?;
+        for (ordinal, method) in methods.into_iter().enumerate() {
             let projection = StandardEnvironmentMethodProjection::try_from_signature(
-                receiver,
-                &member,
+                &method.receiver,
+                &method.member,
                 &method.signature,
                 limits,
             )?;
@@ -1005,15 +1443,6 @@ fn standard_manifest_digest(
         encoder.bytes(record.schema().semantic_digest().as_bytes());
     }
     EnvironmentManifestDigest::from_bytes(encoder.finish(DOMAIN))
-}
-
-fn callable_path_from_storage(path: &str) -> Result<CallablePath, super::CallablePublicationError> {
-    let segments = path
-        .split('.')
-        .map(CallableName::try_new)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|_| super::CallablePublicationError::InvalidOverload)?;
-    CallablePath::try_new(segments).map_err(|_| super::CallablePublicationError::InvalidOverload)
 }
 
 fn environment_record_from_signature(

@@ -4,9 +4,9 @@ use arcweft_lang_syntax::attachment::{
     AstNode, AttachedStyleAssignmentState, AttachedStyleBody, AttachedStyleDeclaration,
     AttachedStyleEnvironment, AttachedStyleEnvironmentComparison, AttachedStyleEnvironmentField,
     AttachedStyleExpression, AttachedStyleId, AttachedStyleMember, AttachedStyleName,
-    AttachedStyleProperty, AttachedStyleRule, AttachedStyleSelector, AttachedStyleToken,
-    StyleEnvironmentComparisonKind, StyleEnvironmentConditionIssue, StyleEnvironmentFieldKind,
-    StylePropertyOperation, StyleSelectorRelation, StyleSyntaxNameIssue,
+    AttachedStyleProperty, AttachedStyleRule, AttachedStyleSelector, AttachedStyleSelectorSequence,
+    AttachedStyleToken, StyleEnvironmentComparisonKind, StyleEnvironmentConditionIssue,
+    StyleEnvironmentFieldKind, StylePropertyOperation, StyleSelectorRelation, StyleSyntaxNameIssue,
 };
 
 use crate::identity::{HirLimit, ItemId, ScopeId};
@@ -18,7 +18,7 @@ use crate::item::{
     HirStyleItem, HirStyleName, HirStyleNameIssue, HirStyleRule, HirStyleSelector,
     HirStyleSelectorIssue, HirStyleSelectorSequence, HirStyleToken, HirStyleTokenIssue,
 };
-use crate::lower::{HirInvariantFailure, HirLowerFailure};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure};
 
 use super::super::id_ref_projection::id_ref;
 use super::super::{StagedHirModuleTransaction, require_limit};
@@ -498,7 +498,7 @@ fn style_selector_issue(
     if attached
         .sequences()
         .iter()
-        .any(|sequence| sequence.has_recovery())
+        .any(AttachedStyleSelectorSequence::has_recovery)
         || sequences.iter().any(|sequence| {
             sequence
                 .element()

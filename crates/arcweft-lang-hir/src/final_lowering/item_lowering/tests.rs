@@ -24,12 +24,15 @@ use crate::item::{
     HirRequiredName, HirRetainedName, HirRetainedPublicId,
 };
 use crate::leaf::{HirName, HirPath, HirPathRoot, HirPathSegment, HirPathValue};
-use crate::lower::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
+use crate::lowering::{HirInvariantFailure, HirLowerFailure, HirModuleKey, LoweringRequest};
 use crate::module::HirModule;
+use crate::proof_return::{
+    HirProofReturnSemanticClass, HirProofReturnSemanticFact, HirProofReturnSemanticFactSet,
+};
 use crate::scope::{HirLocal, HirLocalKind, HirScope, HirScopeKind, HirScopeOwner};
 use crate::slot::HirOrigin;
 use crate::source_index::HirSourceSite;
-use crate::symbol::CallablePackageId;
+use crate::symbol::{CallablePackageId, ProjectSymbolRevision, ProjectSymbolWorldId};
 
 use super::super::StagedHirModuleTransaction;
 use super::nominal::preflight_nominal_members;
@@ -40,15 +43,19 @@ mod activity;
 mod entry;
 mod extern_capability;
 mod flow;
+mod flow_transaction;
 mod function;
+mod item_sources;
 mod layer;
 mod metric;
 mod predicate;
 mod proof;
+mod removed_form_recovery;
 mod resource;
 mod source;
 mod style;
 mod style_freeze;
+mod synthetic_roles;
 mod test_bench;
 mod trait_impl;
 mod view;
@@ -89,16 +96,68 @@ fn stage<'source>(
     parsed: &'source ParsedSource,
     key: &HirModuleKey,
 ) -> StagedHirModuleTransaction<'source> {
-    database
-        .stage_final_hir(LoweringRequest::try_new(key.clone(), parsed).unwrap())
-        .unwrap()
+    super::super::stage_unpublished_module_for_invariant_test(
+        database,
+        LoweringRequest::try_new(key.clone(), parsed).unwrap(),
+        crate::lowering::HirLoweringControl::new(),
+    )
+    .unwrap()
 }
 
 fn lower(database: &mut HirDatabase, parsed: &ParsedSource, key: &HirModuleKey) -> Arc<HirModule> {
-    let tree = parsed.tree();
     let mut transaction = stage(database, parsed, key);
-    transaction.lower_attached_source_file_items(&tree).unwrap();
+    transaction.lower_parsed_source_items(parsed).unwrap();
     transaction.finish(database).unwrap().into_module()
+}
+
+fn lower_with_proof_return_classes(
+    database: &mut HirDatabase,
+    parsed: &ParsedSource,
+    key: &HirModuleKey,
+    classes: impl IntoIterator<Item = HirProofReturnSemanticClass>,
+) -> Arc<HirModule> {
+    let world = ProjectSymbolWorldId::try_new(
+        key.package().clone(),
+        parsed.document().identity().id().clone(),
+        "final-item-lowering-test",
+    )
+    .unwrap();
+    let revision =
+        ProjectSymbolRevision::try_for_documents([parsed.document().identity()]).unwrap();
+    let transaction = database
+        .stage_proof_return_project(
+            [LoweringRequest::try_new(key.clone(), parsed).unwrap()],
+            world,
+            revision,
+            [parsed.document().identity()],
+            crate::lowering::HirLoweringControl::new(),
+        )
+        .unwrap();
+    let headers = transaction.headers().cloned().collect::<Vec<_>>();
+    let classes = classes.into_iter().collect::<Vec<_>>();
+    assert_eq!(
+        headers.len(),
+        classes.len(),
+        "fixture must classify every authored Proof return exactly once"
+    );
+    let semantic_facts = headers
+        .iter()
+        .cloned()
+        .zip(classes)
+        .map(|(header, class)| HirProofReturnSemanticFact::new(header, class, 1))
+        .collect::<Vec<_>>();
+    let facts = HirProofReturnSemanticFactSet::try_new(
+        Arc::clone(transaction.generation()),
+        headers,
+        semantic_facts,
+    )
+    .unwrap();
+    let mut outputs = transaction
+        .publish_with_semantic_facts(database, facts)
+        .unwrap();
+    let output = outputs.pop().expect("one fixture module");
+    assert!(outputs.is_empty());
+    output.into_module()
 }
 
 fn resolve_item(module: &HirModule, ordinal: usize) -> &HirItem {
@@ -204,7 +263,6 @@ fn assert_item_slot_whole(
         panic!("authored item must retain a source-backed slot")
     };
     let attached = parsed
-        .tree()
         .items()
         .unwrap()
         .into_iter()
@@ -247,6 +305,10 @@ fn assert_item_owner_whole_recovery(module: &HirModule, owner: crate::identity::
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Predicate/Proof parameter test exhausts forbidden default/rest recovery without child allocation"
+)]
 fn predicate_and_proof_reject_function_only_default_and_rest_without_lowering_the_default() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-fixed-only-parameter-surface",
@@ -282,7 +344,7 @@ fn predicate_and_proof_reject_function_only_default_and_rest_without_lowering_th
             assert!(!rest.has_recovery());
             default_syntax.push(default.value().id());
         };
-        for item in parsed.tree().items().unwrap() {
+        for item in parsed.items().unwrap() {
             match item {
                 TypedItemNode::Predicate(node) => {
                     let attached = node.semantics().unwrap();
@@ -359,6 +421,10 @@ fn predicate_and_proof_reject_function_only_default_and_rest_without_lowering_th
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the canonical nominal test asserts all typed payload, inline-member, and source-owner rows"
+)]
 fn clean_nominal_items_publish_typed_payloads_inline_members_and_exact_sources() {
     let parsed = parse(
         "arcweft-test://proof/final-hir-nominal-clean",
@@ -677,6 +743,10 @@ fn nominal_member_preflight_accepts_exact_and_rejects_one_over() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the nominal recovery test exhausts recognized families and owner-whole diagnostics"
+)]
 fn nominal_recovery_matrix_keeps_recognized_families_and_owner_whole_diagnostics() {
     let cases = [
         (
@@ -772,10 +842,9 @@ fn nominal_recovery_matrix_keeps_recognized_families_and_owner_whole_diagnostics
         );
         let key = module_key(&parsed);
         let mut database = HirDatabase::try_new().unwrap();
-        let tree = parsed.tree();
         let mut transaction = stage(&database, &parsed, &key);
         transaction
-            .lower_attached_source_file_items(&tree)
+            .lower_parsed_source_items(&parsed)
             .unwrap_or_else(|error| panic!("{case}: lowering failed: {error:?}"));
         let module = transaction
             .finish(&mut database)
@@ -1178,9 +1247,7 @@ fn assert_action_local_freeze_rejects(case: &str, tamper: ActionLocalTamper) {
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    transaction.lower_parsed_source_items(&parsed).unwrap();
     let owner = transaction.source_ordered_items[0];
     let (local, parameter_type, payload) = {
         let (slots, arenas) = transaction.storage_mut();
@@ -1313,6 +1380,10 @@ fn action_exact_fixed_parameter_budget_lowers_without_a_second_hir_limit() {
 }
 
 #[test]
+#[allow(
+    clippy::too_many_lines,
+    reason = "the Action freeze test exhausts parameter order, scope membership, and scope-kind tampering"
+)]
 fn action_freeze_rejects_parameter_order_scope_membership_and_scope_kind_tampering() {
     {
         let parsed = parse(
@@ -1322,9 +1393,7 @@ fn action_freeze_rejects_parameter_order_scope_membership_and_scope_kind_tamperi
         let key = module_key(&parsed);
         let mut database = HirDatabase::try_new().unwrap();
         let mut transaction = stage(&database, &parsed, &key);
-        transaction
-            .lower_attached_source_file_items(&parsed.tree())
-            .unwrap();
+        transaction.lower_parsed_source_items(&parsed).unwrap();
         let owner = transaction.source_ordered_items[0];
         {
             let (slots, arenas) = transaction.storage_mut();
@@ -1371,9 +1440,7 @@ fn action_freeze_rejects_parameter_order_scope_membership_and_scope_kind_tamperi
         let key = module_key(&parsed);
         let mut database = HirDatabase::try_new().unwrap();
         let mut transaction = stage(&database, &parsed, &key);
-        let root_scope = transaction
-            .lower_attached_source_file_items(&parsed.tree())
-            .unwrap();
+        let root_scope = transaction.lower_parsed_source_items(&parsed).unwrap();
         {
             let (slots, arenas) = transaction.storage_mut();
             let original = arenas
@@ -1406,9 +1473,7 @@ fn action_freeze_rejects_parameter_order_scope_membership_and_scope_kind_tamperi
         let key = module_key(&parsed);
         let mut database = HirDatabase::try_new().unwrap();
         let mut transaction = stage(&database, &parsed, &key);
-        transaction
-            .lower_attached_source_file_items(&parsed.tree())
-            .unwrap();
+        transaction.lower_parsed_source_items(&parsed).unwrap();
         let owner = transaction.source_ordered_items[0];
         let callable_scope = {
             let (slots, arenas) = transaction.storage_mut();
@@ -1801,8 +1866,7 @@ fn attached_headers_publish_one_root_scope_and_exact_authored_item_order() {
         ),
     );
     assert!(parsed.diagnostics().is_empty());
-    let tree = parsed.tree();
-    let entries = tree
+    let entries = parsed
         .entries()
         .unwrap()
         .into_iter()
@@ -1907,6 +1971,57 @@ fn typed_segment_family_controls_projection_without_spelling_fallback() {
         recovered.state(),
         &HirItemPoisonState::Poisoned(HirItemIssue::MalformedHeader)
     );
+}
+
+#[test]
+fn attached_use_paths_lower_external_project_segments_without_string_reconstruction() {
+    let parsed = parse(
+        "arcweft-test://proof/source-file-external-project-segments",
+        concat!(
+            "use character.hero-pack.2d\n",
+            "use character.hero-pack.{2d, alternate-name as alternate}\n",
+        ),
+    );
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().unwrap();
+    let module = lower(&mut database, &parsed, &key);
+
+    let paths = module
+        .source_ordered_items()
+        .iter()
+        .enumerate()
+        .flat_map(|(ordinal, _)| {
+            let HirItemKind::Use(import) = resolve_item(&module, ordinal).kind() else {
+                panic!("external segment fixture remains a typed Use")
+            };
+            import
+                .bindings()
+                .iter()
+                .map(|binding| resolved_path(binding.path()))
+        })
+        .collect::<Vec<_>>();
+    assert!(matches!(
+        paths[0].segments(),
+        [HirPathSegment::ProjectSymbol(namespace),
+         HirPathSegment::ProjectSymbol(project),
+         HirPathSegment::ProjectSymbol(name)]
+            if namespace.as_str() == "character"
+                && project.as_str() == "hero-pack"
+                && name.as_str() == "2d"
+    ));
+    assert!(paths[1..].iter().all(|path| matches!(
+        &path.segments()[1],
+        HirPathSegment::ProjectSymbol(project) if project.as_str() == "hero-pack"
+    )));
+    assert!(matches!(
+        paths[2].segments().last(),
+        Some(HirPathSegment::ProjectSymbol(name)) if name.as_str() == "alternate-name"
+    ));
 }
 
 #[test]
@@ -2023,9 +2138,7 @@ fn source_order_validation_rejects_reversed_duplicate_and_missing_source_items()
 
     let mut duplicate_database = HirDatabase::try_new().unwrap();
     let mut duplicate = stage(&duplicate_database, &parsed, &key);
-    duplicate
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    duplicate.lower_parsed_source_items(&parsed).unwrap();
     duplicate
         .source_ordered_items
         .push(duplicate.source_ordered_items[0]);
@@ -2039,9 +2152,7 @@ fn source_order_validation_rejects_reversed_duplicate_and_missing_source_items()
 
     let mut reversed_database = HirDatabase::try_new().unwrap();
     let mut reversed = stage(&reversed_database, &parsed, &key);
-    reversed
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    reversed.lower_parsed_source_items(&parsed).unwrap();
     reversed.source_ordered_items.reverse();
     assert!(matches!(
         reversed.finish(&mut reversed_database),
@@ -2053,9 +2164,7 @@ fn source_order_validation_rejects_reversed_duplicate_and_missing_source_items()
 
     let mut missing_database = HirDatabase::try_new().unwrap();
     let mut missing = stage(&missing_database, &parsed, &key);
-    missing
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    missing.lower_parsed_source_items(&parsed).unwrap();
     missing.source_ordered_items.pop();
     assert!(matches!(
         missing.finish(&mut missing_database),
@@ -2088,9 +2197,7 @@ fn attached_item_freeze_rejects_a_synthetic_item_without_publication() {
     let key = module_key(&parsed);
     let mut database = HirDatabase::try_new().unwrap();
     let mut transaction = stage(&database, &parsed, &key);
-    let root_scope = transaction
-        .lower_attached_source_file_items(&parsed.tree())
-        .unwrap();
+    let root_scope = transaction.lower_parsed_source_items(&parsed).unwrap();
     let root_site = HirSourceSite::Span(parsed.root_syntax().source_span().clone());
     let synthetic = {
         let (slots, arenas) = transaction.storage_mut();
@@ -2326,7 +2433,7 @@ fn foreign_and_stale_attached_roots_poison_the_transaction_without_publication()
     let mut database = HirDatabase::try_new().unwrap();
     let mut stale = stage(&database, &initial, &key);
     assert!(matches!(
-        stale.lower_attached_source_file_items(&revised.tree()),
+        stale.lower_parsed_source_items(&revised),
         Err(HirLowerFailure::StaleSource { .. })
     ));
     assert!(stale.finish(&mut database).is_err());
@@ -2338,7 +2445,7 @@ fn foreign_and_stale_attached_roots_poison_the_transaction_without_publication()
     );
     let mut foreign_transaction = stage(&database, &initial, &key);
     assert!(matches!(
-        foreign_transaction.lower_attached_source_file_items(&foreign.tree()),
+        foreign_transaction.lower_parsed_source_items(&foreign),
         Err(HirLowerFailure::WrongSyntaxDatabase { .. })
     ));
     assert!(foreign_transaction.finish(&mut database).is_err());

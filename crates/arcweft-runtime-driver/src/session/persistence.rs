@@ -48,7 +48,6 @@ impl BundleSession {
         validate_dialogue_view_save_point(&self.view_runtime, &self.presentation)?;
         validate_presentation_runtime_status(&self.presentation, &self.executor.fiber().status)?;
         let active = self.active_generation();
-        validate_presentation_dialogue_revision(&self.presentation, &active.dialogue_revision)?;
         let product_program = self.executor.product_awbc_program().ok_or_else(|| {
             BundleSessionSaveError::UnsupportedExecutorTier {
                 tier: self.executor.tier().as_str().to_owned(),
@@ -87,7 +86,7 @@ impl BundleSession {
             generation: BundleSessionGenerationSnapshot {
                 active_generation: active.id,
                 artifact: self.active_artifact_identity,
-                dialogue_revision: active.dialogue_revision.clone(),
+                dialogue_content: active.dialogue_content,
                 bytecode_abi: active.bytecode_abi,
                 adapter_requirements: active.adapter_requirements,
             },
@@ -149,10 +148,6 @@ impl BundleSession {
         snapshot: BundleSessionSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
         self.validate_session_save_generation(&snapshot.generation)?;
-        validate_presentation_dialogue_revision(
-            &snapshot.presentation,
-            &snapshot.generation.dialogue_revision,
-        )?;
         validate_presentation_snapshot(&snapshot.presentation, &self.fx_definitions)?;
         let active_entry = snapshot.active_entry.clone();
         let active_generation = self.active_generation().id;
@@ -358,11 +353,11 @@ impl BundleSession {
                 actual: format!("{actual_artifact:?}"),
             });
         }
-        if snapshot.dialogue_revision != active.dialogue_revision {
+        if snapshot.dialogue_content != active.dialogue_content {
             return Err(BundleSessionSaveError::GenerationMismatch {
-                field: "dialogue_revision",
-                saved: format!("{:?}", snapshot.dialogue_revision),
-                actual: format!("{:?}", active.dialogue_revision),
+                field: "dialogue_content",
+                saved: digest_label(&snapshot.dialogue_content),
+                actual: digest_label(&active.dialogue_content),
             });
         }
         if snapshot.bytecode_abi != active.bytecode_abi {
@@ -385,7 +380,7 @@ impl BundleSession {
     pub(super) fn activate_runtime(&mut self, runtime: SessionRuntime) {
         self.source_label = runtime.source_label;
         self.executor = runtime.executor;
-        self.display = runtime.display;
+        self.dialogue_content = runtime.dialogue_content;
         self.image_objects = runtime.image_objects;
         self.text_inputs = runtime.text_inputs;
         self.action_buttons = runtime.action_buttons;
@@ -433,22 +428,4 @@ fn validate_dialogue_view_save_point(
         .map_err(|error| BundleSessionSaveError::ViewRuntime {
             message: error.to_string(),
         })
-}
-
-fn validate_presentation_dialogue_revision(
-    presentation: &BundlePresentationSnapshot,
-    expected: &arcweft_dialogue::DialogueProfileRevision,
-) -> Result<(), BundleSessionSaveError> {
-    for dialogue in presentation.dialogue.iter() {
-        for entry in dialogue.entries() {
-            if &entry.frame().dialogue_revision != expected {
-                return Err(BundleSessionSaveError::GenerationMismatch {
-                    field: "presentation.dialogue_revision",
-                    saved: format!("{:?}", entry.frame().dialogue_revision),
-                    actual: format!("{expected:?}"),
-                });
-            }
-        }
-    }
-    Ok(())
 }

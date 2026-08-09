@@ -7,5 +7,5 @@ error[E0599]: no method named `recovered_node_type` found for reference `&Nomina
 help: there is a method `recovered_type` with a similar name, but with different arguments
   --> src/nominal/index.rs
    |
-   |     pub fn recovered_type(&self, root: &SourceSpan) -> Option<&TypeKind> {
-   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |     pub fn recovered_type(&self, root: TypeId) -> Option<&TypeKind> {
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

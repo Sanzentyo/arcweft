@@ -1,6 +1,10 @@
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
-use super::document::parse_shadow_document;
+use super::document::parse_document;
+use crate::expressions::{
+    ExpressionProjection, SyntaxBuiltinRichTextTag, SyntaxDialogueContentProjection,
+    SyntaxDialogueNodeProjection, SyntaxRichTextArgumentProjection, SyntaxRichTextTagIdentity,
+};
 use crate::grammar::build::UnattachedGrammarEntry;
 use crate::grammar::kinds::SyntaxKind;
 use crate::text::{
@@ -21,14 +25,13 @@ fn document(source: &str) -> SourceDocument {
 fn flow_postfix_brackets_select_distinct_typed_lossless_owners() {
     let source = concat!(
         "flow opening {\n",
-        "    let handles = alice.say()[本文です。[p]]\n",
+        "    let handles = alice()[本文です。[p]]\n",
         "    let direct = alice[おはよう。[p]]\n",
         "    let selected = rows[0]\n",
         "    let named = rows[index]\n",
         "}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -67,15 +70,46 @@ fn flow_postfix_brackets_select_distinct_typed_lossless_owners() {
 }
 
 #[test]
+fn dot_selector_and_empty_close_are_typed_inference_owned_by_dialogue_grammar() {
+    let source = "flow opening {\n    let line = alice[[.shake]effect[/][p]]\n}\n";
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let projection = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
+        .and_then(UnattachedGrammarEntry::expression_projection)
+        .expect("dialogue application retains its typed projection");
+    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
+    else {
+        panic!("selected dialogue application projection");
+    };
+    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+        panic!("dialogue application retains content");
+    };
+
+    assert!(matches!(
+        content.nodes().first(),
+        Some(SyntaxDialogueNodeProjection::InferredStartTag { tag: 0 })
+    ));
+    assert!(matches!(
+        content.nodes().get(2),
+        Some(SyntaxDialogueNodeProjection::InferredEndTag(end))
+            if end.is_inferred() && end.issue().is_none()
+    ));
+    assert_eq!(content.tags()[0].paired_end_node(), Some(2));
+    assert!(built.diagnostics().is_empty(), "{:?}", built.diagnostics());
+}
+
+#[test]
 fn unclosed_dialogue_content_recovers_before_the_next_item() {
     let source = concat!(
         "flow broken {\n",
-        "    let handles = alice.say()[unfinished\n",
+        "    let handles = alice()[unfinished\n",
         "}\n",
         "proof next() = true\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let kinds = built
         .index()
         .entries()
@@ -99,8 +133,7 @@ fn unterminated_rich_text_quote_recovers_before_following_tags() {
         "[effect .wave note=\"unfinished][.sparkle]next[/]]\n",
         "}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
     let entries = built.index().entries();
     let rich_text_kinds = entries
         .iter()
@@ -146,8 +179,7 @@ fn dedicated_rich_text_payloads_share_unterminated_quote_recovery() {
         let source =
             format!("flow opening {{\n    let line = alice[本文。{payload}[.sparkle]]\n}}\n");
         let built =
-            parse_shadow_document(&document(&source), crate::parser::ParseOptions::default())
-                .unwrap();
+            parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
         let diagnostics = built
             .diagnostics()
             .iter()
@@ -178,8 +210,7 @@ fn dedicated_rich_text_payloads_share_unterminated_quote_recovery() {
 fn private_rich_text_grammar_stops_at_the_content_tag_limit() {
     let tags = "[p]".repeat(MAX_RICH_TEXT_CONTENT_TAGS + 3);
     let source = format!("flow opening {{\n    let line = alice[本文。{tags}]\n}}\n");
-    let built =
-        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
 
     assert_eq!(
         built
@@ -212,8 +243,7 @@ fn private_rich_text_grammar_reports_the_content_argument_limit_once() {
     );
     let content = one_tag.repeat(MAX_RICH_TEXT_CONTENT_ARGUMENTS / MAX_RICH_TEXT_TAG_ARGUMENTS + 3);
     let source = format!("flow opening {{\n    let line = alice[本文。{content}]\n}}\n");
-    let built =
-        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
 
     assert_eq!(
         built
@@ -244,8 +274,7 @@ fn per_tag_argument_one_over_recovers_as_text_without_tag_or_argument_identity()
     let source = format!(
         "flow opening {{\n    let line = alice[本文。[effect {arguments}]text[/effect]]\n}}\n"
     );
-    let built =
-        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
 
     assert_eq!(
         built
@@ -282,14 +311,40 @@ fn per_tag_argument_one_over_recovers_as_text_without_tag_or_argument_identity()
 }
 
 #[test]
-fn mark_payload_does_not_invent_rich_text_arguments() {
+fn explicit_mark_selector_retains_one_typed_positional_argument() {
     let source = concat!(
         "flow opening {\n",
-        "    let line = alice[本文。[mark checkpoint]]\n",
+        "    let line = alice[本文。[mark .checkpoint]]\n",
         "}\n",
     );
-    let built =
-        parse_shadow_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(source), crate::parser::ParseOptions::default()).unwrap();
+
+    let projection = built
+        .index()
+        .entries()
+        .iter()
+        .find(|entry| entry.kind() == SyntaxKind::DialogueContentApplicationExpression)
+        .and_then(UnattachedGrammarEntry::expression_projection)
+        .expect("mark remains inside one typed Dialogue application");
+    let ExpressionProjection::DialogueContentApplication(application) = projection.projection()
+    else {
+        panic!("selected Dialogue application projection");
+    };
+    let SyntaxDialogueContentProjection::Present(content) = application.content() else {
+        panic!("mark Dialogue application retains content");
+    };
+    let [tag] = content.tags() else {
+        panic!("one explicit marker tag");
+    };
+    assert!(matches!(
+        tag.identity(),
+        SyntaxRichTextTagIdentity::Builtin(SyntaxBuiltinRichTextTag::Marker)
+    ));
+    assert!(matches!(
+        tag.arguments(),
+        [SyntaxRichTextArgumentProjection::Positional { value }]
+            if value.decoded() == ".checkpoint"
+    ));
 
     assert_eq!(
         built
@@ -300,10 +355,24 @@ fn mark_payload_does_not_invent_rich_text_arguments() {
             .count(),
         1
     );
-    assert!(!built.index().entries().iter().any(|entry| matches!(
-        entry.kind(),
-        SyntaxKind::RichTextPositionalArgument | SyntaxKind::RichTextArgumentPayload
-    )));
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::RichTextPositionalArgument)
+            .count(),
+        1
+    );
+    assert_eq!(
+        built
+            .index()
+            .entries()
+            .iter()
+            .filter(|entry| entry.kind() == SyntaxKind::RichTextArgumentPayload)
+            .count(),
+        1
+    );
     assert_eq!(built.green().to_string(), source);
 }
 
@@ -312,8 +381,7 @@ fn overlong_rich_text_body_is_opaque_to_inner_tag_identity() {
     let oversized = format!("[{}[p]]", "a".repeat(MAX_RICH_TEXT_TAG_BODY_BYTES + 1));
     let source =
         format!("flow opening {{\n    let line = alice[本文。{oversized}[.sparkle]]\n}}\n");
-    let built =
-        parse_shadow_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
+    let built = parse_document(&document(&source), crate::parser::ParseOptions::default()).unwrap();
 
     let tags = built
         .index()

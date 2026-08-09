@@ -558,11 +558,11 @@ impl Wire for AwbcTerminator {
                 resume.write_wire(writer)?;
             }
             Self::Await {
-                task,
+                handle,
                 binding,
                 resume,
             } => {
-                task.write_wire(writer)?;
+                handle.write_wire(writer)?;
                 binding.write_wire(writer)?;
                 resume.write_wire(writer)?;
             }
@@ -655,7 +655,7 @@ impl Wire for AwbcTerminator {
                 resume: AwbcResumePointId::read_wire(reader)?,
             },
             AwbcOpcode::Await => Self::Await {
-                task: AwbcRegisterId::read_wire(reader)?,
+                handle: AwbcRegisterId::read_wire(reader)?,
                 binding: Option::<AwbcPatternId>::read_wire(reader)?,
                 resume: AwbcResumePointId::read_wire(reader)?,
             },
@@ -876,7 +876,7 @@ impl Wire for AwbcPattern {
                 rest: Option::<AwbcRegisterId>::read_wire(reader)?,
             },
             7 => Self::Variant {
-                ty: Option::<AwbcTypeId>::read_wire(reader)?,
+                ty: AwbcTypeId::read_wire(reader)?,
                 case: u32::read_wire(reader)?,
                 case_name: AwbcStringId::read_wire(reader)?,
                 payload: Option::<AwbcPatternId>::read_wire(reader)?,
