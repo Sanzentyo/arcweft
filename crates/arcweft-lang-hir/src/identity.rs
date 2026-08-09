@@ -141,6 +141,15 @@ impl RawHirId {
             slot: self.slot,
         }
     }
+
+    pub(crate) fn cache_fingerprint_input(self) -> [u8; 17] {
+        let mut bytes = [0; 17];
+        bytes[..8].copy_from_slice(&self.module.database.0.get().to_le_bytes());
+        bytes[8..12].copy_from_slice(&self.module.slot.get().to_le_bytes());
+        bytes[12..16].copy_from_slice(&self.slot.get().to_le_bytes());
+        bytes[16] = self.kind.cache_fingerprint_tag();
+        bytes
+    }
 }
 
 /// Non-forgeable diagnostic projection of a raw HIR identity.
@@ -199,6 +208,10 @@ impl ScopeId {
     pub const fn kind(self) -> HirIdKind {
         HirIdKind::Scope
     }
+
+    pub(crate) fn cache_fingerprint_input(self) -> [u8; 17] {
+        self.0.cache_fingerprint_input()
+    }
 }
 
 /// Local binding identity.
@@ -230,6 +243,10 @@ impl ExprId {
     /// Returns this identity's arena kind.
     pub const fn kind(self) -> HirIdKind {
         HirIdKind::Expr
+    }
+
+    pub(crate) fn cache_fingerprint_input(self) -> [u8; 17] {
+        self.0.cache_fingerprint_input()
     }
 }
 
@@ -519,6 +536,19 @@ pub enum HirIdKind {
 }
 
 impl HirIdKind {
+    const fn cache_fingerprint_tag(self) -> u8 {
+        match self {
+            Self::Item => 0,
+            Self::Scope => 1,
+            Self::Local => 2,
+            Self::Expr => 3,
+            Self::Stmt => 4,
+            Self::Type => 5,
+            Self::Pattern => 6,
+            Self::Capture => 7,
+        }
+    }
+
     /// Stable diagnostic label for the slot kind.
     pub const fn as_str(self) -> &'static str {
         match self {

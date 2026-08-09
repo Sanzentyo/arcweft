@@ -31,10 +31,12 @@ use crate::view::CompiledViewProduct;
 use crate::{lower, parse, style, view};
 use arcweft_lang_hir::{
     database::HirDatabase,
-    identity::{HirDatabaseCreateError, HirDatabaseId},
+    identity::{HirDatabaseCreateError, HirDatabaseId, HirSnapshotId},
     lowering::{HirLoweringControl, HirModuleKey, LoweringRequest},
     module::HirModule,
-    project::{HirProject, HirProjectBuildError, HirProjectBuilder, HirProjectModule},
+    project::{
+        HirPackageModuleKey, HirProject, HirProjectBuildError, HirProjectBuilder, HirProjectModule,
+    },
     symbol::{CallablePackageId, ProjectSymbolTable},
 };
 #[cfg(test)]
@@ -132,6 +134,14 @@ pub struct CompiledProjectModule {
 /// Compiler-owned final-HIR session reused only within one process build session.
 pub struct ProjectCompilationSession {
     hir: HirDatabase,
+    accepted_hir_project: Option<(HirProjectCacheKey, Arc<HirProject>)>,
+}
+
+/// Private exact-snapshot key for the session's last accepted HIR project.
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct HirProjectCacheKey {
+    root_package: CallablePackageId,
+    modules: Box<[(HirPackageModuleKey, SourceDocumentIdentity, HirSnapshotId)]>,
 }
 
 /// Deterministic content/dependency key for one compile unit.
@@ -391,11 +401,32 @@ impl ProjectCompilationSession {
     pub fn try_new() -> Result<Self, HirDatabaseCreateError> {
         Ok(Self {
             hir: HirDatabase::try_new()?,
+            accepted_hir_project: None,
         })
     }
 
     pub const fn hir_database_id(&self) -> HirDatabaseId {
         self.hir.database_id()
+    }
+}
+
+impl HirProjectCacheKey {
+    fn new(root_package: CallablePackageId, modules: &[HirProjectModule]) -> Self {
+        let mut modules = modules
+            .iter()
+            .map(|module| {
+                (
+                    module.key(),
+                    module.source().clone(),
+                    module.module().snapshot_id(),
+                )
+            })
+            .collect::<Vec<_>>();
+        modules.sort();
+        Self {
+            root_package,
+            modules: modules.into_boxed_slice(),
+        }
     }
 }
 
@@ -607,6 +638,7 @@ where
             hir_lowering_control,
         )?;
 
+    let mut attempted_project_cache_key = None;
     let result = (|| {
         let package =
             CallablePackageId::try_new(project.package().id.as_str()).map_err(|error| {
@@ -638,28 +670,35 @@ where
             })?;
             project_modules.push(bound);
         }
-        let mut project_builder = HirProjectBuilder::new(&session.hir, package);
-        for module in project_modules {
-            project_builder.insert_module(module).map_err(|error| {
-                linked_error(
-                    ProjectCompileStage::HirProject,
-                    [
-                        Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
-                            .with_code("hir.project"),
-                    ],
-                )
-            })?;
-        }
-        let hir_project = Arc::new(project_builder.finish().map_err(|error| {
-            match error {
+        let project_cache_key = HirProjectCacheKey::new(package.clone(), &project_modules);
+        attempted_project_cache_key = Some(project_cache_key.clone());
+        let hir_project = if let Some((cached_key, cached_project)) =
+            session.accepted_hir_project.as_ref()
+            && cached_key == &project_cache_key
+        {
+            Arc::clone(cached_project)
+        } else {
+            let mut project_builder = HirProjectBuilder::new(&session.hir, package);
+            for module in project_modules {
+                project_builder.insert_module(module).map_err(|error| {
+                    linked_error(
+                        ProjectCompileStage::HirProject,
+                        [
+                            Diagnostic::new(DiagnosticSeverity::Error, error.to_string())
+                                .with_code("hir.project"),
+                        ],
+                    )
+                })?;
+            }
+            Arc::new(project_builder.finish().map_err(|error| match error {
                 HirProjectBuildError::DialogueLines(rejection) => linked_error(
                     ProjectCompileStage::HirProject,
                     rejection
-                    .diagnostics()
-                    .iter()
-                    .map(
-                        arcweft_lang_hir::line_identity::DialogueLineDiagnostic::to_source_diagnostic,
-                    ),
+                        .diagnostics()
+                        .iter()
+                        .map(
+                            arcweft_lang_hir::line_identity::DialogueLineDiagnostic::to_source_diagnostic,
+                        ),
                 ),
                 error => linked_error(
                     ProjectCompileStage::HirProject,
@@ -668,8 +707,8 @@ where
                             .with_code("hir.project"),
                     ],
                 ),
-            }
-        })?);
+            })?)
+        };
         let mut semantic_tail_diagnostics = Vec::new();
         for module in &modules {
             let projected = project_callable_tail_recovery_diagnostics(
@@ -950,6 +989,11 @@ where
     })();
     match result {
         Ok(compiled) => {
+            session.accepted_hir_project = Some((
+                attempted_project_cache_key
+                    .expect("successful compilation constructed one exact HIR project cache key"),
+                Arc::clone(compiled.hir_project()),
+            ));
             pending_stores
                 .flush(cache)
                 .expect("pending compiler stores are finalized exactly once after assembly");

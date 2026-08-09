@@ -18,10 +18,22 @@ use super::HirProjectModule;
 const MAX_PROJECT_DIALOGUE_LINE_CANDIDATES: usize = 262_144;
 const MAX_PROJECT_DIALOGUE_LINE_DIAGNOSTICS: usize = 1_024;
 const MAX_PROJECT_DIALOGUE_LINE_WORK: u32 = 786_432;
+const INVENTORY_FINGERPRINT_DOMAIN: &[u8] = b"arcweft.hir.dialogue-line-inventory.v1\0";
 
 /// Stable index into one accepted dialogue-line inventory generation.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct DialogueLineIndex(u32);
+
+/// Crate-private deterministic identity of one canonical accepted inventory.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub(crate) struct DialogueLineInventoryFingerprint([u8; 32]);
+
+impl DialogueLineInventoryFingerprint {
+    #[cfg(test)]
+    pub(crate) const fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
+}
 
 impl DialogueLineIndex {
     fn try_from_offset(offset: usize) -> Result<Self, DialogueLineProjectFatal> {
@@ -120,12 +132,15 @@ pub struct AcceptedDialogueLineInventory {
     by_id: BTreeMap<DialogueLineId, DialogueLineIndex>,
     by_expr: BTreeMap<ExprId, DialogueLineIndex>,
     source_order: Arc<[DialogueLineIndex]>,
+    cache_fingerprint: DialogueLineInventoryFingerprint,
 }
 
 impl AcceptedDialogueLineInventory {
     pub(crate) fn empty() -> Self {
+        let records = Arc::from([]);
         Self {
-            records: Arc::from([]),
+            cache_fingerprint: fingerprint_inventory(&records),
+            records,
             by_id: BTreeMap::new(),
             by_expr: BTreeMap::new(),
             source_order: Arc::from([]),
@@ -152,6 +167,11 @@ impl AcceptedDialogueLineInventory {
         self.source_order
             .iter()
             .map(|index| &self.records[index.offset()])
+    }
+
+    #[cfg(test)]
+    pub(crate) const fn cache_fingerprint(&self) -> DialogueLineInventoryFingerprint {
+        self.cache_fingerprint
     }
 }
 
@@ -422,12 +442,148 @@ impl DialogueLineAcceptanceTransaction {
             })
             .collect::<Result<Vec<_>, _>>()?;
 
+        let records = Arc::from(self.accepted);
         Ok(AcceptedDialogueLineInventory {
-            records: Arc::from(self.accepted),
+            cache_fingerprint: fingerprint_inventory(&records),
+            records,
             by_id,
             by_expr,
             source_order: Arc::from(source_order),
         })
+    }
+}
+
+fn fingerprint_inventory(records: &[AcceptedDialogueLine]) -> DialogueLineInventoryFingerprint {
+    let mut encoder = InventoryFingerprintEncoder::new();
+    encoder.usize(records.len());
+    for record in records {
+        encoder.line(record);
+    }
+    DialogueLineInventoryFingerprint(encoder.finish())
+}
+
+struct InventoryFingerprintEncoder {
+    hasher: blake3::Hasher,
+}
+
+impl InventoryFingerprintEncoder {
+    fn new() -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(INVENTORY_FINGERPRINT_DOMAIN);
+        Self { hasher }
+    }
+
+    fn finish(self) -> [u8; 32] {
+        *self.hasher.finalize().as_bytes()
+    }
+
+    fn line(&mut self, record: &AcceptedDialogueLine) {
+        self.string(record.id().as_str());
+        self.string(record.text_key().as_str());
+        self.u8(match record.id_origin() {
+            DialogueLineIdOrigin::ExplicitAbsolute => 0,
+            DialogueLineIdOrigin::ExplicitRelative => 1,
+            DialogueLineIdOrigin::ExplicitFamilyRelative => 2,
+            DialogueLineIdOrigin::Generated => 3,
+        });
+        self.u8(match record.text_key_origin() {
+            DialogueTextKeyOrigin::Explicit => 0,
+            DialogueTextKeyOrigin::Derived => 1,
+        });
+        self.source(record.source());
+    }
+
+    fn source(&mut self, source: &AcceptedDialogueLineSource) {
+        let module = source.module();
+        self.string(module.package().as_str());
+        self.usize(module.path().segments().len());
+        for segment in module.path().segments() {
+            self.string(segment.as_str());
+        }
+        self.source_identity(module.source());
+        self.bytes(&source.application().cache_fingerprint_input());
+        self.owner(source.owner());
+        self.usize(source.named_scopes().len());
+        for scope in source.named_scopes() {
+            self.bytes(&scope.scope().cache_fingerprint_input());
+            self.string(scope.segment().as_str());
+            self.span(scope.declaration());
+        }
+        self.u32(source.source_order().get());
+        self.span(source.application_span());
+        self.optional_span(source.id_coordinate_span());
+        self.optional_span(source.text_key_coordinate_span());
+    }
+
+    fn owner(&mut self, owner: &HirDialogueLineSourceOwner) {
+        match owner {
+            HirDialogueLineSourceOwner::Flow(owner) => {
+                self.u8(0);
+                self.string(owner.id().as_str());
+            }
+            HirDialogueLineSourceOwner::Callable(owner) => {
+                self.u8(1);
+                self.string(owner.package().as_str());
+                self.usize(owner.module().segments().len());
+                for segment in owner.module().segments() {
+                    self.string(segment.as_str());
+                }
+                self.u8(owner.owner().digest_tag());
+                self.usize(owner.owner_path().len());
+                for segment in owner.owner_path() {
+                    self.string(segment.as_str());
+                }
+                self.string(owner.name());
+            }
+            HirDialogueLineSourceOwner::Ownerless => self.u8(2),
+        }
+    }
+
+    fn optional_span(&mut self, span: Option<&SourceSpan>) {
+        match span {
+            Some(span) => {
+                self.u8(1);
+                self.span(span);
+            }
+            None => self.u8(0),
+        }
+    }
+
+    fn span(&mut self, span: &SourceSpan) {
+        self.source_identity(span.source());
+        self.usize(span.range().start());
+        self.usize(span.range().end());
+    }
+
+    fn source_identity(&mut self, source: &SourceDocumentIdentity) {
+        self.string(source.id().as_str());
+        self.bytes(source.revision().as_bytes());
+        self.u64(source.source_len());
+    }
+
+    fn string(&mut self, value: &str) {
+        self.bytes(value.as_bytes());
+    }
+
+    fn bytes(&mut self, value: &[u8]) {
+        self.usize(value.len());
+        self.hasher.update(value);
+    }
+
+    fn usize(&mut self, value: usize) {
+        self.u64(u64::try_from(value).expect("bounded HIR inventory lengths fit u64"));
+    }
+
+    fn u64(&mut self, value: u64) {
+        self.hasher.update(&value.to_le_bytes());
+    }
+
+    fn u32(&mut self, value: u32) {
+        self.hasher.update(&value.to_le_bytes());
+    }
+
+    fn u8(&mut self, value: u8) {
+        self.hasher.update(&[value]);
     }
 }
 

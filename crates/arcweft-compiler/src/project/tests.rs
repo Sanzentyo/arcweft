@@ -253,6 +253,20 @@ fn compiled_project_modules_retain_typed_non_blocking_lints() {
 }
 
 #[test]
+fn noop_project_rebuild_reuses_the_exact_accepted_hir_project_arc() {
+    let (project, context) = removed_role_project("flow opening {\n}\n");
+    let (mut session, parsed_sources) = compilation_state(&project);
+    let first = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("first project compilation");
+    let retained = Arc::clone(first.hir_project());
+
+    let second = compile_project(&mut session, &project, &parsed_sources, &context)
+        .expect("identical project recompilation");
+
+    assert!(Arc::ptr_eq(&retained, second.hir_project()));
+}
+
+#[test]
 fn multi_module_authored_proof_alias_to_unit_uses_one_semantic_project_transaction() {
     let aliases = CanonicalModulePath::crate_root()
         .join(ModuleSegment::new("aliases").expect("module segment"));
@@ -485,6 +499,40 @@ fn project_dialogue_collision_projects_exact_cross_module_source_labels() {
             ))
             .expect("root exact span")
     );
+}
+
+#[test]
+fn failed_project_build_preserves_the_previous_accepted_hir_project_arc() {
+    let (accepted_project, accepted_context) = removed_role_project("flow opening {\n}\n");
+    let (mut session, accepted_sources) = compilation_state(&accepted_project);
+    let accepted = compile_project(
+        &mut session,
+        &accepted_project,
+        &accepted_sources,
+        &accepted_context,
+    )
+    .expect("initial accepted project");
+    let retained = Arc::clone(accepted.hir_project());
+
+    let (collision_project, collision_context, _, _) = dialogue_collision_project();
+    let (_, collision_sources) = compilation_state(&collision_project);
+    let error = compile_project(
+        &mut session,
+        &collision_project,
+        &collision_sources,
+        &collision_context,
+    )
+    .expect_err("collision candidate rejects without replacing accepted cache");
+    assert_eq!(error.stage(), ProjectCompileStage::HirProject.as_str());
+
+    let rebuilt = compile_project(
+        &mut session,
+        &accepted_project,
+        &accepted_sources,
+        &accepted_context,
+    )
+    .expect("accepted input remains reusable after rejection");
+    assert!(Arc::ptr_eq(&retained, rebuilt.hir_project()));
 }
 
 #[test]

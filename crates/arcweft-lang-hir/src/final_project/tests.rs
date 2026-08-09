@@ -406,6 +406,45 @@ fn project_publishes_generated_dialogue_identity_from_typed_callable_owner() {
 }
 
 #[test]
+fn module_input_permutations_produce_equal_inventory_fingerprint() {
+    let package = package();
+    let root_path = CanonicalModulePath::crate_root();
+    let child_path = root_path.join(ModuleSegment::new("chapter").unwrap());
+    let mut root_syntax = SyntaxDatabase::try_new().unwrap();
+    let root_source = parse_initial(
+        &mut root_syntax,
+        "arcweft-test://proof/final-project/fingerprint-root",
+        "fingerprint-root.arcw",
+        "fn root_line() {\n    let line = alice[before[strong]root[/strong]after]\n}\n",
+    );
+    let mut child_syntax = SyntaxDatabase::try_new().unwrap();
+    let child_source = parse_initial(
+        &mut child_syntax,
+        "arcweft-test://proof/final-project/fingerprint-child",
+        "fingerprint-child.arcw",
+        "fn child_line() {\n    let line = bob[before[strong]child[/strong]after]\n}\n",
+    );
+    let mut database = HirDatabase::try_new().unwrap();
+    let root = lower(&mut database, &root_source, &package, &root_path);
+    let child = lower(&mut database, &child_source, &package, &child_path);
+    let root = bind(&database, &package, &root_path, root);
+    let child = bind(&database, &package, &child_path, child);
+
+    let forward = build_project(&database, package.clone(), [root.clone(), child.clone()]).unwrap();
+    let reverse = build_project(&database, package, [child, root]).unwrap();
+
+    assert_eq!(forward.dialogue_lines(), reverse.dialogue_lines());
+    assert_eq!(
+        forward.dialogue_lines().cache_fingerprint(),
+        reverse.dialogue_lines().cache_fingerprint()
+    );
+    assert_ne!(
+        forward.dialogue_lines().cache_fingerprint().as_bytes(),
+        &[0; 32]
+    );
+}
+
+#[test]
 fn project_rejects_cross_module_dialogue_id_collision_with_exact_sites() {
     let package = package();
     let root_path = CanonicalModulePath::crate_root();
