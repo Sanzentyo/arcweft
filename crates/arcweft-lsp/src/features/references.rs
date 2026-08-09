@@ -15,6 +15,10 @@ pub fn references(
     else {
         return Vec::new();
     };
+    if let Some(locations) = crate::features::dialogue_lines::references(profile, document, offset)
+    {
+        return locations;
+    }
     if let Some(locations) = crate::features::entry_roles::references(profile, document, offset) {
         return locations;
     }

@@ -257,7 +257,10 @@ pub fn project_runtime_semantic_facts(
                     })?;
                 input.push_value(owner, RuntimeResolvedValue::DialogueLine(line));
             }
-            CheckedExpressionResolution::Call
+            CheckedExpressionResolution::DialogueLineCoordinate(_)
+            | CheckedExpressionResolution::DialogueTextKeyCoordinate(_)
+            | CheckedExpressionResolution::DialogueConfiguration { .. }
+            | CheckedExpressionResolution::Call
             | CheckedExpressionResolution::ViewCall(_)
             | CheckedExpressionResolution::ViewCallee(_)
             | CheckedExpressionResolution::StyleValue(_)

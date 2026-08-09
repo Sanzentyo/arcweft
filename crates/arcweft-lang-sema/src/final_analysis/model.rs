@@ -2,7 +2,7 @@
 
 use super::{
     AssertionRuntimePolicy, CallableDeclarationKey, CharacterId, CharacterNominalType,
-    CheckedRichTextReport, DeclarationIdentityFamily, DialogueLineId, EffectSet,
+    CheckedRichTextReport, DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet,
     EnvironmentBindingId, ExprId, GenericTypeOwnerId, GenericTypeParameterId, HirFlowIdentity,
     HirItemFamily, HirLiteral, HirName, ItemId, LocalId, ProjectNominalDeclaration,
     ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, TypeKind,
@@ -434,6 +434,15 @@ pub enum CheckedExpressionResolution {
     /// Exact accepted dialogue-line target selected for an entity-reference
     /// leaf under the `DialogueLine` expected family.
     DialogueLineReference(DialogueLineId),
+    /// Immediate `id` metadata owned by one accepted dialogue application.
+    DialogueLineCoordinate(DialogueLineId),
+    /// Immediate `text_key` metadata owned by one accepted dialogue application.
+    DialogueTextKeyCoordinate(DialogueTextKey),
+    /// Immediate ordinary-call carrier whose meaning is dialogue
+    /// configuration, not an independently executable callable invocation.
+    DialogueConfiguration {
+        character: ItemId,
+    },
     DialogueApplication {
         character: ItemId,
         rich_text: Box<CheckedRichTextReport>,

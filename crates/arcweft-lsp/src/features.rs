@@ -5,6 +5,7 @@ pub mod character_definition;
 pub mod character_metadata;
 pub mod completion;
 pub mod definition;
+pub(crate) mod dialogue_lines;
 mod dialogue_view_metadata;
 pub(crate) mod entry_roles;
 pub mod hover;

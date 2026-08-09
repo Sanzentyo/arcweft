@@ -151,6 +151,90 @@ source = "src/main.arcw"
 }
 
 #[test]
+fn dialogue_line_navigation_and_explicit_rename_share_typed_project_facts() {
+    let source = r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let line = alice(
+        id = @say.story.greeting,
+        text_key = @text.story.fixed,
+    )[前[strong]強調[/strong]後]
+}
+
+fn other() {
+    let line = alice(id = @say.story.other)[別[strong]行[/strong]]
+}
+
+fn reference() {
+    let selected: Ref<DialogueLine> = @say.story.greeting
+}
+";
+    let (_project, session, uri) = accepted_project_session("dialogue-line-navigation", source);
+    let profile = session.profile_for_uri(&uri);
+    assert!(
+        profile.accepted_environment().is_some(),
+        "dialogue-line project must be accepted: {:?}",
+        profile.diagnostics()
+    );
+    let document = session.documents.get(&uri).expect("open source document");
+    let reference_offset = source.rfind("@say.story.greeting").expect("line reference") + 1;
+
+    let definition =
+        crate::features::dialogue_lines::definition(profile, document, reference_offset)
+            .expect("typed line definition");
+    let GotoDefinitionResponse::Scalar(definition) = definition else {
+        panic!("dialogue line definition is scalar")
+    };
+    assert_eq!(definition.uri, uri);
+
+    let references =
+        crate::features::dialogue_lines::references(profile, document, reference_offset)
+            .expect("typed line references");
+    assert_eq!(references.len(), 2, "declaration plus one reference");
+
+    let prepared =
+        crate::features::dialogue_lines::prepare_rename(profile, document, reference_offset)
+            .expect("explicit line rename preparation");
+    assert!(matches!(
+        prepared,
+        lsp_types::PrepareRenameResponse::RangeWithPlaceholder { ref placeholder, .. }
+            if placeholder == "@say.story.greeting"
+    ));
+
+    let edit = crate::features::dialogue_lines::rename(
+        profile,
+        &session.documents,
+        document,
+        reference_offset,
+        "say.story.renamed",
+    )
+    .expect("typed line rename edits");
+    let edits = edit
+        .changes
+        .expect("workspace changes")
+        .remove(&uri)
+        .expect("source edits");
+    assert_eq!(edits.len(), 2);
+    assert!(
+        edits
+            .iter()
+            .all(|edit| edit.new_text == "@say.story.renamed")
+    );
+    assert!(
+        crate::features::dialogue_lines::rename(
+            profile,
+            &session.documents,
+            document,
+            reference_offset,
+            "say.story.other",
+        )
+        .is_none(),
+        "rename must reject an accepted project collision"
+    );
+}
+
+#[test]
 fn workspace_edit_normalization_is_deterministic_and_deduplicated() {
     let current = "file:///b.arcw".parse::<Uri>().expect("current URI");
     let other = "file:///a.arcw".parse::<Uri>().expect("other URI");

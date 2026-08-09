@@ -23,7 +23,10 @@ use crate::{
     },
 };
 use arcweft_character::id::CharacterId;
-use arcweft_id::{DeclarationIdentityFamily, PublicId, dialogue::DialogueLineId};
+use arcweft_id::{
+    DeclarationIdentityFamily, PublicId,
+    dialogue::{DialogueLineId, DialogueTextKey},
+};
 use arcweft_lang_hir::{
     expr::{HirCallArgumentOrdinal, HirExprKind},
     identity::{

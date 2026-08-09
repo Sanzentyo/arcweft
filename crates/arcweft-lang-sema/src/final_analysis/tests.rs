@@ -3355,6 +3355,42 @@ fn reference() {
 }
 
 #[test]
+fn dialogue_configuration_coordinates_are_typed_semantic_metadata() {
+    let fixture = fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let line = alice(
+        id = @say.story.greeting,
+        text_key = @text.story.greeting,
+    )[前[strong]強調[/strong]後]
+}
+",
+        None,
+    );
+    let analysis = analyze(&fixture).expect("typed dialogue configuration analysis");
+    let resolutions = analysis
+        .expressions()
+        .map(|(_, checked)| checked.resolution())
+        .collect::<Vec<_>>();
+    assert!(resolutions.iter().any(|resolution| matches!(
+        resolution,
+        CheckedExpressionResolution::DialogueConfiguration { .. }
+    )));
+    assert!(resolutions.iter().any(|resolution| matches!(
+        resolution,
+        CheckedExpressionResolution::DialogueLineCoordinate(id)
+            if id.as_str() == "say.story.greeting"
+    )));
+    assert!(resolutions.iter().any(|resolution| matches!(
+        resolution,
+        CheckedExpressionResolution::DialogueTextKeyCoordinate(key)
+            if key.as_str() == "text.story.greeting"
+    )));
+}
+
+#[test]
 fn entry_entity_reference_reads_exact_final_hir_item_owner() {
     let fixture = fixture(
         r"

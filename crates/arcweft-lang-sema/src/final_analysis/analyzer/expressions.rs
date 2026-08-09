@@ -13,11 +13,11 @@ use super::{
     HirComputationBlockKind, HirExpr, HirExprKind, HirExprSourceRole, HirIdRef, HirIntegerLiteral,
     HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket,
     HirPostfixBracketCandidates, HirRecordField, HirRecoveredName, HirSelectedMember,
-    HirSourcePresence, HirSourceQuery, HirSourceSite, HirTypeSourceRole, HirUnaryOp, LocalLookup,
-    PostfixBracketResolution, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
-    ProjectTypeTarget, ProjectValueLookup, PropagationOperator, RegisteredSemanticValueId,
-    ResolvedProjectSymbol, RichTextAttributeChecker, ScopeId, SourceSpan, TypeKind,
-    TypeParameterSubstitutions,
+    HirSourcePresence, HirSourceQuery, HirSourceSite, HirTypeSourceRole, HirUnaryOp, ItemId,
+    LocalLookup, PostfixBracketResolution, ProjectNominalBody, ProjectNominalDeclaration,
+    ProjectNominalType, ProjectTypeTarget, ProjectValueLookup, PropagationOperator,
+    RegisteredSemanticValueId, ResolvedProjectSymbol, RichTextAttributeChecker, ScopeId,
+    SourceSpan, TypeKind, TypeParameterSubstitutions,
     calls::{checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
@@ -1450,7 +1450,8 @@ impl Analyzer<'_, '_, '_> {
         application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
         expected: Option<&TypeKind>,
     ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
-        let target_owner = application.target();
+        let (target_owner, configuration) =
+            Self::dialogue_target_owner(module, owner, application)?;
         let target = module
             .resolve_expr(target_owner)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
@@ -1492,15 +1493,27 @@ impl Analyzer<'_, '_, '_> {
             character.owner(),
         )
         .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        let character_owner = character.owner();
+        let character_ty = item.ty();
         self.facts.set_expression(
             target_owner,
             CheckedExpression::new(
-                item.ty(),
+                character_ty.clone(),
                 CheckedTypeSelection::Inferred,
                 EffectSet::new(),
                 CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)),
             ),
         );
+
+        if let Some(configuration_owner) = configuration {
+            self.publish_dialogue_configuration(
+                owner,
+                application,
+                configuration_owner,
+                character_owner,
+                character_ty,
+            )?;
+        }
 
         let application_children = module
             .resolve_expr(owner)
@@ -1514,22 +1527,93 @@ impl Analyzer<'_, '_, '_> {
         }
 
         let ty = TypeKind::entity_ref(EntityKind::DialogueLine);
-        if expected.is_some_and(|expected| !expected.accepts(&ty)) {
-            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
-        }
+        let selection = match expected.map(|expected| expected.accepts(&ty)) {
+            Some(true) => CheckedTypeSelection::Expected,
+            None => CheckedTypeSelection::Inferred,
+            Some(false) => {
+                return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+            }
+        };
         Ok(CheckedExpression::new(
             ty,
-            if expected.is_some() {
-                CheckedTypeSelection::Expected
-            } else {
-                CheckedTypeSelection::Inferred
-            },
+            selection,
             EffectSet::new(),
             CheckedExpressionResolution::DialogueApplication {
                 character: character.owner(),
                 rich_text: Box::new(rich_text),
             },
         ))
+    }
+
+    fn dialogue_target_owner(
+        module: &HirModule,
+        owner: ExprId,
+        application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
+    ) -> Result<(ExprId, Option<ExprId>), FinalSemanticAnalysisError> {
+        let configuration_owner = application.target();
+        let target = module
+            .resolve_expr(configuration_owner)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        match target.kind() {
+            HirExprKind::Path(_) => Ok((configuration_owner, None)),
+            HirExprKind::Call(call) if !application.coordinates().is_empty() => {
+                let arcweft_lang_hir::expr::HirCallCallee::Value { value } = call.callee() else {
+                    return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+                };
+                Ok((*value, Some(configuration_owner)))
+            }
+            _ => Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }),
+        }
+    }
+
+    fn publish_dialogue_configuration(
+        &mut self,
+        owner: ExprId,
+        application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
+        configuration_owner: ExprId,
+        character_owner: ItemId,
+        character_ty: TypeKind,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        self.facts.set_expression(
+            configuration_owner,
+            CheckedExpression::new(
+                character_ty,
+                CheckedTypeSelection::Inferred,
+                EffectSet::new(),
+                CheckedExpressionResolution::DialogueConfiguration {
+                    character: character_owner,
+                },
+            ),
+        );
+        let accepted = self
+            .project
+            .dialogue_lines()
+            .for_expr(owner)
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        for coordinate in application.coordinates() {
+            let (ty, resolution) = match coordinate.kind() {
+                arcweft_lang_hir::dialogue_application::HirDialogueCoordinateKind::Id => (
+                    TypeKind::entity_ref(EntityKind::DialogueLine),
+                    CheckedExpressionResolution::DialogueLineCoordinate(accepted.id().clone()),
+                ),
+                arcweft_lang_hir::dialogue_application::HirDialogueCoordinateKind::TextKey => (
+                    TypeKind::entity_ref(EntityKind::Text),
+                    CheckedExpressionResolution::DialogueTextKeyCoordinate(
+                        accepted.text_key().clone(),
+                    ),
+                ),
+            };
+            self.facts.set_expression(
+                coordinate.value(),
+                CheckedExpression::new(
+                    ty,
+                    CheckedTypeSelection::Inferred,
+                    EffectSet::new(),
+                    resolution,
+                ),
+            );
+        }
+        Ok(())
     }
 
     fn check_expressions(

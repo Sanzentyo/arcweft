@@ -602,11 +602,14 @@ fn expression_resolution_matches(
         | (HirExprKind::Path(_) | HirExprKind::Select(_), CheckedExpressionResolution::Effect(_))
         | (
             HirExprKind::EntityReference(_),
-            CheckedExpressionResolution::DialogueLineReference(_),
+            CheckedExpressionResolution::DialogueLineReference(_)
+            | CheckedExpressionResolution::DialogueLineCoordinate(_)
+            | CheckedExpressionResolution::DialogueTextKeyCoordinate(_),
         )
         | (
             HirExprKind::Call(_),
-            CheckedExpressionResolution::Call
+            CheckedExpressionResolution::DialogueConfiguration { .. }
+            | CheckedExpressionResolution::Call
             | CheckedExpressionResolution::ViewCall(_)
             | CheckedExpressionResolution::StyleValue(_),
         )
@@ -703,15 +706,23 @@ fn validate_expression_resolution(
         CheckedExpressionResolution::Variant(variant) => {
             validate_variant(symbols, modules, variant)
         }
-        CheckedExpressionResolution::DialogueApplication { character, .. } => {
+        CheckedExpressionResolution::DialogueApplication { character, .. }
+        | CheckedExpressionResolution::DialogueConfiguration { character } => {
             let item = resolve_item(modules, *character)?;
             matches!(item.kind(), HirItemKind::Character(_))
                 .then_some(())
                 .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
         }
-        CheckedExpressionResolution::DialogueLineReference(target) => dialogue_lines
+        CheckedExpressionResolution::DialogueLineReference(target)
+        | CheckedExpressionResolution::DialogueLineCoordinate(target) => dialogue_lines
             .get(target)
             .map(|_| ())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
+        CheckedExpressionResolution::DialogueTextKeyCoordinate(target) => dialogue_lines
+            .records()
+            .iter()
+            .any(|line| line.text_key() == target)
+            .then_some(())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
         CheckedExpressionResolution::PostfixBracket(_)
         | CheckedExpressionResolution::Effect(_)

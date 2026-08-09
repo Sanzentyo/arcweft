@@ -1035,6 +1035,7 @@ dependencies = [
  "arcweft-character",
  "arcweft-compiler",
  "arcweft-core",
+ "arcweft-id",
  "arcweft-lang-hir",
  "arcweft-lang-sema",
  "arcweft-lang-syntax",
