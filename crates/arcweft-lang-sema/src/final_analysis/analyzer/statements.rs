@@ -591,7 +591,7 @@ fn scope_starts_independent_execution(
     }
 }
 
-fn scope_is_within(
+pub(super) fn scope_is_within(
     module: &HirModule,
     mut candidate: ScopeId,
     root: ScopeId,

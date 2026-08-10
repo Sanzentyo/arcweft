@@ -1605,10 +1605,11 @@ impl Analyzer<'_, '_, '_> {
             CallableGroupIndex::ZERO,
             CallPoison::Clean,
         );
+        let enclosing_callable = self.enclosing_ordinary_callable(module, owner)?;
         let facts = CallTargetFacts::try_new(
             CallTargetFactsInput {
                 expression: owner,
-                enclosing_callable: None,
+                enclosing_callable,
                 callee: Some(callee),
                 checked,
                 diagnostics: Vec::new(),

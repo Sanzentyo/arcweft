@@ -14,27 +14,28 @@ pub(super) use semantics::{
 
 use super::expression_types::value_resolution_type;
 use super::preparation::AssociatedReceiverTypeResolution;
-use super::statements::{expression_span, source_span};
+use super::statements::{expression_span, scope_is_within, source_span};
 use super::{
     Analyzer, BTreeMap, CallArgumentMapping, CallCalleeClassificationFact, CallPoison,
     CallResolverAuthority, CallResolverRequest, CallTargetFacts, CallTargetFactsInput,
-    CallableGroupIndex, CallableInstantiation, CandidateEvaluationPass, CandidateProbe,
-    CandidateScore, CandidateSelection, CandidateSemanticProjection,
-    CharacterDialogueCharacterType, CharacterDialogueFieldCoordinate,
+    CallableDeclarationKey, CallableDeclarationOwner, CallableGroupIndex, CallableInstantiation,
+    CandidateEvaluationPass, CandidateProbe, CandidateScore, CandidateSelection,
+    CandidateSemanticProjection, CharacterDialogueCharacterType, CharacterDialogueFieldCoordinate,
     CharacterDialoguePatchContext, CharacterOwnerSource, CheckedCallArgumentFact,
     CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput, CheckedCallArgumentSlotSource,
-    CheckedCallTarget, CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
-    CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
-    CheckedCharacterDialogueTarget, CheckedExpression, CheckedExpressionResolution,
-    CheckedPatchOperation, CheckedTypeSelection, CheckedValueResolution, EffectRow, EffectSet,
-    EvaluatedCallArguments, ExprId, FinalCallCalleeFacts, FinalSemanticAnalysisError,
-    HirAssociatedSeparator, HirCallArgument, HirCallArgumentSourcePart, HirCallCallee, HirCallExpr,
-    HirExprKind, HirExprSourceRole, HirModule, HirPathSegment, HirSourcePresence, HirSourceQuery,
-    HirSourceSite, PendingCallAnalysis, PhysicalCandidateArgument,
-    PhysicalCandidateArgumentEvaluation, RegisteredSemanticValueId, ResolveCallOutcome,
-    ResolvedCallTarget, ResolvedCallable, ResolvedCharacterOwner, ResolverWork, TypeKind,
-    TypeParameterSubstitutions, map_call_arguments, map_unmapped_call_arguments,
-    prepare_final_call_callee, prepare_language_free_dot_path, resolve_call_target,
+    CheckedCallTarget, CheckedCallableDeclaration, CheckedCharacterDialogueFactory,
+    CheckedCharacterDialoguePatch, CheckedCharacterDialoguePatchField,
+    CheckedCharacterDialogueReconfigure, CheckedCharacterDialogueTarget, CheckedExpression,
+    CheckedExpressionResolution, CheckedPatchOperation, CheckedTypeSelection,
+    CheckedValueResolution, EffectRow, EffectSet, EvaluatedCallArguments, ExprId,
+    FinalCallCalleeFacts, FinalSemanticAnalysisError, HirAssociatedSeparator, HirCallArgument,
+    HirCallArgumentSourcePart, HirCallCallee, HirCallExpr, HirExprKind, HirExprSourceRole,
+    HirModule, HirPathSegment, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    PendingCallAnalysis, PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
+    RegisteredSemanticValueId, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
+    ResolvedCharacterOwner, ResolverWork, TypeKind, TypeParameterSubstitutions, map_call_arguments,
+    map_unmapped_call_arguments, prepare_final_call_callee, prepare_language_free_dot_path,
+    resolve_call_target,
 };
 use crate::callable::{MappedCallArgument, MappedCallArgumentSlot};
 use crate::final_analysis::type_rules::compact_numeric_element_type as infer_compact_numeric_element_type;
@@ -273,6 +274,43 @@ fn call_argument_part_span(
 }
 
 impl Analyzer<'_, '_, '_> {
+    /// Returns the exact ordinary Function declaration that lexically owns an
+    /// expression. The checked-callable staging transaction already retains
+    /// each accepted body scope and checked identity, so call facts do not
+    /// reconstruct ownership from source text or maintain a parallel index.
+    pub(super) fn enclosing_ordinary_callable(
+        &self,
+        module: &HirModule,
+        expression: ExprId,
+    ) -> Result<Option<CallableDeclarationKey>, FinalSemanticAnalysisError> {
+        let scope = module
+            .resolve_expr(expression)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
+            .scope();
+        let staged = self
+            .staged_callables
+            .as_ref()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let mut enclosing = None;
+        for body in &staged.bodies {
+            if body.module != module.module_id()
+                || body.owner != CallableDeclarationOwner::Function
+                || !scope_is_within(module, scope, body.scope)?
+            {
+                continue;
+            }
+            let CheckedCallableDeclaration::Project(declaration) = body.id.declaration() else {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            };
+            if declaration.owner() != CallableDeclarationOwner::Function
+                || enclosing.replace(declaration.clone()).is_some()
+            {
+                return Err(FinalSemanticAnalysisError::CheckedCallableCatalog);
+            }
+        }
+        Ok(enclosing)
+    }
+
     pub(super) fn check_call_expression(
         &mut self,
         module: &HirModule,
@@ -790,10 +828,11 @@ impl Analyzer<'_, '_, '_> {
         )?;
         let checked =
             CheckedCallTarget::associated_receiver_recovery(arguments, recovery.result.clone());
+        let enclosing_callable = self.enclosing_ordinary_callable(source.module, source.owner)?;
         let facts = CallTargetFacts::try_new(
             CallTargetFactsInput {
                 expression: source.owner,
-                enclosing_callable: None,
+                enclosing_callable,
                 callee: Some(callee),
                 checked,
                 diagnostics: Vec::new(),
@@ -1032,7 +1071,7 @@ impl Analyzer<'_, '_, '_> {
             expression: source.owner,
             expression_resolution: expression_resolution.clone(),
             callee_expression,
-            enclosing_callable: None,
+            enclosing_callable: self.enclosing_ordinary_callable(source.module, source.owner)?,
             callee: resolution.callee,
             selected,
             considered: resolution.considered,
@@ -1211,10 +1250,11 @@ impl Analyzer<'_, '_, '_> {
         } else {
             CheckedCallTarget::rejected(candidates, arguments, result.clone(), current_group)
         };
+        let enclosing_callable = self.enclosing_ordinary_callable(source.module, source.owner)?;
         let facts = CallTargetFacts::try_new(
             CallTargetFactsInput {
                 expression: source.owner,
-                enclosing_callable: None,
+                enclosing_callable,
                 callee: Some(callee),
                 checked,
                 diagnostics: Vec::new(),

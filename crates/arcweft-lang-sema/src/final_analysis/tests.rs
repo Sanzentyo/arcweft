@@ -4607,6 +4607,61 @@ effects { agent.observe }
             module.expressions().collect::<Vec<_>>()
         );
     }
+    let report = result.expect("Agent intrinsic analysis");
+    let function = function_owner(&fixture, "run_smoke");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_item() == function)
+        .expect("ordinary function symbol")
+        .declaration();
+    let call = report
+        .calls()
+        .map(|(_, call)| call)
+        .find(|call| {
+            matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if matches!(selected.id(), CallableCandidateId::Agent(_))
+            )
+        })
+        .expect("Agent intrinsic call fact");
+    assert_eq!(call.enclosing_callable(), Some(declaration));
+}
+
+#[test]
+fn closure_agent_intrinsic_retains_its_lexical_ordinary_function_owner() {
+    let fixture = fixture(
+        r"
+fn run_smoke() -> Result<Unit, AgentError>
+effects {}
+{
+    let hidden = || { observe() }
+    return Ok(())
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("closure Agent intrinsic analysis");
+    let function = function_owner(&fixture, "run_smoke");
+    let declaration = fixture
+        .symbols
+        .callable_symbols()
+        .find(|symbol| symbol.source_item() == function)
+        .expect("ordinary function symbol")
+        .declaration();
+    let call = report
+        .calls()
+        .map(|(_, call)| call)
+        .find(|call| {
+            matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if matches!(selected.id(), CallableCandidateId::Agent(_))
+            )
+        })
+        .expect("closure Agent intrinsic call fact");
+    assert_eq!(call.enclosing_callable(), Some(declaration));
 }
 
 #[test]
