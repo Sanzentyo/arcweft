@@ -495,6 +495,11 @@ mod tests {
                 RichTextDocument::new(vec![RichTextNode::Text {
                     text: "shared prepared capture".to_owned(),
                 }]),
+                crate::test_character_plan(),
+                arcweft_text_model::DialoguePresentationSnapshot::new(
+                    crate::test_dialogue_profile(),
+                    crate::test_dialogue_profile_revision(),
+                ),
                 Vec::new(),
                 source_map
                     .primary_document()
@@ -529,6 +534,7 @@ mod tests {
             dialogue_content,
         )
         .expect("standard dialogue source joins source map")
+        .with_character_presentation_catalog(crate::test_character_catalog())
         .with_product_awbc(product_awbc)
     }
 

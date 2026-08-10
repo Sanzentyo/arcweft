@@ -24,6 +24,7 @@ serde.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-render-text = { workspace = true }
 arcweft-text-model = { workspace = true }

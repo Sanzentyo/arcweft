@@ -43,6 +43,7 @@ pub(super) fn agent_dialogue_prepared_text_objects(
             PreparedTextOwnerKind::DialogueView {
                 dialogue: owner_dialogue,
                 entry: owner_entry,
+                role: arcweft_render_wgpu::geometry::DialoguePreparedTextRole::Content,
                 ..
             } if owner_dialogue == u64::try_from(dialogue).unwrap_or(u64::MAX)
                 && owner_entry == u64::try_from(entry).unwrap_or(u64::MAX)

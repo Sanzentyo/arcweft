@@ -843,7 +843,7 @@ impl Analyzer<'_, '_, '_> {
                     previous.ty().clone(),
                     previous.type_selection(),
                     effects.concrete().clone(),
-                    CheckedExpressionResolution::Call,
+                    call.expression_resolution.clone(),
                 ),
             );
         }

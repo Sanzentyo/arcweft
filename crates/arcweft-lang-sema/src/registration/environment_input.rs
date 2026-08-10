@@ -3,9 +3,14 @@
 //! Adapter and Rust metadata producers stop at this boundary. Final semantic
 //! types are projected only after registration has accepted one nominal world.
 
+use std::collections::BTreeSet;
+
+use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+use arcweft_dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::symbol::ProjectSymbolWorldId;
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
 use arcweft_source::{SourceDocumentIdentity, SourceSpan};
+use arcweft_view::ViewId;
 
 use crate::{
     callable::{
@@ -15,6 +20,7 @@ use crate::{
         CallableSource, CallableValidator, EnvironmentCallableKind, EnvironmentCallableOwner,
         EnvironmentDeclarationOrdinal, ProjectCallablePath, RustCallableProvenance, RustItemPath,
     },
+    character_dialogue::CharacterDialogueCustomFieldBinding,
     effect_row::EffectRow,
     env::{
         identity::EnvironmentBindingId,
@@ -73,6 +79,7 @@ pub enum EnvironmentPublicationItemId {
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub enum EnvironmentTypeSiteRoot {
     SymbolType,
+    CharacterDialogueCustomField,
     MethodReceiver,
     Parameter {
         group: CallableGroupIndex,
@@ -193,6 +200,20 @@ pub struct EnvironmentValueBindingInput {
     ty: EnvironmentTypeProjectionNode,
 }
 
+/// World-neutral publication of one typed `CharacterDialogue` custom coordinate.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CharacterDialogueCustomFieldInput {
+    item: EnvironmentPublicationItemId,
+    id: CharacterDialogueCustomFieldId,
+    bindings: Box<[CharacterDialogueCustomFieldBinding]>,
+    value_type: EnvironmentTypeProjectionNode,
+    runtime_nominal_type: Option<RuntimeNominalTypeId>,
+    runtime_layout: TypeLayoutHash,
+    clearable: bool,
+    accepted_views: BTreeSet<ViewId>,
+    declaration: SourceSpan,
+}
+
 /// One unresolved callable parameter.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EnvironmentParameterInput {
@@ -277,6 +298,7 @@ pub struct SourceBackedEnvironmentRegistrationInput {
     manifest_digest: EnvironmentManifestDigest,
     nominal_inventory: Box<[AcceptedNominalInventoryInput]>,
     value_bindings: Box<[EnvironmentValueBindingInput]>,
+    character_dialogue_fields: Box<[CharacterDialogueCustomFieldInput]>,
     rust_metadata: Box<[RustTypeMetadataPublicationInput]>,
     callable_records: Box<[EnvironmentCallablePublicationRecordInput]>,
 }
@@ -398,6 +420,69 @@ impl EnvironmentValueBindingInput {
 
     pub const fn ty(&self) -> &EnvironmentTypeProjectionNode {
         &self.ty
+    }
+}
+
+impl CharacterDialogueCustomFieldInput {
+    #[allow(clippy::too_many_arguments)]
+    pub fn new(
+        item: EnvironmentPublicationItemId,
+        id: CharacterDialogueCustomFieldId,
+        bindings: impl Into<Box<[CharacterDialogueCustomFieldBinding]>>,
+        value_type: EnvironmentTypeProjectionNode,
+        runtime_nominal_type: Option<RuntimeNominalTypeId>,
+        runtime_layout: TypeLayoutHash,
+        clearable: bool,
+        accepted_views: BTreeSet<ViewId>,
+        declaration: SourceSpan,
+    ) -> Self {
+        Self {
+            item,
+            id,
+            bindings: bindings.into(),
+            value_type,
+            runtime_nominal_type,
+            runtime_layout,
+            clearable,
+            accepted_views,
+            declaration,
+        }
+    }
+
+    pub const fn item(&self) -> &EnvironmentPublicationItemId {
+        &self.item
+    }
+
+    pub const fn id(&self) -> &CharacterDialogueCustomFieldId {
+        &self.id
+    }
+
+    pub const fn bindings(&self) -> &[CharacterDialogueCustomFieldBinding] {
+        &self.bindings
+    }
+
+    pub const fn value_type(&self) -> &EnvironmentTypeProjectionNode {
+        &self.value_type
+    }
+
+    pub const fn runtime_nominal_type(&self) -> Option<&RuntimeNominalTypeId> {
+        self.runtime_nominal_type.as_ref()
+    }
+
+    pub const fn runtime_layout(&self) -> TypeLayoutHash {
+        self.runtime_layout
+    }
+
+    pub const fn clearable(&self) -> bool {
+        self.clearable
+    }
+
+    pub const fn accepted_views(&self) -> &BTreeSet<ViewId> {
+        &self.accepted_views
+    }
+
+    pub const fn declaration(&self) -> &SourceSpan {
+        &self.declaration
     }
 }
 
@@ -625,9 +710,19 @@ impl SourceBackedEnvironmentRegistrationInput {
             manifest_digest,
             nominal_inventory: nominal_inventory.into(),
             value_bindings: value_bindings.into(),
+            character_dialogue_fields: Box::new([]),
             rust_metadata: rust_metadata.into(),
             callable_records: callable_records.into(),
         }
+    }
+
+    #[must_use]
+    pub fn with_character_dialogue_fields(
+        mut self,
+        fields: impl Into<Box<[CharacterDialogueCustomFieldInput]>>,
+    ) -> Self {
+        self.character_dialogue_fields = fields.into();
+        self
     }
 
     pub const fn owner(&self) -> &EnvironmentCallableOwner {
@@ -650,6 +745,10 @@ impl SourceBackedEnvironmentRegistrationInput {
         &self.value_bindings
     }
 
+    pub fn character_dialogue_fields(&self) -> &[CharacterDialogueCustomFieldInput] {
+        &self.character_dialogue_fields
+    }
+
     pub fn rust_metadata(&self) -> &[RustTypeMetadataPublicationInput] {
         &self.rust_metadata
     }
@@ -666,6 +765,11 @@ impl SourceBackedEnvironmentRegistrationInput {
             .chain(self.value_bindings.iter().flat_map(|binding| {
                 let mut spans = Vec::new();
                 append_type_spans(binding.ty(), &mut spans);
+                spans
+            }))
+            .chain(self.character_dialogue_fields.iter().flat_map(|field| {
+                let mut spans = vec![field.declaration()];
+                append_type_spans(field.value_type(), &mut spans);
                 spans
             }))
             .chain(

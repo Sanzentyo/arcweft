@@ -228,9 +228,7 @@ impl CanonicalEncoder {
             CallableValidator::Builtin(_) => 8,
             CallableValidator::Agent(_) => 9,
             CallableValidator::Presentation(_) => 10,
-            // Tag 11 belonged to the deleted Dialogue validator. Keep the
-            // unreleased semantic layout stable while replacing the former
-            // trait validator at tag 16 directly with `Method`.
+            CallableValidator::Dialogue(_) => 11,
             CallableValidator::Collection(_) => 12,
             CallableValidator::PresentationHandle(_) => 13,
             CallableValidator::Integer(_) => 14,
@@ -246,6 +244,14 @@ impl CanonicalEncoder {
                 super::CallableMethodRole::TraitRequirement => 0,
                 super::CallableMethodRole::TraitImplementation => 1,
                 super::CallableMethodRole::Inherent => 2,
+            });
+        }
+        if let CallableValidator::Dialogue(id) = validator {
+            self.tag(match id {
+                super::DialogueCallableId::CharacterFactory => 0,
+                super::DialogueCallableId::CharacterReconfigure => 1,
+                super::DialogueCallableId::ContentApplication => 2,
+                super::DialogueCallableId::ContentCall => 3,
             });
         }
     }

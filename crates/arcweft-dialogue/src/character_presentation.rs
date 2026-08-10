@@ -9,6 +9,7 @@ use arcweft_character::{
     },
 };
 use arcweft_core::entry::TypeLayoutHash;
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
 /// Typed evidence identifying the Character selected by dialogue execution.
@@ -21,8 +22,60 @@ pub enum CharacterPresentationTargetEvidence {
     },
 }
 
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+enum CharacterPresentationTargetEvidenceWire {
+    Exact {
+        character: CharacterId,
+    },
+    RuntimeCharacterDialogue {
+        contract: CharacterDialogueContractIdentity,
+        layout: TypeLayoutHash,
+    },
+}
+
+impl Serialize for CharacterPresentationTargetEvidence {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match self {
+            Self::Exact(character) => CharacterPresentationTargetEvidenceWire::Exact {
+                character: character.clone(),
+            },
+            Self::RuntimeCharacterDialogue { contract, layout } => {
+                CharacterPresentationTargetEvidenceWire::RuntimeCharacterDialogue {
+                    contract: *contract,
+                    layout: *layout,
+                }
+            }
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for CharacterPresentationTargetEvidence {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        Ok(
+            match CharacterPresentationTargetEvidenceWire::deserialize(deserializer)? {
+                CharacterPresentationTargetEvidenceWire::Exact { character } => {
+                    Self::Exact(character)
+                }
+                CharacterPresentationTargetEvidenceWire::RuntimeCharacterDialogue {
+                    contract,
+                    layout,
+                } => Self::RuntimeCharacterDialogue { contract, layout },
+            },
+        )
+    }
+}
+
 /// Runtime-plan Character presentation target bound to accepted catalog identity.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CheckedCharacterPresentationPlan {
     target: CharacterPresentationTargetEvidence,
     semantic_digest: CharacterPresentationSemanticDigest,

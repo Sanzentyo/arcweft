@@ -5,6 +5,13 @@ use arcweft_bundle::{
     patch::{BundlePatchArtifact, encode_patch_bundle},
     resource_codec::{ViewInputResource, ViewProgramResource, ViewStyleResource},
 };
+use arcweft_character::{
+    id::CharacterId,
+    presentation_name::{
+        CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
+        CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+    },
+};
 use arcweft_compiler::project::{
     CompiledProject, ProjectCompilationContext, ProjectCompilationSession, compile_project,
 };
@@ -13,6 +20,12 @@ use arcweft_core::effect::{RuntimeArtifactFingerprint, RuntimeEffectExpr};
 use arcweft_core::plan::{FlowRuntimeId, RuntimeFlow, RuntimeLineId};
 use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
+};
+use arcweft_dialogue::{
+    DialoguePresentationProfile, DialogueProfileRevision,
+    character_presentation::{
+        CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
+    },
 };
 use arcweft_id::TextKey;
 use arcweft_lang_hir::symbol::{CallablePackageId, ProjectSymbolWorldId};
@@ -25,11 +38,12 @@ use arcweft_runtime_driver::view_runtime::BundleViewRuntime;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_source::{
     ProductSourceId, ProductSourceRef, SourceDocument, SourceDocumentId, SourceName,
-    identity::SourceSnapshotId,
+    SourceSetRevision, identity::SourceSnapshotId,
 };
 use arcweft_text_model::{
     DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode, RichTextStyle,
 };
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -37,6 +51,38 @@ use std::{
 
 mod scroll_style;
 mod view_part_recovery;
+
+fn test_character_plan() -> CheckedCharacterPresentationPlan {
+    CheckedCharacterPresentationPlan::try_new(
+        CharacterPresentationTargetEvidence::Exact(
+            CharacterId::try_new("character.fixture").unwrap(),
+        ),
+        CharacterPresentationCatalogGeneration::new(
+            CharacterPresentationCatalogRevision::INITIAL,
+            CharacterPresentationSemanticDigest::from_bytes([1; 32]),
+            CharacterPresentationLocalePolicyDigest::from_bytes([2; 32]),
+        ),
+    )
+    .unwrap()
+}
+
+fn test_dialogue_profile_revision() -> DialogueProfileRevision {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("cli-bundle-dialogue-profile-fixture").unwrap(),
+        SourceName::Memory,
+        "schema = 1\n",
+    )
+    .unwrap();
+    let sources = SourceSetRevision::try_for_identities([source.identity()]).unwrap();
+    DialogueProfileRevision::from_admitted_parts(
+        source.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.cli_bundle_dialogue").unwrap(),
+        AcceptedViewProgramRevision::try_from_bytes([0x48; 32]).unwrap(),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 fn bundle_fixture_document(logical_name: &str, source: impl Into<Arc<str>>) -> Arc<SourceDocument> {
     Arc::new(
@@ -2060,6 +2106,11 @@ fn bundle_hydrates_default_view_localization_from_matching_content_text_key() {
             RuntimeLineId::from_runtime_line_value("say.localization.display").unwrap(),
             TextKey::try_new("text.opening.dream").expect("text key"),
             document.clone(),
+            test_character_plan(),
+            arcweft_text_model::DialoguePresentationSnapshot::new(
+                DialoguePresentationProfile::engine_default(),
+                test_dialogue_profile_revision(),
+            ),
             Vec::new(),
             ProductSourceRef::try_for_identity(source.identity()).expect("product source"),
         )])

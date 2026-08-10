@@ -24,6 +24,7 @@ use thiserror::Error;
 
 use crate::{
     callable::RegisteredCallableCatalog,
+    character_dialogue::CharacterDialogueCustomFieldRegistry,
     env::{
         AcceptedRustTypeMetadataCatalog, TypeCheckEnv,
         identity::EnvironmentBindingId,
@@ -207,6 +208,7 @@ pub struct CharacterInventoryDescriptorV1 {
 #[derive(Clone, Debug)]
 pub struct RegisteredTypeCheckEnv {
     pub(crate) nominal_world: Arc<AcceptedNominalWorld>,
+    pub(crate) character_dialogue_fields: Arc<CharacterDialogueCustomFieldRegistry>,
     pub(crate) rust_metadata: Arc<AcceptedRustTypeMetadataCatalog>,
     pub(crate) callables: Arc<RegisteredCallableCatalog>,
     pub(crate) characters: BTreeMap<CharacterId, CharacterManifest>,
@@ -875,6 +877,10 @@ impl RegisteredTypeCheckEnv {
     /// Exact nominal world accepted before and retained with callable publication.
     pub fn nominal_world(&self) -> &AcceptedNominalWorld {
         &self.nominal_world
+    }
+
+    pub fn character_dialogue_fields(&self) -> &CharacterDialogueCustomFieldRegistry {
+        &self.character_dialogue_fields
     }
 
     pub fn world(&self) -> &ProjectSymbolWorldId {

@@ -53,6 +53,84 @@ use arcweft_runtime_host::{
     BundleRunnerExecutor, BundleRunnerOptions, BundleRunnerStepMode, NativeTaskStats,
     RuntimeExecutorStats, run_bundle_with_native_adapters,
 };
+
+#[cfg(test)]
+pub(crate) fn test_character_plan()
+-> arcweft_dialogue::character_presentation::CheckedCharacterPresentationPlan {
+    use arcweft_character::presentation_name::{
+        CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
+    };
+    use arcweft_dialogue::character_presentation::{
+        CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
+    };
+    let catalog = test_character_catalog();
+    CheckedCharacterPresentationPlan::try_new(
+        CharacterPresentationTargetEvidence::Exact(
+            arcweft_character::id::CharacterId::try_new("character.fixture").unwrap(),
+        ),
+        CharacterPresentationCatalogGeneration::new(
+            CharacterPresentationCatalogRevision::INITIAL,
+            catalog.semantic_digest(),
+            catalog.locale_policy_digest(),
+        ),
+    )
+    .unwrap()
+}
+
+#[cfg(test)]
+pub(crate) fn test_character_catalog()
+-> arcweft_character::presentation_name::CharacterPresentationCatalogData {
+    use arcweft_character::presentation_name::{
+        CharacterDisplayNameInput, CharacterDisplayNameRecordInput, CharacterDisplayNameValue,
+        CharacterNameLocale, CharacterNameLocalePolicy, CharacterPresentationCatalogData,
+        CharacterPresentationCatalogInput, CharacterPresentationRole,
+    };
+    let locale = CharacterNameLocale::new(arcweft_id::LocaleTag::try_new("en").unwrap());
+    let policy = CharacterNameLocalePolicy::try_new(locale, Vec::new()).unwrap();
+    let record = CharacterDisplayNameRecordInput::try_new(
+        arcweft_character::id::CharacterId::try_new("character.fixture").unwrap(),
+        CharacterPresentationRole::Character,
+        None,
+        Some(CharacterDisplayNameInput::Visible(
+            CharacterDisplayNameValue::try_new("Fixture").unwrap(),
+        )),
+        Vec::new(),
+        None,
+    )
+    .unwrap();
+    CharacterPresentationCatalogData::try_from_inputs(
+        CharacterPresentationCatalogInput::try_new(policy, vec![record]).unwrap(),
+    )
+    .unwrap()
+}
+
+#[cfg(test)]
+pub(crate) fn test_dialogue_profile() -> arcweft_dialogue::DialoguePresentationProfile {
+    arcweft_dialogue::DialoguePresentationProfile::engine_default()
+}
+
+#[cfg(test)]
+pub(crate) fn test_dialogue_profile_revision() -> arcweft_dialogue::DialogueProfileRevision {
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
+    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
+
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("player-native-dialogue-profile-fixture").unwrap(),
+        SourceName::Memory,
+        "schema = 1\n",
+    )
+    .unwrap();
+    let sources = SourceSetRevision::try_for_identities([source.identity()]).unwrap();
+    arcweft_dialogue::DialogueProfileRevision::from_admitted_parts(
+        source.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.player_native_dialogue").unwrap(),
+        AcceptedViewProgramRevision::try_from_bytes([0x45; 32]).unwrap(),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 use arcweft_text_model::LineDisplayFrame;
 use serde::Serialize;
 use std::path::Path;
@@ -238,6 +316,11 @@ mod tests {
                 RichTextDocument::new(vec![RichTextNode::Text {
                     text: "Hello bundle".to_owned(),
                 }]),
+                crate::test_character_plan(),
+                arcweft_text_model::DialoguePresentationSnapshot::new(
+                    crate::test_dialogue_profile(),
+                    crate::test_dialogue_profile_revision(),
+                ),
                 Vec::new(),
                 source,
             )])

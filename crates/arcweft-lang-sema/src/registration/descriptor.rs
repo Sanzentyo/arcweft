@@ -83,11 +83,10 @@ impl AcceptedNominalWorld {
         clippy::result_large_err,
         reason = "owner lookup errors retain both complete typed world identities and revisions"
     )]
-    pub fn external_owner(
+    pub(crate) fn bound_external_owner(
         &self,
         symbols: &ProjectSymbolTable,
         declaration: ExternalDeclarationId,
-        expected: RegisteredExternalOwnerKind,
     ) -> Result<&RegisteredExternalOwner, ExternalOwnerLookupError> {
         if symbols.world() != self.world() || symbols.revision() != self.symbol_revision() {
             return Err(ExternalOwnerLookupError::Stale {
@@ -97,10 +96,22 @@ impl AcceptedNominalWorld {
                 actual_revision: *symbols.revision(),
             });
         }
-        let owner = self
-            .external_owners()
+        self.external_owners()
             .get(&declaration)
-            .ok_or(ExternalOwnerLookupError::Unknown { declaration })?;
+            .ok_or(ExternalOwnerLookupError::Unknown { declaration })
+    }
+
+    #[allow(
+        clippy::result_large_err,
+        reason = "owner lookup errors retain both complete typed world identities and revisions"
+    )]
+    pub fn external_owner(
+        &self,
+        symbols: &ProjectSymbolTable,
+        declaration: ExternalDeclarationId,
+        expected: RegisteredExternalOwnerKind,
+    ) -> Result<&RegisteredExternalOwner, ExternalOwnerLookupError> {
+        let owner = self.bound_external_owner(symbols, declaration)?;
         let actual = owner.kind();
         if actual != expected {
             return Err(ExternalOwnerLookupError::WrongKind {
@@ -114,6 +125,19 @@ impl AcceptedNominalWorld {
 }
 
 impl RegisteredTypeCheckEnv {
+    #[allow(
+        clippy::result_large_err,
+        reason = "owner lookup errors retain both complete typed world identities and revisions"
+    )]
+    pub(crate) fn bound_external_owner(
+        &self,
+        symbols: &ProjectSymbolTable,
+        declaration: ExternalDeclarationId,
+    ) -> Result<&RegisteredExternalOwner, ExternalOwnerLookupError> {
+        self.nominal_world
+            .bound_external_owner(symbols, declaration)
+    }
+
     #[allow(
         clippy::result_large_err,
         reason = "owner lookup errors retain both complete typed world identities and revisions"

@@ -10,7 +10,8 @@ use core::fmt;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// Contract provenance retained by every `CharacterDialogue` value.
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct CharacterDialogueContractIdentity {
     character_manifest: RuntimeValueDigest,
     defaults: RuntimeValueDigest,

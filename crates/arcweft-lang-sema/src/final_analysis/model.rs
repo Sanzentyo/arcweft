@@ -1,14 +1,17 @@
 //! Generation-bound checked semantic fact model.
 
 use super::{
-    AssertionRuntimePolicy, CallableDeclarationKey, CharacterId, CharacterNominalType,
-    CheckedRichTextReport, DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet,
-    EnvironmentBindingId, ExprId, GenericTypeOwnerId, GenericTypeParameterId, HirFlowIdentity,
-    HirItemFamily, HirLiteral, HirName, ItemId, LocalId, ProjectNominalDeclaration,
-    ProjectNominalDeclarationId, PublicId, SemanticTypeDigest, TypeKind,
-    TypeParameterSubstitutions,
+    AssertionRuntimePolicy, CallableDeclarationKey, CharacterDialogueCharacterType,
+    CharacterDialogueType, CharacterId, CharacterNominalType, CheckedRichTextReport,
+    DeclarationIdentityFamily, DialogueLineId, DialogueTextKey, EffectSet, EnvironmentBindingId,
+    ExprId, GenericTypeOwnerId, GenericTypeParameterId, HirFlowIdentity, HirItemFamily, HirLiteral,
+    HirName, ItemId, LocalId, ProjectNominalDeclaration, ProjectNominalDeclarationId, PublicId,
+    SemanticTypeDigest, TypeKind, TypeParameterSubstitutions,
 };
+use crate::callable::CharacterDialoguePatchContext;
+use arcweft_dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::symbol::ExternalDeclarationId;
+use arcweft_source::SourceSpan;
 
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct RegisteredSemanticValueId {
@@ -305,7 +308,7 @@ pub enum CheckedSelectResolution {
     /// environment registry, never reconstructed from its field spelling by
     /// compiler or runtime consumers.
     DialogueView {
-        projection: crate::dialogue_view::DialogueViewProjection,
+        projection: crate::dialogue_view::DialogueProjectionCoordinate,
         name: HirName,
     },
     Field {
@@ -438,16 +441,185 @@ pub enum CheckedExpressionResolution {
     DialogueLineCoordinate(DialogueLineId),
     /// Immediate `text_key` metadata owned by one accepted dialogue application.
     DialogueTextKeyCoordinate(DialogueTextKey),
-    /// Immediate ordinary-call carrier whose meaning is dialogue
-    /// configuration, not an independently executable callable invocation.
-    DialogueConfiguration {
-        character: ItemId,
-    },
+    CharacterDialogueFactory(CheckedCharacterDialogueFactory),
+    CharacterDialogueReconfigure(CheckedCharacterDialogueReconfigure),
     DialogueApplication {
-        character: ItemId,
+        target: CheckedCharacterDialogueTarget,
+        application_patch: Option<CheckedCharacterDialoguePatch>,
         rich_text: Box<CheckedRichTextReport>,
     },
     PostfixBracket(PostfixBracketResolution),
+}
+
+/// Typed runtime-value target selected for `CharacterDialogue` construction or use.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedCharacterDialogueTarget {
+    Character {
+        expression: ExprId,
+        item: Option<CheckedProjectItem>,
+        character: CharacterDialogueCharacterType,
+    },
+    Dialogue {
+        expression: ExprId,
+        ty: CharacterDialogueType,
+    },
+}
+
+impl CheckedCharacterDialogueTarget {
+    pub const fn expression(&self) -> ExprId {
+        match self {
+            Self::Character { expression, .. } | Self::Dialogue { expression, .. } => *expression,
+        }
+    }
+
+    pub const fn character(&self) -> &CharacterDialogueCharacterType {
+        match self {
+            Self::Character { character, .. } => character,
+            Self::Dialogue { ty, .. } => ty.character(),
+        }
+    }
+
+    pub fn result_type(&self) -> CharacterDialogueType {
+        CharacterDialogueType::new(self.character().clone())
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedCharacterDialoguePatch {
+    context: CharacterDialoguePatchContext,
+    fields: Box<[CheckedCharacterDialoguePatchField]>,
+    source: SourceSpan,
+}
+
+impl CheckedCharacterDialoguePatch {
+    pub fn new(
+        context: CharacterDialoguePatchContext,
+        fields: impl Into<Box<[CheckedCharacterDialoguePatchField]>>,
+        source: SourceSpan,
+    ) -> Self {
+        Self {
+            context,
+            fields: fields.into(),
+            source,
+        }
+    }
+
+    pub const fn context(&self) -> CharacterDialoguePatchContext {
+        self.context
+    }
+
+    pub const fn fields(&self) -> &[CheckedCharacterDialoguePatchField] {
+        &self.fields
+    }
+
+    pub const fn source(&self) -> &SourceSpan {
+        &self.source
+    }
+}
+
+/// Stable semantic coordinate selected for one `CharacterDialogue` patch field.
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum CharacterDialogueFieldCoordinate {
+    Voice,
+    Look,
+    Stage,
+    Portrait,
+    Focus,
+    Cleanup,
+    View,
+    SourceLocale,
+    Hooks,
+    Style,
+    RichText,
+    InlineFailure,
+    Custom(CharacterDialogueCustomFieldId),
+}
+
+/// Compile-time operation carried by one source-ordered patch field.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum CheckedPatchOperation {
+    Set { value: ExprId, ty: TypeKind },
+    Clear,
+}
+
+/// One source-ordered, typed `CharacterDialogue` patch contribution.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedCharacterDialoguePatchField {
+    coordinate: CharacterDialogueFieldCoordinate,
+    operation: CheckedPatchOperation,
+    source: SourceSpan,
+}
+
+impl CheckedCharacterDialoguePatchField {
+    pub const fn new(
+        coordinate: CharacterDialogueFieldCoordinate,
+        operation: CheckedPatchOperation,
+        source: SourceSpan,
+    ) -> Self {
+        Self {
+            coordinate,
+            operation,
+            source,
+        }
+    }
+
+    pub const fn coordinate(&self) -> &CharacterDialogueFieldCoordinate {
+        &self.coordinate
+    }
+
+    pub const fn operation(&self) -> &CheckedPatchOperation {
+        &self.operation
+    }
+
+    pub const fn source(&self) -> &SourceSpan {
+        &self.source
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedCharacterDialogueFactory {
+    target: CheckedCharacterDialogueTarget,
+    patch: CheckedCharacterDialoguePatch,
+}
+
+impl CheckedCharacterDialogueFactory {
+    pub const fn new(
+        target: CheckedCharacterDialogueTarget,
+        patch: CheckedCharacterDialoguePatch,
+    ) -> Self {
+        Self { target, patch }
+    }
+
+    pub const fn target(&self) -> &CheckedCharacterDialogueTarget {
+        &self.target
+    }
+
+    pub const fn patch(&self) -> &CheckedCharacterDialoguePatch {
+        &self.patch
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CheckedCharacterDialogueReconfigure {
+    target: CheckedCharacterDialogueTarget,
+    patch: CheckedCharacterDialoguePatch,
+}
+
+impl CheckedCharacterDialogueReconfigure {
+    pub const fn new(
+        target: CheckedCharacterDialogueTarget,
+        patch: CheckedCharacterDialoguePatch,
+    ) -> Self {
+        Self { target, patch }
+    }
+
+    pub const fn target(&self) -> &CheckedCharacterDialogueTarget {
+        &self.target
+    }
+
+    pub const fn patch(&self) -> &CheckedCharacterDialoguePatch {
+        &self.patch
+    }
 }
 
 /// Closed semantic classification for a call executed by the View evaluator.
@@ -549,6 +721,20 @@ impl CheckedExpression {
 
     pub const fn resolution(&self) -> &CheckedExpressionResolution {
         &self.resolution
+    }
+
+    /// Returns whether this fact is an application-owned semantic coordinate
+    /// whose identity is fixed before ordinary-call candidate evaluation.
+    ///
+    /// Candidate probes still type-check and account for the authored slot,
+    /// but must not erase this fact and reinterpret its entity path outside
+    /// the owning dialogue application.
+    pub(crate) const fn is_candidate_stable_coordinate(&self) -> bool {
+        matches!(
+            self.resolution,
+            CheckedExpressionResolution::DialogueLineCoordinate(_)
+                | CheckedExpressionResolution::DialogueTextKeyCoordinate(_)
+        )
     }
 }
 

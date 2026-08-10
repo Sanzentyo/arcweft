@@ -74,24 +74,37 @@ fn dialogue_view_completions(
                 ))),
                 ..CompletionItem::default()
             }];
-            items.extend(DialogueViewTypeMetadata::fields().map(|(projection, ty)| {
-                CompletionItem {
-                    label: projection.field().to_owned(),
+            items.extend(
+                DialogueViewTypeMetadata::fields().map(|(field, ty)| CompletionItem {
+                    label: field.to_owned(),
                     kind: Some(CompletionItemKind::FIELD),
                     detail: Some(format!(
                         "{}.{}: {}",
                         model.name,
-                        projection.field(),
+                        field,
                         type_kind_label(&ty)
                     )),
                     documentation: Some(Documentation::String(format!(
                         "Runtime-supplied `{}` field of dialogue View model `{}`.",
-                        projection.field(),
-                        model.name
+                        field, model.name
                     ))),
                     ..CompletionItem::default()
-                }
-            }));
+                }),
+            );
+            items.extend(
+                DialogueViewTypeMetadata::character_fields().map(|(field, ty)| CompletionItem {
+                    label: field.to_owned(),
+                    kind: Some(CompletionItemKind::FIELD),
+                    detail: Some(format!(
+                        "DialogueCharacter.{field}: {}",
+                        type_kind_label(&ty)
+                    )),
+                    documentation: Some(Documentation::String(format!(
+                        "Runtime-supplied `{field}` field of the nested dialogue Character."
+                    ))),
+                    ..CompletionItem::default()
+                }),
+            );
             items
         })
         .collect()

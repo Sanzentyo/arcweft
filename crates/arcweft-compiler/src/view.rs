@@ -35,7 +35,7 @@ use arcweft_lang_hir::{
     symbol::ProjectSymbolTable,
 };
 use arcweft_lang_sema::{
-    dialogue_view::DialogueViewProjection,
+    dialogue_view::{DialogueCharacterProjection, DialogueProjectionCoordinate},
     final_analysis::{
         CheckedBindingRole, CheckedExpressionResolution, CheckedSelectResolution,
         CheckedValueResolution, CheckedViewCall, FinalSemanticAnalysis,
@@ -572,26 +572,40 @@ impl AuthoredViewBodyLowerer<'_> {
                         _ => None,
                     })
                     .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
-                let target = self
-                    .analysis
-                    .expression(select.target())
-                    .and_then(|checked| match checked.resolution() {
-                        CheckedExpressionResolution::Value(CheckedValueResolution::Local(
-                            local,
-                        )) => Some(*local),
-                        _ => None,
-                    })
-                    .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
+                let target = match projection {
+                    DialogueProjectionCoordinate::Character(_) => self
+                        .module
+                        .resolve_expr(select.target())
+                        .ok()
+                        .and_then(|expression| match expression.kind() {
+                            arcweft_lang_hir::expr::HirExprKind::Select(character) => {
+                                Some(character.target())
+                            }
+                            _ => None,
+                        }),
+                    _ => Some(select.target()),
+                }
+                .and_then(|target| self.analysis.expression(target))
+                .and_then(|checked| match checked.resolution() {
+                    CheckedExpressionResolution::Value(CheckedValueResolution::Local(local)) => {
+                        Some(*local)
+                    }
+                    _ => None,
+                })
+                .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
                 let parameter = self
                     .parameters
                     .get(&target)
                     .cloned()
                     .ok_or(ViewProjectLowerError::MissingCheckedViewProjection { owner })?;
                 let projection = match (surface, projection) {
-                    (ViewTextSurface::Text, DialogueViewProjection::CharacterDisplayName) => {
-                        DialogueTextProjection::CharacterDisplayName
-                    }
-                    (ViewTextSurface::RichText, DialogueViewProjection::Content) => {
+                    (
+                        ViewTextSurface::Text,
+                        DialogueProjectionCoordinate::Character(
+                            DialogueCharacterProjection::DisplayName,
+                        ),
+                    ) => DialogueTextProjection::CharacterDisplayName,
+                    (ViewTextSurface::RichText, DialogueProjectionCoordinate::Content) => {
                         DialogueTextProjection::Content
                     }
                     _ => {

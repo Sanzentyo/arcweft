@@ -9,11 +9,16 @@ use arcweft_lang_hir::{
     },
     identity::ExprId,
     module::HirModule,
-    source_index::{HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite},
+    source_index::{
+        HirExprSourceRole, HirSourcePresence, HirSourceQuery, HirSourceQueryError, HirSourceSite,
+    },
 };
 use arcweft_source::{SourceDocument, SourceRange, SourceSpan};
 
-use crate::callable::{ResolveCallError, SignatureQueryWorkMeter, SignatureWorkKind};
+use crate::callable::{
+    CallableGroupIndex, CallableParameterCoordinate, CallableParameterIndex, ResolveCallError,
+    SemanticSignatureSurface, SignatureQueryWorkMeter, SignatureWorkKind,
+};
 
 use super::{
     SignatureQueryControl, SignatureQueryError, SignatureQueryStep, SignatureQueryStepControl,
@@ -33,6 +38,8 @@ pub(crate) struct FocusedCallSite {
     callee: SourceSpan,
     arguments: SourceSpan,
     active_argument: Option<usize>,
+    active_parameter: Option<CallableParameterCoordinate>,
+    surface: SemanticSignatureSurface,
     recovery_nodes: usize,
     missing_close_delimiter: bool,
     argument_content: SourceRange,
@@ -59,6 +66,14 @@ impl FocusedCallSite {
 
     pub(crate) const fn active_argument(&self) -> Option<usize> {
         self.active_argument
+    }
+
+    pub(crate) const fn active_parameter(&self) -> Option<CallableParameterCoordinate> {
+        self.active_parameter
+    }
+
+    pub(crate) const fn surface(&self) -> SemanticSignatureSurface {
+        self.surface
     }
 
     pub(crate) const fn recovery_nodes(&self) -> usize {
@@ -158,9 +173,10 @@ impl SurfaceScanner<'_> {
             self.visit_node()?;
             match expression.kind() {
                 HirExprKind::Call(call) => self.scan_call(expression_id, call)?,
-                HirExprKind::DialogueContentApplication(_) | HirExprKind::PostfixBracket(_) => {
-                    self.mark_unsupported(expression_id)?;
+                HirExprKind::DialogueContentApplication(application) => {
+                    self.scan_dialogue_application(expression_id, application)?;
                 }
+                HirExprKind::PostfixBracket(_) => self.mark_unsupported(expression_id)?,
                 _ => {}
             }
         }
@@ -197,6 +213,111 @@ impl SurfaceScanner<'_> {
 
         let Some(candidate) = self.focused_call_site(expression_id, call)? else {
             return Ok(());
+        };
+        self.poll_operation()?;
+        self.work
+            .charge(SignatureWorkKind::NestedCalls, 1)
+            .map_err(map_signature_accounting_error)?;
+        match self.selected.as_ref() {
+            None => self.selected = Some(candidate),
+            Some(current) => match candidate.compare_focus(current) {
+                Ordering::Greater => self.selected = Some(candidate),
+                Ordering::Less => {}
+                Ordering::Equal
+                    if candidate.expression() == current.expression()
+                        && candidate.arguments() == current.arguments() => {}
+                Ordering::Equal => {
+                    return Err(super::SignatureSemanticUnavailable::AmbiguousCallRange {
+                        document: Box::new(self.document.identity().clone()),
+                        byte_offset: self.byte_offset,
+                    }
+                    .into());
+                }
+            },
+        }
+        Ok(())
+    }
+
+    fn scan_dialogue_application(
+        &mut self,
+        expression_id: ExprId,
+        application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
+    ) -> Result<(), SignatureQueryError> {
+        self.work
+            .charge(SignatureWorkKind::CandidateCalls, 1)
+            .map_err(map_signature_accounting_error)?;
+        self.poll_operation()?;
+        self.work
+            .charge(SignatureWorkKind::Arguments, 1)
+            .map_err(map_signature_accounting_error)?;
+        if application.plan().is_some() {
+            self.poll_operation()?;
+            self.work
+                .charge(SignatureWorkKind::Arguments, 1)
+                .map_err(map_signature_accounting_error)?;
+        }
+
+        let whole = self.required_span(expression_id, HirExprSourceRole::Whole)?;
+        let target = self.required_span(expression_id, HirExprSourceRole::Target)?;
+        let content = self.required_span(expression_id, HirExprSourceRole::Content)?;
+        let content_body = self.required_span(expression_id, HirExprSourceRole::ContentBody)?;
+        let open = self
+            .applicable_site(expression_id, HirExprSourceRole::OpenBracket)?
+            .or(self.applicable_site(expression_id, HirExprSourceRole::Colon)?)
+            .ok_or(
+                super::SignatureSemanticUnavailable::MissingSourceComponent {
+                    owner: expression_id,
+                    role: HirExprSourceRole::Content,
+                },
+            )?;
+        let close = self.applicable_site(expression_id, HirExprSourceRole::CloseBracket)?;
+        let plan = self.optional_site(expression_id, HirExprSourceRole::Plan)?;
+        let focus_end = plan.as_ref().map_or(content.range().end(), site_end);
+        if self.byte_offset < site_start(&open) || self.byte_offset > focus_end {
+            return Ok(());
+        }
+        let in_plan = plan.as_ref().is_some_and(|plan| {
+            site_start(plan) <= self.byte_offset && self.byte_offset <= site_end(plan)
+        });
+        let active_parameter = CallableParameterCoordinate::new(
+            CallableGroupIndex::ZERO,
+            CallableParameterIndex::try_from_usize(if in_plan { 2 } else { 1 })
+                .map_err(|_| crate::callable::SemanticSignatureError::ActiveParameterOutOfBounds)?,
+        );
+        let arguments = self
+            .document
+            .span(SourceRange::new(site_start(&open), focus_end))
+            .map_err(map_span_error)?;
+        let missing_close_delimiter = close
+            .as_ref()
+            .is_some_and(|site| matches!(site, HirSourceSite::Insertion(_)));
+        let recovery_nodes = usize::from(missing_close_delimiter);
+        for _ in 0..recovery_nodes {
+            self.poll_operation()?;
+            self.work
+                .charge(SignatureWorkKind::RecoveryNodes, 1)
+                .map_err(map_signature_accounting_error)?;
+        }
+        let candidate = FocusedCallSite {
+            expression: expression_id,
+            call: whole,
+            callee: target,
+            arguments,
+            active_argument: None,
+            active_parameter: Some(active_parameter),
+            surface: SemanticSignatureSurface::DialogueContent,
+            recovery_nodes,
+            missing_close_delimiter,
+            argument_content: if in_plan {
+                let plan = plan
+                    .as_ref()
+                    .expect("in-plan focus requires a plan source site");
+                SourceRange::new(site_start(plan), site_end(plan))
+            } else {
+                content_body.range()
+            },
+            open_paren_start: site_start(&open),
+            byte_offset: Some(self.byte_offset),
         };
         self.poll_operation()?;
         self.work
@@ -265,6 +386,8 @@ impl SurfaceScanner<'_> {
             callee,
             arguments,
             active_argument: Some(active_argument),
+            active_parameter: None,
+            surface: SemanticSignatureSurface::Parenthesized,
             recovery_nodes: call
                 .arguments()
                 .iter()
@@ -360,6 +483,31 @@ impl SurfaceScanner<'_> {
             HirSourcePresence::Present(site) => Some(site.clone()),
             HirSourcePresence::AbsentOptional => None,
         })
+    }
+
+    fn applicable_site(
+        &self,
+        owner: ExprId,
+        role: HirExprSourceRole,
+    ) -> Result<Option<HirSourceSite>, SignatureQueryError> {
+        match self.module.source_site(
+            self.document.identity(),
+            HirSourceQuery::Expr { owner, role },
+        ) {
+            Ok(lookup) => Ok(match lookup.presence() {
+                HirSourcePresence::Present(site) => Some(site.clone()),
+                HirSourcePresence::AbsentOptional => None,
+            }),
+            Err(HirSourceQueryError::ExprRoleNotApplicable {
+                owner: actual,
+                role: actual_role,
+            }) if actual == owner && actual_role == role => Ok(None),
+            Err(error) => Err(super::SignatureSemanticUnavailable::SourceQuery {
+                owner,
+                error: Box::new(error),
+            }
+            .into()),
+        }
     }
 }
 

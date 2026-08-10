@@ -1,3 +1,5 @@
+mod support;
+
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::{
     ViewElementKind, ViewObserveClassification, ViewTextSelectionPolicy,
@@ -662,6 +664,11 @@ fn mounted_view_localized_and_display_stage_sources_prepare_without_plain_fallba
                     text: "Stage two".to_owned(),
                 },
             ]),
+            support::character_plan(),
+            arcweft_text_model::DialoguePresentationSnapshot::new(
+                support::dialogue_profile(),
+                support::dialogue_profile_revision(),
+            ),
             Vec::new(),
             test_source_ref(),
         ),

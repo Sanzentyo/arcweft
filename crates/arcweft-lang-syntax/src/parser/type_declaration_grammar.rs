@@ -193,7 +193,10 @@ fn emit_enum_variant(parser: &mut DocumentParser<'_, '_>, end: usize, _ordinal: 
         return;
     };
     bump_until(parser, name);
-    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+    if matches!(
+        parser.current_kind(),
+        Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
+    ) {
         parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
         parser.bump();
         parser.finish();
@@ -216,7 +219,10 @@ fn emit_named_field(parser: &mut DocumentParser<'_, '_>, end: usize, _ordinal: u
         return;
     };
     bump_until(parser, name);
-    if parser.current_kind() == Some(SyntaxKind::IdentifierToken) {
+    if matches!(
+        parser.current_kind(),
+        Some(SyntaxKind::IdentifierToken | SyntaxKind::KeywordToken)
+    ) {
         parser.start(SyntaxKind::NameDefinition, SyntaxRole::Name);
         parser.bump();
         parser.finish();

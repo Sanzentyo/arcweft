@@ -1783,6 +1783,7 @@ pub enum CallableCandidateId {
     Builtin(BuiltinCallableId),
     Agent(AgentIntrinsicSignatureId),
     Presentation(super::PresentationCallableId),
+    Dialogue(super::DialogueCallableId),
     Project(CallableDeclarationKey),
     Detached(DetachedCallableDeclarationId),
     Environment(EnvironmentCallableId),
@@ -1810,6 +1811,7 @@ pub enum CallableFamily {
     Builtin,
     Agent,
     Presentation,
+    Dialogue,
     Project,
     Environment,
     Lexical,
@@ -1828,7 +1830,7 @@ pub enum CallableFamily {
 
 impl CallableFamily {
     /// Every production callable family in stable semantic-audit order.
-    pub const ALL: [Self; 21] = [
+    pub const ALL: [Self; 22] = [
         Self::Fx,
         Self::EnumConstructor,
         Self::ResultConstructor,
@@ -1836,6 +1838,7 @@ impl CallableFamily {
         Self::Builtin,
         Self::Agent,
         Self::Presentation,
+        Self::Dialogue,
         Self::Project,
         Self::Environment,
         Self::Lexical,
@@ -1863,6 +1866,7 @@ impl CallableCandidateId {
             Self::Builtin(_) => CallableFamily::Builtin,
             Self::Agent(_) => CallableFamily::Agent,
             Self::Presentation(_) => CallableFamily::Presentation,
+            Self::Dialogue(_) => CallableFamily::Dialogue,
             Self::Project(_) | Self::Detached(_) | Self::Standard(_) => CallableFamily::Project,
             Self::Environment(_) => CallableFamily::Environment,
             Self::Local(_) => CallableFamily::Lexical,
@@ -1890,6 +1894,7 @@ pub enum LanguageCallableFamily {
     Builtin,
     Agent,
     Presentation,
+    Dialogue,
     CollectionMethod,
     PresentationHandleMethod,
     IntegerMethod,

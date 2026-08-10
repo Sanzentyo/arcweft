@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-bundle = { workspace = true, default-features = false }
+arcweft-character = { workspace = true }
 arcweft-core = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-interaction-model = { workspace = true }
@@ -24,7 +25,6 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
-arcweft-character = { workspace = true }
 arcweft-resource-model = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }

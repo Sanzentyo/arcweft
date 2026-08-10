@@ -28,6 +28,7 @@ thiserror.workspace = true
 [dev-dependencies]
 arcweft-core = { workspace = true }
 arcweft-dialogue = { workspace = true }
+arcweft-resource-model = { workspace = true }
 arcweft-source = { workspace = true }
 serde_json.workspace = true
 

@@ -803,13 +803,16 @@ mod tests {
             .drain_patch_boundary(FrameBoundary::AfterRenderSubmitted)
             .expect("content patch applies");
 
-        assert!(matches!(
-            outcomes.as_slice(),
-            [WindowedRuntimeOutcome::Applied {
-                compatibility: PatchCompatibility::ContentOnly,
-                ..
-            }]
-        ));
+        assert!(
+            matches!(
+                outcomes.as_slice(),
+                [WindowedRuntimeOutcome::Applied {
+                    compatibility: PatchCompatibility::CodeCompatible,
+                    ..
+                }]
+            ),
+            "unexpected content patch outcomes: {outcomes:?}"
+        );
         assert_eq!(rendered_rgba(&owner), vec![0, 0, 255, 255]);
         assert_eq!(owner.last_patch_report().state, WindowedPatchState::Applied);
     }
@@ -880,6 +883,11 @@ mod tests {
                 RichTextDocument::new(vec![RichTextNode::Text {
                     text: display_text.to_owned(),
                 }]),
+                crate::test_character_plan(),
+                arcweft_text_model::DialoguePresentationSnapshot::new(
+                    crate::test_dialogue_profile(),
+                    crate::test_dialogue_profile_revision(),
+                ),
                 Vec::new(),
                 source_map
                     .primary_document()
@@ -917,6 +925,7 @@ mod tests {
             dialogue_content,
         )
         .expect("standard dialogue source joins source map")
+        .with_character_presentation_catalog(crate::test_character_catalog())
         .with_product_awbc(product_awbc)
         .with_virtual_files([BundleVirtualFile {
             space: BundleVirtualFileSpace::Asset,

@@ -9,7 +9,6 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_id::DeclarationIdentityFamily;
 use arcweft_lang_hir::{
     dialogue_application::{HirPostfixBracket, HirPostfixBracketCandidates},
     expr::{
@@ -36,10 +35,10 @@ use arcweft_lang_hir::{
     project::{HirExecutableProjectView, HirProjectView},
     scope::{HirScopeKind, HirScopeOwner, LocalLookup},
     source_index::{
-        HirCallableEffectSourcePart, HirCallableSourceOwner, HirCallableSourceRole,
-        HirExprSourceRole, HirFlowContractSourcePart, HirFlowSourceRole, HirItemSourceRole,
-        HirPatternSourceRole, HirScopeSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
-        HirTypeSourceRole,
+        HirCallArgumentSourcePart, HirCallableEffectSourcePart, HirCallableSourceOwner,
+        HirCallableSourceRole, HirExprSourceRole, HirFlowContractSourcePart, HirFlowSourceRole,
+        HirItemSourceRole, HirPatternSourceRole, HirScopeSourceRole, HirSourcePresence,
+        HirSourceQuery, HirSourceSite, HirTypeSourceRole,
     },
     stmt::{HirAssertionMode, HirStmtKind},
     symbol::{
@@ -83,23 +82,28 @@ use crate::{
     },
     registration::RegisteredSemanticWorld,
     types::{
-        ArrayLength, EntityKind, GenericTypeOwnerId, GenericTypeParameterId, IteratorStateKind,
-        ProjectNominalType, TypeKind, TypeParameterSubstitutions,
+        ArrayLength, CharacterDialogueCharacterType, EntityKind, GenericTypeOwnerId,
+        GenericTypeParameterId, IteratorStateKind, ProjectNominalType, TypeKind,
+        TypeParameterSubstitutions,
     },
 };
 
 use super::{
-    CandidateEvaluationPass, CandidateExpectedType, CheckedAssertionDisposition, CheckedBinding,
-    CheckedBindingRole, CheckedBuiltinVariantCase, CheckedEntryReference, CheckedExpression,
+    CandidateEvaluationPass, CandidateExpectedType, CharacterDialogueFieldCoordinate,
+    CharacterDialoguePatchContext, CheckedAssertionDisposition, CheckedBinding, CheckedBindingRole,
+    CheckedBuiltinVariantCase, CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
+    CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
+    CheckedCharacterDialogueTarget, CheckedEntryReference, CheckedExpression,
     CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
-    CheckedIteration, CheckedIteratorFamily, CheckedPattern, CheckedPatternResolution,
-    CheckedProjectCallable, CheckedProjectItem, CheckedProjectNominal, CheckedSelectResolution,
-    CheckedStatement, CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole,
-    CheckedTraitConformance, CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution,
-    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
-    FinalSemanticAnalysis, FinalSemanticAnalysisControl, FinalSemanticAnalysisError,
-    FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind, PhysicalCandidateArgument,
-    PhysicalCandidateArgumentEvaluation, PostfixBracketResolution, PropagationOperator,
+    CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedProjectCallable, CheckedProjectItem, CheckedProjectNominal,
+    CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedStyleCallee,
+    CheckedSuspensionRole, CheckedTraitConformance, CheckedTraitIdentity, CheckedTypeSelection,
+    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall,
+    CheckedViewCallee, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
+    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, PhysicalArgumentEvaluationKind,
+    PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation, PostfixBracketResolution,
+    ProjectHirSymbolLookupError, ProjectSymbolResolutionError, PropagationOperator,
     RecursiveCallableContractEdge, RegisteredSemanticValueId, SemanticFactFamily,
 };
 
@@ -233,6 +237,7 @@ struct StagedCallableBody {
 #[derive(Clone)]
 struct PendingCallAnalysis {
     expression: ExprId,
+    expression_resolution: CheckedExpressionResolution,
     callee_expression: Option<ExprId>,
     enclosing_callable: Option<arcweft_lang_hir::symbol::CallableDeclarationKey>,
     callee: CallCalleeClassificationFact,

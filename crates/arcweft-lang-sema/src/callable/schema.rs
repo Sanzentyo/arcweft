@@ -15,8 +15,8 @@ use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallableDocumentationError,
     CallableGroupIndex, CallableLimits, CallableName, CallableParameterIndex, CallableSchemaError,
     CallableSourceError, CapacityMethodId, CollectionMethodId, DetachedCallableDeclarationId,
-    DomainMethodId, EnumVariantSignatureId, FxCallableSignatureId, IntegerMethodId,
-    LanguageDocumentationFamily, OptionConstructorKind, PresentationCallableId,
+    DialogueCallableId, DomainMethodId, EnumVariantSignatureId, FxCallableSignatureId,
+    IntegerMethodId, LanguageDocumentationFamily, OptionConstructorKind, PresentationCallableId,
     PresentationHandleMethodId, PromotionCallableId, ReductionConstructorKind,
     ResultConstructorKind, RustItemPath, RustProvenanceError, RustProvenanceField, StageMethodId,
 };
@@ -478,6 +478,7 @@ pub enum CallableValidator {
     Builtin(BuiltinCallableId),
     Agent(AgentIntrinsicSignatureId),
     Presentation(PresentationCallableId),
+    Dialogue(DialogueCallableId),
     Collection(CollectionMethodId),
     PresentationHandle(PresentationHandleMethodId),
     Integer(IntegerMethodId),
@@ -1073,4 +1074,4 @@ impl CallableArgumentPolicy {
 
 mod families;
 
-pub(super) use families::presentation_schema;
+pub(super) use families::{dialogue_schema, presentation_schema};

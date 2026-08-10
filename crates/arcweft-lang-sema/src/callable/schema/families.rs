@@ -1,9 +1,10 @@
 //! Closed family schemas used by the shared callable resolver.
 
 use crate::{
+    callable::CharacterDialoguePatchContext,
     effect_row::EffectRow,
     effects::EffectSet,
-    types::{EntityKind, MapKind, TypeKind},
+    types::{CharacterDialogueCharacterType, CharacterDialogueType, EntityKind, MapKind, TypeKind},
 };
 use arcweft_character::id::CharacterId;
 
@@ -17,12 +18,166 @@ use crate::callable::PromotionCallableId;
 use crate::callable::{
     AgentIntrinsicSignatureId, BuiltinCallableId, CallableName, CallableParameterIndex,
     CallableSchemaError, CapabilityCallableId, CapacityMethodId, CollectionMethodId,
-    DomainMethodId, DropCallableId, FloatWidth, FxCallableSignatureId, IntegerMethodId,
-    MathCallableId, OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS,
-    PresentationArgumentValuePolicy, PresentationCallableId, PresentationHandleMethodId,
-    ReductionConstructorKind, ResolvedCharacterOwner, ResultConstructorKind, StageMethodId,
-    StdFloatCallableId, StdFloatOperation, VectorDimensions,
+    DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext, DomainMethodId,
+    DropCallableId, FloatWidth, FxCallableSignatureId, IntegerMethodId, MathCallableId,
+    OptionConstructorKind, PRODUCTION_CALLABLE_LIMITS, PresentationArgumentValuePolicy,
+    PresentationCallableId, PresentationHandleMethodId, ReductionConstructorKind,
+    ResolvedCharacterOwner, ResultConstructorKind, StageMethodId, StdFloatCallableId,
+    StdFloatOperation, VectorDimensions,
 };
+
+pub(in crate::callable) fn dialogue_schema(
+    id: DialogueCallableId,
+    context: DialogueSchemaContext<'_>,
+) -> Result<CallableSignatureSchema, CallableSchemaError> {
+    if !id.supports_callee(context.callee) {
+        return Err(CallableSchemaError::FamilyInvariant {
+            family: crate::callable::CallableFamily::Dialogue,
+            code: crate::callable::CallableFamilyInvariantCode::InvalidOwner,
+        });
+    }
+    let character = match context.callee {
+        DialogueCalleeIdentity::Character { character }
+        | DialogueCalleeIdentity::CharacterDialogue { character } => Some(character),
+        DialogueCalleeIdentity::Content { .. } => None,
+    };
+    let dialogue_type = CharacterDialogueType::new(
+        character
+            .cloned()
+            .unwrap_or(CharacterDialogueCharacterType::Any),
+    );
+    let (parameters, result, policy) = match id {
+        DialogueCallableId::CharacterFactory | DialogueCallableId::CharacterReconfigure => {
+            let mut parameters = character_dialogue_patch_parameters(character);
+            if context.patch_context == CharacterDialoguePatchContext::ImmediateContentApplication {
+                let next = parameters.len();
+                parameters.push(optional_named(
+                    next,
+                    "id",
+                    TypeKind::entity_ref(EntityKind::DialogueLine),
+                ));
+                parameters.push(optional_named(
+                    next + 1,
+                    "text_key",
+                    TypeKind::entity_ref(EntityKind::Text),
+                ));
+            }
+            for (name, descriptor) in context.custom_fields.visible_bindings(context.module) {
+                let index = parameters.len();
+                parameters.push(optional_named(index, name, descriptor.value_type().clone()));
+            }
+            (
+                parameters,
+                TypeKind::CharacterDialogue(dialogue_type),
+                open_checked(),
+            )
+        }
+        DialogueCallableId::ContentApplication => {
+            let target = match context.callee {
+                DialogueCalleeIdentity::Character { .. } => {
+                    TypeKind::entity_ref(EntityKind::Character)
+                }
+                DialogueCalleeIdentity::CharacterDialogue { .. } => {
+                    TypeKind::CharacterDialogue(dialogue_type)
+                }
+                DialogueCalleeIdentity::Content { .. } => {
+                    unreachable!("content-application owner was validated above")
+                }
+            };
+            (
+                vec![
+                    required_positional(0, "target", target),
+                    required_positional(
+                        1,
+                        "content",
+                        TypeKind::Named("DialogueContent".to_owned()),
+                    ),
+                    parameter(
+                        2,
+                        Some("line_plan"),
+                        CallableParameterType::Exact(TypeKind::Named("LinePlan".to_owned())),
+                        CallableParameterPassing::PositionalOnly,
+                        CallableParameterPresence::Optional,
+                    ),
+                ],
+                TypeKind::DialogueLine(Box::new(TypeKind::Unit)),
+                closed(),
+            )
+        }
+        DialogueCallableId::ContentCall => (
+            character_dialogue_patch_parameters(character),
+            TypeKind::Unit,
+            open_checked(),
+        ),
+    };
+    Ok(schema(
+        parameters,
+        result,
+        &[],
+        policy,
+        CallableValidator::Dialogue(id),
+    ))
+}
+
+fn character_dialogue_patch_parameters(
+    character: Option<&CharacterDialogueCharacterType>,
+) -> Vec<CallableParameter> {
+    let look = match character {
+        Some(CharacterDialogueCharacterType::Exact(character)) => {
+            CallableParameterType::Exact(TypeKind::character_look(character.clone()))
+        }
+        Some(CharacterDialogueCharacterType::Any) | None => CallableParameterType::Unchecked,
+    };
+    vec![
+        parameter(
+            0,
+            Some("look"),
+            look,
+            CallableParameterPassing::PositionalOrNamed,
+            CallableParameterPresence::Optional,
+        ),
+        optional_named(1, "voice", TypeKind::Named("DialogueVoice".to_owned())),
+        optional_named(2, "stage", TypeKind::Named("DialogueStage".to_owned())),
+        optional_named(
+            3,
+            "portrait",
+            TypeKind::Named("DialoguePortrait".to_owned()),
+        ),
+        optional_named(4, "focus", TypeKind::Named("DialogueFocus".to_owned())),
+        optional_named(5, "cleanup", TypeKind::Named("DialogueCleanup".to_owned())),
+        optional_named(6, "view", TypeKind::entity_ref(EntityKind::View)),
+        optional_named(7, "source_locale", TypeKind::String),
+        optional_named(
+            8,
+            "hooks",
+            TypeKind::Seq(Box::new(TypeKind::Named("DialogueHook".to_owned()))),
+        ),
+        optional_named(
+            9,
+            "style",
+            TypeKind::Choice(vec![
+                TypeKind::entity_ref(EntityKind::Style),
+                TypeKind::Named("RichTextStyle".to_owned()),
+            ]),
+        ),
+        optional_named(10, "rich_text", TypeKind::Named("RichTextStyle".to_owned())),
+        optional_named(
+            11,
+            "inline_error",
+            TypeKind::Named("InlineFailurePolicy".to_owned()),
+        ),
+        optional_named(
+            12,
+            "inline_error_policy",
+            TypeKind::Named("InlineFailurePolicy".to_owned()),
+        ),
+        optional_named(
+            13,
+            "inline_fallback",
+            TypeKind::Named("InlineFailurePolicy".to_owned()),
+        ),
+    ]
+}
 
 impl BuiltinCallableId {
     pub fn signature_schema(&self) -> CallableSignatureSchema {

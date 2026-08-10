@@ -48,6 +48,7 @@ pub enum BuiltinTypeConstructor {
     Bytes,
     Unit,
     Never,
+    CharacterDialogue,
     Vec,
     Slice,
     Seq,
@@ -368,6 +369,7 @@ impl BuiltinTypeConstructor {
         Self::Bytes,
         Self::Unit,
         Self::Never,
+        Self::CharacterDialogue,
         Self::Vec,
         Self::Slice,
         Self::Seq,
@@ -412,6 +414,7 @@ impl BuiltinTypeConstructor {
             Self::Bytes => "Bytes",
             Self::Unit => "Unit",
             Self::Never => "Never",
+            Self::CharacterDialogue => "CharacterDialogue",
             Self::Vec => "Vec",
             Self::Slice => "Slice",
             Self::Seq => "Seq",
@@ -453,7 +456,8 @@ impl BuiltinTypeConstructor {
             | Self::Char
             | Self::Bytes
             | Self::Unit
-            | Self::Never => 0,
+            | Self::Never
+            | Self::CharacterDialogue => 0,
             Self::Vec
             | Self::Slice
             | Self::Seq
@@ -982,6 +986,11 @@ mod tests {
         );
         assert_eq!(BuiltinTypeConstructor::Bool.spelling(), "bool");
         assert_eq!(BuiltinTypeConstructor::Bool.arity(), 0);
+        assert_eq!(
+            BuiltinTypeConstructor::CharacterDialogue.spelling(),
+            "CharacterDialogue"
+        );
+        assert_eq!(BuiltinTypeConstructor::CharacterDialogue.arity(), 0);
         assert_eq!(BuiltinTypeConstructor::Vec.arity(), 1);
         assert_eq!(BuiltinTypeConstructor::Array.arity(), 2);
         assert_eq!(BuiltinTypeConstructor::Ref.spelling(), "Ref");

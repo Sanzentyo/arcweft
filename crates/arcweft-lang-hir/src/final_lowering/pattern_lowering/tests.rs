@@ -412,26 +412,25 @@ fn assert_nested_fixture_evidence(
             key.ordinal(),
             u32::try_from(ordinal).expect("fixture ordinal")
         );
-        let HirSourceSite::Insertion(insertion) = metadata.source_site() else {
-            panic!("fixture binding must use a zero-width name anchor");
+        let HirSourceSite::Span(binding_span) = metadata.source_site() else {
+            panic!("fixture binding must retain its exact authored name span");
         };
         let component = if expected_name == "e" {
             PatternComponentRole::WholeBindingName
         } else {
             PatternComponentRole::Name
         };
-        let expected_start = attached
+        let expected = attached
             .component(component)
             .expect("fixture binding-name component")
-            .range()
-            .start();
-        assert_eq!(insertion.offset(), expected_start);
+            .range();
+        assert_eq!(binding_span.range(), expected);
         evidence.push((
             expected_name.into(),
             payload.generation().get(),
             key.role(),
             key.ordinal(),
-            insertion.offset(),
+            binding_span.range().start(),
         ));
     }
 
@@ -452,8 +451,8 @@ fn assert_nested_fixture_evidence(
     );
     assert_eq!(rest_key.role(), SyntheticRole::PatternRest);
     assert_eq!(rest_key.ordinal(), 0);
-    let HirSourceSite::Insertion(rest_insertion) = rest_metadata.source_site() else {
-        panic!("fixture rest must use a zero-width rest anchor");
+    let HirSourceSite::Span(rest_span) = rest_metadata.source_site() else {
+        panic!("fixture rest must retain its exact authored binding span");
     };
     let rest_binding_start = attached_record
         .component(PatternComponentRole::PatternField {
@@ -463,22 +462,20 @@ fn assert_nested_fixture_evidence(
         .expect("fixture rest binding-name component")
         .range()
         .start();
-    let rest_end = attached_record
+    let rest_binding = attached_record
         .component(PatternComponentRole::PatternField {
             field: 2,
-            part: PatternFieldPart::Whole,
+            part: PatternFieldPart::RestBinding,
         })
-        .expect("fixture rest whole component")
-        .range()
-        .end();
-    assert!(rest_binding_start < rest_end);
-    assert_eq!(rest_insertion.offset(), rest_end);
+        .expect("fixture rest binding-name component")
+        .range();
+    assert_eq!(rest_span.range(), rest_binding);
     evidence.push((
         "rest".into(),
         rest_payload.generation().get(),
         rest_key.role(),
         rest_key.ordinal(),
-        rest_insertion.offset(),
+        rest_binding_start,
     ));
     (locals, evidence)
 }
@@ -1055,7 +1052,7 @@ fn or_alternatives_reuse_outer_ordinals_and_first_rest_local() {
     assert_eq!(ordinary_ordinals, [0, 1]);
     assert!(rest_owner.is_some());
 
-    let expected_rest_end = attached[0]
+    let expected_rest_binding = attached[0]
         .children()
         .expect("Or children")
         .into_iter()
@@ -1079,19 +1076,19 @@ fn or_alternatives_reuse_outer_ordinals_and_first_rest_local() {
         .and_then(|sequence| {
             sequence
                 .component(PatternComponentRole::SequenceRest(
-                    arcweft_lang_syntax::patterns::PatternRestPart::Whole,
+                    arcweft_lang_syntax::patterns::PatternRestPart::Binding,
                 ))
-                .map(|span| span.range().end())
+                .map(|span| span.range())
         })
         .expect("first sequence rest source");
     let rest_metadata = module
         .slots()
         .resolve(first_locals.2)
         .expect("rest Local metadata");
-    let HirSourceSite::Insertion(insertion) = rest_metadata.source_site() else {
-        panic!("rest Local must use an insertion anchor");
+    let HirSourceSite::Span(rest_span) = rest_metadata.source_site() else {
+        panic!("rest Local must retain its exact authored binding span");
     };
-    assert_eq!(insertion.offset(), expected_rest_end);
+    assert_eq!(rest_span.range(), expected_rest_binding);
 }
 
 #[test]

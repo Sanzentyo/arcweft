@@ -23,6 +23,7 @@ use std::{
 };
 
 use arcweft_lang_hir::{
+    dialogue_application::HirDialogueContentApplication,
     expr::{
         HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator, HirCallArgument,
         HirCallCallee, HirCallExpr, HirExpr, HirExprKind, HirRecoveredName,
@@ -47,6 +48,7 @@ use crate::{
     types::TypeKind,
 };
 
+use super::CharacterDialoguePatchContext;
 use super::{
     AdapterPackageId, AgentIntrinsicSignatureId, BuiltinCallableId, CallCalleeClassificationFact,
     CallTargetFact, CallTargetFacts, CallableAuthorityRank, CallableCandidateId, CallableFamily,
@@ -80,6 +82,11 @@ pub(crate) enum PreparedCallCallee<'a> {
     AssociatedType {
         receiver: ResolvedAssociatedTypeReceiver<'a>,
         member: &'a CallableName,
+    },
+    Dialogue {
+        id: super::DialogueCallableId,
+        callee: &'a super::DialogueCalleeIdentity,
+        patch_context: CharacterDialoguePatchContext,
     },
     FunctionValue {
         value: &'a ResolvedFunctionValueSeed,
@@ -124,6 +131,11 @@ pub(crate) enum PreparedFinalCallCallee<'a> {
         receiver: ResolvedAssociatedTypeReceiver<'a>,
         member: CallableName,
     },
+    Dialogue {
+        id: super::DialogueCallableId,
+        callee: super::DialogueCalleeIdentity,
+        patch_context: CharacterDialoguePatchContext,
+    },
     FunctionValue {
         value: Box<ResolvedFunctionValueSeed>,
     },
@@ -159,6 +171,15 @@ impl PreparedFinalCallCallee<'_> {
             Self::AssociatedType { receiver, member } => PreparedCallCallee::AssociatedType {
                 receiver: *receiver,
                 member,
+            },
+            Self::Dialogue {
+                id,
+                callee,
+                patch_context,
+            } => PreparedCallCallee::Dialogue {
+                id: *id,
+                callee,
+                patch_context: *patch_context,
             },
             Self::FunctionValue { value } => PreparedCallCallee::FunctionValue { value },
             Self::NonCallableValue { expression, ty } => PreparedCallCallee::NonCallableValue {
@@ -299,7 +320,7 @@ pub(crate) struct CallResolverRequest<'a> {
     authority: CallResolverAuthority<'a>,
     checked: CheckedCallResolverAuthority<'a>,
     expected: Option<&'a TypeKind>,
-    call: &'a HirCallExpr,
+    call: Option<&'a HirCallExpr>,
     classification: CallCalleeClassificationFact,
     call_group: CallableGroupIndex,
     cancellation: &'a AtomicBool,
@@ -404,6 +425,49 @@ impl<'a> CallResolverAuthority<'a> {
         expression: ExprId,
         limits: &CallableLimits,
     ) -> Result<(&'a HirCallExpr, CallCalleeClassificationFact), ResolveCallError> {
+        let expression = self.validate_expression(expression, limits)?;
+        let HirExprKind::Call(call) = expression.kind() else {
+            return Err(ResolveCallError::InvalidResolvedCallable);
+        };
+        let classification = classify_prepared_callee(callee, call, self.module.module_id())?;
+        Ok((call, classification))
+    }
+
+    fn validate_dialogue_application(
+        self,
+        callee: &PreparedCallCallee<'_>,
+        expression: ExprId,
+        limits: &CallableLimits,
+    ) -> Result<
+        (
+            &'a HirDialogueContentApplication,
+            CallCalleeClassificationFact,
+        ),
+        ResolveCallError,
+    > {
+        let expression = self.validate_expression(expression, limits)?;
+        let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+            return Err(ResolveCallError::InvalidResolvedCallable);
+        };
+        let PreparedCallCallee::Dialogue { id, callee, .. } = callee else {
+            return Err(ResolveCallError::InvalidResolvedCallable);
+        };
+        if *id != super::DialogueCallableId::ContentApplication || !id.supports_callee(callee) {
+            return Err(ResolveCallError::InvalidResolvedCallable);
+        }
+        Ok((
+            application,
+            CallCalleeClassificationFact::Value {
+                expression: application.target(),
+            },
+        ))
+    }
+
+    fn validate_expression(
+        self,
+        expression: ExprId,
+        limits: &CallableLimits,
+    ) -> Result<&'a HirExpr, ResolveCallError> {
         if self.symbols.world() != self.world.symbols().world()
             || self.symbols.revision() != self.world.symbols().revision()
             || self.symbols.world() != self.world.environment().world()
@@ -434,15 +498,9 @@ impl<'a> CallResolverAuthority<'a> {
                 },
             ));
         }
-        let expression = self
-            .module
+        self.module
             .resolve_expr(expression)
-            .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
-        let HirExprKind::Call(call) = expression.kind() else {
-            return Err(ResolveCallError::InvalidResolvedCallable);
-        };
-        let classification = classify_prepared_callee(callee, call, self.module.module_id())?;
-        Ok((call, classification))
+            .map_err(|_| ResolveCallError::InvalidResolvedCallable)
     }
 
     const fn parts(
@@ -457,6 +515,10 @@ impl<'a> CallResolverAuthority<'a> {
 
     const fn module(self) -> &'a HirModule {
         self.module
+    }
+
+    const fn world(self) -> &'a RegisteredSemanticWorld {
+        self.world
     }
 
     fn typed_environment_method(
@@ -524,7 +586,7 @@ impl<'a> CallResolverRequest<'a> {
             authority: context.authority,
             checked: context.checked,
             expected: context.expected,
-            call,
+            call: Some(call),
             classification,
             call_group: context.call_group,
             cancellation: context.cancellation,
@@ -533,7 +595,34 @@ impl<'a> CallResolverRequest<'a> {
         })
     }
 
-    pub(crate) const fn call(&self) -> &'a HirCallExpr {
+    pub(crate) fn try_new_dialogue_application(
+        callee: PreparedCallCallee<'a>,
+        context: &CallResolverContext<'a>,
+        work: &'a mut ResolverWork,
+    ) -> Result<Self, ResolveCallError> {
+        if context.cancellation.load(Ordering::Acquire) {
+            return Err(ResolveCallError::Cancelled);
+        }
+        let (_, classification) = context.authority.validate_dialogue_application(
+            &callee,
+            context.expression,
+            context.limits,
+        )?;
+        Ok(Self {
+            callee,
+            authority: context.authority,
+            checked: context.checked,
+            expected: context.expected,
+            call: None,
+            classification,
+            call_group: context.call_group,
+            cancellation: context.cancellation,
+            work,
+            limits: context.limits,
+        })
+    }
+
+    pub(crate) const fn parenthesized_call(&self) -> Option<&'a HirCallExpr> {
         self.call
     }
     pub(crate) const fn classification(&self) -> CallCalleeClassificationFact {

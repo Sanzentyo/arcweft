@@ -56,6 +56,7 @@ fn contains_generic_parameter(ty: &TypeKind) -> bool {
         | TypeKind::Option(inner)
         | TypeKind::ThreadHandle(inner)
         | TypeKind::Shared(inner)
+        | TypeKind::DialogueLine(inner)
         | TypeKind::BorrowRef { inner, .. } => contains_generic_parameter(inner),
         TypeKind::IteratorState { item, .. } | TypeKind::Array { item, .. } => {
             contains_generic_parameter(item)
@@ -64,14 +65,16 @@ fn contains_generic_parameter(ty: &TypeKind) -> bool {
         TypeKind::Map { key, value, .. } => {
             contains_generic_parameter(key) || contains_generic_parameter(value)
         }
-        TypeKind::Need { ready, error } => {
-            contains_generic_parameter(ready) || contains_generic_parameter(error)
+        TypeKind::Need {
+            ready: left,
+            error: right,
         }
+        | TypeKind::Result {
+            ok: left,
+            error: right,
+        } => contains_generic_parameter(left) || contains_generic_parameter(right),
         TypeKind::Stream { item, error } | TypeKind::Source { item, error } => {
             contains_generic_parameter(item) || contains_generic_parameter(error)
-        }
-        TypeKind::Result { ok, error } => {
-            contains_generic_parameter(ok) || contains_generic_parameter(error)
         }
         TypeKind::Function {
             params,
@@ -80,15 +83,9 @@ fn contains_generic_parameter(ty: &TypeKind) -> bool {
         } => {
             params.iter().any(contains_generic_parameter) || contains_generic_parameter(return_type)
         }
-        TypeKind::ProjectNominal(nominal) => {
-            nominal.arguments().iter().any(contains_generic_parameter)
-        }
-        TypeKind::AcceptedNominal(nominal) => {
-            nominal.arguments().iter().any(contains_generic_parameter)
-        }
-        TypeKind::OpenNominal(nominal) => {
-            nominal.arguments().iter().any(contains_generic_parameter)
-        }
+        TypeKind::ProjectNominal(nominal) => contains_any_generic(nominal.arguments()),
+        TypeKind::AcceptedNominal(nominal) => contains_any_generic(nominal.arguments()),
+        TypeKind::OpenNominal(nominal) => contains_any_generic(nominal.arguments()),
         TypeKind::Projection { subject, .. } => contains_generic_parameter(subject),
         TypeKind::Tuple(items) | TypeKind::Choice(items) => {
             items.iter().any(contains_generic_parameter)
@@ -140,11 +137,16 @@ fn contains_generic_parameter(ty: &TypeKind) -> bool {
         | TypeKind::Error(_)
         | TypeKind::CharacterPatch(_)
         | TypeKind::FocusPatch
+        | TypeKind::CharacterDialogue(_)
         | TypeKind::CharacterNominal(_)
         | TypeKind::Named(_)
         | TypeKind::Unit
         | TypeKind::Never => false,
     }
+}
+
+fn contains_any_generic(types: &[TypeKind]) -> bool {
+    types.iter().any(contains_generic_parameter)
 }
 
 impl TypeKind {
@@ -243,6 +245,9 @@ impl TypeKind {
                     .map(|item| item.substitute_type_parameters(substitutions))
                     .collect(),
             ),
+            Self::DialogueLine(result) => {
+                Self::DialogueLine(Box::new(result.substitute_type_parameters(substitutions)))
+            }
             other => other.clone(),
         }
     }
@@ -289,6 +294,7 @@ impl TypeKind {
             Self::ThreadHandle(inner) => Self::ThreadHandle(substitute(inner)),
             Self::Shared(inner) => Self::Shared(substitute(inner)),
             Self::Probe(inner) => Self::Probe(substitute(inner)),
+            Self::DialogueLine(inner) => Self::DialogueLine(substitute(inner)),
             _ => return None,
         })
     }
@@ -361,7 +367,8 @@ fn observe_unary_type_parameters(
         | (TypeKind::Seq(declared), TypeKind::Seq(actual))
         | (TypeKind::Option(declared), TypeKind::Option(actual))
         | (TypeKind::ThreadHandle(declared), TypeKind::ThreadHandle(actual))
-        | (TypeKind::Shared(declared), TypeKind::Shared(actual)) => (declared, actual),
+        | (TypeKind::Shared(declared), TypeKind::Shared(actual))
+        | (TypeKind::DialogueLine(declared), TypeKind::DialogueLine(actual)) => (declared, actual),
         (TypeKind::Array { item: declared, .. }, TypeKind::Array { item: actual, .. }) => {
             (declared, actual)
         }
@@ -398,6 +405,7 @@ fn observe_unary_type_parameters(
             | TypeKind::Option(_)
             | TypeKind::ThreadHandle(_)
             | TypeKind::Shared(_)
+            | TypeKind::DialogueLine(_)
             | TypeKind::Array { .. }
             | TypeKind::BorrowRef { .. }
             | TypeKind::IteratorState { .. },

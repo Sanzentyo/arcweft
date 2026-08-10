@@ -510,7 +510,8 @@ fn owner_kind_label(kind: PreparedTextOwnerKind) -> String {
             dialogue,
             entry,
             mount,
-        } => format!("dialogue:{dialogue}:{entry}:{mount}"),
+            role,
+        } => format!("dialogue:{dialogue}:{entry}:{mount}:{role:?}"),
         PreparedTextOwnerKind::View { mount } => format!("view:{mount}"),
         PreparedTextOwnerKind::Control => "control".to_owned(),
     }

@@ -10,8 +10,8 @@ use crate::resource_codec::runtime::{
     RuntimeTypesSection as CompactRuntimeTypesSection,
 };
 use crate::resource_codec::{
-    CompactAssetCatalogSection, CompactAudioGraphSection, CompactContentCatalogSection,
-    CompactDisplayCatalogSection, SourceMapSection,
+    CharacterPresentationCatalogSection, CompactAssetCatalogSection, CompactAudioGraphSection,
+    CompactContentCatalogSection, CompactDisplayCatalogSection, SourceMapSection,
 };
 use crate::resource_codec::{
     ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
@@ -127,6 +127,7 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     .into_iter()
     .chain(optional_asset_catalog_section(bundle)?)
     .chain(optional_audio_graph_section(bundle)?)
+    .chain(optional_locale_catalog_section(bundle)?)
     .chain(optional_view_program_section(bundle)?)
     .chain(optional_view_style_section(bundle)?)
     .chain(optional_view_text_section(bundle)?)
@@ -184,6 +185,12 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         .map_err(|error| compact_decode_error(&error))?;
     let adapters = required_adapter_requirements(&view, external_sections)?;
     let content = required_content_catalog(&view, external_sections)?;
+    let character_presentation = optional_locale_catalog(&view, external_sections)?;
+    if content.dialogue_content.records().is_empty() != character_presentation.is_none() {
+        return Err(BundleCodecError::DecodeAwfb {
+            message: "AWFB dialogue content and LocaleCatalog presence disagree".to_owned(),
+        });
+    }
     let assets = optional_asset_catalog(&view, external_sections)?.unwrap_or_default();
     let display = required_display_catalog(&view, external_sections)?;
     let source_map = optional_source_map(&view, external_sections)?.ok_or_else(|| {
@@ -224,6 +231,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         },
         product_awbc: Some(product_awbc),
         dialogue_content: content.dialogue_content,
+        character_presentation,
         fx_definitions,
         adapter_manifests: adapters.adapter_manifests,
         virtual_files: assets.virtual_files,
@@ -304,6 +312,31 @@ fn optional_audio_graph_section(
                 .map(|bytes| optional_section(BundleSectionKind::AudioGraph, bytes))
         })
         .transpose()
+}
+
+fn optional_locale_catalog_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    if bundle.dialogue_content.records().is_empty() {
+        if bundle.character_presentation.is_some() {
+            return Err(BundleCodecError::EncodeAwfb {
+                message: "LocaleCatalog is present without executable dialogue content".to_owned(),
+            });
+        }
+        return Ok(None);
+    }
+    let catalog =
+        bundle
+            .character_presentation
+            .as_ref()
+            .ok_or_else(|| BundleCodecError::EncodeAwfb {
+                message: "executable dialogue content requires LocaleCatalog".to_owned(),
+            })?;
+    CharacterPresentationCatalogSection::encode_canonical(catalog)
+        .map(|bytes| Some(optional_section(BundleSectionKind::LocaleCatalog, bytes)))
+        .map_err(|error| BundleCodecError::EncodeAwfb {
+            message: error.to_string(),
+        })
 }
 
 fn optional_view_program_section(
@@ -413,6 +446,21 @@ fn optional_asset_catalog(
         external_sections,
         BundleSectionKind::AssetCatalog,
         CompactAssetCatalogSection::decode_canonical_section,
+    )
+}
+
+fn optional_locale_catalog(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+) -> Result<
+    Option<arcweft_character::presentation_name::CharacterPresentationCatalogData>,
+    BundleCodecError,
+> {
+    optional_compact_payload(
+        view,
+        external_sections,
+        BundleSectionKind::LocaleCatalog,
+        CharacterPresentationCatalogSection::decode_canonical,
     )
 }
 

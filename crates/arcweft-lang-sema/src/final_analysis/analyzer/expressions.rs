@@ -7,25 +7,32 @@ use super::{
     Analyzer, ArrayLength, BTreeSet, BorrowKind, CandidateSemanticProjection,
     CheckedEntryReference, CheckedExpression, CheckedExpressionResolution, CheckedProjectItem,
     CheckedStyleCallee, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
-    CheckedViewCall, CheckedViewCallee, DeclarationIdentityFamily, EffectId, EffectSet, EntityKind,
-    EnumVariantPayload, ExprId, FinalSemanticAnalysisError, GenericTypeOwnerId,
-    GenericTypeParameterId, HirAwaitPropagation, HirBinaryOp, HirBorrowKind, HirCallArgument,
-    HirComputationBlockKind, HirExpr, HirExprKind, HirExprSourceRole, HirIdRef, HirIntegerLiteral,
-    HirItemKind, HirLiteral, HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket,
-    HirPostfixBracketCandidates, HirRecordField, HirRecoveredName, HirSelectedMember,
-    HirSourcePresence, HirSourceQuery, HirSourceSite, HirTypeSourceRole, HirUnaryOp, ItemId,
-    LocalLookup, PostfixBracketResolution, ProjectNominalBody, ProjectNominalDeclaration,
-    ProjectNominalType, ProjectTypeTarget, ProjectValueLookup, PropagationOperator,
+    CheckedViewCall, CheckedViewCallee, EffectId, EffectSet, EntityKind, EnumVariantPayload,
+    ExprId, FinalSemanticAnalysisError, GenericTypeOwnerId, GenericTypeParameterId,
+    HirAwaitPropagation, HirBinaryOp, HirBorrowKind, HirCallArgument, HirComputationBlockKind,
+    HirExpr, HirExprKind, HirExprSourceRole, HirIdRef, HirIntegerLiteral, HirItemKind, HirLiteral,
+    HirModule, HirPathRoot, HirPathSegment, HirPostfixBracket, HirPostfixBracketCandidates,
+    HirRecordField, HirRecoveredName, HirSelectedMember, HirSourcePresence, HirSourceQuery,
+    HirSourceSite, HirTypeSourceRole, HirUnaryOp, LocalLookup, PostfixBracketResolution,
+    ProjectHirSymbolLookupError, ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalType,
+    ProjectSymbolResolutionError, ProjectTypeTarget, ProjectValueLookup, PropagationOperator,
     RegisteredSemanticValueId, ResolvedProjectSymbol, RichTextAttributeChecker, ScopeId,
     SourceSpan, TypeKind, TypeParameterSubstitutions,
-    calls::{checked_project_nominal, nominal_substitutions},
+    calls::{checked_character_dialogue_target, checked_project_nominal, nominal_substitutions},
     expression_types::{
         common_type, expected_item, indexed_item, literal_type, value_resolution_type,
     },
     patterns::{checked_builtin_closed_owner, resolve_closed_variant_path},
     statements::{enclosing_item, expression_span},
 };
+use crate::callable::{
+    CallPoison, CallResolverAuthority, CallResolverRequest, CallTargetFacts, CallTargetFactsInput,
+    CallableGroupIndex, CharacterDialoguePatchContext, CheckedCallTarget, DialogueCallableId,
+    DialogueCalleeIdentity, PreparedCallCallee, ResolveCallOutcome, ResolvedCallTarget,
+    ResolverWork, resolve_call_target,
+};
 use crate::final_analysis::type_rules::integer_suffix_type;
+use crate::registration::RegisteredExternalOwner;
 
 use super::entities::EntityReferenceResolutionError;
 
@@ -932,8 +939,7 @@ impl Analyzer<'_, '_, '_> {
                     .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
                 let resolution = environment
                     .dialogue_view_models()
-                    .model(type_name)
-                    .and_then(|model| model.projection(name.as_str()))
+                    .projection(type_name, name.as_str())
                     .map_or_else(
                         || super::CheckedSelectResolution::Field {
                             nominal: None,
@@ -1398,24 +1404,27 @@ impl Analyzer<'_, '_, '_> {
         let index_probe = self.probe_postfix_candidate(index_id, expected);
         let dialogue_probe = self.probe_postfix_candidate(dialogue_id, expected);
         let (checked, projection, resolution) = match (index_probe, dialogue_probe) {
-            (Some((checked, projection)), None) => (
+            (Ok((checked, projection)), Err(_)) => (
                 checked,
                 projection,
                 PostfixBracketResolution::Index {
                     candidate: index_id,
                 },
             ),
-            (None, Some((checked, projection))) => (
+            (Err(_), Ok((checked, projection))) => (
                 checked,
                 projection,
                 PostfixBracketResolution::Dialogue {
                     candidate: dialogue_id,
                 },
             ),
-            (Some(_), Some(_)) => {
+            (Ok(_), Ok(_)) => {
                 return Err(FinalSemanticAnalysisError::AmbiguousPostfixBracket { owner });
             }
-            (None, None) => {
+            (Err(_), Err(dialogue_error)) => {
+                if dialogue_error.proves_dialogue_postfix_candidate() {
+                    return Err(dialogue_error);
+                }
                 return Err(FinalSemanticAnalysisError::UnresolvedPostfixBracket { owner });
             }
         };
@@ -1432,15 +1441,20 @@ impl Analyzer<'_, '_, '_> {
         &mut self,
         candidate: ExprId,
         expected: Option<&TypeKind>,
-    ) -> Option<(CheckedExpression, CandidateSemanticProjection)> {
+    ) -> Result<(CheckedExpression, CandidateSemanticProjection), FinalSemanticAnalysisError> {
         let checkpoint = self.facts.begin_candidate_transaction();
         let result = self.check_expression(candidate, expected);
-        let checked = result.ok();
-        let projection = checked
-            .as_ref()
-            .map(|_| self.facts.capture_candidate_projection(checkpoint));
+        let projection = result
+            .is_ok()
+            .then(|| self.facts.capture_candidate_projection(checkpoint));
         self.facts.rollback_candidate_transaction(checkpoint);
-        checked.zip(projection)
+        match result {
+            Ok(checked) => Ok((
+                checked,
+                projection.expect("successful postfix probe captures a projection"),
+            )),
+            Err(error) => Err(error),
+        }
     }
 
     fn check_dialogue_content_application(
@@ -1450,35 +1464,35 @@ impl Analyzer<'_, '_, '_> {
         application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
         expected: Option<&TypeKind>,
     ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
-        let (target_owner, configuration) =
-            Self::dialogue_target_owner(module, owner, application)?;
-        let target = module
+        // Immediate id/text_key arguments are compile-time application
+        // coordinates. Publish their accepted project identities before the
+        // shared parenthesized-call resolver evaluates argument facts.
+        self.publish_dialogue_coordinates(owner, application)?;
+        let target_owner = application.target();
+        let target_expression = module
             .resolve_expr(target_owner)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let HirExprKind::Path(path) = target.kind() else {
-            return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
+        let checked_target = match target_expression.kind() {
+            HirExprKind::Call(call) => {
+                let checked =
+                    self.check_immediate_character_dialogue_call(module, target_owner, call)?;
+                self.facts.set_expression(target_owner, checked.clone());
+                checked
+            }
+            _ => self.check_expression(target_owner, None)?,
         };
-        let path = path
-            .as_resolved()
-            .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
-        let symbol = self
-            .symbols
-            .resolve_hir_symbol_target(
-                module.key().path(),
-                path,
-                expression_span(module, target_owner)?,
-            )
-            .map_err(|_| FinalSemanticAnalysisError::ValueResolutionFailed {
-                owner: target_owner,
-            })?;
-        let ResolvedProjectSymbol::Retained(character) = symbol else {
-            return Err(FinalSemanticAnalysisError::ValueResolutionFailed {
-                owner: target_owner,
-            });
+        let target = checked_character_dialogue_target(target_owner, &checked_target)
+            .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+        self.publish_dialogue_content_application_call(module, owner, &target, expected)?;
+        let application_patch = match checked_target.resolution() {
+            CheckedExpressionResolution::CharacterDialogueFactory(factory) => {
+                Some(factory.patch().clone())
+            }
+            CheckedExpressionResolution::CharacterDialogueReconfigure(reconfigure) => {
+                Some(reconfigure.patch().clone())
+            }
+            _ => None,
         };
-        if character.family() != DeclarationIdentityFamily::Character {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
-        }
         let rich_text = RichTextAttributeChecker::check(module, application.content())
             .map_err(|_| FinalSemanticAnalysisError::RichTextSourceQuery { owner })?;
         if !rich_text.is_valid() {
@@ -1487,34 +1501,6 @@ impl Analyzer<'_, '_, '_> {
                 report: Box::new(rich_text),
             });
         }
-        let item = CheckedProjectItem::try_new_retained(
-            character.public_id().clone(),
-            character.family(),
-            character.owner(),
-        )
-        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
-        let character_owner = character.owner();
-        let character_ty = item.ty();
-        self.facts.set_expression(
-            target_owner,
-            CheckedExpression::new(
-                character_ty.clone(),
-                CheckedTypeSelection::Inferred,
-                EffectSet::new(),
-                CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)),
-            ),
-        );
-
-        if let Some(configuration_owner) = configuration {
-            self.publish_dialogue_configuration(
-                owner,
-                application,
-                configuration_owner,
-                character_owner,
-                character_ty,
-            )?;
-        }
-
         let application_children = module
             .resolve_expr(owner)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?
@@ -1526,7 +1512,7 @@ impl Analyzer<'_, '_, '_> {
             }
         }
 
-        let ty = TypeKind::entity_ref(EntityKind::DialogueLine);
+        let ty = TypeKind::DialogueLine(Box::new(TypeKind::Unit));
         let selection = match expected.map(|expected| expected.accepts(&ty)) {
             Some(true) => CheckedTypeSelection::Expected,
             None => CheckedTypeSelection::Inferred,
@@ -1539,52 +1525,112 @@ impl Analyzer<'_, '_, '_> {
             selection,
             EffectSet::new(),
             CheckedExpressionResolution::DialogueApplication {
-                character: character.owner(),
+                target,
+                application_patch,
                 rich_text: Box::new(rich_text),
             },
         ))
     }
 
-    fn dialogue_target_owner(
+    fn publish_dialogue_content_application_call(
+        &mut self,
         module: &HirModule,
         owner: ExprId,
-        application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
-    ) -> Result<(ExprId, Option<ExprId>), FinalSemanticAnalysisError> {
-        let configuration_owner = application.target();
-        let target = module
-            .resolve_expr(configuration_owner)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        match target.kind() {
-            HirExprKind::Path(_) => Ok((configuration_owner, None)),
-            HirExprKind::Call(call) => {
-                let arcweft_lang_hir::expr::HirCallCallee::Value { value } = call.callee() else {
-                    return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
-                };
-                Ok((*value, Some(configuration_owner)))
+        target: &super::CheckedCharacterDialogueTarget,
+        expected: Option<&TypeKind>,
+    ) -> Result<(), FinalSemanticAnalysisError> {
+        let callee = match target {
+            super::CheckedCharacterDialogueTarget::Character { character, .. } => {
+                DialogueCalleeIdentity::Character {
+                    character: character.clone(),
+                }
             }
-            _ => Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }),
+            super::CheckedCharacterDialogueTarget::Dialogue { ty, .. } => {
+                DialogueCalleeIdentity::CharacterDialogue {
+                    character: ty.character().clone(),
+                }
+            }
+        };
+        let prepared = PreparedCallCallee::Dialogue {
+            id: DialogueCallableId::ContentApplication,
+            callee: &callee,
+            patch_context: CharacterDialoguePatchContext::ImmediateContentApplication,
+        };
+        let authority = CallResolverAuthority::accepted(
+            self.project,
+            module,
+            self.symbols,
+            self.catalogs.world,
+        );
+        let staged = self
+            .staged_callables
+            .as_ref()
+            .ok_or(FinalSemanticAnalysisError::CheckedCallableCatalog)?;
+        let mut work = ResolverWork::new(self.catalogs.callable_limits.max_query_work());
+        let request = CallResolverRequest::try_new_dialogue_application(
+            prepared,
+            &super::CallResolverContext {
+                authority,
+                checked: (&staged.builder).into(),
+                expected,
+                call_group: CallableGroupIndex::ZERO,
+                expression: owner,
+                cancellation: self.control.cancellation(),
+                limits: &self.catalogs.callable_limits,
+            },
+            &mut work,
+        )
+        .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?;
+        let callee = request.classification();
+        let outcome = resolve_call_target(request);
+        let ResolveCallOutcome::Resolved(ResolvedCallTarget::Candidates(candidates)) = outcome
+        else {
+            return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner });
+        };
+        let selected = candidates.first();
+        if selected.id()
+            != &crate::callable::CallableCandidateId::Dialogue(
+                DialogueCallableId::ContentApplication,
+            )
+            || selected.schema().result() != &TypeKind::DialogueLine(Box::new(TypeKind::Unit))
+        {
+            return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner });
         }
+        let checked = CheckedCallTarget::selected(
+            selected,
+            candidates.as_slice(),
+            Vec::new(),
+            selected.schema().result().clone(),
+            crate::effect_row::EffectRow::closed(EffectSet::new()),
+            CallableGroupIndex::ZERO,
+            CallPoison::Clean,
+        );
+        let facts = CallTargetFacts::try_new(
+            CallTargetFactsInput {
+                expression: owner,
+                enclosing_callable: None,
+                callee: Some(callee),
+                checked,
+                diagnostics: Vec::new(),
+                accounting: work.call_accounting(),
+            },
+            &self.catalogs.callable_limits,
+        )
+        .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?;
+        if self.facts.set_call_fact(owner, facts) {
+            return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner });
+        }
+        Ok(())
     }
 
-    fn publish_dialogue_configuration(
+    fn publish_dialogue_coordinates(
         &mut self,
         owner: ExprId,
         application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
-        configuration_owner: ExprId,
-        character_owner: ItemId,
-        character_ty: TypeKind,
     ) -> Result<(), FinalSemanticAnalysisError> {
-        self.facts.set_expression(
-            configuration_owner,
-            CheckedExpression::new(
-                character_ty,
-                CheckedTypeSelection::Inferred,
-                EffectSet::new(),
-                CheckedExpressionResolution::DialogueConfiguration {
-                    character: character_owner,
-                },
-            ),
-        );
+        if application.coordinates().is_empty() {
+            return Ok(());
+        }
         let accepted = self
             .project
             .dialogue_lines()
@@ -1659,6 +1705,58 @@ impl Analyzer<'_, '_, '_> {
                 )),
             )),
             ProjectValueLookup::Absent => {
+                match self.symbols.resolve_hir_symbol_target(
+                    module.key().path(),
+                    path,
+                    expression_span(module, owner)?,
+                ) {
+                    Ok(ResolvedProjectSymbol::Retained(symbol)) => {
+                        let item = CheckedProjectItem::try_new_retained(
+                            symbol.public_id().clone(),
+                            symbol.family(),
+                            symbol.owner(),
+                        )
+                        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                        return Ok(Some(CheckedValueResolution::ProjectItem(item)));
+                    }
+                    Ok(ResolvedProjectSymbol::External(symbol)) => {
+                        let owner = self
+                            .catalogs
+                            .world
+                            .environment()
+                            .bound_external_owner(self.symbols, symbol.declaration())
+                            .map_err(|_| FinalSemanticAnalysisError::WrongPayloadFamily)?;
+                        return Ok(Some(match owner {
+                            RegisteredExternalOwner::Character(character) => {
+                                CheckedValueResolution::ProjectItem(
+                                    CheckedProjectItem::new_external_character(
+                                        symbol.declaration(),
+                                        character.clone(),
+                                    ),
+                                )
+                            }
+                            RegisteredExternalOwner::Environment(environment) => {
+                                CheckedValueResolution::Registered(
+                                    RegisteredSemanticValueId::for_environment_binding(
+                                        environment.value_binding().clone(),
+                                    ),
+                                )
+                            }
+                        }));
+                    }
+                    Err(ProjectHirSymbolLookupError::Symbol(
+                        ProjectSymbolResolutionError::Unknown { .. },
+                    )) => {}
+                    Ok(
+                        ResolvedProjectSymbol::Callable(_)
+                        | ResolvedProjectSymbol::StructuralCallable(_)
+                        | ResolvedProjectSymbol::Nominal(_)
+                        | ResolvedProjectSymbol::Module(_),
+                    )
+                    | Err(_) => {
+                        return Err(FinalSemanticAnalysisError::ValueResolutionFailed { owner });
+                    }
+                }
                 let Some(binding) = environment_binding_for_path(path) else {
                     return Ok(None);
                 };

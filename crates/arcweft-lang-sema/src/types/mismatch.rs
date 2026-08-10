@@ -63,6 +63,8 @@ pub enum TypeMismatchPathSegment {
     ProjectionTrait,
     ProjectionAssociation,
     ProjectionSubject,
+    CharacterDialogueCharacter,
+    DialogueLineResult,
     CharacterPatchKind,
     CharacterFamily,
     CharacterOwner,
@@ -921,6 +923,27 @@ impl TypeKind {
                             mismatch.prepend(TypeMismatchPathSegment::ProjectionSubject)
                         })
                 }
+            }
+            Self::CharacterDialogue(expected) => {
+                let Self::CharacterDialogue(actual_dialogue) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                (expected != actual_dialogue).then(|| {
+                    TypeMismatch::at(
+                        self,
+                        actual,
+                        TypeMismatchPathSegment::CharacterDialogueCharacter,
+                        TypeMismatchReason::NonTypeParameter,
+                    )
+                })
+            }
+            Self::DialogueLine(expected) => {
+                let Self::DialogueLine(actual_result) = actual else {
+                    unreachable!("equal discriminants")
+                };
+                expected
+                    .first_mismatch(actual_result)
+                    .map(|mismatch| mismatch.prepend(TypeMismatchPathSegment::DialogueLineResult))
             }
             Self::CharacterPatch(expected) => {
                 let Self::CharacterPatch(actual_kind) = actual else {

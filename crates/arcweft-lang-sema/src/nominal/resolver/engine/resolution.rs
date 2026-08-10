@@ -15,10 +15,7 @@ use crate::{
         AcceptedNominalOwnerId, AcceptedNominalRecord, AcceptedNominalSemantics,
         OpenNominalEnvironment, OpenNominalRule,
     },
-    registration::{
-        AcceptedNominalWorld, ExternalOwnerLookupError, RegisteredExternalOwner,
-        RegisteredExternalOwnerKind,
-    },
+    registration::{AcceptedNominalWorld, ExternalOwnerLookupError, RegisteredExternalOwner},
     types::{
         AcceptedNominalType, ArrayLength, GenericTypeOwnerId, GenericTypeParameterId, MapKind,
         OpenNominalType, ProjectNominalType, TypeKind, TypePoisonId,
@@ -796,33 +793,15 @@ impl Resolver<'_, '_> {
         environment: &AcceptedNominalWorld,
         external: &ExternalSymbol,
     ) -> Result<RegisteredExternalOwner, TypeResolutionInputError> {
-        match environment.external_owner(
-            symbols,
-            external.declaration(),
-            RegisteredExternalOwnerKind::Character,
-        ) {
-            Ok(owner) => Ok(owner.clone()),
-            Err(ExternalOwnerLookupError::WrongKind {
-                actual: RegisteredExternalOwnerKind::Environment,
-                ..
-            }) => environment
-                .external_owner(
-                    symbols,
-                    external.declaration(),
-                    RegisteredExternalOwnerKind::Environment,
-                )
-                .cloned()
-                .map_err(
-                    |reason| TypeResolutionInputError::RegisteredEnvironmentIntegrity {
-                        external: external.declaration(),
-                        reason: Box::new(reason),
-                    },
-                ),
-            Err(reason) => Err(TypeResolutionInputError::RegisteredEnvironmentIntegrity {
-                external: external.declaration(),
-                reason: Box::new(reason),
-            }),
-        }
+        environment
+            .bound_external_owner(symbols, external.declaration())
+            .cloned()
+            .map_err(
+                |reason| TypeResolutionInputError::RegisteredEnvironmentIntegrity {
+                    external: external.declaration(),
+                    reason: Box::new(reason),
+                },
+            )
     }
 
     fn external_nominal_product(
@@ -891,7 +870,10 @@ impl Resolver<'_, '_> {
             | BuiltinTypeConstructor::Char
             | BuiltinTypeConstructor::Bytes
             | BuiltinTypeConstructor::Unit
-            | BuiltinTypeConstructor::Never => unreachable!("scalar constructors returned above"),
+            | BuiltinTypeConstructor::Never
+            | BuiltinTypeConstructor::CharacterDialogue => {
+                unreachable!("scalar constructors returned above")
+            }
             BuiltinTypeConstructor::Vec
             | BuiltinTypeConstructor::Slice
             | BuiltinTypeConstructor::Seq
@@ -945,6 +927,9 @@ impl Resolver<'_, '_> {
             BuiltinTypeConstructor::Bytes => TypeKind::Bytes,
             BuiltinTypeConstructor::Unit => TypeKind::Unit,
             BuiltinTypeConstructor::Never => TypeKind::Never,
+            BuiltinTypeConstructor::CharacterDialogue => {
+                TypeKind::CharacterDialogue(crate::types::CharacterDialogueType::any())
+            }
             _ => return None,
         })
     }

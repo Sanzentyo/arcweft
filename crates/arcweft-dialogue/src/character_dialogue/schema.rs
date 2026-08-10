@@ -198,6 +198,13 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
 }
 
 impl<'a> CharacterDialogueRuntimeSchema<'a> {
+    /// Returns the sole runtime nominal identity for encoded
+    /// [`CharacterDialogue`](super::CharacterDialogue) values.
+    #[must_use]
+    pub fn nominal_type_id() -> RuntimeNominalTypeId {
+        character_dialogue_type_id()
+    }
+
     #[must_use]
     pub const fn new(
         character_catalog: &'a CharacterCatalog,

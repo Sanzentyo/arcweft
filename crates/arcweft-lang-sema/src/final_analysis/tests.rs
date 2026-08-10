@@ -1,6 +1,6 @@
 use std::{
     cell::Cell,
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap},
     sync::{Arc, atomic::AtomicBool},
 };
 
@@ -11,6 +11,8 @@ use arcweft_character::{
     },
     registration_catalog::SourceBackedCharacterCatalog,
 };
+use arcweft_core::entry::TypeLayoutHash;
+use arcweft_dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::{
     database::HirDatabase,
     expr::{HirCallCallee, HirExprKind},
@@ -43,15 +45,16 @@ use arcweft_source::{
 };
 
 use super::{
-    CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType, CheckedAssertionDisposition,
-    CheckedBinding, CheckedBuiltinVariantCase, CheckedExpression, CheckedExpressionResolution,
-    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
-    CheckedIteratorFamily, CheckedPattern, CheckedPatternResolution, CheckedStatement,
-    CheckedStatementRole, CheckedSuspensionRole, CheckedTypeSelection, CheckedValueResolution,
-    CheckedVariantOwner, FinalSemanticAnalysis, FinalSemanticAnalysisControl,
-    FinalSemanticAnalysisError, FinalSemanticAnalysisInput, FinalSemanticCatalogs,
-    PhysicalArgumentEvaluationKind, RegisteredSemanticValueId, ResolvedCallable,
-    analyze_final_project,
+    CallTargetFacts, CandidateEvaluationPass, CandidateExpectedType,
+    CharacterDialogueFieldCoordinate, CharacterDialoguePatchContext, CheckedAssertionDisposition,
+    CheckedBinding, CheckedBuiltinVariantCase, CheckedCharacterDialogueTarget, CheckedExpression,
+    CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem, CheckedItemRole,
+    CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedStatement, CheckedStatementRole, CheckedSuspensionRole,
+    CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner, FinalSemanticAnalysis,
+    FinalSemanticAnalysisControl, FinalSemanticAnalysisError, FinalSemanticAnalysisInput,
+    FinalSemanticCatalogs, PhysicalArgumentEvaluationKind, RegisteredSemanticValueId,
+    ResolvedCallable, analyze_final_project,
 };
 use crate::{
     assertion::{AssertionBuildProfile, AssertionContext, AssertionRuntimePolicy},
@@ -63,15 +66,16 @@ use crate::{
         CallableOverloadIndex, CallableParameter, CallableParameterGroup, CallableParameterIndex,
         CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
         CallableProviderId, CallableRecord, CallableSignatureSchema, CallableValidator,
-        CatalogCallableEntry, CheckedCallArgumentSlotSource, CheckedClosureId,
+        CatalogCallableEntry, CheckedCallArgumentSlotSource, CheckedClosureId, DialogueCallableId,
         EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
         EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
         EnvironmentDeclarationOrdinal, FinalCallCalleeFacts, NonEmptyCallableSet,
         PRODUCTION_CALLABLE_LIMITS, PresentationCallableId, ProjectCallablePath,
         RegisteredCallableCatalog, ResolveCallError, ResolveCallOutcome, ResolverWork,
-        SpreadArgumentPolicy, UnknownCallKind, UnknownNamedArgumentPolicy,
-        prepare_final_call_callee, resolve_call_target,
+        SemanticSignatureSurface, SpreadArgumentPolicy, UnknownCallKind,
+        UnknownNamedArgumentPolicy, prepare_final_call_callee, resolve_call_target,
     },
+    character_dialogue::CharacterDialogueCustomFieldBinding,
     effect_row::EffectRow,
     effects::{EffectId, EffectSet},
     entry::CheckedEntryCatalog,
@@ -79,10 +83,10 @@ use crate::{
     nominal::{ResolvedTypeRefOutcome, TypeNameResolution, TypeResolutionFailure},
     project_index::{ProgramHash, ProjectEntityId, ProjectSemanticIndex},
     registration::{
-        CharacterRegistrar, CharacterRegistrationRequest, EnvironmentCallableLookupInput,
-        EnvironmentCallablePublicationMetadataInput, EnvironmentCallablePublicationRecordInput,
-        EnvironmentCallableSignatureInput, EnvironmentManifestDigest,
-        EnvironmentParameterGroupInput, EnvironmentParameterInput,
+        CharacterDialogueCustomFieldInput, CharacterRegistrar, CharacterRegistrationRequest,
+        EnvironmentCallableLookupInput, EnvironmentCallablePublicationMetadataInput,
+        EnvironmentCallablePublicationRecordInput, EnvironmentCallableSignatureInput,
+        EnvironmentManifestDigest, EnvironmentParameterGroupInput, EnvironmentParameterInput,
         EnvironmentParameterMetadataInput, EnvironmentParameterTypeInput,
         EnvironmentPublicationItemId, EnvironmentTypeProjectionKind, EnvironmentTypeProjectionNode,
         ExternalRegistrationFact, ProjectRegistrationFacts, RegisteredExternalOwner,
@@ -949,6 +953,7 @@ fn resolve_single_call_directly(
         authority,
         owner,
         FinalCallCalleeFacts::new(&expressions, &calls, &nominal_receivers, &enum_variants),
+        CharacterDialoguePatchContext::ReusableValue,
         &PRODUCTION_CALLABLE_LIMITS,
     )
     .expect("free environment Call callee preparation");
@@ -2131,6 +2136,37 @@ fn character_nominal_show_checker_signature_primary_and_schema_equal() {
 }
 
 #[test]
+fn character_dialogue_exact_target_supplies_the_manifest_look_type() {
+    const SOURCE: &str = concat!(
+        "pub character @character.akane Akane as akane {}\n",
+        "fn configure() { let dialogue = akane(look = .normal) }\n",
+    );
+    let fixture = character_nominal_fixture(SOURCE);
+    let report = analyze(&fixture).expect("typed exact CharacterDialogue look");
+    let expected_character = CharacterId::try_new("character.akane").expect("Character identity");
+    let expected_look = TypeKind::character_look(expected_character.clone());
+    let factory = report
+        .expressions()
+        .find_map(|(_, expression)| match expression.resolution() {
+            CheckedExpressionResolution::CharacterDialogueFactory(factory) => Some(factory),
+            _ => None,
+        })
+        .expect("checked CharacterDialogue factory");
+    assert_eq!(
+        factory.target().character(),
+        &crate::types::CharacterDialogueCharacterType::Exact(expected_character)
+    );
+    let [field] = factory.patch().fields() else {
+        panic!("one look patch field")
+    };
+    assert_eq!(field.coordinate(), &CharacterDialogueFieldCoordinate::Look);
+    assert!(matches!(
+        field.operation(),
+        CheckedPatchOperation::Set { ty, .. } if ty == &expected_look
+    ));
+}
+
+#[test]
 fn external_character_entity_reference_retains_registered_owner_without_hir_item() {
     const SOURCE: &str = "fn caller() { show(@character.akane); }\n";
     let fixture = external_character_fixture(SOURCE);
@@ -3240,30 +3276,31 @@ flow @flow.root root {
         .expect("dialogue application fact");
     assert_eq!(
         checked.ty(),
-        &TypeKind::entity_ref(EntityKind::DialogueLine)
+        &TypeKind::DialogueLine(Box::new(TypeKind::Unit))
     );
     let CheckedExpressionResolution::DialogueApplication {
-        character,
+        target: dialogue_target,
         rich_text,
+        ..
     } = checked.resolution()
     else {
         panic!("dialogue application must retain exact Character owner")
     };
     assert!(rich_text.is_valid());
-    assert!(matches!(
-        module
-            .resolve_item(*character)
-            .expect("resolved Character owner")
-            .kind(),
-        HirItemKind::Character(_)
-    ));
+    let CheckedCharacterDialogueTarget::Character {
+        item: Some(character),
+        ..
+    } = dialogue_target
+    else {
+        panic!("direct Character application must retain its checked item")
+    };
     assert!(matches!(
         report
             .expression(target)
             .expect("dialogue target fact")
             .resolution(),
         CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item))
-            if item.retained_owner() == Some(*character)
+            if item.retained_owner() == character.retained_owner()
     ));
 }
 
@@ -3274,7 +3311,7 @@ fn dialogue_line_reference_uses_accepted_project_inventory() {
 pub character @character.alice Alice as alice {}
 
 fn opening() {
-    let line = alice[前[strong]強調[/strong]後]
+    alice[前[strong]強調[/strong]後];
 }
 
 fn reference() {
@@ -3361,10 +3398,10 @@ fn dialogue_configuration_coordinates_are_typed_semantic_metadata() {
 pub character @character.alice Alice as alice {}
 
 fn opening() {
-    let line = alice(
+    alice(
         id = @say.story.greeting,
         text_key = @text.story.greeting,
-    )[前[strong]強調[/strong]後]
+    )[前[strong]強調[/strong]後];
 }
 ",
         None,
@@ -3376,7 +3413,7 @@ fn opening() {
         .collect::<Vec<_>>();
     assert!(resolutions.iter().any(|resolution| matches!(
         resolution,
-        CheckedExpressionResolution::DialogueConfiguration { .. }
+        CheckedExpressionResolution::CharacterDialogueFactory(_)
     )));
     assert!(resolutions.iter().any(|resolution| matches!(
         resolution,
@@ -3391,13 +3428,402 @@ fn opening() {
 }
 
 #[test]
+fn character_dialogue_patch_retains_typed_fields_in_source_order() {
+    let fixture = fixture(
+        r#"
+pub character @character.alice Alice as alice {}
+
+flow @flow.root root {
+    alice(source_locale = "ja-JP", inline_error = None)[Hello[p]]
+}
+"#,
+        None,
+    );
+    let report = analyze(&fixture).expect("typed CharacterDialogue patch analysis");
+    let (factory_owner, factory) = report
+        .expressions()
+        .find_map(|(owner, expression)| match expression.resolution() {
+            CheckedExpressionResolution::CharacterDialogueFactory(factory) => {
+                Some((owner, factory))
+            }
+            _ => None,
+        })
+        .expect("Character factory fact");
+    let call = report
+        .call(factory_owner)
+        .expect("Character factory is retained as one shared-resolver call fact");
+    let CallTargetFact::Selected { selected, .. } = call.target() else {
+        panic!("Character factory must select one callable candidate")
+    };
+    assert_eq!(
+        selected.id(),
+        &CallableCandidateId::Dialogue(DialogueCallableId::CharacterFactory)
+    );
+    assert_eq!(
+        selected.schema().validator(),
+        &CallableValidator::Dialogue(DialogueCallableId::CharacterFactory)
+    );
+    assert_eq!(call.accounting().resolver_invocations(), 1);
+    let [locale, inline_failure] = factory.patch().fields() else {
+        panic!("factory patch must retain two fields")
+    };
+    assert_eq!(
+        locale.coordinate(),
+        &CharacterDialogueFieldCoordinate::SourceLocale
+    );
+    assert!(matches!(
+        locale.operation(),
+        CheckedPatchOperation::Set {
+            ty: TypeKind::String,
+            ..
+        }
+    ));
+    assert_eq!(
+        inline_failure.coordinate(),
+        &CharacterDialogueFieldCoordinate::InlineFailure
+    );
+    assert_eq!(inline_failure.operation(), &CheckedPatchOperation::Clear);
+    let (application_owner, application_patch) = report
+        .expressions()
+        .find_map(|(owner, expression)| match expression.resolution() {
+            CheckedExpressionResolution::DialogueApplication {
+                application_patch: Some(patch),
+                ..
+            } => Some((owner, patch)),
+            _ => None,
+        })
+        .expect("immediate application patch");
+    assert_eq!(application_patch, factory.patch());
+    let application_call = report
+        .call(application_owner)
+        .expect("content application retains the shared resolver selection");
+    let CallTargetFact::Selected {
+        selected,
+        considered,
+    } = application_call.target()
+    else {
+        panic!("content application must select one callable candidate")
+    };
+    assert_eq!(considered.len(), 1);
+    assert_eq!(
+        selected.id(),
+        &CallableCandidateId::Dialogue(DialogueCallableId::ContentApplication)
+    );
+    assert_eq!(
+        selected.schema().validator(),
+        &CallableValidator::Dialogue(DialogueCallableId::ContentApplication)
+    );
+    assert!(application_call.arguments().is_empty());
+    assert_eq!(application_call.accounting().resolver_invocations(), 1);
+}
+
+#[test]
+fn character_dialogue_application_only_coordinates_are_rejected_in_reusable_calls() {
+    let fixture = fixture(
+        r#"
+pub character @character.alice Alice as alice {}
+
+fn configure() {
+    let configured = alice(id = "not-an-application-coordinate")
+}
+"#,
+        None,
+    );
+    let error = analyze(&fixture).expect_err("id is an application-only coordinate");
+    let FinalSemanticAnalysisError::CharacterDialogueApplicationOnlyField { field, field_span } =
+        &error
+    else {
+        panic!("unexpected application-only result: {error:?}")
+    };
+    assert_eq!(field, "id");
+    assert_eq!(error.diagnostic_code(), "AW-CD-007");
+    assert_eq!(
+        &fixture.root_document.text()[field_span.range().start()..field_span.range().end()],
+        "id"
+    );
+    assert_eq!(
+        error
+            .source_diagnostic()
+            .expect("typed application-only diagnostic")
+            .labels()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn character_dialogue_inline_failure_aliases_share_one_semantic_coordinate() {
+    let fixture = fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+flow @flow.root root {
+    alice(inline_error = None, inline_fallback = None)[Hello[p]]
+}
+",
+        None,
+    );
+    let result = analyze(&fixture);
+    let error = result.expect_err("inline-failure aliases share one coordinate");
+    let FinalSemanticAnalysisError::DuplicateCharacterDialogueField {
+        first_span,
+        duplicate_span,
+        ..
+    } = &error
+    else {
+        panic!("unexpected alias-conflict result: {error:?}")
+    };
+    assert_eq!(error.diagnostic_code(), "AW-CD-005");
+    assert_eq!(
+        &fixture.root_document.text()[first_span.range().start()..first_span.range().end()],
+        "inline_error"
+    );
+    assert_eq!(
+        &fixture.root_document.text()[duplicate_span.range().start()..duplicate_span.range().end()],
+        "inline_fallback"
+    );
+    assert_eq!(
+        error
+            .source_diagnostic()
+            .expect("typed duplicate-coordinate diagnostic")
+            .labels()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn character_dialogue_unknown_custom_field_has_typed_diagnostic() {
+    let fixture = fixture(
+        r#"
+pub character @character.alice Alice as alice {}
+
+fn configure() {
+    let configured = alice(mood = "quiet")
+}
+"#,
+        None,
+    );
+    let error = analyze(&fixture).expect_err("unknown custom field must fail closed");
+    let FinalSemanticAnalysisError::UnknownCharacterDialogueField {
+        name,
+        field_span,
+        scope,
+    } = &error
+    else {
+        panic!("unexpected unknown-field result: {error:?}")
+    };
+    assert_eq!(name, "mood");
+    assert_eq!(scope, &CanonicalModulePath::crate_root());
+    assert_eq!(error.diagnostic_code(), "AW-CD-014");
+    assert_eq!(
+        &fixture.root_document.text()[field_span.range().start()..field_span.range().end()],
+        "mood"
+    );
+    assert_eq!(
+        error
+            .source_diagnostic()
+            .expect("typed unknown-field diagnostic")
+            .labels()
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn character_dialogue_custom_field_resolves_through_accepted_world_registry() {
+    let (fixture, field) = custom_dialogue_field_fixture(
+        r#"
+pub character @character.alice Alice as alice {}
+
+flow @flow.root root {
+    alice(mood = "quiet")[Hello[p]]
+}
+"#,
+        true,
+    );
+    let report = analyze(&fixture).expect("typed custom CharacterDialogue field");
+    let (factory_owner, custom) = report
+        .expressions()
+        .find_map(|(owner, expression)| match expression.resolution() {
+            CheckedExpressionResolution::CharacterDialogueFactory(factory) => {
+                factory.patch().fields().first().map(|field| (owner, field))
+            }
+            _ => None,
+        })
+        .expect("custom patch field");
+    assert_eq!(
+        custom.coordinate(),
+        &CharacterDialogueFieldCoordinate::Custom(field)
+    );
+    assert!(matches!(
+        custom.operation(),
+        CheckedPatchOperation::Set {
+            ty: TypeKind::String,
+            ..
+        }
+    ));
+    let CallTargetFact::Selected { selected, .. } = report
+        .call(factory_owner)
+        .expect("custom field call fact")
+        .target()
+    else {
+        panic!("custom field call must select its Dialogue candidate")
+    };
+    let mood = selected.schema().groups()[0]
+        .parameters()
+        .iter()
+        .find(|parameter| parameter.name().is_some_and(|name| name.as_str() == "mood"))
+        .expect("accepted custom binding is part of the shared signature schema");
+    assert_eq!(mood.ty(), &CallableParameterType::Exact(TypeKind::String));
+}
+
+fn custom_dialogue_field_fixture(
+    source: &str,
+    clearable: bool,
+) -> (Fixture, CharacterDialogueCustomFieldId) {
+    let document = source_document(
+        "arcweft-test://sema/final/dialogue-custom-field",
+        "dialogue-custom-field.environment",
+        "mood",
+    );
+    let declaration = document
+        .span(SourceRange::new(0, document.text().len()))
+        .expect("custom field declaration span");
+    let owner = EnvironmentCallableOwner::Adapter(
+        AdapterPackageId::try_new("dialogue-custom-field").expect("adapter package ID"),
+    );
+    let item = EnvironmentPublicationItemId::AdapterSymbol {
+        owner: owner.clone(),
+        path: ProjectSymbolPath::new(
+            ModulePathRoot::ImplicitCrate,
+            [ProjectSymbolSegment::try_new("mood").expect("custom binding")],
+        )
+        .expect("custom field publication path"),
+    };
+    let field = CharacterDialogueCustomFieldId::try_new("character_dialogue_field.mood")
+        .expect("custom field ID");
+    let input = SourceBackedEnvironmentRegistrationInput::new(
+        owner,
+        document.identity().clone(),
+        EnvironmentManifestDigest::from_bytes([91; 32]),
+        [],
+        [],
+        [],
+        [],
+    )
+    .with_character_dialogue_fields([CharacterDialogueCustomFieldInput::new(
+        item,
+        field.clone(),
+        [CharacterDialogueCustomFieldBinding::global("mood")],
+        EnvironmentTypeProjectionNode::new(
+            declaration.clone(),
+            EnvironmentTypeProjectionKind::String,
+        ),
+        None,
+        TypeLayoutHash::from_bytes([9; 32]),
+        clearable,
+        BTreeSet::new(),
+        declaration,
+    )]);
+    let fixture = fixture_with_environment_inputs(source, None, vec![(document, input)]);
+    (fixture, field)
+}
+
+#[test]
+fn character_dialogue_custom_field_type_mismatch_has_typed_diagnostic() {
+    let (fixture, field) = custom_dialogue_field_fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+fn configure() {
+    let configured = alice(mood = 7)
+}
+",
+        true,
+    );
+    let error = analyze(&fixture).expect_err("custom field type mismatch must reject");
+    let FinalSemanticAnalysisError::CharacterDialogueCustomFieldTypeMismatch {
+        field: actual_field,
+        declared,
+        actual,
+        value_span,
+        declaration_span,
+    } = &error
+    else {
+        panic!("unexpected custom-field mismatch result: {error:?}")
+    };
+    assert_eq!(actual_field, &field);
+    assert_eq!(declared.as_ref(), &TypeKind::String);
+    assert_eq!(actual.as_ref(), &TypeKind::I32);
+    assert_eq!(error.diagnostic_code(), "AW-CD-015");
+    assert_eq!(
+        &fixture.root_document.text()[value_span.range().start()..value_span.range().end()],
+        "7"
+    );
+    assert_eq!(
+        declaration_span.source().id().as_str(),
+        "arcweft-test://sema/final/dialogue-custom-field"
+    );
+    assert_eq!(
+        error
+            .source_diagnostic()
+            .expect("typed custom-field mismatch diagnostic")
+            .labels()
+            .len(),
+        2
+    );
+}
+
+#[test]
+fn character_dialogue_non_clearable_custom_field_has_typed_diagnostic() {
+    let (fixture, field) = custom_dialogue_field_fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+flow @flow.root root {
+    alice(mood = None)[Hello[p]]
+}
+",
+        false,
+    );
+    let error = analyze(&fixture).expect_err("non-clearable custom field must reject Clear");
+    let FinalSemanticAnalysisError::CharacterDialogueFieldNotClearable {
+        field: actual,
+        field_span,
+        declaration_span,
+    } = &error
+    else {
+        panic!("unexpected non-clearable field result: {error:?}")
+    };
+    assert_eq!(actual, &field);
+    assert_eq!(error.diagnostic_code(), "AW-CD-016");
+    assert_eq!(
+        &fixture.root_document.text()[field_span.range().start()..field_span.range().end()],
+        "mood"
+    );
+    assert_eq!(
+        declaration_span.source().id().as_str(),
+        "arcweft-test://sema/final/dialogue-custom-field"
+    );
+    let diagnostic = error.source_diagnostic().expect("typed source diagnostic");
+    assert_eq!(
+        diagnostic
+            .code()
+            .map(arcweft_source::DiagnosticCode::as_str),
+        Some("AW-CD-016")
+    );
+    assert_eq!(diagnostic.labels().len(), 2);
+}
+
+#[test]
 fn coordinate_free_dialogue_call_is_typed_configuration_metadata() {
     let fixture = fixture(
         r"
 pub character @character.alice Alice as alice {}
 
 fn opening() {
-    let line = alice()[前[strong]強調[/strong]後]
+    alice()[前[strong]強調[/strong]後];
 }
 ",
         None,
@@ -3405,8 +3831,220 @@ fn opening() {
     let analysis = analyze(&fixture).expect("coordinate-free dialogue configuration analysis");
     assert!(analysis.expressions().any(|(_, checked)| matches!(
         checked.resolution(),
-        CheckedExpressionResolution::DialogueConfiguration { .. }
+        CheckedExpressionResolution::CharacterDialogueFactory(_)
     )));
+}
+
+#[test]
+fn character_dialogue_flows_through_branch_reconfigure_collection_and_capture() {
+    let fixture = fixture(
+        r#"
+pub character @character.alice Alice as alice {}
+pub character @character.bob Bob as bob {}
+
+fn configure(condition: bool) {
+    let dialogue = if condition { alice() } else { bob() }
+    let patched = dialogue(source_locale = "ja-JP")
+    let values = [dialogue, patched]
+    let captured = || { dialogue }
+}
+"#,
+        None,
+    );
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let analysis = analyze(&fixture).expect("CharacterDialogue value-flow matrix");
+    let local_type = |name: &str| {
+        analysis.locals().find_map(|(owner, binding)| {
+            module
+                .resolve_local(owner)
+                .ok()
+                .is_some_and(|local| local.name().as_str() == name)
+                .then(|| binding.ty().clone())
+        })
+    };
+    let any_dialogue = TypeKind::CharacterDialogue(crate::types::CharacterDialogueType::new(
+        crate::types::CharacterDialogueCharacterType::Any,
+    ));
+    assert_eq!(local_type("dialogue"), Some(any_dialogue.clone()));
+    assert_eq!(local_type("patched"), Some(any_dialogue.clone()));
+    assert_eq!(
+        local_type("values"),
+        Some(TypeKind::Vec(Box::new(any_dialogue.clone())))
+    );
+    assert_eq!(
+        local_type("captured"),
+        Some(TypeKind::function(Vec::new(), any_dialogue.clone()))
+    );
+    assert!(
+        analysis
+            .captures()
+            .any(|(_, capture)| capture.ty() == &any_dialogue)
+    );
+    assert!(analysis.expressions().any(|(_, expression)| matches!(
+        expression.resolution(),
+        CheckedExpressionResolution::CharacterDialogueReconfigure(_)
+    )));
+}
+
+#[test]
+fn character_dialogue_is_an_authored_parameter_return_and_alias_type() {
+    let fixture = fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+type Dialogue = CharacterDialogue
+
+fn passthrough(value: Dialogue) -> CharacterDialogue {
+    value
+}
+
+fn configure() {
+    let result = passthrough(alice())
+}
+",
+        None,
+    );
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let analysis = analyze(&fixture).expect("authored CharacterDialogue boundary");
+    let any_dialogue = TypeKind::CharacterDialogue(crate::types::CharacterDialogueType::any());
+    for name in ["value", "result"] {
+        let actual = analysis.locals().find_map(|(owner, binding)| {
+            module
+                .resolve_local(owner)
+                .ok()
+                .is_some_and(|local| local.name().as_str() == name)
+                .then(|| binding.ty())
+        });
+        assert_eq!(actual, Some(&any_dialogue), "local `{name}`");
+    }
+    assert!(analysis.types().any(|(_, ty)| ty == &any_dialogue));
+}
+
+#[test]
+fn generic_identity_preserves_exact_character_dialogue_type() {
+    let fixture = fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+fn identity<T>(value: T) -> T {
+    value
+}
+
+fn configure() {
+    let result = identity(alice())
+}
+",
+        None,
+    );
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let analysis = analyze(&fixture).expect("generic CharacterDialogue identity");
+    let alice = CharacterId::try_new("character.alice").expect("Character ID");
+    let exact = TypeKind::CharacterDialogue(crate::types::CharacterDialogueType::exact(alice));
+    let actual = analysis.locals().find_map(|(owner, binding)| {
+        module
+            .resolve_local(owner)
+            .ok()
+            .is_some_and(|local| local.name().as_str() == "result")
+            .then(|| binding.ty())
+    });
+    assert_eq!(actual, Some(&exact));
+}
+
+#[test]
+fn dialogue_content_signature_help_uses_the_shared_application_schema() {
+    const SOURCE: &str = r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    alice()[前[strong]強調[/strong]後];
+}
+";
+    let fixture = fixture(SOURCE, None);
+    let analysis = analyze(&fixture).expect("typed dialogue application analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let cancellation = AtomicBool::new(false);
+    let byte_offset = SOURCE.find("強調").expect("dialogue content") + "強".len();
+    let outcome = query_signature(
+        SignatureQuery::production(
+            &fixture.registered,
+            &fixture.root_document,
+            module,
+            &analysis,
+            byte_offset,
+            SignatureQueryControl::new(&cancellation, None),
+        )
+        .expect("generation-bound signature query"),
+    )
+    .expect("dialogue content signature help");
+    let SignatureQueryOutcome::Help(help) = outcome else {
+        panic!("dialogue content must be a native signature surface")
+    };
+    assert_eq!(help.surface(), SemanticSignatureSurface::DialogueContent);
+    let active = help.active_parameter().expect("content parameter");
+    assert_eq!(active.group(), CallableGroupIndex::ZERO);
+    assert_eq!(active.parameter().get(), 1);
+    let [signature] = help.signatures() else {
+        panic!("one content-application signature")
+    };
+    assert_eq!(
+        signature.candidate(),
+        &CallableCandidateId::Dialogue(DialogueCallableId::ContentApplication)
+    );
+    let [group] = signature.groups() else {
+        panic!("one content-application parameter group")
+    };
+    assert_eq!(group.parameters().len(), 3);
+    assert_eq!(
+        group.parameters()[1].ty(),
+        &CallableParameterType::Exact(TypeKind::Named("DialogueContent".to_owned()))
+    );
+    assert_eq!(
+        signature.result(),
+        &TypeKind::DialogueLine(Box::new(TypeKind::Unit))
+    );
+}
+
+#[test]
+fn dialogue_line_operation_cannot_escape_into_a_local_binding() {
+    let fixture = fixture(
+        r"
+pub character @character.alice Alice as alice {}
+
+fn opening() {
+    let escaped = alice[Hello[p]]
+}
+",
+        None,
+    );
+    let error = analyze(&fixture).expect_err("DialogueLine local storage must be rejected");
+    let FinalSemanticAnalysisError::DialogueLineEscape { escape_span } = &error else {
+        panic!("unexpected DialogueLine escape result: {error:?}")
+    };
+    assert_eq!(error.diagnostic_code(), "AW-CD-017");
+    assert_eq!(
+        &fixture.root_document.text()[escape_span.range().start()..escape_span.range().end()],
+        "escaped"
+    );
 }
 
 #[test]
@@ -3940,6 +4578,52 @@ fn load_story() -> Unit effects { agent.observe } {
     ));
     assert_eq!(report.ty(nominal_receiver), None);
     assert_eq!(report.type_resolution(nominal_receiver), None);
+}
+
+#[test]
+fn agent_intrinsic_call_retains_an_admissible_result_type() {
+    let fixture = fixture(
+        r"
+fn run_smoke() -> Result<Unit, AgentError>
+effects { agent.observe }
+{
+    observe()
+    return Ok(())
+}
+",
+        None,
+    );
+
+    let result = analyze(&fixture);
+    if let Err(error) = &result {
+        let module = fixture
+            .project
+            .executable_view()
+            .expect("executable HIR")
+            .module(&CanonicalModulePath::crate_root())
+            .expect("root HIR module");
+        panic!(
+            "Agent intrinsic call must retain a final type: {error:?}\nexpressions: {:#?}",
+            module.expressions().collect::<Vec<_>>()
+        );
+    }
+}
+
+#[test]
+fn direct_return_operand_must_match_the_ordinary_function_result() {
+    let fixture = fixture(
+        r"
+fn run_smoke() -> Result<Unit, AgentError> {
+    return 1
+}
+",
+        None,
+    );
+
+    assert!(matches!(
+        analyze(&fixture),
+        Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { .. })
+    ));
 }
 
 #[test]

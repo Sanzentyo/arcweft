@@ -9,6 +9,8 @@ repository.workspace = true
 [dependencies]
 blake3.workspace = true
 arcweft-core = { workspace = true }
+arcweft-character = { workspace = true }
+arcweft-dialogue = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-syntax = { workspace = true }

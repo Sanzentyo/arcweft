@@ -52,6 +52,8 @@ use arcweft_view::{
 use arcweft_view::{ViewValueProgram, ViewValueProgramId};
 use std::collections::{BTreeMap, BTreeSet};
 
+mod support;
+
 struct BundleViewRuntime;
 
 impl BundleViewRuntime {
@@ -111,6 +113,11 @@ fn dialogue_frame(
         RuntimeLineId::from_runtime_line_value(line).expect("runtime line identity"),
         TextKey::try_new(line.replacen("say.", "text.", 1)).expect("text key"),
         RichTextDocument::new(nodes),
+        support::character_plan("character.test"),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            support::dialogue_profile(),
+            support::dialogue_profile_revision(),
+        ),
         Vec::new(),
         dialogue_source_ref(),
     );
@@ -2363,8 +2370,8 @@ fn typed_dialogue_projection_uses_one_persistent_authored_mount_per_occurrence()
     assert_eq!(first.mounts[0].dialogue, Some(dialogue_view_state(40)));
     assert!(matches!(
         &first.mounts[0].text[0].value,
-        BundleViewTextValue::DialogueCharacterDisplayName { label, frame }
-            if label == "Hero" && frame.as_ref() == &display_frame
+        BundleViewTextValue::CharacterDisplayName { frame }
+            if frame.character.display_name == "Hero" && frame.as_ref() == &display_frame
     ));
     assert!(matches!(
         &first.mounts[0].text[1].value,

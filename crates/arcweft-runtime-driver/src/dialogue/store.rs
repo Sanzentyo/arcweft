@@ -6,6 +6,7 @@ use super::{
     DialogueViewOccurrence, DialogueViewPrimaryAction, DialogueViewReveal, DialogueViewStage,
     DialogueViewState,
 };
+use arcweft_character::id::CharacterId;
 use arcweft_core::plan::RuntimeLineId;
 use arcweft_text_model::LineDisplayFrame;
 use serde::{Deserialize, Serialize};
@@ -95,6 +96,44 @@ impl DialoguePresentationStore {
                 .filter(|entry| entry.waiting_for_advance)
                 .map(|entry| (dialogue, entry))
         })
+    }
+
+    /// Re-resolves every retained frame's presentation name in one atomic store update.
+    ///
+    /// The resolver receives only the typed Character identity retained by the
+    /// frame. Any lookup or revision failure leaves the live store unchanged.
+    pub(crate) fn reproject_character_display_names(
+        &mut self,
+        mut resolve: impl FnMut(&CharacterId) -> Result<String, String>,
+    ) -> Result<bool, DialoguePresentationStoreError> {
+        let mut next = self.clone();
+        let mut changed = false;
+        for dialogue in next.presentations.values_mut() {
+            let mut dialogue_changed = false;
+            for entry in &mut dialogue.entries {
+                let display_name = resolve(&entry.frame.character.id).map_err(|message| {
+                    DialoguePresentationStoreError::InvalidSnapshot {
+                        message: format!(
+                            "dialogue entry {:?} Character presentation reprojection failed: {message}",
+                            entry.id
+                        ),
+                    }
+                })?;
+                if entry.frame.character.display_name != display_name {
+                    entry.frame.character.display_name = display_name;
+                    dialogue_changed = true;
+                }
+            }
+            if dialogue_changed {
+                dialogue.bump_revision()?;
+                changed = true;
+            }
+        }
+        if changed {
+            next.validate()?;
+            *self = next;
+        }
+        Ok(changed)
     }
 
     /// Supplies every retained occurrence to the shared authored View evaluator.

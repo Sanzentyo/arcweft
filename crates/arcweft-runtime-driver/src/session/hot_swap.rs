@@ -5,9 +5,10 @@ use super::{
     BundlePatchReadiness, BundlePatchReadinessReport, BundlePresentationSnapshot, BundleSession,
     BundleSessionArtifactIdentity, BundleSessionError, BundleView, GenerationId,
     GenerationRuntimeImage, PatchMaterializedTarget, ProgramGeneration, ReadBudget,
-    SwapCompatibility, ViewRuntimeTextControl, apply_patch_bundle, build_session_runtime,
-    build_session_runtime_preserving_executor, classify_swap_for_entry, decode_patch_bundle,
-    reconciled_root_handles_for_restore, validate_virtual_list_scroll_owner,
+    SwapCompatibility, ViewProjectionInput, ViewRuntimeTextControl, apply_patch_bundle,
+    build_session_runtime, build_session_runtime_preserving_executor, classify_swap_for_entry,
+    decode_patch_bundle, project_view_resources, reconciled_root_handles_for_restore,
+    validate_virtual_list_scroll_owner,
 };
 
 impl BundleSession {
@@ -99,6 +100,7 @@ impl BundleSession {
         let mut next_environment = self.environment.clone();
         let _environment_update =
             next_environment.replace_theme(next_runtime.view_theme_environment)?;
+        let mut next_presentation = self.presentation.clone();
         preserve_runtime_text_control_values(&self.text_inputs, &mut next_runtime.text_inputs);
         if matches!(
             compatibility,
@@ -116,7 +118,46 @@ impl BundleSession {
             }
         }
         if compatibility == SwapCompatibility::ContentOnly {
-            let dialogue = self.presentation.dialogue.view_inputs();
+            let catalog_changed = match (
+                self.character_presentation.as_ref(),
+                next_runtime.character_presentation.as_ref(),
+            ) {
+                (Some(current), Some(candidate)) => current.data() != candidate.data(),
+                (None, None) => false,
+                _ => true,
+            } || self.active_locale != next_runtime.active_locale;
+            if catalog_changed && !next_presentation.dialogue.is_empty() {
+                let catalog = next_runtime.character_presentation.as_ref().ok_or_else(|| {
+                    BundleHotSwapError::CharacterPresentation {
+                        message: "replacement removed the Character catalog required by retained dialogue"
+                            .to_owned(),
+                    }
+                })?;
+                let active_locale = next_runtime.active_locale.as_ref().ok_or_else(|| {
+                    BundleHotSwapError::CharacterPresentation {
+                        message:
+                            "replacement removed the active locale required by retained dialogue"
+                                .to_owned(),
+                    }
+                })?;
+                let locale = active_locale.character_name_locale();
+                let changed = next_presentation
+                    .dialogue
+                    .reproject_character_display_names(|character| {
+                        catalog
+                            .data()
+                            .resolve(character, &locale)
+                            .map(|resolved| resolved.value().to_owned())
+                            .map_err(|error| error.to_string())
+                    })
+                    .map_err(|error| BundleHotSwapError::CharacterPresentation {
+                        message: error.to_string(),
+                    })?;
+                if changed {
+                    next_presentation.revision = next_presentation.revision.saturating_add(1);
+                }
+            }
+            let dialogue = next_presentation.dialogue.view_inputs();
             next_runtime
                 .view_runtime
                 .validate_dialogue_inputs(&dialogue)
@@ -142,6 +183,33 @@ impl BundleSession {
                 .map_err(|error| BundleHotSwapError::ViewRuntime {
                     message: error.to_string(),
                 })?;
+            let frame = next_runtime.view_runtime.evaluate_with_dialogue(
+                &next_presentation.presentation_handles,
+                &dialogue,
+                &[],
+                next_environment.effective().reduced_motion(),
+            );
+            drop(dialogue);
+            if next_runtime.view_runtime.has_program() {
+                let executable_definitions = next_runtime.view_runtime.definition_ids();
+                let projected = project_view_resources(
+                    &frame,
+                    &ViewProjectionInput {
+                        executable_definitions: &executable_definitions,
+                        current_images: &next_presentation.images,
+                        current_text_inputs: &next_presentation.text_inputs,
+                        images: &next_runtime.image_objects,
+                        text_inputs: &next_runtime.text_inputs,
+                        action_buttons: &next_runtime.action_buttons,
+                        scroll_regions: &next_runtime.scroll_regions,
+                        surfaces: &next_runtime.surfaces,
+                        focus_groups: &next_runtime.focus_groups,
+                        focus_navigation: &next_runtime.focus_navigation,
+                    },
+                );
+                next_presentation.replace_view_resources(projected);
+            }
+            next_presentation.replace_view_frame(frame);
         }
         if compatibility == SwapCompatibility::ContentOnly
             && let Err(error) = self
@@ -166,6 +234,8 @@ impl BundleSession {
                     .source_display_name()
                     .clone_into(&mut self.source_label);
                 self.dialogue_content = bundle.dialogue_content.clone();
+                self.character_presentation = next_runtime.character_presentation.clone();
+                self.active_locale = next_runtime.active_locale.clone();
                 self.image_objects.clone_from(&bundle.image_objects);
                 self.text_inputs.clone_from(&next_runtime.text_inputs);
                 self.action_buttons.clone_from(&next_runtime.action_buttons);
@@ -177,6 +247,7 @@ impl BundleSession {
                 self.fx_definitions.clone_from(&next_runtime.fx_definitions);
                 self.view_runtime = next_runtime.view_runtime.clone();
                 self.view_style_palettes = next_runtime.view_style_palettes;
+                self.presentation = next_presentation;
             }
             SwapCompatibility::CodeCompatible => {
                 self.activate_runtime(next_runtime.clone());

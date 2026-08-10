@@ -4,6 +4,7 @@ use crate::app::project::{
 };
 use crate::output::RuntimeProfilePhase;
 use arcweft_bundle::resource_codec::SourceMapSection;
+use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_compiler::{
     project::{
         CompiledProject, ProjectCompilationContext, ProjectCompilationSession, compile_project,
@@ -46,6 +47,8 @@ pub(in crate::app) struct ProfileCompiledRuntimePlan {
     pub(in crate::app) line_task_groups: usize,
     pub(in crate::app) runtime_plan_stats: RuntimePlanLowerStats,
     pub(in crate::app) dialogue_content_catalog: DialogueContentCatalog,
+    pub(in crate::app) character_presentation_catalog:
+        Option<Arc<CharacterPresentationCatalogData>>,
     pub(in crate::app) product_awbc: AwbcProgram,
     pub(in crate::app) bytecode: BytecodeProgram,
     pub(in crate::app) bytecode_stats: BytecodeStats,
@@ -215,6 +218,7 @@ pub(in crate::app) fn compile_accepted_project_runtime_plan(
     let runtime_plan_report = compiled.runtime_plan().clone();
     let plan = runtime_plan_report.plan;
     let dialogue_content_catalog = runtime_plan_report.dialogue_content_catalog;
+    let character_presentation_catalog = runtime_plan_report.character_presentation_catalog;
     let runtime_plan_stats = runtime_plan_report.stats;
     let product_awbc =
         profile_lower_product_awbc(selection, &plan, &dialogue_content_catalog, phases)?;
@@ -241,6 +245,7 @@ pub(in crate::app) fn compile_accepted_project_runtime_plan(
         line_task_groups,
         runtime_plan_stats,
         dialogue_content_catalog,
+        character_presentation_catalog,
         product_awbc,
         bytecode,
         bytecode_stats,

@@ -14,7 +14,8 @@ pub use diagnostic::{
 };
 pub(crate) use environment_input::BoundEnvironmentRegistrationInput;
 pub use environment_input::{
-    AcceptedNominalInputVisibility, AcceptedNominalInventoryInput, EnvironmentCallableLookupInput,
+    AcceptedNominalInputVisibility, AcceptedNominalInventoryInput,
+    CharacterDialogueCustomFieldInput, EnvironmentCallableLookupInput,
     EnvironmentCallablePublicationMetadataInput, EnvironmentCallablePublicationRecordInput,
     EnvironmentCallableSignatureInput, EnvironmentManifestDigest, EnvironmentParameterGroupInput,
     EnvironmentParameterInput, EnvironmentParameterMetadataInput, EnvironmentParameterTypeInput,

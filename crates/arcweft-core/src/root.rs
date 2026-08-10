@@ -776,6 +776,7 @@ fn parse_reducer_result(value: RuntimeValue) -> Result<ParsedReducerResult, Stri
 }
 
 fn parse_reduction(value: RuntimeValue) -> Result<ParsedReducerResult, String> {
+    let value = unwrap_named_variant(value, "Reduction")?;
     let fields = record_fields(value, "Reduction")?;
     let state = fields
         .get("state")

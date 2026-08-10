@@ -553,16 +553,24 @@ pub struct PreparedDialogueViewState {
 /// Semantic ownership for one canonical prepared-text item.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PreparedTextOwnerKind {
-    /// Dialogue content rendered inside one persistent authored View mount.
+    /// Dialogue text rendered inside one persistent authored View mount.
     DialogueView {
         dialogue: u64,
         entry: u64,
         mount: u64,
+        role: DialoguePreparedTextRole,
     },
     /// Authored or Rust-backed View text.
     View { mount: u64 },
     /// Shared player control text associated with an interaction target.
     Control,
+}
+
+/// Semantic role of one shaped dialogue text item.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DialoguePreparedTextRole {
+    CharacterDisplayName,
+    Content,
 }
 
 /// Renderer-neutral identity and geometry associated with one prepared item.

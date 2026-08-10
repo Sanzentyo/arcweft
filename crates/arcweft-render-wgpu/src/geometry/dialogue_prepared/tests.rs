@@ -1,6 +1,17 @@
-use arcweft_character::id::CharacterId;
+use arcweft_character::{
+    id::CharacterId,
+    presentation_name::{
+        CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
+        CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+    },
+};
 use arcweft_core::{entry::RuntimeValueDigest, plan::RuntimeLineId};
-use arcweft_dialogue::InlineFailurePolicy;
+use arcweft_dialogue::{
+    DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy,
+    character_presentation::{
+        CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
+    },
+};
 use arcweft_id::TextKey;
 use arcweft_presentation::{
     fx::{
@@ -13,12 +24,16 @@ use arcweft_presentation::{
     hit::HitRect,
 };
 use arcweft_render_text::{RuntimeLineContext, TextWeight, resolve_frame};
-use arcweft_source::{ProductSourceRef, SourceDocument, SourceDocumentId, SourceName};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
+use arcweft_source::{
+    ProductSourceRef, SourceDocument, SourceDocumentId, SourceName, SourceSetRevision,
+};
 use arcweft_text_model::{
     CharacterDialoguePresentationConfig, DialogueContentSpec, DialoguePresentationCharacter,
     LineDisplayFrame, RichTextControl, RichTextDocument, RichTextLayout, RichTextNode,
     RichTextSpanKind, RichTextStyle, RichTextWritingMode,
 };
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use std::collections::BTreeMap;
 
 use super::*;
@@ -33,6 +48,38 @@ fn test_source_ref() -> ProductSourceRef {
     )
     .expect("test document");
     ProductSourceRef::try_for_identity(source.identity()).expect("product source reference")
+}
+
+fn test_character_plan() -> CheckedCharacterPresentationPlan {
+    CheckedCharacterPresentationPlan::try_new(
+        CharacterPresentationTargetEvidence::Exact(
+            CharacterId::try_new("character.narrator").expect("character identity"),
+        ),
+        CharacterPresentationCatalogGeneration::new(
+            CharacterPresentationCatalogRevision::INITIAL,
+            CharacterPresentationSemanticDigest::from_bytes([1; 32]),
+            CharacterPresentationLocalePolicyDigest::from_bytes([2; 32]),
+        ),
+    )
+    .expect("checked Character presentation plan")
+}
+
+fn test_dialogue_profile_revision() -> DialogueProfileRevision {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("render-wgpu-dialogue-profile-test").unwrap(),
+        SourceName::Memory,
+        "schema = 1\n",
+    )
+    .unwrap();
+    let sources = SourceSetRevision::try_for_identities([source.identity()]).unwrap();
+    DialogueProfileRevision::from_admitted_parts(
+        source.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.render_wgpu_dialogue").unwrap(),
+        AcceptedViewProgramRevision::try_from_bytes([0x41; 32]).unwrap(),
+        ResourceTypeRegistry::empty().digest(),
+    )
 }
 
 fn runtime_line_context() -> RuntimeLineContext {
@@ -597,6 +644,11 @@ fn frame(nodes: Vec<RichTextNode>) -> LineDisplayFrame {
         RuntimeLineId::canonical("prepared.dialogue.test").expect("line id"),
         TextKey::try_new("text.prepared.dialogue.test").expect("text key"),
         RichTextDocument::new(nodes),
+        test_character_plan(),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            DialoguePresentationProfile::engine_default(),
+            test_dialogue_profile_revision(),
+        ),
         Vec::new(),
         test_source_ref(),
     );

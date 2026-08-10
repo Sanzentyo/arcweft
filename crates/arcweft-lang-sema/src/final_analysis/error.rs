@@ -1,11 +1,13 @@
 //! Publication and semantic-analysis failures.
 
+use arcweft_dialogue::CharacterDialogueCustomFieldId;
+use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_source::{Diagnostic, DiagnosticLabel, DiagnosticSeverity, SourceSpan};
 use thiserror::Error;
 
 use super::{
-    AssertionContext, AssertionMode, CheckedRichTextReport, EffectSet, ExprId, ItemId, LocalId,
-    PatternId, StmtId, TypeId, TypeKind,
+    AssertionContext, AssertionMode, CharacterDialogueFieldCoordinate, CheckedRichTextReport,
+    EffectSet, ExprId, ItemId, LocalId, PatternId, StmtId, TypeId, TypeKind,
 };
 use crate::callable::{CheckedCallableId, UnknownCallKind};
 
@@ -162,6 +164,43 @@ pub enum FinalSemanticAnalysisError {
     ValueResolutionFailed { owner: ExprId },
     #[error("shared callable resolution failed for expression {owner:?}")]
     CallResolutionFailed { owner: ExprId },
+    #[error("CharacterDialogue patch on expression {owner:?} has an invalid argument shape")]
+    InvalidCharacterDialoguePatch { owner: ExprId },
+    #[error("CharacterDialogue patch uses unknown field `{name}` in module {scope:?}")]
+    UnknownCharacterDialogueField {
+        name: String,
+        field_span: SourceSpan,
+        scope: CanonicalModulePath,
+    },
+    #[error("CharacterDialogue patch repeats field coordinate {coordinate:?}")]
+    DuplicateCharacterDialogueField {
+        coordinate: CharacterDialogueFieldCoordinate,
+        first_span: SourceSpan,
+        duplicate_span: SourceSpan,
+    },
+    #[error("CharacterDialogue field `{field}` expects {declared:?}, found {actual:?}")]
+    CharacterDialogueCustomFieldTypeMismatch {
+        field: CharacterDialogueCustomFieldId,
+        declared: Box<TypeKind>,
+        actual: Box<TypeKind>,
+        value_span: SourceSpan,
+        declaration_span: SourceSpan,
+    },
+    #[error("CharacterDialogue field `{field}` is only valid on an immediate content application")]
+    CharacterDialogueApplicationOnlyField {
+        field: String,
+        field_span: SourceSpan,
+    },
+    #[error("CharacterDialogue patch field on expression {owner:?} has an incompatible type")]
+    CharacterDialogueFieldType { owner: ExprId },
+    #[error("CharacterDialogue custom field `{field}` is not clearable")]
+    CharacterDialogueFieldNotClearable {
+        field: CharacterDialogueCustomFieldId,
+        field_span: SourceSpan,
+        declaration_span: SourceSpan,
+    },
+    #[error("DialogueLine execution operation cannot escape into a runtime value")]
+    DialogueLineEscape { escape_span: SourceSpan },
     #[error("unknown function `{name}`")]
     UnknownCallTarget {
         owner: ExprId,
@@ -195,6 +234,25 @@ pub enum FinalSemanticAnalysisError {
 }
 
 impl FinalSemanticAnalysisError {
+    /// Reports that a failed ambiguous postfix probe had already selected the
+    /// typed Dialogue application family. Such failures are semantic errors
+    /// inside a viable Dialogue interpretation, not evidence that both
+    /// postfix interpretations were absent.
+    pub(super) const fn proves_dialogue_postfix_candidate(&self) -> bool {
+        matches!(
+            self,
+            Self::InvalidRichTextAttributes { .. }
+                | Self::RichTextSourceQuery { .. }
+                | Self::InvalidCharacterDialoguePatch { .. }
+                | Self::UnknownCharacterDialogueField { .. }
+                | Self::DuplicateCharacterDialogueField { .. }
+                | Self::CharacterDialogueCustomFieldTypeMismatch { .. }
+                | Self::CharacterDialogueApplicationOnlyField { .. }
+                | Self::CharacterDialogueFieldType { .. }
+                | Self::CharacterDialogueFieldNotClearable { .. }
+        )
+    }
+
     /// Stable compiler/LSP diagnostic code owned by the final semantic authority.
     pub const fn diagnostic_code(&self) -> &'static str {
         match self {
@@ -212,6 +270,12 @@ impl FinalSemanticAnalysisError {
                 ..
             } => "sema.await.error_mismatch",
             Self::EffectUpperBoundExceeded { .. } => "AWF-EFX-001",
+            Self::DuplicateCharacterDialogueField { .. } => "AW-CD-005",
+            Self::CharacterDialogueApplicationOnlyField { .. } => "AW-CD-007",
+            Self::UnknownCharacterDialogueField { .. } => "AW-CD-014",
+            Self::CharacterDialogueCustomFieldTypeMismatch { .. } => "AW-CD-015",
+            Self::CharacterDialogueFieldNotClearable { .. } => "AW-CD-016",
+            Self::DialogueLineEscape { .. } => "AW-CD-017",
             _ => "sema.final_analysis",
         }
     }
@@ -224,23 +288,12 @@ impl FinalSemanticAnalysisError {
                 name,
                 call_source,
                 ..
-            } => Some(
-                Diagnostic::new(
-                    DiagnosticSeverity::Error,
-                    match kind {
-                        UnknownCallKind::Free => format!("unknown function `{name}`"),
-                        UnknownCallKind::Method => format!("unknown method `{name}`"),
-                        UnknownCallKind::AssociatedType => {
-                            format!("unknown associated function `{name}`")
-                        }
-                    },
-                )
-                .with_code(self.diagnostic_code())
-                .with_label(DiagnosticLabel::primary(
-                    call_source.clone(),
-                    Some("no registered callable candidate matches this target".to_owned()),
-                )),
-            ),
+            } => Some(unknown_call_diagnostic(
+                *kind,
+                name,
+                call_source,
+                self.diagnostic_code(),
+            )),
             Self::PropagationErrorMismatch {
                 operator,
                 operand_error,
@@ -248,53 +301,277 @@ impl FinalSemanticAnalysisError {
                 operator_source,
                 return_source,
                 ..
-            } => Some(
-                Diagnostic::new(
-                    DiagnosticSeverity::Error,
-                    format!(
-                        "{} propagates error type {}, but the enclosing return boundary requires {}",
-                        match operator {
-                            PropagationOperator::Try => "try",
-                            PropagationOperator::Await => "await",
-                        },
-                        operand_error.source_label(),
-                        return_error.source_label(),
-                    ),
-                )
-                .with_code(self.diagnostic_code())
-                .with_label(DiagnosticLabel::primary(
-                    operator_source.clone(),
-                    Some("propagated error type does not match this boundary".to_owned()),
-                ))
-                .with_label(DiagnosticLabel::secondary(
-                    return_source.clone(),
-                    Some("enclosing return error is declared here".to_owned()),
-                )),
-            ),
+            } => Some(propagation_diagnostic(
+                *operator,
+                operand_error,
+                return_error,
+                operator_source,
+                return_source,
+                self.diagnostic_code(),
+            )),
             Self::EffectUpperBoundExceeded {
                 callable,
                 missing,
                 contract_source,
                 trace_notes,
                 ..
-            } => {
-                let mut diagnostic = Diagnostic::new(
-                    DiagnosticSeverity::Error,
-                    format!(
-                        "callable `{callable}` performs effects {missing} outside its declared upper bound"
-                    ),
-                )
-                .with_code(self.diagnostic_code())
-                .with_label(DiagnosticLabel::primary(
-                    contract_source.clone(),
-                    Some("declared effect upper bound is exceeded".to_owned()),
-                ));
-                for note in trace_notes {
-                    diagnostic = diagnostic.with_note(note.clone());
-                }
-                Some(diagnostic)
-            }
-            _ => None,
+            } => Some(effect_upper_bound_diagnostic(
+                callable,
+                missing,
+                contract_source,
+                trace_notes,
+                self.diagnostic_code(),
+            )),
+            Self::DialogueLineEscape { escape_span } => Some(dialogue_line_escape_diagnostic(
+                escape_span,
+                self.diagnostic_code(),
+            )),
+            _ => character_dialogue_diagnostic(self),
         }
     }
+}
+
+fn unknown_call_diagnostic(
+    kind: UnknownCallKind,
+    name: &str,
+    call_source: &SourceSpan,
+    code: &'static str,
+) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        match kind {
+            UnknownCallKind::Free => format!("unknown function `{name}`"),
+            UnknownCallKind::Method => format!("unknown method `{name}`"),
+            UnknownCallKind::AssociatedType => format!("unknown associated function `{name}`"),
+        },
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        call_source.clone(),
+        Some("no registered callable candidate matches this target".to_owned()),
+    ))
+}
+
+fn propagation_diagnostic(
+    operator: PropagationOperator,
+    operand_error: &TypeKind,
+    return_error: &TypeKind,
+    operator_source: &SourceSpan,
+    return_source: &SourceSpan,
+    code: &'static str,
+) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        format!(
+            "{} propagates error type {}, but the enclosing return boundary requires {}",
+            match operator {
+                PropagationOperator::Try => "try",
+                PropagationOperator::Await => "await",
+            },
+            operand_error.source_label(),
+            return_error.source_label(),
+        ),
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        operator_source.clone(),
+        Some("propagated error type does not match this boundary".to_owned()),
+    ))
+    .with_label(DiagnosticLabel::secondary(
+        return_source.clone(),
+        Some("enclosing return error is declared here".to_owned()),
+    ))
+}
+
+fn effect_upper_bound_diagnostic(
+    callable: &str,
+    missing: &EffectSet,
+    contract_source: &SourceSpan,
+    trace_notes: &[String],
+    code: &'static str,
+) -> Diagnostic {
+    let mut diagnostic = Diagnostic::new(
+        DiagnosticSeverity::Error,
+        format!(
+            "callable `{callable}` performs effects {missing} outside its declared upper bound"
+        ),
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        contract_source.clone(),
+        Some("declared effect upper bound is exceeded".to_owned()),
+    ));
+    for note in trace_notes {
+        diagnostic = diagnostic.with_note(note.clone());
+    }
+    diagnostic
+}
+
+fn dialogue_line_escape_diagnostic(escape_span: &SourceSpan, code: &'static str) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        "DialogueLine is a line-execution operation and cannot be stored, captured, returned, or passed as a runtime value",
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        escape_span.clone(),
+        Some("this operation escapes its line-execution boundary".to_owned()),
+    ))
+}
+
+fn character_dialogue_diagnostic(error: &FinalSemanticAnalysisError) -> Option<Diagnostic> {
+    let code = error.diagnostic_code();
+    match error {
+        FinalSemanticAnalysisError::UnknownCharacterDialogueField {
+            name,
+            field_span,
+            scope,
+        } => Some(unknown_character_dialogue_field_diagnostic(
+            name, field_span, scope, code,
+        )),
+        FinalSemanticAnalysisError::DuplicateCharacterDialogueField {
+            coordinate,
+            first_span,
+            duplicate_span,
+        } => Some(duplicate_character_dialogue_field_diagnostic(
+            coordinate,
+            first_span,
+            duplicate_span,
+            code,
+        )),
+        FinalSemanticAnalysisError::CharacterDialogueCustomFieldTypeMismatch {
+            field,
+            declared,
+            actual,
+            value_span,
+            declaration_span,
+        } => Some(character_dialogue_type_mismatch_diagnostic(
+            field,
+            declared,
+            actual,
+            value_span,
+            declaration_span,
+            code,
+        )),
+        FinalSemanticAnalysisError::CharacterDialogueApplicationOnlyField { field, field_span } => {
+            Some(character_dialogue_application_only_diagnostic(
+                field, field_span, code,
+            ))
+        }
+        FinalSemanticAnalysisError::CharacterDialogueFieldNotClearable {
+            field,
+            field_span,
+            declaration_span,
+        } => Some(character_dialogue_not_clearable_diagnostic(
+            field,
+            field_span,
+            declaration_span,
+            code,
+        )),
+        _ => None,
+    }
+}
+
+fn unknown_character_dialogue_field_diagnostic(
+    name: &str,
+    field_span: &SourceSpan,
+    scope: &CanonicalModulePath,
+    code: &'static str,
+) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        format!("unknown CharacterDialogue custom field `{name}` in module {scope:?}"),
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        field_span.clone(),
+        Some("no accepted custom-field binding matches this name".to_owned()),
+    ))
+}
+
+fn duplicate_character_dialogue_field_diagnostic(
+    coordinate: &CharacterDialogueFieldCoordinate,
+    first_span: &SourceSpan,
+    duplicate_span: &SourceSpan,
+    code: &'static str,
+) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        format!("CharacterDialogue field {coordinate:?} is configured more than once"),
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        duplicate_span.clone(),
+        Some("this field repeats the same semantic coordinate".to_owned()),
+    ))
+    .with_label(DiagnosticLabel::secondary(
+        first_span.clone(),
+        Some("the coordinate was first configured here".to_owned()),
+    ))
+}
+
+fn character_dialogue_type_mismatch_diagnostic(
+    field: &CharacterDialogueCustomFieldId,
+    declared: &TypeKind,
+    actual: &TypeKind,
+    value_span: &SourceSpan,
+    declaration_span: &SourceSpan,
+    code: &'static str,
+) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        format!(
+            "CharacterDialogue custom field `{field}` expects {}, found {}",
+            declared.source_label(),
+            actual.source_label(),
+        ),
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        value_span.clone(),
+        Some("this value does not match the accepted field type".to_owned()),
+    ))
+    .with_label(DiagnosticLabel::secondary(
+        declaration_span.clone(),
+        Some("the custom-field type is declared here".to_owned()),
+    ))
+}
+
+fn character_dialogue_application_only_diagnostic(
+    field: &str,
+    field_span: &SourceSpan,
+    code: &'static str,
+) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        format!(
+            "CharacterDialogue field `{field}` is only valid on an immediate content application"
+        ),
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        field_span.clone(),
+        Some("move this coordinate to the outer content application".to_owned()),
+    ))
+}
+
+fn character_dialogue_not_clearable_diagnostic(
+    field: &CharacterDialogueCustomFieldId,
+    field_span: &SourceSpan,
+    declaration_span: &SourceSpan,
+    code: &'static str,
+) -> Diagnostic {
+    Diagnostic::new(
+        DiagnosticSeverity::Error,
+        format!("CharacterDialogue custom field `{field}` cannot be cleared"),
+    )
+    .with_code(code)
+    .with_label(DiagnosticLabel::primary(
+        field_span.clone(),
+        Some("`None` requests Clear for this non-clearable field".to_owned()),
+    ))
+    .with_label(DiagnosticLabel::secondary(
+        declaration_span.clone(),
+        Some("the accepted custom-field descriptor is declared here".to_owned()),
+    ))
 }

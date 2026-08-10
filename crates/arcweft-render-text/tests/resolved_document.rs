@@ -18,6 +18,8 @@ use arcweft_text_model::{
 use arcweft_view::ViewId;
 use std::collections::BTreeMap;
 
+mod support;
+
 #[test]
 fn shaping_language_uses_the_shared_canonical_locale_owner() {
     let language = LanguageTag::new("zh-hant-tw").unwrap();
@@ -75,6 +77,11 @@ fn line(nodes: Vec<RichTextNode>) -> DialogueContentSpec {
         RuntimeLineId::canonical("resolved.document.test").expect("canonical test line"),
         TextKey::try_new("text.resolved.document.test").expect("text key"),
         RichTextDocument::new(nodes),
+        support::character_plan("character.test"),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            support::dialogue_profile(),
+            support::dialogue_profile_revision(),
+        ),
         Vec::new(),
         source_ref(),
     )

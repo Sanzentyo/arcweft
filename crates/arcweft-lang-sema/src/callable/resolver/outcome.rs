@@ -483,6 +483,10 @@ const fn language_origin_matches(id: &CallableCandidateId, family: LanguageCalla
                 LanguageCallableFamily::Presentation
             )
             | (
+                CallableCandidateId::Dialogue(_),
+                LanguageCallableFamily::Dialogue
+            )
+            | (
                 CallableCandidateId::CollectionMethod(_),
                 LanguageCallableFamily::CollectionMethod
             )
@@ -538,6 +542,10 @@ fn instantiation_matches(id: &CallableCandidateId, instantiation: &CallableInsta
         | (CallableCandidateId::Option(_), CallableInstantiation::Option { .. })
         | (
             CallableCandidateId::Presentation(_),
+            CallableInstantiation::Character { .. } | CallableInstantiation::None,
+        )
+        | (
+            CallableCandidateId::Dialogue(_),
             CallableInstantiation::Character { .. } | CallableInstantiation::None,
         )
         | (

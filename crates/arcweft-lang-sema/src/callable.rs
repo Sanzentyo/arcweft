@@ -9,6 +9,7 @@ mod arguments;
 mod builder;
 mod catalog;
 mod checked_catalog;
+mod dialogue;
 mod digest;
 mod error;
 mod facts;
@@ -41,6 +42,10 @@ pub use checked_catalog::{
     EffectItemSource, EffectPermission,
 };
 pub(crate) use checked_catalog::{CheckedCallableCatalogBuildError, CheckedCallableCatalogBuilder};
+pub use dialogue::{
+    CharacterDialoguePatchContext, DialogueCallableId, DialogueCalleeIdentity,
+    DialogueSchemaContext,
+};
 pub use digest::{
     CallableSignatureSchemaDigest, EnvironmentCallablePublicationDigest,
     RegisteredCallableCatalogDigest,
@@ -59,7 +64,7 @@ pub use facts::{
     CallableDiagnosticRelated, CallableDiagnosticSeverity, CallableDiagnosticSubject,
     CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallArgumentSlotSource,
     SemanticParameter, SemanticParameterGroup, SemanticSignature, SemanticSignatureHelp,
-    SemanticSignatureIndex, SemanticSignatureRecovery,
+    SemanticSignatureIndex, SemanticSignatureRecovery, SemanticSignatureSurface,
 };
 pub(crate) use facts::{CallTargetFactsInput, CheckedCallArgumentSlotInput, CheckedCallTarget};
 pub use identity::{
@@ -98,7 +103,8 @@ pub use projection::{
 pub use publication::{EnvironmentCallablePublication, EnvironmentCallablePublicationRecord};
 pub(crate) use resolver::{
     CallResolverAuthority, CallResolverContext, CallResolverRequest, FinalCallCalleeFacts,
-    prepare_final_call_callee, prepare_language_free_dot_path, resolve_call_target,
+    PreparedCallCallee, prepare_final_call_callee, prepare_language_free_dot_path,
+    resolve_call_target,
 };
 pub use resolver::{
     CallableInstantiation, CharacterOwnerSource, NonCallableSource, NonEmptyResolvedCandidates,

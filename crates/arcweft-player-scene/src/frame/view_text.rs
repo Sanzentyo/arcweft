@@ -36,10 +36,7 @@ use arcweft_runtime_driver::{
     presentation_handles::PresentationHandleId,
 };
 use arcweft_text_layout::{LayoutPoint, LayoutRect, LayoutSize};
-use arcweft_text_model::{
-    LineDisplayFrame, LineDisplayStage, RichTextInlineDirection, RichTextPresentation,
-    RichTextRange, RichTextWritingMode,
-};
+use arcweft_text_model::{LineDisplayFrame, LineDisplayStage, RichTextPresentation, RichTextRange};
 use arcweft_view::geometry::ViewGeometryConsumer;
 use std::collections::BTreeMap;
 
@@ -399,9 +396,17 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
             PublicId::try_new(&parent_value).map_err(|_| FramePlanError::InvalidId {
                 value: parent_value,
             })?;
-        let dialogue_content =
-            dialogue.filter(|_| matches!(output.value, BundleViewTextValue::DisplayFrame { .. }));
-        let object_bounds = if dialogue_content.is_some() {
+        let dialogue_role = match output.value {
+            BundleViewTextValue::CharacterDisplayName { .. } => {
+                Some(arcweft_render_wgpu::geometry::DialoguePreparedTextRole::CharacterDisplayName)
+            }
+            BundleViewTextValue::DisplayFrame { .. } => {
+                Some(arcweft_render_wgpu::geometry::DialoguePreparedTextRole::Content)
+            }
+            _ => None,
+        };
+        let dialogue_text = dialogue.zip(dialogue_role);
+        let object_bounds = if dialogue_text.is_some() {
             dialogue_surface_bounds(
                 self.request.presentation,
                 root_output,
@@ -412,14 +417,15 @@ impl<'a, 'request> RuntimeViewTextPreparer<'a, 'request> {
         } else {
             bounds
         };
-        let owner_kind = dialogue_content.map_or(
+        let owner_kind = dialogue_text.map_or(
             PreparedTextOwnerKind::View {
                 mount: mount.mount.get(),
             },
-            |dialogue| PreparedTextOwnerKind::DialogueView {
+            |(dialogue, role)| PreparedTextOwnerKind::DialogueView {
                 dialogue: dialogue.dialogue.id().get(),
                 entry: dialogue.entry.id().get(),
                 mount: mount.mount.get(),
+                role,
             },
         );
         self.frame.push_prepared_text_owner(
@@ -495,17 +501,8 @@ fn push_text_value(
                 reveal_complete: None,
             })
         }
-        BundleViewTextValue::DialogueCharacterDisplayName {
-            label,
-            frame: display,
-        } => {
-            let inherited =
-                TextStyleCascade::new(style).resolve_style(display.base_styles.iter())?;
-            let style = inherited.with_flow(
-                RichTextWritingMode::HorizontalTb,
-                RichTextInlineDirection::Auto,
-            );
-            let document = plain_document(label, style)?;
+        BundleViewTextValue::CharacterDisplayName { frame: display } => {
+            let document = plain_document(&display.character.display_name, style.clone())?;
             let source_origin = document.source_origin();
             let text = shared.push_prepared_text_document(frame, &document, request)?;
             Ok(PushedTextValue {
@@ -650,7 +647,7 @@ fn dialogue_surface_bounds(
 fn visible_text(value: &BundleViewTextValue) -> Result<&str, FramePlanError> {
     match value {
         BundleViewTextValue::Plain { value } => Ok(value),
-        BundleViewTextValue::DialogueCharacterDisplayName { label, .. } => Ok(label),
+        BundleViewTextValue::CharacterDisplayName { frame } => Ok(&frame.character.display_name),
         BundleViewTextValue::Localized { document, .. }
         | BundleViewTextValue::RichTextDocument { document } => Ok(document.resolved_text()),
         BundleViewTextValue::DisplayFrame { frame, stage_index } => {

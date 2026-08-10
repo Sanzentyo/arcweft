@@ -553,6 +553,8 @@ fn runtime_plan_consumes_project_view_without_flattening() {
         executable,
         compiled.project_symbols(),
         compiled.final_analysis(),
+        None,
+        None,
     )
     .expect("runtime facts project from the accepted project view");
     let entry_input = RuntimeEntryLoweringInput::empty(executable);

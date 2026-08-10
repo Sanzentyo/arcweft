@@ -122,7 +122,7 @@ pub fn compile_checked_agent_bundle(
         agent_artifact_manifest(compiled, checked, controller_facts, project, runtime_budget)?;
     let documents = agent_bundle_source_documents(compiled)?;
     let source_map = SourceMapSection::try_from_documents(&documents)?;
-    let bundle = ArcweftBundle::try_new(
+    let mut bundle = ArcweftBundle::try_new(
         BundleManifest {
             profile_id: None,
             profile_kind: None,
@@ -143,8 +143,11 @@ pub fn compile_checked_agent_bundle(
         source_map,
         bytecode,
         compiled.runtime_plan().dialogue_content_catalog.clone(),
-    )?
-    .with_agent_manifest(manifest.clone());
+    )?;
+    if let Some(catalog) = &compiled.runtime_plan().character_presentation_catalog {
+        bundle = bundle.with_character_presentation_catalog(catalog.as_ref().clone());
+    }
+    let bundle = bundle.with_agent_manifest(manifest.clone());
     Ok(CompiledAgentBundle {
         bundle,
         manifest,

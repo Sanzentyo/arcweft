@@ -185,8 +185,7 @@ pub enum BundleViewTextValue {
         document: Box<RichTextDocument>,
     },
     /// Character display name retaining the same resolved frame provenance as content.
-    DialogueCharacterDisplayName {
-        label: String,
+    CharacterDisplayName {
         frame: Box<LineDisplayFrame>,
     },
     DisplayFrame {

@@ -6,8 +6,12 @@
 //! keyed by qualified final-HIR IDs; source-order counters, byte ranges,
 //! display labels, and reconstructed paths are not accepted as identities.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
+use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::entry::{RuntimeCallableId, RuntimeNominalTypeId};
 pub use arcweft_core::pattern::RuntimeSemanticTypeId;
 use arcweft_core::pattern::{RuntimeCheckedType, RuntimeCheckedVariantCase};
@@ -35,6 +39,7 @@ use arcweft_lang_hir::symbol::{
     nominal::{ProjectNominalDeclarationId, ProjectNominalVariant},
 };
 use arcweft_lang_hir::type_ref::HirTypeKind;
+use arcweft_text_model::DialogueContentSpec;
 use thiserror::Error;
 
 use crate::assertion_identity::RuntimeAssertionMode;
@@ -707,6 +712,22 @@ pub struct RuntimeCheckedCapture {
     ty: RuntimeNormalizedType,
 }
 
+/// One executable dialogue application projected from checked semantics.
+#[derive(Clone, Debug, PartialEq)]
+pub struct RuntimeDialogueApplication {
+    content: DialogueContentSpec,
+}
+
+impl RuntimeDialogueApplication {
+    pub const fn new(content: DialogueContentSpec) -> Self {
+        Self { content }
+    }
+
+    pub const fn content(&self) -> &DialogueContentSpec {
+        &self.content
+    }
+}
+
 /// Trait authority selected by final semantic analysis for one executable
 /// implementation method.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -904,6 +925,8 @@ pub struct RuntimePlanSemanticFacts {
     iterations: BTreeMap<StmtId, RuntimeIteratorEvidence>,
     assertions: BTreeMap<StmtId, RuntimeAssertionAdmission>,
     captures: BTreeMap<CaptureId, RuntimeCheckedCapture>,
+    dialogue_applications: BTreeMap<ExprId, RuntimeDialogueApplication>,
+    character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
 }
 
 impl RuntimePlanSemanticFacts {
@@ -1215,7 +1238,71 @@ impl RuntimePlanSemanticFacts {
             iterations,
             assertions,
             captures,
+            dialogue_applications: BTreeMap::new(),
+            character_presentation_catalog: None,
         })
+    }
+
+    /// Binds the complete dialogue projection to this exact accepted HIR generation.
+    pub fn with_dialogue_projection(
+        mut self,
+        project: HirExecutableProjectView<'_>,
+        catalog: Option<Arc<CharacterPresentationCatalogData>>,
+        applications: impl IntoIterator<Item = (ExprId, RuntimeDialogueApplication)>,
+    ) -> Result<Self, RuntimeSemanticFactsError> {
+        self.validate_generation(project)?;
+        let applications =
+            collect_unique(applications, RuntimeSemanticFactFamily::DialogueApplication)?;
+        if applications.is_empty() != catalog.is_none() {
+            return Err(RuntimeSemanticFactsError::DialogueCatalogPresenceMismatch);
+        }
+        let modules = project
+            .modules()
+            .map(|(_, module)| (module.module_id(), module.as_ref()))
+            .collect::<BTreeMap<_, _>>();
+        for (owner, application) in &applications {
+            require_expr_family(
+                &modules,
+                *owner,
+                RuntimeSemanticFactFamily::DialogueApplication,
+                |kind| matches!(kind, HirExprKind::DialogueContentApplication(_)),
+            )?;
+            let accepted = project
+                .dialogue_lines()
+                .for_expr(*owner)
+                .ok_or(RuntimeSemanticFactsError::DialogueLineMismatch { expression: *owner })?;
+            let accepted_runtime_line =
+                RuntimeLineId::from_source_entity_body(accepted.id().as_str()).map_err(|_| {
+                    RuntimeSemanticFactsError::DialogueLineMismatch { expression: *owner }
+                })?;
+            if &accepted_runtime_line != application.content().line()
+                || accepted.text_key().as_str() != application.content().text_key().as_str()
+            {
+                return Err(RuntimeSemanticFactsError::DialogueLineMismatch { expression: *owner });
+            }
+            let catalog = catalog
+                .as_ref()
+                .ok_or(RuntimeSemanticFactsError::DialogueCatalogPresenceMismatch)?;
+            if application.content().character().semantic_digest() != catalog.semantic_digest()
+                || application.content().character().locale_policy_digest()
+                    != catalog.locale_policy_digest()
+            {
+                return Err(RuntimeSemanticFactsError::DialogueCharacterPlanMismatch {
+                    expression: *owner,
+                });
+            }
+            if let arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence::Exact(character) =
+                application.content().character().target()
+                && catalog.record(character).is_err()
+            {
+                return Err(RuntimeSemanticFactsError::DialogueCharacterPlanMismatch {
+                    expression: *owner,
+                });
+            }
+        }
+        self.dialogue_applications = applications;
+        self.character_presentation_catalog = catalog;
+        Ok(self)
     }
 
     /// Revalidates that the facts are consumed by the exact generation that
@@ -1304,6 +1391,22 @@ impl RuntimePlanSemanticFacts {
     pub fn capture(&self, capture: CaptureId) -> Option<&RuntimeCheckedCapture> {
         self.captures.get(&capture)
     }
+
+    pub fn dialogue_application(&self, expression: ExprId) -> Option<&RuntimeDialogueApplication> {
+        self.dialogue_applications.get(&expression)
+    }
+
+    pub fn dialogue_applications(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&ExprId, &RuntimeDialogueApplication)> {
+        self.dialogue_applications.iter()
+    }
+
+    pub const fn character_presentation_catalog(
+        &self,
+    ) -> Option<&Arc<CharacterPresentationCatalogData>> {
+        self.character_presentation_catalog.as_ref()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, Error, PartialEq)]
@@ -1370,6 +1473,12 @@ pub enum RuntimeSemanticFactsError {
     },
     #[error("runtime trait method fact does not match its final-HIR implementation member")]
     InvalidTraitMethodIdentity,
+    #[error("dialogue projection and Character presentation catalog presence disagree")]
+    DialogueCatalogPresenceMismatch,
+    #[error("dialogue application {expression:?} does not match its accepted line identity")]
+    DialogueLineMismatch { expression: ExprId },
+    #[error("dialogue application {expression:?} carries stale or unknown Character evidence")]
+    DialogueCharacterPlanMismatch { expression: ExprId },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -1391,6 +1500,7 @@ pub enum RuntimeSemanticFactFamily {
     Iteration,
     Assertion,
     Capture,
+    DialogueApplication,
 }
 
 fn collect_unique<K: Ord + Copy, V>(

@@ -5,10 +5,16 @@ use std::{
     sync::Arc,
 };
 
-use arcweft_lang_hir::expr::HirCallCallee;
+use arcweft_lang_hir::{
+    expr::HirCallCallee,
+    source_index::{
+        HirExprSourceRole, HirLocalSourceRole, HirSourcePresence, HirSourceQuery, HirSourceSite,
+        HirTypeSourceRole,
+    },
+};
 
 use crate::{
-    callable::UnknownCallKind,
+    callable::{CallableCandidateId, CallableValidator, DialogueCallableId, UnknownCallKind},
     nominal::{ResolvedTypeRefOutcome, TypeNameResolution, TypeResolutionFailure},
 };
 
@@ -16,12 +22,13 @@ use super::type_rules::compact_numeric_element_type;
 use super::{
     CallCalleeClassificationFact, CallPoison, CallTargetFact, CallTargetFacts,
     CallableDeclarationOwner, CallableDiagnosticSubject, CallableInstantiation, CaptureId,
-    CheckedBinding, CheckedBindingRole, CheckedCallArgumentSlotSource, CheckedEntryReference,
+    CheckedBinding, CheckedBindingRole, CheckedCallArgumentSlotSource,
+    CheckedCharacterDialoguePatch, CheckedCharacterDialogueTarget, CheckedEntryReference,
     CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem,
-    CheckedItemRole, CheckedIteration, CheckedPattern, CheckedPatternResolution,
-    CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal,
-    CheckedSelectResolution, CheckedStatement, CheckedStatementRole, CheckedTraitConformance,
-    CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
+    CheckedItemRole, CheckedIteration, CheckedPatchOperation, CheckedPattern,
+    CheckedPatternResolution, CheckedProjectCallable, CheckedProjectItem, CheckedProjectItemOwner,
+    CheckedProjectNominal, CheckedSelectResolution, CheckedStatement, CheckedStatementRole,
+    CheckedTraitConformance, CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
     DeclarationIdentityFamily, ExprId, FinalSemanticAnalysisError, FinalSemanticAnalysisWork,
     HirExecutableProjectView, HirExprKind, HirIdRef, HirItemKind, HirModule, HirModuleId,
     HirPatternKind, HirStmtKind, ItemId, LocalId, PatternId, PhysicalCandidateArgumentEvaluation,
@@ -409,6 +416,17 @@ pub(super) fn validate_types(
         if ty.contains_nominal_poison() && !recovered_receivers.contains(&owner) {
             return Err(FinalSemanticAnalysisError::PoisonedType);
         }
+        if ty.contains_dialogue_line_operation() {
+            return Err(FinalSemanticAnalysisError::DialogueLineEscape {
+                escape_span: required_source(
+                    resolve_module(modules, owner.module())?,
+                    HirSourceQuery::Type {
+                        owner,
+                        role: HirTypeSourceRole::Whole,
+                    },
+                )?,
+            });
+        }
     }
     Ok(())
 }
@@ -430,13 +448,35 @@ pub(super) fn validate_bindings(
         if fact.ty().contains_nominal_poison() {
             return Err(FinalSemanticAnalysisError::PoisonedType);
         }
+        if fact.ty().contains_dialogue_line_operation() {
+            return Err(FinalSemanticAnalysisError::DialogueLineEscape {
+                escape_span: required_source(
+                    resolve_module(modules, owner.module())?,
+                    HirSourceQuery::Local {
+                        owner,
+                        role: HirLocalSourceRole::Name,
+                    },
+                )?,
+            });
+        }
     }
     for (&owner, fact) in captures {
-        resolve_module(modules, owner.module())?
+        let capture = resolve_module(modules, owner.module())?
             .resolve_capture(owner)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
         if fact.ty().contains_nominal_poison() {
             return Err(FinalSemanticAnalysisError::PoisonedType);
+        }
+        if fact.ty().contains_dialogue_line_operation() {
+            return Err(FinalSemanticAnalysisError::DialogueLineEscape {
+                escape_span: required_source(
+                    resolve_module(modules, owner.module())?,
+                    HirSourceQuery::Local {
+                        owner: capture.local(),
+                        role: HirLocalSourceRole::Name,
+                    },
+                )?,
+            });
         }
     }
     Ok(())
@@ -472,12 +512,39 @@ pub(super) fn validate_expressions(
         if fact.ty().contains_nominal_poison() && !associated_wrong_arity {
             return Err(FinalSemanticAnalysisError::PoisonedType);
         }
+        if fact.ty().contains_dialogue_line_operation()
+            && !matches!(
+                (fact.ty(), fact.resolution()),
+                (
+                    TypeKind::DialogueLine(_),
+                    CheckedExpressionResolution::DialogueApplication { .. }
+                        | CheckedExpressionResolution::PostfixBracket(
+                            PostfixBracketResolution::Dialogue { .. }
+                        )
+                )
+            )
+        {
+            return Err(FinalSemanticAnalysisError::DialogueLineEscape {
+                escape_span: required_expression_source(
+                    resolve_module(modules, owner.module())?,
+                    owner,
+                    HirExprSourceRole::Whole,
+                )?,
+            });
+        }
         if !expression_resolution_matches(expression.kind(), fact.resolution())
             && !nominal_fallback_receiver_matches(owner, fact, modules, calls)?
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        validate_expression_resolution(symbols, modules, dialogue_lines, fact.resolution())?;
+        validate_expression_resolution(
+            symbols,
+            modules,
+            dialogue_lines,
+            expressions,
+            owner,
+            fact.resolution(),
+        )?;
         if let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)) =
             fact.resolution()
             && &item.ty() != fact.ty()
@@ -490,9 +557,14 @@ pub(super) fn validate_expressions(
         {
             return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
         }
-        if matches!(fact.resolution(), CheckedExpressionResolution::Call)
-            != calls.contains_key(&owner)
-        {
+        let call_backed = matches!(
+            fact.resolution(),
+            CheckedExpressionResolution::Call
+                | CheckedExpressionResolution::CharacterDialogueFactory(_)
+                | CheckedExpressionResolution::CharacterDialogueReconfigure(_)
+                | CheckedExpressionResolution::DialogueApplication { .. }
+        );
+        if call_backed != calls.contains_key(&owner) {
             return Err(FinalSemanticAnalysisError::CallFactMismatch);
         }
     }
@@ -608,7 +680,8 @@ fn expression_resolution_matches(
         )
         | (
             HirExprKind::Call(_),
-            CheckedExpressionResolution::DialogueConfiguration { .. }
+            CheckedExpressionResolution::CharacterDialogueFactory(_)
+            | CheckedExpressionResolution::CharacterDialogueReconfigure(_)
             | CheckedExpressionResolution::Call
             | CheckedExpressionResolution::ViewCall(_)
             | CheckedExpressionResolution::StyleValue(_),
@@ -683,6 +756,8 @@ fn validate_expression_resolution(
     symbols: &ProjectSymbolTable,
     modules: &BTreeMap<HirModuleId, &HirModule>,
     dialogue_lines: &arcweft_lang_hir::project::AcceptedDialogueLineInventory,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
+    owner: ExprId,
     resolution: &CheckedExpressionResolution,
 ) -> Result<(), FinalSemanticAnalysisError> {
     match resolution {
@@ -694,8 +769,12 @@ fn validate_expression_resolution(
                 .map(|nominal| validate_nominal(symbols, modules, nominal))
                 .transpose()
                 .map(|_| ()),
-            CheckedSelectResolution::DialogueView { projection, name } => (projection.field()
-                == name.as_str())
+            CheckedSelectResolution::DialogueView { projection, name } => (match projection {
+                crate::dialogue_view::DialogueProjectionCoordinate::Character(character) => {
+                    character.field()
+                }
+                other => other.field(),
+            } == name.as_str())
             .then_some(())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
             CheckedSelectResolution::TupleElement { .. } => Ok(()),
@@ -706,12 +785,50 @@ fn validate_expression_resolution(
         CheckedExpressionResolution::Variant(variant) => {
             validate_variant(symbols, modules, variant)
         }
-        CheckedExpressionResolution::DialogueApplication { character, .. }
-        | CheckedExpressionResolution::DialogueConfiguration { character } => {
-            let item = resolve_item(modules, *character)?;
-            matches!(item.kind(), HirItemKind::Character(_))
-                .then_some(())
-                .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)
+        CheckedExpressionResolution::CharacterDialogueFactory(factory) => {
+            validate_character_dialogue_call(
+                symbols,
+                modules,
+                expressions,
+                owner,
+                factory.target(),
+                factory.patch(),
+            )
+        }
+        CheckedExpressionResolution::CharacterDialogueReconfigure(reconfigure) => {
+            validate_character_dialogue_call(
+                symbols,
+                modules,
+                expressions,
+                owner,
+                reconfigure.target(),
+                reconfigure.patch(),
+            )
+        }
+        CheckedExpressionResolution::DialogueApplication {
+            target,
+            application_patch,
+            ..
+        } => {
+            validate_character_dialogue_application_target(
+                symbols,
+                modules,
+                expressions,
+                owner,
+                target,
+            )?;
+            application_patch
+                .as_ref()
+                .map(|patch| {
+                    validate_character_dialogue_patch(
+                        modules,
+                        expressions,
+                        target.expression(),
+                        patch,
+                    )
+                })
+                .transpose()
+                .map(|_| ())
         }
         CheckedExpressionResolution::DialogueLineReference(target)
         | CheckedExpressionResolution::DialogueLineCoordinate(target) => dialogue_lines
@@ -819,6 +936,184 @@ pub(super) fn validate_patterns(
         }
     }
     Ok(())
+}
+
+fn validate_character_dialogue_target(
+    symbols: &ProjectSymbolTable,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
+    target: &CheckedCharacterDialogueTarget,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let checked = expressions
+        .get(&target.expression())
+        .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+    match target {
+        CheckedCharacterDialogueTarget::Character {
+            item: Some(item),
+            character,
+            ..
+        } => {
+            if item.family() != DeclarationIdentityFamily::Character {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            if item.character().as_ref() != character.exact()
+                || !checked
+                    .ty()
+                    .is_entity_ref_kind(&crate::types::EntityKind::Character)
+            {
+                return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+            }
+            validate_project_item(symbols, modules, item)
+        }
+        CheckedCharacterDialogueTarget::Character {
+            item: None,
+            character,
+            ..
+        } => (character.exact().is_none()
+            && checked
+                .ty()
+                .is_entity_ref_kind(&crate::types::EntityKind::Character))
+        .then_some(())
+        .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
+        CheckedCharacterDialogueTarget::Dialogue { ty, .. } => (checked.ty()
+            == &TypeKind::CharacterDialogue(ty.clone()))
+            .then_some(())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
+    }
+}
+
+fn validate_character_dialogue_call(
+    symbols: &ProjectSymbolTable,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
+    owner: ExprId,
+    target: &CheckedCharacterDialogueTarget,
+    patch: &CheckedCharacterDialoguePatch,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let module = resolve_module(modules, owner.module())?;
+    let expression = module
+        .resolve_expr(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    let HirExprKind::Call(call) = expression.kind() else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    if !matches!(call.callee(), HirCallCallee::Value { value } if *value == target.expression()) {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    validate_character_dialogue_target(symbols, modules, expressions, target)?;
+    validate_character_dialogue_patch(modules, expressions, owner, patch)
+}
+
+fn validate_character_dialogue_application_target(
+    symbols: &ProjectSymbolTable,
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
+    owner: ExprId,
+    target: &CheckedCharacterDialogueTarget,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let expression = resolve_module(modules, owner.module())?
+        .resolve_expr(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    if application.target() != target.expression() {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+    validate_character_dialogue_target(symbols, modules, expressions, target)
+}
+
+fn validate_character_dialogue_patch(
+    modules: &BTreeMap<HirModuleId, &HirModule>,
+    expressions: &BTreeMap<ExprId, CheckedExpression>,
+    owner: ExprId,
+    patch: &CheckedCharacterDialoguePatch,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let module = resolve_module(modules, owner.module())?;
+    let expression = module
+        .resolve_expr(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    let HirExprKind::Call(call) = expression.kind() else {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    };
+    let whole = required_expression_source(module, owner, HirExprSourceRole::Whole)?;
+    if patch.source() != &whole || patch.fields().len() > call.arguments().len() {
+        return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+    }
+
+    let mut argument_sources = Vec::with_capacity(call.arguments().len());
+    for index in 0..call.arguments().len() {
+        let argument = arcweft_lang_hir::expr::HirCallArgumentOrdinal::try_from_usize(index)
+            .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+        argument_sources.push(required_expression_source(
+            module,
+            owner,
+            HirExprSourceRole::CallArgument {
+                argument,
+                part: arcweft_lang_hir::source_index::HirCallArgumentSourcePart::Whole,
+            },
+        )?);
+    }
+
+    let mut last_argument = None;
+    let mut coordinates = BTreeSet::new();
+    for field in patch.fields() {
+        if !coordinates.insert(field.coordinate()) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        let argument_index = argument_sources
+            .iter()
+            .position(|source| source == field.source())
+            .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily)?;
+        if last_argument.is_some_and(|previous| argument_index <= previous) {
+            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        }
+        last_argument = Some(argument_index);
+        let argument = &call.arguments()[argument_index];
+        let checked = expressions
+            .get(&argument.value())
+            .ok_or(FinalSemanticAnalysisError::InvalidOwner)?;
+        match field.operation() {
+            CheckedPatchOperation::Set { value, ty } => {
+                if *value != argument.value() || checked.ty() != ty {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            }
+            CheckedPatchOperation::Clear => {
+                if !matches!(
+                    checked.resolution(),
+                    CheckedExpressionResolution::Variant(variant)
+                        if matches!(variant.owner(), CheckedVariantOwner::Option { .. })
+                            && variant.ordinal() == 1
+                ) {
+                    return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn required_expression_source(
+    module: &HirModule,
+    owner: ExprId,
+    role: HirExprSourceRole,
+) -> Result<arcweft_source::SourceSpan, FinalSemanticAnalysisError> {
+    required_source(module, HirSourceQuery::Expr { owner, role })
+}
+
+fn required_source(
+    module: &HirModule,
+    query: HirSourceQuery,
+) -> Result<arcweft_source::SourceSpan, FinalSemanticAnalysisError> {
+    let lookup = module
+        .source_site(module.provenance().source_identity(), query)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    match lookup.presence() {
+        HirSourcePresence::Present(HirSourceSite::Span(span)) => Ok(span.clone()),
+        HirSourcePresence::Present(HirSourceSite::Insertion(_))
+        | HirSourcePresence::AbsentOptional => Err(FinalSemanticAnalysisError::InvalidOwner),
+    }
 }
 
 fn validate_project_item(
@@ -1067,15 +1362,55 @@ pub(super) fn validate_calls(
         let expression = resolve_module(modules, owner.module())?
             .resolve_expr(owner)
             .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-        let HirExprKind::Call(hir_call) = expression.kind() else {
-            return Err(FinalSemanticAnalysisError::WrongPayloadFamily);
+        let associated_wrong_arity = match expression.kind() {
+            HirExprKind::Call(hir_call) => {
+                validate_call_acceptance(call, hir_call, type_resolutions)?
+            }
+            HirExprKind::DialogueContentApplication(application) => {
+                validate_dialogue_application_call_acceptance(call, application)?;
+                false
+            }
+            _ => return Err(FinalSemanticAnalysisError::WrongPayloadFamily),
         };
-        let associated_wrong_arity = validate_call_acceptance(call, hir_call, type_resolutions)?;
         validate_call_callee(modules, call)?;
         validate_call_result(expressions, owner, call)?;
         validate_call_argument_slots(modules, expressions, call)?;
         validate_call_target(symbols, modules, call, associated_wrong_arity)?;
         validate_call_context(symbols, modules, call)?;
+    }
+    Ok(())
+}
+
+fn validate_dialogue_application_call_acceptance(
+    call: &CallTargetFacts,
+    application: &arcweft_lang_hir::dialogue_application::HirDialogueContentApplication,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let CallTargetFact::Selected {
+        selected,
+        considered,
+    } = call.target()
+    else {
+        return Err(FinalSemanticAnalysisError::UnacceptedCall);
+    };
+    if call.callee()
+        != Some(CallCalleeClassificationFact::Value {
+            expression: application.target(),
+        })
+        || call.poison() != CallPoison::Clean
+        || !call.arguments().is_empty()
+        || call.current_group() != crate::callable::CallableGroupIndex::ZERO
+        || call.next_group().is_some()
+        || call.function_value_type().is_some()
+        || considered.len() != 1
+        || selected.id() != &CallableCandidateId::Dialogue(DialogueCallableId::ContentApplication)
+        || selected.schema().validator()
+            != &CallableValidator::Dialogue(DialogueCallableId::ContentApplication)
+        || selected.schema().result()
+            != call
+                .result()
+                .ok_or(FinalSemanticAnalysisError::CallFactMismatch)?
+    {
+        return Err(FinalSemanticAnalysisError::UnacceptedCall);
     }
     Ok(())
 }
@@ -1193,6 +1528,24 @@ fn validate_call_argument_slots(
                     .is_some_and(TypeKind::contains_nominal_poison)
             {
                 return Err(FinalSemanticAnalysisError::CallFactMismatch);
+            }
+            if slot
+                .inferred()
+                .is_some_and(TypeKind::contains_dialogue_line_operation)
+            {
+                let owner = match slot.source() {
+                    CheckedCallArgumentSlotSource::Expression(expression) => expression,
+                    CheckedCallArgumentSlotSource::CompactNumericElement { sequence, .. } => {
+                        sequence
+                    }
+                };
+                return Err(FinalSemanticAnalysisError::DialogueLineEscape {
+                    escape_span: required_expression_source(
+                        resolve_module(modules, owner.module())?,
+                        owner,
+                        HirExprSourceRole::Whole,
+                    )?,
+                });
             }
         }
     }

@@ -308,30 +308,31 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
     let view_product = compiled.view_product.clone();
     let image_objects = view_product.image_objects().to_vec();
     validate_referenced_bundle_image_assets(&compiled.plan, &image_assets)?;
-    let bundle = attach_compiled_view_product(
-        ArcweftBundle::try_new(
-            bundle_manifest(
-                selection,
-                &compiled,
-                adapter_manifest_ids,
-                required_host_calls,
-            ),
-            compiled.source_map,
-            compiled.bytecode,
-            compiled.dialogue_content_catalog,
-        )
-        .map_err(|error| {
-            eprintln!("error: failed to reserve the standard dialogue Style source: {error}");
-            ExitCode::FAILURE
-        })?
-        .with_product_awbc(compiled.product_awbc)
-        .with_fx_definitions(fx_definitions)
-        .with_adapter_manifests(adapter_manifests)
-        .with_virtual_files(virtual_files)
-        .with_image_assets(image_assets)
-        .with_image_objects(image_objects),
-        &view_product,
-    )?;
+    let mut bundle = ArcweftBundle::try_new(
+        bundle_manifest(
+            selection,
+            &compiled,
+            adapter_manifest_ids,
+            required_host_calls,
+        ),
+        compiled.source_map,
+        compiled.bytecode,
+        compiled.dialogue_content_catalog,
+    )
+    .map_err(|error| {
+        eprintln!("error: failed to reserve the standard dialogue Style source: {error}");
+        ExitCode::FAILURE
+    })?
+    .with_product_awbc(compiled.product_awbc)
+    .with_fx_definitions(fx_definitions)
+    .with_adapter_manifests(adapter_manifests)
+    .with_virtual_files(virtual_files)
+    .with_image_assets(image_assets)
+    .with_image_objects(image_objects);
+    if let Some(catalog) = compiled.character_presentation_catalog {
+        bundle = bundle.with_character_presentation_catalog(catalog.as_ref().clone());
+    }
+    let bundle = attach_compiled_view_product(bundle, &view_product)?;
     Ok(CompiledBundleArtifact {
         bundle,
         entry_kinds,

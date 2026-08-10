@@ -24,6 +24,7 @@ pub(super) fn derive(
     world: &AcceptedNominalWorld,
     rust_metadata_digest: &[u8; 32],
     callable_catalog_digest: &[u8; 32],
+    character_dialogue_fields_digest: &[u8; 32],
     facts: &ProjectRegistrationFacts,
     character_digest: CharacterInventoryDigest,
     character_revision: CharacterInventoryRevision,
@@ -37,6 +38,7 @@ pub(super) fn derive(
     encoder.bytes(&visibility_digest(world.visibility()));
     encoder.bytes(rust_metadata_digest);
     encoder.bytes(callable_catalog_digest);
+    encoder.bytes(character_dialogue_fields_digest);
 
     let mut manifests = facts
         .environment_inputs()

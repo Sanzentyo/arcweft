@@ -4,6 +4,10 @@ use std::collections::BTreeMap;
 
 use crate::RichTextDocument;
 use arcweft_core::plan::RuntimeLineId;
+use arcweft_dialogue::{
+    DialoguePresentationProfile, DialogueProfileRevision,
+    character_presentation::CheckedCharacterPresentationPlan,
+};
 use arcweft_id::TextKey;
 use arcweft_source::ProductSourceRef;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
@@ -18,8 +22,34 @@ pub struct DialogueContentSpec {
     line: RuntimeLineId,
     text_key: TextKey,
     content: RichTextDocument,
+    character: CheckedCharacterPresentationPlan,
+    presentation: DialoguePresentationSnapshot,
     inline_styles: Vec<RichTextStyleContribution>,
     source: ProductSourceRef,
+}
+
+/// Exact accepted presentation profile and revision used by one dialogue line.
+#[derive(Clone, Debug, PartialEq)]
+pub struct DialoguePresentationSnapshot {
+    profile: DialoguePresentationProfile,
+    revision: DialogueProfileRevision,
+}
+
+impl DialoguePresentationSnapshot {
+    pub const fn new(
+        profile: DialoguePresentationProfile,
+        revision: DialogueProfileRevision,
+    ) -> Self {
+        Self { profile, revision }
+    }
+
+    pub const fn profile(&self) -> &DialoguePresentationProfile {
+        &self.profile
+    }
+
+    pub const fn revision(&self) -> &DialogueProfileRevision {
+        &self.revision
+    }
 }
 
 impl DialogueContentSpec {
@@ -27,6 +57,8 @@ impl DialogueContentSpec {
         line: RuntimeLineId,
         text_key: TextKey,
         content: RichTextDocument,
+        character: CheckedCharacterPresentationPlan,
+        presentation: DialoguePresentationSnapshot,
         inline_styles: Vec<RichTextStyleContribution>,
         source: ProductSourceRef,
     ) -> Self {
@@ -34,6 +66,8 @@ impl DialogueContentSpec {
             line,
             text_key,
             content,
+            character,
+            presentation,
             inline_styles,
             source,
         }
@@ -49,6 +83,18 @@ impl DialogueContentSpec {
 
     pub const fn content(&self) -> &RichTextDocument {
         &self.content
+    }
+
+    pub const fn character(&self) -> &CheckedCharacterPresentationPlan {
+        &self.character
+    }
+
+    pub const fn presentation(&self) -> &DialoguePresentationProfile {
+        self.presentation.profile()
+    }
+
+    pub const fn presentation_revision(&self) -> &DialogueProfileRevision {
+        self.presentation.revision()
     }
 
     pub fn inline_styles(&self) -> &[RichTextStyleContribution] {
@@ -129,6 +175,9 @@ struct DialogueContentSpecWire {
     line: RuntimeLineId,
     text_key: String,
     content: RichTextDocument,
+    character: CheckedCharacterPresentationPlan,
+    presentation: DialoguePresentationProfile,
+    presentation_revision: DialogueProfileRevision,
     inline_styles: Vec<RichTextStyleContribution>,
     source: ProductSourceRef,
 }
@@ -142,6 +191,9 @@ impl Serialize for DialogueContentSpec {
             line: self.line.clone(),
             text_key: self.text_key.as_str().to_owned(),
             content: self.content.clone(),
+            character: self.character.clone(),
+            presentation: self.presentation.profile().clone(),
+            presentation_revision: self.presentation.revision().clone(),
             inline_styles: self.inline_styles.clone(),
             source: self.source.clone(),
         }
@@ -159,6 +211,8 @@ impl<'de> Deserialize<'de> for DialogueContentSpec {
             wire.line,
             TextKey::try_new(wire.text_key).map_err(serde::de::Error::custom)?,
             wire.content,
+            wire.character,
+            DialoguePresentationSnapshot::new(wire.presentation, wire.presentation_revision),
             wire.inline_styles,
             wire.source,
         ))

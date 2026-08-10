@@ -544,16 +544,19 @@ mod tests {
             .apply_prepared_patch(prepared)
             .expect("prepared content patch applies");
 
-        assert!(matches!(
-            outcome,
-            NativePatchOutcome::Applied {
-                report: BundleHotSwapReport {
-                    compatibility: SwapCompatibility::ContentOnly,
-                    ..
-                },
-                content_root,
-            } if content_root == new_root
-        ));
+        assert!(
+            matches!(
+                &outcome,
+                NativePatchOutcome::Applied {
+                    report: BundleHotSwapReport {
+                        compatibility: SwapCompatibility::CodeCompatible,
+                        ..
+                    },
+                    content_root,
+                } if *content_root == new_root
+            ),
+            "unexpected content patch outcome: {outcome:?}"
+        );
         assert_eq!(endpoint.active_content_root(), Some(new_root));
         let step = endpoint.session_mut().step_with_clock(
             RuntimeClockStep::from_millis(1, 16).expect("clock"),
@@ -991,6 +994,11 @@ mod tests {
                 RichTextDocument::new(vec![RichTextNode::Text {
                     text: display_text.to_owned(),
                 }]),
+                crate::test_character_plan(),
+                arcweft_text_model::DialoguePresentationSnapshot::new(
+                    crate::test_dialogue_profile(),
+                    crate::test_dialogue_profile_revision(),
+                ),
                 Vec::new(),
                 source_map
                     .primary_document()
@@ -1027,6 +1035,7 @@ mod tests {
             dialogue_content,
         )
         .expect("standard dialogue source joins source map")
+        .with_character_presentation_catalog(crate::test_character_catalog())
         .with_product_awbc(product_awbc)
     }
 

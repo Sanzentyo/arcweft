@@ -21,19 +21,50 @@ use arcweft_bundle::{
     BundleImageObject, BundleImageObjectAlignment, BundleImageObjectBounds, BundleImageObjectFit,
     BundleImageObjectPlayback, BundleImageObjectTransform,
 };
+use arcweft_character::presentation_name::{
+    AcceptedCharacterPresentationCatalog, CharacterNameLocale,
+};
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::engine::FlowFiberStatus;
+use arcweft_core::entry::RuntimeValueDigest;
 use arcweft_core::{plan::FlowEvent, value::RuntimeBinding};
+use arcweft_dialogue::character_presentation::CharacterPresentationTargetEvidence;
+use arcweft_id::LocaleTag;
 use arcweft_layout::ScalePolicy;
 use arcweft_layout::stage_placement::{StageAnchor, StagePlacement, StageRect, StageSize};
 use arcweft_presentation::{
     BackgroundSlotAddress, PresentationSlot, PresentationTarget, fx::FxDiagnostic,
 };
 use arcweft_render_text::{RuntimeLineContext, resolve_frame};
-use arcweft_text_model::{DialogueContentCatalog, DialogueContentSpec};
+use arcweft_text_model::{
+    CharacterDialoguePresentationConfig, DialogueContentCatalog, DialogueContentSpec,
+    DialoguePresentationCharacter,
+};
 use core::fmt;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use thiserror::Error;
+
+/// Canonical Character-name locale selected for the current runtime session.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(transparent)]
+pub struct ActiveSessionLocale(LocaleTag);
+
+impl ActiveSessionLocale {
+    #[must_use]
+    pub fn new(locale: &CharacterNameLocale) -> Self {
+        Self(locale.locale_tag().clone())
+    }
+
+    #[must_use]
+    pub const fn locale_tag(&self) -> &LocaleTag {
+        &self.0
+    }
+
+    pub(crate) fn character_name_locale(&self) -> CharacterNameLocale {
+        CharacterNameLocale::new(self.0.clone())
+    }
+}
 
 /// Choice metadata shared by native and Web presentation hosts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -68,6 +99,86 @@ pub trait DialogueRuntimeContextProvider {
         content: &DialogueContentSpec,
         bindings: &[RuntimeBinding],
     ) -> Result<RuntimeLineContext, DialogueRuntimeContextError>;
+}
+
+/// Runtime view over one accepted Character catalog generation and locale.
+pub(crate) struct CatalogDialogueRuntimeContextProvider<'a> {
+    catalog: &'a AcceptedCharacterPresentationCatalog,
+    active_locale: &'a ActiveSessionLocale,
+}
+
+impl<'a> CatalogDialogueRuntimeContextProvider<'a> {
+    #[must_use]
+    pub(crate) const fn new(
+        catalog: &'a AcceptedCharacterPresentationCatalog,
+        active_locale: &'a ActiveSessionLocale,
+    ) -> Self {
+        Self {
+            catalog,
+            active_locale,
+        }
+    }
+}
+
+impl DialogueRuntimeContextProvider for CatalogDialogueRuntimeContextProvider<'_> {
+    fn context_for(
+        &self,
+        content: &DialogueContentSpec,
+        bindings: &[RuntimeBinding],
+    ) -> Result<RuntimeLineContext, DialogueRuntimeContextError> {
+        let generation = self.catalog.generation();
+        if content.character().semantic_digest() != generation.semantic_digest()
+            || content.character().locale_policy_digest() != generation.locale_policy_digest()
+        {
+            return Err(DialogueRuntimeContextError::Rejected {
+                line: content.line().clone(),
+                reason: "Character presentation plan is stale for the active catalog generation"
+                    .to_owned(),
+            });
+        }
+        let character = match content.character().target() {
+            CharacterPresentationTargetEvidence::Exact(character) => character,
+            CharacterPresentationTargetEvidence::RuntimeCharacterDialogue { .. } => {
+                return Err(DialogueRuntimeContextError::Rejected {
+                    line: content.line().clone(),
+                    reason: "runtime CharacterDialogue target has no decoded runtime value"
+                        .to_owned(),
+                });
+            }
+        };
+        let resolved = self
+            .catalog
+            .data()
+            .resolve(character, &self.active_locale.character_name_locale())
+            .map_err(|error| DialogueRuntimeContextError::Rejected {
+                line: content.line().clone(),
+                reason: error.to_string(),
+            })?;
+        let presentation = content.presentation();
+        Ok(RuntimeLineContext::new(
+            bindings.to_vec(),
+            DialoguePresentationCharacter {
+                id: character.clone(),
+                display_name: resolved.value().to_owned(),
+            },
+            CharacterDialoguePresentationConfig {
+                view: presentation.view().clone(),
+                voice: None,
+                look: None,
+                stage: None,
+                portrait: None,
+                focus: None,
+                cleanup: None,
+                source_locale: None,
+                hooks: Vec::new(),
+                inline_failure: presentation.inline_failure().clone(),
+                custom: BTreeMap::new(),
+                config_digest: RuntimeValueDigest::ZERO,
+            },
+            Vec::new(),
+            content.inline_styles().to_vec(),
+        ))
+    }
 }
 
 /// Failure to obtain one checked dynamic dialogue presentation context.

@@ -6,7 +6,10 @@ use arcweft_lang_hir::{
     item::HirItemKind,
     leaf::{HirPath, HirPathRoot, HirPathSegment},
 };
-use arcweft_lang_sema::dialogue_view::{DialogueViewProjection, STANDARD_DIALOGUE_VIEW_TYPE};
+use arcweft_lang_sema::dialogue_view::{
+    DIALOGUE_CHARACTER_TYPE, DialogueCharacterProjection, DialogueProjectionCoordinate,
+    STANDARD_DIALOGUE_VIEW_TYPE,
+};
 use arcweft_lang_sema::types::TypeKind;
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -16,27 +19,44 @@ pub(crate) struct DialogueViewTypeMetadata {
 }
 
 impl DialogueViewTypeMetadata {
-    pub(crate) fn fields() -> [(DialogueViewProjection, TypeKind); 6] {
+    pub(crate) fn fields() -> [(&'static str, TypeKind); 6] {
         [
-            DialogueViewProjection::CharacterDisplayName,
-            DialogueViewProjection::Content,
-            DialogueViewProjection::Occurrence,
-            DialogueViewProjection::Stage,
-            DialogueViewProjection::Reveal,
-            DialogueViewProjection::PrimaryAction,
+            (
+                "character",
+                TypeKind::Named(DIALOGUE_CHARACTER_TYPE.to_owned()),
+            ),
+            projection_field(DialogueProjectionCoordinate::Content),
+            projection_field(DialogueProjectionCoordinate::Occurrence),
+            projection_field(DialogueProjectionCoordinate::Stage),
+            projection_field(DialogueProjectionCoordinate::Reveal),
+            projection_field(DialogueProjectionCoordinate::PrimaryAction),
         ]
-        .map(|projection| (projection, projection.value_type()))
+    }
+
+    pub(crate) fn character_fields() -> [(&'static str, TypeKind); 2] {
+        [
+            DialogueCharacterProjection::Id,
+            DialogueCharacterProjection::DisplayName,
+        ]
+        .map(|projection| (projection.field(), projection.value_type()))
     }
 
     pub(crate) fn declaration(&self) -> String {
         let fields = Self::fields()
-            .map(|(projection, ty)| format!("    {}: {}", projection.field(), type_label(&ty)))
+            .map(|(field, ty)| format!("    {field}: {}", type_label(&ty)))
+            .join("\n");
+        let character_fields = Self::character_fields()
+            .map(|(field, ty)| format!("    {field}: {}", type_label(&ty)))
             .join("\n");
         format!(
-            "#[dialogue_view]\npub struct {} {{\n{fields}\n}}",
+            "pub struct {DIALOGUE_CHARACTER_TYPE} {{\n{character_fields}\n}}\n\n#[dialogue_view]\npub struct {} {{\n{fields}\n}}",
             self.name
         )
     }
+}
+
+fn projection_field(projection: DialogueProjectionCoordinate) -> (&'static str, TypeKind) {
+    (projection.field(), projection.value_type())
 }
 
 pub(crate) fn dialogue_view_types(

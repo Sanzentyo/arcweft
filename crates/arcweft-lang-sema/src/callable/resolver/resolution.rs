@@ -15,6 +15,7 @@ use super::{
     ResultConstructorKind, SignatureOrigin, StageMethodId, TypeKind, TypeReceiverInstantiation,
     TypedEnvironmentMethodCandidate, UnknownCallKind, UnknownCallTarget, call_shape_is_viable,
 };
+use crate::callable::{DialogueCallableId, DialogueCalleeIdentity, DialogueSchemaContext};
 
 pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> ResolveCallOutcome {
     if let Err(error) = request.work.record_resolver_invocation() {
@@ -23,7 +24,17 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
     if let Err(error) = check_query_step(&mut request) {
         return ResolveCallOutcome::Rejected(error);
     }
-    let arguments = request.call().arguments();
+    if request.parenthesized_call().is_none()
+        && !matches!(
+            request.callee,
+            PreparedCallCallee::Dialogue {
+                id: DialogueCallableId::ContentApplication,
+                ..
+            }
+        )
+    {
+        return ResolveCallOutcome::Rejected(ResolveCallError::InvalidResolvedCallable);
+    }
     match request.callee.clone() {
         PreparedCallCallee::Free {
             path,
@@ -48,6 +59,10 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
             receiver_type,
             method,
         } => {
+            let arguments = request
+                .parenthesized_call()
+                .expect("selected calls are parenthesized")
+                .arguments();
             let receiver_type = receiver_type.clone();
             let method = method.clone();
             let receiver = EvaluatedReceiver::new(receiver_expression, &receiver_type);
@@ -63,6 +78,10 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
             }
         }
         PreparedCallCallee::AssociatedType { receiver, member } => {
+            let arguments = request
+                .parenthesized_call()
+                .expect("associated calls are parenthesized")
+                .arguments();
             let receiver_type = receiver.ty().clone();
             let member = member.clone();
             match resolve_associated_type_call(&mut request, receiver, &member, arguments) {
@@ -76,6 +95,14 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
                 Err(error) => ResolveCallOutcome::Rejected(error),
             }
         }
+        PreparedCallCallee::Dialogue {
+            id,
+            callee,
+            patch_context,
+        } => match resolve_dialogue_call(&mut request, id, callee, patch_context) {
+            Ok(target) => ResolveCallOutcome::Resolved(target),
+            Err(error) => ResolveCallOutcome::Rejected(error),
+        },
         PreparedCallCallee::FunctionValue { value } => {
             match resolve_function_value(value, &mut request) {
                 Ok(target) => ResolveCallOutcome::Resolved(target),
@@ -88,6 +115,57 @@ pub(crate) fn resolve_call_target(mut request: CallResolverRequest<'_>) -> Resol
             ))
         }
     }
+}
+
+fn resolve_dialogue_call(
+    request: &mut CallResolverRequest<'_>,
+    id: DialogueCallableId,
+    callee: &DialogueCalleeIdentity,
+    patch_context: super::CharacterDialoguePatchContext,
+) -> Result<ResolvedCallTarget, ResolveCallError> {
+    if !id.supports_callee(callee) {
+        return Err(ResolveCallError::InvalidResolvedCallable);
+    }
+    let schema = id
+        .signature_schema(DialogueSchemaContext {
+            callee,
+            module: request.authority.module().key().path(),
+            custom_fields: request
+                .authority
+                .world()
+                .environment()
+                .character_dialogue_fields(),
+            patch_context,
+        })
+        .map_err(|_| ResolveCallError::InvalidResolvedCallable)?;
+    let instantiation = match callee {
+        DialogueCalleeIdentity::Character { character }
+        | DialogueCalleeIdentity::CharacterDialogue { character } => match character {
+            crate::types::CharacterDialogueCharacterType::Exact(character) => {
+                CallableInstantiation::Character {
+                    owner: super::ResolvedCharacterOwner::new(
+                        character.clone(),
+                        super::CharacterOwnerSource::EntityReference,
+                    ),
+                }
+            }
+            crate::types::CharacterDialogueCharacterType::Any => CallableInstantiation::None,
+        },
+        DialogueCalleeIdentity::Content { .. } => CallableInstantiation::None,
+    };
+    check_query_step(request)?;
+    let callable = ResolvedCallable::try_from_intrinsic(
+        CallableCandidateId::Dialogue(id),
+        SignatureOrigin::Language {
+            family: LanguageCallableFamily::Dialogue,
+        },
+        Arc::new(schema),
+        instantiation,
+        Vec::new(),
+        request.limits,
+    )?;
+    NonEmptyResolvedCandidates::try_new(vec![callable], request.limits)
+        .map(ResolvedCallTarget::Candidates)
 }
 
 fn resolve_associated_type_call(

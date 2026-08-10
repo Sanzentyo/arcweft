@@ -135,8 +135,7 @@ impl ViewEvaluator<'_> {
         })?;
         match projection {
             DialogueTextProjection::CharacterDisplayName => {
-                Ok(BundleViewTextValue::DialogueCharacterDisplayName {
-                    label: input.frame.character.display_name.clone(),
+                Ok(BundleViewTextValue::CharacterDisplayName {
                     frame: Box::new(input.frame.clone()),
                 })
             }

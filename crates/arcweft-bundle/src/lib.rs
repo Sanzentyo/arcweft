@@ -28,6 +28,7 @@ use apache_avro::types::Value as AvroValue;
 use apache_avro::{Reader, Schema, Writer};
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_audio_core::graph::AudioGraph;
+use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::awbc::schema::AwbcProgram;
 use arcweft_core::bytecode::BytecodeProgram;
 use arcweft_core::effect::RuntimeArtifactFingerprint;
@@ -63,6 +64,10 @@ pub struct ArcweftBundle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub product_awbc: Option<BundleAwbcProgram>,
     pub dialogue_content: DialogueContentCatalog,
+    /// Accepted Character presentation data. Its sole persisted wire is the
+    /// compact AWFB `LocaleCatalog` section.
+    #[serde(skip)]
+    pub character_presentation: Option<CharacterPresentationCatalogData>,
     #[serde(default, skip_serializing_if = "FxDefinitions::is_empty")]
     pub fx_definitions: FxDefinitions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -378,6 +383,8 @@ pub enum BundleCodecError {
     UnexpectedAgentManifest,
     #[error("failed to encode Arcweft bundle JSON: {0}")]
     Encode(#[source] serde_json::Error),
+    #[error("serialized Arcweft bundle length does not fit the canonical u64 transcript field")]
+    LogicalIdentityLengthOverflow,
     #[error("failed to decode Arcweft bundle JSON: {0}")]
     Decode(#[source] serde_json::Error),
     #[error("failed to encode Arcweft bundle {format}: {message}")]
@@ -580,6 +587,7 @@ impl ArcweftBundle {
             },
             product_awbc: None,
             dialogue_content,
+            character_presentation: None,
             fx_definitions: FxDefinitions::default(),
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
@@ -593,6 +601,15 @@ impl ArcweftBundle {
             view_input: None,
             view_theme: None,
         })
+    }
+
+    #[must_use]
+    pub fn with_character_presentation_catalog(
+        mut self,
+        catalog: CharacterPresentationCatalogData,
+    ) -> Self {
+        self.character_presentation = Some(catalog);
+        self
     }
 
     /// Human-readable label projected from the canonical source map.

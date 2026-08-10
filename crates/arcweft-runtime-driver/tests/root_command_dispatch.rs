@@ -10,7 +10,9 @@ use arcweft_core::entry::{
     RuntimeNominalTypeId, RuntimeStatefulEntryRoles, RuntimeTypeSchema, RuntimeValueDigest,
     TypeLayoutHash,
 };
-use arcweft_core::pattern::{RuntimePattern, RuntimeSemanticTypeId, RuntimeVariantIdentity};
+use arcweft_core::pattern::{
+    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimePattern, RuntimeSemanticTypeId,
+};
 use arcweft_core::plan::{
     EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
     RuntimeFlow, RuntimeHostCallTarget, RuntimePlan, RuntimePureHelper, RuntimePureHelperId,
@@ -20,9 +22,7 @@ use arcweft_core::root::{RootEventInput, TransitionSequence};
 use arcweft_core::step::{
     RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallMode, RuntimeHostCallResult,
 };
-use arcweft_core::value::{
-    RuntimeExpr, RuntimeFieldValue, RuntimePayload, RuntimeSeq, RuntimeValue,
-};
+use arcweft_core::value::{RuntimeExpr, RuntimeFieldExpr, RuntimePayload, RuntimeValue};
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{
     BundleEntryStart, BundleHotSwapError, BundleSession, BundleSessionError, BundleSessionOptions,
@@ -62,48 +62,54 @@ fn target_id() -> RuntimeCommandTargetId {
     RuntimeCommandTargetId::try_new(TARGET).expect("target ID")
 }
 
-fn command_value(payload: RuntimeValue) -> RuntimeValue {
-    nominal_variant(
-        "Command",
-        "Command",
-        Some(RuntimeValue::Record(vec![
-            RuntimeFieldValue {
+fn command_expr(payload: RuntimeValue) -> RuntimeExpr {
+    RuntimeExpr::Variant {
+        owner: nominal_variant_type("Command", "Command", "CommandPayload"),
+        ordinal: 0,
+        name: "Command".to_owned(),
+        payload: Some(Box::new(RuntimeExpr::Record(vec![
+            RuntimeFieldExpr {
                 name: "constructor".to_owned(),
-                value: RuntimeValue::EntityRef(CONSTRUCTOR.to_owned()),
+                value: RuntimeExpr::Value(RuntimeValue::EntityRef(CONSTRUCTOR.to_owned())),
             },
-            RuntimeFieldValue {
+            RuntimeFieldExpr {
                 name: "target".to_owned(),
-                value: RuntimeValue::EntityRef(TARGET.to_owned()),
+                value: RuntimeExpr::Value(RuntimeValue::EntityRef(TARGET.to_owned())),
             },
-            RuntimeFieldValue {
+            RuntimeFieldExpr {
                 name: "payload".to_owned(),
-                value: payload,
+                value: RuntimeExpr::Value(payload),
             },
-        ])),
-    )
+        ]))),
+    }
 }
 
-fn reducer_ok_with_command() -> RuntimeValue {
+fn reducer_ok_with_command() -> RuntimeExpr {
     reducer_ok_with_commands([RuntimeValue::String("checkpoint".to_owned())])
 }
 
-fn reducer_ok_with_commands(payloads: impl IntoIterator<Item = RuntimeValue>) -> RuntimeValue {
-    RuntimeValue::result_ok(nominal_variant(
-        "Reduction",
-        "Reduction",
-        Some(RuntimeValue::Record(vec![
-            RuntimeFieldValue {
+fn reducer_ok_with_commands(payloads: impl IntoIterator<Item = RuntimeValue>) -> RuntimeExpr {
+    let reduction = RuntimeExpr::Variant {
+        owner: reduction_type(),
+        ordinal: 0,
+        name: "Reduction".to_owned(),
+        payload: Some(Box::new(RuntimeExpr::Record(vec![
+            RuntimeFieldExpr {
                 name: "state".to_owned(),
-                value: RuntimeValue::i64(2),
+                value: RuntimeExpr::Value(RuntimeValue::i64(2)),
             },
-            RuntimeFieldValue {
+            RuntimeFieldExpr {
                 name: "commands".to_owned(),
-                value: RuntimeValue::Seq(RuntimeSeq::values(
-                    payloads.into_iter().map(command_value).collect(),
-                )),
+                value: RuntimeExpr::BracketSeq(payloads.into_iter().map(command_expr).collect()),
             },
-        ])),
-    ))
+        ]))),
+    };
+    RuntimeExpr::Variant {
+        owner: reducer_result_type(),
+        ordinal: 0,
+        name: "Ok".to_owned(),
+        payload: Some(Box::new(reduction)),
+    }
 }
 
 fn command_bundle(include_flow_host_call: bool) -> ArcweftBundle {
@@ -114,32 +120,56 @@ fn command_bundle(include_flow_host_call: bool) -> ArcweftBundle {
     )
 }
 
-fn reducer_rejection() -> RuntimeValue {
-    RuntimeValue::result_err(nominal_variant(
-        "ReducerError",
-        "ReducerError",
-        Some(RuntimeValue::Record(vec![
-            RuntimeFieldValue {
+fn reducer_rejection() -> RuntimeExpr {
+    let rejection = RuntimeExpr::Variant {
+        owner: reducer_error_type(),
+        ordinal: 0,
+        name: "ReducerError".to_owned(),
+        payload: Some(Box::new(RuntimeExpr::Record(vec![
+            RuntimeFieldExpr {
                 name: "code".to_owned(),
-                value: RuntimeValue::String("not_allowed".to_owned()),
+                value: RuntimeExpr::Value(RuntimeValue::String("not_allowed".to_owned())),
             },
-            RuntimeFieldValue {
+            RuntimeFieldExpr {
                 name: "message".to_owned(),
-                value: RuntimeValue::String("transition rejected".to_owned()),
+                value: RuntimeExpr::Value(RuntimeValue::String("transition rejected".to_owned())),
             },
-        ])),
-    ))
+        ]))),
+    };
+    RuntimeExpr::Variant {
+        owner: reducer_result_type(),
+        ordinal: 1,
+        name: "Err".to_owned(),
+        payload: Some(Box::new(rejection)),
+    }
 }
 
-fn nominal_variant(owner: &str, name: &str, payload: Option<RuntimeValue>) -> RuntimeValue {
-    RuntimeValue::Variant {
-        owner: RuntimeVariantIdentity::Nominal {
-            nominal: RuntimeNominalTypeId::try_new(owner).expect("nominal variant owner"),
-            semantic_identity: RuntimeSemanticTypeId::from_bytes([0x52; 32]),
-        },
-        ordinal: 0,
-        name: name.to_owned(),
-        payload: payload.map(Box::new),
+fn reducer_result_type() -> RuntimeCheckedType {
+    RuntimeCheckedType::Result {
+        ok: Box::new(reduction_type()),
+        error: Box::new(reducer_error_type()),
+    }
+}
+
+fn reduction_type() -> RuntimeCheckedType {
+    nominal_variant_type("Reduction", "Reduction", "ReductionPayload")
+}
+
+fn reducer_error_type() -> RuntimeCheckedType {
+    nominal_variant_type("ReducerError", "ReducerError", "ReducerErrorPayload")
+}
+
+fn nominal_variant_type(owner: &str, case: &str, payload: &str) -> RuntimeCheckedType {
+    RuntimeCheckedType::Variant {
+        nominal: RuntimeNominalTypeId::try_new(owner).expect("nominal variant owner"),
+        semantic_identity: RuntimeSemanticTypeId::from_bytes([0x52; 32]),
+        cases: vec![RuntimeCheckedVariantCase {
+            name: case.to_owned(),
+            payload: Some(Box::new(RuntimeCheckedType::Nominal {
+                nominal: RuntimeNominalTypeId::try_new(payload).expect("nominal payload owner"),
+                semantic_identity: RuntimeSemanticTypeId::from_bytes([0x53; 32]),
+            })),
+        }],
     }
 }
 
@@ -255,7 +285,7 @@ impl RootFixtureContract {
 fn command_bundle_with_root(
     include_flow_host_call: bool,
     initializer_value: RuntimeValue,
-    reducer_value: RuntimeValue,
+    reducer_expr: RuntimeExpr,
 ) -> ArcweftBundle {
     let contract = RootFixtureContract::new();
     let flow_ops = if include_flow_host_call {
@@ -301,7 +331,7 @@ fn command_bundle_with_root(
             input_names: vec!["state".to_owned(), "event".to_owned()],
             input_types: vec![RuntimePureInputType::Value, RuntimePureInputType::Value],
             output_type: RuntimePureOutputType::Value,
-            expr: RuntimeExpr::Value(reducer_value),
+            expr: reducer_expr,
             scalar_eval_supported: false,
             origin: RuntimePureHelperOrigin::Annotated,
         },
@@ -482,7 +512,7 @@ fn committed_root_request_precedes_later_flow_host_request() {
     let mut session = session(true, RootCommandHostResultRoute::Ignore);
     let step = step_with_event(&mut session, RuntimeValue::i64(7));
 
-    assert_eq!(step.root_commands.len(), 1);
+    assert_eq!(step.root_commands.len(), 1, "{step:#?}");
     assert_eq!(step.requested_host_calls.len(), 2);
     assert_eq!(step.requested_host_calls[0].public_id, "host.save");
     assert_eq!(step.requested_host_calls[0].capability, "save");
@@ -954,7 +984,7 @@ fn rep_009_recorded_trap_is_terminal_and_has_no_command_dispatch() {
     let bundle = command_bundle_with_root(
         false,
         RuntimeValue::i64(1),
-        RuntimeValue::String("not a reducer result".to_owned()),
+        RuntimeExpr::Value(RuntimeValue::String("not a reducer result".to_owned())),
     );
     let trace = recorded_single_transition(&bundle, RootCommandHostResultRoute::Ignore);
     assert!(matches!(

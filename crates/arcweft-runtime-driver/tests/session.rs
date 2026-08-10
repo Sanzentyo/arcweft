@@ -24,6 +24,7 @@ use arcweft_bundle::{
     ArcweftBundle, BundleFormat, BundleManifest, BundleRuntimeSummary, BundleVirtualFile,
     BundleVirtualFileSpace,
 };
+use arcweft_character::presentation_name::CharacterNameLocale;
 use arcweft_core::awbc::schema::{
     AwbcEntry, AwbcEntryId, AwbcEntryKind, AwbcEntryTarget, AwbcProgram, AwbcRoute, AwbcStringId,
 };
@@ -42,7 +43,7 @@ use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeBinding, RuntimeExpr, RuntimePayload, RuntimeValue};
-use arcweft_id::{PublicId, TextKey};
+use arcweft_id::{LocaleTag, PublicId, TextKey};
 use arcweft_presentation::appearance::{
     ColorScheme, ContrastPreference, PresentationEnvironmentField, PresentationEnvironmentFieldSet,
     PresentationEnvironmentOverrides, PresentationEnvironmentValue, PresentationEnvironmentValues,
@@ -58,7 +59,7 @@ use arcweft_presentation::text_input::{
 };
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::dialogue::DialogueEntryState;
-use arcweft_runtime_driver::display::BundlePresentationSnapshot;
+use arcweft_runtime_driver::display::{ActiveSessionLocale, BundlePresentationSnapshot};
 use arcweft_runtime_driver::presentation_handles::PresentationHandleId;
 use arcweft_runtime_driver::session::{
     BundleEntryStart, BundleEntryStartError, BundleHotSwapError, BundlePatchReadiness,
@@ -83,6 +84,8 @@ use arcweft_view::{
     ViewBoxAxisHostSeed, ViewBoxAxisMode, ViewBoxAxisSeedSource, ViewId, ViewValueProgram,
     ViewValueProgramId,
 };
+
+mod support;
 
 fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
     arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
@@ -126,6 +129,11 @@ fn dialogue_content(
         line_id(line),
         TextKey::try_new(line.replace("line.", "text.")).expect("text key"),
         RichTextDocument::new(nodes),
+        support::character_plan("character.fixture"),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            support::dialogue_profile(),
+            support::dialogue_profile_revision(),
+        ),
         Vec::new(),
         ProductSourceRef::try_for_identity(source.identity()).expect("product source ref"),
     )])
@@ -567,7 +575,11 @@ fn fixture_bundle_from_parts(
         BytecodeProgram::from_runtime_plan(plan.clone()),
         dialogue_content.clone(),
     )
-    .expect("standard dialogue source joins source map");
+    .expect("standard dialogue source joins source map")
+    .with_character_presentation_catalog(support::character_catalog(
+        "character.fixture",
+        "Fixture",
+    ));
     if include_product_awbc {
         let product_awbc = AwbcLowerer::new(&plan, &dialogue_content, "web-demo.arcw")
             .lower()
@@ -1140,13 +1152,20 @@ fn session_requires_explicit_clock_and_exposes_presentation() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(dialogue_text(&first.presentation), None);
+    assert_eq!(dialogue_text(&first.presentation), Some("WebGPU dialogue"));
+    assert_eq!(
+        latest_dialogue(&first.presentation)
+            .expect("dialogue frame is published")
+            .frame()
+            .character
+            .display_name,
+        "Fixture"
+    );
     assert!(
         first
             .diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.contains("context is unavailable")),
-        "session without the final CharacterDialogue producer must fail closed: {first:#?}"
+            .all(|diagnostic| !diagnostic.contains("context is unavailable"))
     );
     assert!(first.presentation.choices.is_empty());
 }
@@ -1665,6 +1684,40 @@ fn dialogue_content_mismatch_is_rejected_without_mutating_the_session() {
 }
 
 #[test]
+fn character_presentation_identity_mismatch_is_rejected_without_mutating_the_session() {
+    let bundle = fixture_bundle();
+    let mut session =
+        BundleSession::new(&bundle, BundleSessionOptions::default()).expect("session starts");
+    let before = session
+        .snapshot_session()
+        .expect("session snapshot exports");
+
+    let mut tampered = before.clone();
+    tampered
+        .character_presentation
+        .as_mut()
+        .expect("dialogue fixture publishes Character presentation identity")
+        .active_locale = ActiveSessionLocale::new(&CharacterNameLocale::new(
+        LocaleTag::try_new("ja").expect("test locale is valid"),
+    ));
+
+    let error = session
+        .restore_session_snapshot(tampered)
+        .expect_err("a save from another active Character locale is rejected");
+
+    assert!(matches!(
+        error,
+        BundleSessionSaveError::CharacterPresentation { .. }
+    ));
+    assert_eq!(
+        session
+            .snapshot_session()
+            .expect("live session remains valid"),
+        before
+    );
+}
+
+#[test]
 fn session_accepts_generic_semantic_action_invoke() {
     let bundle = fixture_bundle();
     let mut session =
@@ -1884,11 +1937,59 @@ fn hot_swap_dialogue_content_change_requires_presentation_reset() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(dialogue_text(&step.presentation), None);
+    assert_eq!(dialogue_text(&step.presentation), Some("New text"));
     assert!(
         step.diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.contains("context is unavailable"))
+            .all(|diagnostic| !diagnostic.contains("context is unavailable"))
+    );
+}
+
+#[test]
+fn content_only_character_catalog_swap_reprojects_retained_dialogue_atomically() {
+    let old_bundle = fixture_bundle();
+    let new_bundle = fixture_bundle().with_character_presentation_catalog(
+        support::character_catalog("character.fixture", "Updated Fixture"),
+    );
+    assert_ne!(
+        old_bundle
+            .character_presentation
+            .as_ref()
+            .expect("old fixture publishes Character catalog")
+            .semantic_digest(),
+        new_bundle
+            .character_presentation
+            .as_ref()
+            .expect("replacement publishes Character catalog")
+            .semantic_digest()
+    );
+    let mut session =
+        BundleSession::new(&old_bundle, BundleSessionOptions::default()).expect("session starts");
+    let first = session.step_with_clock(
+        RuntimeClockStep::from_millis(1, 16).expect("clock"),
+        BundleStepInput::default(),
+    );
+    assert_eq!(
+        latest_dialogue(&first.presentation)
+            .expect("dialogue frame is retained")
+            .frame()
+            .character
+            .display_name,
+        "Fixture"
+    );
+
+    let report = session
+        .hot_swap_bundle(&new_bundle)
+        .expect("Character catalog replacement reprojects every retained frame");
+
+    assert_eq!(report.compatibility, SwapCompatibility::ContentOnly);
+    assert_eq!(
+        latest_dialogue(session.presentation())
+            .expect("retained dialogue survives the content-only replacement")
+            .frame()
+            .character
+            .display_name,
+        "Updated Fixture"
     );
 }
 
@@ -2006,11 +2107,11 @@ fn hot_swap_code_compatible_bundle_replaces_runtime_at_quiescent_boundary() {
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(dialogue_text(&step.presentation), None);
+    assert_eq!(dialogue_text(&step.presentation), Some("WebGPU dialogue"));
     assert!(
         step.diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.contains("context is unavailable"))
+            .all(|diagnostic| !diagnostic.contains("context is unavailable"))
     );
 }
 
@@ -2506,11 +2607,11 @@ fn hot_swap_patch_bytes_materializes_dialogue_content_with_presentation_reset() 
         RuntimeClockStep::from_millis(1, 16).expect("clock"),
         BundleStepInput::default(),
     );
-    assert_eq!(dialogue_text(&step.presentation), None);
+    assert_eq!(dialogue_text(&step.presentation), Some("New text"));
     assert!(
         step.diagnostics
             .iter()
-            .any(|diagnostic| diagnostic.contains("context is unavailable"))
+            .all(|diagnostic| !diagnostic.contains("context is unavailable"))
     );
 }
 

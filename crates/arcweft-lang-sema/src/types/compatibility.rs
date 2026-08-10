@@ -34,6 +34,9 @@ impl TypeKind {
             return compatible;
         }
         match (self, actual) {
+            (Self::CharacterDialogue(expected), Self::CharacterDialogue(actual)) => {
+                expected.accepts(actual)
+            }
             (Self::Bytes, Self::Vec(inner) | Self::Slice(inner) | Self::Seq(inner)) => {
                 matches!(inner.as_ref(), Self::U8)
             }
@@ -72,7 +75,8 @@ impl TypeKind {
                 expected.accepts(actual)
                     || matches!(actual.as_ref(), Self::Named(name) if name == "_")
             }
-            (Self::Vec(expected), Self::Vec(actual))
+            (Self::DialogueLine(expected), Self::DialogueLine(actual))
+            | (Self::Vec(expected), Self::Vec(actual))
             | (Self::Seq(expected), Self::Seq(actual))
             | (Self::Slice(expected), Self::Slice(actual))
             | (Self::Range(expected), Self::Range(actual)) => expected.accepts(actual),

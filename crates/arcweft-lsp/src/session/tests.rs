@@ -156,25 +156,33 @@ fn dialogue_line_navigation_and_explicit_rename_share_typed_project_facts() {
 pub character @character.alice Alice as alice {}
 
 fn opening() {
-    let line = alice(
+    alice(
         id = @say.story.greeting,
         text_key = @text.story.fixed,
-    )[前[strong]強調[/strong]後]
+    )[前[strong]強調[/strong]後];
 }
 
 fn other() {
-    let line = alice(id = @say.story.other)[別[strong]行[/strong]]
+    alice(id = @say.story.other)[別[strong]行[/strong]];
 }
 
 fn reference() {
     let selected: Ref<DialogueLine> = @say.story.greeting
 }
 ";
-    let (_project, session, uri) = accepted_project_session("dialogue-line-navigation", source);
+    let (_project, session, uri) =
+        accepted_dialogue_project_session("dialogue-line-navigation", source);
     let profile = session.profile_for_uri(&uri);
     assert!(
         profile.accepted_environment().is_some(),
         "dialogue-line project must be accepted: {:?}",
+        profile.diagnostics()
+    );
+    assert!(
+        profile
+            .accepted_environment()
+            .is_some_and(|accepted| accepted.executable().is_some()),
+        "dialogue-line project must be executable: {:?}",
         profile.diagnostics()
     );
     let document = session.documents.get(&uri).expect("open source document");
@@ -240,15 +248,20 @@ fn generated_dialogue_line_rename_materializes_immediate_id_coordinate() {
 pub character @character.alice Alice as alice {}
 
 fn opening() {
-    let line = alice()[前[strong]生成[/strong]後]
+    alice()[前[strong]生成[/strong]後];
 }
 ";
     let (_project, session, uri) =
-        accepted_project_session("generated-dialogue-line-rename", source);
+        accepted_dialogue_project_session("generated-dialogue-line-rename", source);
     let profile = session.profile_for_uri(&uri);
     let accepted = profile
         .accepted_environment()
         .expect("generated dialogue-line project is accepted");
+    assert!(
+        accepted.executable().is_some(),
+        "generated dialogue-line project must be executable: {:?}",
+        profile.diagnostics()
+    );
     let [line] = accepted.project().hir_project().dialogue_lines().records() else {
         panic!("one generated dialogue line")
     };
@@ -289,7 +302,7 @@ fn opening() {
 
     let materialized = source.replacen("alice()", "alice(id = @say.story.materialized)", 1);
     let (_project, materialized_session, materialized_uri) =
-        accepted_project_session("materialized-dialogue-line", &materialized);
+        accepted_dialogue_project_session("materialized-dialogue-line", &materialized);
     let materialized_profile = materialized_session.profile_for_uri(&materialized_uri);
     let materialized_project = materialized_profile
         .accepted_environment()
@@ -315,13 +328,20 @@ fn generated_dialogue_line_rename_uses_typed_call_and_target_insertion_sites() {
 pub character @character.alice Alice as alice {}
 
 fn opening() {
-    let line = alice(text_key = @text.story.fixed)[前[strong]生成[/strong]後]
+    alice(text_key = @text.story.fixed)[前[strong]生成[/strong]後];
 }
 ";
     let (_project, call_session, call_uri) =
-        accepted_project_session("generated-line-call-insertion", call_source);
+        accepted_dialogue_project_session("generated-line-call-insertion", call_source);
     let call_profile = call_session.profile_for_uri(&call_uri);
     assert!(call_profile.accepted_environment().is_some());
+    assert!(
+        call_profile
+            .accepted_environment()
+            .is_some_and(|accepted| accepted.executable().is_some()),
+        "dialogue call project must be executable: {:?}",
+        call_profile.diagnostics()
+    );
     let call_document = call_session
         .documents
         .get(&call_uri)
@@ -349,11 +369,11 @@ fn opening() {
 pub character @character.alice Alice as alice {}
 
 fn opening() {
-    let line = alice[前[strong]生成[/strong]後]
+    alice[前[strong]生成[/strong]後];
 }
 ";
     let (_project, path_session, path_uri) =
-        accepted_project_session("generated-line-target-insertion", path_source);
+        accepted_dialogue_project_session("generated-line-target-insertion", path_source);
     let path_profile = path_session.profile_for_uri(&path_uri);
     assert!(path_profile.accepted_environment().is_some());
     let path_document = path_session
@@ -826,7 +846,7 @@ fn completions_and_hover_expose_standard_dialogue_view_nominal_contract() {
     let source = r"
 pub view DialoguePanel(dialogue: DialogueView) {
     Column {
-        Text(dialogue.character_display_name)
+        Text(dialogue.character.display_name)
         RichText(dialogue.content)
     }
 }
@@ -836,7 +856,8 @@ pub view DialoguePanel(dialogue: DialogueView) {
     let completions = completion_labels(&mut session, uri.clone());
     for expected in [
         "DialogueView",
-        "character_display_name",
+        "character",
+        "display_name",
         "content",
         "occurrence",
         "stage",
@@ -859,7 +880,7 @@ fn completion_and_hover_use_custom_dialogue_view_role_inventory() {
     let source = r"
 #[dialogue_view]
 pub struct StoryDialogue {
-    character_display_name: String
+    character: DialogueCharacter
     content: DialogueContent
     occurrence: DialogueOccurrenceId
     stage: DialogueStage
@@ -868,6 +889,14 @@ pub struct StoryDialogue {
 }
 ";
     let (_project, mut session, uri) = accepted_project_session("custom-dialogue-view", source);
+    assert!(
+        session
+            .profile_for_uri(&uri)
+            .accepted_environment()
+            .is_some(),
+        "custom dialogue View project must be accepted: {:?}",
+        session.profile_for_uri(&uri).diagnostics()
+    );
 
     let completions = completion_labels(&mut session, uri.clone());
     assert!(
@@ -1143,6 +1172,20 @@ flow @flow.main main {}\n";
     let uri = file_uri(&project.path("src/main.arcw"));
     let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
     open_text(&mut session, uri.clone(), source);
+    let signature_profile = session.profile_for_uri(&uri);
+    let signature_environment = signature_profile.accepted_environment();
+    assert!(
+        signature_environment.is_some(),
+        "signature profile diagnostics: {:#?}",
+        signature_profile.diagnostics()
+    );
+    assert!(
+        signature_environment
+            .as_ref()
+            .is_some_and(|accepted| accepted.executable().is_some()),
+        "signature executable diagnostics: {:#?}",
+        signature_profile.diagnostics()
+    );
     let session = Arc::new(RwLock::new(session));
     let (server, client) = Connection::memory();
     let runtime =
@@ -1482,6 +1525,10 @@ version = "0.1.0"
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
+
+[profiles.dev.localization.character_names]
+active = "ja-JP"
+fallbacks = []
 "#,
     );
     let root_source = r"use crate.side.child_helper
@@ -1518,6 +1565,14 @@ test @test.child_dialogue scenario {
         "child document should belong to an accepted project generation: {:?}",
         profile.diagnostics()
     );
+    let accepted = profile
+        .accepted_environment()
+        .expect("child document accepted environment");
+    assert!(
+        accepted.executable().is_some(),
+        "child dialogue project must be executable: {:?}",
+        profile.diagnostics()
+    );
 
     let hover = hover_text(&mut session, uri, child_source, "child_speaker[");
     assert!(
@@ -1542,6 +1597,35 @@ version = "0.1.0"
 [profiles.dev]
 kind = "game"
 source = "src/main.arcw"
+"#,
+    );
+    project.write("src/main.arcw", source);
+    let uri = file_uri(&project.path("src/main.arcw"));
+    let mut session = ArcweftLspSession::new(&LspConfig::default().with_profile_id("dev"));
+    open_text(&mut session, uri.clone(), source);
+    (project, session, uri)
+}
+
+fn accepted_dialogue_project_session(
+    name: &str,
+    source: &str,
+) -> (TestProject, ArcweftLspSession, Uri) {
+    let project = TestProject::new(name);
+    project.write(
+        "arcw.toml",
+        r#"schema = 1
+
+[package]
+id = "org.arcweft.tests.accepted.dialogue"
+version = "0.1.0"
+
+[profiles.dev]
+kind = "game"
+source = "src/main.arcw"
+
+[profiles.dev.localization.character_names]
+active = "ja-JP"
+fallbacks = []
 "#,
     );
     project.write("src/main.arcw", source);

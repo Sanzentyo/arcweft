@@ -923,6 +923,13 @@ where
             executable,
             registered_world.symbols(),
             &final_analysis,
+            Some((dialogue_profile.presentation(), dialogue_profile.revision())),
+            context.accepted_launch_profile().and_then(|input| {
+                input
+                    .resolved_profile()
+                    .localization()
+                    .character_names()
+            }),
         )
         .map_err(|error| {
             linked_error(

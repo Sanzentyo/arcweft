@@ -1,11 +1,13 @@
 //! Launch-selected dialogue presentation policy.
 
 use arcweft_view::{ViewId, ViewStyleSheetId};
+use serde::{Deserialize, Serialize};
 
 use crate::InlineFailurePolicy;
 
 /// Immutable launch-level defaults applied before Character and line overrides.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct DialoguePresentationProfile {
     view: ViewId,
     style: Option<ViewStyleSheetId>,

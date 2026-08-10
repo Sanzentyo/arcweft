@@ -896,6 +896,7 @@ pub struct SemanticSignatureHelp {
     call_span: SourceSpan,
     argument_span: SourceSpan,
     expression: ExprId,
+    surface: SemanticSignatureSurface,
     signatures: Arc<[SemanticSignature]>,
     active_signature: SemanticSignatureIndex,
     active_parameter: Option<CallableParameterCoordinate>,
@@ -906,6 +907,13 @@ pub struct SemanticSignatureHelp {
     omitted_diagnostics: u64,
     work: SignatureWorkReport,
     query_work: SignatureQueryWorkReport,
+}
+
+/// Closed source presentation selected for one semantic signature-help query.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SemanticSignatureSurface {
+    Parenthesized,
+    DialogueContent,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -928,6 +936,7 @@ impl SemanticSignatureHelp {
         call_span: SourceSpan,
         argument_span: SourceSpan,
         expression: ExprId,
+        surface: SemanticSignatureSurface,
         signatures: Vec<SemanticSignature>,
         active_signature: SemanticSignatureIndex,
         active_parameter: Option<CallableParameterCoordinate>,
@@ -1035,6 +1044,7 @@ impl SemanticSignatureHelp {
             call_span,
             argument_span,
             expression,
+            surface,
             signatures: signatures.into(),
             active_signature,
             active_parameter,
@@ -1058,6 +1068,9 @@ impl SemanticSignatureHelp {
     }
     pub const fn expression(&self) -> ExprId {
         self.expression
+    }
+    pub const fn surface(&self) -> SemanticSignatureSurface {
+        self.surface
     }
     pub fn signatures(&self) -> &[SemanticSignature] {
         &self.signatures

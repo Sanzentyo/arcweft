@@ -14,6 +14,8 @@ use arcweft_text_model::{
 use arcweft_view::ViewId;
 use std::collections::BTreeMap;
 
+mod support;
+
 fn line_id(value: &str) -> RuntimeLineId {
     RuntimeLineId::from_runtime_line_value(value).expect("test line ID is valid")
 }
@@ -70,6 +72,11 @@ fn spec_with_line(line: &str, nodes: Vec<RichTextNode>) -> DialogueContentSpec {
         line_id(line),
         TextKey::try_new(line.replacen("say.", "text.", 1)).expect("text key"),
         RichTextDocument::new(nodes),
+        support::character_plan("character.test"),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            support::dialogue_profile(),
+            support::dialogue_profile_revision(),
+        ),
         Vec::new(),
         source_ref(),
     )

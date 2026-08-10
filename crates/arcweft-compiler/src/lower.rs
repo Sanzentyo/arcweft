@@ -5,8 +5,21 @@
 //! final-HIR generation and never opens source text, rebuilds a detached HIR,
 //! or consults the removed `TypeCheckReport` sidecar.
 
-use std::collections::BTreeMap;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    sync::Arc,
+};
 
+use arcweft_character::{
+    id::CharacterId,
+    presentation_name::{
+        CharacterDisplayNameInput, CharacterDisplayNameRecordInput, CharacterDisplayNameValue,
+        CharacterNameFallbackLocale, CharacterNameLocale, CharacterNameLocalePolicy,
+        CharacterPresentationCatalogData, CharacterPresentationCatalogGeneration,
+        CharacterPresentationCatalogInput, CharacterPresentationCatalogRevision,
+        CharacterPresentationRole,
+    },
+};
 use arcweft_core::{
     entry::RuntimeNominalTypeId,
     pattern::RuntimeCheckedVariantCase,
@@ -22,14 +35,23 @@ use arcweft_core::{
         RuntimeValue, runtime_sequence_from_literal_values,
     },
 };
+use arcweft_dialogue::{
+    CharacterDialogueRuntimeSchema, DialoguePresentationProfile, DialogueProfileRevision,
+    InlineFailurePolicy,
+    character_presentation::{
+        CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
+    },
+};
 use arcweft_lang_hir::{
     expr::HirExprKind,
     identity::{ExprId, ItemId, PatternId, StmtId},
+    item::{HirCharacterSurfaceAlias, HirDeclarationMemberKind, HirItemKind, HirRetainedName},
     leaf::{
         HirBigUint, HirCharacterLiteral, HirDecimal, HirDurationLiteral, HirFloatLiteral,
         HirIntegerLiteral, HirLiteral, HirStringLiteral, HirUnitNumberLiteral,
     },
-    project::HirExecutableProjectView,
+    project::{HirExecutableProjectView, HirProjectItemRef},
+    scope::HirScopeOwner,
     symbol::{CallableDeclarationKey, ProjectSymbolTable, nominal::ProjectNominalDeclarationId},
 };
 use arcweft_lang_sema::{
@@ -39,28 +61,41 @@ use arcweft_lang_sema::{
         CheckedCallableExecution, MathCallableId, ReductionConstructorKind, ResolvedCallable,
         SignatureOrigin, StdFloatOperation,
     },
+    checked_rich_text::{
+        CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueToken,
+        CheckedDirectStyleSpan, CheckedRichTextAction, CheckedRichTextReport, CheckedVoiceSource,
+        LengthUnit,
+    },
     effects::EffectId,
     final_analysis::{
-        CheckedAssertionDisposition, CheckedExpressionResolution, CheckedItemRole,
-        CheckedIteration, CheckedIteratorFamily, CheckedPatternResolution, CheckedProjectItemOwner,
-        CheckedProjectNominal, CheckedSelectResolution, CheckedStatementRole,
-        CheckedTraitConformance, CheckedTraitIdentity, CheckedValueResolution, CheckedVariantOwner,
-        CheckedVariantResolution, FinalSemanticAnalysis, FinalSemanticAnalysisError,
+        CheckedAssertionDisposition, CheckedCharacterDialogueTarget, CheckedExpressionResolution,
+        CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedPatternResolution,
+        CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
+        CheckedStatementRole, CheckedTraitConformance, CheckedTraitIdentity,
+        CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
+        FinalSemanticAnalysis, FinalSemanticAnalysisError,
     },
     types::{ArrayLength, TypeKind},
 };
+use arcweft_manifest_model::CharacterNameLocalePolicySpec;
 use arcweft_runtime_plan::{
     assertion_identity::RuntimeAssertionMode,
     semantic_facts::{
         RuntimeAssertionAdmission, RuntimeCallResultShape, RuntimeCheckedCapture,
-        RuntimeNormalizedType, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
-        RuntimeProjectCallable, RuntimeProjectItem, RuntimeReductionConstructor,
-        RuntimeRegisteredValueId, RuntimeResolvedCall, RuntimeResolvedCallArgument,
-        RuntimeResolvedCallTarget, RuntimeResolvedNominal, RuntimeResolvedSelect,
-        RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactsError,
-        RuntimeSemanticTypeId, RuntimeSequenceKind, RuntimeTraitIdentity, RuntimeTraitMethodFact,
-        RuntimeTypeShape,
+        RuntimeDialogueApplication, RuntimeNormalizedType, RuntimePlanSemanticFactInput,
+        RuntimePlanSemanticFacts, RuntimeProjectCallable, RuntimeProjectItem,
+        RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
+        RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedNominal,
+        RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
+        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
+        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTypeShape,
     },
+};
+use arcweft_source::ProductSourceRef;
+use arcweft_text_model::{
+    DialogueContentSpec, DialogueHostEvent, DialoguePresentationSnapshot, DialogueVoiceSource,
+    Milli, RichTextAngle, RichTextColor, RichTextControl, RichTextDocument, RichTextFontFamily,
+    RichTextNode, RichTextSpanKind, RichTextStyle,
 };
 use thiserror::Error;
 
@@ -96,6 +131,11 @@ pub enum RuntimeSemanticProjectionError {
     InconsistentIterationConformance,
     #[error("assertion statement {owner:?} has an invalid runtime disposition")]
     InvalidAssertionDisposition { owner: StmtId },
+    #[error("dialogue projection failed for {owner:?}: {reason}")]
+    Dialogue {
+        owner: Option<ExprId>,
+        reason: String,
+    },
 }
 
 impl From<FinalSemanticAnalysisError> for RuntimeSemanticProjectionError {
@@ -122,6 +162,8 @@ pub fn project_runtime_semantic_facts(
     project: HirExecutableProjectView<'_>,
     symbols: &ProjectSymbolTable,
     analysis: &FinalSemanticAnalysis,
+    dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
+    character_name_policy: Option<&CharacterNameLocalePolicySpec>,
 ) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
     analysis.validate_generation(project, symbols)?;
     let mut input = RuntimePlanSemanticFactInput::new();
@@ -259,7 +301,8 @@ pub fn project_runtime_semantic_facts(
             }
             CheckedExpressionResolution::DialogueLineCoordinate(_)
             | CheckedExpressionResolution::DialogueTextKeyCoordinate(_)
-            | CheckedExpressionResolution::DialogueConfiguration { .. }
+            | CheckedExpressionResolution::CharacterDialogueFactory(_)
+            | CheckedExpressionResolution::CharacterDialogueReconfigure(_)
             | CheckedExpressionResolution::Call
             | CheckedExpressionResolution::ViewCall(_)
             | CheckedExpressionResolution::ViewCallee(_)
@@ -315,11 +358,644 @@ pub fn project_runtime_semantic_facts(
         ));
     }
 
+    let dialogue_application_calls = dialogue_application_owned_calls(project, analysis)?;
     for (owner, call) in analysis.calls() {
+        if dialogue_application_calls.contains(&owner) {
+            continue;
+        }
         input.push_call(owner, runtime_call(owner, call, symbols, analysis)?);
     }
 
-    RuntimePlanSemanticFacts::try_new(project, input).map_err(Into::into)
+    let facts = RuntimePlanSemanticFacts::try_new(project, input)?;
+    project_dialogue_semantic_facts(
+        project,
+        analysis,
+        dialogue_profile,
+        character_name_policy,
+        facts,
+    )
+}
+
+fn dialogue_application_owned_calls(
+    project: HirExecutableProjectView<'_>,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<BTreeSet<ExprId>, RuntimeSemanticProjectionError> {
+    analysis
+        .expressions()
+        .filter_map(|(owner, expression)| {
+            matches!(
+                expression.resolution(),
+                CheckedExpressionResolution::DialogueApplication { .. }
+            )
+            .then_some(owner)
+        })
+        .try_fold(BTreeSet::new(), |mut calls, owner| {
+            let module = project
+                .modules()
+                .find_map(|(_, module)| {
+                    (module.module_id() == owner.module()).then_some(module.as_ref())
+                })
+                .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
+            let expression = module.resolve_expr(owner).map_err(|error| {
+                RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: error.to_string(),
+                }
+            })?;
+            let HirExprKind::DialogueContentApplication(application) = expression.kind() else {
+                return Err(RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: "checked dialogue application has a different final-HIR family"
+                        .to_owned(),
+                });
+            };
+            calls.insert(owner);
+            if analysis.call(application.target()).is_some() {
+                calls.insert(application.target());
+            }
+            Ok(calls)
+        })
+}
+
+fn project_dialogue_semantic_facts(
+    project: HirExecutableProjectView<'_>,
+    analysis: &FinalSemanticAnalysis,
+    dialogue_profile: Option<(&DialoguePresentationProfile, &DialogueProfileRevision)>,
+    policy: Option<&CharacterNameLocalePolicySpec>,
+    facts: RuntimePlanSemanticFacts,
+) -> Result<RuntimePlanSemanticFacts, RuntimeSemanticProjectionError> {
+    let applications = executable_dialogue_applications(project, analysis)?;
+    if applications.is_empty() {
+        return facts
+            .with_dialogue_projection(project, None, [])
+            .map_err(Into::into);
+    }
+    let (dialogue_profile, dialogue_profile_revision) =
+        dialogue_profile.ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason:
+                "an executable dialogue product requires one compiler-admitted dialogue profile"
+                    .to_owned(),
+        })?;
+    let policy = policy.ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+        owner: None,
+        reason: "an executable dialogue product requires the selected profile localization.character_names policy"
+            .to_owned(),
+    })?;
+    let catalog = Arc::new(build_character_presentation_catalog(
+        project, analysis, policy,
+    )?);
+    let generation = CharacterPresentationCatalogGeneration::new(
+        CharacterPresentationCatalogRevision::INITIAL,
+        catalog.semantic_digest(),
+        catalog.locale_policy_digest(),
+    );
+    let presentation = DialoguePresentationSnapshot::new(
+        dialogue_profile.clone(),
+        dialogue_profile_revision.clone(),
+    );
+    let mut projected = Vec::with_capacity(applications.len());
+    for (owner, target, rich_text) in applications {
+        projected.push(project_dialogue_application(
+            project,
+            &facts,
+            owner,
+            target,
+            rich_text,
+            generation,
+            presentation.clone(),
+        )?);
+    }
+    facts
+        .with_dialogue_projection(project, Some(catalog), projected)
+        .map_err(Into::into)
+}
+
+type CheckedDialogueApplication<'analysis> = (
+    ExprId,
+    &'analysis CheckedCharacterDialogueTarget,
+    &'analysis CheckedRichTextReport,
+);
+
+fn executable_dialogue_applications<'analysis>(
+    project: HirExecutableProjectView<'_>,
+    analysis: &'analysis FinalSemanticAnalysis,
+) -> Result<Vec<CheckedDialogueApplication<'analysis>>, RuntimeSemanticProjectionError> {
+    analysis
+        .expressions()
+        .filter_map(|(owner, expression)| match expression.resolution() {
+            CheckedExpressionResolution::DialogueApplication {
+                target, rich_text, ..
+            } => Some((owner, target, rich_text.as_ref())),
+            _ => None,
+        })
+        .try_fold(Vec::new(), |mut applications, application| {
+            let (owner, _, _) = application;
+            let module = project
+                .modules()
+                .find_map(|(_, module)| {
+                    (module.module_id() == owner.module()).then_some(module.as_ref())
+                })
+                .ok_or(RuntimeSemanticProjectionError::MissingModule { owner })?;
+            if !expression_belongs_to_non_product_plan(module, owner)? {
+                applications.push(application);
+            }
+            Ok::<_, RuntimeSemanticProjectionError>(applications)
+        })
+}
+
+fn project_dialogue_application(
+    project: HirExecutableProjectView<'_>,
+    facts: &RuntimePlanSemanticFacts,
+    owner: ExprId,
+    target: &CheckedCharacterDialogueTarget,
+    rich_text: &CheckedRichTextReport,
+    generation: CharacterPresentationCatalogGeneration,
+    presentation: DialoguePresentationSnapshot,
+) -> Result<(ExprId, RuntimeDialogueApplication), RuntimeSemanticProjectionError> {
+    let module = project
+        .modules()
+        .find_map(|(_, module)| (module.module_id() == owner.module()).then_some(module))
+        .ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+            owner: Some(owner),
+            reason: "dialogue application belongs to no accepted module".to_owned(),
+        })?;
+    let character = target.character().exact().cloned().ok_or_else(|| {
+        RuntimeSemanticProjectionError::Dialogue {
+            owner: Some(owner),
+            reason: "dynamic CharacterDialogue target requires typed runtime-plan lowering"
+                .to_owned(),
+        }
+    })?;
+    let plan = CheckedCharacterPresentationPlan::try_new(
+        CharacterPresentationTargetEvidence::Exact(character),
+        generation,
+    )
+    .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+        owner: Some(owner),
+        reason: error.to_string(),
+    })?;
+    let line = project.dialogue_lines().for_expr(owner).ok_or_else(|| {
+        RuntimeSemanticProjectionError::Dialogue {
+            owner: Some(owner),
+            reason: "dialogue application has no accepted line identity".to_owned(),
+        }
+    })?;
+    let runtime_line =
+        RuntimeLineId::from_source_entity_body(line.id().as_str()).map_err(|error| {
+            RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason: error.to_string(),
+            }
+        })?;
+    let content = lower_checked_rich_text(owner, module, facts, rich_text)?;
+    let source = ProductSourceRef::try_for_identity(line.source().application_span().source())
+        .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+            owner: Some(owner),
+            reason: error.to_string(),
+        })?;
+    Ok((
+        owner,
+        RuntimeDialogueApplication::new(DialogueContentSpec::new(
+            runtime_line,
+            line.text_key().as_text_key().clone(),
+            content,
+            plan,
+            presentation,
+            Vec::new(),
+            source,
+        )),
+    ))
+}
+
+fn expression_belongs_to_non_product_plan(
+    module: &arcweft_lang_hir::module::HirModule,
+    owner: ExprId,
+) -> Result<bool, RuntimeSemanticProjectionError> {
+    let mut scope = Some(
+        module
+            .resolve_expr(owner)
+            .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason: error.to_string(),
+            })?
+            .scope(),
+    );
+    while let Some(current) = scope {
+        let resolved = module.resolve_scope(current).map_err(|error| {
+            RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason: error.to_string(),
+            }
+        })?;
+        if let HirScopeOwner::Item(item) = *resolved.owner() {
+            let item = module.resolve_item(item).map_err(|error| {
+                RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: error.to_string(),
+                }
+            })?;
+            return Ok(matches!(
+                item.kind(),
+                HirItemKind::Test(_) | HirItemKind::Bench(_)
+            ));
+        }
+        scope = resolved.parent();
+    }
+    Ok(false)
+}
+
+fn build_character_presentation_catalog(
+    project: HirExecutableProjectView<'_>,
+    analysis: &FinalSemanticAnalysis,
+    policy: &CharacterNameLocalePolicySpec,
+) -> Result<CharacterPresentationCatalogData, RuntimeSemanticProjectionError> {
+    let active = CharacterNameLocale::new(policy.active().clone());
+    let fallbacks = policy
+        .fallbacks()
+        .iter()
+        .cloned()
+        .map(CharacterNameLocale::new)
+        .map(CharacterNameFallbackLocale::new)
+        .collect();
+    let policy = CharacterNameLocalePolicy::try_new(active, fallbacks).map_err(|error| {
+        RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason: error.to_string(),
+        }
+    })?;
+    let records = project
+        .items()
+        .filter(|item| matches!(item.item().kind(), HirItemKind::Character(_)))
+        .map(|item| character_presentation_record(item, analysis))
+        .collect::<Result<Vec<_>, _>>()?;
+    let input = CharacterPresentationCatalogInput::try_new(policy, records).map_err(|error| {
+        RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason: error.to_string(),
+        }
+    })?;
+    CharacterPresentationCatalogData::try_from_inputs(input).map_err(|error| {
+        RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason: error.to_string(),
+        }
+    })
+}
+
+fn character_presentation_record(
+    item: HirProjectItemRef<'_>,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<CharacterDisplayNameRecordInput, RuntimeSemanticProjectionError> {
+    let HirItemKind::Character(character) = item.item().kind() else {
+        return Err(RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason: "non-Character item entered Character presentation projection".to_owned(),
+        });
+    };
+    let public_id = character.header().public_id().resolved().ok_or_else(|| {
+        RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason: "a recovered Character identity cannot enter the presentation catalog"
+                .to_owned(),
+        }
+    })?;
+    let character_id = CharacterId::try_new(public_id.as_str()).map_err(|error| {
+        RuntimeSemanticProjectionError::Dialogue {
+            owner: None,
+            reason: error.to_string(),
+        }
+    })?;
+    let base = character
+        .display_name()
+        .map(|member| {
+            let member = item
+                .module()
+                .declaration_members()
+                .resolve(member)
+                .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+                    owner: None,
+                    reason: error.to_string(),
+                })?;
+            let HirDeclarationMemberKind::CharacterDisplayName(member) = member.kind() else {
+                return Err(RuntimeSemanticProjectionError::Dialogue {
+                    owner: None,
+                    reason: "Character display_name member has the wrong typed family".to_owned(),
+                });
+            };
+            let initializer =
+                member
+                    .initializer()
+                    .ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+                        owner: None,
+                        reason: "Character display_name has no checked initializer".to_owned(),
+                    })?;
+            let value = analysis
+                .expression(initializer)
+                .and_then(|expression| match expression.resolution() {
+                    CheckedExpressionResolution::Literal(HirLiteral::String(
+                        HirStringLiteral::Value(value),
+                    )) => Some(value.to_string()),
+                    _ => None,
+                })
+                .ok_or_else(|| RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(initializer),
+                    reason: "Character display_name must be a checked constant String".to_owned(),
+                })?;
+            CharacterDisplayNameValue::try_new(value)
+                .map(CharacterDisplayNameInput::Visible)
+                .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(initializer),
+                    reason: error.to_string(),
+                })
+        })
+        .transpose()?;
+    let fallback = match character.surface_alias() {
+        HirCharacterSurfaceAlias::Resolved(alias) => Some(alias.as_str()),
+        HirCharacterSurfaceAlias::Absent | HirCharacterSurfaceAlias::Missing => {
+            match character.header().name() {
+                HirRetainedName::Resolved(name) => Some(name.as_str()),
+                HirRetainedName::Missing | HirRetainedName::Invalid => None,
+            }
+        }
+    }
+    .map(CharacterDisplayNameValue::try_new)
+    .transpose()
+    .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+        owner: None,
+        reason: error.to_string(),
+    })?;
+    CharacterDisplayNameRecordInput::try_new(
+        character_id,
+        CharacterPresentationRole::Character,
+        None,
+        base,
+        Vec::new(),
+        fallback,
+    )
+    .map_err(|error| RuntimeSemanticProjectionError::Dialogue {
+        owner: None,
+        reason: error.to_string(),
+    })
+}
+
+fn lower_checked_rich_text(
+    owner: ExprId,
+    module: &arcweft_lang_hir::module::HirModule,
+    facts: &RuntimePlanSemanticFacts,
+    report: &CheckedRichTextReport,
+) -> Result<RichTextDocument, RuntimeSemanticProjectionError> {
+    let mut nodes = Vec::new();
+    let mut spans = BTreeMap::new();
+    for token in report.content().tokens() {
+        match token {
+            CheckedDialogueToken::Text(text) => nodes.push(RichTextNode::Text {
+                text: text.to_string(),
+            }),
+            CheckedDialogueToken::RawText(text) => nodes.push(RichTextNode::Control {
+                control: RichTextControl::Raw {
+                    text: text.to_string(),
+                },
+            }),
+            CheckedDialogueToken::Escape(value) => nodes.push(RichTextNode::Text {
+                text: value.to_string(),
+            }),
+            CheckedDialogueToken::Ruby { base, ruby } => nodes.push(RichTextNode::Ruby {
+                base: base.to_string(),
+                ruby: ruby.to_string(),
+            }),
+            CheckedDialogueToken::Interpolation(expression) => {
+                let expr = arcweft_runtime_plan::lower_checked_runtime_expression(
+                    module,
+                    facts,
+                    *expression,
+                )
+                .map_err(|reason| RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason,
+                })?;
+                nodes.push(RichTextNode::Interpolation {
+                    expr,
+                    label: format!("{expression:?}"),
+                    on_error: InlineFailurePolicy::FailLine,
+                });
+            }
+            CheckedDialogueToken::LineBreak(kind) => match kind {
+                arcweft_lang_hir::dialogue_application::HirLineBreakKind::Line => {
+                    nodes.push(RichTextNode::Control {
+                        control: RichTextControl::HardBreak,
+                    });
+                }
+                arcweft_lang_hir::dialogue_application::HirLineBreakKind::Paragraph => {
+                    nodes.push(RichTextNode::Text {
+                        text: "\n\n".to_owned(),
+                    });
+                }
+                arcweft_lang_hir::dialogue_application::HirLineBreakKind::Page => {
+                    nodes.push(RichTextNode::Control {
+                        control: RichTextControl::Page,
+                    });
+                }
+            },
+            CheckedDialogueToken::Open(tag) => {
+                if let Some(span) =
+                    lower_rich_text_action(owner, module, facts, tag.action(), &mut nodes)?
+                {
+                    spans.insert(tag.id(), span);
+                }
+            }
+            CheckedDialogueToken::Close(close) => {
+                if let Some(span) = spans.get(&close.open()).copied() {
+                    nodes.push(RichTextNode::StyleEnd { span });
+                }
+            }
+            CheckedDialogueToken::InvalidTag { .. } => {
+                return Err(RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: "invalid RichText tag reached executable projection".to_owned(),
+                });
+            }
+        }
+    }
+    Ok(RichTextDocument::new(nodes))
+}
+
+fn lower_rich_text_action(
+    owner: ExprId,
+    module: &arcweft_lang_hir::module::HirModule,
+    facts: &RuntimePlanSemanticFacts,
+    action: &CheckedRichTextAction,
+    nodes: &mut Vec<RichTextNode>,
+) -> Result<Option<RichTextSpanKind>, RuntimeSemanticProjectionError> {
+    let style = match action {
+        CheckedRichTextAction::DirectStyle { action, .. } => Some(match action {
+            CheckedDirectStyleSpan::Emphasis => RichTextStyle::Em,
+            CheckedDirectStyleSpan::Strong => RichTextStyle::Strong,
+            CheckedDirectStyleSpan::Italic => RichTextStyle::Italic,
+            CheckedDirectStyleSpan::Oblique { angle } => RichTextStyle::Oblique {
+                angle: RichTextAngle {
+                    degrees: Milli(angle.milli_degrees),
+                },
+            },
+            CheckedDirectStyleSpan::Color { value } => RichTextStyle::Color {
+                value: match value {
+                    arcweft_lang_sema::checked_rich_text::CheckedColor::Rgba8(value) => {
+                        RichTextColor::Rgba8 { value: *value }
+                    }
+                    arcweft_lang_sema::checked_rich_text::CheckedColor::Resource(id) => {
+                        RichTextColor::Resource {
+                            id: id.as_str().to_owned(),
+                        }
+                    }
+                },
+            },
+            CheckedDirectStyleSpan::Font { family } => RichTextStyle::Font {
+                family: RichTextFontFamily::Named {
+                    name: family.clone(),
+                },
+            },
+            CheckedDirectStyleSpan::Size { value } if value.unit == LengthUnit::Pt => {
+                RichTextStyle::Size {
+                    milli_points: Milli(value.milli),
+                }
+            }
+            CheckedDirectStyleSpan::Size { .. } => {
+                return Err(RuntimeSemanticProjectionError::Dialogue {
+                    owner: Some(owner),
+                    reason: "RichText size execution currently requires a point length".to_owned(),
+                });
+            }
+            CheckedDirectStyleSpan::Ruby { annotation } => RichTextStyle::Ruby {
+                annotation: annotation.clone(),
+            },
+        }),
+        CheckedRichTextAction::Control { action, .. } => {
+            let control = match action {
+                CheckedDialogueControl::Page => RichTextControl::Page,
+                CheckedDialogueControl::LineWait => RichTextControl::LineWait,
+                CheckedDialogueControl::HardBreak => RichTextControl::HardBreak,
+                CheckedDialogueControl::TimedWait { duration } => RichTextControl::TimedWait {
+                    duration_millis: duration.millis,
+                },
+                CheckedDialogueControl::Clear => RichTextControl::Clear,
+                CheckedDialogueControl::Reset => RichTextControl::Reset,
+                CheckedDialogueControl::RevealRate { milli_cps } => {
+                    let style = RichTextStyle::Speed {
+                        milli_cps: Milli(milli_cps.0),
+                    };
+                    let span = style.span_kind();
+                    nodes.push(RichTextNode::StyleStart { style });
+                    return Ok(Some(span));
+                }
+            };
+            nodes.push(RichTextNode::Control { control });
+            None
+        }
+        CheckedRichTextAction::Host { action, .. } => {
+            let event = lower_dialogue_host_event(owner, module, facts, action)?;
+            nodes.push(RichTextNode::HostEvent { event });
+            None
+        }
+        CheckedRichTextAction::Marker(marker) => {
+            nodes.push(RichTextNode::Control {
+                control: RichTextControl::Mark {
+                    name: marker.as_str().to_owned(),
+                },
+            });
+            None
+        }
+        CheckedRichTextAction::Style { .. }
+        | CheckedRichTextAction::Layout { .. }
+        | CheckedRichTextAction::Transform { .. }
+        | CheckedRichTextAction::Object { .. }
+        | CheckedRichTextAction::BuiltinFx { .. } => {
+            return Err(RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason: "checked RichText action has no final runtime projection".to_owned(),
+            });
+        }
+    };
+    if let Some(style) = style {
+        let span = style.span_kind();
+        nodes.push(RichTextNode::StyleStart { style });
+        Ok(Some(span))
+    } else {
+        Ok(None)
+    }
+}
+
+fn lower_dialogue_host_event(
+    owner: ExprId,
+    module: &arcweft_lang_hir::module::HirModule,
+    facts: &RuntimePlanSemanticFacts,
+    event: &CheckedDialogueHostEvent,
+) -> Result<DialogueHostEvent, RuntimeSemanticProjectionError> {
+    let expression = |expression: ExprId| {
+        arcweft_runtime_plan::lower_checked_runtime_expression(module, facts, expression).map_err(
+            |reason| RuntimeSemanticProjectionError::Dialogue {
+                owner: Some(owner),
+                reason,
+            },
+        )
+    };
+    Ok(match event {
+        CheckedDialogueHostEvent::Voice { source } => DialogueHostEvent::Voice {
+            source: match source {
+                CheckedVoiceSource::Auto => DialogueVoiceSource::Auto,
+                CheckedVoiceSource::Identity(id) => DialogueVoiceSource::Identity {
+                    id: id.as_str().to_owned(),
+                },
+            },
+        },
+        CheckedDialogueHostEvent::Face { expression } => DialogueHostEvent::Face {
+            expression: expression.as_str().to_owned(),
+        },
+        CheckedDialogueHostEvent::Pose { pose } => DialogueHostEvent::Pose {
+            pose: pose.as_str().to_owned(),
+        },
+        CheckedDialogueHostEvent::Show { entity } => DialogueHostEvent::Show {
+            entity: entity.as_str().to_owned(),
+        },
+        CheckedDialogueHostEvent::Hide { entity } => DialogueHostEvent::Hide {
+            entity: entity.as_str().to_owned(),
+        },
+        CheckedDialogueHostEvent::Move { x, y } => DialogueHostEvent::Move {
+            x: Milli(x.milli),
+            y: Milli(y.milli),
+        },
+        CheckedDialogueHostEvent::Scale { x, y } => DialogueHostEvent::Scale {
+            x: Milli(x.0),
+            y: Milli(y.0),
+        },
+        CheckedDialogueHostEvent::Rotate { angle } => DialogueHostEvent::Rotate {
+            angle: RichTextAngle {
+                degrees: Milli(angle.milli_degrees),
+            },
+        },
+        CheckedDialogueHostEvent::Animation { animation } => DialogueHostEvent::Anim {
+            animation: animation.as_str().to_owned(),
+        },
+        CheckedDialogueHostEvent::Shake { amplitude } => DialogueHostEvent::Shake {
+            amplitude: Milli(amplitude.milli),
+        },
+        CheckedDialogueHostEvent::TimedCue { at, call } => DialogueHostEvent::TimedCue {
+            at_millis: at.millis,
+            call: expression(*call)?,
+        },
+        CheckedDialogueHostEvent::Call { call } => DialogueHostEvent::Call {
+            call: expression(*call)?,
+        },
+        CheckedDialogueHostEvent::Signal { signal } => DialogueHostEvent::Signal {
+            signal: signal.as_str().to_owned(),
+        },
+        CheckedDialogueHostEvent::ConditionalStart { condition } => {
+            DialogueHostEvent::ConditionalStart {
+                condition: expression(*condition)?,
+            }
+        }
+        CheckedDialogueHostEvent::ConditionalElse => DialogueHostEvent::ConditionalElse,
+        CheckedDialogueHostEvent::ConditionalEnd => DialogueHostEvent::ConditionalEnd,
+    })
 }
 
 #[expect(
@@ -440,6 +1116,15 @@ fn runtime_type(
                 reason: format!("checked accepted nominal identity is invalid: {error}"),
             })?,
         },
+        TypeKind::CharacterDialogue(_) => RuntimeTypeShape::Named {
+            nominal: CharacterDialogueRuntimeSchema::nominal_type_id(),
+        },
+        TypeKind::DialogueLine(_) => {
+            return Err(RuntimeSemanticProjectionError::Type {
+                reason: "non-escaping DialogueLine operation reached runtime type projection"
+                    .to_owned(),
+            });
+        }
         TypeKind::Tuple(items) => RuntimeTypeShape::Tuple(
             items
                 .iter()

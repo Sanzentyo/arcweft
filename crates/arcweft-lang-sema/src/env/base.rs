@@ -6,8 +6,9 @@ use super::{
 };
 use crate::callable::{CallableName, CallablePath};
 use crate::dialogue_view::{
-    DIALOGUE_ACTION_TYPE, DIALOGUE_CONTENT_TYPE, DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE,
-    DIALOGUE_STAGE_TYPE, DialogueViewModelRegistry, DialogueViewProjection,
+    DIALOGUE_ACTION_TYPE, DIALOGUE_CHARACTER_TYPE, DIALOGUE_CONTENT_TYPE,
+    DIALOGUE_OCCURRENCE_ID_TYPE, DIALOGUE_REVEAL_TYPE, DIALOGUE_STAGE_TYPE,
+    DialogueCharacterProjection, DialogueProjectionCoordinate, DialogueViewModelRegistry,
     STANDARD_DIALOGUE_VIEW_TYPE,
 };
 use crate::effect_row::EffectRow;
@@ -653,32 +654,45 @@ impl TypeCheckEnv {
             std::iter::empty::<(String, TypeKind)>(),
         )
         .with_standard_nominal_record(
+            DIALOGUE_CHARACTER_TYPE,
+            [
+                (
+                    DialogueCharacterProjection::Id.field().to_owned(),
+                    DialogueCharacterProjection::Id.value_type(),
+                ),
+                (
+                    DialogueCharacterProjection::DisplayName.field().to_owned(),
+                    DialogueCharacterProjection::DisplayName.value_type(),
+                ),
+            ],
+        )
+        .with_standard_nominal_record(
             STANDARD_DIALOGUE_VIEW_TYPE,
             [
                 (
-                    DialogueViewProjection::CharacterDisplayName
-                        .field()
-                        .to_owned(),
-                    TypeKind::String,
+                    "character".to_owned(),
+                    TypeKind::Named(DIALOGUE_CHARACTER_TYPE.to_owned()),
                 ),
                 (
-                    DialogueViewProjection::Content.field().to_owned(),
+                    DialogueProjectionCoordinate::Content.field().to_owned(),
                     TypeKind::Named(DIALOGUE_CONTENT_TYPE.to_owned()),
                 ),
                 (
-                    DialogueViewProjection::Occurrence.field().to_owned(),
+                    DialogueProjectionCoordinate::Occurrence.field().to_owned(),
                     TypeKind::Named(DIALOGUE_OCCURRENCE_ID_TYPE.to_owned()),
                 ),
                 (
-                    DialogueViewProjection::Stage.field().to_owned(),
+                    DialogueProjectionCoordinate::Stage.field().to_owned(),
                     TypeKind::Named(DIALOGUE_STAGE_TYPE.to_owned()),
                 ),
                 (
-                    DialogueViewProjection::Reveal.field().to_owned(),
+                    DialogueProjectionCoordinate::Reveal.field().to_owned(),
                     TypeKind::Named(DIALOGUE_REVEAL_TYPE.to_owned()),
                 ),
                 (
-                    DialogueViewProjection::PrimaryAction.field().to_owned(),
+                    DialogueProjectionCoordinate::PrimaryAction
+                        .field()
+                        .to_owned(),
                     TypeKind::Named(DIALOGUE_ACTION_TYPE.to_owned()),
                 ),
             ],

@@ -5,6 +5,7 @@ use std::{
     sync::Arc,
 };
 
+use arcweft_character::presentation_name::CharacterPresentationCatalogData;
 use arcweft_core::effect::{
     RuntimeArtifactFingerprint, RuntimeAssertionProfile, RuntimeEffectExpr,
 };
@@ -12,6 +13,7 @@ use arcweft_core::entry::{
     RuntimeCallableExecutable, RuntimeCallableExecutableCode, RuntimeCallableId,
     RuntimeCallableRole, RuntimeFlowExecutable,
 };
+use arcweft_core::line_task::LineTaskGroup;
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::{
     FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeFlow, RuntimeMatchArm,
@@ -194,6 +196,7 @@ pub struct RuntimePlanLowerReport {
     pub plan: RuntimePlan,
     pub stats: RuntimePlanLowerStats,
     pub dialogue_content_catalog: DialogueContentCatalog,
+    pub character_presentation_catalog: Option<Arc<CharacterPresentationCatalogData>>,
     assertion_sites: Box<[RuntimeAssertionSite]>,
 }
 
@@ -379,7 +382,21 @@ pub fn lower_runtime_plan_with_stats(
     all_flow_executables.extend(controller_executables);
     let trait_methods = lower_trait_methods(project, facts)?;
 
-    let plan = RuntimePlan::new(flows, Vec::new())
+    let mut dialogue_records = facts
+        .dialogue_applications()
+        .map(|(_, application)| application.content().clone())
+        .collect::<Vec<_>>();
+    dialogue_records.sort_by(|left, right| {
+        (left.line(), left.text_key()).cmp(&(right.line(), right.text_key()))
+    });
+    let dialogue_content_catalog = DialogueContentCatalog::try_from_records(dialogue_records)
+        .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?;
+    let line_task_groups = if dialogue_content_catalog.records().is_empty() {
+        Vec::new()
+    } else {
+        vec![LineTaskGroup::default()]
+    };
+    let plan = RuntimePlan::new(flows, line_task_groups)
         .map_err(|error| vec![RuntimePlanLowerError::new(error.to_string())])?
         .with_entries(entries)
         .with_pure_helpers(pure_helpers.clone())
@@ -393,7 +410,8 @@ pub fn lower_runtime_plan_with_stats(
             pure_candidate_lower_attempts: pure_helpers.len(),
             ..RuntimePlanLowerStats::default()
         },
-        dialogue_content_catalog: DialogueContentCatalog::new(),
+        dialogue_content_catalog,
+        character_presentation_catalog: facts.character_presentation_catalog().cloned(),
         assertion_sites: assertion_sites.into_boxed_slice(),
     })
 }
@@ -1145,9 +1163,18 @@ impl<'hir> FinalFlowLowerer<'hir> {
     ) -> Result<Vec<FlowOp>, RuntimePlanLowerError> {
         let statement = match item {
             HirThreadFlowItem::DialogueApplication(expression) => {
-                return Err(RuntimePlanLowerError::new(format!(
-                    "dialogue application {expression:?} requires its checked line/display projection fact"
-                )));
+                let application =
+                    self.facts
+                        .dialogue_application(*expression)
+                        .ok_or_else(|| {
+                            RuntimePlanLowerError::new(format!(
+                                "dialogue application {expression:?} has no checked projection fact"
+                            ))
+                        })?;
+                return Ok(vec![FlowOp::Dialogue {
+                    line: application.content().line().clone(),
+                    task_group: 0,
+                }]);
             }
             HirThreadFlowItem::Statement(statement)
             | HirThreadFlowItem::Choice(statement)

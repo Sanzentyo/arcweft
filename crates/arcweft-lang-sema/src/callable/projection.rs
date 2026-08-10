@@ -187,6 +187,20 @@ impl std::fmt::Display for EnvironmentPublicationProjectionReport {
 impl std::error::Error for EnvironmentPublicationProjectionReport {}
 
 impl AcceptedNominalWorld {
+    pub(crate) fn try_project_character_dialogue_field_type(
+        &self,
+        root: &EnvironmentTypeProjectionNode,
+        item: &EnvironmentPublicationItemId,
+        limits: NominalResolutionLimits,
+    ) -> Result<TypeKind, EnvironmentPublicationProjectionReport> {
+        self.project_callable_type(
+            root,
+            item,
+            EnvironmentTypeSiteRoot::CharacterDialogueCustomField,
+            limits,
+        )
+    }
+
     pub(crate) fn try_project_environment_bindings(
         &self,
         input: &BoundEnvironmentRegistrationInput,

@@ -5,8 +5,8 @@ use crate::awbc_lower::{table_index, table_range_len};
 use arcweft_core::awbc::schema::{
     AwbcBinaryOp, AwbcBindMode, AwbcBlock, AwbcBlockId, AwbcEffectSetId, AwbcFunction,
     AwbcFunctionFlags, AwbcFunctionKind, AwbcInstruction, AwbcIntrinsic, AwbcIntrinsicId,
-    AwbcPatternId, AwbcPureHelperId, AwbcRegisterId, AwbcSafePointKind, AwbcScopeId,
-    AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp,
+    AwbcPatternId, AwbcPureHelperId, AwbcRegisterId, AwbcRuntimeType, AwbcSafePointKind,
+    AwbcScopeId, AwbcTableRange, AwbcTerminator, AwbcTraitMethodId, AwbcTrapCode, AwbcUnaryOp,
 };
 use arcweft_core::pattern::RuntimePattern;
 use arcweft_core::plan::RuntimeReceiverMode;
@@ -82,7 +82,12 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
             }
             RuntimeExpr::Tuple(items) => {
                 let registers = items.iter().map(|item| self.lower(item)).collect();
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let ty = self.inventory.intern_type(AwbcRuntimeType::Tuple(vec![
+                    self.inventory
+                        .dynamic_ty();
+                    items.len()
+                ]));
+                let dst = self.frame.temp(ty);
                 self.inventory.push_instruction(AwbcInstruction::MakeTuple {
                     dst,
                     items: registers,
@@ -91,7 +96,10 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
             }
             RuntimeExpr::BracketSeq(items) => {
                 let registers = items.iter().map(|item| self.lower(item)).collect();
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let ty = self
+                    .inventory
+                    .intern_type(AwbcRuntimeType::Sequence(self.inventory.dynamic_ty()));
+                let dst = self.frame.temp(ty);
                 self.inventory
                     .push_instruction(AwbcInstruction::MakeSequence {
                         dst,
@@ -109,7 +117,10 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                     dst: len_reg,
                     constant,
                 });
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let ty = self
+                    .inventory
+                    .intern_type(AwbcRuntimeType::Sequence(self.inventory.dynamic_ty()));
+                let dst = self.frame.temp(ty);
                 self.inventory
                     .push_instruction(AwbcInstruction::RepeatSequence {
                         dst,

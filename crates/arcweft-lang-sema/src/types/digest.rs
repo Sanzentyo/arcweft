@@ -291,6 +291,20 @@ impl Encoder {
                 self.option(trait_name.as_ref(), |encoder, value| encoder.string(value));
                 self.string(assoc);
             }
+            TypeKind::CharacterDialogue(dialogue) => {
+                self.tag(69);
+                match dialogue.character() {
+                    super::CharacterDialogueCharacterType::Exact(character) => {
+                        self.byte(0);
+                        self.string(character.as_str());
+                    }
+                    super::CharacterDialogueCharacterType::Any => self.byte(1),
+                }
+            }
+            TypeKind::DialogueLine(result) => {
+                self.tag(70);
+                self.ty(result);
+            }
             TypeKind::CharacterPatch(kind) => {
                 self.tag(71);
                 self.entity_kind(kind);

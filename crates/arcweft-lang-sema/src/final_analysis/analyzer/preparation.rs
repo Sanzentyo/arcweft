@@ -447,7 +447,12 @@ impl Analyzer<'_, '_, '_> {
                         } else {
                             TypeKind::Unit
                         };
-                        expectations.push((function_body_tail(function.body())?, expected));
+                        append_function_body_result_expectations(
+                            module,
+                            function.body(),
+                            expected,
+                            &mut expectations,
+                        )?;
                     }
                     HirItemKind::Predicate(predicate) => expectations.push((
                         predicate_body_tail(predicate.body())?,
@@ -471,7 +476,12 @@ impl Analyzer<'_, '_, '_> {
                             } else {
                                 TypeKind::Unit
                             };
-                            expectations.push((function_body_tail(body)?, expected));
+                            append_function_body_result_expectations(
+                                module,
+                                body,
+                                expected,
+                                &mut expectations,
+                            )?;
                         }
                     }
                     _ => {}
@@ -555,11 +565,38 @@ fn resolved_required_result(
         .ok_or(FinalSemanticAnalysisError::TypeResolutionFailed { owner })
 }
 
-fn function_body_tail(body: &HirFunctionBody) -> Result<ExprId, FinalSemanticAnalysisError> {
-    match body {
-        HirFunctionBody::Block { tail, .. } => Ok(*tail),
-        HirFunctionBody::Error(_) => Err(FinalSemanticAnalysisError::RecoveredOwner),
+fn append_function_body_result_expectations(
+    module: &HirModule,
+    body: &HirFunctionBody,
+    expected: TypeKind,
+    expectations: &mut Vec<(ExprId, TypeKind)>,
+) -> Result<(), FinalSemanticAnalysisError> {
+    let HirFunctionBody::Block {
+        statements, tail, ..
+    } = body
+    else {
+        return Err(FinalSemanticAnalysisError::RecoveredOwner);
+    };
+    for statement in statements {
+        let statement = module
+            .resolve_stmt(*statement)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        if let HirStmtKind::Return { value } = statement.kind() {
+            expectations.push((*value, expected.clone()));
+        }
     }
+    let tail_expected = match statements.last() {
+        Some(statement)
+            if module
+                .resolve_stmt(*statement)
+                .is_ok_and(|statement| matches!(statement.kind(), HirStmtKind::Return { .. })) =>
+        {
+            TypeKind::Unit
+        }
+        _ => expected,
+    };
+    expectations.push((*tail, tail_expected));
+    Ok(())
 }
 
 fn predicate_body_tail(body: &HirPredicateBody) -> Result<ExprId, FinalSemanticAnalysisError> {

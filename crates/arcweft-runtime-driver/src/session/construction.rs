@@ -1,17 +1,17 @@
 //! Bundle product validation, runtime construction, and initial session assembly.
 
 use super::{
-    Arc, ArcweftBundle, ArcweftRuntimeExecutor, AwbcEntryId, AwbcProductStepBuildError,
-    AwbcProgram, BTreeMap, BundleEntryStart, BundleEntryStartError, BundleFormat,
-    BundleImageObject, BundleKind, BundlePresentationSnapshot, BundleSession,
-    BundleSessionArtifactIdentity, BundleSessionError, BundleSessionOptions, BundleView,
-    BundleViewRuntime, BundleViewRuntimeError, DialogueContentCatalog, EntryRuntimeId,
-    FxDefinitions, GenerationBuildError, GenerationId, GenerationRuntimeImage,
-    GenerationRuntimeTable, PresentationEnvironmentOverrides, ProgramGeneration, ReadBudget,
-    RootCommandHostCallCatalog, RuntimeTaskRegistry, SessionEnvironmentState, SwapSession,
-    SystemPaletteSet, ViewProgramResource, ViewRuntimeActionButton, ViewRuntimeFocusGroup,
-    ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
-    ViewRuntimeTextControl, ViewVirtualizationRuntime,
+    AcceptedCharacterPresentationCatalog, ActiveSessionLocale, Arc, ArcweftBundle,
+    ArcweftRuntimeExecutor, AwbcEntryId, AwbcProductStepBuildError, AwbcProgram, BTreeMap,
+    BundleEntryStart, BundleEntryStartError, BundleFormat, BundleImageObject, BundleKind,
+    BundlePresentationSnapshot, BundleSession, BundleSessionArtifactIdentity, BundleSessionError,
+    BundleSessionOptions, BundleView, BundleViewRuntime, BundleViewRuntimeError,
+    DialogueContentCatalog, EntryRuntimeId, FxDefinitions, GenerationBuildError, GenerationId,
+    GenerationRuntimeImage, GenerationRuntimeTable, PresentationEnvironmentOverrides,
+    ProgramGeneration, ReadBudget, RootCommandHostCallCatalog, RuntimeTaskRegistry,
+    SessionEnvironmentState, SwapSession, SystemPaletteSet, ViewProgramResource,
+    ViewRuntimeActionButton, ViewRuntimeFocusGroup, ViewRuntimeFocusNavigation,
+    ViewRuntimeScrollRegion, ViewRuntimeSurface, ViewRuntimeTextControl, ViewVirtualizationRuntime,
 };
 
 #[derive(Clone, Debug)]
@@ -21,6 +21,8 @@ pub(super) struct SessionRuntime {
     pub(super) entry: AwbcEntryId,
     pub(super) executor: ArcweftRuntimeExecutor,
     pub(super) dialogue_content: DialogueContentCatalog,
+    pub(super) character_presentation: Option<AcceptedCharacterPresentationCatalog>,
+    pub(super) active_locale: Option<ActiveSessionLocale>,
     pub(super) image_objects: Vec<BundleImageObject>,
     pub(super) text_inputs: Vec<ViewRuntimeTextControl>,
     pub(super) action_buttons: Vec<ViewRuntimeActionButton>,
@@ -37,6 +39,8 @@ pub(super) struct SessionRuntime {
 #[derive(Clone, Debug)]
 struct SessionRuntimeResources {
     dialogue_content: DialogueContentCatalog,
+    character_presentation: Option<AcceptedCharacterPresentationCatalog>,
+    active_locale: Option<ActiveSessionLocale>,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
@@ -102,6 +106,8 @@ impl BundleSession {
         let runtime = build_session_runtime(bundle, &options)?;
         let executor = runtime.executor.clone();
         let dialogue_content = runtime.dialogue_content.clone();
+        let character_presentation = runtime.character_presentation.clone();
+        let active_locale = runtime.active_locale.clone();
         let image_objects = runtime.image_objects.clone();
         let text_inputs = runtime.text_inputs.clone();
         let action_buttons = runtime.action_buttons.clone();
@@ -126,6 +132,8 @@ impl BundleSession {
                 runtime,
             )),
             dialogue_content,
+            character_presentation,
+            active_locale,
             image_objects,
             text_inputs,
             action_buttons,
@@ -215,6 +223,8 @@ impl SessionRuntime {
             entry,
             executor,
             dialogue_content: resources.dialogue_content,
+            character_presentation: resources.character_presentation,
+            active_locale: resources.active_locale,
             image_objects: resources.image_objects,
             text_inputs: resources.text_inputs,
             action_buttons: resources.action_buttons,
@@ -248,6 +258,8 @@ impl SessionRuntime {
             entry,
             SessionRuntimeResources {
                 dialogue_content: self.dialogue_content.clone(),
+                character_presentation: self.character_presentation.clone(),
+                active_locale: self.active_locale.clone(),
                 image_objects: self.image_objects.clone(),
                 text_inputs: self.text_inputs.clone(),
                 action_buttons: self.action_buttons.clone(),
@@ -334,8 +346,11 @@ fn build_session_runtime_with_executor(
     let view_theme = bundle.view_theme.clone().unwrap_or_default();
     let view_theme_environment = view_theme.environment_overrides();
     let view_style_palettes = view_theme.system_palette_set();
+    let (character_presentation, active_locale) = accepted_character_presentation(bundle)?;
     let resources = SessionRuntimeResources {
         dialogue_content: bundle.dialogue_content.clone(),
+        character_presentation,
+        active_locale,
         image_objects: bundle.image_objects.clone(),
         text_inputs,
         action_buttons,
@@ -368,6 +383,36 @@ fn build_session_runtime_with_executor(
         )
         .map_err(BundleSessionError::from),
     }
+}
+
+fn accepted_character_presentation(
+    bundle: &ArcweftBundle,
+) -> Result<
+    (
+        Option<AcceptedCharacterPresentationCatalog>,
+        Option<ActiveSessionLocale>,
+    ),
+    BundleSessionError,
+> {
+    let catalog = bundle
+        .character_presentation
+        .clone()
+        .map(AcceptedCharacterPresentationCatalog::publish_initial)
+        .transpose()
+        .map_err(|error| BundleSessionError::CharacterPresentation {
+            message: error.to_string(),
+        })?;
+    if bundle.dialogue_content.records().is_empty() != catalog.is_none() {
+        return Err(BundleSessionError::CharacterPresentation {
+            message:
+                "dialogue content and accepted Character presentation catalog presence disagree"
+                    .to_owned(),
+        });
+    }
+    let active_locale = catalog
+        .as_ref()
+        .map(|catalog| ActiveSessionLocale::new(catalog.data().policy().default_active()));
+    Ok((catalog, active_locale))
 }
 
 fn validate_root_command_host_call_catalog(

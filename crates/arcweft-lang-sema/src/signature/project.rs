@@ -136,6 +136,7 @@ pub(super) fn project_signature_help(
         site.call().clone(),
         site.arguments().clone(),
         facts.expression(),
+        site.surface(),
         signatures,
         active_signature,
         active_parameter,
@@ -291,6 +292,9 @@ fn active_parameter(
     site: &FocusedCallSite,
     facts: &CallTargetFacts,
 ) -> Option<CallableParameterCoordinate> {
+    if let Some(active) = site.active_parameter() {
+        return Some(active);
+    }
     let active_argument = site.active_argument()?;
     if let Some(argument) = facts.arguments().get(active_argument) {
         let mut mapped = argument

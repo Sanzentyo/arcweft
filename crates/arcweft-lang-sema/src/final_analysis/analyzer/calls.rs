@@ -14,24 +14,29 @@ pub(super) use semantics::{
 
 use super::expression_types::value_resolution_type;
 use super::preparation::AssociatedReceiverTypeResolution;
+use super::statements::{expression_span, source_span};
 use super::{
     Analyzer, BTreeMap, CallArgumentMapping, CallCalleeClassificationFact, CallPoison,
     CallResolverAuthority, CallResolverRequest, CallTargetFacts, CallTargetFactsInput,
     CallableGroupIndex, CallableInstantiation, CandidateEvaluationPass, CandidateProbe,
-    CandidateScore, CandidateSelection, CandidateSemanticProjection, CharacterOwnerSource,
-    CheckedCallArgumentFact, CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput,
-    CheckedCallArgumentSlotSource, CheckedCallTarget, CheckedExpression,
-    CheckedExpressionResolution, CheckedTypeSelection, CheckedValueResolution, EffectRow,
-    EffectSet, EvaluatedCallArguments, ExprId, FinalCallCalleeFacts, FinalSemanticAnalysisError,
-    HirAssociatedSeparator, HirCallArgument, HirCallCallee, HirCallExpr, HirExprKind,
-    HirExprSourceRole, HirModule, HirSourcePresence, HirSourceQuery, HirSourceSite,
-    PendingCallAnalysis, PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
-    RegisteredSemanticValueId, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
-    ResolvedCharacterOwner, ResolverWork, TypeKind, TypeParameterSubstitutions, map_call_arguments,
-    map_unmapped_call_arguments, prepare_final_call_callee, prepare_language_free_dot_path,
-    resolve_call_target,
+    CandidateScore, CandidateSelection, CandidateSemanticProjection,
+    CharacterDialogueCharacterType, CharacterDialogueFieldCoordinate,
+    CharacterDialoguePatchContext, CharacterOwnerSource, CheckedCallArgumentFact,
+    CheckedCallArgumentSlotFact, CheckedCallArgumentSlotInput, CheckedCallArgumentSlotSource,
+    CheckedCallTarget, CheckedCharacterDialogueFactory, CheckedCharacterDialoguePatch,
+    CheckedCharacterDialoguePatchField, CheckedCharacterDialogueReconfigure,
+    CheckedCharacterDialogueTarget, CheckedExpression, CheckedExpressionResolution,
+    CheckedPatchOperation, CheckedTypeSelection, CheckedValueResolution, EffectRow, EffectSet,
+    EvaluatedCallArguments, ExprId, FinalCallCalleeFacts, FinalSemanticAnalysisError,
+    HirAssociatedSeparator, HirCallArgument, HirCallArgumentSourcePart, HirCallCallee, HirCallExpr,
+    HirExprKind, HirExprSourceRole, HirModule, HirPathSegment, HirSourcePresence, HirSourceQuery,
+    HirSourceSite, PendingCallAnalysis, PhysicalCandidateArgument,
+    PhysicalCandidateArgumentEvaluation, RegisteredSemanticValueId, ResolveCallOutcome,
+    ResolvedCallTarget, ResolvedCallable, ResolvedCharacterOwner, ResolverWork, TypeKind,
+    TypeParameterSubstitutions, map_call_arguments, map_unmapped_call_arguments,
+    prepare_final_call_callee, prepare_language_free_dot_path, resolve_call_target,
 };
-use crate::callable::MappedCallArgument;
+use crate::callable::{MappedCallArgument, MappedCallArgumentSlot};
 use crate::final_analysis::type_rules::compact_numeric_element_type as infer_compact_numeric_element_type;
 
 #[derive(Clone, Copy)]
@@ -49,6 +54,7 @@ struct ResolvedCallQuery {
     current_group: CallableGroupIndex,
     work: ResolverWork,
     argument_count: u64,
+    dialogue_context: CharacterDialoguePatchContext,
 }
 
 struct AssociatedReceiverRecovery {
@@ -100,6 +106,22 @@ struct MappedArgumentEvaluation {
     exact_matches: usize,
 }
 
+struct MappedSlotEvaluation {
+    fact: CheckedCallArgumentSlotFact,
+    hard_error: bool,
+    exact_match: bool,
+    poison: CallPoison,
+}
+
+#[derive(Clone, Copy)]
+struct CharacterDialoguePatchFieldRequest<'a> {
+    source: CallSource<'a>,
+    target: &'a CheckedCharacterDialogueTarget,
+    context: CharacterDialoguePatchContext,
+    index: usize,
+    argument: &'a HirCallArgument,
+}
+
 struct RecoveryCall<'a> {
     source: CallSource<'a>,
     callee: CallCalleeClassificationFact,
@@ -110,6 +132,144 @@ struct RecoveryCall<'a> {
     result: TypeKind,
     work: ResolverWork,
     ambiguous: bool,
+}
+
+pub(super) fn checked_character_dialogue_target(
+    expression: ExprId,
+    checked: &CheckedExpression,
+) -> Option<CheckedCharacterDialogueTarget> {
+    if let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)) =
+        checked.resolution()
+        && item.family() == arcweft_id::DeclarationIdentityFamily::Character
+    {
+        let character = item.character().map_or(
+            CharacterDialogueCharacterType::Any,
+            CharacterDialogueCharacterType::Exact,
+        );
+        return Some(CheckedCharacterDialogueTarget::Character {
+            expression,
+            item: Some(item.clone()),
+            character,
+        });
+    }
+    match checked.ty() {
+        TypeKind::Ref(entity) if entity.kind() == &crate::types::EntityKind::Character => {
+            Some(CheckedCharacterDialogueTarget::Character {
+                expression,
+                item: match checked.resolution() {
+                    CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(
+                        item,
+                    )) => Some(item.clone()),
+                    _ => None,
+                },
+                character: CharacterDialogueCharacterType::Any,
+            })
+        }
+        TypeKind::CharacterDialogue(ty) => Some(CheckedCharacterDialogueTarget::Dialogue {
+            expression,
+            ty: ty.clone(),
+        }),
+        _ => None,
+    }
+}
+
+fn character_dialogue_field_type(
+    target: &CheckedCharacterDialogueTarget,
+    coordinate: &CharacterDialogueFieldCoordinate,
+) -> Option<TypeKind> {
+    Some(match coordinate {
+        CharacterDialogueFieldCoordinate::Voice => TypeKind::Named("DialogueVoice".to_owned()),
+        CharacterDialogueFieldCoordinate::Look => match target.character().exact() {
+            Some(character) => TypeKind::character_look(character.clone()),
+            None => return None,
+        },
+        CharacterDialogueFieldCoordinate::Stage => TypeKind::Named("DialogueStage".to_owned()),
+        CharacterDialogueFieldCoordinate::Portrait => {
+            TypeKind::Named("DialoguePortrait".to_owned())
+        }
+        CharacterDialogueFieldCoordinate::Focus => TypeKind::Named("DialogueFocus".to_owned()),
+        CharacterDialogueFieldCoordinate::Cleanup => TypeKind::Named("DialogueCleanup".to_owned()),
+        CharacterDialogueFieldCoordinate::View => {
+            TypeKind::entity_ref(crate::types::EntityKind::View)
+        }
+        CharacterDialogueFieldCoordinate::SourceLocale => TypeKind::String,
+        CharacterDialogueFieldCoordinate::Hooks => {
+            TypeKind::Seq(Box::new(TypeKind::Named("DialogueHook".to_owned())))
+        }
+        CharacterDialogueFieldCoordinate::Style => TypeKind::Choice(vec![
+            TypeKind::entity_ref(crate::types::EntityKind::Style),
+            TypeKind::Named("RichTextStyle".to_owned()),
+        ]),
+        CharacterDialogueFieldCoordinate::RichText => TypeKind::Named("RichTextStyle".to_owned()),
+        CharacterDialogueFieldCoordinate::InlineFailure => {
+            TypeKind::Named("InlineFailurePolicy".to_owned())
+        }
+        CharacterDialogueFieldCoordinate::Custom(_) => return None,
+    })
+}
+
+fn character_dialogue_field_accepts(
+    coordinate: &CharacterDialogueFieldCoordinate,
+    expected: Option<&TypeKind>,
+    actual: &TypeKind,
+) -> bool {
+    if let Some(expected) = expected {
+        return expected.accepts(actual);
+    }
+    matches!(
+        (coordinate, actual),
+        (
+            CharacterDialogueFieldCoordinate::Look,
+            TypeKind::CharacterNominal(crate::types::CharacterNominalType::Look { .. })
+        )
+    )
+}
+
+fn is_none_patch_value(
+    module: &HirModule,
+    owner: ExprId,
+) -> Result<bool, FinalSemanticAnalysisError> {
+    let expression = module
+        .resolve_expr(owner)
+        .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+    Ok(match expression.kind() {
+        HirExprKind::ShortVariant(name) => name
+            .as_resolved()
+            .is_some_and(|name| name.as_str() == "None"),
+        HirExprKind::Path(path) => path.as_resolved().is_some_and(|path| {
+            matches!(
+                path.segments().last(),
+                Some(HirPathSegment::Identifier(name))
+                    if name.as_str() == "None"
+            )
+        }),
+        _ => false,
+    })
+}
+
+fn call_argument_span(
+    module: &HirModule,
+    owner: ExprId,
+    index: usize,
+) -> Result<arcweft_source::SourceSpan, FinalSemanticAnalysisError> {
+    call_argument_part_span(module, owner, index, HirCallArgumentSourcePart::Whole)
+}
+
+fn call_argument_part_span(
+    module: &HirModule,
+    owner: ExprId,
+    index: usize,
+    part: HirCallArgumentSourcePart,
+) -> Result<arcweft_source::SourceSpan, FinalSemanticAnalysisError> {
+    let argument = arcweft_lang_hir::expr::HirCallArgumentOrdinal::try_from_usize(index)
+        .map_err(|_| FinalSemanticAnalysisError::AccountingOverflow)?;
+    source_span(
+        module,
+        HirSourceQuery::Expr {
+            owner,
+            role: HirExprSourceRole::CallArgument { argument, part },
+        },
+    )
 }
 
 impl Analyzer<'_, '_, '_> {
@@ -130,7 +290,39 @@ impl Analyzer<'_, '_, '_> {
                 .or_default();
         }
         self.physical_call_stack.push(owner);
-        let result = self.check_call_expression_inner(module, owner, call, expected);
+        let result = self.check_call_expression_inner(module, owner, call, expected, None);
+        let popped = self
+            .physical_call_stack
+            .pop()
+            .expect("Call stack push and pop are paired");
+        assert_eq!(popped, owner, "nested Call stack exits LIFO");
+        self.callable_query_depth.leave();
+        result
+    }
+
+    pub(super) fn check_immediate_character_dialogue_call(
+        &mut self,
+        module: &HirModule,
+        owner: ExprId,
+        call: &HirCallExpr,
+    ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
+        let is_root = !self.callable_query_depth.is_active();
+        self.callable_query_depth
+            .try_enter()
+            .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner })?;
+        if is_root {
+            self.physical_candidate_argument_evaluations
+                .entry(owner)
+                .or_default();
+        }
+        self.physical_call_stack.push(owner);
+        let result = self.check_call_expression_inner(
+            module,
+            owner,
+            call,
+            None,
+            Some(CharacterDialoguePatchContext::ImmediateContentApplication),
+        );
         let popped = self
             .physical_call_stack
             .pop()
@@ -146,6 +338,7 @@ impl Analyzer<'_, '_, '_> {
         owner: ExprId,
         call: &HirCallExpr,
         expected: Option<&TypeKind>,
+        dialogue_context: Option<CharacterDialoguePatchContext>,
     ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
         let source = CallSource {
             module,
@@ -163,7 +356,10 @@ impl Analyzer<'_, '_, '_> {
         if let Some(recovery) = self.stage_call_callee_children(source.module, source.call)? {
             return self.publish_associated_receiver_recovery(source, recovery, work);
         }
-        let mut resolution = self.resolve_call_query(source, work, argument_count)?;
+        let dialogue_context =
+            dialogue_context.unwrap_or(CharacterDialoguePatchContext::ReusableValue);
+        let mut resolution =
+            self.resolve_call_query(source, work, argument_count, dialogue_context)?;
         let probes = self.probe_resolved_call(source, &mut resolution)?;
         match select_candidate_probes(&probes.probes) {
             CandidateSelection::Selected(selected) => {
@@ -178,6 +374,279 @@ impl Analyzer<'_, '_, '_> {
         }
     }
 
+    fn checked_character_dialogue_resolution(
+        &mut self,
+        source: CallSource<'_>,
+        selected: &ResolvedCallable,
+        context: CharacterDialoguePatchContext,
+    ) -> Result<Option<CheckedExpressionResolution>, FinalSemanticAnalysisError> {
+        let crate::callable::CallableValidator::Dialogue(id) = selected.schema().validator() else {
+            return Ok(None);
+        };
+        if !matches!(
+            id,
+            crate::callable::DialogueCallableId::CharacterFactory
+                | crate::callable::DialogueCallableId::CharacterReconfigure
+        ) {
+            return Ok(None);
+        }
+        let HirCallCallee::Value { value } = source.call.callee() else {
+            return Ok(None);
+        };
+        let Some(callee) = self.facts.expressions().get(value).cloned() else {
+            return Ok(None);
+        };
+        let Some(target) = checked_character_dialogue_target(*value, &callee) else {
+            return Ok(None);
+        };
+        let patch = self.checked_character_dialogue_patch(source, &target, context)?;
+        let result = target.result_type();
+        let resolution = match (&target, id) {
+            (
+                CheckedCharacterDialogueTarget::Character { .. },
+                crate::callable::DialogueCallableId::CharacterFactory,
+            ) => CheckedExpressionResolution::CharacterDialogueFactory(
+                CheckedCharacterDialogueFactory::new(target, patch),
+            ),
+            (
+                CheckedCharacterDialogueTarget::Dialogue { .. },
+                crate::callable::DialogueCallableId::CharacterReconfigure,
+            ) => CheckedExpressionResolution::CharacterDialogueReconfigure(
+                CheckedCharacterDialogueReconfigure::new(target, patch),
+            ),
+            _ => {
+                return Err(FinalSemanticAnalysisError::InvalidCharacterDialoguePatch {
+                    owner: source.owner,
+                });
+            }
+        };
+        if selected.schema().result() != &TypeKind::CharacterDialogue(result) {
+            return Err(FinalSemanticAnalysisError::InvalidCharacterDialoguePatch {
+                owner: source.owner,
+            });
+        }
+        Ok(Some(resolution))
+    }
+
+    fn checked_character_dialogue_patch(
+        &self,
+        source: CallSource<'_>,
+        target: &CheckedCharacterDialogueTarget,
+        context: CharacterDialoguePatchContext,
+    ) -> Result<CheckedCharacterDialoguePatch, FinalSemanticAnalysisError> {
+        let mut fields = Vec::with_capacity(source.call.arguments().len());
+        let mut coordinates = BTreeMap::new();
+        for (index, argument) in source.call.arguments().iter().enumerate() {
+            let request = CharacterDialoguePatchFieldRequest {
+                source,
+                target,
+                context,
+                index,
+                argument,
+            };
+            let Some((coordinate, field_span)) =
+                self.character_dialogue_field_coordinate(request)?
+            else {
+                continue;
+            };
+            if let Some(first_span) = coordinates.insert(coordinate.clone(), field_span.clone()) {
+                return Err(
+                    FinalSemanticAnalysisError::DuplicateCharacterDialogueField {
+                        coordinate,
+                        first_span,
+                        duplicate_span: field_span,
+                    },
+                );
+            }
+            fields.push(self.checked_character_dialogue_patch_field(request, coordinate)?);
+        }
+        Ok(CheckedCharacterDialoguePatch::new(
+            context,
+            fields,
+            expression_span(source.module, source.owner)?,
+        ))
+    }
+
+    fn character_dialogue_field_coordinate(
+        &self,
+        request: CharacterDialoguePatchFieldRequest<'_>,
+    ) -> Result<
+        Option<(CharacterDialogueFieldCoordinate, arcweft_source::SourceSpan)>,
+        FinalSemanticAnalysisError,
+    > {
+        let CharacterDialoguePatchFieldRequest {
+            source,
+            context,
+            index,
+            argument,
+            ..
+        } = request;
+        let field_span = match argument {
+            HirCallArgument::Named { .. } => call_argument_part_span(
+                source.module,
+                source.owner,
+                index,
+                HirCallArgumentSourcePart::Name,
+            )?,
+            HirCallArgument::Positional { .. } | HirCallArgument::Spread { .. } => {
+                call_argument_span(source.module, source.owner, index)?
+            }
+        };
+        let coordinate = match argument {
+            HirCallArgument::Positional { .. } if index == 0 => {
+                CharacterDialogueFieldCoordinate::Look
+            }
+            HirCallArgument::Positional { .. } | HirCallArgument::Spread { .. } => {
+                return Err(FinalSemanticAnalysisError::InvalidCharacterDialoguePatch {
+                    owner: source.owner,
+                });
+            }
+            HirCallArgument::Named { .. } => {
+                let name = argument.resolved_name().ok_or(
+                    FinalSemanticAnalysisError::InvalidCharacterDialoguePatch {
+                        owner: source.owner,
+                    },
+                )?;
+                match name.as_str() {
+                    "id" | "text_key"
+                        if context
+                            == CharacterDialoguePatchContext::ImmediateContentApplication =>
+                    {
+                        return Ok(None);
+                    }
+                    "id" | "text_key" => {
+                        return Err(
+                            FinalSemanticAnalysisError::CharacterDialogueApplicationOnlyField {
+                                field: name.as_str().to_owned(),
+                                field_span,
+                            },
+                        );
+                    }
+                    "character" | "character_id" | "content" => {
+                        return Err(FinalSemanticAnalysisError::InvalidCharacterDialoguePatch {
+                            owner: source.owner,
+                        });
+                    }
+                    "voice" => CharacterDialogueFieldCoordinate::Voice,
+                    "look" => CharacterDialogueFieldCoordinate::Look,
+                    "stage" => CharacterDialogueFieldCoordinate::Stage,
+                    "portrait" => CharacterDialogueFieldCoordinate::Portrait,
+                    "focus" => CharacterDialogueFieldCoordinate::Focus,
+                    "cleanup" => CharacterDialogueFieldCoordinate::Cleanup,
+                    "view" => CharacterDialogueFieldCoordinate::View,
+                    "source_locale" => CharacterDialogueFieldCoordinate::SourceLocale,
+                    "hooks" => CharacterDialogueFieldCoordinate::Hooks,
+                    "style" => CharacterDialogueFieldCoordinate::Style,
+                    "rich_text" => CharacterDialogueFieldCoordinate::RichText,
+                    "inline_error" | "inline_error_policy" | "inline_fallback" => {
+                        CharacterDialogueFieldCoordinate::InlineFailure
+                    }
+                    name => {
+                        let descriptor = self
+                            .catalogs
+                            .world
+                            .environment()
+                            .character_dialogue_fields()
+                            .resolve(source.module.key().path(), name)
+                            .ok_or_else(|| {
+                                FinalSemanticAnalysisError::UnknownCharacterDialogueField {
+                                    name: name.to_owned(),
+                                    field_span: field_span.clone(),
+                                    scope: source.module.key().path().clone(),
+                                }
+                            })?;
+                        CharacterDialogueFieldCoordinate::Custom(descriptor.id().clone())
+                    }
+                }
+            }
+        };
+        Ok(Some((coordinate, field_span)))
+    }
+
+    fn checked_character_dialogue_patch_field(
+        &self,
+        request: CharacterDialoguePatchFieldRequest<'_>,
+        coordinate: CharacterDialogueFieldCoordinate,
+    ) -> Result<CheckedCharacterDialoguePatchField, FinalSemanticAnalysisError> {
+        let CharacterDialoguePatchFieldRequest {
+            source,
+            target,
+            index,
+            argument,
+            ..
+        } = request;
+        let custom_descriptor = match &coordinate {
+            CharacterDialogueFieldCoordinate::Custom(id) => self
+                .catalogs
+                .world
+                .environment()
+                .character_dialogue_fields()
+                .descriptor(id),
+            _ => None,
+        };
+        let expected = custom_descriptor
+            .map(|descriptor| descriptor.value_type().clone())
+            .or_else(|| character_dialogue_field_type(target, &coordinate));
+        let checked = self.facts.expressions().get(&argument.value()).ok_or(
+            FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                owner: argument.value(),
+            },
+        )?;
+        let clearing = is_none_patch_value(source.module, argument.value())?;
+        if clearing
+            && let Some(descriptor) = custom_descriptor.filter(|descriptor| !descriptor.clearable())
+        {
+            return Err(
+                FinalSemanticAnalysisError::CharacterDialogueFieldNotClearable {
+                    field: descriptor.id().clone(),
+                    field_span: call_argument_part_span(
+                        source.module,
+                        source.owner,
+                        index,
+                        HirCallArgumentSourcePart::Name,
+                    )?,
+                    declaration_span: descriptor.declaration().clone(),
+                },
+            );
+        }
+        let operation = match checked.resolution() {
+            CheckedExpressionResolution::Variant(variant)
+                if matches!(variant.owner(), super::CheckedVariantOwner::Option { .. })
+                    && variant.ordinal() == 1 =>
+            {
+                CheckedPatchOperation::Clear
+            }
+            _ if clearing => CheckedPatchOperation::Clear,
+            _ if character_dialogue_field_accepts(&coordinate, expected.as_ref(), checked.ty()) => {
+                CheckedPatchOperation::Set {
+                    value: argument.value(),
+                    ty: checked.ty().clone(),
+                }
+            }
+            _ => {
+                if let Some(descriptor) = custom_descriptor {
+                    return Err(
+                        FinalSemanticAnalysisError::CharacterDialogueCustomFieldTypeMismatch {
+                            field: descriptor.id().clone(),
+                            declared: Box::new(descriptor.value_type().clone()),
+                            actual: Box::new(checked.ty().clone()),
+                            value_span: expression_span(source.module, argument.value())?,
+                            declaration_span: descriptor.declaration().clone(),
+                        },
+                    );
+                }
+                return Err(FinalSemanticAnalysisError::CharacterDialogueFieldType {
+                    owner: argument.value(),
+                });
+            }
+        };
+        Ok(CheckedCharacterDialoguePatchField::new(
+            coordinate,
+            operation,
+            call_argument_span(source.module, source.owner, index)?,
+        ))
+    }
+
     #[expect(
         clippy::too_many_lines,
         reason = "call-query resolution keeps preparation, charged resolver execution, and checked fact publication atomic"
@@ -187,6 +656,7 @@ impl Analyzer<'_, '_, '_> {
         source: CallSource<'_>,
         mut work: ResolverWork,
         argument_count: u64,
+        dialogue_context: CharacterDialoguePatchContext,
     ) -> Result<ResolvedCallQuery, FinalSemanticAnalysisError> {
         let authority = CallResolverAuthority::accepted(
             self.project,
@@ -204,6 +674,7 @@ impl Analyzer<'_, '_, '_> {
                 &self.type_reports,
                 &enum_variants,
             ),
+            dialogue_context,
             &self.catalogs.callable_limits,
         )
         .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed {
@@ -290,6 +761,7 @@ impl Analyzer<'_, '_, '_> {
             current_group,
             work,
             argument_count,
+            dialogue_context,
         })
     }
 
@@ -541,6 +1013,9 @@ impl Analyzer<'_, '_, '_> {
             &selected,
             &provisional_callable_effects(&selected),
         )?;
+        let expression_resolution = self
+            .checked_character_dialogue_resolution(source, &selected, resolution.dialogue_context)?
+            .unwrap_or(CheckedExpressionResolution::Call);
         let mut checked_target = CheckedCallTarget::selected(
             &selected,
             &resolution.considered,
@@ -555,6 +1030,7 @@ impl Analyzer<'_, '_, '_> {
         }
         let pending = PendingCallAnalysis {
             expression: source.owner,
+            expression_resolution: expression_resolution.clone(),
             callee_expression,
             enclosing_callable: None,
             callee: resolution.callee,
@@ -595,7 +1071,7 @@ impl Analyzer<'_, '_, '_> {
                 CheckedTypeSelection::Inferred
             },
             effects.concrete().clone(),
-            CheckedExpressionResolution::Call,
+            expression_resolution,
         ))
     }
 
@@ -644,6 +1120,7 @@ impl Analyzer<'_, '_, '_> {
         mut batch: CandidateProbeBatch,
         primary: usize,
     ) -> Result<CheckedExpression, FinalSemanticAnalysisError> {
+        let primary_candidate = batch.probes[primary].candidate.clone();
         let arguments = if let Some(checkpoint) = batch.singleton_checkpoint.take() {
             self.facts.rollback_candidate_transaction(checkpoint);
             let checkpoint = self.facts.begin_candidate_transaction();
@@ -670,6 +1147,11 @@ impl Analyzer<'_, '_, '_> {
             self.facts.apply_candidate_projection(projection);
             std::mem::take(&mut batch.probes[primary].arguments)
         };
+        let _ = self.checked_character_dialogue_resolution(
+            source,
+            &primary_candidate,
+            resolution.dialogue_context,
+        )?;
         let result = batch.probes[primary].result.clone();
         self.publish_recovery_call(RecoveryCall {
             source,
@@ -784,8 +1266,8 @@ impl Analyzer<'_, '_, '_> {
                     let path = path
                         .as_resolved()
                         .ok_or(FinalSemanticAnalysisError::RecoveredOwner)?;
-                    if let Ok(Some(resolution)) =
-                        self.resolve_path_value(module, *value, expression.scope(), path)
+                    if let Some(resolution) =
+                        self.resolve_path_value(module, *value, expression.scope(), path)?
                     {
                         let ty = match &resolution {
                             CheckedValueResolution::Local(local) => {
@@ -1182,13 +1664,10 @@ impl Analyzer<'_, '_, '_> {
         substitutions: &mut TypeParameterSubstitutions,
     ) -> Result<MappedArgumentEvaluation, FinalSemanticAnalysisError> {
         let MappedArgumentEvaluationRequest {
-            call,
-            authored,
             mapped,
-            candidate,
-            pass,
             shape_rejected,
             argument,
+            ..
         } = request;
         let mut slots = Vec::with_capacity(mapped.slots().len());
         let mut hard_errors = 0usize;
@@ -1199,75 +1678,123 @@ impl Analyzer<'_, '_, '_> {
             CallPoison::Clean
         };
         for slot in mapped.slots() {
-            self.control.check_physical_slot_boundary()?;
-            work.charge_type_check(1)
-                .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner: call })?;
-            self.facts.prepare_physical_slot_evaluation(slot.source());
-            let declared_expected = slot.expected();
-            let expected = declared_expected.map(|expected| substitutions.apply(expected));
-            let physical_expected = physical_expected_type(
-                expected.as_ref(),
-                slot.coordinate().is_some(),
-                shape_rejected,
-            );
-            let kind = physical_evaluation_kind(
-                authored,
-                slot,
-                shape_rejected,
-                candidate.schema().argument_policy().spread(),
-            );
-            self.record_physical_candidate_argument_evaluation(
-                PhysicalCandidateArgumentEvaluation::new(
-                    call,
-                    candidate.id().clone(),
-                    pass,
-                    PhysicalCandidateArgument::new(
-                        argument,
-                        slot.slot(),
-                        slot.source(),
-                        kind,
-                        physical_expected,
-                    ),
-                ),
-            )?;
-            let inferred = self.check_call_argument_slot(slot.source(), expected.as_ref())?;
-            let substitution_conflict = declared_expected
-                .is_some_and(|declared| !substitutions.observe(declared, &inferred));
-            let retained_expected = declared_expected.map(|expected| substitutions.apply(expected));
-            let mismatch = substitution_conflict
-                || retained_expected
-                    .as_ref()
-                    .is_some_and(|expected| !expected.accepts(&inferred));
-            if mismatch {
+            let evaluated = self.evaluate_mapped_call_slot(request, slot, work, substitutions)?;
+            if evaluated.hard_error {
                 hard_errors = hard_errors
                     .checked_add(1)
                     .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
-            } else if retained_expected.as_ref() == Some(&inferred) {
+            } else if evaluated.exact_match {
                 exact_matches = exact_matches
                     .checked_add(1)
                     .ok_or(FinalSemanticAnalysisError::AccountingOverflow)?;
             }
-            let poison = if shape_rejected || mismatch {
-                CallPoison::Rejected
-            } else {
-                CallPoison::Clean
-            };
-            argument_poison = argument_poison.merge(poison);
-            slots.push(CheckedCallArgumentSlotFact::new(
-                CheckedCallArgumentSlotInput {
-                    slot: slot.slot(),
-                    source: slot.source(),
-                    mapped: slot.coordinate(),
-                    inferred: Some(inferred),
-                    expected: retained_expected,
-                    poison,
-                },
-            ));
+            argument_poison = argument_poison.merge(evaluated.poison);
+            slots.push(evaluated.fact);
         }
         Ok(MappedArgumentEvaluation {
             fact: CheckedCallArgumentFact::new(argument, slots, argument_poison),
             hard_errors,
             exact_matches,
+        })
+    }
+
+    fn evaluate_mapped_call_slot(
+        &mut self,
+        request: MappedArgumentEvaluationRequest<'_>,
+        slot: &MappedCallArgumentSlot,
+        work: &mut ResolverWork,
+        substitutions: &mut TypeParameterSubstitutions,
+    ) -> Result<MappedSlotEvaluation, FinalSemanticAnalysisError> {
+        let MappedArgumentEvaluationRequest {
+            call,
+            authored,
+            candidate,
+            pass,
+            shape_rejected,
+            argument,
+            ..
+        } = request;
+        self.control.check_physical_slot_boundary()?;
+        work.charge_type_check(1)
+            .map_err(|_| FinalSemanticAnalysisError::CallResolutionFailed { owner: call })?;
+        self.facts.prepare_physical_slot_evaluation(slot.source());
+        let is_dialogue_patch_coordinate = matches!(
+            candidate.schema().validator(),
+            crate::callable::CallableValidator::Dialogue(
+                crate::callable::DialogueCallableId::CharacterFactory
+                    | crate::callable::DialogueCallableId::CharacterReconfigure
+            )
+        ) && slot.coordinate().is_some_and(|coordinate| {
+            candidate
+                .schema()
+                .group(coordinate.group())
+                .and_then(|group| group.parameter(coordinate.parameter()))
+                .and_then(|parameter| parameter.name())
+                .is_none_or(|name| !matches!(name.as_str(), "id" | "text_key"))
+        });
+        let clear_expected = if is_dialogue_patch_coordinate
+            && is_none_patch_value(self.module(call.module())?, authored.value())?
+        {
+            Some(TypeKind::Option(Box::new(
+                slot.expected()
+                    .cloned()
+                    .unwrap_or_else(|| TypeKind::Named("_".to_owned())),
+            )))
+        } else {
+            None
+        };
+        let declared_expected = clear_expected.as_ref().or_else(|| slot.expected());
+        let expected = declared_expected.map(|expected| substitutions.apply(expected));
+        let physical_expected = physical_expected_type(
+            expected.as_ref(),
+            slot.coordinate().is_some(),
+            shape_rejected,
+        );
+        let kind = physical_evaluation_kind(
+            authored,
+            slot,
+            shape_rejected,
+            candidate.schema().argument_policy().spread(),
+        );
+        self.record_physical_candidate_argument_evaluation(
+            PhysicalCandidateArgumentEvaluation::new(
+                call,
+                candidate.id().clone(),
+                pass,
+                PhysicalCandidateArgument::new(
+                    argument,
+                    slot.slot(),
+                    slot.source(),
+                    kind,
+                    physical_expected,
+                ),
+            ),
+        )?;
+        let inferred = self.check_call_argument_slot(slot.source(), expected.as_ref())?;
+        let substitution_conflict =
+            declared_expected.is_some_and(|declared| !substitutions.observe(declared, &inferred));
+        let retained_expected = declared_expected.map(|expected| substitutions.apply(expected));
+        let mismatch = substitution_conflict
+            || retained_expected
+                .as_ref()
+                .is_some_and(|expected| !expected.accepts(&inferred));
+        let poison = if shape_rejected || mismatch {
+            CallPoison::Rejected
+        } else {
+            CallPoison::Clean
+        };
+        Ok(MappedSlotEvaluation {
+            hard_error: mismatch,
+            exact_match: retained_expected.as_ref() == Some(&inferred),
+            fact: CheckedCallArgumentSlotFact::new(CheckedCallArgumentSlotInput {
+                slot: slot.slot(),
+                source: slot.source(),
+                mapped: slot.coordinate(),
+                inferred: Some(inferred),
+                expected: retained_expected,
+                poison,
+            }),
+            poison,
         })
     }
 
@@ -1363,6 +1890,20 @@ impl Analyzer<'_, '_, '_> {
                 return Ok(None);
             }
         };
+        let retained_resolution = if let Some(existing) = self.facts.expressions().get(&value) {
+            if nominal_receiver {
+                return Ok(None);
+            }
+            match existing.resolution() {
+                CheckedExpressionResolution::Value(
+                    CheckedValueResolution::ProjectCallable(_)
+                    | CheckedValueResolution::Registered(_),
+                ) => Some(existing.resolution().clone()),
+                _ => return Ok(None),
+            }
+        } else {
+            None
+        };
         let ty = if nominal_receiver {
             match selected.instantiation() {
                 CallableInstantiation::TypeReceiver { receiver } => receiver.receiver().clone(),
@@ -1372,17 +1913,8 @@ impl Analyzer<'_, '_, '_> {
             callable_schema_type_with_effects(selected.schema(), callable_effects)
                 .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?
         };
-        let resolution = if let Some(existing) = self.facts.expressions().get(&value) {
-            if nominal_receiver {
-                return Ok(None);
-            }
-            match existing.resolution() {
-                CheckedExpressionResolution::Value(
-                    CheckedValueResolution::ProjectCallable(_)
-                    | CheckedValueResolution::Registered(_),
-                ) => existing.resolution().clone(),
-                _ => return Ok(None),
-            }
+        let resolution = if let Some(resolution) = retained_resolution {
+            resolution
         } else if nominal_receiver {
             CheckedExpressionResolution::Structural
         } else if let crate::callable::CallableCandidateId::Project(declaration) = selected.id() {

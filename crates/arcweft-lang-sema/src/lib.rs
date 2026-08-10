@@ -7,6 +7,7 @@
 pub mod assertion;
 pub mod callable;
 pub mod character_definition;
+pub mod character_dialogue;
 pub mod checked_rich_text;
 pub mod dialogue_view;
 pub mod effect_analysis;

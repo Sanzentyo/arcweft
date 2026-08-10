@@ -18,8 +18,9 @@ use crate::{
     env::identity::EnvironmentBindingId,
     nominal::TypeResolutionReport,
     types::{
-        CharacterNominalType, GenericTypeOwnerId, GenericTypeParameterId, SemanticTypeDigest,
-        TypeKind, TypeParameterSubstitutions,
+        CharacterDialogueCharacterType, CharacterDialogueType, CharacterNominalType,
+        GenericTypeOwnerId, GenericTypeParameterId, SemanticTypeDigest, TypeKind,
+        TypeParameterSubstitutions,
     },
 };
 use arcweft_character::id::CharacterId;
@@ -39,8 +40,9 @@ use arcweft_lang_hir::{
     project::HirExecutableProjectView,
     stmt::HirStmtKind,
     symbol::{
-        CallableDeclarationKey, CallableDeclarationOwner, ProjectSymbolRevision,
-        ProjectSymbolTable, ProjectSymbolWorldId,
+        CallableDeclarationKey, CallableDeclarationOwner, ProjectHirSymbolLookupError,
+        ProjectSymbolResolutionError, ProjectSymbolRevision, ProjectSymbolTable,
+        ProjectSymbolWorldId,
         nominal::{ProjectNominalBody, ProjectNominalDeclaration, ProjectNominalDeclarationId},
     },
 };
@@ -57,6 +59,7 @@ mod report;
 mod type_rules;
 mod validation;
 
+pub use crate::callable::CharacterDialoguePatchContext;
 pub(crate) use accounting::{
     CandidateEvaluationPass, CandidateExpectedType, PhysicalArgumentEvaluationKind,
     PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
@@ -69,15 +72,18 @@ pub use error::{
 };
 pub(crate) use input::FinalSemanticAnalysisInput;
 pub use model::{
-    CheckedAssertionDisposition, CheckedBinding, CheckedBindingRole, CheckedBuiltinVariantCase,
-    CheckedEntryReference, CheckedExpression, CheckedExpressionResolution,
-    CheckedFunctionExecution, CheckedItem, CheckedItemRole, CheckedIteration,
-    CheckedIteratorFamily, CheckedPattern, CheckedPatternResolution, CheckedProjectCallable,
-    CheckedProjectItem, CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
-    CheckedStatement, CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole,
-    CheckedTraitConformance, CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution,
-    CheckedVariantOwner, CheckedVariantResolution, CheckedViewCall, CheckedViewCallee,
-    PostfixBracketResolution, RegisteredSemanticValueId,
+    CharacterDialogueFieldCoordinate, CheckedAssertionDisposition, CheckedBinding,
+    CheckedBindingRole, CheckedBuiltinVariantCase, CheckedCharacterDialogueFactory,
+    CheckedCharacterDialoguePatch, CheckedCharacterDialoguePatchField,
+    CheckedCharacterDialogueReconfigure, CheckedCharacterDialogueTarget, CheckedEntryReference,
+    CheckedExpression, CheckedExpressionResolution, CheckedFunctionExecution, CheckedItem,
+    CheckedItemRole, CheckedIteration, CheckedIteratorFamily, CheckedPatchOperation,
+    CheckedPattern, CheckedPatternResolution, CheckedProjectCallable, CheckedProjectItem,
+    CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution, CheckedStatement,
+    CheckedStatementRole, CheckedStyleCallee, CheckedSuspensionRole, CheckedTraitConformance,
+    CheckedTraitIdentity, CheckedTypeSelection, CheckedValueResolution, CheckedVariantOwner,
+    CheckedVariantResolution, CheckedViewCall, CheckedViewCallee, PostfixBracketResolution,
+    RegisteredSemanticValueId,
 };
 pub use recovery_diagnostics::{
     CallableTailRecoveryDiagnostic, CallableTailRecoveryProjectionError,

@@ -65,7 +65,15 @@ pub(super) fn common_type<'a>(
 ) -> Option<TypeKind> {
     let mut values = values.into_iter();
     let first = values.next().cloned().or_else(|| expected.cloned())?;
-    values.all(|value| value == &first).then_some(first)
+    values.try_fold(first, |joined, value| match (&joined, value) {
+        (TypeKind::CharacterDialogue(left), TypeKind::CharacterDialogue(right)) => {
+            Some(TypeKind::CharacterDialogue(
+                crate::types::CharacterDialogueType::join(left.clone(), right),
+            ))
+        }
+        _ if value == &joined => Some(joined),
+        _ => None,
+    })
 }
 
 pub(super) fn indexed_item(ty: &TypeKind) -> Option<TypeKind> {

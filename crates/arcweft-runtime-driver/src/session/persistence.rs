@@ -3,13 +3,14 @@
 use super::{
     Arc, ArcweftRuntimeExecutorSnapshot, BUNDLE_SESSION_SAVE_SCHEMA_ID,
     BUNDLE_SESSION_SAVE_SCHEMA_VERSION, BundleEntryStart, BundleEntryStartError,
-    BundlePresentationSnapshot, BundleSession, BundleSessionExecutorSnapshot,
-    BundleSessionGenerationSnapshot, BundleSessionPendingBlocker, BundleSessionRuntimeSnapshot,
-    BundleSessionSaveError, BundleSessionSnapshot, BundleViewRuntime, RuntimeExecutor,
-    RuntimeTaskListOptions, RuntimeTaskRegistry, SessionRuntime, StartedForegroundEntry,
-    ViewVirtualizationRuntime, digest_label, reconciled_root_handles_for_restore,
-    validate_presentation_runtime_status, validate_presentation_snapshot,
-    validate_product_awbc_snapshot, validate_virtual_list_scroll_owner,
+    BundlePresentationSnapshot, BundleSession, BundleSessionCharacterPresentationSnapshot,
+    BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
+    BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSnapshot, BundleViewRuntime,
+    RuntimeExecutor, RuntimeTaskListOptions, RuntimeTaskRegistry, SessionRuntime,
+    StartedForegroundEntry, ViewVirtualizationRuntime, digest_label,
+    reconciled_root_handles_for_restore, validate_presentation_runtime_status,
+    validate_presentation_snapshot, validate_product_awbc_snapshot,
+    validate_virtual_list_scroll_owner,
 };
 
 impl BundleSession {
@@ -90,6 +91,7 @@ impl BundleSession {
                 bytecode_abi: active.bytecode_abi,
                 adapter_requirements: active.adapter_requirements,
             },
+            character_presentation: self.character_presentation_snapshot(&self.presentation)?,
             active_entry,
             root,
             runtime: BundleSessionRuntimeSnapshot {
@@ -108,6 +110,78 @@ impl BundleSession {
                 }
             })?,
         })
+    }
+
+    fn character_presentation_snapshot(
+        &self,
+        presentation: &BundlePresentationSnapshot,
+    ) -> Result<Option<BundleSessionCharacterPresentationSnapshot>, BundleSessionSaveError> {
+        let snapshot = self.character_presentation_identity()?;
+        self.validate_character_presentation_frames(snapshot.as_ref(), presentation)?;
+        Ok(snapshot)
+    }
+
+    fn character_presentation_identity(
+        &self,
+    ) -> Result<Option<BundleSessionCharacterPresentationSnapshot>, BundleSessionSaveError> {
+        match (&self.character_presentation, &self.active_locale) {
+            (Some(catalog), Some(active_locale)) => {
+                let generation = catalog.generation();
+                Ok(Some(BundleSessionCharacterPresentationSnapshot {
+                    active_locale: active_locale.clone(),
+                    semantic_digest: generation.semantic_digest(),
+                    locale_policy_digest: generation.locale_policy_digest(),
+                }))
+            }
+            (None, None) => Ok(None),
+            _ => Err(BundleSessionSaveError::CharacterPresentation {
+                message: "accepted Character catalog and active locale presence disagree"
+                    .to_owned(),
+            }),
+        }
+    }
+
+    fn validate_character_presentation_frames(
+        &self,
+        snapshot: Option<&BundleSessionCharacterPresentationSnapshot>,
+        presentation: &BundlePresentationSnapshot,
+    ) -> Result<(), BundleSessionSaveError> {
+        let has_dialogue = presentation.dialogue.iter().next().is_some();
+        let (Some(snapshot), Some(catalog)) = (snapshot, self.character_presentation.as_ref())
+        else {
+            return if has_dialogue {
+                Err(BundleSessionSaveError::CharacterPresentation {
+                    message: "retained dialogue entries require Character presentation identity"
+                        .to_owned(),
+                })
+            } else {
+                Ok(())
+            };
+        };
+        let active = snapshot.active_locale.character_name_locale();
+        for dialogue in presentation.dialogue.iter() {
+            for entry in dialogue.entries() {
+                let frame = entry.frame();
+                let resolved = catalog
+                    .data()
+                    .resolve(&frame.character.id, &active)
+                    .map_err(|error| BundleSessionSaveError::CharacterPresentation {
+                        message: format!(
+                            "line `{}` Character `{}` cannot be resolved: {error}",
+                            frame.line, frame.character.id
+                        ),
+                    })?;
+                if resolved.value() != frame.character.display_name {
+                    return Err(BundleSessionSaveError::CharacterPresentation {
+                        message: format!(
+                            "line `{}` Character `{}` saved display name does not match the accepted catalog",
+                            frame.line, frame.character.id
+                        ),
+                    });
+                }
+            }
+        }
+        Ok(())
     }
 
     pub fn export_session_save_bytes(&self) -> Result<Vec<u8>, BundleSessionSaveError> {
@@ -148,6 +222,17 @@ impl BundleSession {
         snapshot: BundleSessionSnapshot,
     ) -> Result<(), BundleSessionSaveError> {
         self.validate_session_save_generation(&snapshot.generation)?;
+        let expected_character_presentation = self.character_presentation_identity()?;
+        if snapshot.character_presentation != expected_character_presentation {
+            return Err(BundleSessionSaveError::CharacterPresentation {
+                message: "saved locale or Character presentation digests do not match the active artifact"
+                    .to_owned(),
+            });
+        }
+        self.validate_character_presentation_frames(
+            snapshot.character_presentation.as_ref(),
+            &snapshot.presentation,
+        )?;
         validate_presentation_snapshot(&snapshot.presentation, &self.fx_definitions)?;
         let active_entry = snapshot.active_entry.clone();
         let active_generation = self.active_generation().id;
@@ -381,6 +466,8 @@ impl BundleSession {
         self.source_label = runtime.source_label;
         self.executor = runtime.executor;
         self.dialogue_content = runtime.dialogue_content;
+        self.character_presentation = runtime.character_presentation;
+        self.active_locale = runtime.active_locale;
         self.image_objects = runtime.image_objects;
         self.text_inputs = runtime.text_inputs;
         self.action_buttons = runtime.action_buttons;

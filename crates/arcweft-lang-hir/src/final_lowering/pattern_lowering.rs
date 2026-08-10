@@ -35,7 +35,7 @@ use crate::pattern::{
     HirVariantPatternNameIssue, HirVariantPatternPayload, HirVariantPatternPayloadIssue,
 };
 use crate::scope::{HirLocal, HirPatternBindingPolicy};
-use crate::source_index::{HirInsertionPoint, HirPatternSourceRole, HirSourceQuery, HirSourceSite};
+use crate::source_index::{HirPatternSourceRole, HirSourceQuery, HirSourceSite};
 
 use self::binding_plan::{RecordFieldDisposition, binding_issue, classify_record_fields};
 use self::leaf::{path_value, record_path};
@@ -980,21 +980,16 @@ impl StagedHirModuleTransaction<'_> {
             },
             BindingSiteRole::RecordRest(field) => PatternComponentRole::PatternField {
                 field,
-                part: PatternFieldPart::Whole,
+                part: PatternFieldPart::RestBinding,
             },
             BindingSiteRole::SequenceRest => {
-                PatternComponentRole::SequenceRest(PatternRestPart::Whole)
+                PatternComponentRole::SequenceRest(PatternRestPart::Binding)
             }
         };
         let span = attached
             .component(component)
             .ok_or(HirInvariantFailure::InvalidSourceIndex)?;
-        let offset = match role {
-            BindingSiteRole::RecordRest(_) | BindingSiteRole::SequenceRest => span.range().end(),
-            BindingSiteRole::Node | BindingSiteRole::RecordShorthand(_) => span.range().start(),
-        };
-        HirInsertionPoint::try_new(self.request.source().document(), offset)
-            .map(HirSourceSite::Insertion)
+        HirSourceSite::from_attached_span(self.request.source().document(), &span)
             .map_err(|_| HirInvariantFailure::InvalidSourceSpan.into())
     }
 

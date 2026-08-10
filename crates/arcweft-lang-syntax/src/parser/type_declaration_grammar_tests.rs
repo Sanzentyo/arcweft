@@ -159,6 +159,50 @@ fn nominal_declarations_attach_their_exact_bodies_and_members() {
 }
 
 #[test]
+fn nominal_member_names_accept_keyword_spellings_in_their_unambiguous_namespace() {
+    let source = concat!(
+        "struct DialogueInput { character: Character, content: DialogueContent }\n",
+        "enum Control { return, await String }\n",
+    );
+    let document = Arc::new(document(source));
+    let snapshot = SourceSnapshotId::initial(document.display_name().clone());
+    let mut database = SyntaxDatabase::try_new().unwrap();
+    let parsed = database
+        .parse_initial(snapshot, document, crate::parser::ParseOptions::default())
+        .unwrap();
+
+    assert!(
+        parsed.diagnostics().is_empty(),
+        "{:?}",
+        parsed.diagnostics()
+    );
+    let items = parsed.items().unwrap();
+    let [TypedItemNode::Struct(record), TypedItemNode::Enum(choice)] = items.as_slice() else {
+        panic!("expected struct and enum declarations");
+    };
+    let record = record.semantics().unwrap();
+    assert_eq!(
+        record
+            .body()
+            .fields()
+            .iter()
+            .map(|field| field.name().value().unwrap().as_str())
+            .collect::<Vec<_>>(),
+        ["character", "content"]
+    );
+    let choice = choice.semantics().unwrap();
+    assert_eq!(
+        choice
+            .body()
+            .variants()
+            .iter()
+            .map(|variant| variant.name().value().unwrap().as_str())
+            .collect::<Vec<_>>(),
+        ["return", "await"]
+    );
+}
+
+#[test]
 fn nominal_where_predicates_attach_missing_bounds_as_typed_recovery() {
     let source = concat!(
         "type Empty = Value where T:\n",

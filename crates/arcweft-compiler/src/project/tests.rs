@@ -21,11 +21,13 @@ use arcweft_lang_syntax::{
     lint::{SyntaxLintCode, SyntaxLintSeverity},
     parser::ParseOptions,
 };
+use arcweft_launch::{LaunchProfileSelection, ProfileId, accepted::SourceBackedManifest};
 use arcweft_manifest_model::{BuildSpec, PackageId, PackageSpec, PackageVersion};
 use arcweft_project::graph::ModuleDependency;
 use arcweft_project::sources::ProjectSourceFile;
 use arcweft_source::{
-    DiagnosticLabel, DiagnosticLabelStyle, SourceDocument, SourceRange, identity::SourceSnapshotId,
+    DiagnosticLabel, DiagnosticLabelStyle, SourceDocument, SourceRange, SourceSetRevision,
+    identity::SourceSnapshotId,
 };
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -56,6 +58,17 @@ fn compilation_state(
 }
 
 fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilationContext) {
+    removed_role_project_with_dialogue_profile(source_text, false)
+}
+
+fn removed_role_dialogue_project(source_text: &str) -> (ProjectSources, ProjectCompilationContext) {
+    removed_role_project_with_dialogue_profile(source_text, true)
+}
+
+fn removed_role_project_with_dialogue_profile(
+    source_text: &str,
+    with_dialogue_profile: bool,
+) -> (ProjectSources, ProjectCompilationContext) {
     let source_path = PathBuf::from("src/main.arcw");
     let document = Arc::new(
         SourceDocument::try_new(
@@ -66,12 +79,17 @@ fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilatio
         )
         .expect("source document"),
     );
+    let manifest = if with_dialogue_profile {
+        dialogue_manifest_document("removed-role")
+    } else {
+        manifest_document("removed-role")
+    };
     let project = ProjectSources::new(
         PathBuf::from("arcw.toml"),
         PathBuf::new(),
         package("org.arcweft.removed-role"),
         BuildSpec::default(),
-        manifest_document("removed-role"),
+        Arc::clone(&manifest),
         [ProjectSourceFile::new(
             CanonicalModulePath::crate_root(),
             source_path,
@@ -86,21 +104,45 @@ fn removed_role_project(source_text: &str) -> (ProjectSources, ProjectCompilatio
         "removed-role-test",
     )
     .expect("symbol world");
+    let mut registration_documents = vec![Arc::clone(&document)];
+    if with_dialogue_profile {
+        registration_documents.push(Arc::clone(&manifest));
+    }
     let facts = ProjectRegistrationFacts::try_new(
         world,
-        vec![document],
+        registration_documents,
         Vec::new(),
         Vec::new(),
         Vec::new(),
     )
     .expect("registration facts");
-    let context = ProjectCompilationContext::new(
+    let resource_types = Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty());
+    let mut context = ProjectCompilationContext::new(
         Arc::new(TypeCheckEnv::standard()),
         Arc::new(facts),
-        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        Arc::clone(&resource_types),
         None,
         None,
     );
+    if with_dialogue_profile {
+        let accepted = Arc::new(
+            SourceBackedManifest::decode(Arc::clone(&manifest)).expect("accepted test manifest"),
+        );
+        let profile_id = ProfileId::new("dev").expect("profile ID");
+        let resolved = accepted
+            .resolve_profile(LaunchProfileSelection::Explicit(profile_id.as_str()))
+            .expect("resolved dialogue test profile");
+        let topology_revision =
+            SourceSetRevision::try_for_identities([manifest.identity(), document.identity()])
+                .expect("dialogue test topology revision");
+        context = context.with_accepted_launch_profile(AcceptedLaunchProfileInput::new(
+            accepted,
+            profile_id,
+            resolved,
+            topology_revision,
+            resource_types,
+        ));
+    }
     (project, context)
 }
 
@@ -120,6 +162,20 @@ fn manifest_document(name: &str) -> Arc<SourceDocument> {
             format!("schema = 1\n[package]\nid = \"org.arcweft.{name}\"\nversion = \"0.1.0\"\n"),
         )
         .expect("manifest document"),
+    )
+}
+
+fn dialogue_manifest_document(name: &str) -> Arc<SourceDocument> {
+    Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new(format!("arcweft-project://{name}/arcw.toml"))
+                .expect("manifest document ID"),
+            SourceName::path("arcw.toml"),
+            format!(
+                "schema = 1\n[package]\nid = \"org.arcweft.{name}\"\nversion = \"0.1.0\"\n\n[profiles.dev]\nkind = \"game\"\nsource = \"src/main.arcw\"\n\n[profiles.dev.localization.character_names]\nactive = \"ja-JP\"\nfallbacks = []\n"
+            ),
+        )
+        .expect("dialogue manifest document"),
     )
 }
 
@@ -268,12 +324,12 @@ fn noop_project_rebuild_reuses_the_exact_accepted_hir_project_arc() {
 
 #[test]
 fn dialogue_line_reference_reaches_runtime_lowering_from_one_accepted_generation() {
-    let (project, context) = removed_role_project(
+    let (project, context) = removed_role_dialogue_project(
         r"
 pub character @character.alice Alice as alice {}
 
 fn opening() {
-    let line = alice[前[strong]強調[/strong]後]
+    alice[前[strong]強調[/strong]後];
 }
 
 flow reference {
@@ -411,8 +467,10 @@ fn dialogue_collision_project() -> (
 ) {
     let child = CanonicalModulePath::crate_root()
         .join(ModuleSegment::new("child").expect("module segment"));
-    let root_text = "fn root_line() {\n    let line = alice(id = @say.shared)[before[strong]root[/strong]after]\n}\n";
-    let child_text = "fn child_line() {\n    let line = bob(id = @say.shared)[before[strong]child[/strong]after]\n}\n";
+    let root_text =
+        "fn root_line() {\n    alice(id = @say.shared)[before[strong]root[/strong]after];\n}\n";
+    let child_text =
+        "fn child_line() {\n    bob(id = @say.shared)[before[strong]child[/strong]after];\n}\n";
     let root_document = Arc::new(
         SourceDocument::try_new(
             SourceDocumentId::try_new("arcweft-project://dialogue-collision/src/main.arcw")

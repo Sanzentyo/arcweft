@@ -13,6 +13,10 @@ use super::{
     ProjectValueLookup, PromotionCallableId, ResolveCallError, ResolvedAssociatedTypeReceiver,
     ResolvedFunctionValueSeed, TypeId, TypeKind, TypeResolutionReport,
 };
+use crate::{
+    callable::{CharacterDialoguePatchContext, DialogueCallableId, DialogueCalleeIdentity},
+    types::{CharacterDialogueCharacterType, EntityKind},
+};
 
 /// Prepares the only callee representation admitted by the shared resolver
 /// from final-HIR structure and already checked child facts.
@@ -25,6 +29,7 @@ pub(crate) fn prepare_final_call_callee<'a>(
     authority: CallResolverAuthority<'a>,
     expression: ExprId,
     facts: FinalCallCalleeFacts<'a>,
+    dialogue_context: CharacterDialoguePatchContext,
     limits: &CallableLimits,
 ) -> Result<PreparedFinalCallCallee<'a>, PrepareFinalCallCalleeError> {
     let module = authority.module();
@@ -37,7 +42,7 @@ pub(crate) fn prepare_final_call_callee<'a>(
 
     match call.callee() {
         HirCallCallee::Value { value } => {
-            prepare_value_call_callee(authority, *value, facts, limits)
+            prepare_value_call_callee(authority, *value, facts, dialogue_context, limits)
         }
         HirCallCallee::UnresolvedDot {
             value_receiver,
@@ -67,12 +72,23 @@ fn prepare_value_call_callee<'a>(
     authority: CallResolverAuthority<'a>,
     value: ExprId,
     facts: FinalCallCalleeFacts<'a>,
+    dialogue_context: CharacterDialoguePatchContext,
     limits: &CallableLimits,
 ) -> Result<PreparedFinalCallCallee<'a>, PrepareFinalCallCalleeError> {
     let expression = authority
         .module()
         .resolve_expr(value)
         .map_err(|_| PrepareFinalCallCalleeError::InvalidCallExpression { expression: value })?;
+
+    if let Some(checked) = facts.expressions.get(&value)
+        && let Some(callee) = character_dialogue_callee(checked)
+    {
+        return Ok(PreparedFinalCallCallee::Dialogue {
+            id: DialogueCallableId::resolve(&callee),
+            callee,
+            patch_context: dialogue_context,
+        });
+    }
 
     if let HirExprKind::Path(HirPathValue::Resolved(path)) = expression.kind() {
         if let Some(checked) = facts.expressions.get(&value)
@@ -147,6 +163,31 @@ fn prepare_value_call_callee<'a>(
         expression: value,
         ty: Box::new(checked.ty().clone()),
     })
+}
+
+fn character_dialogue_callee(checked: &CheckedExpression) -> Option<DialogueCalleeIdentity> {
+    if let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)) =
+        checked.resolution()
+        && item.family() == arcweft_id::DeclarationIdentityFamily::Character
+    {
+        return Some(DialogueCalleeIdentity::Character {
+            character: item.character().map_or(
+                CharacterDialogueCharacterType::Any,
+                CharacterDialogueCharacterType::Exact,
+            ),
+        });
+    }
+    match checked.ty() {
+        TypeKind::Ref(entity) if entity.kind() == &EntityKind::Character => {
+            Some(DialogueCalleeIdentity::Character {
+                character: CharacterDialogueCharacterType::Any,
+            })
+        }
+        TypeKind::CharacterDialogue(dialogue) => Some(DialogueCalleeIdentity::CharacterDialogue {
+            character: dialogue.character().clone(),
+        }),
+        _ => None,
+    }
 }
 
 fn prepare_unresolved_dot_callee<'a>(
@@ -425,6 +466,7 @@ pub(super) fn classify_prepared_callee(
     match (prepared, call.callee()) {
         (
             PreparedCallCallee::Free { .. }
+            | PreparedCallCallee::Dialogue { .. }
             | PreparedCallCallee::FunctionValue { .. }
             | PreparedCallCallee::NonCallableValue { .. },
             HirCallCallee::Value { value },

@@ -1,3 +1,4 @@
+mod character_support;
 mod support;
 
 use arcweft_bundle::patch::PatchCompatibility;
@@ -53,7 +54,7 @@ fn content_only_patch_refreshes_catalog_and_preserves_window_renderer_input_cloc
     let report = content_only_smoke_report(&fixtures).expect("content-only smoke passes");
 
     assert_shell_preserved(&report);
-    assert_single_outcome(&report, "applied", Some("content-only"));
+    assert_single_outcome(&report, "applied", Some("code-compatible"));
     assert_eq!(
         image_probe_rgba(&report.before.direct_image_probe),
         Some(&[255, 0, 0, 255][..])

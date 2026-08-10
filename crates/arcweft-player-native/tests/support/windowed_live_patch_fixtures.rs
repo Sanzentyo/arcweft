@@ -16,6 +16,7 @@ use arcweft_core::task::{
     AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
 };
 use arcweft_core::value::{RuntimeExpr, RuntimePayload, RuntimeValue};
+use arcweft_dialogue::{DialoguePresentationProfile, DialogueProfileRevision};
 use arcweft_id::TextKey;
 use arcweft_player_native::windowed_patch::{
     FrameBoundary, PatchEventSource, RestartReason, WindowedPatchEvent, WindowedPatchReport,
@@ -23,16 +24,36 @@ use arcweft_player_native::windowed_patch::{
 use arcweft_player_native::{WindowedRuntimeOutcome, WindowedRuntimeOwner};
 use arcweft_player_scene::input::InputController;
 use arcweft_render_wgpu::geometry::RenderViewport;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::session::{BundleEntryStart, BundleSessionOptions, BundleStepInput};
 use arcweft_runtime_driver::swap::GenerationId;
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use arcweft_text_model::{
     DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
 };
+use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 use serde::Serialize;
 use std::fmt::Write as _;
+
+fn test_dialogue_profile_revision() -> DialogueProfileRevision {
+    let source = SourceDocument::try_new(
+        SourceDocumentId::try_new("player-native-live-patch-dialogue-profile").unwrap(),
+        SourceName::Memory,
+        "schema = 1\n",
+    )
+    .unwrap();
+    let sources = SourceSetRevision::try_for_identities([source.identity()]).unwrap();
+    DialogueProfileRevision::from_admitted_parts(
+        source.identity().clone(),
+        sources,
+        sources,
+        ViewProgramId::try_new("view_program.player_native_live_patch").unwrap(),
+        AcceptedViewProgramRevision::try_from_bytes([0x47; 32]).unwrap(),
+        ResourceTypeRegistry::empty().digest(),
+    )
+}
 
 fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
     arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
@@ -1060,6 +1081,11 @@ fn dialogue_content_catalog(
         RichTextDocument::new(vec![RichTextNode::Text {
             text: display_text.to_owned(),
         }]),
+        crate::character_support::character_plan(),
+        arcweft_text_model::DialoguePresentationSnapshot::new(
+            DialoguePresentationProfile::engine_default(),
+            test_dialogue_profile_revision(),
+        ),
         Vec::new(),
         source_map
             .primary_document()
@@ -1105,6 +1131,7 @@ fn bundle_from_runtime_parts(
         dialogue_content,
     )
     .expect("standard dialogue source joins source map")
+    .with_character_presentation_catalog(crate::character_support::character_catalog())
     .with_product_awbc(product_awbc)
 }
 

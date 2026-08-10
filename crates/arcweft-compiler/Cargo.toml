@@ -9,6 +9,7 @@ repository.workspace = true
 [dependencies]
 arcweft-agent-protocol = { workspace = true }
 arcweft-bundle = { workspace = true, default-features = true }
+arcweft-character = { workspace = true }
 arcweft-core = { workspace = true }
 arcweft-data = { workspace = true }
 arcweft-dialogue = { workspace = true }

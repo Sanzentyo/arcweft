@@ -3,7 +3,7 @@
 use arcweft_lang_sema::{
     callable::{
         CallableDocumentation, CallableParameterCoordinate, SemanticSignature,
-        SemanticSignatureHelp,
+        SemanticSignatureHelp, SemanticSignatureSurface,
     },
     signature::SignatureQueryOutcome,
 };
@@ -49,7 +49,7 @@ fn project_help(help: &SemanticSignatureHelp) -> Result<SignatureHelp, Signature
             let active = (active_signature == index)
                 .then_some(help.active_parameter())
                 .flatten();
-            let projected = project_signature(signature, active)?;
+            let projected = project_signature(signature, active, help.surface())?;
             if active_signature == index {
                 active_parameter = help.active_parameter().and(projected.active_parameter);
             }
@@ -72,29 +72,61 @@ struct ProjectedSignature {
 fn project_signature(
     signature: &SemanticSignature,
     active: Option<CallableParameterCoordinate>,
+    surface: SemanticSignatureSurface,
 ) -> Result<ProjectedSignature, SignatureProjectionError> {
     let mut label = SignatureLabelBuilder::new(signature.authored_callee())?;
     let mut parameters = Vec::new();
     let mut active_parameter = None;
 
-    for group in signature.groups() {
-        label.push("(")?;
-        for (index, parameter) in group.parameters().iter().enumerate() {
-            if index != 0 {
-                label.push(", ")?;
+    match surface {
+        SemanticSignatureSurface::Parenthesized => {
+            for group in signature.groups() {
+                label.push("(")?;
+                for (index, parameter) in group.parameters().iter().enumerate() {
+                    if index != 0 {
+                        label.push(", ")?;
+                    }
+                    push_parameter(
+                        &mut label,
+                        &mut parameters,
+                        &mut active_parameter,
+                        parameter,
+                        active,
+                    )?;
+                }
+                label.push(")")?;
             }
-            let flat_index = u32::try_from(parameters.len())
-                .map_err(|_| SignatureProjectionError::ActiveParameterOverflow)?;
-            let range = label.push_parameter(parameter.label())?;
-            if active == Some(parameter.coordinate()) {
-                active_parameter = Some(flat_index);
-            }
-            parameters.push(ParameterInformation {
-                label: ParameterLabel::LabelOffsets(range),
-                documentation: text_documentation(parameter.documentation()),
-            });
         }
-        label.push(")")?;
+        SemanticSignatureSurface::DialogueContent => {
+            let group = signature
+                .groups()
+                .get(signature.current_group().get())
+                .ok_or(SignatureProjectionError::ActiveParameterMissing)?;
+            let content = group
+                .parameters()
+                .get(1)
+                .ok_or(SignatureProjectionError::ActiveParameterMissing)?;
+            let plan = group
+                .parameters()
+                .get(2)
+                .ok_or(SignatureProjectionError::ActiveParameterMissing)?;
+            label.push("[")?;
+            push_parameter(
+                &mut label,
+                &mut parameters,
+                &mut active_parameter,
+                content,
+                active,
+            )?;
+            label.push("] with ")?;
+            push_parameter(
+                &mut label,
+                &mut parameters,
+                &mut active_parameter,
+                plan,
+                active,
+            )?;
+        }
     }
     label.push(" -> ")?;
     label.push(signature.result().source_label().as_str())?;
@@ -112,6 +144,26 @@ fn project_signature(
         },
         active_parameter,
     })
+}
+
+fn push_parameter(
+    label: &mut SignatureLabelBuilder,
+    parameters: &mut Vec<ParameterInformation>,
+    active_parameter: &mut Option<u32>,
+    parameter: &arcweft_lang_sema::callable::SemanticParameter,
+    active: Option<CallableParameterCoordinate>,
+) -> Result<(), SignatureProjectionError> {
+    let flat_index = u32::try_from(parameters.len())
+        .map_err(|_| SignatureProjectionError::ActiveParameterOverflow)?;
+    let range = label.push_parameter(parameter.label())?;
+    if active == Some(parameter.coordinate()) {
+        *active_parameter = Some(flat_index);
+    }
+    parameters.push(ParameterInformation {
+        label: ParameterLabel::LabelOffsets(range),
+        documentation: text_documentation(parameter.documentation()),
+    });
+    Ok(())
 }
 
 struct SignatureLabelBuilder {
@@ -204,7 +256,7 @@ mod tests {
             SemanticParameter, SemanticParameterGroup, SemanticSignature, SignatureOrigin,
         },
         effect_row::EffectRow,
-        types::TypeKind,
+        types::{EntityKind, TypeKind},
     };
 
     use super::*;
@@ -251,7 +303,12 @@ mod tests {
         )
         .expect("semantic signature");
 
-        let projected = project_signature(&signature, Some(coordinate)).expect("LSP projection");
+        let projected = project_signature(
+            &signature,
+            Some(coordinate),
+            SemanticSignatureSurface::Parenthesized,
+        )
+        .expect("LSP projection");
 
         assert_eq!(projected.information.label, "計算(値: String) -> String");
         assert_eq!(projected.active_parameter, Some(0));
@@ -262,6 +319,102 @@ mod tests {
                 documentation: None,
             }])
         );
+    }
+
+    #[test]
+    fn dialogue_content_surface_hides_the_structural_target_parameter() {
+        let group_index = CallableGroupIndex::try_from_usize(0).expect("group");
+        let parameters = [
+            (
+                "target",
+                TypeKind::entity_ref(EntityKind::Character),
+                CallableParameterPresence::Required,
+            ),
+            (
+                "content",
+                TypeKind::Named("DialogueContent".to_owned()),
+                CallableParameterPresence::Required,
+            ),
+            (
+                "line_plan",
+                TypeKind::Named("LinePlan".to_owned()),
+                CallableParameterPresence::Optional,
+            ),
+        ]
+        .into_iter()
+        .enumerate()
+        .map(|(index, (name, ty, presence))| {
+            let parameter = CallableParameterIndex::try_from_usize(index).expect("parameter");
+            SemanticParameter::try_new(
+                CallableParameterCoordinate::new(group_index, parameter),
+                format!(
+                    "{name}: {}{}",
+                    ty.source_label(),
+                    if presence == CallableParameterPresence::Optional {
+                        "?"
+                    } else {
+                        ""
+                    }
+                ),
+                Some(CallableName::try_new(name).expect("name")),
+                CallableParameterType::Exact(ty),
+                CallableParameterPassing::PositionalOnly,
+                presence,
+                None,
+                None,
+            )
+            .expect("semantic parameter")
+        })
+        .collect::<Vec<_>>();
+        let content_coordinate = parameters[1].coordinate();
+        let group = SemanticParameterGroup::try_new(
+            group_index,
+            CallableGroupKind::Initial,
+            parameters,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("semantic group");
+        let signature = SemanticSignature::try_new(
+            CallableCandidateId::Builtin(BuiltinCallableId::Panic),
+            Vec::new(),
+            SignatureOrigin::Language {
+                family: LanguageCallableFamily::Builtin,
+            },
+            Arc::from("alice"),
+            Arc::from("dialogue.content_application"),
+            vec![group],
+            TypeKind::DialogueLine(Box::new(TypeKind::Unit)),
+            EffectRow::default(),
+            CallableDocumentation::missing(),
+            None,
+            group_index,
+            CallPoison::Clean,
+            &PRODUCTION_CALLABLE_LIMITS,
+        )
+        .expect("semantic signature");
+
+        let projected = project_signature(
+            &signature,
+            Some(content_coordinate),
+            SemanticSignatureSurface::DialogueContent,
+        )
+        .expect("dialogue LSP projection");
+
+        assert_eq!(
+            projected.information.label,
+            "alice[content: DialogueContent] with line_plan: LinePlan? -> DialogueLine<Unit>"
+        );
+        assert_eq!(projected.active_parameter, Some(0));
+        assert_eq!(
+            projected
+                .information
+                .parameters
+                .as_ref()
+                .expect("visible parameters")
+                .len(),
+            2
+        );
+        assert!(!projected.information.label.contains("target"));
     }
 
     #[test]

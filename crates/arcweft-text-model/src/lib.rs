@@ -12,8 +12,9 @@ pub mod rich_text;
 pub mod style;
 
 pub use catalog::{
-    DialogueContentCatalog, DialogueContentCatalogError, DialogueContentSpec, RichTextAssignOp,
-    RichTextCascadeLayer, RichTextSettingSource, RichTextSourceRange, RichTextStyleContribution,
+    DialogueContentCatalog, DialogueContentCatalogError, DialogueContentSpec,
+    DialoguePresentationSnapshot, RichTextAssignOp, RichTextCascadeLayer, RichTextSettingSource,
+    RichTextSourceRange, RichTextStyleContribution,
 };
 pub use frame::{
     CharacterDialoguePresentationConfig, DialoguePresentationCharacter, LineDisplayFrame,

@@ -23,6 +23,9 @@ use crate::{
         EnvironmentPublicationProjectionErrorKind, EnvironmentPublicationProjectionReport,
         PRODUCTION_CALLABLE_LIMITS, RegisteredCallableCatalogBuilder,
     },
+    character_dialogue::{
+        CharacterDialogueCustomFieldDescriptor, CharacterDialogueCustomFieldRegistry,
+    },
     env::{
         TypeCheckEnv,
         nominal::{
@@ -45,9 +48,9 @@ use super::{
     limits::{CharacterRegistrationLimitKind, CharacterRegistrationLimits},
     model::{
         AcceptedNominalVisibilityIndex, AcceptedNominalWorld, CharacterInventoryRevision,
-        CharacterRegistrar, CharacterRegistrationRequest, ProofReturnRegistrationPrelude,
-        ProofReturnRegistrationRequest, RegisteredExternalOwner, RegisteredSemanticWorld,
-        RegisteredTypeCheckEnv,
+        CharacterRegistrar, CharacterRegistrationRequest, ProjectRegistrationFacts,
+        ProofReturnRegistrationPrelude, ProofReturnRegistrationRequest, RegisteredExternalOwner,
+        RegisteredSemanticWorld, RegisteredTypeCheckEnv,
     },
     source_index::CharacterDefinitionIndex,
 };
@@ -447,16 +450,20 @@ impl CharacterRegistrar {
                 ]));
             }
         };
+        let character_dialogue_fields =
+            build_character_dialogue_fields(&nominal_world, facts, fallback.clone())?;
         let environment_digest = super::environment_digest::derive(
             &nominal_world,
             rust_metadata.digest().as_bytes(),
             callables.digest().as_bytes(),
+            character_dialogue_fields.semantic_digest(),
             facts,
             character_digest,
             character_revision,
         );
         let environment = Arc::new(RegisteredTypeCheckEnv {
             nominal_world,
+            character_dialogue_fields,
             rust_metadata,
             callables,
             characters,
@@ -829,10 +836,13 @@ impl CharacterRegistrar {
             }
         };
 
+        let character_dialogue_fields =
+            build_character_dialogue_fields(&nominal_world, request.facts, fallback.clone())?;
         let environment_digest = super::environment_digest::derive(
             &nominal_world,
             rust_metadata.digest().as_bytes(),
             callables.digest().as_bytes(),
+            character_dialogue_fields.semantic_digest(),
             request.facts,
             digest,
             revision,
@@ -841,6 +851,7 @@ impl CharacterRegistrar {
         let symbols = Arc::new(link.into_table());
         let environment = Arc::new(RegisteredTypeCheckEnv {
             nominal_world,
+            character_dialogue_fields,
             rust_metadata,
             callables,
             characters,
@@ -880,6 +891,46 @@ impl CharacterRegistrar {
             character_definitions,
         })
     }
+}
+
+fn build_character_dialogue_fields(
+    nominal_world: &AcceptedNominalWorld,
+    facts: &ProjectRegistrationFacts,
+    fallback: SourceSpan,
+) -> Result<Arc<CharacterDialogueCustomFieldRegistry>, CharacterRegistrationReport> {
+    let mut descriptors = Vec::new();
+    for environment in facts.environment_inputs() {
+        for field in environment.input().character_dialogue_fields() {
+            let value_type = nominal_world
+                .try_project_character_dialogue_field_type(
+                    field.value_type(),
+                    field.item(),
+                    NominalResolutionLimits::PRODUCTION,
+                )
+                .map_err(environment_projection_registration_report)?;
+            descriptors.push(CharacterDialogueCustomFieldDescriptor::new(
+                field.id().clone(),
+                field.bindings().to_vec(),
+                value_type,
+                field.runtime_nominal_type().cloned(),
+                field.runtime_layout(),
+                field.clearable(),
+                field.accepted_views().clone(),
+                field.declaration().clone(),
+            ));
+        }
+    }
+    CharacterDialogueCustomFieldRegistry::try_new(nominal_world.stamp(), descriptors)
+        .map(Arc::new)
+        .map_err(|error| {
+            CharacterRegistrationReport::from_diagnostics(vec![
+                CharacterRegistrationDiagnostic::new(
+                    CharacterRegistrationDiagnosticKind::CharacterDialogueCustomFields { error },
+                    fallback,
+                    [],
+                ),
+            ])
+        })
 }
 
 fn environment_projection_registration_report(

@@ -6,6 +6,7 @@ use arcweft_lang_syntax::{
 };
 use core::fmt;
 
+mod character_dialogue;
 mod character_nominal;
 mod compatibility;
 mod digest;
@@ -15,6 +16,7 @@ mod openness;
 mod order;
 mod substitution;
 
+pub use character_dialogue::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
 pub use digest::SemanticTypeDigest;
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
@@ -461,6 +463,10 @@ pub enum TypeKind {
     },
     CharacterPatch(EntityKind),
     FocusPatch,
+    /// Immutable first-class dialogue presentation value.
+    CharacterDialogue(CharacterDialogueType),
+    /// Non-escaping dialogue suspension operation and its line-plan result.
+    DialogueLine(Box<TypeKind>),
     /// Manifest-backed character enum with structural nominal identity.
     CharacterNominal(CharacterNominalType),
     /// Internal or host-produced semantic value without an authored `TypeRef` origin.
@@ -602,6 +608,8 @@ impl TypeKind {
                 |trait_name| format!("<{} as {trait_name}>::{assoc}", subject.source_label()),
             ),
             Self::CharacterPatch(kind) => format!("CharacterPatch<{kind:?}>"),
+            Self::CharacterDialogue(dialogue) => dialogue.source_label(),
+            Self::DialogueLine(result) => format!("DialogueLine<{}>", result.source_label()),
             Self::CharacterNominal(nominal) => nominal.source_label(),
             Self::Tuple(items) => format!(
                 "({})",
@@ -796,6 +804,9 @@ impl TypeKind {
             (left, right) if left == right => left,
             (Self::Never, right) => right,
             (left, Self::Never) => left,
+            (Self::CharacterDialogue(left), Self::CharacterDialogue(right)) => {
+                Self::CharacterDialogue(CharacterDialogueType::join(left, &right))
+            }
             (left, right) => Self::normalized_choice([left, right]),
         }
     }

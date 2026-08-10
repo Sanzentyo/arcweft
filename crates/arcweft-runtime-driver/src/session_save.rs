@@ -4,12 +4,15 @@
 //! payload contains only restorable runtime state and one unambiguous artifact
 //! binding; it deliberately has no nested schema marker or legacy identity.
 
-use crate::display::BundlePresentationSnapshot;
+use crate::display::{ActiveSessionLocale, BundlePresentationSnapshot};
 use crate::swap::GenerationId;
 use crate::view_runtime::BundleViewRuntimeSnapshot;
 use arcweft_bundle::container::{ArtifactIdentity, BundleDigest};
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::logical_identity::LogicalBundleIdentity;
+use arcweft_character::presentation_name::{
+    CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+};
 use arcweft_core::awbc::fiber::{FiberState, FiberStateError};
 use arcweft_core::awbc::product_step::AwbcProductExecutorSnapshot;
 use arcweft_core::awbc::schema::AwbcProgram;
@@ -29,6 +32,8 @@ pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 2;
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BundleSessionSnapshot {
     pub generation: BundleSessionGenerationSnapshot,
+    #[serde(deserialize_with = "deserialize_required_option")]
+    pub character_presentation: Option<BundleSessionCharacterPresentationSnapshot>,
     pub active_entry: ActiveEntrySnapshotV1,
     pub root: Option<RootStateSnapshotV1>,
     pub runtime: BundleSessionRuntimeSnapshot,
@@ -38,6 +43,14 @@ pub struct BundleSessionSnapshot {
     pub view_virtualization: ViewVirtualizationSnapshot,
     /// Exact executable View mount graph, typed slots, clocks, and allocator cursor.
     pub view_runtime: BundleViewRuntimeSnapshot,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct BundleSessionCharacterPresentationSnapshot {
+    pub active_locale: ActiveSessionLocale,
+    pub semantic_digest: CharacterPresentationSemanticDigest,
+    pub locale_policy_digest: CharacterPresentationLocalePolicyDigest,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -192,6 +205,8 @@ pub enum BundleSessionSaveError {
     },
     #[error("invalid presentation snapshot in session save: {message}")]
     Presentation { message: String },
+    #[error("invalid Character presentation snapshot in session save: {message}")]
+    CharacterPresentation { message: String },
     #[error("invalid Fx runtime snapshot in session save: {diagnostic:?}")]
     Fx { diagnostic: Box<FxDiagnostic> },
     #[error("invalid Product AWBC fiber snapshot in session save: {message}")]

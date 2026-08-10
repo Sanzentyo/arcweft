@@ -58,7 +58,7 @@ pub struct CharacterPresentationCatalogInput {
 }
 
 /// Canonical accepted catalog data independent of process publication order.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct CharacterPresentationCatalogData {
     policy: CharacterNameLocalePolicy,
     records: Box<[CharacterDisplayNameRecord]>,

@@ -1,3 +1,5 @@
+mod support;
+
 use arcweft_bundle::fx_definitions::FxDefinitions;
 use arcweft_bundle::resource_codec::view::ViewRuntimeActionButtonAction;
 use arcweft_bundle::resource_codec::{ValidatedViewProduct, ViewProductValidationLimits};
@@ -76,7 +78,15 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
         .frame
         .prepared_text_owners()
         .iter()
-        .find(|owner| matches!(owner.kind, PreparedTextOwnerKind::View { .. }))
+        .find(|owner| {
+            matches!(
+                owner.kind,
+                PreparedTextOwnerKind::DialogueView {
+                    role: arcweft_render_wgpu::geometry::DialoguePreparedTextRole::CharacterDisplayName,
+                    ..
+                }
+            )
+        })
         .expect("dialogue speaker owner");
     let speaker = prepared
         .frame
@@ -90,7 +100,15 @@ fn standard_dialogue_view_preserves_vertical_ruby_and_final_panel_geometry() {
         .frame
         .prepared_text_owners()
         .iter()
-        .find(|owner| matches!(owner.kind, PreparedTextOwnerKind::DialogueView { .. }))
+        .find(|owner| {
+            matches!(
+                owner.kind,
+                PreparedTextOwnerKind::DialogueView {
+                    role: arcweft_render_wgpu::geometry::DialoguePreparedTextRole::Content,
+                    ..
+                }
+            )
+        })
         .expect("dialogue content owner");
     assert!((body.object_bounds.x - 57.6).abs() < 0.001);
     assert!((body.object_bounds.y - 460.8).abs() < 0.001);
@@ -186,6 +204,11 @@ fn vertical_ruby_frame(line: &RuntimeLineId) -> LineDisplayFrame {
                 base: "漢字".to_owned(),
                 ruby: "かんじ".to_owned(),
             }]),
+            support::character_plan(),
+            arcweft_text_model::DialoguePresentationSnapshot::new(
+                support::dialogue_profile(),
+                support::dialogue_profile_revision(),
+            ),
             Vec::new(),
             test_source_ref(),
         ),

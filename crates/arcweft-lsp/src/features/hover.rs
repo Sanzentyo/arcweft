@@ -15,7 +15,7 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::{
     callable::{CheckedCallableSourceCategory, CheckedCallableSourceKey},
     effects::EffectSet,
-    final_analysis::{CheckedExpressionResolution, CheckedValueResolution, FinalSemanticAnalysis},
+    final_analysis::{CheckedExpressionResolution, FinalSemanticAnalysis},
     types::TypeKind,
 };
 use arcweft_lang_syntax::ast::common::TextRange;
@@ -86,12 +86,12 @@ fn dialogue_application_hover(
             if owner.module() != module.module_id() {
                 return None;
             }
-            let HirExprKind::DialogueContentApplication(application) =
+            let HirExprKind::DialogueContentApplication(_) =
                 module.resolve_expr(owner).ok()?.kind()
             else {
                 return None;
             };
-            let CheckedExpressionResolution::DialogueApplication { character, .. } =
+            let CheckedExpressionResolution::DialogueApplication { target, .. } =
                 checked.resolution()
             else {
                 return None;
@@ -106,21 +106,16 @@ fn dialogue_application_hover(
             if offset < target_range.start() || offset >= target_range.end() {
                 return None;
             }
-            let target = analysis.expression(application.target())?;
-            let CheckedExpressionResolution::Value(CheckedValueResolution::ProjectItem(item)) =
-                target.resolution()
-            else {
-                return None;
-            };
-            if item.retained_owner() != Some(*character) {
-                return None;
-            }
-            Some((target_range, item.public_id().as_str()))
+            let character = target
+                .character()
+                .exact()
+                .map_or_else(|| "any character".to_owned(), |id| format!("@{}", id.as_str()));
+            Some((target_range, character))
         })
         .min_by_key(|(range, _)| range.end() - range.start())
         .map(|(range, character)| Hover {
             contents: HoverContents::Scalar(MarkedString::String(format!(
-                "CharacterDialogue content application\n\ncharacter: `@{character}`\n\nresult: `DialogueLine`"
+                "CharacterDialogue content application\n\ncharacter: `{character}`\n\nresult: `DialogueLine`"
             ))),
             range: Some(
                 document
@@ -178,9 +173,24 @@ fn dialogue_view_hover(
         return Some(hover);
     }
     for model in dialogue_view_types(profile, Some(document)) {
-        if let Some((projection, ty)) = DialogueViewTypeMetadata::fields()
+        if let Some((field, ty)) = DialogueViewTypeMetadata::character_fields()
             .into_iter()
-            .find(|(projection, _)| projection.field() == word)
+            .find(|(field, _)| *field == word)
+        {
+            let ty = match ty {
+                arcweft_lang_sema::types::TypeKind::Named(name) => name,
+                other => format!("{other:?}"),
+            };
+            return Some(Hover {
+                contents: HoverContents::Scalar(MarkedString::String(format!(
+                    "DialogueCharacter.{field}: {ty}\n\nRuntime-supplied nested Character field."
+                ))),
+                range: None,
+            });
+        }
+        if let Some((field, ty)) = DialogueViewTypeMetadata::fields()
+            .into_iter()
+            .find(|(field, _)| *field == word)
         {
             let ty = match ty {
                 arcweft_lang_sema::types::TypeKind::Named(name) => name,
@@ -189,8 +199,7 @@ fn dialogue_view_hover(
             return Some(Hover {
                 contents: HoverContents::Scalar(MarkedString::String(format!(
                     "{}.{}: {ty}\n\nRuntime-supplied dialogue View field.",
-                    model.name,
-                    projection.field()
+                    model.name, field
                 ))),
                 range: None,
             });

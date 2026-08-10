@@ -11,6 +11,43 @@ use crate::scope::{CaptureAccess, HirCapture, LocalLookup};
 use crate::source_index::HirMatchArmSourcePart;
 use crate::type_ref::HirTypeKind;
 
+#[test]
+fn authored_binding_local_retains_exact_name_source_span() {
+    let parsed = parsed_source(
+        "local-name-source",
+        &["result { let escaped = 1; escaped }".into()],
+    );
+    let (module, _, _) = lower_and_publish(&parsed);
+    let (owner, _) = module
+        .locals()
+        .find(|(_, local)| local.name().as_str() == "escaped")
+        .expect("authored block local");
+    let lookup = module
+        .source_site(
+            parsed.document().identity(),
+            crate::source_index::HirSourceQuery::Local {
+                owner,
+                role: crate::source_index::HirLocalSourceRole::Name,
+            },
+        )
+        .expect("typed local-name source query");
+    let crate::source_index::HirSourcePresence::Present(crate::source_index::HirSourceSite::Span(
+        span,
+    )) = lookup.presence()
+    else {
+        panic!("authored local name must retain a span: {lookup:?}")
+    };
+    let start = parsed
+        .document()
+        .text()
+        .find("escaped")
+        .expect("authored local name");
+    assert_eq!(
+        span.range(),
+        SourceRange::new(start, start + "escaped".len())
+    );
+}
+
 fn typed_if(module: &HirModule, owner: ExprId) -> &crate::expr::HirIfExpr {
     let HirExprKind::If(expression) = expression(module, owner).kind() else {
         panic!("E30 owner must retain HirExprKind::If");

@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-character = { workspace = true }
+arcweft-core.workspace = true
 arcweft-data.workspace = true
 arcweft-dialogue.workspace = true
 arcweft-id = { workspace = true }

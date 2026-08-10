@@ -887,6 +887,13 @@ mod tests {
         BundleImageFormat, BundleManifest, BundleRuntimeSummary, BundleVirtualFile,
         BundleVirtualFileRef, BundleVirtualFileSpace,
     };
+    use arcweft_character::{
+        id::CharacterId,
+        presentation_name::{
+            CharacterPresentationCatalogGeneration, CharacterPresentationCatalogRevision,
+            CharacterPresentationLocalePolicyDigest, CharacterPresentationSemanticDigest,
+        },
+    };
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::effect::{
         RuntimeAssertion, RuntimeAssertionGuardId, RuntimeAssertionProfile,
@@ -896,16 +903,56 @@ mod tests {
     use arcweft_core::plan::{
         FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeFlow, RuntimeLineId,
     };
+    use arcweft_dialogue::{
+        DialoguePresentationProfile, DialogueProfileRevision,
+        character_presentation::{
+            CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
+        },
+    };
     use arcweft_id::TextKey;
+    use arcweft_resource_model::registry::ResourceTypeRegistry;
     use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
-    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
+    use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
     use arcweft_text_model::{
         DialogueContentCatalog, DialogueContentSpec, RichTextDocument, RichTextNode,
     };
+    use arcweft_view::{AcceptedViewProgramRevision, ViewProgramId};
 
     fn fixture_runtime_artifact_fingerprint() -> arcweft_core::effect::RuntimeArtifactFingerprint {
         arcweft_core::effect::RuntimeArtifactFingerprint::try_from_bytes([0x6a; 32])
             .expect("fixture runtime artifact fingerprint is non-zero")
+    }
+
+    fn test_character_plan() -> CheckedCharacterPresentationPlan {
+        CheckedCharacterPresentationPlan::try_new(
+            CharacterPresentationTargetEvidence::Exact(
+                CharacterId::try_new("character.fixture").unwrap(),
+            ),
+            CharacterPresentationCatalogGeneration::new(
+                CharacterPresentationCatalogRevision::INITIAL,
+                CharacterPresentationSemanticDigest::from_bytes([1; 32]),
+                CharacterPresentationLocalePolicyDigest::from_bytes([2; 32]),
+            ),
+        )
+        .unwrap()
+    }
+
+    fn test_dialogue_profile_revision() -> DialogueProfileRevision {
+        let source = SourceDocument::try_new(
+            SourceDocumentId::try_new("runtime-host-dialogue-profile-fixture").unwrap(),
+            SourceName::Memory,
+            "schema = 1\n",
+        )
+        .unwrap();
+        let sources = SourceSetRevision::try_for_identities([source.identity()]).unwrap();
+        DialogueProfileRevision::from_admitted_parts(
+            source.identity().clone(),
+            sources,
+            sources,
+            ViewProgramId::try_new("view_program.runtime_host_dialogue").unwrap(),
+            AcceptedViewProgramRevision::try_from_bytes([0x44; 32]).unwrap(),
+            ResourceTypeRegistry::empty().digest(),
+        )
     }
 
     #[test]
@@ -1171,6 +1218,11 @@ mod tests {
                 RichTextDocument::new(vec![RichTextNode::Text {
                     text: "Opening".to_owned(),
                 }]),
+                test_character_plan(),
+                arcweft_text_model::DialoguePresentationSnapshot::new(
+                    DialoguePresentationProfile::engine_default(),
+                    test_dialogue_profile_revision(),
+                ),
                 Vec::new(),
                 source_map
                     .primary_document()

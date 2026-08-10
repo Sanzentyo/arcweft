@@ -193,6 +193,10 @@ impl TypeKind {
                 (Self::CharacterPatch(left), Self::CharacterPatch(right)) => {
                     entity_kind_ordering(left, right)
                 }
+                (Self::CharacterDialogue(left), Self::CharacterDialogue(right)) => left.cmp(right),
+                (Self::DialogueLine(left), Self::DialogueLine(right)) => {
+                    left.stable_ordering(right)
+                }
                 (Self::CharacterNominal(left), Self::CharacterNominal(right)) => left.cmp(right),
                 (Self::Tuple(left), Self::Tuple(right))
                 | (Self::Choice(left), Self::Choice(right)) => type_slice_ordering(left, right),
@@ -396,6 +400,8 @@ const fn type_kind_tag(kind: &TypeKind) -> u8 {
         TypeKind::OpenNominal(_) => 65,
         TypeKind::Error(_) => 66,
         TypeKind::Projection { .. } => 67,
+        TypeKind::CharacterDialogue(_) => 68,
+        TypeKind::DialogueLine(_) => 69,
         TypeKind::CharacterPatch(_) => 70,
         TypeKind::FocusPatch => 71,
         TypeKind::CharacterNominal(_) => 72,

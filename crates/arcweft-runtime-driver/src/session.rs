@@ -5,8 +5,8 @@ use crate::dialogue::{
     DialogueAdvanceTarget, DialoguePresentationStore,
 };
 use crate::display::{
-    BundlePresentationResources, BundlePresentationSnapshot, DisplayResolution,
-    resolve_display_frames,
+    ActiveSessionLocale, BundlePresentationResources, BundlePresentationSnapshot,
+    CatalogDialogueRuntimeContextProvider, DisplayResolution, resolve_display_frames,
 };
 use crate::fx_runtime::BundleFxRuntimeError;
 use crate::generation_runtime::{
@@ -14,10 +14,11 @@ use crate::generation_runtime::{
 };
 use crate::session_save::{
     BUNDLE_SESSION_SAVE_SCHEMA_ID, BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
-    BundleSessionArtifactIdentity, BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot,
-    BundleSessionPendingBlocker, BundleSessionRuntimeSnapshot, BundleSessionSaveError,
-    BundleSessionSnapshot, digest_label, validate_presentation_runtime_status,
-    validate_presentation_snapshot, validate_product_awbc_snapshot,
+    BundleSessionArtifactIdentity, BundleSessionCharacterPresentationSnapshot,
+    BundleSessionExecutorSnapshot, BundleSessionGenerationSnapshot, BundleSessionPendingBlocker,
+    BundleSessionRuntimeSnapshot, BundleSessionSaveError, BundleSessionSnapshot, digest_label,
+    validate_presentation_runtime_status, validate_presentation_snapshot,
+    validate_product_awbc_snapshot,
 };
 use crate::swap::{
     GenerationBuildError, GenerationId, ProgramGeneration, SwapCompatibility, SwapError,
@@ -45,6 +46,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeTextControl, ViewRuntimeTextSelection,
 };
 use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
+use arcweft_character::presentation_name::AcceptedCharacterPresentationCatalog;
 use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
     schema::{AwbcEntryId, AwbcProgram},
@@ -259,6 +261,8 @@ pub struct BundleSession {
     executor: ArcweftRuntimeExecutor,
     runtime_images: GenerationRuntimeTable<SessionRuntime>,
     dialogue_content: DialogueContentCatalog,
+    character_presentation: Option<AcceptedCharacterPresentationCatalog>,
+    active_locale: Option<ActiveSessionLocale>,
     image_objects: Vec<BundleImageObject>,
     text_inputs: Vec<ViewRuntimeTextControl>,
     action_buttons: Vec<ViewRuntimeActionButton>,
@@ -327,6 +331,8 @@ pub enum BundleSessionError {
     GenerationFingerprint { message: String },
     #[error("failed to decode bundle container: {message}")]
     DecodeBundle { message: String },
+    #[error("invalid Character presentation product: {message}")]
+    CharacterPresentation { message: String },
     #[error("unsupported semantic action `{action}` at the game runtime boundary")]
     UnsupportedSemanticAction { action: String },
     #[error("semantic action `{action}` is missing its option payload")]
@@ -426,6 +432,8 @@ pub enum BundleHotSwapError {
     ViewVirtualization { message: String },
     #[error("hot-swap executable View state is incompatible: {message}")]
     ViewRuntime { message: String },
+    #[error("hot-swap Character presentation state is incompatible: {message}")]
+    CharacterPresentation { message: String },
     #[error(transparent)]
     Environment(#[from] PresentationEnvironmentUpdateError),
     #[error(transparent)]
@@ -691,7 +699,18 @@ impl BundleSession {
                 _ => None,
             })
             .collect();
-        let display = resolve_display_frames(&self.dialogue_content, &flow_events, None);
+        let context_provider = self
+            .character_presentation
+            .as_ref()
+            .zip(self.active_locale.as_ref())
+            .map(|(catalog, locale)| CatalogDialogueRuntimeContextProvider::new(catalog, locale));
+        let display = resolve_display_frames(
+            &self.dialogue_content,
+            &flow_events,
+            context_provider
+                .as_ref()
+                .map(|provider| provider as &dyn crate::display::DialogueRuntimeContextProvider),
+        );
         let mut diagnostics = output
             .diagnostics
             .into_iter()

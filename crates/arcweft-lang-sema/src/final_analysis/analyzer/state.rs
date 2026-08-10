@@ -334,7 +334,13 @@ impl SemanticFactState {
         let CheckedCallArgumentSlotSource::Expression(owner) = source else {
             return;
         };
-        self.remove_expression(owner);
+        if !self
+            .expressions
+            .get(&owner)
+            .is_some_and(CheckedExpression::is_candidate_stable_coordinate)
+        {
+            self.remove_expression(owner);
+        }
         self.remove_pending_call(owner);
         self.remove_call_fact(owner);
     }
