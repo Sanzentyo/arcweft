@@ -57,9 +57,10 @@ use arcweft_lang_hir::{
 use arcweft_lang_sema::{
     assertion::AssertionRuntimePolicy,
     callable::{
-        BuiltinCallableId, CallPoison, CallTargetFact, CallableFamily, CallableInstantiation,
-        CheckedCallableExecution, MathCallableId, ReductionConstructorKind, ResolvedCallable,
-        SignatureOrigin, StdFloatOperation,
+        AgentIntrinsicSignatureId, BuiltinCallableId, CallPoison, CallTargetFact,
+        CallableCandidateId, CallableFamily, CallableInstantiation, CheckedCallableExecution,
+        DomainMethodId, MathCallableId, ProbeComparisonOperator, ReductionConstructorKind,
+        ResolvedCallable, SignatureOrigin, StdFloatOperation,
     },
     checked_rich_text::{
         CheckedDialogueControl, CheckedDialogueHostEvent, CheckedDialogueToken,
@@ -79,6 +80,7 @@ use arcweft_lang_sema::{
 };
 use arcweft_manifest_model::CharacterNameLocalePolicySpec;
 use arcweft_runtime_plan::{
+    agent::{RuntimeAgentIntrinsic, RuntimeAgentProbeComparison},
     assertion_identity::RuntimeAssertionMode,
     semantic_facts::{
         RuntimeAssertionAdmission, RuntimeCallResultShape, RuntimeCheckedCapture,
@@ -1376,6 +1378,9 @@ fn runtime_flow_identity(
 fn runtime_select(select: &CheckedSelectResolution) -> Option<RuntimeResolvedSelect> {
     Some(match select {
         CheckedSelectResolution::DialogueView { .. } => return None,
+        CheckedSelectResolution::Method { name } => {
+            RuntimeResolvedSelect::Method { name: name.clone() }
+        }
         CheckedSelectResolution::Field { nominal, name } => RuntimeResolvedSelect::Field {
             nominal: nominal.as_ref().map(runtime_nominal),
             name: name.clone(),
@@ -1762,6 +1767,18 @@ fn runtime_call_target(
     if let Some(intrinsic) = runtime_intrinsic(selected.id()) {
         return Ok(RuntimeResolvedCallTarget::Intrinsic(intrinsic));
     }
+    if let arcweft_lang_sema::callable::CallableCandidateId::Agent(intrinsic) = selected.id() {
+        return Ok(RuntimeResolvedCallTarget::Agent(runtime_agent_intrinsic(
+            *intrinsic,
+        )));
+    }
+    if let CallableCandidateId::DomainMethod(DomainMethodId::ProbeCompare { operation, .. }) =
+        selected.id()
+    {
+        return Ok(RuntimeResolvedCallTarget::AgentProbeComparison(
+            runtime_agent_probe_comparison(operation.operator()),
+        ));
+    }
     if let SignatureOrigin::Project { declaration, .. } = selected.origin() {
         let symbol =
             symbols
@@ -1826,6 +1843,56 @@ fn runtime_call_target(
             checked.semantic_digest().into_bytes(),
         ),
     ))
+}
+
+const fn runtime_agent_intrinsic(intrinsic: AgentIntrinsicSignatureId) -> RuntimeAgentIntrinsic {
+    match intrinsic {
+        AgentIntrinsicSignatureId::Observe => RuntimeAgentIntrinsic::Observe,
+        AgentIntrinsicSignatureId::Expect => RuntimeAgentIntrinsic::Expect,
+        AgentIntrinsicSignatureId::Deny => RuntimeAgentIntrinsic::Deny,
+        AgentIntrinsicSignatureId::Checkpoint => RuntimeAgentIntrinsic::Checkpoint,
+        AgentIntrinsicSignatureId::Note => RuntimeAgentIntrinsic::Note,
+        AgentIntrinsicSignatureId::Attach => RuntimeAgentIntrinsic::Attach,
+        AgentIntrinsicSignatureId::ChoiceAction => RuntimeAgentIntrinsic::ChoiceAction,
+        AgentIntrinsicSignatureId::Viewport => RuntimeAgentIntrinsic::Viewport,
+        AgentIntrinsicSignatureId::Layer => RuntimeAgentIntrinsic::Layer,
+        AgentIntrinsicSignatureId::Object => RuntimeAgentIntrinsic::Object,
+        AgentIntrinsicSignatureId::Capture => RuntimeAgentIntrinsic::Capture,
+        AgentIntrinsicSignatureId::ReadResource => RuntimeAgentIntrinsic::ReadResource,
+        AgentIntrinsicSignatureId::EntityMeta => RuntimeAgentIntrinsic::EntityMeta,
+        AgentIntrinsicSignatureId::ProjectNeighbors => RuntimeAgentIntrinsic::ProjectNeighbors,
+        AgentIntrinsicSignatureId::Signal => RuntimeAgentIntrinsic::Signal,
+        AgentIntrinsicSignatureId::Metric => RuntimeAgentIntrinsic::Metric,
+        AgentIntrinsicSignatureId::StatePath => RuntimeAgentIntrinsic::StatePath,
+        AgentIntrinsicSignatureId::ObservationPath => RuntimeAgentIntrinsic::ObservationPath,
+        AgentIntrinsicSignatureId::State => RuntimeAgentIntrinsic::State,
+        AgentIntrinsicSignatureId::Observation => RuntimeAgentIntrinsic::Observation,
+        AgentIntrinsicSignatureId::Diagnostics => RuntimeAgentIntrinsic::Diagnostics,
+        AgentIntrinsicSignatureId::Exists => RuntimeAgentIntrinsic::Exists,
+        AgentIntrinsicSignatureId::ActionEnabled => RuntimeAgentIntrinsic::ActionEnabled,
+        AgentIntrinsicSignatureId::All => RuntimeAgentIntrinsic::All,
+        AgentIntrinsicSignatureId::Any => RuntimeAgentIntrinsic::Any,
+        AgentIntrinsicSignatureId::Not => RuntimeAgentIntrinsic::Not,
+        AgentIntrinsicSignatureId::Wait => RuntimeAgentIntrinsic::Wait,
+        AgentIntrinsicSignatureId::AdvanceText => RuntimeAgentIntrinsic::AdvanceText,
+        AgentIntrinsicSignatureId::ViewportPoint => RuntimeAgentIntrinsic::ViewportPoint,
+        AgentIntrinsicSignatureId::PointerClick => RuntimeAgentIntrinsic::PointerClick,
+        AgentIntrinsicSignatureId::Invoke => RuntimeAgentIntrinsic::Invoke,
+        AgentIntrinsicSignatureId::RagQuery => RuntimeAgentIntrinsic::RagQuery,
+    }
+}
+
+const fn runtime_agent_probe_comparison(
+    operation: ProbeComparisonOperator,
+) -> RuntimeAgentProbeComparison {
+    match operation {
+        ProbeComparisonOperator::Eq => RuntimeAgentProbeComparison::Eq,
+        ProbeComparisonOperator::NotEq => RuntimeAgentProbeComparison::NotEq,
+        ProbeComparisonOperator::Greater => RuntimeAgentProbeComparison::Greater,
+        ProbeComparisonOperator::GreaterOrEqual => RuntimeAgentProbeComparison::GreaterOrEqual,
+        ProbeComparisonOperator::Less => RuntimeAgentProbeComparison::Less,
+        ProbeComparisonOperator::LessOrEqual => RuntimeAgentProbeComparison::LessOrEqual,
+    }
 }
 
 #[expect(

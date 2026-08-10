@@ -1,8 +1,6 @@
 fmt:
     @cargo fmt --all
 
-proof_cargo := if os() == "windows" { "$env:CARGO_INCREMENTAL='0'; cargo" } else { "CARGO_INCREMENTAL=0 cargo" }
-
 fmt-check:
     @cargo fmt --all --check
 
@@ -32,42 +30,42 @@ test-workspace-profile:
 
 # Proof persisted-boundary row: execute each real typed owner without a cross-crate codec alias.
 awbc_bundle_save_checkpoint_cache_round_trip_without_session_ids:
-    @{{ proof_cargo }} test -p arcweft-core --lib --all-features awbc::tests::canonical_awbc_assertion_payload_round_trips_as_typed_identity -- --exact
-    @{{ proof_cargo }} test -p arcweft-bundle --lib --all-features tests::awfb_round_trip_retains_typed_runtime_assertion_payload -- --exact
-    @{{ proof_cargo }} test -p arcweft-save --test runtime_assertion_identity --all-features save_round_trip_retains_the_real_core_runtime_assertion_payload -- --exact
-    @{{ proof_cargo }} test -p arcweft-project-loader --lib --all-features cache::persistent_query::tests::persistent_query_verified_bytecode_unit_is_actual_hit -- --exact
-    @{{ proof_cargo }} test -p arcweft-core --lib --all-features awbc::tests::fiber_checkpoint_and_serde_preserve_cleanup_stacks -- --exact
-    @{{ proof_cargo }} test -p arcweft-runtime-plan --test api_compile --all-features removed_runtime_plan_apis_are_unavailable -- --exact
-    @{{ proof_cargo }} test -p arcweft-core --test api_compile --all-features runtime_assertion_identity_boundaries_are_compile_time_closed -- --exact
+    @cargo test -p arcweft-core --lib --all-features awbc::tests::canonical_awbc_assertion_payload_round_trips_as_typed_identity -- --exact
+    @cargo test -p arcweft-bundle --lib --all-features tests::awfb_round_trip_retains_typed_runtime_assertion_payload -- --exact
+    @cargo test -p arcweft-save --test runtime_assertion_identity --all-features save_round_trip_retains_the_real_core_runtime_assertion_payload -- --exact
+    @cargo test -p arcweft-project-loader --lib --all-features cache::persistent_query::tests::persistent_query_verified_bytecode_unit_is_actual_hit -- --exact
+    @cargo test -p arcweft-core --lib --all-features awbc::tests::fiber_checkpoint_and_serde_preserve_cleanup_stacks -- --exact
+    @cargo test -p arcweft-runtime-plan --test api_compile --all-features removed_runtime_plan_apis_are_unavailable -- --exact
+    @cargo test -p arcweft-core --test api_compile --all-features runtime_assertion_identity_boundaries_are_compile_time_closed -- --exact
 
 # Proof public-surface row: run the five existing owner trybuild suites directly.
 public_api_surface_contains_only_final_nodes:
-    @{{ proof_cargo }} test -p arcweft-lang-syntax --test public_api --all-features removed_public_api_contract -- --exact
-    @{{ proof_cargo }} test -p arcweft-lang-hir --test public_api --all-features removed_and_session_identity_public_api_contract -- --exact
-    @{{ proof_cargo }} test -p arcweft-compiler --test api_compile --all-features removed_compiler_apis_are_unavailable -- --exact
-    @{{ proof_cargo }} test -p arcweft-runtime-plan --test api_compile --all-features removed_runtime_plan_apis_are_unavailable -- --exact
-    @{{ proof_cargo }} test -p arcweft-core --test api_compile --all-features runtime_assertion_identity_boundaries_are_compile_time_closed -- --exact
+    @cargo test -p arcweft-lang-syntax --test public_api --all-features removed_public_api_contract -- --exact
+    @cargo test -p arcweft-lang-hir --test public_api --all-features removed_and_session_identity_public_api_contract -- --exact
+    @cargo test -p arcweft-compiler --test api_compile --all-features removed_compiler_apis_are_unavailable -- --exact
+    @cargo test -p arcweft-runtime-plan --test api_compile --all-features removed_runtime_plan_apis_are_unavailable -- --exact
+    @cargo test -p arcweft-core --test api_compile --all-features runtime_assertion_identity_boundaries_are_compile_time_closed -- --exact
 
 # Proof recovered-module row: combine executable/cache rejection with tooling-only publication.
 recovered_module_is_excluded_from_executable_caches:
-    @{{ proof_cargo }} test -p arcweft-compiler --lib --all-features project::tests::recovered_module_never_enters_runtime_plan_or_compile_cache -- --exact
-    @{{ proof_cargo }} test -p arcweft-lsp --lib --all-features session::publication_gate_tests::recovered_module_is_excluded_from_executable_caches -- --exact
+    @cargo test -p arcweft-compiler --lib --all-features project::tests::recovered_module_never_enters_runtime_plan_or_compile_cache -- --exact
+    @cargo test -p arcweft-lsp --lib --all-features session::publication_gate_tests::recovered_module_is_excluded_from_executable_caches -- --exact
 
 proof-cross-boundary-acceptance: awbc_bundle_save_checkpoint_cache_round_trip_without_session_ids public_api_surface_contains_only_final_nodes recovered_module_is_excluded_from_executable_caches
 
 # Proof E13 Tier 2: execute each ignored production Select boundary independently.
 test-proof-select-production-boundaries:
-    @{{ proof_cargo }} test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_total_slots_exact_uses_three_retired_production_batches -- --ignored --exact
-    @{{ proof_cargo }} test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_total_slots_one_over_rolls_back_the_direct_select -- --ignored --exact
-    @{{ proof_cargo }} test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_syntax_expression_limit_uses_a_shallow_select_matrix -- --ignored --exact
-    @{{ proof_cargo }} test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_hir_expression_limit_uses_a_shallow_select_matrix_and_scope_tail -- --ignored --exact
-    @{{ proof_cargo }} test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_hir_source_byte_preflight_retains_the_select_pipeline -- --ignored --exact
-    @{{ proof_cargo }} test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_syntax_diagnostic_limit_uses_real_parser_diagnostics -- --ignored --exact
+    @cargo test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_total_slots_exact_uses_three_retired_production_batches -- --ignored --exact
+    @cargo test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_total_slots_one_over_rolls_back_the_direct_select -- --ignored --exact
+    @cargo test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_syntax_expression_limit_uses_a_shallow_select_matrix -- --ignored --exact
+    @cargo test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_hir_expression_limit_uses_a_shallow_select_matrix_and_scope_tail -- --ignored --exact
+    @cargo test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_hir_source_byte_preflight_retains_the_select_pipeline -- --ignored --exact
+    @cargo test -p arcweft-lang-hir --lib --all-features final_lowering::expression_lowering::tests::select_limits::e13_tier2_syntax_diagnostic_limit_uses_real_parser_diagnostics -- --ignored --exact
 
 # Proof Flow T-LIMIT-26 Tier 2: exercise the real attached 65,536/65,537-item boundary.
 test-proof-flow-production-boundary:
-    @{{ proof_cargo }} test -p arcweft-lang-hir --lib --all-features final_lowering::item_lowering::tests::flow_transaction::thread_flow_items_exact_and_one_over_are_atomic_for_attached_flow -- --ignored --exact
-    @{{ proof_cargo }} test -p arcweft-lang-hir --lib --all-features final_lowering::item_lowering::tests::flow_transaction::thread_flow_items_exact_and_one_over_are_atomic_for_attached_thread_expression -- --ignored --exact
+    @cargo test -p arcweft-lang-hir --lib --all-features final_lowering::item_lowering::tests::flow_transaction::thread_flow_items_exact_and_one_over_are_atomic_for_attached_flow -- --ignored --exact
+    @cargo test -p arcweft-lang-hir --lib --all-features final_lowering::item_lowering::tests::flow_transaction::thread_flow_items_exact_and_one_over_are_atomic_for_attached_thread_expression -- --ignored --exact
 
 test-doc:
     @cargo test --workspace --doc --quiet

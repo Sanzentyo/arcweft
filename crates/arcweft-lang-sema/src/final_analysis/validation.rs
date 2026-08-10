@@ -763,6 +763,8 @@ fn validate_expression_resolution(
     match resolution {
         CheckedExpressionResolution::Value(value) => validate_value(symbols, modules, value),
         CheckedExpressionResolution::Select(select) => match select {
+            CheckedSelectResolution::Method { .. }
+            | CheckedSelectResolution::TupleElement { .. } => Ok(()),
             CheckedSelectResolution::Field { nominal, .. }
             | CheckedSelectResolution::RecordElement { nominal, .. } => nominal
                 .as_ref()
@@ -777,7 +779,6 @@ fn validate_expression_resolution(
             } == name.as_str())
             .then_some(())
             .ok_or(FinalSemanticAnalysisError::WrongPayloadFamily),
-            CheckedSelectResolution::TupleElement { .. } => Ok(()),
         },
         CheckedExpressionResolution::Nominal(nominal) => {
             validate_nominal(symbols, modules, nominal)

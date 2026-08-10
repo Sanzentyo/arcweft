@@ -26,9 +26,9 @@ use arcweft_lang_hir::{
     dialogue_application::HirDialogueContentApplication,
     expr::{
         HirAssociatedCallSyntax, HirAssociatedReceiver, HirAssociatedSeparator, HirCallArgument,
-        HirCallCallee, HirCallExpr, HirExpr, HirExprKind, HirRecoveredName,
+        HirCallCallee, HirCallExpr, HirExpr, HirExprKind, HirRecoveredName, HirSelectedMember,
     },
-    identity::{ExprId, HirModuleId, TypeId},
+    identity::{ExprId, TypeId},
     leaf::{HirPath, HirPathRoot, HirPathSegment, HirPathValue},
     module::HirModule,
     project::HirProjectView,
@@ -429,7 +429,7 @@ impl<'a> CallResolverAuthority<'a> {
         let HirExprKind::Call(call) = expression.kind() else {
             return Err(ResolveCallError::InvalidResolvedCallable);
         };
-        let classification = classify_prepared_callee(callee, call, self.module.module_id())?;
+        let classification = classify_prepared_callee(callee, call, self.module)?;
         Ok((call, classification))
     }
 

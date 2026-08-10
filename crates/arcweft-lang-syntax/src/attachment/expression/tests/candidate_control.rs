@@ -410,7 +410,7 @@ fn candidate_assignment_views_keep_both_typed_operands_and_missing_slots() {
 }
 
 #[test]
-fn candidate_required_operand_views_preserve_wait_recovery_and_freeze_flow_blocks() {
+fn candidate_required_operand_views_keep_ordinary_wait_as_a_call_expression() {
     with_index_primary(
         "items[{ marker; return value; yield @entity.value; wait(target); close resource; select choice.member; marker }]",
         |primary| {
@@ -419,27 +419,17 @@ fn candidate_required_operand_views_preserve_wait_recovery_and_freeze_flow_block
                 panic!("prefix plus five required-operand statements");
             };
             assert_eq!(prefix.kind(), SyntaxKind::ExpressionStatement);
-            for statement in [returned, yielded, waited, closed, selected] {
+            for statement in [returned, yielded, closed, selected] {
                 let operand = statement
                     .required_operand_view()
                     .expect("typed required operand");
                 assert!(!operand.operand().has_recovery());
                 assert!(!operand.has_punctuation_recovery());
             }
+            assert_eq!(waited.kind(), SyntaxKind::ExpressionStatement);
+            assert!(waited.required_operand_view().is_none());
         },
     );
-
-    with_index_primary("items[{ marker; wait target; marker }]", |primary| {
-        let block = primary.value_block_view().expect("typed candidate Block");
-        let [_, waited] = block.statements() else {
-            panic!("prefix plus recovered Wait statement");
-        };
-        let waited = waited
-            .required_operand_view()
-            .expect("typed recovered Wait");
-        assert!(!waited.operand().has_recovery());
-        assert!(waited.has_punctuation_recovery());
-    });
 
     for source in [
         "items[{ marker; select { marker; }; marker }]",

@@ -422,6 +422,7 @@ impl TypeCheckEnv {
             .with_standard_presentation_nominals()
             .with_standard_dialogue_view_types()
             .with_standard_presentation_lifetimes()
+            .with_standard_agent_enums()
             .with_standard_function(
                 ["fmt"],
                 FunctionSignature::return_only(TypeKind::DisplayText),
@@ -477,6 +478,38 @@ impl TypeCheckEnv {
                     )],
                 ),
             )
+    }
+
+    #[must_use]
+    fn with_standard_agent_enums(self) -> Self {
+        [
+            (
+                "CaptureFormat",
+                TypeKind::Named("CaptureFormat".to_owned()),
+                &["png", "raw_rgba"][..],
+            ),
+            (
+                "CaptureKind",
+                TypeKind::Named("CaptureKind".to_owned()),
+                &["color", "mask"][..],
+            ),
+            (
+                "PointerButton",
+                TypeKind::Named("PointerButton".to_owned()),
+                &["primary", "secondary", "middle"][..],
+            ),
+        ]
+        .into_iter()
+        .fold(self, |environment, (owner, ty, variants)| {
+            environment
+                .try_with_enum_variants(
+                    EnvironmentBindingId::try_new(owner)
+                        .expect("Agent enum owner identity is valid"),
+                    ty,
+                    variants.iter().copied(),
+                )
+                .expect("Agent enum inventories have distinct typed owners")
+        })
     }
 
     #[must_use]

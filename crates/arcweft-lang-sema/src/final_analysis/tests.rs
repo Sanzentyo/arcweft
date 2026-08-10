@@ -15,7 +15,7 @@ use arcweft_core::entry::TypeLayoutHash;
 use arcweft_dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::{
     database::HirDatabase,
-    expr::{HirCallCallee, HirExprKind},
+    expr::{HirCallCallee, HirExprKind, HirSelectedMember},
     item::{HirFunctionBody, HirItemKind},
     lowering::{HirModuleKey, LoweringRequest},
     module::HirModule,
@@ -67,7 +67,7 @@ use crate::{
         CallableParameterPassing, CallableParameterPresence, CallableParameterType, CallablePath,
         CallableProviderId, CallableRecord, CallableSignatureSchema, CallableValidator,
         CatalogCallableEntry, CheckedCallArgumentSlotSource, CheckedClosureId, DialogueCallableId,
-        EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
+        DomainMethodId, EffectContractOrigin, EnvironmentCallableCatalog, EnvironmentCallableId,
         EnvironmentCallableKind, EnvironmentCallableOwner, EnvironmentCallablePublicationDigest,
         EnvironmentDeclarationOrdinal, FinalCallCalleeFacts, NonEmptyCallableSet,
         PRODUCTION_CALLABLE_LIMITS, PresentationCallableId, ProjectCallablePath,
@@ -4627,6 +4627,94 @@ effects { agent.observe }
         })
         .expect("Agent intrinsic call fact");
     assert_eq!(call.enclosing_callable(), Some(declaration));
+}
+
+#[test]
+fn agent_composite_wait_retains_typed_predicate_calls() {
+    let fixture = fixture(
+        r"
+fn composite_wait() -> Result<Unit, AgentError>
+effects { agent.observe, agent.wait }
+{
+    wait(
+        all(exists(signal(@signal.ready)), not(signal(@signal.ready).eq(false))),
+        timeout = 5s,
+        stable_frames = 1u32,
+        poll_frames = 1u32,
+    )
+    return Ok(())
+}
+signal ready: bool
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("Agent composite wait analysis");
+    assert_eq!(
+        report
+            .calls()
+            .filter(|(_, call)| matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if matches!(selected.id(), CallableCandidateId::Agent(_))
+            ))
+            .count(),
+        6
+    );
+    assert_eq!(
+        report
+            .calls()
+            .filter(|(_, call)| matches!(
+                call.target(),
+                CallTargetFact::Selected { selected, .. }
+                    if matches!(
+                        selected.id(),
+                        CallableCandidateId::DomainMethod(DomainMethodId::ProbeCompare { .. })
+                    )
+            ))
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn agent_action_result_field_retains_its_protocol_type() {
+    let fixture = fixture(
+        r"
+fn run_smoke() -> Result<Unit, AgentError>
+effects { agent.act.physical }
+{
+    let click_result = try pointer.click(
+        viewport_point(12u32, 34u32),
+        button = .secondary,
+    )
+    expect(click_result.accepted)
+    return Ok(())
+}
+",
+        None,
+    );
+    let report = analyze(&fixture).expect("Agent action result field analysis");
+    let module = fixture
+        .project
+        .executable_view()
+        .expect("executable HIR")
+        .module(&CanonicalModulePath::crate_root())
+        .expect("root HIR module");
+    let accepted = module
+        .expressions()
+        .find_map(|(owner, expression)| match expression.kind() {
+            HirExprKind::Select(select)
+                if matches!(select.member(), HirSelectedMember::Name(name) if name.as_str() == "accepted") =>
+            {
+                Some(owner)
+            }
+            _ => None,
+        })
+        .expect("accepted field expression");
+    assert_eq!(
+        report.expression(accepted).map(CheckedExpression::ty),
+        Some(&TypeKind::Bool)
+    );
 }
 
 #[test]

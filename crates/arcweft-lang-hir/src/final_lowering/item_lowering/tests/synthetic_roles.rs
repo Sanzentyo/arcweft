@@ -11,8 +11,23 @@ use crate::source_index::{
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct SyntheticObservation {
     child: RawHirId,
-    insertion_offset: usize,
+    source_anchor: SyntheticSourceAnchor,
     poisoned: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum SyntheticSourceAnchor {
+    Span(SourceRange),
+    Insertion(usize),
+}
+
+impl SyntheticObservation {
+    fn insertion_offset(self) -> usize {
+        let SyntheticSourceAnchor::Insertion(offset) = self.source_anchor else {
+            panic!("synthetic role must retain its prescribed zero-width insertion")
+        };
+        offset
+    }
 }
 
 type SyntheticObservationKey = (SyntheticKey, HirIdKind);
@@ -35,6 +50,13 @@ fn insertion_offset(site: &HirSourceSite) -> usize {
     insertion.offset()
 }
 
+fn source_anchor(site: &HirSourceSite) -> SyntheticSourceAnchor {
+    match site {
+        HirSourceSite::Span(span) => SyntheticSourceAnchor::Span(span.range()),
+        HirSourceSite::Insertion(insertion) => SyntheticSourceAnchor::Insertion(insertion.offset()),
+    }
+}
+
 fn record_synthetic<I: HirTypedId>(
     module: &HirModule,
     observations: &mut BTreeMap<SyntheticObservationKey, SyntheticObservation>,
@@ -48,7 +70,7 @@ fn record_synthetic<I: HirTypedId>(
             (*key, I::KIND),
             SyntheticObservation {
                 child: child.raw(),
-                insertion_offset: insertion_offset(metadata.source_site()),
+                source_anchor: source_anchor(metadata.source_site()),
                 poisoned: metadata.is_poisoned(),
             },
         );
@@ -202,8 +224,8 @@ fn produced_synthetic_roles_are_stable_and_collision_free() {
             .expect("unrelated sibling edit must preserve the old synthetic key");
         assert_eq!(second_observation.child, first_observation.child);
         assert_eq!(
-            second_observation.insertion_offset,
-            first_observation.insertion_offset
+            second_observation.source_anchor,
+            first_observation.source_anchor
         );
         assert_eq!(second_observation.poisoned, first_observation.poisoned);
     }
@@ -231,8 +253,11 @@ fn produced_synthetic_roles_are_stable_and_collision_free() {
         0,
         HirIdKind::Scope,
     );
-    assert_eq!(requires.insertion_offset, SOURCE.find("requires").unwrap());
-    assert_eq!(ensures.insertion_offset, SOURCE.find("ensures").unwrap());
+    assert_eq!(
+        requires.insertion_offset(),
+        SOURCE.find("requires").unwrap()
+    );
+    assert_eq!(ensures.insertion_offset(), SOURCE.find("ensures").unwrap());
 
     let predicate_return = observation(
         &first_observations,
@@ -242,7 +267,7 @@ fn produced_synthetic_roles_are_stable_and_collision_free() {
         HirIdKind::Type,
     );
     assert_eq!(
-        predicate_return.insertion_offset,
+        predicate_return.insertion_offset(),
         SOURCE.find("predicate valid(value: &Int)").unwrap() + "predicate valid(value: &Int)".len()
     );
     let proof_return = observation(
@@ -253,7 +278,7 @@ fn produced_synthetic_roles_are_stable_and_collision_free() {
         HirIdKind::Type,
     );
     assert_eq!(
-        proof_return.insertion_offset,
+        proof_return.insertion_offset(),
         SOURCE.find("proof checked(value: &Int)").unwrap() + "proof checked(value: &Int)".len()
     );
 
@@ -266,7 +291,7 @@ fn produced_synthetic_roles_are_stable_and_collision_free() {
         HirIdKind::Local,
     );
     assert_eq!(
-        postcondition_result.insertion_offset,
+        postcondition_result.insertion_offset(),
         SOURCE.find("result == ()").unwrap()
     );
 
@@ -286,7 +311,7 @@ fn produced_synthetic_roles_are_stable_and_collision_free() {
     );
     assert_eq!(implicit_tail.child, tail.raw());
     assert_eq!(
-        implicit_tail.insertion_offset,
+        implicit_tail.insertion_offset(),
         SOURCE.find("\n}\npredicate").unwrap() + 1
     );
 
@@ -316,9 +341,9 @@ fn produced_synthetic_roles_are_stable_and_collision_free() {
     assert_eq!(capture_rows[1].0.0.ordinal(), 1);
     assert_eq!(capture_rows[0].0.0.owner(), capture_rows[1].0.0.owner());
     let closure_body = SOURCE.find("second + first + second").unwrap();
-    assert_eq!(capture_rows[0].1.insertion_offset, closure_body);
+    assert_eq!(capture_rows[0].1.insertion_offset(), closure_body);
     assert_eq!(
-        capture_rows[1].1.insertion_offset,
+        capture_rows[1].1.insertion_offset(),
         closure_body + "second + ".len()
     );
 
@@ -329,7 +354,7 @@ fn produced_synthetic_roles_are_stable_and_collision_free() {
     assert_eq!(recovery_rows.len(), 1);
     assert_eq!(recovery_rows[0].0.0.ordinal(), 0);
     assert_eq!(
-        recovery_rows[0].1.insertion_offset,
+        recovery_rows[0].1.insertion_offset(),
         SOURCE.find("-;").unwrap() + 1
     );
     assert!(recovery_rows[0].1.poisoned);

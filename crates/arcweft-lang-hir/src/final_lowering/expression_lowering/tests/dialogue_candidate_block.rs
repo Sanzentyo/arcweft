@@ -1,6 +1,6 @@
 use super::*;
 use crate::dialogue_application::HirPostfixBracketCandidates;
-use crate::expr::{HirComputationBlockKind, HirNamedBlockName};
+use crate::expr::{HirCallCallee, HirComputationBlockKind, HirNamedBlockName};
 use crate::leaf::{HirIdRefIssue, HirIdRefShape, HirIdRefValue};
 use crate::stmt::{
     HirAssertionMode, HirConditionalElseBranch, HirStmtChildRole, HirStmtMatchArmBody,
@@ -23,15 +23,24 @@ fn index_candidate(module: &HirModule, owner: ExprId) -> (ExprId, &crate::expr::
     (*index, index_payload)
 }
 
-fn assert_candidate_origin<I: HirTypedId>(module: &HirModule, id: I, outer: ExprId, ordinal: u32) {
+fn assert_candidate_origin<I: HirTypedId + std::fmt::Debug>(
+    module: &HirModule,
+    id: I,
+    outer: ExprId,
+    ordinal: u32,
+) {
     let metadata = module.slots().resolve(id).expect("candidate slot metadata");
-    assert!(matches!(
-        metadata.origin(),
-        HirOrigin::Synthetic(key)
-            if key.owner() == SyntheticOwner::Expr(outer)
-                && key.role() == SyntheticRole::PostfixIndexCandidateExpression
-                && key.ordinal() == ordinal
-    ));
+    assert!(
+        matches!(
+            metadata.origin(),
+            HirOrigin::Synthetic(key)
+                if key.owner() == SyntheticOwner::Expr(outer)
+                    && key.role() == SyntheticRole::PostfixIndexCandidateExpression
+                    && key.ordinal() == ordinal
+        ),
+        "unexpected candidate origin for {id:?}: {:?}",
+        metadata.origin()
+    );
 }
 
 fn candidate_statement(
@@ -491,7 +500,7 @@ fn candidate_assignment_missing_operands_preserve_family_and_priority() {
 }
 
 #[test]
-fn candidate_required_operand_statements_keep_payloads_and_global_preorder() {
+fn candidate_required_operands_and_ordinary_wait_call_keep_global_preorder() {
     let parsed = parsed_source(
         "dialogue-candidate-required-operands",
         &["items[{ marker; return value; yield @entity.value; wait(target); close resource; select candidate.member; marker }]".into()],
@@ -516,22 +525,30 @@ fn candidate_required_operand_statements_keep_payloads_and_global_preorder() {
     assert_candidate_origin(&module, *yielded, outer, 4);
 
     let (_, waited) = candidate_statement(&module, outer, 3);
-    let HirStmtKind::Wait { target } = waited.kind() else {
-        panic!("candidate Wait family");
+    let HirStmtKind::Expression { expression: waited } = waited.kind() else {
+        panic!("ordinary candidate wait call must remain an expression statement");
     };
-    assert_candidate_origin(&module, *target, outer, 5);
+    assert_candidate_origin(&module, *waited, outer, 5);
+    let HirExprKind::Call(wait) = expression(&module, *waited).kind() else {
+        panic!("ordinary candidate wait must remain a Call expression");
+    };
+    let HirCallCallee::Value { value: callee } = wait.callee() else {
+        panic!("ordinary candidate wait must retain its value callee");
+    };
+    assert_candidate_origin(&module, *callee, outer, 6);
+    assert_candidate_origin(&module, wait.arguments()[0].value(), outer, 7);
 
     let (_, closed) = candidate_statement(&module, outer, 4);
     let HirStmtKind::Close { target } = closed.kind() else {
         panic!("candidate Close family");
     };
-    assert_candidate_origin(&module, *target, outer, 6);
+    assert_candidate_origin(&module, *target, outer, 8);
 
     let (_, selected) = candidate_statement(&module, outer, 5);
     let HirStmtKind::Select(crate::stmt::HirSelectStmt::Operand(selected)) = selected.kind() else {
         panic!("candidate ordinary Select family");
     };
-    assert_candidate_origin(&module, *selected, outer, 7);
+    assert_candidate_origin(&module, *selected, outer, 9);
     assert!(matches!(
         expression(&module, *selected).kind(),
         HirExprKind::Select(_)
@@ -539,14 +556,12 @@ fn candidate_required_operand_statements_keep_payloads_and_global_preorder() {
 }
 
 #[test]
-fn candidate_required_operand_recovery_preserves_wait_priority() {
+fn candidate_required_operand_recovery_excludes_ordinary_wait_calls() {
     let parsed = parsed_source(
         "dialogue-candidate-required-operand-recovery",
         &[
             "items[{ marker; return; marker }]".into(),
             "items[{ marker; yield; marker }]".into(),
-            "items[{ marker; wait(); marker }]".into(),
-            "items[{ marker; wait target; marker }]".into(),
             "items[{ marker; close; marker }]".into(),
             "items[{ marker; select; marker }]".into(),
         ],
@@ -561,10 +576,6 @@ fn candidate_required_operand_recovery_preserves_wait_priority() {
         HirStmtRecoveryIssue::RecoveredChild {
             role: HirStmtChildRole::Expression,
         },
-        HirStmtRecoveryIssue::RecoveredChild {
-            role: HirStmtChildRole::Target,
-        },
-        HirStmtRecoveryIssue::MalformedWait,
         HirStmtRecoveryIssue::RecoveredChild {
             role: HirStmtChildRole::Target,
         },

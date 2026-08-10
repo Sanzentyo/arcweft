@@ -12,16 +12,16 @@ use super::node::{
     BlockKind, CallArgumentKind, CallExpressionKind, ChoiceExpressionKind, CloseParenKind,
     CloseStatementKind, DeclarationHeaderKind, DeclarationPublicIdKind, DocBlockKind, ExactAstKind,
     ExpressionBodyKind, ExpressionStatementKind, FixedParameterGroupKind, FunctionBodyKind,
-    FunctionTypeKind, GenericApplicationTypeKind, IfStatementKind, LetAwaitStatementKind,
-    LetChoiceStatementKind, LetStatementKind, LifetimeSetStatementKind, MatchArmKind,
-    MatchStatementKind, MissingBodyKind, MissingExpressionKind, NameReferenceKind,
-    OmittedBlockTailKind, OpenParenKind, OuterAttributeKind, ParameterKind, PredicateBlockKind,
-    PredicateBodyKind, ProofBlockKind, ProofBodyKind, ProofCallStatementKind,
-    RecordPatternFieldKind, RecordPatternKind, ReturnStatementKind, RichTextArgumentPayloadKind,
-    RichTextArgumentTokenKind, RichTextArgumentValueKind, RichTextConditionPayloadKind,
-    RichTextDialogueCallPayloadKind, RichTextEndTagKind, RichTextFxCallPayloadKind,
-    RichTextInvalidArgumentKind, RichTextNamedArgumentKind, RichTextPositionalArgumentKind,
-    RichTextTagKind, RichTextTagNameKind, SelectStatementKind, SourceItemKind, TypeArgumentKind,
+    FunctionTypeKind, GenericApplicationTypeKind, IfStatementKind, LetChoiceStatementKind,
+    LetStatementKind, LifetimeSetStatementKind, MatchArmKind, MatchStatementKind, MissingBodyKind,
+    MissingExpressionKind, NameReferenceKind, OmittedBlockTailKind, OpenParenKind,
+    OuterAttributeKind, ParameterKind, PredicateBlockKind, PredicateBodyKind, ProofBlockKind,
+    ProofBodyKind, ProofCallStatementKind, RecordPatternFieldKind, RecordPatternKind,
+    ReturnStatementKind, RichTextArgumentPayloadKind, RichTextArgumentTokenKind,
+    RichTextArgumentValueKind, RichTextConditionPayloadKind, RichTextDialogueCallPayloadKind,
+    RichTextEndTagKind, RichTextFxCallPayloadKind, RichTextInvalidArgumentKind,
+    RichTextNamedArgumentKind, RichTextPositionalArgumentKind, RichTextTagKind,
+    RichTextTagNameKind, SelectStatementKind, SourceItemKind, TypeArgumentKind,
     UnsafeLifetimeStatementKind, VisibilityKind, WaitStatementKind, WholeBindingPatternKind,
     YieldStatementKind,
 };
@@ -955,16 +955,6 @@ impl AstNode<LetChoiceStatementKind> {
 impl AstNode<ExpressionStatementKind> {
     /// Exact value expression evaluated by this ordinary expression statement.
     pub fn expression(&self) -> Result<ExprNode, SyntaxAccessError> {
-        self.required_family_child::<ExpressionFamily>(SyntaxRole::Initializer)
-    }
-}
-
-impl AstNode<LetAwaitStatementKind> {
-    pub fn pattern(&self) -> Result<PatternNode, SyntaxAccessError> {
-        self.required_family_child::<PatternFamily>(SyntaxRole::Pattern)
-    }
-
-    pub fn initializer(&self) -> Result<ExprNode, SyntaxAccessError> {
         self.required_family_child::<ExpressionFamily>(SyntaxRole::Initializer)
     }
 }

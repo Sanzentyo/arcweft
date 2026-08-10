@@ -2,13 +2,88 @@ use super::*;
 
 use arcweft_lang_syntax::attachment::TypedItemNode;
 
-use crate::expr::HirPoisonState;
+use crate::expr::{HirExprKind, HirPoisonState};
 use crate::item::{
     HirContractScopes, HirFunctionBody, HirFunctionItem, HirFunctionParameterGroup,
     HirFunctionSignature, HirParameter, HirParameterKind,
 };
+use crate::module::HirModuleStatus;
 use crate::stmt::HirStmtKind;
 use crate::type_ref::{HirType, HirTypeKind};
+
+#[test]
+fn function_body_retains_prefix_try_associated_call_and_following_select() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-prefix-try",
+        "fn controller() -> Result<Unit, AgentError>\n\
+         effects { agent.act.physical }\n\
+         {\n\
+             let click_result = try pointer.click(\n\
+                 viewport_point(12u32, 34u32),\n\
+                 button = .secondary,\n\
+             )\n\
+             expect(click_result.accepted)\n\
+             return Ok(())\n\
+         }\n",
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+    let (_, _, function) = function(&module, 0);
+    let HirFunctionBody::Block { statements, .. } = function.body() else {
+        panic!("ordinary function must retain its block body")
+    };
+    let first = module
+        .arenas()
+        .statements()
+        .resolve(module.slots(), statements[0])
+        .expect("first function statement");
+    let HirStmtKind::Let { initializer, .. } = first.kind() else {
+        panic!("prefix Try binding must remain an ordinary Let")
+    };
+    assert!(matches!(
+        module
+            .arenas()
+            .expressions()
+            .resolve(module.slots(), *initializer)
+            .expect("Try initializer")
+            .kind(),
+        HirExprKind::Try(_)
+    ));
+}
+
+#[test]
+fn function_body_retains_agent_composite_wait_expression() {
+    let parsed = parse(
+        "arcweft-test://proof/final-hir-function-agent-composite-wait",
+        "fn composite_wait() -> Result<Unit, AgentError>\n\
+         effects { agent.observe, agent.wait }\n\
+         {\n\
+             wait(\n\
+                 all(exists(signal(@signal.ready)), not(signal(@signal.ready).eq(false))),\n\
+                 timeout = 5s,\n\
+                 stable_frames = 1u32,\n\
+                 poll_frames = 1u32,\n\
+             )\n\
+             return Ok(())\n\
+         }\n",
+    );
+    let key = module_key(&parsed);
+    let mut database = HirDatabase::try_new().expect("HIR database");
+    let module = lower(&mut database, &parsed, &key);
+    assert_eq!(
+        module.status(),
+        HirModuleStatus::Clean,
+        "{:#?}",
+        module.diagnostics()
+    );
+}
 
 fn function(
     module: &HirModule,

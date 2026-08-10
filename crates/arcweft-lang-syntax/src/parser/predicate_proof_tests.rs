@@ -1059,7 +1059,6 @@ fn shared_statement_families_keep_typed_identity_and_children() {
         SyntaxKind::DeferStatement,
         SyntaxKind::YieldStatement,
         SyntaxKind::SignalStatement,
-        SyntaxKind::WaitStatement,
         SyntaxKind::OnStatement,
         SyntaxKind::CloseStatement,
         SyntaxKind::SelectStatement,
@@ -1069,13 +1068,14 @@ fn shared_statement_families_keep_typed_identity_and_children() {
     ] {
         assert!(kinds.contains(&expected), "missing {expected:?}: {kinds:?}");
     }
+    assert!(!kinds.contains(&SyntaxKind::WaitStatement));
     assert_eq!(built.green().to_string(), source);
 }
 
 #[test]
 fn required_operand_statements_retain_exact_missing_slots_and_wait_punctuation() {
     let authored = "{ return 'lease; yield @entity.value; wait(target); close resource; select choice.member; }\n";
-    let built = parse_test_statement_block(&document(authored)).unwrap();
+    let built = super::statement::parse_test_flow_statement_block(&document(authored)).unwrap();
     let entries = built.index().entries();
     assert!(entries.iter().any(|entry| {
         entry.kind() == SyntaxKind::LifetimePathExpression && entry.role() == SyntaxRole::Operand
@@ -1103,7 +1103,7 @@ fn required_operand_statements_retain_exact_missing_slots_and_wait_punctuation()
     assert_eq!(built.green().to_string(), authored);
 
     let missing = "{ return; yield; wait(); close; select; }\n";
-    let built = parse_test_statement_block(&document(missing)).unwrap();
+    let built = super::statement::parse_test_flow_statement_block(&document(missing)).unwrap();
     assert_eq!(
         built
             .index()
@@ -1118,7 +1118,7 @@ fn required_operand_statements_retain_exact_missing_slots_and_wait_punctuation()
     assert_eq!(built.green().to_string(), missing);
 
     let recovered = "{ wait target; }\n";
-    let built = parse_test_statement_block(&document(recovered)).unwrap();
+    let built = super::statement::parse_test_flow_statement_block(&document(recovered)).unwrap();
     let codes = built
         .diagnostics()
         .iter()
@@ -1129,7 +1129,8 @@ fn required_operand_statements_retain_exact_missing_slots_and_wait_punctuation()
     assert_eq!(built.green().to_string(), recovered);
 
     let missing_close = "{ wait(target }\n";
-    let built = parse_test_statement_block(&document(missing_close)).unwrap();
+    let built =
+        super::statement::parse_test_flow_statement_block(&document(missing_close)).unwrap();
     assert!(
         built
             .diagnostics()
@@ -1192,7 +1193,7 @@ fn let_statement_variants_share_pattern_and_initializer_authority() {
         SyntaxKind::LetChoiceStatement,
         SyntaxKind::LetScopeStatement,
         SyntaxKind::LetLoopStatement,
-        SyntaxKind::LetAwaitStatement,
+        SyntaxKind::AwaitExpression,
         SyntaxKind::LetActionReceiveStatement,
         SyntaxKind::VariantPattern,
         SyntaxKind::Block,

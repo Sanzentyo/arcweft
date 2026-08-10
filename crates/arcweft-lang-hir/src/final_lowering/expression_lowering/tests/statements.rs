@@ -937,7 +937,7 @@ fn assignment_source_freeze_rejects_operand_reordering() {
 }
 
 #[test]
-fn required_operand_statements_lower_with_exact_payloads_and_nested_select() {
+fn required_operand_statements_and_ordinary_wait_call_lower_with_exact_payloads() {
     let parsed = parsed_source(
         "required-operand-statements",
         &["{ marker; return value; yield @entity.value; wait(target); close resource; select candidate.member; () }".into()],
@@ -950,7 +950,13 @@ fn required_operand_statements_lower_with_exact_payloads_and_nested_select() {
     let (_, yielded) = block_statement(&module, owners[0], 2);
     assert!(matches!(yielded.kind(), HirStmtKind::Yield { .. }));
     let (_, waited) = block_statement(&module, owners[0], 3);
-    assert!(matches!(waited.kind(), HirStmtKind::Wait { .. }));
+    let HirStmtKind::Expression { expression: waited } = waited.kind() else {
+        panic!("ordinary wait call must remain an expression statement");
+    };
+    assert!(matches!(
+        expression(&module, *waited).kind(),
+        HirExprKind::Call(_)
+    ));
     let (_, closed) = block_statement(&module, owners[0], 4);
     assert!(matches!(closed.kind(), HirStmtKind::Close { .. }));
     let (_, selected) = block_statement(&module, owners[0], 5);
@@ -964,14 +970,12 @@ fn required_operand_statements_lower_with_exact_payloads_and_nested_select() {
 }
 
 #[test]
-fn required_operand_recovery_preserves_family_and_wait_priority() {
+fn required_operand_recovery_preserves_each_remaining_statement_family() {
     let parsed = parsed_source(
         "required-operand-recovery",
         &[
             "{ marker; return; () }".into(),
             "{ marker; yield; () }".into(),
-            "{ marker; wait(); () }".into(),
-            "{ marker; wait target; () }".into(),
             "{ marker; close; () }".into(),
             "{ marker; select; () }".into(),
         ],
@@ -996,21 +1000,13 @@ fn required_operand_recovery_preserves_family_and_wait_priority() {
         ),
         (
             2,
-            "wait",
-            HirStmtRecoveryIssue::RecoveredChild {
-                role: HirStmtChildRole::Target,
-            },
-        ),
-        (3, "wait", HirStmtRecoveryIssue::MalformedWait),
-        (
-            4,
             "close",
             HirStmtRecoveryIssue::RecoveredChild {
                 role: HirStmtChildRole::Target,
             },
         ),
         (
-            5,
+            3,
             "select",
             HirStmtRecoveryIssue::RecoveredChild {
                 role: HirStmtChildRole::Expression,
@@ -1023,7 +1019,6 @@ fn required_operand_recovery_preserves_family_and_wait_priority() {
                 (expected_kind, statement.kind()),
                 ("return", HirStmtKind::Return { .. })
                     | ("yield", HirStmtKind::Yield { .. })
-                    | ("wait", HirStmtKind::Wait { .. })
                     | ("close", HirStmtKind::Close { .. })
                     | ("select", HirStmtKind::Select(HirSelectStmt::Operand(_)))
             ),

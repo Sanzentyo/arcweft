@@ -1,3 +1,4 @@
+pub mod agent;
 pub mod assertion_identity;
 mod assertion_lower;
 mod assertion_projection;

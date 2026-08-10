@@ -901,58 +901,70 @@ impl Analyzer<'_, '_, '_> {
         let HirSelectedMember::Name(name) = select.member() else {
             return Err(FinalSemanticAnalysisError::RecoveredOwner);
         };
-        let (ty, resolution) = match target.ty() {
-            TypeKind::ProjectNominal(target_nominal) => {
-                let declaration = self
-                    .symbols
-                    .nominal(target_nominal.declaration())
-                    .cloned()
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-                let ProjectNominalBody::Struct { fields } = declaration.body() else {
-                    return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner });
-                };
-                let field = fields
-                    .iter()
-                    .find(|field| field.name().as_str() == name.as_str())
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-                let declared_ty = self.types.get(&field.ty()).ok_or(
-                    FinalSemanticAnalysisError::TypeResolutionFailed { owner: field.ty() },
-                )?;
-                let substitutions = nominal_substitutions(&declaration, target_nominal)
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-                let nominal = checked_project_nominal(&declaration, target.ty())?;
-                (
-                    substitutions.apply(declared_ty),
-                    super::CheckedSelectResolution::Field {
-                        nominal: Some(nominal),
-                        name: name.clone(),
-                    },
-                )
-            }
-            TypeKind::Named(type_name) => {
-                let environment = self.catalogs.world.environment().typecheck_env();
-                let ty = environment
-                    .nominal_records()
-                    .get(type_name)
-                    .and_then(|fields| fields.get(name.as_str()))
-                    .cloned()
-                    .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
-                let resolution = environment
-                    .dialogue_view_models()
-                    .projection(type_name, name.as_str())
-                    .map_or_else(
-                        || super::CheckedSelectResolution::Field {
-                            nominal: None,
+        let (ty, resolution) = if let Some(ty) = target.ty().agent_field_type(name.as_str()) {
+            (
+                ty,
+                super::CheckedSelectResolution::Field {
+                    nominal: None,
+                    name: name.clone(),
+                },
+            )
+        } else {
+            match target.ty() {
+                TypeKind::ProjectNominal(target_nominal) => {
+                    let declaration = self
+                        .symbols
+                        .nominal(target_nominal.declaration())
+                        .cloned()
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    let ProjectNominalBody::Struct { fields } = declaration.body() else {
+                        return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable {
+                            owner,
+                        });
+                    };
+                    let field = fields
+                        .iter()
+                        .find(|field| field.name().as_str() == name.as_str())
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    let declared_ty = self.types.get(&field.ty()).ok_or(
+                        FinalSemanticAnalysisError::TypeResolutionFailed { owner: field.ty() },
+                    )?;
+                    let substitutions = nominal_substitutions(&declaration, target_nominal)
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    let nominal = checked_project_nominal(&declaration, target.ty())?;
+                    (
+                        substitutions.apply(declared_ty),
+                        super::CheckedSelectResolution::Field {
+                            nominal: Some(nominal),
                             name: name.clone(),
                         },
-                        |projection| super::CheckedSelectResolution::DialogueView {
-                            projection,
-                            name: name.clone(),
-                        },
-                    );
-                (ty, resolution)
+                    )
+                }
+                TypeKind::Named(type_name) => {
+                    let environment = self.catalogs.world.environment().typecheck_env();
+                    let ty = environment
+                        .nominal_records()
+                        .get(type_name)
+                        .and_then(|fields| fields.get(name.as_str()))
+                        .cloned()
+                        .ok_or(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner })?;
+                    let resolution = environment
+                        .dialogue_view_models()
+                        .projection(type_name, name.as_str())
+                        .map_or_else(
+                            || super::CheckedSelectResolution::Field {
+                                nominal: None,
+                                name: name.clone(),
+                            },
+                            |projection| super::CheckedSelectResolution::DialogueView {
+                                projection,
+                                name: name.clone(),
+                            },
+                        );
+                    (ty, resolution)
+                }
+                _ => return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }),
             }
-            _ => return Err(FinalSemanticAnalysisError::ExpressionTypeUnavailable { owner }),
         };
         Ok(CheckedExpression::new(
             ty,

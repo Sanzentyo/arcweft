@@ -138,7 +138,6 @@ define_ast_kinds!(STATEMENT_MARKERS, Statement;
     LetChoiceStatementKind => LetChoiceStatement,
     LetScopeStatementKind => LetScopeStatement,
     LetLoopStatementKind => LetLoopStatement,
-    LetAwaitStatementKind => LetAwaitStatement,
     LetActionReceiveStatementKind => LetActionReceiveStatement,
     ReturnStatementKind => ReturnStatement,
     OutStatementKind => OutStatement,

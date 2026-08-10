@@ -32,7 +32,7 @@ use crate::pattern::{
 };
 use crate::scope::HirPatternBindingPolicy;
 use crate::slot::HirOrigin;
-use crate::source_index::{HirInsertionPoint, HirSourceSite};
+use crate::source_index::HirSourceSite;
 
 pub(super) struct CandidatePatternBinding {
     pub(super) owner: PatternId,
@@ -641,24 +641,14 @@ fn local_source_site(
         },
         PatternBindingSiteKind::RecordRest { field } => PatternComponentRole::PatternField {
             field,
-            part: PatternFieldPart::Whole,
+            part: PatternFieldPart::RestBinding,
         },
         PatternBindingSiteKind::SequenceRest => {
-            PatternComponentRole::SequenceRest(PatternRestPart::Whole)
+            PatternComponentRole::SequenceRest(PatternRestPart::Binding)
         }
     };
     let span = source.component(component)?;
-    let offset = if matches!(
-        kind,
-        PatternBindingSiteKind::RecordRest { .. } | PatternBindingSiteKind::SequenceRest
-    ) {
-        span.range().end()
-    } else {
-        span.range().start()
-    };
-    HirInsertionPoint::try_new(document, offset)
-        .ok()
-        .map(HirSourceSite::Insertion)
+    HirSourceSite::from_attached_span(document, &span).ok()
 }
 
 fn variant_head_matches(

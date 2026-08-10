@@ -6,6 +6,7 @@ use arcweft_lang_syntax::{
 };
 use core::fmt;
 
+mod agent_fields;
 mod character_dialogue;
 mod character_nominal;
 mod compatibility;

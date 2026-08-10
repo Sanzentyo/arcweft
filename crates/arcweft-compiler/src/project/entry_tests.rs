@@ -15,6 +15,7 @@ use arcweft_bundle::ArcweftBundle;
 use arcweft_core::{
     entry::{EntryBindingIdentity, RootExecutionLimits, RuntimeCommandPolicy, RuntimeEntryRoles},
     plan::{FlowOp, FlowRuntimeId, RuntimeEntryTarget},
+    task::HostTaskArgTemplate,
     value::{RuntimeExpr, RuntimeUInt, RuntimeValue},
 };
 use arcweft_debug_model::sink::NullDebugEventSink;
@@ -643,6 +644,129 @@ entry agent @entry.agent.controller {
             .code()
             .is_some_and(|code| code.as_str() == "sema.entry.unbound_agent_intrinsic")
     }));
+}
+
+#[test]
+fn selected_agent_controller_owns_its_intrinsic_call() {
+    let source = r"
+fn controller() -> Result<Unit, AgentError>
+effects { agent.observe }
+{
+    observe()
+    return Ok(())
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+    let (project, context) = entry_project(
+        source,
+        "entry.agent.controller",
+        ProjectEntrySelectionKind::Agent,
+    );
+    let compiled = compile_attached_project(&project, &context)
+        .expect("Agent intrinsic inside the exact selected controller compiles");
+    assert!(
+        compiled
+            .checked_entries()
+            .entries()
+            .any(|entry| entry.id().public_id().as_str() == "entry.agent.controller")
+    );
+    let controller = compiled
+        .runtime_plan()
+        .plan
+        .flows
+        .iter()
+        .find(|flow| flow.id.canonical_label().contains("controller"))
+        .expect("selected controller flow");
+    let Some(FlowOp::Await { target, .. }) = controller.ops.first() else {
+        panic!("Agent observe call must lower to one typed host task");
+    };
+    assert_eq!(target.request.capability.0, "agent");
+    assert_eq!(target.request.operation, "observe");
+}
+
+#[test]
+fn selected_agent_controller_lowers_typed_probe_comparison_into_wait_request() {
+    let source = r"
+signal ready: bool
+
+fn controller() -> Result<Unit, AgentError>
+effects { agent.observe, agent.wait }
+{
+    wait(
+        all(exists(signal(@signal.ready)), not(signal(@signal.ready).eq(false))),
+        timeout = 5s,
+        stable_frames = 1u32,
+        poll_frames = 1u32,
+    )
+    return Ok(())
+}
+
+entry agent @entry.agent.controller {
+    controller = controller
+}
+";
+    let (project, context) = entry_project(
+        source,
+        "entry.agent.controller",
+        ProjectEntrySelectionKind::Agent,
+    );
+    let compiled = compile_attached_project(&project, &context)
+        .expect("typed Agent predicate controller compiles");
+    let controller = compiled
+        .runtime_plan()
+        .plan
+        .flows
+        .iter()
+        .find(|flow| flow.id.canonical_label().contains("controller"))
+        .expect("selected controller flow");
+    let Some(FlowOp::Await { target, .. }) = controller.ops.first() else {
+        panic!("Agent wait call must lower to one typed host task");
+    };
+    assert_eq!(target.request.operation, "wait");
+    let Some(HostTaskArgTemplate::Positional(RuntimeExpr::Record(all))) =
+        target.request.args.first()
+    else {
+        panic!("wait predicate must remain a typed runtime record");
+    };
+    assert_eq!(runtime_string_field(all, "kind"), Some("all"));
+    let predicates = all
+        .iter()
+        .find(|field| field.name == "predicates")
+        .map(|field| &field.value)
+        .expect("all predicate tuple");
+    let RuntimeExpr::Tuple(predicates) = predicates else {
+        panic!("all predicate children must remain an ordered tuple");
+    };
+    let RuntimeExpr::Record(not) = &predicates[1] else {
+        panic!("second predicate must remain the typed not record");
+    };
+    let compare = not
+        .iter()
+        .find(|field| field.name == "predicate")
+        .map(|field| &field.value)
+        .expect("not predicate payload");
+    let RuntimeExpr::Record(compare) = compare else {
+        panic!("probe comparison must remain a typed runtime record");
+    };
+    assert_eq!(runtime_string_field(compare, "kind"), Some("compare"));
+    assert_eq!(runtime_string_field(compare, "op"), Some("eq"));
+}
+
+fn runtime_string_field<'a>(
+    fields: &'a [arcweft_core::value::RuntimeFieldExpr],
+    name: &str,
+) -> Option<&'a str> {
+    fields.iter().find_map(|field| {
+        (field.name == name)
+            .then_some(&field.value)
+            .and_then(|value| match value {
+                RuntimeExpr::Value(RuntimeValue::String(value)) => Some(value.as_str()),
+                _ => None,
+            })
+    })
 }
 
 #[test]

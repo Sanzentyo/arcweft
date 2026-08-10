@@ -402,10 +402,7 @@ fn predicate_and_proof_reject_function_only_default_and_rest_without_lowering_th
                 assert_eq!(key.owner(), SyntheticOwner::Pattern(parameter.pattern()));
                 assert_eq!(key.role(), SyntheticRole::DestructuredBinding);
                 assert_eq!(key.ordinal(), 0);
-                assert!(matches!(
-                    metadata.source_site(),
-                    HirSourceSite::Insertion(_)
-                ));
+                assert!(matches!(metadata.source_site(), HirSourceSite::Span(_)));
 
                 let local = module
                     .arenas()

@@ -1283,7 +1283,6 @@ fn is_choice_let_kind(kind: SyntaxKind) -> bool {
             | SyntaxKind::LetChoiceStatement
             | SyntaxKind::LetScopeStatement
             | SyntaxKind::LetLoopStatement
-            | SyntaxKind::LetAwaitStatement
             | SyntaxKind::LetActionReceiveStatement
     )
 }

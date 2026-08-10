@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use arcweft_lang_syntax::ast::module_path::CanonicalModulePath;
 use arcweft_lang_syntax::attachment::node::{
-    FunctionBodyKind, LetAwaitStatementKind, LetChoiceStatementKind, LetStatementKind,
+    FunctionBodyKind, LetChoiceStatementKind, LetStatementKind,
 };
 use arcweft_lang_syntax::attachment::{
     AttachedExpressionNode, DeclarationBodyNode, LetInitializerNode, StatementNode,
@@ -215,11 +215,7 @@ fn attached_expressions(parsed: &ParsedSource) -> Vec<AttachedExpressionNode> {
                     .expression_node()
                     .expect("let-choice attached expression");
             } else {
-                statement
-                    .cast::<LetAwaitStatementKind>()
-                    .expect("let-await statement family")
-                    .initializer()
-                    .expect("let-await initializer access")
+                panic!("test statement must bind an ordinary or Choice expression")
             };
             initializer
                 .semantic()

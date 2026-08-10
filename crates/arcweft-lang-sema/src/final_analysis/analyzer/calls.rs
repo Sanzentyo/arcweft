@@ -30,7 +30,7 @@ use super::{
     CheckedValueResolution, EffectRow, EffectSet, EvaluatedCallArguments, ExprId,
     FinalCallCalleeFacts, FinalSemanticAnalysisError, HirAssociatedSeparator, HirCallArgument,
     HirCallArgumentSourcePart, HirCallCallee, HirCallExpr, HirExprKind, HirExprSourceRole,
-    HirModule, HirPathSegment, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    HirModule, HirPathSegment, HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite,
     PendingCallAnalysis, PhysicalCandidateArgument, PhysicalCandidateArgumentEvaluation,
     RegisteredSemanticValueId, ResolveCallOutcome, ResolvedCallTarget, ResolvedCallable,
     ResolvedCharacterOwner, ResolverWork, TypeKind, TypeParameterSubstitutions, map_call_arguments,
@@ -1300,7 +1300,9 @@ impl Analyzer<'_, '_, '_> {
                 let expression = module
                     .resolve_expr(*value)
                     .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
-                if !matches!(expression.kind(), HirExprKind::Path(_)) {
+                if let HirExprKind::Select(select) = expression.kind() {
+                    self.check_expression(select.target(), None)?;
+                } else if !matches!(expression.kind(), HirExprKind::Path(_)) {
                     self.check_expression(*value, None)?;
                 } else if let HirExprKind::Path(path) = expression.kind() {
                     let path = path
@@ -1930,7 +1932,21 @@ impl Analyzer<'_, '_, '_> {
                 return Ok(None);
             }
         };
-        let retained_resolution = if let Some(existing) = self.facts.expressions().get(&value) {
+        let expression = module
+            .resolve_expr(value)
+            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let method_callee = match expression.kind() {
+            HirExprKind::Select(select) if !nominal_receiver => {
+                let HirSelectedMember::Name(name) = select.member() else {
+                    return Err(FinalSemanticAnalysisError::RecoveredOwner);
+                };
+                Some((select.target(), name.clone()))
+            }
+            _ => None,
+        };
+        let retained_resolution = if method_callee.is_some() {
+            None
+        } else if let Some(existing) = self.facts.expressions().get(&value) {
             if nominal_receiver {
                 return Ok(None);
             }
@@ -1953,7 +1969,21 @@ impl Analyzer<'_, '_, '_> {
             callable_schema_type_with_effects(selected.schema(), callable_effects)
                 .ok_or(FinalSemanticAnalysisError::CallResolutionFailed { owner: value })?
         };
-        let resolution = if let Some(resolution) = retained_resolution {
+        let resolution = if let Some((receiver, name)) = &method_callee {
+            match selected.instantiation() {
+                CallableInstantiation::Receiver {
+                    receiver: selected_receiver,
+                } if self
+                    .facts
+                    .expressions()
+                    .get(receiver)
+                    .is_some_and(|checked| checked.ty() == selected_receiver) => {}
+                _ => return Err(FinalSemanticAnalysisError::CallResolutionFailed { owner: value }),
+            }
+            CheckedExpressionResolution::Select(super::CheckedSelectResolution::Method {
+                name: name.clone(),
+            })
+        } else if let Some(resolution) = retained_resolution {
             resolution
         } else if nominal_receiver {
             CheckedExpressionResolution::Structural
@@ -1972,17 +2002,13 @@ impl Analyzer<'_, '_, '_> {
                 ),
             ))
         };
-        let _ = module
-            .resolve_expr(value)
-            .map_err(|_| FinalSemanticAnalysisError::InvalidOwner)?;
+        let effects = method_callee
+            .as_ref()
+            .and_then(|(receiver, _)| self.facts.expressions().get(receiver))
+            .map_or_else(EffectSet::new, |receiver| receiver.effects().clone());
         self.facts.set_expression(
             value,
-            CheckedExpression::new(
-                ty,
-                CheckedTypeSelection::Inferred,
-                EffectSet::new(),
-                resolution,
-            ),
+            CheckedExpression::new(ty, CheckedTypeSelection::Inferred, effects, resolution),
         );
         Ok((!nominal_receiver).then_some(value))
     }

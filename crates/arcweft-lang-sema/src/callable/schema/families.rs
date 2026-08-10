@@ -756,8 +756,8 @@ impl AgentIntrinsicSignatureId {
                 vec![
                     required(0, "target", TypeKind::CaptureTarget),
                     optional_named(1, "name", TypeKind::String),
-                    optional_named_unchecked(2, "format"),
-                    optional_named_unchecked(3, "kind"),
+                    optional_named(2, "format", named("CaptureFormat")),
+                    optional_named(3, "kind", named("CaptureKind")),
                 ],
                 agent_result(TypeKind::CaptureRef),
                 &["agent.capture"],
@@ -902,7 +902,7 @@ impl AgentIntrinsicSignatureId {
             Self::PointerClick => schema(
                 vec![
                     required(0, "point", named("ViewportPoint")),
-                    defaulted_named(1, "button", TypeKind::ActionName),
+                    defaulted_named(1, "button", named("PointerButton")),
                 ],
                 agent_result(TypeKind::ActionResult),
                 &["agent.act.physical"],

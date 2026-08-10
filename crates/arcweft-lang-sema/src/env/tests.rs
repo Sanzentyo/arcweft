@@ -116,6 +116,36 @@ fn standard_closed_enum_inventories_preserve_owner_authored_order() {
         ]
         .map(str::to_owned)
     );
+
+    let capture_format = inventories
+        .iter()
+        .find(|(ty, _)| ty == &TypeKind::Named("CaptureFormat".to_owned()))
+        .map(|(_, variants)| variants)
+        .expect("CaptureFormat has one closed environment enum inventory");
+    assert_eq!(capture_format, &["png", "raw_rgba"].map(str::to_owned));
+
+    let capture_kind = inventories
+        .iter()
+        .find(|(ty, _)| ty == &TypeKind::Named("CaptureKind".to_owned()))
+        .map(|(_, variants)| variants)
+        .expect("CaptureKind has one closed environment enum inventory");
+    assert_eq!(capture_kind, &["color", "mask"].map(str::to_owned));
+
+    let pointer_button = inventories
+        .iter()
+        .find(|(ty, _)| ty == &TypeKind::Named("PointerButton".to_owned()))
+        .map(|(_, variants)| variants)
+        .expect("PointerButton has one closed environment enum inventory");
+    assert_eq!(
+        pointer_button,
+        &["primary", "secondary", "middle"].map(str::to_owned)
+    );
+    assert!(
+        inventories
+            .iter()
+            .all(|(ty, _)| ty != &TypeKind::ActionName),
+        "open Agent action names must not be collapsed into a pointer-button enum"
+    );
 }
 
 #[test]

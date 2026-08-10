@@ -432,7 +432,6 @@ fn emit_statement_kind(
         | SyntaxKind::LetChoiceStatement
         | SyntaxKind::LetScopeStatement
         | SyntaxKind::LetLoopStatement
-        | SyntaxKind::LetAwaitStatement
         | SyntaxKind::LetActionReceiveStatement => {
             emit_let_children(parser, child_end, kind, item_kind);
         }
@@ -1113,6 +1112,10 @@ fn classify_statement(
         {
             SyntaxKind::SignalStatement
         }
+        // Ordinary functions own direct suspension through the selected call
+        // expression. Flow and line-plan bodies retain the dedicated runtime
+        // Wait statement family.
+        Some("wait") if item_kind == SyntaxKind::FunctionItem => SyntaxKind::ExpressionStatement,
         Some("wait") => SyntaxKind::WaitStatement,
         Some("on") => SyntaxKind::OnStatement,
         Some("unsafe") => SyntaxKind::UnsafeLifetimeStatement,
@@ -1146,6 +1149,21 @@ fn classify_statement(
 pub(super) fn parse_test_statement_block(
     document: &arcweft_source::SourceDocument,
 ) -> Result<crate::grammar::build::GrammarBuild, crate::grammar::build::GrammarBuildError> {
+    parse_test_statement_block_for_item(document, SyntaxKind::FunctionItem)
+}
+
+#[cfg(test)]
+pub(super) fn parse_test_flow_statement_block(
+    document: &arcweft_source::SourceDocument,
+) -> Result<crate::grammar::build::GrammarBuild, crate::grammar::build::GrammarBuildError> {
+    parse_test_statement_block_for_item(document, SyntaxKind::FlowItem)
+}
+
+#[cfg(test)]
+fn parse_test_statement_block_for_item(
+    document: &arcweft_source::SourceDocument,
+    item_kind: SyntaxKind,
+) -> Result<crate::grammar::build::GrammarBuild, crate::grammar::build::GrammarBuildError> {
     let tokens = super::lexer::DocumentLexer::new(document.text()).lex();
     let mut events = Vec::with_capacity(tokens.len() + 8);
     let mut budget = crate::grammar::budget::GrammarBudget::default();
@@ -1155,7 +1173,7 @@ pub(super) fn parse_test_statement_block(
         let mut parser = DocumentParser::new(document.text(), &tokens, &mut events, &mut budget);
         emit_braced_block(
             &mut parser,
-            SyntaxKind::FunctionItem,
+            item_kind,
             SyntaxKind::Block,
             SyntaxRole::Body,
             "syntax.statement.missing_block_close",
@@ -1186,7 +1204,6 @@ fn classify_let_statement(parser: &DocumentParser<'_, '_>, end: usize) -> Syntax
         Some("choice") => SyntaxKind::LetChoiceStatement,
         Some("scope") => SyntaxKind::LetScopeStatement,
         Some("loop") => SyntaxKind::LetLoopStatement,
-        Some("await" | "try") => SyntaxKind::LetAwaitStatement,
         Some("receive") => SyntaxKind::LetActionReceiveStatement,
         _ => SyntaxKind::LetStatement,
     }

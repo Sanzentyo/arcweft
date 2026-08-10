@@ -669,9 +669,14 @@ fn capture_binding_program_with_budget(budget: AgentBudget) -> BytecodeProgram {
                             "agent",
                             "capture",
                             [
-                                HostTaskArgTemplate::positional(RuntimeExpr::Value(
-                                    RuntimeValue::String("viewport()".to_owned()),
-                                )),
+                                HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
+                                    RuntimeFieldExpr {
+                                        name: "kind".to_owned(),
+                                        value: RuntimeExpr::Value(RuntimeValue::String(
+                                            "viewport".to_owned(),
+                                        )),
+                                    },
+                                ])),
                                 HostTaskArgTemplate::positional(RuntimeExpr::Record(vec![
                                     RuntimeFieldExpr {
                                         name: "format".to_owned(),

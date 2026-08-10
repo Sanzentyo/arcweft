@@ -1101,6 +1101,18 @@ pub enum ProbeComparisonId {
     LessOrEqual,
 }
 
+/// Canonical semantic operation shared by the accepted probe-comparison
+/// spellings.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub enum ProbeComparisonOperator {
+    Eq,
+    NotEq,
+    Greater,
+    GreaterOrEqual,
+    Less,
+    LessOrEqual,
+}
+
 impl ProbeComparisonId {
     pub fn resolve(method: &CallableName) -> Option<Self> {
         match method.as_str() {
@@ -1116,6 +1128,17 @@ impl ProbeComparisonId {
             "le" => Some(Self::Le),
             "less_or_equal" => Some(Self::LessOrEqual),
             _ => None,
+        }
+    }
+
+    pub const fn operator(self) -> ProbeComparisonOperator {
+        match self {
+            Self::Eq => ProbeComparisonOperator::Eq,
+            Self::Ne | Self::NotEq => ProbeComparisonOperator::NotEq,
+            Self::Gt | Self::Greater => ProbeComparisonOperator::Greater,
+            Self::Ge | Self::GreaterOrEqual => ProbeComparisonOperator::GreaterOrEqual,
+            Self::Lt | Self::Less => ProbeComparisonOperator::Less,
+            Self::Le | Self::LessOrEqual => ProbeComparisonOperator::LessOrEqual,
         }
     }
 }

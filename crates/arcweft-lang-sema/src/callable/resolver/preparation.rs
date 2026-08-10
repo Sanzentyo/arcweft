@@ -7,11 +7,12 @@ use super::{
     CheckedValueResolution, ExprId, FinalCallCalleeFacts, FunctionValueSignatureId,
     FxCallableSignatureId, FxResolution, HirAssociatedCallSyntax, HirAssociatedReceiver,
     HirAssociatedSeparator, HirCallCallee, HirCallExpr, HirExpr, HirExprKind, HirExprSourceRole,
-    HirModule, HirModuleId, HirPath, HirPathRoot, HirPathSegment, HirPathValue, HirRecoveredName,
-    HirSourcePresence, HirSourceQuery, HirSourceSite, PrepareFinalCallCalleeError,
-    PreparedCallCallee, PreparedFinalCallCallee, PreparedFreeCallScope, PresentationCallableId,
-    ProjectValueLookup, PromotionCallableId, ResolveCallError, ResolvedAssociatedTypeReceiver,
-    ResolvedFunctionValueSeed, TypeId, TypeKind, TypeResolutionReport,
+    HirModule, HirPath, HirPathRoot, HirPathSegment, HirPathValue, HirRecoveredName,
+    HirSelectedMember, HirSourcePresence, HirSourceQuery, HirSourceSite,
+    PrepareFinalCallCalleeError, PreparedCallCallee, PreparedFinalCallCallee,
+    PreparedFreeCallScope, PresentationCallableId, ProjectValueLookup, PromotionCallableId,
+    ResolveCallError, ResolvedAssociatedTypeReceiver, ResolvedFunctionValueSeed, TypeId, TypeKind,
+    TypeResolutionReport,
 };
 use crate::{
     callable::{CharacterDialoguePatchContext, DialogueCallableId, DialogueCalleeIdentity},
@@ -87,6 +88,23 @@ fn prepare_value_call_callee<'a>(
             id: DialogueCallableId::resolve(&callee),
             callee,
             patch_context: dialogue_context,
+        });
+    }
+
+    if let HirExprKind::Select(select) = expression.kind() {
+        let HirSelectedMember::Name(member) = select.member() else {
+            return Err(PrepareFinalCallCalleeError::RecoveredCallee);
+        };
+        let receiver = facts.expressions.get(&select.target()).ok_or(
+            PrepareFinalCallCalleeError::MissingExpressionFact {
+                expression: select.target(),
+            },
+        )?;
+        return Ok(PreparedFinalCallCallee::Selected {
+            receiver_expression: select.target(),
+            receiver_type: Box::new(receiver.ty().clone()),
+            method: CallableName::try_new(member.as_str())
+                .map_err(|_| PrepareFinalCallCalleeError::InvalidValuePath { expression: value })?,
         });
     }
 
@@ -461,8 +479,9 @@ fn callable_path_from_hir(
 pub(super) fn classify_prepared_callee(
     prepared: &PreparedCallCallee<'_>,
     call: &HirCallExpr,
-    module: HirModuleId,
+    module: &HirModule,
 ) -> Result<CallCalleeClassificationFact, ResolveCallError> {
+    let module_id = module.module_id();
     match (prepared, call.callee()) {
         (
             PreparedCallCallee::Free { .. }
@@ -470,11 +489,30 @@ pub(super) fn classify_prepared_callee(
             | PreparedCallCallee::FunctionValue { .. }
             | PreparedCallCallee::NonCallableValue { .. },
             HirCallCallee::Value { value },
-        ) if value.module() == module => {
+        ) if value.module() == module_id => {
+            Ok(CallCalleeClassificationFact::Value { expression: *value })
+        }
+        (
+            PreparedCallCallee::Selected {
+                receiver_expression,
+                method,
+                ..
+            },
+            HirCallCallee::Value { value },
+        ) if value.module() == module_id
+            && module.resolve_expr(*value).is_ok_and(|expression| {
+                matches!(
+                    expression.kind(),
+                    HirExprKind::Select(select)
+                        if select.target() == *receiver_expression
+                            && matches!(select.member(), HirSelectedMember::Name(member) if member.as_str() == method.as_str())
+                )
+            }) =>
+        {
             Ok(CallCalleeClassificationFact::Value { expression: *value })
         }
         (PreparedCallCallee::Free { .. }, HirCallCallee::UnresolvedDot { value_receiver, .. })
-            if value_receiver.module() == module =>
+            if value_receiver.module() == module_id =>
         {
             Ok(CallCalleeClassificationFact::Value {
                 expression: *value_receiver,
@@ -510,7 +548,7 @@ pub(super) fn classify_prepared_callee(
             && *owner == receiver.product().root()
             && receiver.product().recovered() == receiver.ty()
             && receiver.root().recovered() == Some(receiver.ty())
-            && owner.module() == module
+            && owner.module() == module_id
             && member.as_str() == authored_member.as_str() =>
         {
             Ok(CallCalleeClassificationFact::AssociatedType {
@@ -530,7 +568,7 @@ pub(super) fn classify_prepared_callee(
             && *owner == receiver.product().root()
             && receiver.product().recovered() == receiver.ty()
             && receiver.root().recovered() == Some(receiver.ty())
-            && owner.module() == module
+            && owner.module() == module_id
             && member.as_str() == authored_member.as_str() =>
         {
             Ok(CallCalleeClassificationFact::AssociatedType {

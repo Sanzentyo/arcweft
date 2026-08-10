@@ -21,6 +21,9 @@ use arcweft_core::plan::{
     RuntimePureInputType, RuntimePureOutputType, RuntimeReceiverMode, RuntimeTraitMethod,
     RuntimeTraitMethodIdentity,
 };
+use arcweft_core::task::{
+    AwaitTarget, HostTaskArgTemplate, HostTaskRequestTemplate, NeedId, TaskId,
+};
 use arcweft_core::value::{
     RuntimeExpr, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue,
 };
@@ -55,8 +58,9 @@ use crate::errors::RuntimePlanLowerError;
 use crate::final_expr::FinalExprLowerer;
 use crate::final_pattern::FinalPatternLowerer;
 use crate::semantic_facts::{
-    RuntimeAssertionAdmission, RuntimePlanSemanticFacts, RuntimeResolvedValue,
-    RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTypeShape,
+    RuntimeAssertionAdmission, RuntimePlanSemanticFacts, RuntimeResolvedCallTarget,
+    RuntimeResolvedValue, RuntimeSemanticFactsError, RuntimeTraitIdentity, RuntimeTraitMethodFact,
+    RuntimeTypeShape,
 };
 
 /// Final-HIR owner and checked runtime Entry metadata admitted by semantic analysis.
@@ -1114,6 +1118,7 @@ struct FinalFlowLowerer<'hir> {
     package: &'hir CallablePackageId,
     assertion_owner: RuntimeAssertionOwner,
     assertion_ordinal: u32,
+    agent_host_call_ordinal: u32,
     assertion_sites: Vec<RuntimeAssertionSite>,
 }
 
@@ -1130,6 +1135,7 @@ impl<'hir> FinalFlowLowerer<'hir> {
             package,
             assertion_owner,
             assertion_ordinal: 0,
+            agent_host_call_ordinal: 0,
             assertion_sites: Vec::new(),
         }
     }
@@ -1231,12 +1237,21 @@ impl<'hir> FinalFlowLowerer<'hir> {
                 pattern: owner,
                 initializer,
                 ..
-            } => Ok(vec![FlowOp::Let {
-                pattern: pattern.lower(*owner).map_err(RuntimePlanLowerError::new)?,
-                expr: expr
-                    .lower(*initializer)
-                    .map_err(RuntimePlanLowerError::new)?,
-            }]),
+            } => {
+                let binding = pattern.lower(*owner).map_err(RuntimePlanLowerError::new)?;
+                if let Some(host) =
+                    self.lower_agent_host_call(*initializer, Some(binding.clone()))?
+                {
+                    Ok(vec![host])
+                } else {
+                    Ok(vec![FlowOp::Let {
+                        pattern: binding,
+                        expr: expr
+                            .lower(*initializer)
+                            .map_err(RuntimePlanLowerError::new)?,
+                    }])
+                }
+            }
             HirStmtKind::Assign { target, value } => Ok(vec![FlowOp::Let {
                 pattern: RuntimePattern::Discard,
                 expr: expr
@@ -1270,6 +1285,9 @@ impl<'hir> FinalFlowLowerer<'hir> {
                 }
             }
             HirStmtKind::Expression { expression: thread } => {
+                if let Some(host) = self.lower_agent_host_call(*thread, None)? {
+                    return Ok(vec![host]);
+                }
                 let thread_expr = self.module.resolve_expr(*thread).map_err(|error| {
                     RuntimePlanLowerError::new(format!(
                         "cannot resolve final-HIR Thread expression {thread:?}: {error}"
@@ -1413,6 +1431,84 @@ impl<'hir> FinalFlowLowerer<'hir> {
             unsupported => Err(RuntimePlanLowerError::new(format!(
                 "final-HIR statement {id:?} family {unsupported:?} has no checked core projection"
             ))),
+        }
+    }
+
+    fn lower_agent_host_call(
+        &mut self,
+        expression: arcweft_lang_hir::identity::ExprId,
+        binding: Option<RuntimePattern>,
+    ) -> Result<Option<FlowOp>, RuntimePlanLowerError> {
+        let Some((call_id, call)) = self.agent_call_operand(expression)? else {
+            return Ok(None);
+        };
+        let Some(selected) = self.facts.call(call_id) else {
+            return Ok(None);
+        };
+        let RuntimeResolvedCallTarget::Agent(intrinsic) = selected.target() else {
+            return Ok(None);
+        };
+        let Some(operation) = intrinsic.host_operation() else {
+            return Ok(None);
+        };
+        let lowerer = FinalExprLowerer::new(self.module, self.facts);
+        let mut arguments = Vec::with_capacity(call.arguments().len());
+        for argument in call.arguments() {
+            let value = lowerer
+                .lower(argument.value())
+                .map_err(RuntimePlanLowerError::new)?;
+            arguments.push(match argument {
+                arcweft_lang_hir::expr::HirCallArgument::Positional { .. } => {
+                    HostTaskArgTemplate::positional(value)
+                }
+                arcweft_lang_hir::expr::HirCallArgument::Named { .. } => {
+                    let name = argument.resolved_name().ok_or_else(|| {
+                        RuntimePlanLowerError::new(format!(
+                            "checked Agent host call {call_id:?} has a recovered named argument"
+                        ))
+                    })?;
+                    HostTaskArgTemplate::named(name.as_str(), value)
+                }
+                arcweft_lang_hir::expr::HirCallArgument::Spread { .. } => {
+                    HostTaskArgTemplate::spread(value)
+                }
+            });
+        }
+        let ordinal = self.agent_host_call_ordinal;
+        self.agent_host_call_ordinal = self
+            .agent_host_call_ordinal
+            .checked_add(1)
+            .ok_or_else(|| RuntimePlanLowerError::new("Agent host-call ordinal overflow"))?;
+        Ok(Some(FlowOp::Await {
+            binding,
+            target: AwaitTarget::new(
+                NeedId(format!("need.agent.{ordinal}")),
+                TaskId(format!("task.agent.{ordinal}")),
+                HostTaskRequestTemplate::new("agent", operation, arguments),
+            ),
+            pending: Vec::new(),
+        }))
+    }
+
+    fn agent_call_operand(
+        &self,
+        expression: arcweft_lang_hir::identity::ExprId,
+    ) -> Result<
+        Option<(
+            arcweft_lang_hir::identity::ExprId,
+            &arcweft_lang_hir::expr::HirCallExpr,
+        )>,
+        RuntimePlanLowerError,
+    > {
+        let resolved = self.module.resolve_expr(expression).map_err(|error| {
+            RuntimePlanLowerError::new(format!(
+                "cannot resolve possible Agent host expression {expression:?}: {error}"
+            ))
+        })?;
+        match resolved.kind() {
+            HirExprKind::Call(call) => Ok(Some((expression, call))),
+            HirExprKind::Try(propagation) => self.agent_call_operand(propagation.operand()),
+            _ => Ok(None),
         }
     }
 

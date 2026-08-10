@@ -425,7 +425,7 @@ mod tests {
     fn statement_exposes_its_primary_typed_kind_without_source_identity() {
         for (source, expected_kind) in [
             ("return", SyntaxKind::ReturnStatement),
-            ("wait(", SyntaxKind::WaitStatement),
+            ("wait(", SyntaxKind::ExpressionStatement),
             ("if ready() { return value } else", SyntaxKind::IfStatement),
             ("try", SyntaxKind::ExpressionStatement),
         ] {

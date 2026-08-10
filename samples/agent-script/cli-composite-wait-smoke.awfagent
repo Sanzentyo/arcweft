@@ -1,3 +1,5 @@
+signal ready: bool
+
 fn composite_wait() -> Result<Unit, AgentError>
 effects { agent.observe, agent.wait }
 {

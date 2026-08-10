@@ -303,6 +303,12 @@ pub enum CheckedValueResolution {
 /// Checked projection selected for one member expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum CheckedSelectResolution {
+    /// Method selected through an arbitrary value expression. The enclosing
+    /// checked Call owns the exact callable identity; this fact retains the
+    /// bound-method shape of its final-HIR callee expression.
+    Method {
+        name: HirName,
+    },
     /// Runtime-supplied field of a nominal record carrying the semantic
     /// `#[dialogue_view]` role. The projection identity is selected by the
     /// environment registry, never reconstructed from its field spelling by

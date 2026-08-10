@@ -403,6 +403,9 @@ pub enum RuntimeResolvedValue {
 /// Checked projection selected for one final-HIR member expression.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum RuntimeResolvedSelect {
+    Method {
+        name: HirName,
+    },
     Field {
         nominal: Option<RuntimeResolvedNominal>,
         name: HirName,
@@ -657,6 +660,8 @@ impl RuntimeResolvedCall {
 )]
 pub enum RuntimeResolvedCallTarget {
     Intrinsic(RuntimeIntrinsic),
+    Agent(crate::agent::RuntimeAgentIntrinsic),
+    AgentProbeComparison(crate::agent::RuntimeAgentProbeComparison),
     Declaration(RuntimeProjectCallable),
     /// Typed enum case selected by the shared callable resolver.
     ///
@@ -1671,11 +1676,11 @@ fn validate_select(
     select: &RuntimeResolvedSelect,
 ) -> Result<(), RuntimeSemanticFactsError> {
     match select {
+        RuntimeResolvedSelect::Method { .. } | RuntimeResolvedSelect::TupleElement { .. } => Ok(()),
         RuntimeResolvedSelect::Field { nominal, .. }
         | RuntimeResolvedSelect::RecordElement { nominal, .. } => nominal
             .as_ref()
             .map_or(Ok(()), |nominal| validate_nominal(modules, nominal)),
-        RuntimeResolvedSelect::TupleElement { .. } => Ok(()),
     }
 }
 
@@ -1862,7 +1867,9 @@ fn validate_call(
             }
         }
         RuntimeResolvedCallTarget::Variant(variant) => validate_variant(modules, variant)?,
-        RuntimeResolvedCallTarget::Reduction(_)
+        RuntimeResolvedCallTarget::Agent(_)
+        | RuntimeResolvedCallTarget::AgentProbeComparison(_)
+        | RuntimeResolvedCallTarget::Reduction(_)
         | RuntimeResolvedCallTarget::Intrinsic(_)
         | RuntimeResolvedCallTarget::TraitMethod { .. }
         | RuntimeResolvedCallTarget::Registered(_) => {}

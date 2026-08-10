@@ -13,9 +13,9 @@ use arcweft_lang_syntax::{
         node::{
             AssertionStatementKind, AssignmentStatementKind, BlockKind, BreakStatementKind,
             CloseStatementKind, DeferStatementKind, ExpressionStatementKind, GotoStatementKind,
-            IfStatementKind, LetAwaitStatementKind, LetStatementKind, LifetimeSetStatementKind,
-            MatchStatementKind, OutStatementKind, ReturnStatementKind, SignalStatementKind,
-            WaitStatementKind, YieldStatementKind,
+            IfStatementKind, LetStatementKind, LifetimeSetStatementKind, MatchStatementKind,
+            OutStatementKind, ReturnStatementKind, SignalStatementKind, WaitStatementKind,
+            YieldStatementKind,
         },
     },
     expressions::{
@@ -405,10 +405,6 @@ fn visit_value_block(
     Ok(())
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "the closed statement-kind traversal keeps RichText canonicalization coverage exhaustive"
-)]
 fn visit_statement(
     source: &str,
     statement: &arcweft_lang_syntax::attachment::StatementNode,
@@ -428,15 +424,6 @@ fn visit_statement(
             &statement
                 .cast::<ExpressionStatementKind>()?
                 .expression()?
-                .semantic()?,
-            context,
-            edits,
-        )?,
-        SyntaxKind::LetAwaitStatement => visit_expression(
-            source,
-            &statement
-                .cast::<LetAwaitStatementKind>()?
-                .initializer()?
                 .semantic()?,
             context,
             edits,

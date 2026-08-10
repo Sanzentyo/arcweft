@@ -9,8 +9,7 @@ use arcweft_agent_protocol::{
 use arcweft_core::value::{RuntimeFieldValue, RuntimePayload, RuntimeValue};
 
 use crate::label_parse::{
-    parse_bool_label, parse_capture_format, parse_capture_target, parse_public_id_arg,
-    parse_public_id_list,
+    parse_bool_label, parse_capture_format, parse_public_id_arg, parse_public_id_list,
 };
 
 pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
@@ -322,7 +321,17 @@ pub(crate) fn runtime_public_ids(value: &RuntimeValue) -> Result<Vec<PublicId>, 
 }
 
 pub(crate) fn runtime_capture_target(value: &RuntimeValue) -> Result<CaptureTarget, String> {
-    runtime_string(value).and_then(|value| parse_capture_target(&value))
+    let fields = runtime_record_fields(value, "capture target")?;
+    match runtime_record_string(fields, "kind")?.as_str() {
+        "viewport" => Ok(CaptureTarget::Viewport),
+        "layer" => runtime_record_get(fields, "target")
+            .and_then(runtime_public_id)
+            .map(|id| CaptureTarget::Layer { id }),
+        "object" => runtime_record_get(fields, "target")
+            .and_then(runtime_string)
+            .map(|id| CaptureTarget::Object { id }),
+        other => Err(format!("unsupported typed capture target kind `{other}`")),
+    }
 }
 
 pub(crate) fn runtime_capture_format(value: &RuntimeValue) -> Result<CaptureFormat, String> {

@@ -1,11 +1,11 @@
 fn pointer_click_smoke() -> Result<Unit, AgentError>
 effects { agent.act.physical }
 {
-    let action = try pointer.click(
+    let click_result = try pointer.click(
         viewport_point(12u32, 34u32),
         button = .secondary,
     )
-    expect(action.accepted)
+    expect(click_result.accepted)
     return Ok(())
 }
 

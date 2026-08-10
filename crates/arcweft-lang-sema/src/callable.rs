@@ -80,11 +80,11 @@ pub use identity::{
     FunctionValueSignatureId, FxCallableSignatureId, FxResolution, IntegerMethodId,
     LanguageCallableFamily, LanguageDocumentationFamily, LexicalBindingIndex, LocalCallableId,
     MathCallableId, OptionConstructorKind, PresentationHandleMethodId, ProbeComparisonId,
-    ProjectCallablePath, ProjectNameBinding, ProjectNominalTypeId, PromotionCallableId,
-    ReceiverMethodKey, ReductionConstructorKind, ResultConstructorKind, RustItemPath,
-    STANDARD_TRAIT_CATALOG_VERSION, SemanticScopeId, StageMethodId, StandardCallableDeclarationId,
-    StandardEnvironmentId, StandardTraitCatalogVersion, StdFloatCallableId, StdFloatOperation,
-    VectorDimensions,
+    ProbeComparisonOperator, ProjectCallablePath, ProjectNameBinding, ProjectNominalTypeId,
+    PromotionCallableId, ReceiverMethodKey, ReductionConstructorKind, ResultConstructorKind,
+    RustItemPath, STANDARD_TRAIT_CATALOG_VERSION, SemanticScopeId, StageMethodId,
+    StandardCallableDeclarationId, StandardEnvironmentId, StandardTraitCatalogVersion,
+    StdFloatCallableId, StdFloatOperation, VectorDimensions,
 };
 pub use limits::{
     CallResolverAccountingReport, CallableLimits, PRODUCTION_CALLABLE_LIMITS,
