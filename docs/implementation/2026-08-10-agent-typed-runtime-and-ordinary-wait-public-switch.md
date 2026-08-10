@@ -112,12 +112,14 @@ No design request is dispatched from this cut. The exposed failures belong to
 returned, implementation-ready typed RichText/View work, not to a missing Agent
 runtime contract.
 
-The three supplied Lang-01.5.1 return archives must first be verified and
-entered through the repository package ledger before implementation; they must
-not be dispatched again merely because the earlier conversation classified
-them as unreturned. Likewise, existing repository evidence says the
-Lang-01.1.1.2 and retained Lang-01.3 correction cohorts require ledger/current-
-`main` adjudication, not a duplicate request.
+The three supplied Lang-01.5.1 return archives were already hash/manifest
+verified and entered through the repository package ledger by commit
+`80331c81e`; they must not be dispatched again merely because the earlier
+conversation classified them as unreturned. Their implementation order still
+comes from the accepted package chain and current compiler evidence. Likewise,
+existing repository evidence says the Lang-01.1.1.2 and retained Lang-01.3
+correction cohorts require ledger/current-`main` adjudication, not a duplicate
+request.
 
 If a genuinely missing correction is confirmed after that audit, use its
 existing narrow file under `docs/reviews/requests/`. Send that request together
@@ -136,5 +138,4 @@ and do not implement an inferred shape while waiting.
 - no removed-syntax-only diagnostic;
 - no guessed Stream, typed-resource, manifest-slice, View, codec, or save shape;
   and
-- no implementation of the supplied Lang-01.5.1 packages before verified
-  package intake.
+- no out-of-order implementation of the verified Lang-01.5.1 package chain.
