@@ -89,6 +89,15 @@ impl SourceBackedManifest {
         &self.manifest
     }
 
+    pub fn resource_type_manifest_span(&self) -> Option<&SourceSpan> {
+        self.source_map.get(&ManifestSourceKey {
+            path: ManifestPath::new([ManifestPathSegment::Root(
+                ManifestRootField::ResourceTypeManifest,
+            )]),
+            slot: ManifestSourceSlot::ScalarValue,
+        })
+    }
+
     /// Returns the exact authored value span of one profile's selected entry.
     pub fn profile_entry_span(&self, profile: &ProfileId) -> Option<&SourceSpan> {
         self.source_map.get(&ManifestSourceKey {

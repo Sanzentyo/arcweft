@@ -14,8 +14,11 @@ arcweft-core = { workspace = true }
 arcweft-data = { workspace = true }
 arcweft-id = { workspace = true }
 arcweft-layout.workspace = true
+arcweft-manifest-model.workspace = true
 arcweft-presentation = { workspace = true }
 arcweft-render-text = { workspace = true }
+arcweft-resource-manifest.workspace = true
+arcweft-resource-model.workspace = true
 arcweft-text-model = { workspace = true }
 arcweft-serde-bridge = { workspace = true, optional = true }
 arcweft-source = { workspace = true }
@@ -35,7 +38,6 @@ zstd.workspace = true
 [dev-dependencies]
 arcweft-dialogue = { workspace = true }
 arcweft-interaction-model = { workspace = true }
-arcweft-resource-model = { workspace = true }
 
 [features]
 default = [

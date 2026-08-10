@@ -499,8 +499,10 @@ dependencies = [
  "arcweft-id",
  "arcweft-interaction-model",
  "arcweft-layout",
+ "arcweft-manifest-model",
  "arcweft-presentation",
  "arcweft-render-text",
+ "arcweft-resource-manifest",
  "arcweft-resource-model",
  "arcweft-serde-bridge",
  "arcweft-source",
@@ -1255,6 +1257,7 @@ dependencies = [
  "arcweft-manifest-model",
  "arcweft-project",
  "arcweft-render-text",
+ "arcweft-resource-manifest",
  "arcweft-resource-model",
  "arcweft-source",
  "arcweft-text-model",
@@ -1340,6 +1343,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "arcweft-resource-manifest"
+version = "0.1.0"
+dependencies = [
+ "arcweft-core",
+ "arcweft-id",
+ "arcweft-interaction-model",
+ "arcweft-layout",
+ "arcweft-manifest-model",
+ "arcweft-resource-model",
+ "arcweft-source",
+ "json-spanned-value",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "arcweft-resource-model"
 version = "0.1.0"
 dependencies = [
@@ -1409,8 +1429,10 @@ dependencies = [
  "arcweft-id",
  "arcweft-interaction-model",
  "arcweft-layout",
+ "arcweft-manifest-model",
  "arcweft-presentation",
  "arcweft-render-text",
+ "arcweft-resource-manifest",
  "arcweft-resource-model",
  "arcweft-runtime-plan",
  "arcweft-save",

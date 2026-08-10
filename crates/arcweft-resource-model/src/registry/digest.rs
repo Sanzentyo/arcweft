@@ -1,4 +1,4 @@
-use super::{ResourceSchemaDigest, ResourceTypeRegistryDigest};
+use super::{ResourceSchemaDigest, ResourceTypeDescriptorDigest, ResourceTypeRegistryDigest};
 use crate::descriptor::{
     ResourceAgentExposure, ResourceCapabilities, ResourceCodecSupport, ResourceEnumSchema,
     ResourceFieldDescriptor, ResourceFieldPresence, ResourceHotReloadClass,
@@ -17,6 +17,7 @@ use arcweft_manifest_model::SemanticDigest;
 use std::collections::BTreeMap;
 
 const SCHEMA_DIGEST_CONTEXT: &str = "arcweft-resource-value-schema-v1";
+const DESCRIPTOR_DIGEST_CONTEXT: &str = "arcweft-resource-type-descriptor-v1";
 const REGISTRY_DIGEST_CONTEXT: &str = "arcweft-resource-type-registry-v1";
 
 pub(super) fn schema_digest(schema: &ResourceValueSchema) -> ResourceSchemaDigest {
@@ -26,6 +27,23 @@ pub(super) fn schema_digest(schema: &ResourceValueSchema) -> ResourceSchemaDiges
         SCHEMA_DIGEST_CONTEXT,
         encoder.as_bytes(),
     ))
+}
+
+pub(super) fn descriptor_digest(
+    descriptor: &ResourceTypeDescriptor,
+) -> ResourceTypeDescriptorDigest {
+    let mut encoder = CanonicalEncoder::default();
+    encode_descriptor(&mut encoder, descriptor);
+    ResourceTypeDescriptorDigest(SemanticDigest::derive(
+        DESCRIPTOR_DIGEST_CONTEXT,
+        encoder.as_bytes(),
+    ))
+}
+
+pub(super) fn descriptor_digest_transcript_len(descriptor: &ResourceTypeDescriptor) -> usize {
+    let mut encoder = CanonicalEncoder::default();
+    encode_descriptor(&mut encoder, descriptor);
+    encoder.as_bytes().len()
 }
 
 pub(super) fn registry_digest(

@@ -1129,7 +1129,11 @@ fn read_cached_project_bundle(
         }
     };
     let bytes = bytes?;
-    let bundle = match ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes) {
+    let engine_resource_types = arcweft_resource_model::registry::ResourceTypeRegistry::empty();
+    let bundle = match ArcweftBundle::from_awfb_slice_with_resource_types(
+        &bytes,
+        &engine_resource_types,
+    ) {
         Ok(bundle) => bundle,
         Err(error) => {
             eprintln!(

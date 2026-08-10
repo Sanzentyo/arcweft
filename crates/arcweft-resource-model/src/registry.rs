@@ -22,6 +22,16 @@ use thiserror::Error;
 mod digest;
 mod validation;
 
+pub(crate) fn descriptor_digest(
+    descriptor: &ResourceTypeDescriptor,
+) -> ResourceTypeDescriptorDigest {
+    digest::descriptor_digest(descriptor)
+}
+
+pub(crate) fn descriptor_digest_transcript_len(descriptor: &ResourceTypeDescriptor) -> usize {
+    digest::descriptor_digest_transcript_len(descriptor)
+}
+
 /// Sole resource descriptor publication schema accepted by this cut.
 pub const RESOURCE_TYPE_MANIFEST_SCHEMA_VERSION: u32 = 1;
 
@@ -37,6 +47,10 @@ pub struct ResourceRegistryPublication {
 /// Semantic digest of one canonical nominal resource value schema.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct ResourceSchemaDigest(SemanticDigest);
+
+/// Semantic digest of one configured-resource descriptor.
+#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
+pub struct ResourceTypeDescriptorDigest(SemanticDigest);
 
 /// Semantic digest of one complete immutable resource type registry.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
@@ -190,8 +204,11 @@ pub enum ResourceRegistryIssue {
         type_id: ResourceTypeId,
         source: ResourceCapabilityError,
     },
-    #[error("resource value type nesting exceeds the supported publication depth")]
-    ValueTypeNestingTooDeep { owner: ResourceSchemaId },
+    #[error("resource value type for `{owner}` exceeds the supported depth at {path:?}")]
+    ValueTypeNestingTooDeep {
+        owner: ResourceSchemaId,
+        path: ResourceValueTypePath,
+    },
 }
 
 /// Invalid nested structure in a typed descriptor default.
@@ -264,6 +281,18 @@ impl ResourceRegistryPublication {
 impl ResourceSchemaDigest {
     pub const fn semantic_digest(self) -> SemanticDigest {
         self.0
+    }
+}
+
+impl ResourceTypeDescriptorDigest {
+    pub const fn semantic_digest(self) -> SemanticDigest {
+        self.0
+    }
+}
+
+impl fmt::Display for ResourceTypeDescriptorDigest {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.fmt(formatter)
     }
 }
 
@@ -371,6 +400,12 @@ impl ResourceTypeRegistry {
 
     pub fn codec(&self, codec_id: &ResourceCodecId) -> Option<&ResourceCodecSupport> {
         self.codecs.get(codec_id)
+    }
+
+    pub fn codecs(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (&ResourceCodecId, &ResourceCodecSupport)> {
+        self.codecs.iter()
     }
 
     pub const fn digest(&self) -> ResourceTypeRegistryDigest {

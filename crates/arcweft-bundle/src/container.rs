@@ -68,6 +68,7 @@ pub enum BundleSectionKind {
     ViewInput,
     ViewTheme,
     FxDefinitions,
+    ResourceTypeManifests,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -362,6 +363,7 @@ impl BundleSectionKind {
             Self::ViewInput => 19,
             Self::ViewTheme => 20,
             Self::FxDefinitions => 21,
+            Self::ResourceTypeManifests => 22,
         }
     }
 
@@ -388,6 +390,7 @@ impl BundleSectionKind {
             19 => Some(Self::ViewInput),
             20 => Some(Self::ViewTheme),
             21 => Some(Self::FxDefinitions),
+            22 => Some(Self::ResourceTypeManifests),
             _ => None,
         }
     }
@@ -427,7 +430,8 @@ impl BundleSectionKind {
             | Self::ViewStyle
             | Self::ViewInput
             | Self::ViewTheme
-            | Self::FxDefinitions => ContentResidency::Startup,
+            | Self::FxDefinitions
+            | Self::ResourceTypeManifests => ContentResidency::Startup,
             Self::AssetBlob
             | Self::SourceMap
             | Self::DebugSymbols
@@ -461,7 +465,8 @@ impl BundleSectionKind {
             | Self::ViewProgram
             | Self::ViewStyle
             | Self::ViewText
-            | Self::ViewTheme => crate::patch::PatchCompatibility::ContentOnly,
+            | Self::ViewTheme
+            | Self::ResourceTypeManifests => crate::patch::PatchCompatibility::ContentOnly,
         }
     }
 }

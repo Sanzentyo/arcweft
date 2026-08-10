@@ -218,6 +218,7 @@ pub(crate) fn register_profile_environment(
             selection,
             &overlay_seeds,
             arcweft_adapter_context::standard::standard_registry(),
+            Arc::new(ResourceTypeRegistry::empty()),
         ),
     )
     .map_err(|error| RegisterProfileEnvironmentError::Topology(Box::new(error)))?;
@@ -252,7 +253,7 @@ pub(crate) fn register_loaded_environment(
         .declare_effects(TypeCheckEnv::standard());
     let characters = registered_character_catalog(&facts)?;
     let source_seeds = accepted_source_seeds(&facts, file_documents);
-    let resource_types = Arc::new(ResourceTypeRegistry::empty());
+    let resource_types = Arc::clone(topology.resource_types());
     let accepted_launch = AcceptedLaunchProfileInput::new(
         Arc::clone(topology.manifest()),
         topology.selected_profile().id().clone(),

@@ -78,17 +78,21 @@ fn run_bundle(args: &Args) -> Result<(), String> {
     )?;
     let mut bytes =
         fs::read(&args.path).map_err(|error| format!("failed to read bundle file: {error}"))?;
+    let session_options = BundleSessionOptions::default();
     if let Some(transport) = args.patch_transport.as_ref() {
-        let mut endpoint =
-            NativePatchEndpoint::from_awfb_bytes(bytes, BundleSessionOptions::default())
-                .map_err(|error| error.to_string())?;
+        let mut endpoint = NativePatchEndpoint::from_awfb_bytes(bytes, session_options.clone())
+            .map_err(|error| error.to_string())?;
         endpoint
             .apply_patch_transport_path(transport)
             .map_err(|error| error.to_string())?;
         bytes = endpoint.active_awfb_bytes().to_vec();
     }
-    let bundle = ArcweftBundle::from_product_path_slice(&args.path, &bytes)
-        .map_err(|error| error.to_string())?;
+    let bundle = ArcweftBundle::from_product_path_slice_with_resource_types(
+        &args.path,
+        &bytes,
+        session_options.engine_resource_types.as_ref(),
+    )
+    .map_err(|error| error.to_string())?;
     run_bundle_program(args, bundle)
 }
 

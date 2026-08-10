@@ -20,6 +20,8 @@ pub struct ArcweftManifestDocument {
     #[serde(default)]
     pub(crate) build: BuildSpec,
     #[serde(default)]
+    pub(crate) resource_type_manifest: Option<NormalizedProjectPath>,
+    #[serde(default)]
     pub(crate) content_units: BTreeMap<ContentUnitId, ContentUnitSpec>,
     #[serde(default)]
     pub(crate) external_modules: BTreeMap<ExternalModuleImportId, ExternalModuleImportSpec>,
@@ -43,6 +45,10 @@ impl ArcweftManifestDocument {
 
     pub const fn build(&self) -> &BuildSpec {
         &self.build
+    }
+
+    pub const fn resource_type_manifest(&self) -> Option<&NormalizedProjectPath> {
+        self.resource_type_manifest.as_ref()
     }
 }
 

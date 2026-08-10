@@ -16,12 +16,18 @@ use crate::resource_codec::{
 use crate::resource_codec::{
     ViewInputResource, ViewProgramResource, ViewStyleResource, ViewTextResource, ViewThemeResource,
 };
+use crate::resource_type_manifests::{
+    RESOURCE_TYPE_MANIFESTS_SECTION_SCHEMA, decode_resource_type_manifest_section_v1,
+    resource_type_manifest_section_input_v1,
+};
 use crate::{
     ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleAwbcProgram, BundleBytecodeEncoding,
     BundleBytecodeProgram, BundleCodecError, BundleKind, BundleManifest,
 };
 use arcweft_agent_protocol::artifact::AgentArtifactManifest;
 use arcweft_core::bytecode::BytecodeProgram;
+use arcweft_resource_manifest::{ResourceManifestDecodeLimits, ResourceManifestPublicationLimits};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use serde::{Deserialize, Deserializer, Serialize};
 
 mod source_projection;
@@ -134,6 +140,7 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
     .chain(optional_view_input_section(bundle)?)
     .chain(optional_view_theme_section(bundle)?)
     .chain(optional_fx_definitions_section(bundle)?)
+    .chain(optional_resource_type_manifests_section(bundle)?)
     .collect::<Vec<_>>();
     validate_style_section_inputs(bundle.view_style.as_ref(), &sections).map_err(|error| {
         BundleCodecError::EncodeAwfb {
@@ -148,12 +155,27 @@ pub(crate) fn to_awfb_bytes(bundle: &ArcweftBundle) -> Result<Vec<u8>, BundleCod
 }
 
 pub(crate) fn from_awfb_slice(bytes: &[u8]) -> Result<ArcweftBundle, BundleCodecError> {
-    from_awfb_slice_with_external_sections(bytes, &[])
+    from_awfb_slice_with_external_sections_and_resource_types(bytes, &[], None)
+}
+
+pub(crate) fn from_awfb_slice_with_resource_types(
+    bytes: &[u8],
+    base_resource_types: &ResourceTypeRegistry,
+) -> Result<ArcweftBundle, BundleCodecError> {
+    from_awfb_slice_with_external_sections_and_resource_types(bytes, &[], Some(base_resource_types))
 }
 
 pub(crate) fn from_awfb_slice_with_external_sections(
     bytes: &[u8],
     external_sections: &[ExternalSectionPayload],
+) -> Result<ArcweftBundle, BundleCodecError> {
+    from_awfb_slice_with_external_sections_and_resource_types(bytes, external_sections, None)
+}
+
+pub(crate) fn from_awfb_slice_with_external_sections_and_resource_types(
+    bytes: &[u8],
+    external_sections: &[ExternalSectionPayload],
+    base_resource_types: Option<&ResourceTypeRegistry>,
 ) -> Result<ArcweftBundle, BundleCodecError> {
     let view = BundleView::parse(bytes, ReadBudget::default()).map_err(|error| {
         BundleCodecError::DecodeAwfb {
@@ -210,6 +232,8 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     let view_input = optional_view_input(&view, external_sections)?;
     let view_theme = optional_view_theme(&view, external_sections)?;
     let fx_definitions = optional_fx_definitions(&view, external_sections)?.unwrap_or_default();
+    let resource_type_manifests =
+        optional_resource_type_manifests(&view, external_sections, base_resource_types)?;
     validate_style_bundle_view(view_style.as_ref(), &view, external_sections).map_err(|error| {
         BundleCodecError::DecodeAwfb {
             message: error.to_string(),
@@ -232,6 +256,7 @@ pub(crate) fn from_awfb_slice_with_external_sections(
         product_awbc: Some(product_awbc),
         dialogue_content: content.dialogue_content,
         character_presentation,
+        resource_type_manifests,
         fx_definitions,
         adapter_manifests: adapters.adapter_manifests,
         virtual_files: assets.virtual_files,
@@ -247,6 +272,67 @@ pub(crate) fn from_awfb_slice_with_external_sections(
     };
     bundle.validate_schema_and_kind()?;
     Ok(bundle)
+}
+
+fn optional_resource_type_manifests_section(
+    bundle: &ArcweftBundle,
+) -> Result<Option<SectionInput>, BundleCodecError> {
+    bundle
+        .resource_type_manifests
+        .as_ref()
+        .map_or(Ok(None), |manifests| {
+            resource_type_manifest_section_input_v1(
+                section_id(BundleSectionKind::ResourceTypeManifests),
+                manifests,
+            )
+            .map_err(BundleCodecError::from)
+        })
+}
+
+fn optional_resource_type_manifests(
+    view: &BundleView<'_>,
+    external_sections: &[ExternalSectionPayload],
+    base: Option<&ResourceTypeRegistry>,
+) -> Result<Option<arcweft_resource_manifest::PublishedResourceTypeManifestSetV1>, BundleCodecError>
+{
+    let mut matches = view.sections().iter().filter(|descriptor| {
+        descriptor.known_kind() == Some(BundleSectionKind::ResourceTypeManifests)
+    });
+    let Some(descriptor) = matches.next() else {
+        return Ok(None);
+    };
+    if matches.next().is_some() {
+        return Err(BundleCodecError::DecodeAwfb {
+            message: "AWFB bundle contains multiple ResourceTypeManifests sections".to_owned(),
+        });
+    }
+    if !descriptor.required()
+        || descriptor.schema_version() != RESOURCE_TYPE_MANIFESTS_SECTION_SCHEMA
+    {
+        return Err(BundleCodecError::DecodeAwfb {
+            message: "AWFB ResourceTypeManifests section must be required schema 1".to_owned(),
+        });
+    }
+    let base = base.ok_or_else(|| BundleCodecError::DecodeAwfb {
+        message: "AWFB ResourceTypeManifests section requires an explicit engine base registry"
+            .to_owned(),
+    })?;
+    let bytes = view
+        .decoded_section_with_external_payloads(descriptor.id(), external_sections)
+        .map_err(|error| BundleCodecError::DecodeAwfb {
+            message: error.to_string(),
+        })?
+        .ok_or_else(|| BundleCodecError::DecodeAwfb {
+            message: "AWFB ResourceTypeManifests section is external and unavailable".to_owned(),
+        })?;
+    decode_resource_type_manifest_section_v1(
+        &bytes,
+        base,
+        ResourceManifestDecodeLimits::PRODUCTION,
+        ResourceManifestPublicationLimits::PRODUCTION,
+    )
+    .map(Some)
+    .map_err(BundleCodecError::from)
 }
 
 fn required_runtime_types(
@@ -793,8 +879,9 @@ mod tests {
     use super::{
         AWFB_SECTION_SCHEMA_VERSION, CompactAdapterRequirementsSection, CompactEntrypointsSection,
         CompactRuntimeTypesSection, ProductExecutablePayload, ProductManifest, container_kind,
-        encode_json, optional_asset_catalog_section, optional_audio_graph_section,
-        optional_section, required_section, section_id,
+        encode_json, from_awfb_slice, from_awfb_slice_with_resource_types,
+        optional_asset_catalog_section, optional_audio_graph_section, optional_section,
+        required_section, section_id, to_awfb_bytes,
     };
     use crate::container::{
         BundleDigest, BundleSectionKind, BundleView, ExternalSectionPayload, ReadBudget,
@@ -804,6 +891,7 @@ mod tests {
     use crate::resource_codec::{
         CompactContentCatalogSection, CompactDisplayCatalogSection, SourceMapSection,
     };
+    use crate::resource_type_manifests::RESOURCE_TYPE_MANIFESTS_SECTION_SCHEMA;
     use crate::{
         ARCWEFT_BUNDLE_SCHEMA_VERSION, ArcweftBundle, BundleCodecError, BundleFormat,
         BundleManifest, BundleRuntimeSummary,
@@ -817,6 +905,9 @@ mod tests {
     use arcweft_core::bytecode::BytecodeProgram;
     use arcweft_core::effect::RuntimeArtifactFingerprint;
     use arcweft_presentation::fx::{FxDefinition, FxGraph, FxId, FxNode};
+    use arcweft_resource_manifest::{
+        ResourceManifestDecodeLimits, ResourceManifestPublicationLimits,
+    };
     use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
     use arcweft_text_model::DialogueContentCatalog;
     use std::path::Path;
@@ -1251,6 +1342,69 @@ mod tests {
         )
         .expect("standard dialogue source joins source map")
         .with_product_awbc(minimal_awbc_program())
+    }
+
+    #[test]
+    fn product_awfb_requires_and_reconstructs_resource_manifest_section_22() {
+        let published = published_resource_manifests();
+        let expected_digest = published.registry_digest();
+        let bundle = empty_bundle().with_resource_type_manifests(published);
+        let bytes = to_awfb_bytes(&bundle).expect("resource manifest product encodes");
+        let view = BundleView::parse(&bytes, ReadBudget::default()).expect("product container");
+        let descriptor = view
+            .sections()
+            .iter()
+            .find(|descriptor| {
+                descriptor.known_kind() == Some(BundleSectionKind::ResourceTypeManifests)
+            })
+            .expect("section 22");
+        assert!(descriptor.required());
+        assert_eq!(
+            descriptor.schema_version(),
+            RESOURCE_TYPE_MANIFESTS_SECTION_SCHEMA
+        );
+        assert!(from_awfb_slice(&bytes).is_err());
+
+        let decoded = from_awfb_slice_with_resource_types(
+            &bytes,
+            &arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
+        )
+        .expect("explicit engine base reconstructs registry");
+        let decoded = decoded
+            .resource_type_manifests()
+            .expect("decoded resource manifests");
+        assert_eq!(decoded.registry_digest(), expected_digest);
+        assert_eq!(decoded.manifests().len(), 1);
+    }
+
+    fn published_resource_manifests()
+    -> arcweft_resource_manifest::PublishedResourceTypeManifestSetV1 {
+        let text =
+            include_str!("../../arcweft-resource-manifest/tests/fixtures/minimal.input.json");
+        let document = std::sync::Arc::new(
+            SourceDocument::try_new(
+                SourceDocumentId::try_new("product-resource-manifest").expect("source id"),
+                SourceName::Memory,
+                text,
+            )
+            .expect("source document"),
+        );
+        let coordinate = arcweft_resource_manifest::PackageCoordinateFile::new(
+            arcweft_manifest_model::PackageId::new("org.example.weather").expect("package id"),
+            arcweft_manifest_model::PackageVersion::new("1.0.0").expect("package version"),
+        );
+        let manifest = arcweft_resource_manifest::decode_resource_type_manifest(
+            document,
+            &coordinate,
+            ResourceManifestDecodeLimits::PRODUCTION,
+        )
+        .expect("resource manifest");
+        arcweft_resource_manifest::publish_resource_type_manifests_v1(
+            &arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
+            [manifest],
+            ResourceManifestPublicationLimits::PRODUCTION,
+        )
+        .expect("resource registry")
     }
 
     fn source_map(label: &str, text: &str) -> SourceMapSection {

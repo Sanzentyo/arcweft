@@ -379,6 +379,7 @@ pub(crate) enum ManifestRootField {
     Schema,
     Package,
     Build,
+    ResourceTypeManifest,
     ContentUnits,
     ExternalModules,
     ActivityImplementations,

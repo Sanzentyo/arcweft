@@ -588,6 +588,9 @@ compression = "none"
                 LaunchProfileSelection::Explicit("dev"),
                 &[],
                 standard_registry(),
+                std::sync::Arc::new(
+                    arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
+                ),
             ),
         )
         .expect("topology loads");
@@ -708,6 +711,9 @@ compression = "none"
                 LaunchProfileSelection::Explicit("dev"),
                 &[],
                 standard_registry(),
+                std::sync::Arc::new(
+                    arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
+                ),
             ),
         )
         .expect("topology loads");

@@ -116,6 +116,51 @@ fn direct_tree_decode_preserves_root_records_and_source_map() {
 }
 
 #[test]
+fn resource_type_manifest_is_one_optional_normalized_root_path() {
+    let source = "schema = 1\nresource-type-manifest = \"extensions/resource-types.json\"\n[package]\nid = \"org.arcweft.test\"\nversion = \"1.2.3\"\n";
+    let decoded = decode(document(source)).expect("resource manifest root path");
+    assert_eq!(
+        decoded
+            .manifest
+            .resource_type_manifest()
+            .expect("declared path")
+            .as_str(),
+        "extensions/resource-types.json"
+    );
+    let span = decoded
+        .source_map
+        .get(&source_key(
+            [ManifestPathSegment::Root(
+                ManifestRootField::ResourceTypeManifest,
+            )],
+            ManifestSourceSlot::ScalarValue,
+        ))
+        .expect("resource manifest path span");
+    assert_eq!(
+        span.range(),
+        range_of(source, "\"extensions/resource-types.json\"", 0)
+    );
+}
+
+#[test]
+fn resource_type_manifest_reuses_the_normalized_contained_path_boundary() {
+    for (value, expected) in [
+        ("../escape.json", ManifestDiagnosticCode::PathInvalid),
+        ("resource-types.json", ManifestDiagnosticCode::ValueType),
+    ] {
+        let source = if expected == ManifestDiagnosticCode::ValueType {
+            "schema = 1\nresource-type-manifest = 1\n[package]\nid = \"org.arcweft.test\"\nversion = \"1.2.3\"\n".to_owned()
+        } else {
+            format!(
+                "schema = 1\nresource-type-manifest = \"{value}\"\n[package]\nid = \"org.arcweft.test\"\nversion = \"1.2.3\"\n"
+            )
+        };
+        let report = decode(document(&source)).unwrap_err();
+        assert_eq!(report.diagnostics()[0].code(), expected);
+    }
+}
+
+#[test]
 fn source_map_ranges_are_exact_utf8_byte_boundaries() {
     let source = "# 日本語の前置き\nschema = 1\n[package]\nid = \"org.arcweft.test\"\nversion = \"1.2.3\"\n[build]\nsource-dir = \"物語\"\n[profiles.dev]\nkind = \"game\"\nsource = \"src/物語.arcw\"\n";
     let source_document = document(source);

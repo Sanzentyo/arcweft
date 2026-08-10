@@ -45,7 +45,7 @@ use arcweft_bundle::resource_codec::{
     ViewRuntimeFocusNavigation, ViewRuntimeScrollRegion, ViewRuntimeSurface,
     ViewRuntimeTextControl, ViewRuntimeTextSelection,
 };
-use arcweft_bundle::{ArcweftBundle, BundleFormat, BundleImageObject, BundleKind};
+use arcweft_bundle::{ArcweftBundle, BundleImageObject, BundleKind};
 use arcweft_character::presentation_name::AcceptedCharacterPresentationCatalog;
 use arcweft_core::awbc::{
     product_step::AwbcProductStepBuildError,
@@ -83,6 +83,7 @@ use arcweft_presentation::appearance::{
 };
 use arcweft_presentation::input::Action;
 use arcweft_presentation::text_input::TextControlWriteBack;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_text_model::DialogueContentCatalog;
 use arcweft_view::{ViewStyleProgram, virtualization::ViewVirtualizationRuntime};
 use std::collections::BTreeMap;
@@ -128,6 +129,9 @@ pub struct BundleSessionOptions {
     pub max_ops: usize,
     pub root_bindings: Vec<RuntimeBinding>,
     pub root_command_host_calls: RootCommandHostCallCatalog,
+    /// Immutable engine-owned resource types used as the base when an AWFB
+    /// publishes extension manifests.
+    pub engine_resource_types: Arc<ResourceTypeRegistry>,
     /// Complete host provider snapshot, or `None` when no provider is available.
     pub presentation_environment: Option<PresentationEnvironmentValues>,
 }
@@ -140,6 +144,7 @@ impl Default for BundleSessionOptions {
             max_ops: 64,
             root_bindings: Vec::new(),
             root_command_host_calls: RootCommandHostCallCatalog::default(),
+            engine_resource_types: Arc::new(ResourceTypeRegistry::empty()),
             presentation_environment: None,
         }
     }
@@ -274,6 +279,8 @@ pub struct BundleSession {
     view_runtime: BundleViewRuntime,
     environment: SessionEnvironmentState,
     view_style_palettes: SystemPaletteSet,
+    engine_resource_types: Arc<ResourceTypeRegistry>,
+    resource_types: Arc<ResourceTypeRegistry>,
     options: BundleSessionOptions,
     pending_input_events: Vec<RoutedInputEvent>,
     pending_presentation_inputs: Vec<BundlePresentationInput>,

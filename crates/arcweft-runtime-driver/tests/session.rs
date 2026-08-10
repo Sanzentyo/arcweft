@@ -57,6 +57,7 @@ use arcweft_presentation::text_input::{
     TextByteOffset, TextControlValue, TextControlWriteBack, TextInputSessionId, TextRange,
     TextRevision,
 };
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_driver::clock::RuntimeClockStep;
 use arcweft_runtime_driver::dialogue::DialogueEntryState;
 use arcweft_runtime_driver::display::{ActiveSessionLocale, BundlePresentationSnapshot};
@@ -403,6 +404,40 @@ fn awfb_bytes(bundle: &ArcweftBundle) -> Vec<u8> {
     bundle
         .to_format_bytes(BundleFormat::Awfb)
         .expect("fixture encodes as AWFB")
+}
+
+fn extension_resource_types() -> arcweft_resource_manifest::PublishedResourceTypeManifestSetV1 {
+    use arcweft_manifest_model::{PackageId, PackageVersion};
+    use arcweft_resource_manifest::{
+        PackageCoordinateFile, ResourceManifestDecodeLimits, ResourceManifestPublicationLimits,
+        decode_resource_type_manifest, publish_resource_type_manifests_v1,
+    };
+
+    let source = include_str!("../../arcweft-resource-manifest/tests/fixtures/minimal.input.json");
+    let document = std::sync::Arc::new(
+        SourceDocument::try_new(
+            SourceDocumentId::try_new("runtime-resource-manifest").unwrap(),
+            SourceName::Memory,
+            source,
+        )
+        .unwrap(),
+    );
+    let coordinate = PackageCoordinateFile::new(
+        PackageId::new("org.example.weather").unwrap(),
+        PackageVersion::new("1.0.0").unwrap(),
+    );
+    let manifest = decode_resource_type_manifest(
+        document,
+        &coordinate,
+        ResourceManifestDecodeLimits::PRODUCTION,
+    )
+    .unwrap();
+    publish_resource_type_manifests_v1(
+        &ResourceTypeRegistry::empty(),
+        [manifest],
+        ResourceManifestPublicationLimits::PRODUCTION,
+    )
+    .unwrap()
 }
 
 fn awfb_identity(bytes: &[u8]) -> ArtifactIdentity {
@@ -1140,6 +1175,26 @@ fn bundle_session_options_none_is_documented_engine_default() {
     assert_eq!(
         session.presentation_environment().values(),
         PresentationEnvironmentValues::ENGINE_DEFAULT
+    );
+}
+
+#[test]
+fn awfb_session_reconstructs_extension_registry_against_supplied_engine_base() {
+    let published = extension_resource_types();
+    let expected_digest = published.registry_digest();
+    let bytes = awfb_bytes(&fixture_bundle().with_resource_type_manifests(published));
+    let engine_resource_types = std::sync::Arc::new(ResourceTypeRegistry::empty());
+    let options = BundleSessionOptions {
+        engine_resource_types: std::sync::Arc::clone(&engine_resource_types),
+        ..BundleSessionOptions::default()
+    };
+
+    let session = BundleSession::from_awfb_bytes(&bytes, options).expect("session starts");
+
+    assert_eq!(session.resource_types().digest(), expected_digest);
+    assert_eq!(
+        engine_resource_types.digest(),
+        ResourceTypeRegistry::empty().digest()
     );
 }
 

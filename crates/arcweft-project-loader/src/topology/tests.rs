@@ -1,6 +1,7 @@
 use super::{
-    ProfileTopologyBinaryOverlaySeed, ProfileTopologyErrorCode, ProfileTopologyLimits,
-    ProfileTopologyLoadRequest, ProfileTopologyOverlaySeed, ProfileTopologyOwnerId,
+    ProfileDependencyResourceSeed, ProfileTopologyBinaryOverlaySeed, ProfileTopologyErrorCode,
+    ProfileTopologyLimits, ProfileTopologyLoadRequest, ProfileTopologyLogicalPath,
+    ProfileTopologyOverlaySeed, ProfileTopologyOwnerId, ProfileTopologyResourceId,
     ProfileTopologyResourceKind, ProfileTopologyResourceOrigin, load_profile_topology,
     reload_profile_topology,
 };
@@ -20,9 +21,10 @@ use arcweft_lang_sema::env::{EffectCapability, TypeCheckEnv};
 use arcweft_lang_syntax::{ast::module_path::CanonicalModulePath, incremental::SyntaxDatabase};
 use arcweft_launch::LaunchProfileSelection;
 use arcweft_manifest_model::{
-    CapabilityId, FieldName, FunctionName, ManifestVisibility, RawDigest, TypeReference, WitWorldId,
+    CapabilityId, FieldName, FunctionName, ManifestVisibility, PackageId, PackageVersion,
+    RawDigest, TypeReference, WitWorldId,
 };
-use arcweft_source::SourceSetRevision;
+use arcweft_source::{SourceDocumentId, SourceSetRevision};
 use std::{fmt::Write as _, fs, path::PathBuf, sync::Arc};
 
 const ROOT_SOURCE: &str = "fn main() -> Unit { () }\n";
@@ -89,6 +91,158 @@ fn open_manifest_overlay_precedes_disk_decode() {
 }
 
 #[test]
+fn explicit_root_resource_manifest_is_loaded_published_and_retained() {
+    let project = TestProject::new("topology-resource-manifest");
+    project.write("arcw.toml", &resource_project_manifest());
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write(
+        "extensions/resource-types.json",
+        include_str!("../../../arcweft-resource-manifest/tests/fixtures/minimal.input.json"),
+    );
+
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert_eq!(topology.resource_type_manifests().manifests().len(), 1);
+    assert_eq!(topology.resource_types().types().len(), 1);
+    assert!(topology.resources().any(|resource| matches!(
+        resource.kind(),
+        ProfileTopologyResourceKind::ResourceTypeManifest { package_id, package_version }
+            if package_id.as_str() == "org.example.weather"
+                && package_version.to_string() == "1.0.0"
+    )));
+}
+
+#[test]
+fn absent_optional_resource_manifest_does_not_probe_a_conventional_filename() {
+    let project = TestProject::new("topology-no-resource-manifest-probe");
+    project.write("arcw.toml", &manifest("dev", "src/main.arcw", ""));
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write("resource-types.json", "{ this file must remain unobserved");
+
+    let topology = project.load(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert!(topology.resource_type_manifests().manifests().is_empty());
+    assert_eq!(topology.resource_types().types().len(), 0);
+    assert!(topology.resources().all(|resource| !matches!(
+        resource.kind(),
+        ProfileTopologyResourceKind::ResourceTypeManifest { .. }
+    )));
+}
+
+#[test]
+fn resource_manifest_utf8_adapter_reports_the_exact_invalid_offset() {
+    let project = TestProject::new("topology-resource-manifest-utf8");
+    project.write("arcw.toml", &resource_project_manifest());
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write_bytes("extensions/resource-types.json", &[b'{', 0xc3, 0x28]);
+
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    assert!(matches!(
+        error,
+        super::ProfileTopologyLoadError::ResourceTypeManifestUtf8 { offset: 1, .. }
+    ));
+}
+
+#[test]
+fn resource_manifest_coordinate_is_checked_against_the_selected_package() {
+    let project = TestProject::new("topology-resource-manifest-coordinate");
+    let launch = resource_project_manifest().replace("org.example.weather", "org.example.other");
+    project.write("arcw.toml", &launch);
+    project.write("src/main.arcw", ROOT_SOURCE);
+    project.write(
+        "extensions/resource-types.json",
+        include_str!("../../../arcweft-resource-manifest/tests/fixtures/minimal.input.json"),
+    );
+
+    let error = project.load_error(LaunchProfileSelection::Explicit("dev"), &[]);
+
+    let super::ProfileTopologyLoadError::ResourceTypeManifest { source, .. } = error else {
+        panic!("expected typed resource manifest rejection");
+    };
+    assert_eq!(
+        source.diagnostics()[0].code(),
+        arcweft_resource_manifest::ResourceManifestDiagnosticCode::PackageMismatch
+    );
+}
+
+#[test]
+fn dependency_resource_manifest_is_loaded_only_from_an_explicit_typed_seed() {
+    let workspace = TestProject::new("topology-resource-manifest-dependency-workspace");
+    workspace.write("arcw.toml", &manifest("dev", "src/main.arcw", ""));
+    workspace.write("src/main.arcw", ROOT_SOURCE);
+    let dependency = TestProject::new("topology-resource-manifest-dependency-package");
+    dependency.write(
+        "resource-types.json",
+        include_str!("../../../arcweft-resource-manifest/tests/fixtures/minimal.input.json"),
+    );
+    let coordinate = (
+        PackageId::new("org.example.weather").unwrap(),
+        PackageVersion::new("1.0.0").unwrap(),
+    );
+    let seed = resource_manifest_dependency_seed(&dependency, &coordinate);
+    let manifest_path = workspace.path("arcw.toml");
+    let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+
+    let topology = load_profile_topology(
+        &mut syntax,
+        ProfileTopologyLoadRequest::new(
+            &manifest_path,
+            workspace.owner(),
+            LaunchProfileSelection::Explicit("dev"),
+            &[],
+            standard_registry(),
+            Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        )
+        .with_dependency_resources(std::slice::from_ref(&seed)),
+    )
+    .expect("explicit dependency resource manifest");
+
+    assert_eq!(topology.resource_type_manifests().manifests().len(), 1);
+    assert!(topology.resources().any(|resource| {
+        resource.id() == seed.id()
+            && matches!(
+                resource.kind(),
+                ProfileTopologyResourceKind::ResourceTypeManifest { .. }
+            )
+    }));
+}
+
+#[test]
+fn missing_dependency_resource_manifest_is_typed_as_unresolved_package() {
+    let workspace = TestProject::new("topology-resource-manifest-unresolved-workspace");
+    workspace.write("arcw.toml", &manifest("dev", "src/main.arcw", ""));
+    workspace.write("src/main.arcw", ROOT_SOURCE);
+    let dependency = TestProject::new("topology-resource-manifest-unresolved-package");
+    let coordinate = (
+        PackageId::new("org.example.weather").unwrap(),
+        PackageVersion::new("1.0.0").unwrap(),
+    );
+    let seed = resource_manifest_dependency_seed(&dependency, &coordinate);
+    let manifest_path = workspace.path("arcw.toml");
+    let mut syntax = SyntaxDatabase::try_new().expect("syntax database");
+
+    let error = load_profile_topology(
+        &mut syntax,
+        ProfileTopologyLoadRequest::new(
+            &manifest_path,
+            workspace.owner(),
+            LaunchProfileSelection::Explicit("dev"),
+            &[],
+            standard_registry(),
+            Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        )
+        .with_dependency_resources(std::slice::from_ref(&seed)),
+    )
+    .expect_err("missing selected dependency manifest");
+
+    assert_eq!(
+        error.resource_manifest_code(),
+        Some(arcweft_resource_manifest::ResourceManifestDiagnosticCode::UnresolvedPackage)
+    );
+}
+
+#[test]
 fn overlay_manifest_can_exist_without_disk_file() {
     let project = TestProject::new("topology-overlay-only-manifest");
     project.write("src/main.arcw", ROOT_SOURCE);
@@ -143,6 +297,7 @@ fn topology_reload_reuses_the_selected_syntax_lineage_and_exact_document() {
             LaunchProfileSelection::Explicit("dev"),
             &[],
             standard_registry(),
+            Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         ),
     )
     .expect("initial topology");
@@ -163,6 +318,7 @@ fn topology_reload_reuses_the_selected_syntax_lineage_and_exact_document() {
             LaunchProfileSelection::Explicit("dev"),
             &[],
             standard_registry(),
+            Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         ),
     )
     .expect("reloaded topology");
@@ -1172,6 +1328,47 @@ source = "{source}"
     )
 }
 
+fn resource_project_manifest() -> String {
+    r#"schema = 1
+resource-type-manifest = "extensions/resource-types.json"
+
+[package]
+id = "org.example.weather"
+version = "1.0.0"
+
+[profiles.dev]
+kind = "game"
+entry = "@entry.game.main"
+source = "src/main.arcw"
+"#
+    .to_owned()
+}
+
+fn resource_manifest_dependency_seed(
+    dependency: &TestProject,
+    coordinate: &(PackageId, PackageVersion),
+) -> ProfileDependencyResourceSeed {
+    let path = dependency.path("resource-types.json");
+    ProfileDependencyResourceSeed::try_new(
+        ProfileTopologyResourceId::new(
+            ProfileTopologyOwnerId::dependency(coordinate.0.as_str()).unwrap(),
+            ProfileTopologyLogicalPath::try_new("resource-types.json").unwrap(),
+        ),
+        ProfileTopologyResourceKind::ResourceTypeManifest {
+            package_id: coordinate.0.clone(),
+            package_version: coordinate.1.clone(),
+        },
+        &dependency.root,
+        path,
+        SourceDocumentId::try_new(format!(
+            "dependency-resource-manifest:{}@{}",
+            coordinate.0, coordinate.1
+        ))
+        .unwrap(),
+    )
+    .unwrap()
+}
+
 fn character_profile_manifest() -> String {
     r#"schema = 1
 
@@ -1457,6 +1654,7 @@ impl TestProject {
                 selection,
                 overlays,
                 registry,
+                Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
             ),
         )
         .expect("topology loads")
@@ -1478,6 +1676,7 @@ impl TestProject {
                 selection,
                 overlays,
                 standard_registry(),
+                Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
             )
             .with_binary_overlays(binary_overlays),
         )
@@ -1499,6 +1698,7 @@ impl TestProject {
                 selection,
                 overlays,
                 standard_registry(),
+                Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
             ),
         )
         .expect_err("topology fails")
@@ -1520,6 +1720,7 @@ impl TestProject {
                 selection,
                 overlays,
                 standard_registry(),
+                Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
             )
             .with_binary_overlays(binary_overlays),
         )

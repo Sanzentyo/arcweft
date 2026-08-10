@@ -27,6 +27,7 @@ arcweft-layout.workspace = true
 arcweft-player-scene = { workspace = true }
 arcweft-player-text-input = { workspace = true }
 arcweft-presentation = { workspace = true }
+arcweft-resource-model = { workspace = true }
 arcweft-render-wgpu = { workspace = true }
 arcweft-render-text = { workspace = true }
 arcweft-text-model = { workspace = true }
@@ -57,7 +58,6 @@ windows = { workspace = true, features = ["Win32_Foundation"] }
 [dev-dependencies]
 arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
-arcweft-resource-model = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }
 arcweft-view = { workspace = true }

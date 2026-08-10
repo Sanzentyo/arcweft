@@ -1,0 +1,885 @@
+{
+  "format": "arcweft.resource-type-manifest",
+  "schema": 1,
+  "package": {
+    "id": "org.example.resources",
+    "version": "2.3.4"
+  },
+  "schemas": [
+    {
+      "kind": "enum",
+      "value": {
+        "schema_id": "org.example.resources.mode",
+        "nominal_type": {
+          "package": "org.example.resources",
+          "module": "catalog",
+          "name": "Mode"
+        },
+        "version": 1,
+        "variants": [
+          {
+            "variant_id": 2,
+            "name": "Named",
+            "payload": {
+              "kind": "scalar",
+              "value": "string"
+            },
+            "docs": "A named mode."
+          },
+          {
+            "variant_id": 1,
+            "name": "Idle"
+          }
+        ]
+      }
+    },
+    {
+      "kind": "record",
+      "value": {
+        "schema_id": "org.example.resources.catalog",
+        "nominal_type": {
+          "package": "org.example.resources",
+          "module": "catalog",
+          "name": "Catalog"
+        },
+        "version": 1,
+        "fields": [
+          {
+            "field_id": 33,
+            "name": "global_target",
+            "value_type": {
+              "kind": "retained_identity_ref",
+              "value": "presentation_target"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "retained_identity_ref",
+              "value": {
+                "kind": "presentation_target",
+                "value": {
+                  "scope": {
+                    "kind": "global"
+                  },
+                  "target_id": "presentation.global"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 32,
+            "name": "idle_mode",
+            "value_type": {
+              "kind": "enum",
+              "value": "org.example.resources.mode"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "enum",
+              "value": {
+                "schema_id": "org.example.resources.mode",
+                "variant_id": 1
+              }
+            }
+          },
+          {
+            "field_id": 31,
+            "name": "maybe_count",
+            "value_type": {
+              "kind": "option",
+              "value": {
+                "kind": "scalar",
+                "value": "unsigned_integer"
+              }
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "option",
+              "value": {
+                "kind": "scalar",
+                "value": {
+                  "kind": "unsigned_integer",
+                  "value": 3
+                }
+              }
+            }
+          },
+          {
+            "field_id": 30,
+            "name": "bounded",
+            "value_type": {
+              "kind": "constrained_scalar",
+              "value": {
+                "scalar": "signed_integer",
+                "lower": {
+                  "kind": "inclusive",
+                  "value": {
+                    "kind": "signed_integer",
+                    "value": 0
+                  }
+                },
+                "upper": {
+                  "kind": "exclusive",
+                  "value": {
+                    "kind": "signed_integer",
+                    "value": 10
+                  }
+                }
+              }
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "signed_integer",
+                "value": 5
+              }
+            }
+          },
+          {
+            "field_id": 29,
+            "name": "scroll_region",
+            "value_type": {
+              "kind": "retained_identity_ref",
+              "value": "scroll_region"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "retained_identity_ref",
+              "value": {
+                "kind": "scroll_region",
+                "value": {
+                  "owner_view_entity_id": "entity.view.main",
+                  "region_id": "scroll.dialogue"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 28,
+            "name": "presentation_target",
+            "value_type": {
+              "kind": "retained_identity_ref",
+              "value": "presentation_target"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "retained_identity_ref",
+              "value": {
+                "kind": "presentation_target",
+                "value": {
+                  "scope": {
+                    "kind": "view",
+                    "value": {
+                      "owner_view_entity_id": "entity.view.main"
+                    }
+                  },
+                  "target_id": "presentation.dialogue"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 27,
+            "name": "signal",
+            "value_type": {
+              "kind": "retained_identity_ref",
+              "value": "signal"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "retained_identity_ref",
+              "value": {
+                "kind": "signal",
+                "value": {
+                  "entity_id": "entity.signal.ready"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 26,
+            "name": "layer",
+            "value_type": {
+              "kind": "retained_identity_ref",
+              "value": "layer"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "retained_identity_ref",
+              "value": {
+                "kind": "layer",
+                "value": {
+                  "entity_id": "entity.layer.front"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 25,
+            "name": "action",
+            "value_type": {
+              "kind": "retained_identity_ref",
+              "value": "action"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "retained_identity_ref",
+              "value": {
+                "kind": "action",
+                "value": {
+                  "entity_id": "entity.action.open"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 24,
+            "name": "view",
+            "value_type": {
+              "kind": "retained_identity_ref",
+              "value": "view"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "retained_identity_ref",
+              "value": {
+                "kind": "view",
+                "value": {
+                  "entity_id": "entity.view.main"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 23,
+            "name": "character",
+            "value_type": {
+              "kind": "retained_identity_ref",
+              "value": "character"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "retained_identity_ref",
+              "value": {
+                "kind": "character",
+                "value": {
+                  "entity_id": "entity.character.alice"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 22,
+            "name": "target",
+            "value_type": {
+              "kind": "resource_ref",
+              "value": {
+                "type_id": {
+                  "package": "org.example.resources",
+                  "module": "catalog",
+                  "name": "Target"
+                }
+              }
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "resource_ref",
+              "value": {
+                "entity_id": "entity.target.main",
+                "public_id": "target.main",
+                "type_id": {
+                  "package": "org.example.resources",
+                  "module": "catalog",
+                  "name": "Target"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 21,
+            "name": "asset",
+            "value_type": {
+              "kind": "asset_ref",
+              "value": {
+                "payload_kind": "image.rgba8"
+              }
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "asset_ref",
+              "value": {
+                "public_id": "asset.catalog-cover",
+                "payload_kind": "image.rgba8"
+              }
+            }
+          },
+          {
+            "field_id": 20,
+            "name": "mode",
+            "value_type": {
+              "kind": "enum",
+              "value": "org.example.resources.mode"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "enum",
+              "value": {
+                "schema_id": "org.example.resources.mode",
+                "variant_id": 2,
+                "payload": {
+                  "kind": "scalar",
+                  "value": {
+                    "kind": "string",
+                    "value": "focused"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "field_id": 19,
+            "name": "metadata",
+            "value_type": {
+              "kind": "record",
+              "value": "org.example.resources.metadata"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "record",
+              "value": {
+                "schema_id": "org.example.resources.metadata",
+                "fields": [
+                  {
+                    "field_id": 2,
+                    "value": {
+                      "kind": "scalar",
+                      "value": {
+                        "kind": "unsigned_integer",
+                        "value": 1
+                      }
+                    }
+                  },
+                  {
+                    "field_id": 1,
+                    "value": {
+                      "kind": "scalar",
+                      "value": {
+                        "kind": "string",
+                        "value": "meta"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "field_id": 18,
+            "name": "weights",
+            "value_type": {
+              "kind": "ordered_map",
+              "value": {
+                "key": {
+                  "kind": "scalar",
+                  "value": "string"
+                },
+                "value": {
+                  "kind": "scalar",
+                  "value": "signed_integer"
+                }
+              }
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "ordered_map",
+              "value": [
+                {
+                  "key": {
+                    "kind": "scalar",
+                    "value": {
+                      "kind": "string",
+                      "value": "z"
+                    }
+                  },
+                  "value": {
+                    "kind": "scalar",
+                    "value": {
+                      "kind": "signed_integer",
+                      "value": 2
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "kind": "scalar",
+                    "value": {
+                      "kind": "string",
+                      "value": "a"
+                    }
+                  },
+                  "value": {
+                    "kind": "scalar",
+                    "value": {
+                      "kind": "signed_integer",
+                      "value": 1
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "field_id": 17,
+            "name": "checkpoints",
+            "value_type": {
+              "kind": "non_empty_list",
+              "value": {
+                "kind": "scalar",
+                "value": "unsigned_integer"
+              }
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "list",
+              "value": [
+                {
+                  "kind": "scalar",
+                  "value": {
+                    "kind": "unsigned_integer",
+                    "value": 1
+                  }
+                },
+                {
+                  "kind": "scalar",
+                  "value": {
+                    "kind": "unsigned_integer",
+                    "value": 2
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "field_id": 16,
+            "name": "tags",
+            "value_type": {
+              "kind": "list",
+              "value": {
+                "kind": "scalar",
+                "value": "string"
+              }
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "list",
+              "value": [
+                {
+                  "kind": "scalar",
+                  "value": {
+                    "kind": "string",
+                    "value": "alpha"
+                  }
+                },
+                {
+                  "kind": "scalar",
+                  "value": {
+                    "kind": "string",
+                    "value": "beta"
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "field_id": 15,
+            "name": "maybe_label",
+            "value_type": {
+              "kind": "option",
+              "value": {
+                "kind": "scalar",
+                "value": "string"
+              }
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "option"
+            }
+          },
+          {
+            "field_id": 14,
+            "name": "owner",
+            "value_type": {
+              "kind": "scalar",
+              "value": "public_id"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "public_id",
+                "value": "resource.owner"
+              }
+            }
+          },
+          {
+            "field_id": 13,
+            "name": "locale",
+            "value_type": {
+              "kind": "scalar",
+              "value": "locale"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "locale",
+                "value": "ja-jp"
+              }
+            }
+          },
+          {
+            "field_id": 12,
+            "name": "pan",
+            "value_type": {
+              "kind": "scalar",
+              "value": "pan"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "pan",
+                "value": 250
+              }
+            }
+          },
+          {
+            "field_id": 11,
+            "name": "gain",
+            "value_type": {
+              "kind": "scalar",
+              "value": "gain"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "gain",
+                "value": -1200
+              }
+            }
+          },
+          {
+            "field_id": 10,
+            "name": "width",
+            "value_type": {
+              "kind": "scalar",
+              "value": "length"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "length",
+                "value": {
+                  "milli_units": 1250,
+                  "unit": "px"
+                }
+              }
+            }
+          },
+          {
+            "field_id": 9,
+            "name": "opacity",
+            "value_type": {
+              "kind": "scalar",
+              "value": "ratio"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "ratio",
+                "value": 750000
+              }
+            }
+          },
+          {
+            "field_id": 8,
+            "name": "timeout",
+            "value_type": {
+              "kind": "scalar",
+              "value": "duration"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "duration",
+                "value": 1000000
+              }
+            }
+          },
+          {
+            "field_id": 7,
+            "name": "initial",
+            "value_type": {
+              "kind": "scalar",
+              "value": "char"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "char",
+                "value": "A"
+              }
+            }
+          },
+          {
+            "field_id": 6,
+            "name": "title",
+            "value_type": {
+              "kind": "scalar",
+              "value": "string"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "string",
+                "value": "カタログ"
+              }
+            }
+          },
+          {
+            "field_id": 5,
+            "name": "finite_float",
+            "value_type": {
+              "kind": "scalar",
+              "value": "float"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "float",
+                "value": "0x3ff8000000000000"
+              }
+            }
+          },
+          {
+            "field_id": 4,
+            "name": "unsigned_count",
+            "value_type": {
+              "kind": "scalar",
+              "value": "unsigned_integer"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "unsigned_integer",
+                "value": 7
+              }
+            }
+          },
+          {
+            "field_id": 3,
+            "name": "signed_count",
+            "value_type": {
+              "kind": "scalar",
+              "value": "signed_integer"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "signed_integer",
+                "value": -7
+              }
+            }
+          },
+          {
+            "field_id": 2,
+            "name": "enabled",
+            "value_type": {
+              "kind": "scalar",
+              "value": "bool"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "bool",
+                "value": true
+              }
+            }
+          },
+          {
+            "field_id": 1,
+            "name": "unit_value",
+            "value_type": {
+              "kind": "scalar",
+              "value": "unit"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "unit"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "record",
+      "value": {
+        "schema_id": "org.example.resources.target",
+        "nominal_type": {
+          "package": "org.example.resources",
+          "module": "catalog",
+          "name": "Target"
+        },
+        "version": 1,
+        "fields": [
+          {
+            "field_id": 1,
+            "name": "name",
+            "value_type": {
+              "kind": "scalar",
+              "value": "string"
+            },
+            "presence": "required"
+          },
+          {
+            "field_id": 2,
+            "name": "active",
+            "value_type": {
+              "kind": "scalar",
+              "value": "bool"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "bool",
+                "value": true
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "kind": "record",
+      "value": {
+        "schema_id": "org.example.resources.metadata",
+        "nominal_type": {
+          "package": "org.example.resources",
+          "module": "catalog",
+          "name": "Metadata"
+        },
+        "version": 1,
+        "fields": [
+          {
+            "field_id": 2,
+            "name": "count",
+            "value_type": {
+              "kind": "scalar",
+              "value": "unsigned_integer"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "unsigned_integer",
+                "value": 1
+              }
+            }
+          },
+          {
+            "field_id": 1,
+            "name": "note",
+            "value_type": {
+              "kind": "scalar",
+              "value": "string"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "string",
+                "value": "meta"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "resource_types": [
+    {
+      "type_id": {
+        "package": "org.example.resources",
+        "module": "catalog",
+        "name": "Target"
+      },
+      "public_id_family": "target",
+      "family_group": "org.example.resources",
+      "body_schema": "org.example.resources.target",
+      "capabilities": {
+        "agent_exposure": "catalog",
+        "save_definition_reference": true,
+        "hot_reload": "replace_definition"
+      },
+      "lowering": {
+        "codec_id": "org.example.resource-json",
+        "codec_version": 1,
+        "section_id": "org.example.resource-section",
+        "section_version": 1
+      },
+      "docs": {
+        "summary": "Exact target referenced by another configured resource."
+      },
+      "descriptor_digest": "blake3:2526b4004ebb7219891342deeedb396261aed5d0d1a0a627eb1a840d88265c76"
+    },
+    {
+      "type_id": {
+        "package": "org.example.resources",
+        "module": "catalog",
+        "name": "Catalog"
+      },
+      "public_id_family": "catalog",
+      "family_group": "org.example.resources",
+      "body_schema": "org.example.resources.catalog",
+      "capabilities": {
+        "runtime_handle_kind": "org.example.catalog-handle",
+        "agent_exposure": "catalog_and_runtime",
+        "save_definition_reference": true,
+        "hot_reload": "update_live_handle"
+      },
+      "lowering": {
+        "codec_id": "org.example.resource-json",
+        "codec_version": 2,
+        "section_id": "org.example.resource-section",
+        "section_version": 1
+      },
+      "docs": {
+        "summary": "Full coverage resource manifest example."
+      },
+      "descriptor_digest": "blake3:5830fb129cb4f0848a975329af4df7d4b8ae4be60102651f1bf13bf39610fad7"
+    }
+  ],
+  "codecs": [
+    {
+      "codec_id": "org.example.resource-json",
+      "versions": [
+        2,
+        1
+      ]
+    }
+  ]
+}

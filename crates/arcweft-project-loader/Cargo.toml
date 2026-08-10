@@ -20,6 +20,8 @@ arcweft-lang-syntax = { workspace = true }
 arcweft-launch = { workspace = true }
 arcweft-manifest-model = { workspace = true }
 arcweft-project = { workspace = true }
+arcweft-resource-manifest = { workspace = true }
+arcweft-resource-model = { workspace = true }
 arcweft-source = { workspace = true }
 blake3.workspace = true
 serde.workspace = true
@@ -31,7 +33,6 @@ ureq.workspace = true
 arcweft-dialogue = { workspace = true }
 arcweft-render-text = { workspace = true }
 arcweft-text-model = { workspace = true }
-arcweft-resource-model = { workspace = true }
 arcweft-view = { workspace = true }
 ed25519-dalek.workspace = true
 trybuild.workspace = true

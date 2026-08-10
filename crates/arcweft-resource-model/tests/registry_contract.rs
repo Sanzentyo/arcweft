@@ -542,7 +542,10 @@ fn resource_refs_require_registered_types_but_asset_refs_require_only_payload_ki
         ResourceRegistryIssue::UnknownResourceReferenceType { target, path, .. }
             if target == &missing_type
                 && path.segments()
-                    == [ResourceValueTypePathSegment::OptionValue]
+                    == [
+                        ResourceValueTypePathSegment::RecordField(field_id(1)),
+                        ResourceValueTypePathSegment::OptionValue,
+                    ]
     )));
 
     let asset_schema = record_schema(

@@ -9,6 +9,7 @@ mod product;
 pub mod product_awbc;
 pub mod release;
 pub mod resource_codec;
+pub mod resource_type_manifests;
 pub mod standard_view;
 
 use crate::character_package::BundleCharacterPackage;
@@ -35,6 +36,7 @@ use arcweft_core::effect::RuntimeArtifactFingerprint;
 #[cfg(feature = "format-yaml")]
 use arcweft_data::{Number, Value};
 use arcweft_layout::stage_placement::StagePlacement;
+use arcweft_resource_manifest::PublishedResourceTypeManifestSetV1;
 use arcweft_source::SourceDocumentId;
 use arcweft_text_model::DialogueContentCatalog;
 use arcweft_view::ViewId;
@@ -68,6 +70,9 @@ pub struct ArcweftBundle {
     /// compact AWFB `LocaleCatalog` section.
     #[serde(skip)]
     pub character_presentation: Option<CharacterPresentationCatalogData>,
+    /// Canonical extension manifests retained only for AWFB section 22.
+    #[serde(skip)]
+    pub resource_type_manifests: Option<PublishedResourceTypeManifestSetV1>,
     #[serde(default, skip_serializing_if = "FxDefinitions::is_empty")]
     pub fx_definitions: FxDefinitions,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -464,6 +469,8 @@ pub enum BundleCodecError {
     InvalidViewStyleContract(#[from] ViewStyleContractError),
     #[error(transparent)]
     InvalidViewProduct(#[from] ViewProductValidationError),
+    #[error(transparent)]
+    ResourceTypeManifests(#[from] resource_type_manifests::ResourceTypeManifestSectionError),
 }
 
 #[cfg(feature = "format-yaml")]
@@ -588,6 +595,7 @@ impl ArcweftBundle {
             product_awbc: None,
             dialogue_content,
             character_presentation: None,
+            resource_type_manifests: None,
             fx_definitions: FxDefinitions::default(),
             adapter_manifests: Vec::new(),
             virtual_files: Vec::new(),
@@ -610,6 +618,19 @@ impl ArcweftBundle {
     ) -> Self {
         self.character_presentation = Some(catalog);
         self
+    }
+
+    #[must_use]
+    pub fn with_resource_type_manifests(
+        mut self,
+        manifests: PublishedResourceTypeManifestSetV1,
+    ) -> Self {
+        self.resource_type_manifests = (!manifests.manifests().is_empty()).then_some(manifests);
+        self
+    }
+
+    pub const fn resource_type_manifests(&self) -> Option<&PublishedResourceTypeManifestSetV1> {
+        self.resource_type_manifests.as_ref()
     }
 
     /// Human-readable label projected from the canonical source map.
@@ -1005,6 +1026,26 @@ impl ArcweftBundle {
         product::from_awfb_slice(bytes)
     }
 
+    pub fn from_product_path_slice_with_resource_types(
+        path: &Path,
+        bytes: &[u8],
+        base_resource_types: &arcweft_resource_model::registry::ResourceTypeRegistry,
+    ) -> Result<Self, BundleCodecError> {
+        if BundleFormat::from_path(path) != Some(BundleFormat::Awfb) {
+            return Err(BundleCodecError::ExpectedProductAwfbPath {
+                path: path.display().to_string(),
+            });
+        }
+        product::from_awfb_slice_with_resource_types(bytes, base_resource_types)
+    }
+
+    pub fn from_awfb_slice_with_resource_types(
+        bytes: &[u8],
+        base_resource_types: &arcweft_resource_model::registry::ResourceTypeRegistry,
+    ) -> Result<Self, BundleCodecError> {
+        product::from_awfb_slice_with_resource_types(bytes, base_resource_types)
+    }
+
     pub fn from_product_path_slice_with_external_sections(
         path: &Path,
         bytes: &[u8],
@@ -1023,6 +1064,18 @@ impl ArcweftBundle {
         external_sections: &[container::ExternalSectionPayload],
     ) -> Result<Self, BundleCodecError> {
         product::from_awfb_slice_with_external_sections(bytes, external_sections)
+    }
+
+    pub fn from_awfb_slice_with_external_sections_and_resource_types(
+        bytes: &[u8],
+        external_sections: &[container::ExternalSectionPayload],
+        base_resource_types: &arcweft_resource_model::registry::ResourceTypeRegistry,
+    ) -> Result<Self, BundleCodecError> {
+        product::from_awfb_slice_with_external_sections_and_resource_types(
+            bytes,
+            external_sections,
+            Some(base_resource_types),
+        )
     }
 
     pub fn from_inspection_path_slice(path: &Path, bytes: &[u8]) -> Result<Self, BundleCodecError> {

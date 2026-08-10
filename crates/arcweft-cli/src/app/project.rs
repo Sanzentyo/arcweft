@@ -315,6 +315,7 @@ impl SourceSelection {
                         LaunchProfileSelection::Explicit(&profile),
                         &[],
                         standard::standard_registry(),
+                        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
                     ),
                 )
                 .map_err(|error| {
@@ -687,6 +688,7 @@ fn load_profile_topology_at(
             selection,
             &[],
             standard::standard_registry(),
+            Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
         ),
     )
     .map(|topology| LoadedProfileSelection {
@@ -1082,7 +1084,12 @@ pub(in crate::app) fn project_compilation_context(
         ExitCode::FAILURE
     })?;
     let (facts, _) = registration.into_parts();
-    compilation_context_from_facts(facts, selection.profile(), semantic)
+    compilation_context_from_facts(
+        facts,
+        selection.profile(),
+        semantic,
+        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+    )
 }
 
 pub(in crate::app) fn profile_project_compilation_context(
@@ -1096,8 +1103,12 @@ pub(in crate::app) fn profile_project_compilation_context(
         ExitCode::FAILURE
     })?;
     let (facts, _) = registration.into_parts();
-    let context =
-        compilation_context_from_facts(facts, Some(topology.selected_profile()), semantic)?;
+    let context = compilation_context_from_facts(
+        facts,
+        Some(topology.selected_profile()),
+        semantic,
+        Arc::clone(topology.resource_types()),
+    )?;
     let accepted_profile = AcceptedLaunchProfileInput::new(
         Arc::clone(topology.manifest()),
         topology.selected_profile().id().clone(),
@@ -1112,6 +1123,7 @@ fn compilation_context_from_facts(
     facts: ProjectRegistrationFacts,
     profile: Option<&ResolvedLaunchProfile>,
     semantic: &SelectionSemanticContext,
+    resource_types: Arc<arcweft_resource_model::registry::ResourceTypeRegistry>,
 ) -> Result<ProjectCompilationContext, ExitCode> {
     let entry_selection = profile
         .and_then(|profile| profile.entry().map(|entry| (profile, entry)))
@@ -1131,7 +1143,7 @@ fn compilation_context_from_facts(
     Ok(ProjectCompilationContext::new(
         Arc::new(semantic.base().clone()),
         Arc::new(facts),
-        Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
+        resource_types,
         None,
         entry_selection,
     )

@@ -570,4 +570,21 @@ impl ResourceTypeDescriptor {
     pub const fn docs(&self) -> &ResourceTypeDocs {
         &self.docs
     }
+
+    /// Returns the canonical semantic digest claimed by a resource manifest.
+    ///
+    /// Documentation and provenance are intentionally excluded, matching the
+    /// complete registry digest contract.
+    pub fn semantic_digest(&self) -> crate::registry::ResourceTypeDescriptorDigest {
+        crate::registry::descriptor_digest(self)
+    }
+
+    /// Exact byte length of the canonical transcript consumed by
+    /// [`Self::semantic_digest`].
+    ///
+    /// Format boundaries use this owner-provided measurement to precharge
+    /// deterministic work without reimplementing the private transcript.
+    pub fn semantic_digest_transcript_len(&self) -> usize {
+        crate::registry::descriptor_digest_transcript_len(self)
+    }
 }

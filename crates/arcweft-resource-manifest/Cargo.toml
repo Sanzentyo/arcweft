@@ -1,0 +1,26 @@
+[package]
+name = "arcweft-resource-manifest"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+arcweft-core.workspace = true
+arcweft-id.workspace = true
+arcweft-interaction-model.workspace = true
+arcweft-layout.workspace = true
+arcweft-manifest-model.workspace = true
+arcweft-resource-model.workspace = true
+arcweft-source.workspace = true
+json-spanned-value.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true

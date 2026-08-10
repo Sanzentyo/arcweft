@@ -19,14 +19,19 @@ pub(super) fn native_player_command(options: &NativePlayerOptions) -> Result<(),
         );
         ExitCode::FAILURE
     })?;
-    let bundle =
-        ArcweftBundle::from_product_path_slice(&options.bundle, &bytes).map_err(|error| {
-            eprintln!(
-                "error: could not decode bundle {}: {error}",
-                options.bundle.display()
-            );
-            ExitCode::FAILURE
-        })?;
+    let engine_resource_types = arcweft_resource_model::registry::ResourceTypeRegistry::empty();
+    let bundle = ArcweftBundle::from_product_path_slice_with_resource_types(
+        &options.bundle,
+        &bytes,
+        &engine_resource_types,
+    )
+    .map_err(|error| {
+        eprintln!(
+            "error: could not decode bundle {}: {error}",
+            options.bundle.display()
+        );
+        ExitCode::FAILURE
+    })?;
     arcweft_player_native::run_bundle_windowed(bundle, options.steps).map_err(|error| {
         eprintln!("error: native player failed: {error}");
         ExitCode::FAILURE

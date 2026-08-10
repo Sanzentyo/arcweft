@@ -211,10 +211,14 @@ pub fn fetch_release_product_bundle(
     content_root: BundleDigest,
     cache_root: &Path,
     external_sections: &[ExternalSectionPayload],
+    base_resource_types: &arcweft_resource_model::registry::ResourceTypeRegistry,
 ) -> Result<ReleaseProductFetch, ReleaseProductFetchError> {
     let fetched = fetch_release_bundle_bytes_to_cache(manifest_path, content_root, cache_root)?;
-    let bundle =
-        ArcweftBundle::from_awfb_slice_with_external_sections(&fetched.bytes, external_sections)?;
+    let bundle = ArcweftBundle::from_awfb_slice_with_external_sections_and_resource_types(
+        &fetched.bytes,
+        external_sections,
+        base_resource_types,
+    )?;
     Ok(ReleaseProductFetch {
         report: fetched.report,
         bundle,
@@ -908,9 +912,14 @@ mod tests {
         )
         .expect("manifest writes");
 
-        let fetched =
-            fetch_release_product_bundle(&manifest_path, bundle_ref.content_root, &cache, &[])
-                .expect("product fetch succeeds");
+        let fetched = fetch_release_product_bundle(
+            &manifest_path,
+            bundle_ref.content_root,
+            &cache,
+            &[],
+            &arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
+        )
+        .expect("product fetch succeeds");
 
         assert_eq!(fetched.report.status, ReleaseCacheFetchStatus::Fetched);
         assert_eq!(fetched.bundle, bundle);

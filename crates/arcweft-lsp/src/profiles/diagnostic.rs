@@ -25,6 +25,10 @@ pub enum LspProfileDiagnosticKind {
     ManifestRead,
     /// The project manifest could not be parsed.
     ManifestParse,
+    /// A declared resource extension-manifest could not be read.
+    ResourceTypeManifestRead,
+    /// A declared resource extension-manifest could not be decoded or published.
+    ResourceTypeManifestParse,
     /// The selected profile could not be resolved.
     ProfileResolve,
     /// A complete profile candidate could not be atomically published.
@@ -149,6 +153,8 @@ impl LspProfileDiagnosticKind {
             Self::WorkspaceManifestNotFound => "profile.manifest.missing",
             Self::ManifestRead => "profile.manifest.read",
             Self::ManifestParse => "profile.manifest.parse",
+            Self::ResourceTypeManifestRead => "profile.resource_type_manifest.read",
+            Self::ResourceTypeManifestParse => "profile.resource_type_manifest.parse",
             Self::ProfileResolve => "profile.resolve",
             Self::ProfilePublication => "profile.publication",
             Self::ProjectSourceRead => "profile.project_source.read",
@@ -214,6 +220,10 @@ fn topology_diagnostic(
     error: &arcweft_project_loader::topology::ProfileTopologyLoadError,
 ) -> LspProfileDiagnostic {
     use arcweft_project_loader::topology::ProfileTopologyLoadError as Error;
+
+    if error.resource_manifest_code().is_some() {
+        return resource_type_manifest_topology_diagnostic(error);
+    }
 
     match error {
         Error::ResourceRead { id, kind, .. } => {
@@ -309,6 +319,33 @@ fn topology_diagnostic(
     }
 }
 
+fn resource_type_manifest_topology_diagnostic(
+    error: &arcweft_project_loader::topology::ProfileTopologyLoadError,
+) -> LspProfileDiagnostic {
+    use arcweft_project_loader::topology::ProfileTopologyLoadError as Error;
+
+    let (resource, source) = match error {
+        Error::ResourceTypeManifestUtf8 { id, .. }
+        | Error::UnresolvedResourceTypePackage { id, .. } => (Some(id.path().as_str()), None),
+        Error::ResourceTypeManifest { id, source, .. } => {
+            (Some(id.path().as_str()), source.diagnostics().first())
+        }
+        Error::ResourceTypePublication { source } => (None, source.diagnostics().first()),
+        _ => unreachable!("caller filters resource manifest topology diagnostics"),
+    };
+    let mut diagnostic = LspProfileDiagnostic::new(
+        LspProfileDiagnosticKind::ResourceTypeManifestParse,
+        error.to_string(),
+    );
+    if let Some(resource) = resource {
+        diagnostic = diagnostic.with_resource(resource);
+    }
+    if let Some(source) = source {
+        diagnostic = diagnostic.with_source(source.primary().clone());
+    }
+    diagnostic
+}
+
 #[derive(Clone, Copy)]
 enum TopologyResourceFailure {
     Read,
@@ -327,6 +364,12 @@ fn topology_resource_diagnostic_kind(
         }
         (Resource::Manifest, TopologyResourceFailure::Parse) => {
             LspProfileDiagnosticKind::ManifestParse
+        }
+        (Resource::ResourceTypeManifest { .. }, TopologyResourceFailure::Read) => {
+            LspProfileDiagnosticKind::ResourceTypeManifestRead
+        }
+        (Resource::ResourceTypeManifest { .. }, TopologyResourceFailure::Parse) => {
+            LspProfileDiagnosticKind::ResourceTypeManifestParse
         }
         (Resource::ArcweftModule { .. }, TopologyResourceFailure::Read) => {
             LspProfileDiagnosticKind::ProjectSourceRead

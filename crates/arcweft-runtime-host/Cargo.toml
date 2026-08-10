@@ -16,6 +16,7 @@ arcweft-image = { workspace = true }
 arcweft-interaction-model = { workspace = true }
 arcweft-presentation = { workspace = true }
 arcweft-runtime-accelerator = { workspace = true, default-features = true }
+arcweft-resource-model = { workspace = true }
 arcweft-runtime-scheduler = { workspace = true }
 arcweft-view = { workspace = true }
 num_cpus.workspace = true
@@ -28,7 +29,6 @@ arcweft-character = { workspace = true }
 arcweft-dialogue = { workspace = true }
 arcweft-render-text = { workspace = true }
 arcweft-text-model = { workspace = true }
-arcweft-resource-model = { workspace = true }
 arcweft-runtime-plan = { workspace = true }
 arcweft-source = { workspace = true }
 serde_json.workspace = true

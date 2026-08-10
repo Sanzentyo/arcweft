@@ -248,12 +248,13 @@ impl WindowedRuntimeOwner {
         awfb_bytes: Vec<u8>,
         options: BundleSessionOptions,
     ) -> Result<Self, WindowedRuntimeOwnerError> {
-        let bundle =
-            ArcweftBundle::from_format_slice(BundleFormat::Awfb, &awfb_bytes).map_err(|error| {
-                WindowedRuntimeOwnerError::DecodeBundle {
-                    message: error.to_string(),
-                }
-            })?;
+        let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
+            &awfb_bytes,
+            options.engine_resource_types.as_ref(),
+        )
+        .map_err(|error| WindowedRuntimeOwnerError::DecodeBundle {
+            message: error.to_string(),
+        })?;
         let images = BundleImageCatalog::from_bundle(&bundle)?;
         Self::from_decoded_bundle_and_awfb_bytes(
             &bundle,
@@ -436,7 +437,10 @@ impl WindowedRuntimeOwner {
         bytes: &[u8],
     ) -> Result<WindowedRuntimeOutcome, WindowedRuntimeOwnerError> {
         let prepared = self.endpoint.prepare_patch_bytes(bytes)?;
-        let target_images = images_from_awfb_bytes(prepared.target_awfb_bytes())?;
+        let target_images = images_from_awfb_bytes(
+            prepared.target_awfb_bytes(),
+            self.endpoint.options().engine_resource_types.as_ref(),
+        )?;
         let outcome = self.endpoint.apply_prepared_patch(prepared)?;
         let outcome = windowed_outcome_from_native(outcome, source);
         if outcome.refreshes_image_catalog() {
@@ -461,7 +465,10 @@ impl WindowedRuntimeOwner {
         _source: PatchEventSource,
         bytes: Vec<u8>,
     ) -> Result<WindowedRuntimeOutcome, WindowedRuntimeOwnerError> {
-        let images = images_from_awfb_bytes(&bytes)?;
+        let images = images_from_awfb_bytes(
+            &bytes,
+            self.endpoint.options().engine_resource_types.as_ref(),
+        )?;
         let endpoint =
             NativePatchEndpoint::from_awfb_bytes(bytes, self.endpoint.options().clone())?;
         let generation = endpoint.session().active_generation().id;
@@ -553,11 +560,13 @@ const fn patch_compatibility_from_swap(
     }
 }
 
-fn images_from_awfb_bytes(bytes: &[u8]) -> Result<BundleImageCatalog, WindowedRuntimeOwnerError> {
-    let bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, bytes).map_err(|error| {
-        WindowedRuntimeOwnerError::DecodeBundle {
-            message: error.to_string(),
-        }
+fn images_from_awfb_bytes(
+    bytes: &[u8],
+    engine_resource_types: &arcweft_resource_model::registry::ResourceTypeRegistry,
+) -> Result<BundleImageCatalog, WindowedRuntimeOwnerError> {
+    let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(bytes, engine_resource_types)
+        .map_err(|error| WindowedRuntimeOwnerError::DecodeBundle {
+        message: error.to_string(),
     })?;
     BundleImageCatalog::from_bundle(&bundle).map_err(WindowedRuntimeOwnerError::ImageCatalog)
 }

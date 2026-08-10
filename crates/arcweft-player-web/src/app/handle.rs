@@ -8,7 +8,7 @@ use crate::clock::LogicalClockQuantizer;
 use crate::edit_context::WebEditContextFeatureDetection;
 use crate::host::BrowserTaskBroker;
 use crate::runtime_text_input::register_runtime_bridge;
-use arcweft_bundle::{ArcweftBundle, BundleFormat};
+use arcweft_bundle::ArcweftBundle;
 use arcweft_layout::ScalePolicy;
 use arcweft_player_scene::dialogue::DialogueVisualClock;
 use arcweft_player_scene::fonts::PlayerFontSet;
@@ -119,9 +119,13 @@ fn create(
         .map_err(|_| WebPlayerError::NotCanvas(canvas_id.clone()))?;
     let detection = WebEditContextFeatureDetection::detect_for_element(canvas.unchecked_ref());
     let text_input = register_runtime_bridge(canvas_id.clone(), detection);
-    let bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bundle_bytes)
-        .map_err(|error| WebPlayerError::BundleDecode(error.to_string()))?;
-    let session = BundleSession::new(&bundle, BundleSessionOptions::default())
+    let session_options = BundleSessionOptions::default();
+    let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
+        &bundle_bytes,
+        session_options.engine_resource_types.as_ref(),
+    )
+    .map_err(|error| WebPlayerError::BundleDecode(error.to_string()))?;
+    let session = BundleSession::new(&bundle, session_options)
         .map_err(|error| WebPlayerError::Session(error.to_string()))?;
     let broker = BrowserTaskBroker::from_bundle(&bundle)
         .map_err(|error| WebPlayerError::TaskBroker(error.to_string()))?;

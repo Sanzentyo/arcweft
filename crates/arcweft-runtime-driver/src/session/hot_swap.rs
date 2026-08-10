@@ -1,7 +1,7 @@
 //! Atomic bundle and patch hot-swap transactions.
 
 use super::{
-    Arc, ArcweftBundle, BundleFormat, BundleHotSwapError, BundleHotSwapReport, BundlePatchArtifact,
+    Arc, ArcweftBundle, BundleHotSwapError, BundleHotSwapReport, BundlePatchArtifact,
     BundlePatchReadiness, BundlePatchReadinessReport, BundlePresentationSnapshot, BundleSession,
     BundleSessionArtifactIdentity, BundleSessionError, BundleView, GenerationId,
     GenerationRuntimeImage, PatchMaterializedTarget, ProgramGeneration, ReadBudget,
@@ -316,12 +316,13 @@ impl BundleSession {
                 ),
             });
         }
-        let target_bundle =
-            ArcweftBundle::from_format_slice(BundleFormat::Awfb, materialized.bytes()).map_err(
-                |error| BundleHotSwapError::DecodePatchTarget {
-                    message: error.to_string(),
-                },
-            )?;
+        let target_bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
+            materialized.bytes(),
+            self.engine_resource_types.as_ref(),
+        )
+        .map_err(|error| BundleHotSwapError::DecodePatchTarget {
+            message: error.to_string(),
+        })?;
         let compatibility_floor =
             SwapCompatibility::from_patch_compatibility(materialized.compatibility());
         self.hot_swap_bundle_with_compatibility_floor(

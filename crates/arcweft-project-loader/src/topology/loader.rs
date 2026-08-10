@@ -31,6 +31,12 @@ use arcweft_manifest_model::{AdapterFamily, RawDigest};
 use arcweft_project::{
     content::ProjectBinaryResource, graph::ModuleDependency, sources::ProjectSourceFile,
 };
+use arcweft_resource_manifest::{
+    PackageCoordinateFile, PublishedResourceTypeManifestSetV1, ResourceManifestDecodeLimits,
+    ResourceManifestPublicationLimits, decode_resource_type_manifest,
+    publish_resource_type_manifests_v1,
+};
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceSetRevision};
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -69,6 +75,7 @@ struct TopologyBuilder<'a, 'syntax> {
     dependency_resources: &'a [ProfileDependencyResourceSeed],
     dependency_binary_resources: &'a [ProfileDependencyBinaryResourceSeed],
     base_adapters: AdapterRegistry,
+    base_resource_types: Arc<ResourceTypeRegistry>,
     layout: arcweft_project::layout::ProjectLayoutSpec,
     resources: BTreeMap<ProfileTopologyResourceId, LoadedProfileTopologyResource>,
     paths: BTreeMap<PathBuf, ProfileTopologyResourceId>,
@@ -76,6 +83,16 @@ struct TopologyBuilder<'a, 'syntax> {
     consumed_binary_overlay_paths: BTreeSet<PathBuf>,
     character_packages: BTreeMap<CharacterId, LoadedCharacterPackage>,
     budget: ProfileTopologyBudget,
+}
+
+struct TopologyFreezeInput {
+    manifest: Arc<SourceBackedManifest>,
+    layout: ContainedProjectLayout,
+    modules: Vec<(ProjectSourceFile, ParsedSource)>,
+    selected_profile: ResolvedLaunchProfile,
+    external_modules: Vec<LoadedExternalModuleMetadata>,
+    adapter: AdapterManifest,
+    resource_type_manifests: PublishedResourceTypeManifestSetV1,
 }
 
 #[derive(Clone)]
@@ -250,6 +267,7 @@ impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
             dependency_resources: request.dependency_resources,
             dependency_binary_resources: request.dependency_binary_resources,
             base_adapters: request.base_adapters,
+            base_resource_types: request.base_resource_types,
             layout: request.layout,
             resources: BTreeMap::new(),
             paths: BTreeMap::new(),
@@ -274,6 +292,7 @@ impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
         .map_err(|source| ProfileTopologyLoadError::ProjectLayout { source })?;
         self.project_root = layout.project_root().to_path_buf();
         let package = manifest.manifest().package().id.as_str().to_owned();
+        let resource_type_manifests = self.load_resource_type_manifests(&manifest, &layout)?;
         let selected_source = layout
             .project_root()
             .join(selected_profile.source().as_path());
@@ -285,14 +304,15 @@ impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
         validate_activity_bindings(&selected_profile, &external_modules)?;
         let adapter = self.select_adapter(&selected_profile)?;
         let adapter = extend_selected_adapter(adapter, &external_modules)?;
-        self.freeze(
+        self.freeze(TopologyFreezeInput {
             manifest,
             layout,
             modules,
             selected_profile,
             external_modules,
             adapter,
-        )
+            resource_type_manifests,
+        })
     }
 
     fn load_primary_manifest(
@@ -360,6 +380,64 @@ impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
             }
         }
         Ok(())
+    }
+
+    fn load_resource_type_manifests(
+        &mut self,
+        manifest: &SourceBackedManifest,
+        layout: &ContainedProjectLayout,
+    ) -> Result<PublishedResourceTypeManifestSetV1, ProfileTopologyLoadError> {
+        let package = manifest.manifest().package();
+        let workspace_coordinate =
+            PackageCoordinateFile::new(package.id.clone(), package.version.clone());
+        let mut accepted = Vec::new();
+        if let Some(relative) = manifest.manifest().resource_type_manifest() {
+            let contained = layout
+                .contain_project_path(relative, ProjectPathRole::ResourceTypeManifest)
+                .map_err(|source| ProfileTopologyLoadError::ProjectLayout { source })?;
+            let kind = ProfileTopologyResourceKind::ResourceTypeManifest {
+                package_id: workspace_coordinate.id().clone(),
+                package_version: workspace_coordinate.version().clone(),
+            };
+            let resource = self.acquire_document(
+                workspace_coordinate.id().as_str(),
+                kind,
+                contained.as_path(),
+            )?;
+            accepted.push(decode_loaded_resource_manifest(
+                &resource,
+                &workspace_coordinate,
+            )?);
+        }
+
+        let dependencies = self
+            .dependency_resources
+            .iter()
+            .filter_map(|seed| match seed.kind() {
+                ProfileTopologyResourceKind::ResourceTypeManifest {
+                    package_id,
+                    package_version,
+                } => Some((
+                    seed.path().to_path_buf(),
+                    PackageCoordinateFile::new(package_id.clone(), package_version.clone()),
+                )),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        for (path, coordinate) in dependencies {
+            let kind = ProfileTopologyResourceKind::ResourceTypeManifest {
+                package_id: coordinate.id().clone(),
+                package_version: coordinate.version().clone(),
+            };
+            let resource = self.acquire_document(coordinate.id().as_str(), kind, &path)?;
+            accepted.push(decode_loaded_resource_manifest(&resource, &coordinate)?);
+        }
+        publish_resource_type_manifests_v1(
+            &self.base_resource_types,
+            accepted,
+            ResourceManifestPublicationLimits::PRODUCTION,
+        )
+        .map_err(|source| ProfileTopologyLoadError::ResourceTypePublication { source })
     }
 
     fn load_character_package(
@@ -574,13 +652,17 @@ impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
 
     fn freeze(
         self,
-        manifest: Arc<SourceBackedManifest>,
-        layout: ContainedProjectLayout,
-        modules: Vec<(ProjectSourceFile, ParsedSource)>,
-        selected_profile: ResolvedLaunchProfile,
-        external_modules: Vec<LoadedExternalModuleMetadata>,
-        adapter: AdapterManifest,
+        input: TopologyFreezeInput,
     ) -> Result<LoadedProfileTopology, ProfileTopologyLoadError> {
+        let TopologyFreezeInput {
+            manifest,
+            layout,
+            modules,
+            selected_profile,
+            external_modules,
+            adapter,
+            resource_type_manifests,
+        } = input;
         if let Some(path) = self
             .binary_overlays
             .keys()
@@ -633,6 +715,7 @@ impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
             layout,
             external_modules,
             adapter,
+            resource_type_manifests,
             self.resources,
             self.character_packages,
             self.consumed_overlays.into_iter().collect(),
@@ -1058,13 +1141,29 @@ impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
     }
 
     fn read_disk(&mut self, claim: &ResourceClaim) -> Result<BoundText, ProfileTopologyLoadError> {
-        let file =
-            File::open(&claim.path).map_err(|source| ProfileTopologyLoadError::ResourceRead {
-                id: Box::new(claim.id.clone()),
-                kind: claim.kind.clone(),
-                path: claim.path.clone(),
-                source,
-            })?;
+        let file = File::open(&claim.path).map_err(|source| {
+            if source.kind() == std::io::ErrorKind::NotFound
+                && claim.ownership == LoadedDocumentOwnership::Dependency
+                && let ProfileTopologyResourceKind::ResourceTypeManifest {
+                    package_id,
+                    package_version,
+                } = &claim.kind
+            {
+                ProfileTopologyLoadError::UnresolvedResourceTypePackage {
+                    id: Box::new(claim.id.clone()),
+                    path: claim.path.clone(),
+                    package_id: package_id.clone(),
+                    package_version: package_version.clone(),
+                }
+            } else {
+                ProfileTopologyLoadError::ResourceRead {
+                    id: Box::new(claim.id.clone()),
+                    kind: claim.kind.clone(),
+                    path: claim.path.clone(),
+                    source,
+                }
+            }
+        })?;
         let bytes =
             read_bytes_bounded(file, self.budget.remaining_source_bytes()).map_err(|source| {
                 ProfileTopologyLoadError::ResourceRead {
@@ -1075,12 +1174,24 @@ impl<'a, 'syntax> TopologyBuilder<'a, 'syntax> {
                 }
             })?;
         self.budget.charge_source_bytes(bytes.len())?;
-        let source =
-            String::from_utf8(bytes).map_err(|_| ProfileTopologyLoadError::ResourceUtf8 {
-                id: Box::new(claim.id.clone()),
-                kind: claim.kind.clone(),
-                path: claim.path.clone(),
-            })?;
+        let source = String::from_utf8(bytes).map_err(|error| {
+            if matches!(
+                claim.kind,
+                ProfileTopologyResourceKind::ResourceTypeManifest { .. }
+            ) {
+                ProfileTopologyLoadError::ResourceTypeManifestUtf8 {
+                    id: Box::new(claim.id.clone()),
+                    path: claim.path.clone(),
+                    offset: error.utf8_error().valid_up_to(),
+                }
+            } else {
+                ProfileTopologyLoadError::ResourceUtf8 {
+                    id: Box::new(claim.id.clone()),
+                    kind: claim.kind.clone(),
+                    path: claim.path.clone(),
+                }
+            }
+        })?;
         Ok(BoundText {
             source: Arc::from(source),
             origin: ProfileTopologyResourceOrigin::Disk,
@@ -1366,6 +1477,20 @@ fn required_text_document(
             id: Box::new(resource.id().clone()),
             kind: resource.kind().clone(),
             path: resource.path().to_path_buf(),
+        })
+}
+
+fn decode_loaded_resource_manifest(
+    resource: &LoadedProfileTopologyResource,
+    expected: &PackageCoordinateFile,
+) -> Result<arcweft_resource_manifest::SourceBackedResourceTypeManifestV1, ProfileTopologyLoadError>
+{
+    let document = Arc::clone(required_text_document(resource)?);
+    decode_resource_type_manifest(document, expected, ResourceManifestDecodeLimits::PRODUCTION)
+        .map_err(|source| ProfileTopologyLoadError::ResourceTypeManifest {
+            id: Box::new(resource.id().clone()),
+            path: resource.path().to_path_buf(),
+            source,
         })
 }
 

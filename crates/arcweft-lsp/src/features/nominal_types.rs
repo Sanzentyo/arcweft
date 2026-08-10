@@ -1349,6 +1349,7 @@ adapter = "rust-nominal-tooling"
                 LaunchProfileSelection::Explicit("agent"),
                 &[],
                 AdapterRegistry::from_manifests([adapter.clone()]),
+                Arc::new(arcweft_resource_model::registry::ResourceTypeRegistry::empty()),
             ),
         )
         .expect("custom adapter topology");

@@ -115,6 +115,7 @@ pub enum ProjectPathRole {
     Asset,
     Content,
     ExternalMetadata,
+    ResourceTypeManifest,
 }
 
 impl ProjectPathRole {
@@ -125,6 +126,7 @@ impl ProjectPathRole {
             Self::Asset => "asset",
             Self::Content => "content",
             Self::ExternalMetadata => "external metadata",
+            Self::ResourceTypeManifest => "resource type manifest",
         }
     }
 }

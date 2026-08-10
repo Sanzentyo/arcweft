@@ -62,6 +62,8 @@ pub(crate) fn decode(document: Arc<SourceDocument>) -> Result<DecodedManifest, M
     let schema = decode_schema(&document, &index, &mut source_entries, &mut diagnostics);
     let package = decode_package(&document, &index, &mut source_entries, &mut diagnostics);
     let build = decode_build(&index, &mut source_entries, &mut diagnostics);
+    let resource_type_manifest =
+        decode_resource_type_manifest_path(&index, &mut source_entries, &mut diagnostics);
     let sections = decode_sections(&document, &index, &mut source_entries, &mut diagnostics);
 
     let mut diagnostics = diagnostics.into_iter();
@@ -105,6 +107,7 @@ pub(crate) fn decode(document: Arc<SourceDocument>) -> Result<DecodedManifest, M
             schema,
             package,
             build,
+            resource_type_manifest,
             content_units: sections.content_units,
             external_modules: sections.external_modules,
             activity_implementations: sections.activity_implementations,
@@ -113,6 +116,42 @@ pub(crate) fn decode(document: Arc<SourceDocument>) -> Result<DecodedManifest, M
         },
         source_map,
     })
+}
+
+fn decode_resource_type_manifest_path(
+    index: &ManifestIndex,
+    source_entries: &mut BTreeMap<ManifestSourceKey, SourceSpan>,
+    diagnostics: &mut Vec<ManifestDiagnostic>,
+) -> Option<NormalizedProjectPath> {
+    let field = index.field(&["resource-type-manifest"])?;
+    record_field_source(
+        source_entries,
+        ManifestPath::new([ManifestPathSegment::Root(
+            ManifestRootField::ResourceTypeManifest,
+        )]),
+        field,
+    );
+    let Node::Str(value) = Node::from_syntax(field.value.clone().into()) else {
+        diagnostics.push(diagnostic(
+            ManifestDiagnosticCode::ValueType,
+            "resource-type-manifest must be a string",
+            field.value_span.clone(),
+            Vec::new(),
+        ));
+        return None;
+    };
+    NormalizedProjectPath::new(value.value()).map_or_else(
+        |_| {
+            diagnostics.push(diagnostic(
+                ManifestDiagnosticCode::PathInvalid,
+                "resource-type-manifest path is invalid",
+                field.value_span.clone(),
+                Vec::new(),
+            ));
+            None
+        },
+        Some,
+    )
 }
 
 fn decode_schema(

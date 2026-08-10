@@ -13,7 +13,7 @@ use crate::identity::{
 use crate::value::{
     MAX_RESOURCE_VALUE_NESTING, ResourceConstValue, ResourceEnumValue, ResourceMapValue,
     ResourceRecordValue, ResourceReferenceRequirementKind, ResourceValidationPathSegment,
-    ResourceValueType,
+    ResourceValueType, ResourceValueTypePathSegment,
 };
 use core::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
@@ -266,6 +266,7 @@ fn validate_schema_references(
                 for field in schema.fields() {
                     validate_value_type(
                         schema_id,
+                        ResourceValueTypePathSegment::RecordField(field.id()),
                         field.value_type(),
                         schemas,
                         resource_types,
@@ -286,7 +287,14 @@ fn validate_schema_references(
             ResourceValueSchema::Enum(schema) => {
                 for variant in schema.variants() {
                     if let Some(payload) = variant.payload() {
-                        validate_value_type(schema_id, payload, schemas, resource_types, issues);
+                        validate_value_type(
+                            schema_id,
+                            ResourceValueTypePathSegment::EnumVariant(variant.id()),
+                            payload,
+                            schemas,
+                            resource_types,
+                            issues,
+                        );
                     }
                 }
             }
@@ -296,25 +304,32 @@ fn validate_schema_references(
 
 fn validate_value_type(
     owner: &ResourceSchemaId,
+    owner_segment: ResourceValueTypePathSegment,
     value_type: &ResourceValueType,
     schemas: &BTreeMap<ResourceSchemaId, ResourceValueSchema>,
     resource_types: &BTreeMap<ResourceTypeId, ResourceTypeDescriptor>,
     issues: &mut Vec<ResourceRegistryIssue>,
 ) {
-    let Ok(requirements) = value_type.reference_requirements() else {
-        issues.push(ResourceRegistryIssue::ValueTypeNestingTooDeep {
-            owner: owner.clone(),
-        });
-        return;
+    let requirements = match value_type.reference_requirements() {
+        Ok(requirements) => requirements,
+        Err(error) => {
+            let path = owned_value_type_path(owner_segment, error.path());
+            issues.push(ResourceRegistryIssue::ValueTypeNestingTooDeep {
+                owner: owner.clone(),
+                path,
+            });
+            return;
+        }
     };
     for requirement in requirements {
+        let path = owned_value_type_path(owner_segment, requirement.path());
         match requirement.kind() {
             ResourceReferenceRequirementKind::NominalRecord { schema_id } => {
                 validate_schema_kind(
                     owner,
                     schema_id,
                     ResourceValueSchemaKind::Record,
-                    requirement.path(),
+                    &path,
                     schemas,
                     issues,
                 );
@@ -324,7 +339,7 @@ fn validate_value_type(
                     owner,
                     schema_id,
                     ResourceValueSchemaKind::Enum,
-                    requirement.path(),
+                    &path,
                     schemas,
                     issues,
                 );
@@ -335,7 +350,7 @@ fn validate_value_type(
                 issues.push(ResourceRegistryIssue::UnknownResourceReferenceType {
                     owner: owner.clone(),
                     target: type_id.clone(),
-                    path: requirement.path().clone(),
+                    path,
                 });
             }
             ResourceReferenceRequirementKind::Asset { .. }
@@ -343,6 +358,15 @@ fn validate_value_type(
             | ResourceReferenceRequirementKind::Retained { .. } => {}
         }
     }
+}
+
+fn owned_value_type_path(
+    owner: ResourceValueTypePathSegment,
+    nested: &crate::value::ResourceValueTypePath,
+) -> crate::value::ResourceValueTypePath {
+    crate::value::ResourceValueTypePath::new(
+        std::iter::once(owner).chain(nested.segments().iter().copied()),
+    )
 }
 
 fn validate_schema_kind(

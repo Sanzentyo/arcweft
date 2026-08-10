@@ -14,10 +14,13 @@ use arcweft_launch::{
     resolve::ResolvedLaunchProfile,
 };
 use arcweft_manifest_model::{
-    ActivityId, AdapterExportId, ExternalModuleImportId, ExternalModuleImportSpec,
+    ActivityId, AdapterExportId, ExternalModuleImportId, ExternalModuleImportSpec, PackageId,
+    PackageVersion,
 };
 use arcweft_project::content::ProjectBinaryResource;
 use arcweft_project::layout::ProjectLayoutSpec;
+use arcweft_resource_manifest::PublishedResourceTypeManifestSetV1;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_source::{
     MAX_REGISTRATION_SOURCE_BYTES, SourceDocument, SourceDocumentId, SourceSetRevision, SourceSpan,
 };
@@ -59,6 +62,10 @@ pub enum ProfileTopologyResourceKind {
     },
     ExternalModuleMetadata {
         import: ExternalModuleImportId,
+    },
+    ResourceTypeManifest {
+        package_id: PackageId,
+        package_version: PackageVersion,
     },
 }
 
@@ -331,6 +338,7 @@ pub struct ProfileTopologyLoadRequest<'a> {
     pub(super) dependency_resources: &'a [ProfileDependencyResourceSeed],
     pub(super) dependency_binary_resources: &'a [ProfileDependencyBinaryResourceSeed],
     pub(super) base_adapters: AdapterRegistry,
+    pub(super) base_resource_types: Arc<ResourceTypeRegistry>,
     pub(super) layout: ProjectLayoutSpec,
 }
 
@@ -341,6 +349,7 @@ impl<'a> ProfileTopologyLoadRequest<'a> {
         selection: LaunchProfileSelection<'a>,
         overlays: &'a [ProfileTopologyOverlaySeed],
         base_adapters: AdapterRegistry,
+        base_resource_types: Arc<ResourceTypeRegistry>,
     ) -> Self {
         Self {
             manifest_path,
@@ -351,6 +360,7 @@ impl<'a> ProfileTopologyLoadRequest<'a> {
             dependency_resources: &[],
             dependency_binary_resources: &[],
             base_adapters,
+            base_resource_types,
             layout: ProjectLayoutSpec::default(),
         }
     }
@@ -398,6 +408,7 @@ pub struct LoadedProfileTopology {
     layout: ContainedProjectLayout,
     external_modules: Arc<[LoadedExternalModuleMetadata]>,
     adapter: AdapterManifest,
+    resource_type_manifests: PublishedResourceTypeManifestSetV1,
     registration_adapter_manifests: Arc<[AdapterManifest]>,
     resources: BTreeMap<ProfileTopologyResourceId, LoadedProfileTopologyResource>,
     character_packages: BTreeMap<arcweft_character::id::CharacterId, LoadedCharacterPackage>,
@@ -483,6 +494,7 @@ impl LoadedProfileTopology {
         layout: ContainedProjectLayout,
         external_modules: Vec<LoadedExternalModuleMetadata>,
         adapter: AdapterManifest,
+        resource_type_manifests: PublishedResourceTypeManifestSetV1,
         resources: BTreeMap<ProfileTopologyResourceId, LoadedProfileTopologyResource>,
         character_packages: BTreeMap<arcweft_character::id::CharacterId, LoadedCharacterPackage>,
         consumed_overlay_ids: Vec<ProfileTopologyResourceId>,
@@ -507,6 +519,7 @@ impl LoadedProfileTopology {
             layout,
             external_modules: external_modules.into(),
             adapter,
+            resource_type_manifests,
             registration_adapter_manifests,
             resources,
             character_packages,
@@ -543,6 +556,14 @@ impl LoadedProfileTopology {
 
     pub fn registration_adapter_manifests(&self) -> &[AdapterManifest] {
         &self.registration_adapter_manifests
+    }
+
+    pub const fn resource_type_manifests(&self) -> &PublishedResourceTypeManifestSetV1 {
+        &self.resource_type_manifests
+    }
+
+    pub const fn resource_types(&self) -> &Arc<ResourceTypeRegistry> {
+        self.resource_type_manifests.registry()
     }
 
     pub fn resources(&self) -> impl ExactSizeIterator<Item = &LoadedProfileTopologyResource> {
@@ -696,6 +717,7 @@ pub enum ProfileTopologyErrorCode {
     ManifestNotFound,
     ResourceRead,
     ResourceUtf8,
+    ResourceTypeManifest,
     Manifest,
     ProjectLayout,
     ProfileSelection,
@@ -911,6 +933,33 @@ pub enum ProfileTopologyLoadError {
         kind: ProfileTopologyResourceKind,
         path: PathBuf,
     },
+    #[error("resource type manifest `{path}` is not valid UTF-8 at byte {offset}")]
+    ResourceTypeManifestUtf8 {
+        id: Box<ProfileTopologyResourceId>,
+        path: PathBuf,
+        offset: usize,
+    },
+    #[error(
+        "selected resource type package `{package_id}` version `{package_version}` is unresolved at `{path}`"
+    )]
+    UnresolvedResourceTypePackage {
+        id: Box<ProfileTopologyResourceId>,
+        path: PathBuf,
+        package_id: PackageId,
+        package_version: PackageVersion,
+    },
+    #[error("failed to decode resource type manifest `{path}`: {source}")]
+    ResourceTypeManifest {
+        id: Box<ProfileTopologyResourceId>,
+        path: PathBuf,
+        #[source]
+        source: arcweft_resource_manifest::ResourceManifestReport,
+    },
+    #[error("failed to publish the selected resource type manifests: {source}")]
+    ResourceTypePublication {
+        #[source]
+        source: arcweft_resource_manifest::ResourceManifestReport,
+    },
     #[error("failed to decode manifest `{path}`: {source}")]
     Manifest {
         id: Box<ProfileTopologyResourceId>,
@@ -1034,6 +1083,12 @@ impl ProfileTopologyLoadError {
             Self::ManifestNotFound { .. } => ProfileTopologyErrorCode::ManifestNotFound,
             Self::ResourceRead { .. } => ProfileTopologyErrorCode::ResourceRead,
             Self::ResourceUtf8 { .. } => ProfileTopologyErrorCode::ResourceUtf8,
+            Self::ResourceTypeManifestUtf8 { .. }
+            | Self::UnresolvedResourceTypePackage { .. }
+            | Self::ResourceTypeManifest { .. }
+            | Self::ResourceTypePublication { .. } => {
+                ProfileTopologyErrorCode::ResourceTypeManifest
+            }
             Self::Manifest { .. } => ProfileTopologyErrorCode::Manifest,
             Self::ProfileSelection { .. } => ProfileTopologyErrorCode::ProfileSelection,
             Self::ProjectLayout { .. } => ProfileTopologyErrorCode::ProjectLayout,
@@ -1055,6 +1110,22 @@ impl ProfileTopologyLoadError {
             Self::DependencySeed { .. } => ProfileTopologyErrorCode::DependencySeed,
             Self::Limit { .. } => ProfileTopologyErrorCode::Limit,
             Self::ArithmeticOverflow { .. } => ProfileTopologyErrorCode::ArithmeticOverflow,
+        }
+    }
+
+    pub fn resource_manifest_code(
+        &self,
+    ) -> Option<arcweft_resource_manifest::ResourceManifestDiagnosticCode> {
+        use arcweft_resource_manifest::ResourceManifestDiagnosticCode as Code;
+        match self {
+            Self::ResourceTypeManifestUtf8 { .. } => Some(Code::InvalidUtf8),
+            Self::UnresolvedResourceTypePackage { .. } => Some(Code::UnresolvedPackage),
+            Self::ResourceTypeManifest { source, .. }
+            | Self::ResourceTypePublication { source } => source
+                .diagnostics()
+                .first()
+                .map(arcweft_resource_manifest::ResourceManifestDiagnostic::code),
+            _ => None,
         }
     }
 }

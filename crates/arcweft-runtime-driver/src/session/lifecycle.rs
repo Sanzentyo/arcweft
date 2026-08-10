@@ -10,6 +10,13 @@ use super::{
 };
 
 impl BundleSession {
+    /// Final resource registry reconstructed for the active bundle.
+    pub const fn resource_types(
+        &self,
+    ) -> &std::sync::Arc<arcweft_resource_model::registry::ResourceTypeRegistry> {
+        &self.resource_types
+    }
+
     pub fn source_label(&self) -> &str {
         &self.source_label
     }

@@ -3,7 +3,7 @@
 use super::{
     AcceptedCharacterPresentationCatalog, ActiveSessionLocale, Arc, ArcweftBundle,
     ArcweftRuntimeExecutor, AwbcEntryId, AwbcProductStepBuildError, AwbcProgram, BTreeMap,
-    BundleEntryStart, BundleEntryStartError, BundleFormat, BundleImageObject, BundleKind,
+    BundleEntryStart, BundleEntryStartError, BundleImageObject, BundleKind,
     BundlePresentationSnapshot, BundleSession, BundleSessionArtifactIdentity, BundleSessionError,
     BundleSessionOptions, BundleView, BundleViewRuntime, BundleViewRuntimeError,
     DialogueContentCatalog, EntryRuntimeId, FxDefinitions, GenerationBuildError, GenerationId,
@@ -65,9 +65,11 @@ impl BundleSession {
                 message: error.to_string(),
             }
         })?;
+        let engine_resource_types = Arc::clone(&options.engine_resource_types);
         Self::new_with_artifact_identity(
             bundle,
             options,
+            engine_resource_types,
             BundleSessionArtifactIdentity::LogicalBundle { identity },
         )
     }
@@ -82,15 +84,18 @@ impl BundleSession {
             }
         })?;
         let container_identity = view.artifact_identity();
-        let bundle =
-            ArcweftBundle::from_format_slice(BundleFormat::Awfb, bytes).map_err(|error| {
-                BundleSessionError::DecodeBundle {
-                    message: error.to_string(),
-                }
-            })?;
+        let engine_resource_types = Arc::clone(&options.engine_resource_types);
+        let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
+            bytes,
+            engine_resource_types.as_ref(),
+        )
+        .map_err(|error| BundleSessionError::DecodeBundle {
+            message: error.to_string(),
+        })?;
         Self::new_with_artifact_identity(
             &bundle,
             options,
+            engine_resource_types,
             BundleSessionArtifactIdentity::AwfbContainer {
                 identity: container_identity,
             },
@@ -100,6 +105,7 @@ impl BundleSession {
     fn new_with_artifact_identity(
         bundle: &ArcweftBundle,
         options: BundleSessionOptions,
+        engine_resource_types: Arc<arcweft_resource_model::registry::ResourceTypeRegistry>,
         active_artifact_identity: BundleSessionArtifactIdentity,
     ) -> Result<Self, BundleSessionError> {
         let generation = Arc::new(initial_generation(bundle)?);
@@ -123,6 +129,10 @@ impl BundleSession {
         );
         let view_style_palettes = runtime.view_style_palettes;
         let source_label = runtime.source_label.clone();
+        let resource_types = bundle.resource_type_manifests().map_or_else(
+            || Arc::clone(&engine_resource_types),
+            |manifests| Arc::clone(manifests.registry()),
+        );
 
         Ok(Self {
             source_label,
@@ -145,6 +155,8 @@ impl BundleSession {
             view_runtime,
             environment,
             view_style_palettes,
+            engine_resource_types,
+            resource_types,
             options,
             pending_input_events: Vec::new(),
             pending_presentation_inputs: Vec::new(),

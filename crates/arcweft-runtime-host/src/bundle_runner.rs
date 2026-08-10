@@ -3,7 +3,7 @@ use crate::native_task::{
 };
 use crate::stats::{RuntimeExecutorStats, runtime_executor_stats};
 use arcweft_bundle::{
-    ArcweftBundle, BundleAdapterManifest, BundleFormat, BundleImageAnimation, BundleImageAsset,
+    ArcweftBundle, BundleAdapterManifest, BundleImageAnimation, BundleImageAsset,
     BundleImageDimensions, BundleImageFormat, BundleKind, BundleVirtualFile,
 };
 use arcweft_core::awbc::{
@@ -23,6 +23,7 @@ use arcweft_core::step::{
 use arcweft_core::value::RuntimeBinding;
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_interaction_model::audio::AudioCommandEnvelope;
+use arcweft_resource_model::registry::ResourceTypeRegistry;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
@@ -62,8 +63,11 @@ pub fn run_bundle_file_with_native_adapters(
         })
     })?;
     let bundle = run_bundle_runner_phase(&mut phases, "decode_bundle", || {
-        ArcweftBundle::from_format_slice(BundleFormat::Awfb, &bytes)
-            .map_err(BundleRunnerError::DecodeBundle)
+        ArcweftBundle::from_awfb_slice_with_resource_types(
+            &bytes,
+            options.engine_resource_types.as_ref(),
+        )
+        .map_err(BundleRunnerError::DecodeBundle)
     })?;
     execute_bundle_with_native_adapters(&bundle, options, adapter_registrars, &mut phases)
 }
@@ -77,6 +81,7 @@ pub struct BundleRunnerOptions {
     pub mode: BundleRunnerStepMode,
     pub max_ops: usize,
     pub values: Vec<RuntimeBinding>,
+    pub engine_resource_types: std::sync::Arc<ResourceTypeRegistry>,
     pub pure_config: RuntimePureAcceleratorConfig,
 }
 
@@ -89,6 +94,7 @@ impl Default for BundleRunnerOptions {
             mode: BundleRunnerStepMode::Drain,
             max_ops: 32,
             values: Vec::new(),
+            engine_resource_types: std::sync::Arc::new(ResourceTypeRegistry::empty()),
             pure_config: RuntimePureAcceleratorConfig::default(),
         }
     }

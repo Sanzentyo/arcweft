@@ -169,7 +169,8 @@ impl ProductSectionCodecKind {
             | BundleSectionKind::NormalizedSource
             | BundleSectionKind::HotSwapMap
             | BundleSectionKind::PatchPlan
-            | BundleSectionKind::FxDefinitions => None,
+            | BundleSectionKind::FxDefinitions
+            | BundleSectionKind::ResourceTypeManifests => None,
         }
     }
 

@@ -144,6 +144,9 @@ pub(super) fn native_player_runtime_state_for_options(
             max_ops: options.max_ops,
             root_bindings: options.values.clone(),
             root_command_host_calls: RootCommandHostCallCatalog::default(),
+            engine_resource_types: std::sync::Arc::new(
+                arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
+            ),
             presentation_environment: Some(
                 arcweft_presentation::appearance::PresentationEnvironmentValues::ENGINE_DEFAULT,
             ),

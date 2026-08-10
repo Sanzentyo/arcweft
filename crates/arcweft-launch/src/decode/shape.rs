@@ -175,6 +175,7 @@ fn is_known_root(root: &str) -> bool {
         "schema"
             | "package"
             | "build"
+            | "resource-type-manifest"
             | "content-units"
             | "external-modules"
             | "activity-implementations"
@@ -189,6 +190,7 @@ fn field_path_allowed(path: &[String]) -> bool {
             if matches!(
                 root.as_str(),
                 "schema"
+                    | "resource-type-manifest"
                     | "package"
                     | "build"
                     | "content-units"

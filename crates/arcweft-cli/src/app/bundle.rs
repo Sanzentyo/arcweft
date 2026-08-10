@@ -170,6 +170,9 @@ fn bundle_runner_options(options: &RunBundleOptions) -> Result<BundleRunnerOptio
         mode: options.mode.into(),
         max_ops: options.max_ops,
         values: options.values.clone(),
+        engine_resource_types: std::sync::Arc::new(
+            arcweft_resource_model::registry::ResourceTypeRegistry::empty(),
+        ),
         pure_config: RuntimePureAcceleratorConfig::default(),
     })
 }
@@ -329,6 +332,9 @@ pub(in crate::app) fn compile_bundle_from_profile_runtime_plan(
     .with_virtual_files(virtual_files)
     .with_image_assets(image_assets)
     .with_image_objects(image_objects);
+    if let Some(topology) = selection.profile_topology() {
+        bundle = bundle.with_resource_type_manifests(topology.resource_type_manifests().clone());
+    }
     if let Some(catalog) = compiled.character_presentation_catalog {
         bundle = bundle.with_character_presentation_catalog(catalog.as_ref().clone());
     }
@@ -659,8 +665,10 @@ fn run_patched_bundle_with_native_adapters(
         ExitCode::FAILURE
     })?;
     let target_bytes = materialized.into_bytes();
-    let target_bundle = ArcweftBundle::from_format_slice(BundleFormat::Awfb, &target_bytes)
-        .map_err(|error| {
+    let engine_resource_types = arcweft_resource_model::registry::ResourceTypeRegistry::empty();
+    let target_bundle =
+        ArcweftBundle::from_awfb_slice_with_resource_types(&target_bytes, &engine_resource_types)
+            .map_err(|error| {
             eprintln!("error: failed to decode patched target bundle: {error}");
             ExitCode::FAILURE
         })?;

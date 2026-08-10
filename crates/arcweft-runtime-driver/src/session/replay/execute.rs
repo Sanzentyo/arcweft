@@ -7,7 +7,7 @@
 use super::super::construction::selected_awbc_entry;
 use super::super::root_command::RootCommandHostResultRoute;
 use super::super::{
-    ArcweftBundle, BundleFormat, BundleSession, BundleSessionArtifactIdentity, BundleSessionError,
+    ArcweftBundle, BundleSession, BundleSessionArtifactIdentity, BundleSessionError,
     BundleSessionOptions, BundleStepInput, BundleView, ReadBudget, RootEventInput,
     RuntimeClockStep, RuntimeHostCallError, RuntimeHostCallErrorKind, RuntimeHostCallResult,
 };
@@ -59,12 +59,13 @@ impl BundleSession {
         let artifact = BundleSessionArtifactIdentity::AwfbContainer {
             identity: view.artifact_identity(),
         };
-        let bundle =
-            ArcweftBundle::from_format_slice(BundleFormat::Awfb, bytes).map_err(|error| {
-                RootReplayError::ArtifactInspection {
-                    message: error.to_string(),
-                }
-            })?;
+        let bundle = ArcweftBundle::from_awfb_slice_with_resource_types(
+            bytes,
+            options.engine_resource_types.as_ref(),
+        )
+        .map_err(|error| RootReplayError::ArtifactInspection {
+            message: error.to_string(),
+        })?;
         let replay_options = options.clone();
         replay_root_trace_with(&bundle, &replay_options, trace, artifact, || {
             BundleSession::from_awfb_bytes(bytes, options)
