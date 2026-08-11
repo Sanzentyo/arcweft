@@ -8,6 +8,17 @@
 use super::{RuntimeFunctionValue, RuntimeIterator, RuntimeSeq, RuntimeValue};
 use serde::{Deserialize, Serialize};
 
+#[allow(dead_code, reason = "the canonical snapshot consumer lands in G1.2-D")]
+mod binary;
+mod path;
+mod slot;
+
+pub use path::{
+    MAX_RUNTIME_VALUE_PATH_SEGMENTS, RuntimeValuePath, RuntimeValuePathError,
+    RuntimeValuePathSegment,
+};
+pub use slot::RuntimeOwnedSlotId;
+
 /// Whether a runtime value may be duplicated without transferring authority.
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[serde(rename_all = "snake_case")]

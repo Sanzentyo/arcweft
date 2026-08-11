@@ -1,0 +1,31 @@
+error[E0423]: cannot initialize a tuple struct which contains private fields
+ --> tests/ui/runtime_ownership_raw_identity_constructors_are_private.rs:8:22
+  |
+8 |     let _execution = ExecutionInstanceId(NonZeroU64::MIN);
+  |                      ^^^^^^^^^^^^^^^^^^^
+  |
+note: constructor is not visible here due to private fields
+ --> src/runtime_id.rs
+  |
+  |         pub struct $name(NonZeroU64);
+  |                          ^^^^^^^^^^ private field
+...
+  | runtime_u64_identity!(ExecutionInstanceId);
+  | ------------------------------------------ in this macro invocation
+  = note: this error originates in the macro `runtime_u64_identity` (in Nightly builds, run with -Z macro-backtrace for more info)
+help: you might have meant to use the `from_allocated` associated function
+  |
+8 |     let _execution = ExecutionInstanceId::from_allocated(NonZeroU64::MIN);
+  |                                         ++++++++++++++++
+
+error[E0423]: cannot initialize a tuple struct which contains private fields
+ --> tests/ui/runtime_ownership_raw_identity_constructors_are_private.rs:9:18
+  |
+9 |     let _field = RuntimeRecordFieldId(NonZeroU32::MIN);
+  |                  ^^^^^^^^^^^^^^^^^^^^
+  |
+note: constructor is not visible here due to private fields
+ --> src/value/record_id.rs
+  |
+  | pub struct RuntimeRecordFieldId(NonZeroU32);
+  |                                 ^^^^^^^^^^ private field

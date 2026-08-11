@@ -20,6 +20,7 @@ mod nominal_record;
 mod option_value;
 pub mod ownership;
 mod range;
+mod record_id;
 mod sequence_constructors;
 mod sequence_impls;
 
@@ -30,6 +31,7 @@ pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
 pub use range::{RuntimeIterator, RuntimeRange, RuntimeRangeIterator};
+pub use record_id::{RuntimeRecordFieldId, RuntimeRecordFieldIdError};
 pub use sequence_constructors::{
     runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
     runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
