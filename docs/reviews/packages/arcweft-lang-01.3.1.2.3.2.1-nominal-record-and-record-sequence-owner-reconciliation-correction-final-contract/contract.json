@@ -1,0 +1,36 @@
+{
+  "archive": "arcweft-lang-01.3.1.2.3.2.1-nominal-record-and-record-sequence-owner-reconciliation-correction-final-contract.zip",
+  "decision_rows": 44,
+  "forbidden": [
+    "RuntimeNominalRecordSchema alias/declaration",
+    "RecordSeqError alias/declaration",
+    "production overlay",
+    "compatibility constructor",
+    "dual reader",
+    "second record value model",
+    "side field ID vector",
+    "core reverse dependency",
+    "name-based visitor fallback"
+  ],
+  "foundation_commit": "08bc30c0c8eac77152a42e92a5ca2f83280b94bc",
+  "inventory_rows": 48,
+  "open_questions": 0,
+  "owners": {
+    "layout_hash_algorithm": "arcweft_core::entry::RuntimeTypeSchema::try_layout_hash",
+    "layout_hash_projection": "arcweft_compiler::project::entry_runtime::RuntimeSchemaProjection",
+    "nominal_record_layout": "arcweft_core::value::RuntimeNominalRecordLayout",
+    "nominal_runtime_value": "arcweft_core::value::RuntimeNominalRecordValue",
+    "persistent_entry_schema": "arcweft_core::entry::RuntimeTypeSchema",
+    "record_sequence_error": "arcweft_core::value::RuntimeSeqError"
+  },
+  "parent_sha256": {
+    "affine": "d053fae201afa104f7db9914aebbc08f2456875d1229f5325f86235d4bc0ea94",
+    "generic": "e95de2a9958000034a48f8c5228c8a4ff17f62226195cce4c0ef93e398c816e4",
+    "view_abi1_correction": "a52453fd07fdacf10205cbf621077f923ded714b83e4c64b9b69c52a7350ff7f"
+  },
+  "production_changes": 0,
+  "sequence": "Lang-01.3.1.2.3.2.1",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "target_commit": "2585f527b02808305b3a8cab0442eb522e8d0352",
+  "test_rows": 81
+}

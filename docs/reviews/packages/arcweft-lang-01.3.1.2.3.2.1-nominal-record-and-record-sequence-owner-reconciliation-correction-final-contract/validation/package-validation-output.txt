@@ -1,0 +1,1 @@
+{"decision_rows": 44, "file_count": 39, "inventory_rows": 48, "manifest": "PASS", "symbol_added": 21, "test_rows": 81, "zip": "NOT_REQUESTED"}

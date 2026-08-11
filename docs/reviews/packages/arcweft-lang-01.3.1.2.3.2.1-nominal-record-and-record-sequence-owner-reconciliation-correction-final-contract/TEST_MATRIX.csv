@@ -1,0 +1,82 @@
+id,area,gate,kind,setup,action,expected,owner
+NREC-001,layout,A1,positive,"layout [a,z]",construct,"fields stay [a,z]; IDs 1,2",core unit
+NREC-002,layout,A1,positive,two equal structural layouts in different Arcs,compare,equal; pointer identity irrelevant,core unit
+NREC-003,layout,A1,negative,"layout [a,a]",construct,DuplicateFieldName(a),core unit
+NREC-004,layout,A1,boundary,empty layout,construct,accepted; no fields/IDs,core unit
+NREC-005,layout,A1,boundary,synthetic count u32::MAX+1,preflight,TooManyFields before scan,model/unit
+NREC-006,layout,A1,negative,"same interning key, different field predicate",publish facts,ConflictingNominalRecordLayout,runtime-plan unit
+NREC-007,layout,A1,negative,descriptor nominal differs from resolved nominal,try_new,NominalIdentity,runtime-plan unit
+NREC-008,layout,A1,negative,descriptor semantic identity differs,try_new,SemanticIdentity,runtime-plan unit
+NREC-009,layout,A1,negative,descriptor layout hash differs,try_new,LayoutIdentity,runtime-plan unit
+NREC-010,layout,A1,negative,nested nominal absent from projected layout catalog,publish,UnresolvedNominalLayout; no fallback,compiler/runtime-plan integration
+NREC-011,checked type,A1,positive,nominal value exact type/layout,accepts_value,true,core unit
+NREC-012,checked type,A1,negative,"same nominal, different layout",accepts_value,false,core unit
+NREC-013,checked type,A1,negative,"different nominal, same layout",accepts_value,false,core unit
+NREC-014,checked type,A1,boundary,nested type at depth limit,accepts_value,existing limit preserved,core unit
+NREC-015,initializer,A2,positive,"layout [a,z], authored [z,a]",admit,"entries stay authored with IDs 2,1",core unit
+NREC-016,initializer,A2,positive,same initializer with effect log,evaluate,"effect log z,a; stored values a,z",engine integration
+NREC-017,initializer,A2,negative,"authored [a,a,z]",admit,DuplicateName on second a,core unit
+NREC-018,initializer,A2,negative,"authored [a] for [a,z]",admit,MissingField id=2 z,core unit
+NREC-019,initializer,A2,negative,"authored [a,q,z]",admit,UnknownField(q),core unit
+NREC-020,initializer,A2,precedence,"authored [q,q]",admit,first q UnknownField; later duplicate not reached,core unit
+NREC-021,initializer,A2,tamper,"stored name z carries ID 1 under [a,z]",validate plan,FieldIdentityMismatch expected 2 actual 1,root/plan unit
+NREC-022,initializer,A2,tamper,stored entries duplicate name/ID,validate plan,DuplicateName before missing,root/plan unit
+NREC-023,lowering,A2,positive,nominal HIR record,lower,"RuntimeExpr::NominalRecord, never anonymous Record",runtime-plan unit
+NREC-024,lowering,A2,structural,search typed final lowering,inspect/compile,identity-only nominal record branch absent,structure test
+NREC-025,pattern,A2,positive,"layout [a,z], pattern fields [z]","match value [a,z]","z uses ID 2, not positional field 1",core unit
+NREC-026,pattern,A2,negative,"same nominal ID, wrong layout",match,false before child matching,core unit
+NREC-027,pattern,A2,positive,nominal pattern with rest,match extra layout fields,accepted per existing rest semantics,core unit
+NREC-028,pattern,A2,structural,nominal matcher source,compile/test,positional zip deleted,structure test
+NREC-029,anonymous,A3,positive,"authored fields [z,a]",try_record,"IDs z=1,a=2",core unit
+NREC-030,anonymous,A3,negative,"fields [a,a]",try_record,DuplicateName; no value published,core unit
+NREC-031,anonymous,A3,negative,"fields [a,b,a]",try_record,DuplicateName on third field,core unit
+NREC-032,anonymous,A3,boundary,zero fields,try_record,accepted empty record,core unit
+NREC-033,anonymous,A3,boundary,synthetic count u32::MAX+1,preflight,TooManyFields,model/unit
+NREC-034,column,A3,positive,"columns [z,a], rows 2",record_columns,"IDs 1,2 in stored order",core unit
+NREC-035,column,A3,negative,"columns [a,a], both len 2",record_columns,DuplicateRecordField(a),core unit
+NREC-036,column,A3,precedence,second a has wrong length,record_columns,ColumnLength ordinal 1 before duplicate,core unit
+NREC-037,column,A3,negative,first column wrong length,record_columns,ColumnLength ordinal 0,core unit
+NREC-038,column,A3,boundary,synthetic count u32::MAX+1,preflight,TooManyRecordFields,model/unit
+NREC-039,column,A3,negative,synthetic ID conversion failure,admit,InvalidRecordFieldIdentity before length/duplicate,model/unit
+NREC-040,column,A3,positive,column -> row reconstruction,into_values,same IDs/names preserved,core unit
+NREC-041,column,A3,negative,rows differ by field IDs but names same,columnarize,fallback to Values; no repair,core unit
+NREC-042,nominal value,A4,positive,"layout [a,z], values [va,vz]",try_from_accepted_layout,type/layout copied; fields unchanged,core unit
+NREC-043,nominal value,A4,negative,one value for two-field layout,construct,FieldCount,core unit
+NREC-044,nominal value,A4,negative,field a wrong checked type,construct,FieldType id=1 a,core unit
+NREC-045,nominal value,A4,precedence,wrong count and wrong first type,construct,FieldCount,core unit
+NREC-046,nominal validate,A4,negative,wrong nominal and layout,validate,Type,core unit
+NREC-047,nominal validate,A4,negative,"correct nominal, wrong layout/count",validate,Layout,core unit
+NREC-048,nominal validate,A4,negative,"correct identity, wrong count/type",validate,FieldCount,core unit
+NREC-049,nominal validate,A4,negative,"correct shape, first wrong type",validate,FieldType first layout ordinal,core unit
+NREC-050,nominal value,A4,positive,"field_id ordinals 0,1",query,"IDs 1,2; ordinal 2 None",core unit
+NREC-051,visitor,A5,positive,"anonymous [z,a]",walk,"RecordField(1), RecordField(2)",core unit
+NREC-052,visitor,A5,positive,"record columns [z,a]",walk,"RecordColumn(1), RecordColumn(2)",core unit
+NREC-053,visitor,A5,positive,"nominal layout [a,z], authored [z,a]",walk,"NominalRecordField(1), (2) in layout order",core unit
+NREC-054,visitor,A5,negative,change diagnostic names only,walk/compare,path identities unchanged,core unit
+NREC-055,visitor,A5,structural,all record walkers,audit,one owner/delegation; no name recovery,structure test
+NREC-056,visitor,A5,parity,full RuntimeValue matrix,classify vs visitor,same ownership result/path order,core property test
+NREC-057,canonical,A6,golden,anonymous record canonical bytes,encode,unchanged from baseline,core golden
+NREC-058,canonical,A6,golden,nominal record canonical bytes,encode,unchanged type/layout/layout-order encoding,core golden
+NREC-059,canonical,A6,positive,same apparent fields anonymous vs nominal,digest,distinct identity and bytes,core golden
+NREC-060,canonical,A6,positive,"authored [z,a], layout [a,z]",encode nominal,"layout order, not authored order",core golden
+NREC-061,codec,A6,golden,RuntimeRecordFieldId 1 and max,fixed LE,01 00 00 00 and ff ff ff ff,existing focused tests
+NREC-062,codec,A6,golden,RecordField/RecordColumn/NominalRecordField paths,fixed LE/order,existing tags/order unchanged,existing focused tests
+NREC-063,restore,A6,tamper,value type/layout/count malformed,restore,typed precedence before traversal/activation,driver/save integration
+NREC-064,restore,A6,tamper,plan initializer name/ID mismatch,load bundle,FieldIdentityMismatch; no repair,bundle integration
+NREC-065,dependency,A6,structural,core Cargo graph/imports,inspect metadata,no HIR/sema/runtime-plan/compiler dependency,metadata test
+NREC-066,ABI,A6,structural,AWBC artifact,encode/verify,ABI 1/codec 8; no allocation/dual reader,AWBC integration
+NREC-067,compile fail,A3,compile_fail,external RuntimeFieldValue literal,compile,private fields reject,trybuild
+NREC-068,compile fail,A3,compile_fail,external RecordSeqField literal,compile,private fields reject,trybuild
+NREC-069,compile fail,A4,compile_fail,RuntimeNominalRecordValue::new,compile,method absent,trybuild
+NREC-070,compile fail,A3,compile_fail,RecordSeq::new,compile,method absent,trybuild
+NREC-071,compile fail,A2,compile_fail,raw RuntimeNominalRecordFieldExpr literal,compile,private fields reject,trybuild
+NREC-072,compile fail,A1,compile_fail,construct layout field directly,compile,private fields/no ctor reject,trybuild
+NREC-073,gate,A1,full_gate,A1 tree,cargo check/clippy/fmt,green,workspace
+NREC-074,gate,A2,full_gate,A2 tree,cargo check/clippy/fmt,green,workspace
+NREC-075,gate,A3,full_gate,A3 tree,core all-features + workspace check/clippy,green,workspace
+NREC-076,gate,A4,full_gate,A4 tree,core all-features + workspace check/clippy,green,workspace
+NREC-077,gate,A5,full_gate,A5 tree,core/ownership/parity + workspace check/clippy,green,workspace
+NREC-078,gate,A6,full_gate,final tree,workspace tests/Tier2/structure/fmt/diff,green,workspace
+NREC-079,layout hash,A1,parity,representative TypeShape matrix,sema nominal_schema vs projected RuntimeTypeSchema::try_layout_hash,all 32 bytes equal,sema/compiler/core integration
+NREC-080,layout hash,A1,negative,tampered checked NominalSchemaDigest,project RuntimeNominalRole,NominalSchemaDigestMismatch before role publication,compiler integration
+NREC-081,layout hash,A1,structural,compiler hash call sites,audit,no direct TypeLayoutHash::from_bytes(schema_digest); no local blake3,structure test

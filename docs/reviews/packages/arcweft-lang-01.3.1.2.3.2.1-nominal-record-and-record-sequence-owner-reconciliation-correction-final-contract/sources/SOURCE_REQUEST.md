@@ -1,0 +1,143 @@
+# Lang-01.3.1.2.3.2.1 — nominal-record and record-sequence owner reconciliation correction
+
+## Sequence position and precedence
+
+This is Lang-01.3.1.2.3.2.1. It is a narrow mandatory correction to the
+returned Lang-01.3.1.2.3.2 generic ownership identity and slot contract. It
+must return before G1.2-A record-carrier admission or the shared value-path
+visitor proceeds.
+
+The following production substrate is accepted at Git commit
+`08bc30c0c8eac77152a42e92a5ca2f83280b94bc` and must not be redesigned without
+a concrete repository-evidenced defect:
+
+- the two-point ownership classifier shipped at
+  `b76465c128322be2d5e66398bc6c30794ca0276f`;
+- the private-field nonzero runtime identity wrappers and cursor;
+- `RuntimeRecordFieldId` as a one-based accepted field identity;
+- the complete eight-variant `RuntimeOwnedSlotId`;
+- the ten-segment `RuntimeValuePath`, manual ordering, strict human-readable
+  Serde, and independent fixed-LE codec; and
+- the returned package's execution/local/transaction/snapshot/activation
+  decisions outside the two unresolved owners below.
+
+The inspected returned archive is
+`arcweft-lang-01.3.1.2.3.2-generic-ownership-identity-and-slot-reconciliation-correction-final-contract.zip`,
+SHA-256
+`e95de2a9958000034a48f8c5228c8a4ff17f62226195cce4c0ef93e398c816e4`.
+
+## Split reason
+
+The returned contract marks `RuntimeNominalRecordSchema` and `RecordSeqError`
+as existing owners and uses both in exact G1.2-A APIs. Exhaustive searches of
+current production and all Git history find no declaration of either symbol.
+The archive references them but does not define them.
+
+Nearby types do not close the result:
+
+- `RuntimeNominalRecordValue` currently stores `type_id`, `layout`, and
+  `fields`, and exposes unchecked public `new(type_id, layout, fields)`;
+- `RuntimeNominalRole` is an entry-role owner carrying identity, layout, and a
+  `RuntimeTypeSchema`, not the specified core schema owner;
+- sema `AcceptedNominalRecord` and dialogue schemas belong to different layers
+  or domains; and
+- `RecordSeq::new` currently shares `RuntimeSeqError` with tuple-column
+  storage. Renaming it, splitting it, or adding a new error changes public
+  variants and deterministic failure selection.
+
+Choosing any mapping locally would decide owner, `Arc` sharing, validation,
+error precedence, and later snapshot shape. This request is independently
+throwable because no other closed identity, transaction, activation, View, or
+Stream result needs redesign.
+
+## Required decisions
+
+1. Define the exact final owner and declaration for the type currently named
+   `RuntimeNominalRecordSchema`, or replace that name with the exact existing
+   production owner that must be consumed.
+2. Give its exact fields, visibility, traits, constructors, accessors, sharing
+   model, and equality/identity semantics. State whether `Arc` is required and
+   which layer may construct it.
+3. Reconcile it explicitly with current `RuntimeNominalRecordValue`,
+   `RuntimeNominalRole`, `RuntimeTypeSchema`, sema accepted nominal-record
+   facts, and canonical nominal identity/layout owners. No alias or copied
+   schema is accepted.
+4. Define exactly which checks
+   `RuntimeNominalRecordValue::try_from_accepted_layout` performs: schema/value
+   arity, initializer names, duplicate/missing/extra fields, authored versus
+   layout order, nominal identity, and field-value type/layout checks.
+5. Fix the exact constructor/accessor/error API and the migration of current
+   public unchecked `RuntimeNominalRecordValue::new`. State the compile-clean
+   cut in which every current caller moves and `new` is deleted.
+6. Decide whether record-column admission returns the existing
+   `RuntimeSeqError` or a new `RecordSeqError`. If new, define the complete enum
+   and the deletion/splitting migration; if existing, correct every normative
+   signature and symbol-closure row.
+7. Define exact record-sequence error variants and precedence for column
+   length, duplicate name, too many fields, and field-identity overflow.
+   Preserve the accepted stored column order and one-based field IDs.
+8. State how anonymous, columnar, and nominal record admission exposes one
+   validated carrier shape to the shared value-path visitor without a side
+   table, fallback reader, or parallel record model.
+9. Confirm the compile-clean trait schedule: live carrier `Clone` and Serde may
+   remain only while enclosing `RuntimeValue`/`RuntimeSeq` require them, with
+   final removal at the already accepted parent stages rather than a new
+   compatibility boundary.
+10. Return a corrected producer/consumer/deletion inventory and the exact
+    G1.2-A continuation order from the accepted representation foundation.
+
+## Required producer and consumer inventory
+
+Inspect and close at least:
+
+- `arcweft_core::value::{RuntimeValue, RuntimeFieldValue, RuntimeSeq,
+  RecordSeq, RecordSeqField, RuntimeNominalRecordValue,
+  RuntimeNominalRecordError, RuntimeSeqError}`;
+- `arcweft_core::value::ownership` record and nominal path traversal;
+- core pattern, schema, pure evaluator, structured engine, AWBC verifier/VM,
+  root/replay validation, nesting, and sequence materialization consumers;
+- entry-role `RuntimeNominalRole` and `RuntimeTypeSchema`;
+- HIR/sema/runtime-plan nominal layout and initializer producers, without a
+  reverse dependency from core; and
+- snapshot/bundle/save codec consumers affected by schema ownership or a
+  changed error/carrier shape.
+
+## Required tests
+
+- anonymous, columnar, and nominal field IDs are contiguous one-based values
+  in accepted authored/layout/stored order;
+- nominal initializer reordering produces layout-order fields and paths;
+- duplicate, missing, extra, arity, column-length, too-many-field, and identity
+  overflow cases select the exact typed error in fixed precedence;
+- unchecked nominal construction and raw record carrier construction fail to
+  compile after the selected cut;
+- current nominal/anonymous canonical identity and byte distinctions remain;
+- the shared visitor produces `RecordField`, `RecordColumn`, and
+  `NominalRecordField` paths without a name-based fallback;
+- no core dependency on HIR, sema, runtime-plan, or entry-role schema owners;
+  and
+- current core tests plus workspace check/Clippy remain green at each stated
+  compile-clean gate.
+
+## Constraints and non-goals
+
+- Do not redesign the accepted ownership lattice, runtime IDs, record-field
+  representation, slot union, path tags/order/codec, transaction contract,
+  activation contract, View result, ABI 1/codec 8, or Stream publication order.
+- Do not add a type alias for an absent owner, a copied schema, a second record
+  enum, a side ID vector, a dual reader, or a compatibility constructor.
+- Do not move entry-role or sema owners into core and do not add a reverse
+  dependency.
+- Do not remove enclosing live-value Clone/Serde earlier than the accepted
+  parent migration permits, and do not preserve them after the final deletion
+  stage.
+- Do not include a production overlay.
+
+## Expected output
+
+Return one independently usable design-only archive named
+`arcweft-lang-01.3.1.2.3.2.1-nominal-record-and-record-sequence-owner-reconciliation-correction-final-contract.zip`.
+It must contain `OPEN_QUESTIONS=0`, exact Rust-shaped owner/API/error decisions,
+a narrow supersession delta against Lang-01.3.1.2.3.2, complete symbol closure,
+producer/consumer/deletion inventory, corrected G1.2-A continuation order, and
+positive/negative/compile-fail test matrices. Keep all sidecars inside the ZIP.
