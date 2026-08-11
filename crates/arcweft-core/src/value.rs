@@ -18,6 +18,7 @@ mod integer;
 mod nesting;
 mod nominal_record;
 mod option_value;
+pub mod ownership;
 mod range;
 mod sequence_constructors;
 mod sequence_impls;
