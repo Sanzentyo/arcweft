@@ -1,0 +1,10 @@
+STATUS=PASS
+EXPECTED_ARCHIVE=arcweft-lang-01.3.1.2.3.2.1.1-opaque-composite-checked-type-owner-reconciliation-correction-final-contract.zip
+EXPECTED_COMMIT=a38c736ba577172b1f4c3fe1a0c3e85443e97e6f
+OPEN_QUESTIONS_EXACT=none\n
+REFERENCE_MODEL=20/20 PASS
+TEST_ROWS=150
+PARITY_ROWS=20
+INVENTORY_ROWS=47
+VALIDATOR=validation/validate_package.py
+NOTE=Final ZIP SHA-256 is intentionally reported outside the archive to avoid self-reference.

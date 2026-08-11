@@ -1,0 +1,24 @@
+# Native/AWBC parity matrix
+
+| ID | Case | Native | AWBC | Required equivalence |
+| --- | --- | --- | --- | --- |
+| PAR-001 | exact opaque value | RuntimeCheckedType::accepts_value | Awbc fiber runtime_value_matches_type | same producer+identity accepts |
+| PAR-002 | exact identity mismatch | false | false | reject |
+| PAR-003 | producer mismatch | false | false | reject |
+| PAR-004 | producer-wide expected, exact same producer | true | true | accept |
+| PAR-005 | producer-wide expected, foreign producer | false | false | reject |
+| PAR-006 | raw payload under opaque expected | false | false | reject |
+| PAR-007 | Result Ok complete owner | full ok+error type | one Variant row | same owner |
+| PAR-008 | Result Err complete owner | same full type | same Variant row | same owner |
+| PAR-009 | Option None | complete item type retained | complete Option Variant row | same owner |
+| PAR-010 | sequence opaque element mismatch | false | false | reject |
+| PAR-011 | tuple opaque position mismatch | false | false | reject |
+| PAR-012 | choice opaque alternative | true if one accepts | true if one accepts | same |
+| PAR-013 | MakeVariant payload | case checked type accepts | types_compatible accepts | same relation |
+| PAR-014 | pattern scrutinee | complete owner equality | complete owner type ID | same |
+| PAR-015 | branch exact-to-wide | semantic join emits wide | wide expected accepts exact | same |
+| PAR-016 | call/return exact-to-wide | owner accepts_owner | types_compatible | same |
+| PAR-017 | opaque constant | owner.try_wrap | exact opaque constant materializer | same value |
+| PAR-018 | nesting depth | core depth traversal enters payload | VM/restore invokes same traversal | same limit |
+| PAR-019 | canonical unsupported payload | encoding error | constant/verifier or encoding error | no fallback |
+| PAR-020 | producer decode | inherent producer decoder | same RuntimeOpaqueValue passed to producer | same validation |

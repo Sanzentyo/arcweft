@@ -1,0 +1,27 @@
+path,class,bytes,lines,sha256,inspection
+2026-08-12-lang-01.3.1.2.3.2.1.1-opaque-composite-checked-type-owner-reconciliation-correction.md,input/authority,8496,157,bb984ead9acd50244fc920827b66e2f7274e9afda32a3dbd090745471ab9581e,byte-inspected
+arcweft_root_AGENTS.md,input/authority,5412,106,90bae8bface6d390246538c60842da7d71d1ebd576ae3fa403019caa35a91498,byte-inspected
+Rust Skill.txt,input/authority,5045,57,1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665,byte-inspected
+parent_FINAL_CONTRACT.md,input/authority,13416,280,f55914cdf3063ff12dca01f41bf266cff5cebb8c312137b1558dd9c61f629d3f,byte-inspected
+parent_RUST_OWNERS_AND_APIS.md,input/authority,18630,630,a5441a381f7c1ca9e2d3e73f6af1a0576cb0304e31bbb043a8954c2ed5b3c6b3,byte-inspected
+parent_NOMINAL_LAYOUT_AND_PROJECTION.md,input/authority,8007,180,a82a62390e97c9eb40635324c3308c8ae9e42ab2f7b65a3aa9c8f2e59b5006cd,byte-inspected
+crates/arcweft-core/src/awbc/codec/types.rs,exact-commit source snapshot,18849,558,0a56d879d1bd7ae35ee758dc86a30f2a74eba1c5647d10bdd078ca87b47d7e26,byte-inspected
+crates/arcweft-core/src/awbc/codec.rs,exact-commit source snapshot,7172,208,d91e649d2eac5daae2e9bee40aa598b70c369b23d364202f3db9c41f7515beb1,byte-inspected
+crates/arcweft-core/src/awbc/fiber.rs,exact-commit source snapshot,74168,2072,868e911a0cd414e1212d0c71878d20f010a123acb18eafb68fe932b14e968c92,byte-inspected
+crates/arcweft-core/src/awbc/schema.rs,exact-commit source snapshot,63799,2146,3837106f5b571256ba56a040dbfd410a5cbcbff857b3d7c46df526c4620f1a09,byte-inspected
+crates/arcweft-core/src/awbc/verify/structure.rs,exact-commit source snapshot,76106,2012,a87517f0218c3e0759e8dea5200660293c16fbf681df425a28be3105dd38c12f,byte-inspected
+crates/arcweft-core/src/pattern.rs,exact-commit source snapshot,17122,509,e8d7feae80e062cf55eef50ad1125c1d0c8aab70a41d74d6e1993b8d4cf532ae,byte-inspected
+crates/arcweft-core/src/value.rs,exact-commit source snapshot,84376,2493,cfb6f24e50f17932a63f5cf9c818e1b92c9fdbc221477f5fbcb8b633d94b43e1,byte-inspected
+crates/arcweft-dialogue/src/character_dialogue/schema.rs,exact-commit source snapshot,34534,1007,78c1a287cb442d2fdb0a9be45d42b497a164c19c71d6a03944cbfa956e5d000d,byte-inspected
+crates/arcweft-lang-sema/src/character_dialogue.rs,exact-commit source snapshot,11416,349,76c2f77145ea034276b040c3c7e1344cf640a803b38bbbad0223aa29436b9724,byte-inspected
+crates/arcweft-lang-sema/src/env/nominal.rs,exact-commit source snapshot,36282,1119,e924bece98e6317728e0b3651e4ed74171e648feff695760a09de66ddc23521e,byte-inspected
+crates/arcweft-lang-sema/src/env/rust_metadata.rs,exact-commit source snapshot,25660,782,a34a725a335b7b454b5727eddef38d7acdaaf7c3f813bf3e8860254ae11f8e0f,byte-inspected
+crates/arcweft-lang-sema/src/registration/descriptor.rs,exact-commit source snapshot,12247,324,a3c77bf627ead8a29481480bed6ede06d7248c3b0cd7ab66a6976b9449baab4a,byte-inspected
+crates/arcweft-lang-sema/src/registration/model.rs,exact-commit source snapshot,40053,1134,038b9ca47bf44c16cfc02aef98750a4b40e73e38dad014e6a27e7ce0e7906a28,byte-inspected
+crates/arcweft-lang-sema/src/registration/registrar.rs,exact-commit source snapshot,74106,1800,b0eb0441bc8c1cf85e363f9c93093d8fd43eeed0b98055f0c3a7c9e6c1b6286e,byte-inspected
+crates/arcweft-lang-sema/src/types/character_dialogue.rs,exact-commit source snapshot,3481,115,73da11e2c1b82c9b7e1cb9bef2a20bc1d5fb309b6923e75400178661d78650eb,byte-inspected
+crates/arcweft-lang-sema/src/types/nominal.rs,exact-commit source snapshot,9032,293,055333b581614d13de33ca1bbbb8d1bd94cf153332d29667d4ea319f00f7b8b0,byte-inspected
+crates/arcweft-lang-sema/src/types.rs,exact-commit source snapshot,32361,1013,984df396eca07e1067dfeff40f4bc781cdd99d60d768f85e0be44bc07a6e1c96,byte-inspected
+crates/arcweft-runtime-plan/src/awbc_lower/expr.rs,exact-commit source snapshot,44657,1207,476717484a95b08b9a8b34b8ecdebea78cb3ada04f6b058081d760fbdf1698f6,byte-inspected
+crates/arcweft-runtime-plan/src/awbc_lower/pattern.rs,exact-commit source snapshot,11367,280,9be79682b17226ac1f8aa22e3ecfd8bc99c0ef17b64e78c59ed32821e5239720,byte-inspected
+crates/arcweft-runtime-plan/src/semantic_facts.rs,exact-commit source snapshot,73532,2040,0586061ab665750d71b5b3495f76138bfd4ea3e3f07bbff9f23c50b1ad67bace,byte-inspected

@@ -1,0 +1,106 @@
+{
+  "archive": "arcweft-lang-01.3.1.2.3.2.1.1-opaque-composite-checked-type-owner-reconciliation-correction-final-contract.zip",
+  "contract": "Lang-01.3.1.2.3.2.1.1",
+  "counts": {
+    "decisions": 10,
+    "inventory": 47,
+    "parity": 20,
+    "tests": 150
+  },
+  "decisions": [
+    {
+      "id": "D-01",
+      "question": "Opaque checked representation",
+      "selected": "RuntimeCheckedType::Opaque { owner } plus exact RuntimeValue::Opaque",
+      "status": "closed"
+    },
+    {
+      "id": "D-02",
+      "question": "Composite recursion",
+      "selected": "complete recursive checked-type tree; opaque generic atomic cut",
+      "status": "closed"
+    },
+    {
+      "id": "D-03",
+      "question": "Variant ownership",
+      "selected": "complete owner; selected case descriptor only; no Never sentinel",
+      "status": "closed"
+    },
+    {
+      "id": "D-04",
+      "question": "Native acceptance",
+      "selected": "one inherent accepts_value; fail closed without wrapper/producer",
+      "status": "closed"
+    },
+    {
+      "id": "D-05",
+      "question": "AWBC",
+      "selected": "ABI1/codec11, type tag23, constant tag18, same relation",
+      "status": "closed"
+    },
+    {
+      "id": "D-06",
+      "question": "Producers",
+      "selected": "accepted opaque rows, CharacterDialogue exact/wide, standard errors opaque",
+      "status": "closed"
+    },
+    {
+      "id": "D-07",
+      "question": "Type reconciliation",
+      "selected": "Named runtime failure; producer-bearing Opaque shape; no schema",
+      "status": "closed"
+    },
+    {
+      "id": "D-08",
+      "question": "RuntimeResolvedVariant",
+      "selected": "checked_selection only; old helpers deleted",
+      "status": "closed"
+    },
+    {
+      "id": "D-09",
+      "question": "Persistence",
+      "selected": "Serde changes, value tag16, save3, no dual reader",
+      "status": "closed"
+    },
+    {
+      "id": "D-10",
+      "question": "A1 order",
+      "selected": "four compile-clean subgates; resume parent after A1.4",
+      "status": "closed"
+    }
+  ],
+  "implementation_performed": false,
+  "open_questions": 0,
+  "open_result_changing_decisions": 0,
+  "parent": {
+    "archive_sha256": "4b15a5eaea31663a9323f41f75345b2acb6faa0ea3a61784eeeabd482a13966a"
+  },
+  "production_overlay_included": false,
+  "repository": {
+    "branch": "main",
+    "commit": "a38c736ba577172b1f4c3fe1a0c3e85443e97e6f",
+    "name": "Sanzentyo/arcweft"
+  },
+  "status": "READY_FOR_IMPLEMENTATION",
+  "tags": {
+    "admission_exact": 0,
+    "admission_producer_wide": 1,
+    "awbc_constant_opaque": 18,
+    "awbc_runtime_type_opaque": 23,
+    "runtime_value_opaque": 16
+  },
+  "versions": {
+    "awbc_abi": {
+      "from": 1,
+      "to": 1
+    },
+    "awbc_codec": {
+      "from": 10,
+      "to": 11
+    },
+    "session_save": {
+      "from": 2,
+      "to": 3
+    }
+  }
+}

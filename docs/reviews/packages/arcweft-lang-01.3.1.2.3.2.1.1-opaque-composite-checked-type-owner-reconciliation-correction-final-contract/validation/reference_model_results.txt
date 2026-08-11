@@ -1,0 +1,21 @@
+owner exact equal: PASS
+owner exact identity mismatch: PASS
+owner exact producer mismatch: PASS
+owner wide exact same producer: PASS
+owner wide exact other producer: PASS
+owner wide unequal wide: PASS
+value exact: PASS
+value exact mismatch: PASS
+value wide A: PASS
+value wide B: PASS
+value wide other producer: PASS
+tuple empty: PASS
+choice empty: PASS
+sequence empty: PASS
+sequence bad: PASS
+option none: PASS
+option some never: PASS
+result ok full: PASS
+result err full: PASS
+result wrong branch identity: PASS
+TOTAL=20 PASS=20 FAIL=0

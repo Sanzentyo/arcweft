@@ -1,0 +1,87 @@
+{
+  "add": [
+    "core.pattern.RuntimeOpaqueTypeProducerId",
+    "core.pattern.RuntimeOpaqueTypeAdmission",
+    "core.pattern.RuntimeOpaqueTypeOwner",
+    "core.value.RuntimeOpaqueValue",
+    "AcceptedNominalRecord::try_new_opaque",
+    "RuntimeCheckedTypeProjectionError",
+    "RuntimeResolvedVariant::checked_selection"
+  ],
+  "change": [
+    "core.pattern.RuntimeCheckedType",
+    "core.value.RuntimeValue",
+    "AcceptedNominalSemantics::Opaque",
+    "AcceptedNominalType",
+    "standard accepted domain atoms",
+    "accepted Rust metadata",
+    "TypeKind::Named",
+    "TypeKind::AcceptedNominal",
+    "TypeKind::CharacterDialogue",
+    "CharacterDialogueRuntimeSchema",
+    "CharacterDialogueValue::into_runtime_value",
+    "RuntimeTypeShape::Opaque",
+    "RuntimeNormalizedType::checked_type",
+    "RuntimeVariantOwner::checked_type",
+    "final expr variant lowering",
+    "final pattern variant lowering",
+    "entry role Reduction/ReducerError",
+    "entry role Unit/AgentError",
+    "AwbcRuntimeType",
+    "AwbcConstant",
+    "AWBC_CODEC_VERSION",
+    "AWBC structural verifier",
+    "AWBC fiber/VM type matcher",
+    "AWBC expr/pattern lowerers",
+    "AWBC types_compatible",
+    "canonical runtime value codec",
+    "session save schema",
+    "snapshot/fiber/capture values"
+  ],
+  "commit": "a38c736ba577172b1f4c3fe1a0c3e85443e97e6f",
+  "delete": [
+    "runtime_value_matches_pattern_type",
+    "RuntimeCheckedType::accepts_variant_case",
+    "RuntimeTypeShape::Named",
+    "compiler nominal schema digest fallback",
+    "codec-10 reader/goldens",
+    "save-schema-2 reader",
+    "name/digest/layout fallback"
+  ],
+  "inventory_rows": 47,
+  "open_questions": 0,
+  "parity_rows": 20,
+  "preserve": [
+    "RuntimeTypeSchema",
+    "RuntimeNominalRecordLayout",
+    "AWBC_ABI_VERSION",
+    "bundle AWBC product key"
+  ],
+  "prohibit": [
+    "producer registry/trait"
+  ],
+  "repository": "Sanzentyo/arcweft",
+  "status": "ready_for_implementation",
+  "tags": {
+    "admission_exact": 0,
+    "admission_producer_wide": 1,
+    "awbc_constant_opaque": 18,
+    "awbc_runtime_type_opaque": 23,
+    "runtime_value_opaque": 16
+  },
+  "test_rows": 150,
+  "versions": {
+    "awbc_abi": {
+      "from": 1,
+      "to": 1
+    },
+    "awbc_codec": {
+      "from": 10,
+      "to": 11
+    },
+    "session_save": {
+      "from": 2,
+      "to": 3
+    }
+  }
+}

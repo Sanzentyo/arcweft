@@ -1,0 +1,7 @@
+Observed in the packaging execution container:
+
+- urllib to api.github.com: Temporary failure in name resolution
+- urllib to github.com archive URL: Temporary failure in name resolution
+- earlier raw/codeload retrieval attempts: host resolution failure
+
+GitHub web connector inspection and the exact targeted source snapshot were used instead. No full checkout, Cargo build, test, or Clippy execution is claimed.
