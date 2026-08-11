@@ -1,0 +1,4 @@
+suite	purpose	detail_file	row_count	acceptance
+T-E13	producer, payload, Try identity, API and reachable limit behavior	T_E13_MATRIX.tsv	34	all rows pass; unreachable/delegated rows prove classification only
+T-Q-13	sole source query, applicability, liveness and precedence	T_Q_13_MATRIX.tsv	24	all exact results and combined-failure order pass
+T-RB-13	preflight/freeze rollback, retry, dedup, limits and deletion switch	T_RB_13_MATRIX.tsv	30	no partial publication and one coherent compiling switch

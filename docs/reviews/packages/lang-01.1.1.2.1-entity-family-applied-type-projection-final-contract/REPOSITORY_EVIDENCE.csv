@@ -1,0 +1,27 @@
+path,blob_sha_at_baseline,inspected_contract_evidence
+AGENTS.md,e91f99213dde67953beda6aa078c370a8dc4541d,"full repository instructions read at pinned commit; layer ownership, direct-final, validation and packaging rules"
+docs/reviews/requests/2026-07-22-lang-01.1.1.2.1-entity-family-applied-type-projection-correction.md,5445ff2e48c47a4cb2455b56fb5348784038beb6,repository request exactly matches uploaded request
+crates/arcweft-lang-sema/src/types.rs,860f086261fb16e9b8d940f559f351708fbb3ee9,EntityKind fixed inventory; EntityType; TypeKind::Ref; inherent entity_ref; source labels
+crates/arcweft-lang-sema/src/nominal/model.rs,1b79adbcdd5b8eda311484debe096c91736fc3db,closed BuiltinTypeConstructor lacks Ref; TypeNameResolution/arity/argument expectation shapes
+crates/arcweft-lang-sema/src/nominal/resolver/engine.rs,06d1419424a6c6aa94a93d81b0246f26ae39227b,single resolver; NodeValue typed/const/entity carriers; source evidence; deterministic report
+crates/arcweft-lang-sema/src/nominal/resolver/engine/traversal.rs,8836e68971974df4a7ebd10d03d3598db201eaa5,current Speaker boolean special case; direct entity-family child classification; node/work behavior
+crates/arcweft-lang-sema/src/nominal/resolver/engine/resolution.rs,d6da94101707516c93315c4f62527a0f0f6a3b89,selection precedence; builtin application; current entity-family projection and wrong-kind behavior
+crates/arcweft-lang-sema/src/nominal/resolver/engine/support.rs,78160c076c76da549c259ae91b6958fb3669cf07,free builtin spelling table to remove; diagnostic mapping and stable helpers
+crates/arcweft-lang-sema/src/nominal/diagnostic.rs,4c63bfbacaade10285132a404b6a67d4a73f83a4,existing codes; WrongArgumentKind maps to wrong_kind; poison origins
+crates/arcweft-lang-sema/src/env/nominal.rs,8b273c41a3bc429371f80c27c88e374209849545,AcceptedNominalSemantics closed; exact/open reserved paths; Ref currently missing from reserved list
+crates/arcweft-lang-hir/src/symbol/error.rs,baa289f0afb336929759eb992c4f1a0bec92e1ff,existing ReservedTypeName typed error and stable code
+crates/arcweft-lang-hir/src/symbol/table/publication.rs,ba871ddc615ebe67b57d82526aef1819bc9078c0,project nominal/callable/external direct binding reservation gates
+crates/arcweft-lang-hir/src/symbol/table.rs,171e3b2e4565bc86e61e2547a6ac9381a21bb6b5,current reserved language type list lacks Ref
+crates/arcweft-lang-sema/src/nominal/index.rs,8ac6bba025f06fb57572640016d8f857c99cb304,single source-backed node/report index; entity-family child is not recovered TypeKind
+crates/arcweft-lang-sema/src/callable/nominal_signature.rs,2f9a91ad33b5f5f9034391d0b4af275cde4e44e3,callable source-backed resolver/cache/index consumption
+crates/arcweft-lang-sema/src/entry/checker/nominal.rs,69a106c0e87c11268a6ad6985f13c274ff9ec810,entry schema consumes checked TypeKind; Ref currently unsupported as TypeShape
+crates/arcweft-data/src/shape.rs,d40d3cdd3c856cda1061fe03a86ac6fc1e9e3760,TypeShape has no typed entity-reference variant
+crates/arcweft-lang-sema/src/project_index/nominal.rs,0acf7e56efa9bf3eee97d2e0cd8486fc5c05f949,project reference edges only for final Project/Alias node outcomes
+crates/arcweft-lang-sema/src/project_index.rs,ad1e4445d51975fc38c2bfa99beb88ac26d60ef8,semantic index can carry TypeKind in callables/types; schema version observed
+crates/arcweft-lsp/src/profiles/accepted_project.rs,f23bbabd2e94b232a2e5189409e427913549391c,accepted snapshot retains full TypeCheckReport and semantic index
+crates/arcweft-lsp/src/features/nominal_types.rs,49d20c631dcee342295249bc03e347a6e0e384f4,current project-nominal hover/definition/completion/rename ownership
+crates/arcweft-compiler/src/persistent.rs,f5090b91ef28f9cb085448273e3de97aacf484f6,authored TypeRef structural digest; no observed semantic TypeKind wire table in inspected path
+tests/fixtures/arcw/current_pass/check/014_struct_enum_type_alias.arcw,b26f6fa2015762023cb8fa5dbdf01f02a62706ec,existing canonical Ref<Flow> field
+tests/fixtures/arcw/current_pass/check/015_state_defaults.arcw,881d0ab90ece9f1f21343ec4e79f233ffcdb45a1,existing canonical Ref<Flow> state field
+docs/01-language/contracts.md,84a5ea66f8218418a03001367ffd4d92b551f933,documented canonical Ref<Character> and Ref<Flow> use
+docs/implementation/2026-07-22-lang-01-1-1-2-project-nominal-resolution-intake.md,446686b410f2216c0b5d5440f23f083523a223eb,repository-recorded prior validation and explicit Ref<Flow> pending failures

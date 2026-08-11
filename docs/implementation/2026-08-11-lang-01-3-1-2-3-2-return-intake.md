@@ -15,7 +15,8 @@ redesigned by the returned correction.
 ## Returned archive
 
 The attached archive was copied without modification to
-`docs/reviews/packages/`:
+`docs/reviews/packages/zips/`; its searchable extracted contents are under
+`docs/reviews/packages/arcweft-lang-01.3.1.2.3.2-generic-ownership-identity-and-slot-reconciliation-correction-final-contract/`:
 
 - archive:
   `arcweft-lang-01.3.1.2.3.2-generic-ownership-identity-and-slot-reconciliation-correction-final-contract.zip`;

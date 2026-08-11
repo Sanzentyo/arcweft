@@ -1,0 +1,235 @@
+id,group,kind,owner,setup,action,expected,diagnostic,stage,gate
+ABI-001,ABI,positive,awbc schema,program header ABI=1 codec=8,encode/decode,round trip exact ABI 1,none,S3,codec/verifier/parity
+ABI-002,ABI,negative,awbc decoder,program header ABI=2,decode,reject unsupported ABI; no alias,bundle.awbc.abi_unsupported,S3,codec/verifier/parity
+ABI-003,ABI,golden,awbc codec,CopyValue dst=1 src=2,encode,bytes 2a 01 02,none,S3,codec/verifier/parity
+ABI-004,ABI,golden,awbc codec,CopyValue multibyte registers,encode/decode,canonical varu32,none,S3,codec/verifier/parity
+ABI-005,ABI,negative,awbc codec,noncanonical varint,decode,reject before verifier,bundle.awbc.noncanonical,S3,codec/verifier/parity
+ABI-006,ABI,negative,awbc codec,opcode 0x2b,decode,unknown opcode,bundle.awbc.unknown_opcode,S3,codec/verifier/parity
+ABI-007,ABI,positive,awbc verifier,unrestricted live src empty dst,verify CopyValue,accepted,none,S3,codec/verifier/parity
+ABI-008,ABI,negative,awbc verifier,affine static src,verify CopyValue,reject,awbc.copy_requires_unrestricted,S3,codec/verifier/parity
+ABI-009,ABI,tamper,awbc vm,static unrestricted but actual affine,execute CopyValue,trap before mutation,runtime.awbc.ownership_mismatch,S3,codec/verifier/parity
+ABI-010,ABI,positive,awbc vm,Move unrestricted,execute,source moved destination live,none,S3,codec/verifier/parity
+ABI-011,ABI,positive,awbc vm,Move affine handle,execute,token moves unchanged,none,S3,codec/verifier/parity
+ABI-012,ABI,negative,awbc verifier,Move source equals destination,verify,reject,awbc.invalid_destination,S3,codec/verifier/parity
+ABI-013,ABI,positive,awbc vm,Drop affine aggregate,execute,owners released once descending,none,S3,codec/verifier/parity
+ABI-014,ABI,negative,awbc verifier,Drop moved register,verify,use-after-move reject,awbc.source_not_live,S3,codec/verifier/parity
+ABI-015,ABI,positive,runtime-plan,unrestricted value reused,lower,explicit CopyValue before consume,none,S3,codec/verifier/parity
+ABI-016,ABI,negative,runtime-plan,affine value reused,lower,semantic ownership error,sema.affine.use_after_move,S3,codec/verifier/parity
+ABI-017,ABI,parity,structured/VM/compiled,same copy/move/drop plan,execute all,identical values/owners/traces,none,S3,codec/verifier/parity
+ABI-018,ABI,negative,product decoder,View function awbc_abi=2,validate,reject,bundle.view.program.invalid,S3,codec/verifier/parity
+ABI-019,ABI,positive,product decoder,View function awbc_abi=1,validate,accepted with ownership joins,none,S3,codec/verifier/parity
+ABI-020,ABI,negative,cache,pre-cut product compiler identity,load,invalidate/rebuild; no fallback reader,bundle.artifact.identity_mismatch,S3,codec/verifier/parity
+ABI-021,ABI,compile_fail,public API,reference AWBC_ABI_VERSION_V2,compile,symbol absent,none,S3,codec/verifier/parity
+ABI-022,ABI,compile_fail,public API,invoke ABI2 decoder,compile,API absent,none,S3,codec/verifier/parity
+ABI-023,ABI,full,workspace,search runtime behavior through typed APIs,run full matrix,no ABI2 success path,none,S3,codec/verifier/parity
+ABI-024,ABI,limit,awbc codec,register one over limit,decode,bounded rejection,bundle.awbc.limit_exceeded,S3,codec/verifier/parity
+ACT-001,ACT,positive,runtime domain,fresh execution absent,activate fresh,one lease/entry,none,S4,runtime/save/tamper
+ACT-002,ACT,negative,runtime domain,same execution already active in driver A,activate fresh in driver B,reject before driver mutation,runtime.restore.execution_already_active,S4,runtime/save/tamper
+ACT-003,ACT,positive,runtime domain,valid snapshot and empty domain/driver,restore empty,one active lease,none,S4,runtime/save/tamper
+ACT-004,ACT,negative,runtime domain,copy same snapshot; first active in A,restore copy into B,reject,runtime.restore.execution_already_active,S4,runtime/save/tamper
+ACT-005,ACT,positive,runtime domain,active driver A exact lease,restore replace A,old retired then new active atomically,none,S4,runtime/save/tamper
+ACT-006,ACT,positive,runtime domain,candidate execution differs and is inactive,replace,old execution retired and candidate execution activated atomically,none,S4,runtime/save/tamper
+ACT-007,ACT,negative,runtime domain,driver B attempts replacing A lease,replace,reject,runtime.restore.activation_holder_mismatch,S4,runtime/save/tamper
+ACT-008,ACT,negative,runtime domain,stale activation generation,replace,reject no retirement,runtime.restore.activation_holder_mismatch,S4,runtime/save/tamper
+ACT-009,ACT,negative,runtime domain,driver active but domain entry missing,replace,invariant rejection before mutation,runtime.restore.activation_holder_mismatch,S4,runtime/save/tamper
+ACT-010,ACT,negative,runtime domain,domain active but driver empty,empty restore,reject,runtime.restore.execution_already_active,S4,runtime/save/tamper
+ACT-011,ACT,positive,candidate,prepare two copies only,prepare,"both dormant, no lease",none,S4,runtime/save/tamper
+ACT-012,ACT,negative,candidate,candidate exposed to step API,compile,no API,none,S4,runtime/save/tamper
+ACT-013,ACT,atomicity,runtime domain,injected allocation failure,restore,active entry/driver unchanged,runtime.restore.allocation_failed,S4,runtime/save/tamper
+ACT-014,ACT,atomicity,runtime domain,epoch changes before commit,replace,candidate dropped active unchanged,runtime.restore.epoch_mismatch,S4,runtime/save/tamper
+ACT-015,ACT,atomicity,runtime domain,artifact set changes,replace,candidate dropped active unchanged,runtime.restore.artifact_mismatch,S4,runtime/save/tamper
+ACT-016,ACT,atomicity,runtime domain,requirement/certificate invalid,restore,no activation reservation published,bundle.view.static.requirement_mismatch,S4,runtime/save/tamper
+ACT-017,ACT,positive,runtime domain,replacement complete,inspect holder,new holder generation increments once,none,S4,runtime/save/tamper
+ACT-018,ACT,negative,runtime domain,reuse consumed candidate,compile/runtime,candidate non-Clone/consumed,none,S4,runtime/save/tamper
+ACT-019,ACT,positive,separate domains,same save activated in two independent domains,restore,allowed as separate execution universes,none,S4,runtime/save/tamper
+ACT-020,ACT,negative,standard host,attempt create second activation domain,compile/API,host owns one domain,none,S4,runtime/save/tamper
+ACT-021,ACT,positive,lease,driver teardown after terminal execution,release,entry removed once,none,S4,runtime/save/tamper
+ACT-022,ACT,negative,lease,drop active driver without domain retirement,test invariant,structured invariant failure; no silent token sharing,runtime.activation.invariant,S4,runtime/save/tamper
+ACT-023,ACT,limit,runtime domain,active entry exact limit,activate,accepted,none,S4,runtime/save/tamper
+ACT-024,ACT,limit,runtime domain,active entry one over,activate,reject before allocation,runtime.activation.limit_exceeded,S4,runtime/save/tamper
+ACT-025,ACT,parity,native/web/headless,same restore sequence,execute,same active holder result,none,S4,runtime/save/tamper
+ACT-026,ACT,tamper,save,holder data injected into snapshot,decode,unknown field rejected; lease never serialized,save.decode_unknown_field,S4,runtime/save/tamper
+ACT-027,ACT,compile_fail,public API,call RuntimeDriver::try_restore_empty,compile,method absent,none,S4,runtime/save/tamper
+ACT-028,ACT,full,runtime domain,concurrent ordered restore attempts,serialize through authority,one succeeds one deterministic already-active failure,runtime.restore.execution_already_active,S4,runtime/save/tamper
+ALC-001,ALC,positive,snapshot,no owners cursor Next(0),save/restore,cursor retained,none,S4,snapshot/allocator
+ALC-002,ALC,positive,snapshot,owners 0..4 cursor Next(5),save/restore,exact cursor retained,none,S4,snapshot/allocator
+ALC-003,ALC,negative,snapshot,owner ordinal equals Next cursor,prepare,reject,runtime.restore.affine_allocator_cursor_invalid,S4,snapshot/allocator
+ALC-004,ALC,negative,snapshot,owner ordinal greater than cursor,prepare,reject,runtime.restore.affine_allocator_cursor_invalid,S4,snapshot/allocator
+ALC-005,ALC,negative,snapshot,allocator execution differs,prepare,reject,runtime.restore.affine_allocator_cursor_invalid,S4,snapshot/allocator
+ALC-006,ALC,negative,snapshot,missing allocator row,decode,reject required field,save.decode_missing_field,S4,snapshot/allocator
+ALC-007,ALC,negative,snapshot,duplicate allocator row,decode,reject duplicate,save.decode_duplicate_field,S4,snapshot/allocator
+ALC-008,ALC,positive,restore,cursor Next(5),first mint,owner ordinal 5 then cursor 6,none,S4,snapshot/allocator
+ALC-009,ALC,positive,restore,cursor Next(MAX),first mint,owner MAX then Exhausted,none,S4,snapshot/allocator
+ALC-010,ALC,negative,restore,cursor Exhausted,mint,allocation exhausted,runtime.affine_owner.exhausted,S4,snapshot/allocator
+ALC-011,ALC,atomicity,mint,begin mint then abort,drop mint,cursor byte-identical,none,S4,snapshot/allocator
+ALC-012,ALC,atomicity,mint,other Stream Open validation fails,prepare,cursor unchanged,runtime.stream.open_invalid,S4,snapshot/allocator
+ALC-013,ALC,positive,snapshot,dropped high owner cursor remains high,save/restore,ordinal not reused,none,S4,snapshot/allocator
+ALC-014,ALC,tamper,snapshot,lower cursor and unchanged digest,decode,digest mismatch first,save.digest_mismatch,S4,snapshot/allocator
+ALC-015,ALC,tamper,snapshot,lower cursor and recomputed outer bytes but live owner conflict,prepare,cursor invalid,runtime.restore.affine_allocator_cursor_invalid,S4,snapshot/allocator
+ALC-016,ALC,parity,structured/VM/compiled,same restored cursor,mint,same owner ID,none,S4,snapshot/allocator
+ALC-017,ALC,positive,hot replacement,allocator cursor preserved,replace,next owner unchanged,none,S4,snapshot/allocator
+ALC-018,ALC,positive,hot replacement,older snapshot cursor is behind discarded active future,replace,install exact older cursor after complete old-execution retirement; deterministic IDs may replay without coexistence,none,S4,snapshot/allocator
+ALC-019,ALC,limit,snapshot,owner traversal exact limit,validate,accepted,none,S4,snapshot/allocator
+ALC-020,ALC,limit,snapshot,owner traversal one over,validate,bounded rejection,runtime.restore.limit_exceeded,S4,snapshot/allocator
+ALC-021,ALC,positive,codec,Next cursor canonical bytes,round trip,byte-identical,none,S4,snapshot/allocator
+ALC-022,ALC,positive,codec,Exhausted cursor canonical bytes,round trip,byte-identical,none,S4,snapshot/allocator
+ALC-023,ALC,negative,codec,unknown cursor state,decode,reject,save.decode_unknown_tag,S4,snapshot/allocator
+ALC-024,ALC,full,save lineage,save restore mint save restore mint,execute,strictly increasing owner ordinals,none,S4,snapshot/allocator
+DRP-001,DRP,positive,ownership transaction,unrestricted scalar slot,prepare+commit,same slot Dropped,none,S1-S6,ownership/drop
+DRP-002,DRP,positive,ownership transaction,direct handle slot,prepare+commit,table transition once,none,S1-S6,ownership/drop
+DRP-003,DRP,positive,ownership transaction,nested two handles,prepare+commit,descending owner release,none,S1-S6,ownership/drop
+DRP-004,DRP,negative,ownership transaction,stale lease,prepare,error source live unchanged,runtime.drop.stale_lease,S1-S6,ownership/drop
+DRP-005,DRP,negative,ownership transaction,duplicate owner occurrence,prepare,error source live unchanged,runtime.drop.duplicate_owner,S1-S6,ownership/drop
+DRP-006,DRP,negative,ownership transaction,source already moved,prepare,error,runtime.drop.source_not_live,S1-S6,ownership/drop
+DRP-007,DRP,negative,ownership transaction,source revision stale,prepare,error,runtime.drop.stale_revision,S1-S6,ownership/drop
+DRP-008,DRP,atomicity,ownership transaction,prepare succeeds then transaction aborted,rollback,exact value restored no release,none,S1-S6,ownership/drop
+DRP-009,DRP,positive,ownership transaction,prepare owns value,inspect API,commit has no value parameter,none,S1-S6,ownership/drop
+DRP-010,DRP,compile_fail,public API,commit prepared A with value B,compile,impossible API,none,S1-S6,ownership/drop
+DRP-011,DRP,compile_fail,public API,call RuntimeValue::try_prepare_drop,compile,old API absent,none,S1-S6,ownership/drop
+DRP-012,DRP,positive,unwind,registered cleanups,trap,same prepared drop path reverse order,none,S1-S6,ownership/drop
+DRP-013,DRP,positive,cancellation,iterator remaining affine values,cancel,each dropped once,none,S1-S6,ownership/drop
+DRP-014,DRP,negative,double drop,terminal slot,prepare,typed error no table mutation,runtime.drop.source_not_live,S1-S6,ownership/drop
+DRP-015,DRP,limit,drop traversal,exact owner count,prepare,accepted,none,S1-S6,ownership/drop
+DRP-016,DRP,limit,drop traversal,one over owner count,prepare,reject source unchanged,runtime.drop.limit_exceeded,S1-S6,ownership/drop
+DRP-017,DRP,parity,structured/VM/compiled,same aggregate drop,execute,same release trace,none,S1-S6,ownership/drop
+DRP-018,DRP,full,Rust destructor,instrument token Drop,all paths,no language release from Rust Drop,none,S1-S6,ownership/drop
+SNP-001,SNP,positive,snapshot DTO,float values including NaN bit patterns,encode/decode,canonical bytes retained; PartialEq policy explicit,none,S1-S5,codec/compile-fail
+SNP-002,SNP,compile_fail,snapshot DTO,require Eq bound on RuntimeValueSnapshotV2,compile,trait not implemented,none,S1-S5,codec/compile-fail
+SNP-003,SNP,positive,snapshot DTO,evidence-only owner row,Eq comparison,allowed on evidence type,none,S1-S5,codec/compile-fail
+SNP-004,SNP,negative,snapshot DTO,unknown field,decode,reject,save.decode_unknown_field,S1-S5,codec/compile-fail
+SNP-005,SNP,negative,snapshot DTO,noncanonical float encoding,decode/reencode,reject,save.noncanonical,S1-S5,codec/compile-fail
+SNP-006,SNP,positive,snapshot DTO,clone dormant image,clone,no runnable authority,none,S1-S5,codec/compile-fail
+SNP-007,SNP,negative,snapshot DTO,serialize live RuntimeValue,compile,Serialize absent,none,S1-S5,codec/compile-fail
+SNP-008,SNP,negative,snapshot DTO,serialize live RuntimeBinding,compile,Serialize absent,none,S1-S5,codec/compile-fail
+SNP-009,SNP,positive,snapshot digest,same canonical bytes,hash,same digest,none,S1-S5,codec/compile-fail
+SNP-010,SNP,tamper,snapshot digest,change float bits,validate,digest mismatch,save.digest_mismatch,S1-S5,codec/compile-fail
+SNP-011,SNP,positive,save,View unrestricted value,snapshot,uses generic RuntimeValueSnapshotV2,none,S1-S5,codec/compile-fail
+SNP-012,SNP,negative,save,View retained affine evidence,restore,reject,save.view.affine_retained_value,S1-S5,codec/compile-fail
+VOW-001,VOW,positive,sema/compiler/bundle/runtime,parameter unrestricted scalar,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-002,VOW,positive,sema/compiler/bundle/runtime,parameter unrestricted record,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-003,VOW,negative,sema/compiler/bundle/runtime,parameter direct StreamHandle,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-004,VOW,negative,sema/compiler/bundle/runtime,parameter aggregate containing StreamHandle,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-005,VOW,negative,sema/compiler/bundle/runtime,parameter open generic may-affine,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-006,VOW,positive,sema/compiler/bundle/runtime,default unrestricted String,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-007,VOW,positive,sema/compiler/bundle/runtime,default unrestricted RichText,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-008,VOW,positive,sema/compiler/bundle/runtime,default ResourceRef,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-009,VOW,negative,sema/compiler/bundle/runtime,default StreamHandle,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-010,VOW,positive,sema/compiler/bundle/runtime,retained local unrestricted sequence,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-011,VOW,negative,sema/compiler/bundle/runtime,retained local affine sequence,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-012,VOW,positive,sema/compiler/bundle/runtime,View state unrestricted nominal,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-013,VOW,negative,sema/compiler/bundle/runtime,View state affine partial,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-014,VOW,positive,sema/compiler/bundle/runtime,repeat unrestricted items/keys,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-015,VOW,negative,sema/compiler/bundle/runtime,repeat sequence contains affine item,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-016,VOW,positive,sema/compiler/bundle/runtime,nested argument unrestricted,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-017,VOW,negative,sema/compiler/bundle/runtime,nested argument affine,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-018,VOW,positive,sema/compiler/bundle/runtime,environment binding unrestricted,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-019,VOW,negative,sema/compiler/bundle/runtime,environment binding may-affine,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-020,VOW,positive,sema/compiler/bundle/runtime,plain text program unrestricted,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-021,VOW,positive,sema/compiler/bundle/runtime,resource projection unrestricted,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-022,VOW,positive,sema/compiler/bundle/runtime,export unrestricted value,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-023,VOW,negative,sema/compiler/bundle/runtime,export affine value,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-024,VOW,negative,sema/compiler/bundle/runtime,pure input marked Move,catalog/lower/decode/evaluate,reject with atomic frame state,compiler.view.input.transfer_invalid,S2-S7,focused/workspace/parity
+VOW-025,VOW,positive,sema/compiler/bundle/runtime,direct-await capture Copy unrestricted,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-026,VOW,negative,sema/compiler/bundle/runtime,direct-await capture affine,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-027,VOW,positive,sema/compiler/bundle/runtime,direct-await retained ready value unrestricted,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-028,VOW,negative,sema/compiler/bundle/runtime,direct-await retained ready value affine,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-029,VOW,positive,sema/compiler/bundle/runtime,handler input exact record,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-030,VOW,negative,sema/compiler/bundle/runtime,handler input marked Copy,catalog/lower/decode/evaluate,reject with atomic frame state,compiler.view.input.transfer_invalid,S2-S7,focused/workspace/parity
+VOW-031,VOW,positive,sema/compiler/bundle/runtime,handler capture unrestricted,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-032,VOW,negative,sema/compiler/bundle/runtime,handler capture affine View state,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-033,VOW,positive,sema/compiler/bundle/runtime,handler transient affine local consumed before exit,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-034,VOW,negative,sema/compiler/bundle/runtime,handler stores affine local into View state,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-035,VOW,negative,sema/compiler/bundle/runtime,View input serialized ownership mismatch,catalog/lower/decode/evaluate,reject with atomic frame state,bundle.view.input.ownership_mismatch,S2-S7,focused/workspace/parity
+VOW-036,VOW,negative,sema/compiler/bundle/runtime,View input AWBC result ownership mismatch,catalog/lower/decode/evaluate,reject with atomic frame state,bundle.view.input.ownership_mismatch,S2-S7,focused/workspace/parity
+VOW-037,VOW,positive,sema/compiler/bundle/runtime,View function awbc_abi=1 exact,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+VOW-038,VOW,negative,sema/compiler/bundle/runtime,View function awbc_abi=2,catalog/lower/decode/evaluate,reject with atomic frame state,bundle.view.program.invalid,S2-S7,focused/workspace/parity
+VOW-039,VOW,negative,sema/compiler/bundle/runtime,View binding borrow transfer tag,catalog/lower/decode/evaluate,reject with atomic frame state,compiler.view.input.transfer_invalid,S2-S7,focused/workspace/parity
+VOW-040,VOW,negative,sema/compiler/bundle/runtime,View static constant affine,catalog/lower/decode/evaluate,reject with atomic frame state,sema.view.value.affine_not_allowed,S2-S7,focused/workspace/parity
+VOW-041,VOW,negative,sema/compiler/bundle/runtime,hot replacement changes ownership contract,catalog/lower/decode/evaluate,reject with atomic frame state,runtime.view.replacement.stale_candidate,S2-S7,focused/workspace/parity
+VOW-042,VOW,positive,sema/compiler/bundle/runtime,save/restore unrestricted retained values,catalog/lower/decode/evaluate,accept with atomic frame state,none,S2-S7,focused/workspace/parity
+REQ-001,REQ,positive,sema/compiler/bundle/runtime,annotated static subject and valid proof,compile/decode,one requirement + authored certificate,none,S5-S8,static/codec/tamper/parity
+REQ-002,REQ,negative,sema/compiler/bundle/runtime,annotated dynamic subject,compile,sema error no product,sema.view.static.required_dynamic,S5-S8,static/codec/tamper/parity
+REQ-003,REQ,negative,sema/compiler/bundle/runtime,requirement without certificate,decode,reject,bundle.view.static.requirement_missing_certificate,S5-S8,static/codec/tamper/parity
+REQ-004,REQ,negative,sema/compiler/bundle/runtime,requirement without fragment,decode,reject,bundle.view.static.requirement_missing_certificate,S5-S8,static/codec/tamper/parity
+REQ-005,REQ,negative,sema/compiler/bundle/runtime,AuthoredRequired certificate without requirement,decode,reject,bundle.view.static.authored_origin_without_requirement,S5-S8,static/codec/tamper/parity
+REQ-006,REQ,negative,sema/compiler/bundle/runtime,Automatic certificate with requirement,decode,reject,bundle.view.static.requirement_mismatch,S5-S8,static/codec/tamper/parity
+REQ-007,REQ,negative,sema/compiler/bundle/runtime,requirement subject differs certificate,decode,reject,bundle.view.static.requirement_mismatch,S5-S8,static/codec/tamper/parity
+REQ-008,REQ,negative,sema/compiler/bundle/runtime,requirement digest tampered,decode,reject,bundle.view.static.requirement_mismatch,S5-S8,static/codec/tamper/parity
+REQ-009,REQ,negative,sema/compiler/bundle/runtime,duplicate requirement subject,decode,reject,bundle.view.program.invalid,S5-S8,static/codec/tamper/parity
+REQ-010,REQ,negative,sema/compiler/bundle/runtime,duplicate requirement digest,decode,reject,bundle.view.program.invalid,S5-S8,static/codec/tamper/parity
+REQ-011,REQ,positive,sema/compiler/bundle/runtime,unannotated subject no certificate,decode/runtime,dynamic execution,none,S5-S8,static/codec/tamper/parity
+REQ-012,REQ,positive,sema/compiler/bundle/runtime,unannotated subject automatic certificate,decode/runtime,certified execution,none,S5-S8,static/codec/tamper/parity
+REQ-013,REQ,tamper,sema/compiler/bundle/runtime,remove requirement and leave accepted revision,decode,revision/digest mismatch,bundle.view.certificate.digest_mismatch,S5-S8,static/codec/tamper/parity
+REQ-014,REQ,tamper,sema/compiler/bundle/runtime,remove requirement and recompute local certificate only,decode,program semantic mismatch,bundle.view.certificate.digest_mismatch,S5-S8,static/codec/tamper/parity
+REQ-015,REQ,positive,sema/compiler/bundle/runtime,attribute source absent from stripped product,decode,requirement still valid; diagnostics limited,none,S5-S8,static/codec/tamper/parity
+REQ-016,REQ,negative,sema/compiler/bundle/runtime,attribute source points outside source map,decode,reject source reference,bundle.view.program.invalid,S5-S8,static/codec/tamper/parity
+REQ-017,REQ,positive,sema/compiler/bundle/runtime,whole definition requirement,compile/decode,exact definition subject,none,S5-S8,static/codec/tamper/parity
+REQ-018,REQ,positive,sema/compiler/bundle/runtime,subtree requirement,compile/decode,exact node/span subject,none,S5-S8,static/codec/tamper/parity
+REQ-019,REQ,negative,sema/compiler/bundle/runtime,stale accepted revision,hot replace,reject before mutation,runtime.view.replacement.stale_candidate,S5-S8,static/codec/tamper/parity
+REQ-020,REQ,parity,sema/compiler/bundle/runtime,authored certificate forced dynamic test path,execute,same visible/lifecycle/save result,none,S5-S8,static/codec/tamper/parity
+REQ-021,REQ,limit,sema/compiler/bundle/runtime,requirements exact limit,decode,accepted,none,S5-S8,static/codec/tamper/parity
+REQ-022,REQ,limit,sema/compiler/bundle/runtime,requirements one over,decode,reject,bundle.view.program.limit_exceeded,S5-S8,static/codec/tamper/parity
+REQ-023,REQ,golden,sema/compiler/bundle/runtime,canonical requirement row,encode/decode,byte identical,none,S5-S8,static/codec/tamper/parity
+REQ-024,REQ,negative,sema/compiler/bundle/runtime,unknown requirement field,decode,reject,bundle.view.program.invalid,S5-S8,static/codec/tamper/parity
+REQ-025,REQ,negative,sema/compiler/bundle/runtime,requirement order unsorted,decode,canonical rejection,bundle.view.program.invalid,S5-S8,static/codec/tamper/parity
+REQ-026,REQ,full,sema/compiler/bundle/runtime,save,required static product save/restore,restore,requirement revalidated from artifact,S5-S8,static/codec/tamper/parity
+REQ-027,REQ,full,sema/compiler/bundle/runtime,Agent/native/Web,same required static View,render/observe,same semantics,S5-S8,static/codec/tamper/parity
+REQ-028,REQ,compile_fail,sema/compiler/bundle/runtime,public API,construct AuthoredRequired without requirement field,compile,constructor requires exact digest,S5-S8,static/codec/tamper/parity
+FRG-001,FRG,positive,bundle/runtime View,single definition fragment,validate/execute,fragment selected,none,S5-S8,static/parity/tamper
+FRG-002,FRG,positive,bundle/runtime View,disjoint siblings,validate/execute,authored-order independent selections,none,S5-S8,static/parity/tamper
+FRG-003,FRG,positive,bundle/runtime View,ancestor and descendant both certified,execute,ancestor selected descendant suppressed,none,S5-S8,static/parity/tamper
+FRG-004,FRG,positive,bundle/runtime View,dynamic ancestor certified descendant,execute,descendant selected at boundary,none,S5-S8,static/parity/tamper
+FRG-005,FRG,negative,bundle/runtime View,crossing partial overlap,decode,reject,bundle.view.static.fragment_partial_overlap,S5-S8,static/parity/tamper
+FRG-006,FRG,negative,bundle/runtime View,child outside parent span,decode,reject,bundle.view.static.fragment_partial_overlap,S5-S8,static/parity/tamper
+FRG-007,FRG,negative,bundle/runtime View,duplicate subject/span,decode,reject,bundle.view.program.invalid,S5-S8,static/parity/tamper
+FRG-008,FRG,negative,bundle/runtime View,sibling overlap,decode,reject,bundle.view.static.fragment_partial_overlap,S5-S8,static/parity/tamper
+FRG-009,FRG,positive,bundle/runtime View,deep strict nesting exact depth limit,validate,accepted,none,S5-S8,static/parity/tamper
+FRG-010,FRG,limit,bundle/runtime View,nesting one over,validate,reject,bundle.view.program.limit_exceeded,S5-S8,static/parity/tamper
+FRG-011,FRG,positive,bundle/runtime View,ancestor fragment retains handlers/input/lifecycle,execute,registered exactly once,none,S5-S8,static/parity/tamper
+FRG-012,FRG,parity,bundle/runtime View,ancestor certified vs forced dynamic,execute,same frame/save/observe,none,S5-S8,static/parity/tamper
+FRG-013,FRG,parity,bundle/runtime View,dynamic ancestor child certified vs all dynamic,execute,same result,none,S5-S8,static/parity/tamper
+FRG-014,FRG,negative,bundle/runtime View,runtime catalog ancestry differs validated product,publish,reject,runtime.view.static.fragment_dispatch_invalid,S5-S8,static/parity/tamper
+FRG-015,FRG,negative,bundle/runtime View,fragment references resource outside closure,decode,reject,bundle.view.certificate.digest_mismatch,S5-S8,static/parity/tamper
+FRG-016,FRG,positive,bundle/runtime View,descendant certificate retained for hot replacement,replace,evidence validated but not double executed,none,S5-S8,static/parity/tamper
+FRG-017,FRG,golden,bundle/runtime View,span sort order,encode,start asc/end desc/subject canonical,none,S5-S8,static/parity/tamper
+FRG-018,FRG,negative,bundle/runtime View,unsorted fragment rows,decode,canonical rejection,bundle.view.program.invalid,S5-S8,static/parity/tamper
+FRG-019,FRG,atomicity,bundle/runtime View,selected fragment evaluation fails injected budget,evaluate,frame transaction discarded,runtime.view.evaluation.budget_exceeded,S5-S8,static/parity/tamper
+FRG-020,FRG,full,bundle/runtime View,save restore with ancestor fragment,restore/evaluate,same outermost selection rederived,none,S5-S8,static/parity/tamper
+FRG-021,FRG,full,bundle/runtime View,native/Web/headless/Agent,nested fragments,render/observe,identical output,S5-S8,static/parity/tamper
+FRG-022,FRG,compile_fail,bundle/runtime View,runtime API,invoke descendant while ancestor active,compile/internal visibility,no public bypass,S5-S8,static/parity/tamper
+ATM-001,ATM,atomicity,cross-layer,runtime domain allocation failure,inject failure,active lease/cursor/driver unchanged,typed first error,S1-S8,fault injection
+ATM-002,ATM,atomicity,cross-layer,prepared drop validation failure,inject failure,source slot/table unchanged,typed first error,S1-S8,fault injection
+ATM-003,ATM,atomicity,cross-layer,View ownership projection failure,inject failure,mount/frame transaction discarded,typed first error,S1-S8,fault injection
+ATM-004,ATM,atomicity,cross-layer,static requirement failure,inject failure,candidate catalog not published,typed first error,S1-S8,fault injection
+ATM-005,ATM,atomicity,cross-layer,fragment overlap failure,inject failure,candidate catalog not published,typed first error,S1-S8,fault injection
+ATM-006,ATM,atomicity,cross-layer,save cursor failure,inject failure,active execution remains runnable,typed first error,S1-S8,fault injection
+ATM-007,ATM,atomicity,cross-layer,hot replacement requirement mismatch,inject failure,active generation unchanged,typed first error,S1-S8,fault injection
+ATM-008,ATM,atomicity,cross-layer,first post-restore mint failure,inject failure,cursor unchanged,typed first error,S1-S8,fault injection
+ATM-009,ATM,atomicity,cross-layer,handler affine store rejection,inject failure,View retained state unchanged,typed first error,S1-S8,fault injection
+ATM-010,ATM,atomicity,cross-layer,AWBC CopyValue runtime mismatch,inject failure,registers/cleanup/table unchanged,typed first error,S1-S8,fault injection
+DEL-001,DEL,compile_fail/structure,workspace,ABI2 constants and tests absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-002,DEL,compile_fail/structure,workspace,RuntimeDriver restore bypass absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-003,DEL,compile_fail/structure,workspace,old prepared drop commit(value) absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-004,DEL,compile_fail/structure,workspace,RuntimeValueSnapshotV2 Eq bound absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-005,DEL,compile_fail/structure,workspace,ViewValueInputBinding old constructor absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-006,DEL,compile_fail/structure,workspace,View retained affine success path absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-007,DEL,compile_fail/structure,workspace,live RuntimeBinding View save absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-008,DEL,compile_fail/structure,workspace,certificate authored origin without requirement constructor absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-009,DEL,compile_fail/structure,workspace,fragment partial-overlap fallback absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+DEL-010,DEL,compile_fail/structure,workspace,compatibility readers/aliases/source gates absent,compile/audit,unreachable or absent,none,S6-S8,compile-fail/structure
+INT-001,INT,full,workspace,affine parent 803 retained tests,run,all retained rows green,none,S7-S8,workspace/Tier2/structure
+INT-002,INT,full,workspace,affine correction tests,run,all new rows green,none,S7-S8,workspace/Tier2/structure
+INT-003,INT,full,workspace,View parent 473 retained tests adjusted only by supersession,run,all retained rows green,none,S7-S8,workspace/Tier2/structure
+INT-004,INT,full,workspace,View correction tests,run,all new rows green,none,S7-S8,workspace/Tier2/structure
+INT-005,INT,full,workspace,structured runtime / AWBC VM / compiled region,parity,identical owner/value traces,none,S7-S8,workspace/Tier2/structure
+INT-006,INT,full,workspace,View dynamic / certified,parity,identical frame/save/observe,none,S7-S8,workspace/Tier2/structure
+INT-007,INT,full,workspace,Stream Open after View migration,execute,handle constructible only after Clone removal,none,S7-S8,workspace/Tier2/structure
+INT-008,INT,full,workspace,View attempts StreamHandle parameter,compile,semantic rejection,none,S7-S8,workspace/Tier2/structure
+INT-009,INT,full,workspace,whole save with active handler and Stream handle elsewhere,round trip,exact independent owners,none,S7-S8,workspace/Tier2/structure
+INT-010,INT,full,workspace,hot reload exact generations and static requirements,replace,atomic compatible result,none,S7-S8,workspace/Tier2/structure
+INT-011,INT,full,workspace,workspace check all targets/features,run,pass,none,S7-S8,workspace/Tier2/structure
+INT-012,INT,full,workspace,strict workspace Clippy,run,pass,none,S7-S8,workspace/Tier2/structure
+INT-013,INT,full,workspace,workspace tests,run,pass,none,S7-S8,workspace/Tier2/structure
+INT-014,INT,full,workspace,Tier2 selected matrix,run,pass,none,S7-S8,workspace/Tier2/structure
+INT-015,INT,full,workspace,Cargo metadata dependency graph,run,pass,none,S7-S8,workspace/Tier2/structure
+INT-016,INT,full,workspace,structure audit and gate,run,zero blocking violations,none,S7-S8,workspace/Tier2/structure

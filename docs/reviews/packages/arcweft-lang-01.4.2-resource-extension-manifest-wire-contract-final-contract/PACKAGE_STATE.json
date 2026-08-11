@@ -1,0 +1,24 @@
+{
+  "package_schema": 1,
+  "generated_at_utc": "2026-07-21T14:03:07.543646+00:00",
+  "repository": "Sanzentyo/arcweft",
+  "branch": "main",
+  "head": null,
+  "origin_main": null,
+  "head_equals_origin_main": false,
+  "worktree_clean": false,
+  "request_sha256": "eb266e3c1d900c2ff3d0e5446a4df3af1b59cf096cb8942e5d42d9a5fb7b41e5",
+  "rust_skill_sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+  "premise_sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1",
+  "agents": [],
+  "checks": [],
+  "contract_agent_validated": false,
+  "markers": {
+    "OPEN_QUESTIONS": "0",
+    "IMPLEMENTATION_PERFORMED": "NO",
+    "COMPATIBILITY_SHIM": "FORBIDDEN",
+    "DUAL_READER": "FORBIDDEN",
+    "SOURCE_GATE": "FORBIDDEN",
+    "CSS_TAKUMI_PATH": "FORBIDDEN"
+  }
+}

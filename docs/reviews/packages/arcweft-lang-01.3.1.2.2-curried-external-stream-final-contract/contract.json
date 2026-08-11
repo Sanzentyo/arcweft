@@ -1,0 +1,48 @@
+{
+  "contract_id": "Lang-01.3.1.2.2",
+  "contract_status": "FINAL",
+  "open_questions": 0,
+  "fallback": false,
+  "production_code_changed": false,
+  "currying_policy": "supported",
+  "wire_strategy": "nested_signature_groups_and_canonical_coordinate_table_plus_parallel_value_vector",
+  "function_value_owner": "RuntimeFunctionValue::ExternalStreamPartial",
+  "repository": {
+    "name": "Sanzentyo/arcweft",
+    "ref": "main",
+    "commit": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6",
+    "agents_blob": "e91f99213dde67953beda6aa078c370a8dc4541d",
+    "request_blob": "6d24910f7961c56faaffddea5cfa6775b48578a1"
+  },
+  "versions": {
+    "awbc_abi": 2,
+    "awbc_codec": 8,
+    "bundle_session_save_schema": 2
+  },
+  "limits": {
+    "groups_per_callable": 16,
+    "parameters_per_callable": 128,
+    "coordinates_per_product": 128,
+    "nesting_depth": 64,
+    "encoded_bytes_default": 268435456
+  },
+  "tags": {
+    "runtime_type_stream_handle": 21,
+    "runtime_type_external_stream_callable": 22,
+    "constant_external_stream_callable": 18,
+    "opcode_apply_external_stream_group": 39,
+    "opcode_open_stream": 40,
+    "function_value_closure": 0,
+    "function_value_external_stream_partial": 1,
+    "argument_explicit": 0,
+    "argument_defaulted": 1,
+    "argument_omitted_optional": 2,
+    "argument_rest_positional": 3,
+    "argument_rest_named": 4
+  },
+  "input_hashes": {
+    "request_sha256": "b19943dba0dbedc2de93288354355e9f7b124f0fa602e31e9c099b135483377d",
+    "rust_skill_sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+    "premise_sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1"
+  }
+}

@@ -244,7 +244,7 @@ TTS.
 
 ## Evidence inspected
 
-- `docs/reviews/packages/arcweft-proof-concurrency-v6.1.1.2.1.1.1-ordinary-flow-evidence-schema-redelivery-correction-final-contract.zip`,
+- `docs/reviews/packages/zips/arcweft-proof-concurrency-v6.1.1.2.1.1.1-ordinary-flow-evidence-schema-redelivery-correction-final-contract.zip`,
   SHA-256 `BDC55671E7D4F8CDB3D07D8EC004672C90E14DEA88A47E63D8189E585BB3E4DF`;
 - `docs/reviews/designs/proof-concurrency-v6.1.1.4.1/arcweft-proof-concurrency-v6.1.1.4.1-final-hir-semantic-leaf-expression-payload-correction-final-contract.zip`,
   SHA-256 `61E2EE166BFF158FE83DCF1484B7B9380A81F60D865377503400D27D238CC708`;

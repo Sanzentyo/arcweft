@@ -1,0 +1,43 @@
+Arcweft Lang-01.5.1.2.1 final-contract package validation
+date=2026-07-22
+repository=Sanzentyo/arcweft
+head=5821a3ca479b5b89ca6ede997b9cf4f42f6280a6
+status=PASS
+fallback=false
+open_questions=0
+production_code_changed=false
+
+PASS input.request.complete sha256=FD8ADBFB7D171E2BAEC9C1429EED56BA32397B0E4B7D00424ADEB5A3D9814045
+PASS input.premise.complete sha256=CFA897A0AD93DEB92FD454079DF0A789EDBBD40D85C8377324DA703C8AEFE0A1
+PASS input.rust_skill.complete sha256=1A28F552ADF5EFDE95205BEE8D56590AEB82346C48EBDF3FDBBAFF5DECA33665
+PASS repository.agents.complete blob=e91f99213dde67953beda6aa078c370a8dc4541d
+PASS repository.baseline_zip.intake_sha256=CA72FD70C657A11B7BECDB331D131177B6DEFD6094D034BBECFC3AF1A232E1C0
+PASS repository.baseline_zip.entry_count=26
+PASS contract.decision_ids.unique count=55
+PASS contract.test_ids.unique count=160
+PASS contract.accepted_categories count=10
+PASS contract.source_family.accepted=false
+PASS contract.callable_family.accepted=false
+PASS contract.source_specific_diagnostic=false
+PASS contract.source_content_compatibility_node=false
+PASS contract.fallback=false
+PASS contract.open_questions=0
+PASS package.utf8_lf
+PASS package.path_containment
+PASS package.entry_uniqueness
+PASS package.no_symlinks
+PASS package.json_csv_parse
+PASS package.no_placeholders
+PASS package.no_production_patch_entries
+PASS package.legacy_positive_shape_lint
+PASS package.manifest_hash_agreement
+PASS zip.testzip
+PASS zip.independent_extract_and_hash
+PASS zip.deterministic_rebuild_byte_equality
+
+NOT_RUN production.cargo reason=no_checkout_and_production_unchanged
+NOT_RUN production.tier2 reason=no_checkout_and_production_unchanged
+NO_STATUS repository.github_combined_status contexts=0
+
+This PASS is the repository-aware contract/package validation result. It does
+not claim unexecuted production implementation commands.

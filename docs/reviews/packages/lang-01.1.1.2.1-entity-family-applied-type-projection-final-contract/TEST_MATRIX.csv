@@ -1,0 +1,72 @@
+id,area,world,input_or_setup,expected_semantic,expected_fact,diagnostic_poison,source_work,required_level
+MODEL-001,owner,both,BuiltinTypeConstructor inventory,Ref appears exactly once; spelling Ref; arity 1,argument 0 expectation EntityFamily; projection subset Ref/Speaker/SpeakerPreset,none,deterministic enum/table order,unit
+MODEL-002,owner,both,project_entity_family for all three constructors,Ref->entity_ref; Speaker->Speaker; SpeakerPreset->SpeakerPreset,inherent owner API only,none,no allocation beyond TypeKind product,unit
+MODEL-003,entity inventory,both,EntityKind authored inventory,all fixed variants round trip name<->kind; Other excluded,typed static inventory,none,deterministic canonical order,unit
+MODEL-004,argument kind,both,TypeArgumentKind ordering,Type/ConstInt/EntityFamily total stable order,wrong-kind payload can represent every successful NodeValue category,none,repeat ordering equality,unit
+RES-001,resolver valid,accepted,Ref<Character>,TypeKind::entity_ref(Character),root Builtin(Ref); child EntityFamily(Character),none,ranges 0..14/0..3/4..13; work 2,unit
+RES-002,resolver valid,accepted,Ref<Flow>,TypeKind::entity_ref(Flow),root Builtin(Ref); child EntityFamily(Flow),none,ranges 0..9/0..3/4..8; work 2,unit
+RES-003,resolver valid nested,accepted,Option<Ref<Character>>,Option(entity_ref(Character)),outer Builtin(Option); inner Builtin(Ref); leaf EntityFamily,none,node order leaf-to-root retained,unit
+RES-004,projection parity,accepted,"Ref<Flow>, Speaker<Flow>, SpeakerPreset<Flow>",three specified products,same child fact and expectation,none,equal work 2,unit
+RES-005,bare family,accepted empty,Character,no entity-family classification,Failed(Unknown),unknown diagnostic; one poison,head range only; work 1,unit
+RES-006,context ownership,accepted with project Character,Character outside slot; Ref<Character> inside,outside ProjectNominal; inside entity_ref(Character),outside Project; inside EntityFamily child,none,exact distinct node facts,integration
+RES-010,wrong arity zero,accepted,Ref,Error,outer Failed WrongArity target Builtin(Ref) expected Exact(1) actual 0,wrong_arity; one authoritative poison,primary 0..3; work 1,unit
+RES-011,wrong arity excess,accepted empty,"Ref<Character, String>",Error,children EntityFamily and Builtin(String); outer Failed WrongArity actual 2,wrong_arity; canonical causes,work 3,unit
+RES-012,ordinary builtin kind,accepted,Ref<String>,Error,root Builtin(Ref); child Failed WrongArgumentKind with recovered String,wrong_kind actual Type(String); one poison,primary 4..10; work 2,unit
+RES-013,const kind,accepted,Ref<3>,Error,child Failed WrongArgumentKind with const evidence,wrong_kind actual ConstInt(3); one authoritative poison,work 2,unit
+RES-014,nested generic kind,accepted,Ref<Option<String>>,Error,argument root Failed WrongArgumentKind; nested String retained,wrong_kind actual Type(Option<String>),primary Option head; work 3,unit
+RES-015,nested contextual kind,accepted,Ref<Speaker<Character>>,Error,Speaker child product is ordinary TypeKind at Ref slot,wrong_kind actual Type(Speaker(Character)),work 3,unit
+RES-016,generic parameter kind,accepted,Ref<T> with type generic T,Error,child Generic then replaced Failed; recovered GenericParam retained,wrong_kind actual Type(GenericParam),work 2,unit
+RES-017,project nominal kind,accepted,Ref<ProjectType>,Error,child Project then replaced Failed; no project index edge,wrong_kind actual Type(ProjectNominal),work 3 with one selection,integration
+RES-018,project alias kind,accepted,Ref<AliasToString>,Error,child Alias then replaced Failed; normalized String retained,wrong_kind actual Type(String),existing alias work additive,integration
+RES-019,external kind,accepted,Ref<qualified external type>,Error,child External then replaced Failed,wrong_kind actual Type(external product),catalog scan accounting unchanged,integration
+RES-020,accepted exact kind,accepted,Ref<qualified accepted exact>,Error,child Accepted then replaced Failed,wrong_kind actual Type(exact product),catalog charge unchanged,integration
+RES-021,open kind,accepted,Ref<qualified open name>,Error,child Open then replaced Failed,wrong_kind actual Type(OpenNominal),open scan charge unchanged,integration
+RES-022,unknown argument,accepted empty,Ref<Missing>,Error,child Failed Unknown; outer Builtin(Ref),unknown only; poison reused; no wrong_kind,work 2,unit
+RES-023,ambiguous argument,accepted project,Ref<AmbiguousName>,Error,child Failed Ambiguous; outer Builtin(Ref),ambiguous only; sorted related candidates,2 + candidate-count work,integration
+RES-024,inaccessible argument,accepted project,Ref<PrivateType>,Error,child Failed Inaccessible; outer Builtin(Ref),inaccessible only; sorted related candidates,2 + candidate-count work,integration
+RES-025,wrong project symbol kind,accepted project,Ref<callable-only name>,Error,child Failed WrongKind; outer Builtin(Ref),existing wrong_kind for non-type declaration only,existing selection accounting,integration
+RES-026,syntax recovery,accepted,Ref<Recovery(p)>,Error(p),child Poisoned(p); outer Builtin(Ref),no duplicate nominal diagnostic; syntax poison retained,deterministic causes,unit
+DET-001,detached valid,detached,Ref<Character>,entity_ref(Character),root Builtin; child EntityFamily,none,local ranges; work 2,unit
+DET-002,detached valid noncharacter,detached,Ref<Flow>,entity_ref(Flow),root Builtin; child EntityFamily,none,local ranges; work 2,unit
+DET-003,detached bare family,detached,Flow,Error,child/root DetachedUnavailable,no source diagnostic; nonauthoritative detached poison,local only; work 1,unit
+DET-004,detached unknown argument,detached,Ref<Missing>,Error,root Builtin; child DetachedUnavailable; report Detached,no authoritative diagnostic; poison reused,work 2,unit
+DET-005,detached builtin wrong kind,detached,Ref<String>,Error,child Failed WrongArgumentKind,local wrong_kind report; source projection None,work 2,unit
+DET-006,detached project-dependent,detached,Ref<ProjectOnly>,Error,"child DetachedUnavailable, not proven wrong-kind",detached poison only,work 2 plus detached open scans,unit
+COL-001,project collision,accepted,publish struct/enum/type alias Ref,publication rejected,no symbol enters table,aw.project.symbol.reserved_type_name,declaration name source,unit
+COL-002,callable collision,accepted,publish callable Ref at reserved type namespace surface,publication rejected,no binding,existing reserved error,declaration name source,unit
+COL-003,external collision,accepted,publish direct external binding Ref,publication rejected,no binding,existing reserved error,binding source,unit
+COL-004,accepted collision,both,AcceptedNominalRecord implicit Ref,catalog construction rejected,no exact row,AcceptedNominalCatalogError::ReservedPath,atomic construction,unit
+COL-005,open exact collision,both,OpenNominalPattern::Exact(Ref),rule construction rejected,no rule,InvalidOpenPattern ReservedPath,atomic construction,unit
+COL-006,open prefix collision,both,OpenNominalPattern::Namespace prefix Ref,rule construction rejected,no rule,InvalidOpenPattern ReservedPath,atomic construction,unit
+COL-007,qualified accepted allowed,accepted,register pkg::Ref and resolve direct/qualified,direct selects builtin; qualified selects registered type,distinct typed owners,none,deterministic precedence,integration
+COL-008,qualified external allowed,accepted,qualified external pkg::Ref; direct alias Ref attempted,qualified allowed; direct alias rejected,distinct typed owners,reserved error only for alias,deterministic binding,integration
+SRC-001,source accepted,accepted,source-backed Ref<Character>,exact TypeKind,root/child local and project spans exact,none,root 0..14 head 0..3 child 4..13,unit
+SRC-002,source invalid,accepted,source-backed Ref<String>,Error,child recovered String and Failed outcome,wrong_kind primary exact child head,root 0..11 child 4..10,unit
+SRC-003,source detached,detached,detached Ref<Missing>,Error,local evidence only,detached poison,no fabricated SourceSpan,unit
+POI-001,poison wrong kind,accepted,Ref<String> repeated,same report,one authoritative nominal poison,"one diagnostic, no duplication",byte-for-byte equal reports,unit
+POI-002,poison child reuse,accepted,Ref<Missing>,Error,outer shares child cause,one unknown poison only,canonical cause list,unit
+POI-003,poison detached,detached,Ref<Missing>,Error,report Detached,one nonauthoritative detached poison,canonical unavailable list,unit
+POI-004,work cache,accepted,resolve same source/cache key twice,same recovered type,same node facts,same diagnostics/poisons,work stored identically; no semantic variation,integration
+CON-001,normal checker,accepted,current pass fixture 014 RouteInfo.id Ref<Flow>,field TypeKind::entity_ref(Flow),checked resolver/index fact,none,fixture passes without fallback,tier2
+CON-002,normal checker,accepted,current pass fixture 015 GameState.route Ref<Flow>,field TypeKind::entity_ref(Flow),checked resolver/index fact,none,fixture passes without fallback,tier2
+CON-003,callable parameter,accepted,fn f(x: Ref<Character>),parameter entity_ref(Character),shared callable resolver/index,none,source-backed fact retained,integration
+CON-004,callable return,accepted,fn f() -> Ref<Flow>,return entity_ref(Flow),shared callable resolver/index,none,source-backed fact retained,integration
+CON-005,entry callable,accepted,entry-bound role callable uses Ref,role comparison accepts exact TypeKind::Ref,checked callable fact only,none,no local TypeRef conversion,integration
+CON-006,entry persisted data,accepted,persisted state/event field Ref<Flow>,typed unsupported canonical data shape,checked Ref consumed then rejected by shape policy,no fallback/Named encoding,deterministic error path,integration
+IDX-001,nominal index valid,accepted,Ref<Character>,root recovered Ref; child no TypeKind,root Builtin; child EntityFamily,none,exact node keys/source,unit
+IDX-002,project index valid,accepted,Ref<Character>,callable/type value may contain Ref,no project nominal reference edge,none,schema version unchanged,integration
+IDX-003,project index invalid,accepted,Ref<ProjectType>,Error,child final outcome Failed; no project edge,wrong_kind,valid outside-slot use still creates edge,integration
+LSP-001,hover constructor,accepted,cursor on Ref,shows language-owned Ref<EntityFamily> and normalized label,uses Builtin(Ref) node,none,exact root range,integration
+LSP-002,hover family,accepted,cursor on Character in Ref<Character>,shows entity family Character,uses EntityFamily child,none,exact child range,integration
+LSP-003,completion type,accepted,ordinary type position,includes Ref/Speaker/SpeakerPreset from typed inventory,no accepted-record fabrication,none,deterministic list,integration
+LSP-004,completion family,accepted,inside Ref<|>,only authored fixed entity families; Other/project/external excluded,typed expectation and EntityKind inventory,none,deterministic canonical order,integration
+LSP-005,definition ownership,accepted,cursor on Ref or entity atom,no location,no project identity fabricated,none,stable None,integration
+LSP-006,rename ownership,accepted,prepare/rename Ref or entity atom,no edit,language/domain owner retained,none,stable None,integration
+LSP-007,invalid project arg rename,accepted,Ref<ProjectType>,no contextual-site rename edge,child final Failed,wrong_kind retained,outside valid use still renameable,integration
+BC-001,persistent digest,accepted,authored callable Ref<Character> twice,stable equal interface digest,structural TypeRef generic base/child,none,repeat equal,integration
+BC-002,persistent distinction,accepted,Ref<Character> vs Ref<Flow>,distinct interface digests,typed authored children differ,none,deterministic distinction,integration
+BC-003,bytecode schema,accepted,compile affected source,no TypeKind wire variant/schema bump,existing authored digest only,none,existing reader count unchanged,tier2
+SAVE-001,save/replay boundary,accepted,persisted data containing Ref,does not cross wire boundary,typed unsupported shape,no alias/fallback,no round trip required in this slice,tier2
+VAL-001,format/lint,n/a,implementation checkout,cargo fmt and full workspace clippy pass,no new allow/unsafe/macro/dependency,none,record commands,normal
+VAL-002,workspace tests,n/a,implementation checkout,workspace all-target/all-feature tests pass,all typed APIs,none,record counts,normal
+VAL-003,Tier 2,n/a,identity/tooling/schema slices,all affected Tier 2 slices pass,typed public/crate APIs,none,record counts and audit,tier2

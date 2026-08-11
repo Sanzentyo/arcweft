@@ -1,0 +1,29 @@
+{
+  "applicable_agents": [
+    {
+      "blob_sha": "e91f99213dde67953beda6aa078c370a8dc4541d",
+      "path": "AGENTS.md",
+      "read_to_end": true,
+      "scope": "repository-wide"
+    }
+  ],
+  "branch": "main",
+  "commit_subject": "Audit returned review packages and require intake scans",
+  "equal": true,
+  "final_reresolution_before_packaging": {
+    "combined_status_contexts": 0,
+    "equal_to_recorded_origin_main": true,
+    "resolved_commit": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6",
+    "workflow_runs": 0
+  },
+  "main_advanced_during_reconciliation": {
+    "action": "re-read current AGENTS.md and request, compared commits, and re-adjudicated against the newer main",
+    "final_pin": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6",
+    "initially_observed": "126f7ece0f69062f1cbea3e753cd04af5ead2056"
+  },
+  "nested_agents_found_for_inspected_paths": false,
+  "origin_main_commit": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6",
+  "repository": "Sanzentyo/arcweft",
+  "resolution_method": "private GitHub connector; refs/heads/main is the authoritative remote branch",
+  "resolved_commit": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6"
+}

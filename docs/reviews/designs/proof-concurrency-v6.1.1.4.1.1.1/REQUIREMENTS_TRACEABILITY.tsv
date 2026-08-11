@@ -1,0 +1,22 @@
+requirement_id	request_clause	decision	normative_owner	tests	status
+R1	Request §1	all 21 roles have exact typed owner set	ROLE_OWNER_ORDINAL_MATRIX.tsv; RUST_SCHEMAS §3	T-ROLE-01..T-ROLE-21	CLOSED
+R2	Request §1	four former Syntax owners replaced	FINAL_CORRECTION §2; matrix rows 1,2,3,8	T-ROLE-01;02;03;08; T-COMPILE-04	CLOSED
+R3	Request §1	multiple typed owners explained	FINAL_CORRECTION §2; matrix	T-ROLE-05;07;16;18	CLOSED
+R4	Request §1	candidate root ownership and non-reuse	CONSTRUCTOR_AND_TRANSACTION_CONTRACT §6	T-CAND-01..04	CLOSED
+R5	Request §2	arbitrary-u32 predicates for every role	RUST_SCHEMAS §3; role matrix	T-ROLE-01..21	CLOSED
+R6	Request §2	exact-zero and source-ordered boundaries	FINAL_CORRECTION §3	all role rows; T-LIMIT-01..03	CLOSED
+R7	Request §2	checked deterministic generators; no map/vector fallback	CONSTRUCTOR_AND_TRANSACTION_CONTRACT §2	role rows 05,07,09,11,20,21; T-CAND-03	CLOSED
+R8	Request §3	accepts_owner and try_new complete behavior	RUST_SCHEMAS §§3-4	T-ERROR-01..03	CLOSED
+R9	Request §3	WrongOwnerKind precedes InvalidOrdinal	FINAL_CORRECTION §4	T-ERROR-01..02	CLOSED
+R10	Request §3	liveness separate from structural construction	CONSTRUCTOR_AND_TRANSACTION_CONTRACT §§3-5	T-LIVE-01..04	CLOSED
+R11	Request §4	exact read-only transcript API and 51-byte layout	FINGERPRINT_TRANSCRIPT §§1-2	T-FP-01..02	CLOSED
+R12	Request §4	owner/role numeric tags	FINGERPRINT_TRANSCRIPT §§3-4	T-FP-03..04	CLOSED
+R13	Request §4	database/module/HIR slot and ordinal encoding	FINGERPRINT_TRANSCRIPT §2	T-FP-01..02;05..06	CLOSED
+R14	Request §4	digest boundary and no Rust Hash bytes	FINGERPRINT_TRANSCRIPT §5	T-EQ-01; T-FP-06	CLOSED
+R15	Request §4	fixed vectors and collision separation	FINGERPRINT_TRANSCRIPT §§6-7	T-FP-01..05	CLOSED
+R16	Request §5	all eight owner projections	RUST_SCHEMAS §1	T-OWNER-01..08	CLOSED
+R17	Request §5	non-Serde/private construction/raw absence	RUST_SCHEMAS §8	T-COMPILE-01..04	CLOSED
+R18	Request §5	foreign/not-yet-live/retired/staged owner	CONSTRUCTOR_AND_TRANSACTION_CONTRACT §3	T-LIVE-01..04	CLOSED
+R19	Request §5	rollback and exact/one-over descendant limit	CONSTRUCTOR_AND_TRANSACTION_CONTRACT §5	T-LIMIT-01..03	CLOSED
+R20	Constraints	no redesign/compatibility/source gate/old dialogue repair	PREDECESSOR_PRECEDENCE; IMPLEMENTATION_AND_DELETION_ORDER	T-MIGRATION-01; T-COMPILE-04	CLOSED
+R21	Required return	standalone ZIP/status/open questions/manifest	README; FINAL_STATUS; OPEN_QUESTIONS; MANIFEST	package validation	CLOSED

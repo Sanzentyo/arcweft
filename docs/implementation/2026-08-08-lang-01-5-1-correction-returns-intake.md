@@ -15,7 +15,7 @@ members. Every `OPEN_QUESTIONS.md` is exactly `none\n`.
 ## Lang-01.5.1.1.1 — accepted as-built confirmation
 
 - package:
-  [`arcweft-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation-final-contract.zip`](../reviews/packages/arcweft-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation-final-contract.zip);
+  [`arcweft-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation-final-contract.zip`](../reviews/packages/zips/arcweft-lang-01.5.1.1.1-dialogue-profile-owner-and-admission-reconciliation-final-contract.zip);
 - SHA-256:
   `8B7FE4D8DA08B793AB039E612CCE5A27AF3EC34E39B9FA07533C81C1F901350F`;
 - classification: `ACCEPTED_AS_BUILT_CONFIRMATION`;
@@ -38,7 +38,7 @@ the coherent Lang-01.5.1 cut.
 ## Lang-01.5.1.2.1 — replacement content-root contract
 
 - package:
-  [`arcweft-lang-01.5.1.2.1-typed-content-root-admission-and-source-elimination-final-contract.zip`](../reviews/packages/arcweft-lang-01.5.1.2.1-typed-content-root-admission-and-source-elimination-final-contract.zip);
+  [`arcweft-lang-01.5.1.2.1-typed-content-root-admission-and-source-elimination-final-contract.zip`](../reviews/packages/zips/arcweft-lang-01.5.1.2.1-typed-content-root-admission-and-source-elimination-final-contract.zip);
 - SHA-256:
   `B1C170170F0EB782FA85E96D933B328F09F4008FAE5EB7BDE20381235DDD7FCB`;
 - classification: `ACCEPTED_IMPLEMENTATION_READY_DEFERRED`;
@@ -67,7 +67,7 @@ usable; the superseded wider root-family set does not.
 ## Lang-01.5.1.3 — replacement generated-binding contract
 
 - package:
-  [`arcweft-lang-01.5.1.3-generated-artifact-runtime-binding-fail-closed-final-contract.zip`](../reviews/packages/arcweft-lang-01.5.1.3-generated-artifact-runtime-binding-fail-closed-final-contract.zip);
+  [`arcweft-lang-01.5.1.3-generated-artifact-runtime-binding-fail-closed-final-contract.zip`](../reviews/packages/zips/arcweft-lang-01.5.1.3-generated-artifact-runtime-binding-fail-closed-final-contract.zip);
 - SHA-256:
   `342D38E521C14F2CCE340355F4F4BC07241C8BFA89DA9B7C324B169869482027`;
 - classification: `ACCEPTED_IMPLEMENTATION_READY_DEFERRED`;

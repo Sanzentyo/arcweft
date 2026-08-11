@@ -1,0 +1,36 @@
+{
+  "access": "read-only GitHub connector at exact commit",
+  "artifact_date": "2026-07-22",
+  "commit_message": "Implement project nominal type resolution",
+  "head_checks": [
+    {
+      "phase": "analysis start",
+      "sha": "4fd6331dc342d30a7f4ac7774852b60801866ef7",
+      "tool": "GitHub.search_commits"
+    },
+    {
+      "phase": "artifact freeze",
+      "sha": "4fd6331dc342d30a7f4ac7774852b60801866ef7",
+      "tool": "GitHub.search_commits"
+    }
+  ],
+  "inputs": {
+    "2026-07-22-lang-01.1.1.2.2-adapter-callable-nominal-publication-projection-correction.md": "44a46abfab0e34f22944f330986f0cf745e75b53e96e8673f2834135009c8022",
+    "Rust Skill.txt": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+    "\u524d\u63d0(Sanzentyo-arcweft).txt": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1"
+  },
+  "production_repository_writes": 0,
+  "ref": "main",
+  "repository": "Sanzentyo/arcweft",
+  "sha": "4fd6331dc342d30a7f4ac7774852b60801866ef7",
+  "timezone": "Asia/Tokyo",
+  "validation_classes": [
+    "baseline head verification",
+    "full AGENTS.md review",
+    "Rust skill full review",
+    "commit-pinned source inspection",
+    "dependency and construction-order reconciliation",
+    "machine contract checks",
+    "deterministic archive and ZIP integrity"
+  ]
+}

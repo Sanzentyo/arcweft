@@ -1,0 +1,208 @@
+# Design request: Proof-concurrency 01.1.1.4.1.1.1 synthetic-role owner admission correction
+
+- Date: 2026-07-28
+- Sequence: Proof-concurrency v6.1.1.4.1.1.1, narrowly correcting the
+  v6.1.1.4.1.1 typed `SyntheticOwner` / `SyntheticKey` contract
+- Kind: independently throwable, GitHub-only, design-only correction
+- Production changes: prohibited
+- Required archive name:
+  `arcweft-proof-concurrency-v6.1.1.4.1.1.1-synthetic-role-owner-admission-correction-final-contract.zip`
+
+## Assignment
+
+Prepare one decision-complete correction for the retained Proof
+v6.1.1.4.1.1 package in the latest GitHub `main` of:
+
+`https://github.com/Sanzentyo/arcweft`
+
+Read repository `AGENTS.md`, this complete request, the full retained
+v6.1.1.4.1.1 ZIP, its predecessor-precedence and Rust-schema members, the
+base Proof v6.1.1 package, the authoritative AW-AH-009.4.2 package, and the
+current intake notes:
+
+- `docs/reviews/designs/proof-concurrency-v6.1.1.4.1.1/arcweft-proof-concurrency-v6.1.1.4.1.1-source-owner-and-semantic-consistency-correction-final-contract.zip`
+- `docs/reviews/packages/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip`
+- `docs/reviews/packages/arcweft-aw-ah-009.4.2-dialogue-content-application-syntax-hir-ownership-production-reconciliation-final-contract.zip`
+- `docs/implementation/2026-07-28-proof-01-1-1-4-1-1-source-owner-consistency-intake.md`
+- `docs/implementation/2026-07-28-proof-database-qualified-hir-identity.md`
+
+This is not permission to redesign the accepted eight-variant
+`SyntheticOwner`, qualified typed HIR IDs, `SyntheticRole` vocabulary,
+source-query contract, Dialogue candidate ownership, or deletion-driven
+migration. Correct only the missing admission and fingerprint decisions below
+and restate the final affected schemas and tests in full.
+
+## Why the correction is required
+
+The retained v6.1.1.4.1.1 package defines:
+
+```rust
+pub enum SyntheticOwner {
+    Item(ItemId),
+    Scope(ScopeId),
+    Local(LocalId),
+    Expr(ExprId),
+    Stmt(StmtId),
+    Type(TypeId),
+    Pattern(PatternId),
+    Capture(CaptureId),
+}
+```
+
+and requires `SyntheticKey::try_new` to call
+`SyntheticRole::accepts_owner(HirIdKind, u32)`, but it defines the exact
+policy only for `ElidedRegion = Type + ordinal 0` and says all other policies
+are inherited.
+
+That inheritance is not implementable without choosing new behavior. The base
+Proof table assigns `ImplicitUnitTail`, `PredicateBoolReturn`,
+`ProofUnitReturn`, and `MissingRequiredTail` to `SyntaxNodeId`, but the final
+owner enum intentionally has no Syntax variant. `DesugaredTemporary` says only
+"lowering owner". Six source-ordered roles name an ordinal generator but do
+not define the boolean admission domain for an arbitrary `u32`. The accepted
+package also lists stable fingerprint ingredients without fixing their typed
+encoder/API or exact discriminant and integer encoding.
+
+Do not solve these omissions by retaining `SyntheticOwner::Syntax`, restoring
+the deleted raw-ID owner, accepting every owner/ordinal, rejecting every
+non-Elided role, or inferring policy from whichever arena slot happens to
+exist.
+
+## Required decisions
+
+### 1. Complete role-to-owner table
+
+For every current `SyntheticRole`, specify the exact accepted
+`SyntheticOwner` variant or variants and corresponding `HirIdKind`:
+
+- `ImplicitUnitTail`
+- `PredicateBoolReturn`
+- `ProofUnitReturn`
+- `ElidedRegion`
+- `RecoveryOperand`
+- `PostconditionResult`
+- `DesugaredTemporary`
+- `MissingRequiredTail`
+- `DestructuredBinding`
+- `ClosureEnvironment`
+- `ClosureCapture`
+- `ContractRequiresScope`
+- `ContractEnsuresScope`
+- `ForIterator`
+- `ForNextValue`
+- `IfLetScrutinee`
+- `WhileLetScrutinee`
+- `MatchScrutinee`
+- `PatternRest`
+- `PostfixIndexCandidateExpression`
+- `DialogueContentCandidateExpression`
+
+Explicitly replace the four former Syntax-owned roles with final typed HIR
+owners. State whether one role admits multiple typed owner kinds and why.
+Preserve candidate root ownership by the source-backed postfix ExprId and do
+not turn a candidate-only key into a selected committed-expression key.
+
+### 2. Exact ordinal admission
+
+For every role, define the predicate over an arbitrary `u32`, not only how a
+lowerer normally generates the ordinal. At minimum close:
+
+- exact-zero roles;
+- `RecoveryOperand` child-role ordinals;
+- `DesugaredTemporary` deterministic lowering ordinals;
+- `DestructuredBinding` preorder ordinals;
+- `ClosureCapture` first-use ordinals; and
+- both candidate-expression preorder families, including root ordinal zero.
+
+State whether all `u32` values are structurally admissible for source-ordered
+families and the separate transaction limit supplies the bound, or define an
+exact smaller inclusive maximum. Give exact/one-over behavior and prevent
+integer wrapping, sentinel values, vector-position fallback, and hash-map
+iteration order.
+
+### 3. Constructor and error precedence
+
+Give the complete implementation-ready behavior of:
+
+```rust
+SyntheticRole::accepts_owner(HirIdKind, u32) -> bool
+SyntheticKey::try_new(SyntheticOwner, SyntheticRole, u32)
+    -> Result<SyntheticKey, SyntheticKeyError>
+```
+
+Define deterministic precedence when both owner kind and ordinal are wrong.
+Retain exact typed error payloads or provide a complete replacement. Separate
+structural owner/role/ordinal admission from module/snapshot liveness; the
+owning transaction, not `try_new`, resolves live/staged typed IDs.
+
+### 4. Stable fingerprint input
+
+Close the v6.1.1.4.1.1 claim that a synthetic key has a stable fingerprint
+input. Specify:
+
+- the owning crate/module and exact read-only encoder or transcript API;
+- version-tag bytes and separator/length convention;
+- stable numeric tags for every owner kind and `SyntheticRole`;
+- whether and how process-local database ID, module slot, and HIR slot are
+  encoded, including integer width and endianness;
+- ordinal encoding;
+- fingerprint/digest algorithm and output type, or an explicit statement that
+  this layer emits canonical transcript bytes for another accepted owner to
+  hash; and
+- fixed-vector and collision-separation tests.
+
+Do not use Rust `Hash` output as stable bytes and do not expose a raw-ID
+constructor or numeric slot accessor merely to implement the encoder.
+
+### 5. Complete focused tests
+
+Provide a standalone matrix covering:
+
+- all eight `SyntheticOwner` variants and `kind()` / `module()` projection;
+- every role's accepted and rejected owner kinds;
+- exact-zero and variable ordinal boundaries;
+- deterministic `WrongOwnerKind` versus `InvalidOrdinal` precedence;
+- `ElidedRegion = Type + 0`;
+- both Dialogue candidate-only role families;
+- structural Eq/Hash/Ord separation and stable fingerprint fixed vectors;
+- non-Serde and private construction compile-fail evidence;
+- foreign/not-yet-live/retired resolution in the owning transaction; and
+- rollback and `SyntheticDescendantsPerOwner` exact/one-over behavior.
+
+Use typed behavioral, compile-fail, and codec/fingerprint tests. Do not add a
+source gate or inspect checked-in source spellings as acceptance evidence.
+
+## Constraints
+
+- Design only: do not edit production code, create a patch, branch, PR, or
+  implementation overlay.
+- Preserve the final eight-variant `SyntheticOwner`; do not restore Syntax or
+  raw-ID owner variants.
+- Preserve all uncontradicted v6.1.1.4.1.1 decisions.
+- No alias, wrapper, extension trait, compatibility shim, dual reader,
+  source-string reparse, source gate, CSS/Takumi path, or permanent
+  removed-syntax-specific diagnostic.
+- Do not repair old `SpeakerLine`, `ContentCall`, stringly `HirDialogue`, or
+  detached syntax readers.
+- Do not require the implementer to infer policy from prose examples or
+  compare archives manually.
+
+## Required return
+
+Return exactly one ZIP with every sidecar inside and no required adjacent
+files:
+
+```text
+arcweft-proof-concurrency-v6.1.1.4.1.1.1-synthetic-role-owner-admission-correction-final-contract.zip
+```
+
+Include README, complete request copy, FINAL_STATUS, OPEN_QUESTIONS, complete
+Rust schemas, the full role/owner/ordinal table, fingerprint transcript or
+codec contract, implementation/deletion order, focused test matrix,
+traceability, repository evidence, validation report, and manifest.
+
+Use `READY_FOR_IMPLEMENTATION` only when `OPEN_QUESTIONS.md` is exactly `none`
+and every role owner, arbitrary-ordinal admission result, constructor error
+precedence, fingerprint byte, and required test is closed. Otherwise return
+the same correctly named ZIP with `NOT_READY` and explicit unresolved
+decisions.

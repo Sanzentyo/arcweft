@@ -1,0 +1,100 @@
+{
+  "accepted_families": [
+    {
+      "accepted_target": "AcceptedContentRootTarget::Character { character: CharacterId }",
+      "class": "file-backed-character",
+      "family": "character",
+      "identity_owner": "arcweft-character::id::CharacterId",
+      "notes": "Exact assets/<suffix>.awchar package; no directory scan.",
+      "resolver_owner": "arcweft-project-loader acquisition + arcweft-project::content acceptance"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::AuthoredEntity { entity: EntityId, family: AuthoredContentRootFamily::Flow }",
+      "class": "authored-entity",
+      "family": "flow",
+      "identity_owner": "arcweft-id::EntityId",
+      "notes": "Exact Flow declaration identity.",
+      "resolver_owner": "arcweft-lang-sema accepted entity resolver"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::AuthoredEntity { entity: EntityId, family: AuthoredContentRootFamily::View }",
+      "class": "authored-entity",
+      "family": "view",
+      "identity_owner": "arcweft-id::EntityId",
+      "notes": "Global retained View declaration.",
+      "resolver_owner": "arcweft-lang-sema accepted entity resolver"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::AuthoredEntity { entity: EntityId, family: AuthoredContentRootFamily::Action }",
+      "class": "authored-entity",
+      "family": "action",
+      "identity_owner": "arcweft-id::EntityId",
+      "notes": "Global Action declaration; scoped action handles are not roots.",
+      "resolver_owner": "arcweft-lang-sema accepted entity resolver"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::AuthoredEntity { entity: EntityId, family: AuthoredContentRootFamily::Activity }",
+      "class": "authored-entity",
+      "family": "activity",
+      "identity_owner": "arcweft-id::EntityId",
+      "notes": "Abstract/source Activity identity, not an adapter implementation artifact.",
+      "resolver_owner": "arcweft-lang-sema accepted entity resolver"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::AuthoredEntity { entity: EntityId, family: AuthoredContentRootFamily::Asset }",
+      "class": "authored-entity",
+      "family": "asset",
+      "identity_owner": "arcweft-id::EntityId",
+      "notes": "Identity only; payload bytes remain in the asset/resource pipeline.",
+      "resolver_owner": "arcweft-lang-sema accepted entity/asset catalog resolver"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::AuthoredEntity { entity: EntityId, family: AuthoredContentRootFamily::Signal }",
+      "class": "authored-entity",
+      "family": "signal",
+      "identity_owner": "arcweft-id::EntityId",
+      "notes": "Global retained Signal declaration.",
+      "resolver_owner": "arcweft-lang-sema accepted entity resolver"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::AuthoredEntity { entity: EntityId, family: AuthoredContentRootFamily::Metric }",
+      "class": "authored-entity",
+      "family": "metric",
+      "identity_owner": "arcweft-id::EntityId",
+      "notes": "Global retained Metric declaration.",
+      "resolver_owner": "arcweft-lang-sema accepted entity resolver"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::AuthoredEntity { entity: EntityId, family: AuthoredContentRootFamily::Layer }",
+      "class": "authored-entity",
+      "family": "layer",
+      "identity_owner": "arcweft-id::EntityId",
+      "notes": "Global retained Layer declaration, not a View-scoped layer handle.",
+      "resolver_owner": "arcweft-lang-sema accepted entity resolver"
+    },
+    {
+      "accepted_target": "AcceptedContentRootTarget::ConfiguredResource { identity: ResourceDeclarationIdentity }",
+      "class": "configured-resource",
+      "family": "configured resource",
+      "identity_owner": "arcweft-resource-model::identity::ResourceDeclarationIdentity",
+      "notes": "Exact declaration required; family spelling or return type is never sufficient.",
+      "resolver_owner": "accepted resource declaration index"
+    }
+  ],
+  "atomic_publication": true,
+  "directory_inference": false,
+  "fallback": false,
+  "open_questions": 0,
+  "production_code_changed": false,
+  "repository": "Sanzentyo/arcweft",
+  "repository_head": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6",
+  "repository_ref": "main",
+  "request": "Lang-01.5.1.2.1",
+  "schema": "arcweft.lang.content-root-final-contract.v1",
+  "source_content_compatibility_node": false,
+  "source_family_accepted": false,
+  "source_reparse_for_roots": false,
+  "source_specific_migration_diagnostic": false,
+  "status": "FINAL_CONTRACT",
+  "stream_callable_is_content_root": false
+}

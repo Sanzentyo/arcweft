@@ -6,7 +6,7 @@ Date: 2026-07-25
 
 The returned archive is retained at:
 
-- [`Lang-01.1.1.3.1 checked callable catalog reconciliation`](../reviews/packages/arcweft-lang-01.1.1.3.1-checked-callable-catalog-authority-and-consumer-scope-reconciliation-final-contract.zip),
+- [`Lang-01.1.1.3.1 checked callable catalog reconciliation`](../reviews/packages/zips/arcweft-lang-01.1.1.3.1-checked-callable-catalog-authority-and-consumer-scope-reconciliation-final-contract.zip),
   SHA-256
   `0E4746ABD1589F0228ADC62A074DFC07EEC92F3DF4DBC432E58138FD21500F4C`.
 

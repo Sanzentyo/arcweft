@@ -1,0 +1,69 @@
+{
+  "schema": "arcweft.implementation-final-contract.package/1",
+  "status": "FINAL",
+  "open_questions": 0,
+  "repository": "Sanzentyo/arcweft",
+  "branch": "main",
+  "base_commit": "c957a61e4a0b9abf094165c41ef4038ce25324c0",
+  "base_commit_message": "Document Proof public authority switch",
+  "base_commit_scope": "documentation-only head after the inspected typed-fragment substrate; no relevant Try/Await/parser/sema/LSP blob changed",
+  "latest_agents_blob": "ea4a46132ff8cd004f860c89c854e4cbfe807d86",
+  "request_sha256": "105ea99a9425b367824985f4495b86304a16bc13bba1d0db869d0409f399d837",
+  "request_is_verbatim_copy": true,
+  "implementation_performed": false,
+  "repository_mutation_performed": false,
+  "repository_commands_executed": [],
+  "verification": "static private-repository inspection plus artifact integrity; no Cargo/Just execution",
+  "test_matrix_rows": 132,
+  "required_test_rows": 124,
+  "conditional_current_formatter_rows": 8,
+  "owner_inventory_rows": 42,
+  "open_questions_marker": "OPEN_QUESTIONS=0",
+  "files": [
+    {
+      "path": "EVIDENCE_AND_VERIFICATION.md",
+      "bytes": 7234,
+      "sha256": "db4291be382800e0e585473aa152e68e1ad511fee1e2454820f08a4ff9491e0c"
+    },
+    {
+      "path": "FINAL_CONTRACT.md",
+      "bytes": 28000,
+      "sha256": "166190ea0852c98f25eefb4c12db9aed421c9e544554ae5b93d117bbb423a75c"
+    },
+    {
+      "path": "IMPLEMENTATION_CUTS.md",
+      "bytes": 5963,
+      "sha256": "4a3024afebafb56aaff41404359f399396624db94caecce13c8bfa8816d2b66b"
+    },
+    {
+      "path": "OPEN_QUESTIONS.md",
+      "bytes": 226,
+      "sha256": "2d7b4270eb18d5cc4c8e40ec4ccd194a944e43a9e41975a73f62867c7829094c"
+    },
+    {
+      "path": "OWNER_MIGRATION_INVENTORY.csv",
+      "bytes": 10323,
+      "sha256": "6fbd145515128323ccff994e392fcb8ca3c76e764a6e9e2966f24b86a682e7b0"
+    },
+    {
+      "path": "README.md",
+      "bytes": 2588,
+      "sha256": "4ebd2d413db8b365e267811a333f77bd4d27cb63c1d40f70f7369e9564d3780e"
+    },
+    {
+      "path": "TEST_MATRIX.csv",
+      "bytes": 23499,
+      "sha256": "e09a43e71739884884bcf191f277afc77511a8d06c239b951901aa2067d1cd1f"
+    },
+    {
+      "path": "TEST_MATRIX_INDEX.md",
+      "bytes": 1248,
+      "sha256": "11299b66800261101771babc0f894a5ebee52bd370d347b2309cea4ce34c2e76"
+    },
+    {
+      "path": "source/REQUEST.md",
+      "bytes": 7351,
+      "sha256": "105ea99a9425b367824985f4495b86304a16bc13bba1d0db869d0409f399d837"
+    }
+  ]
+}

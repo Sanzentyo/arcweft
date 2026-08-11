@@ -1,0 +1,167 @@
+{
+  "format": "arcweft-design-package-manifest-v1",
+  "archive": "arcweft-proof-concurrency-v6.1.1.4.1.1.1.1.2.1-call-source-resolver-authority-correction-final-contract.zip",
+  "repository": "Sanzentyo/arcweft",
+  "main_commit": "004ff3d69f241954eb808985878c348b165a815c",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "open_questions": "none",
+  "self_manifest": false,
+  "entries": [
+    {
+      "path": "ACTIVE_SLOT_MATRIX.tsv",
+      "bytes": 1499,
+      "sha256": "D7F645F940A7F53AF02A91C449F176FED0F007EFD801E2662B68A706D44EC543",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "ATTACHED_CALL_PROJECTION.md",
+      "bytes": 5785,
+      "sha256": "61AAF0431F2B9D5E97CF028DCEA99AD6BE2F4C504BE2622680C98E2B365B780E",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "CALL_PAYLOAD_MATRIX.tsv",
+      "bytes": 4673,
+      "sha256": "DF4B7E41E9D5C4E259D8762D48F127AA8B182F53828E56C6A2A825C4695BDD72",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "CONTRADICTION_AUDIT.tsv",
+      "bytes": 1768,
+      "sha256": "4837023C7DC8EAF4006FC195A09AFFC9E84BC1FEA7E679CCEBC126EF81035B6D",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "CORRECTION_REQUEST_COPY.md",
+      "bytes": 4898,
+      "sha256": "1016E50BF5D4D42B976F45992A3D13DB989003EBDECFB388FF90D0B226713362",
+      "role": "dispatch-copy"
+    },
+    {
+      "path": "DELETION_MIGRATION_MATRIX.tsv",
+      "bytes": 2374,
+      "sha256": "EEE28AE71FE64E24963934DE76ACFF050FF952314DCC6E878A4B46C92B2964CE",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "FINAL_STATUS.md",
+      "bytes": 25,
+      "sha256": "9CFE844241B3057B5B9744AD7FD94D42B90B31F9C96C35DAD40A7AFB94ED395C",
+      "role": "status"
+    },
+    {
+      "path": "IMPLEMENTATION_AND_DELETION_ORDER.md",
+      "bytes": 2199,
+      "sha256": "73826E931018B1B0010255623C8C8324EEFF7717B88DAA644D3CEA27A9F6C9BF",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "LIMIT_AND_ROLLBACK_MATRIX.tsv",
+      "bytes": 1421,
+      "sha256": "0579DA83B26C6707F39530EF62954A4A9E21F51E958A9921C2D6516679A7447F",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "LIMIT_AND_TRANSACTION_CONTRACT.md",
+      "bytes": 2351,
+      "sha256": "EA621378D414E903F61A0F514ADA735503889D70415C53546A40D9DF86C43B6C",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "OPEN_QUESTIONS.md",
+      "bytes": 4,
+      "sha256": "140BEDBF9C3F6D56A9846D2BA7088798683F4DA0C248231336E6A05679E4FDFE",
+      "role": "questions"
+    },
+    {
+      "path": "PREDECESSOR_MEMBER_AUDIT.tsv",
+      "bytes": 2915,
+      "sha256": "0942F075E4831319BDFF49934AB1E4B5D19C9F9BF65AA4A553A7F24FE62556A5",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "PREDECESSOR_PRECEDENCE.md",
+      "bytes": 1747,
+      "sha256": "C04ED2923138002A3B5E9A4D4CEB9D0AFF3766C93CC74B8D1C2F4D73748D32B0",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "PRIMARY_REQUEST_COPY.md",
+      "bytes": 2163,
+      "sha256": "516576BB9F271A886D2CCF8A363C4DBB4386E1851B0C7630358CE3EEFF6ED68A",
+      "role": "dispatch-copy"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4181,
+      "sha256": "E81BA04C4CBEB35C081F44DFB5A8949C60C38C2B8C2DB5982D66CDF886C96FFD",
+      "role": "entrypoint"
+    },
+    {
+      "path": "REJECTED_RETURN_INTAKE_COPY.md",
+      "bytes": 2430,
+      "sha256": "596AB2C6CB9811DE6CBE6220588040C0BD7DD6DB615B4F52884AB55A9E5F2899",
+      "role": "intake-copy"
+    },
+    {
+      "path": "REPOSITORY_EVIDENCE.md",
+      "bytes": 3497,
+      "sha256": "A7097463DCEF0E8BCE0A79A7E4948AAADB9B287765C635C83D5AC9D6F17C374E",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "RESOLVER_ACCOUNTING_MATRIX.tsv",
+      "bytes": 1119,
+      "sha256": "4C6678EDAA0D063640B9D471B3A38D09AF4ABB910784D6728A6797C84D6905CA",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "RESOLVER_AND_ACCOUNTING.md",
+      "bytes": 4378,
+      "sha256": "F3E718EE26BFE204C755917DF2120D371FCFEFCFDB9FAFDC21ADD5B1593CC13F",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "RUST_FACING_SCHEMAS.md",
+      "bytes": 14267,
+      "sha256": "16DBE9E134E66B5324B469AE272523AB59CB7D559F975D21BA79AC95BD1C1AF6",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "SEMANTIC_CHILD_SYNTHETIC_MATRIX.tsv",
+      "bytes": 1051,
+      "sha256": "4840EE5ED5ECBF97799A323D250FD37C1587F05302FF26D96A3A498FCC35BE40",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "SOURCE_AUTHORITY_AND_CURSOR.md",
+      "bytes": 2326,
+      "sha256": "2B3EA148DFC7F874E4815D1B6C4F54E058FEA4BD06907F8744FF530063EEAA13",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "SOURCE_ROLE_APPLICABILITY_MATRIX.tsv",
+      "bytes": 2876,
+      "sha256": "59E88AF216895295E9C7D0E1BA1CB8C07B94E31905BD94FC2357C56BD3113991",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "TEST_MATRIX.tsv",
+      "bytes": 9636,
+      "sha256": "8D836D9C370E8EB3AC3B88F88A0D2605F0F71D344BB31D42B57AF653BE92E91B",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "TRACEABILITY.tsv",
+      "bytes": 1736,
+      "sha256": "2D37A1252DEF7DD2A3F38094FC889711BF9B1AAC4173F9F82C551268B2A45B39",
+      "role": "contract-or-evidence"
+    },
+    {
+      "path": "VALIDATION_REPORT.md",
+      "bytes": 2028,
+      "sha256": "79906D33B8F371E539693282B9852ACA920EC4261CF1E41423D796B8A5C7093F",
+      "role": "contract-or-evidence"
+    }
+  ]
+}

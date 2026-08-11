@@ -1,0 +1,54 @@
+{
+  "accepted_identity_tuple": [
+    "package_id",
+    "package_version",
+    "profile_id",
+    "project_topology_revision"
+  ],
+  "binary_overlay": "ProfileTopologyBinaryOverlaySeed { path, Arc<[u8]> }",
+  "content_fact_owner": "arcweft-project::content::AcceptedProjectContent",
+  "families": [
+    "character",
+    "resource",
+    "activity"
+  ],
+  "file_backed_families": [
+    "character"
+  ],
+  "implementation_performed": false,
+  "open_questions": 0,
+  "removed": [
+    "source declaration",
+    "Source<T,E>",
+    "EntityKind::Source",
+    "TypeKind::Source",
+    "source content declaration",
+    "ProjectGraphRelationKind::ContentRoot",
+    "string-prefix character root discovery"
+  ],
+  "repository": {
+    "git_commit": "0c8cb74dd96116a8b987cc419c9a280b6cabe4a4",
+    "name": "Sanzentyo/arcweft"
+  },
+  "revision_owner": "arcweft-project::content::ProjectTopologyRevision",
+  "schema": "arcweft.design-contract.v1",
+  "semantic_publication_owner": "arcweft-lang-sema::ProjectSemanticIndex",
+  "sequence": "Lang-01.5.1.2.1",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "test_matrix_rows": 122,
+  "text_overlay": "ProfileTopologyOverlaySeed { path, Arc<str> }",
+  "transaction_owner": "arcweft-project-loader::admission::AcceptedProfileProject",
+  "verification": {
+    "agents_sha256": "90bae8bface6d390246538c60842da7d71d1ebd576ae3fa403019caa35a91498",
+    "archive_integrity_executed": true,
+    "cargo_executed": false,
+    "crates_agents_sha256": "9dc887815ef05b1e7c2f63937926a908cdd7d9e36b916600fe9a278787966565",
+    "docs_agents_sha256": "40ef407718c7b6f44b1f79d8dcd92c562d3ff4649557ecfeff37a33d7fd86c2d",
+    "full_checkout": false,
+    "premise_sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1",
+    "request_sha256": "5a318c3499ef3082aff829eafc00e9259b37bc200beb273ffa3c143dcb618065",
+    "reviews_agents_sha256": "49d35db3276b2f2efe4d7e2343cf888455b610f5704a9607ec0acd93a3cb130a",
+    "reviews_readme_sha256": "0727936af481b2eb78e158763048128a68044d2cc351277c1cf067aab0de27a8",
+    "rust_skill_sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665"
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "inputs": [
+    {
+      "name": "2026-07-24-lang-01.3.1.2.2.1-curried-stream-wire-allocation-reconciliation.md",
+      "sha256": "a07f05f4ad901e323eec528b31cb0064d26f0ae23fe91cbfec9758d215a2f170",
+      "role": "sole request"
+    },
+    {
+      "name": "lang-01.3.1.2-typed-stream-runtime-wire-model-final-contract(1).zip",
+      "sha256": "5043483c42259ce638b93bea7f6426d6ef169a7e22aeb426e86b7e1168a60105",
+      "role": "parent contract"
+    },
+    {
+      "name": "Lang-01.3.1.2.1-typed-stream-runtime-wire-contract-correction-final-contract(1).zip",
+      "sha256": "66809a1280a507f69bb78d9df3bf7af227a91cd68b86cf8771cbf9ee20aa856a",
+      "role": "parent correction"
+    },
+    {
+      "name": "arcweft-lang-01.3.1.2.2-curried-external-stream-final-contract(1).zip",
+      "sha256": "d1bd7fb5301509ca88be7c9d3662942ca88472d11143499c0c3067d626df9418",
+      "role": "child correction"
+    },
+    {
+      "name": "Rust Skill.txt",
+      "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+      "role": "applicable skill"
+    },
+    {
+      "name": "前提(Sanzentyo-arcweft).txt",
+      "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1",
+      "role": "project premise"
+    }
+  ]
+}

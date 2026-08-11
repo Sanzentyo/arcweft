@@ -1,0 +1,100 @@
+test_id	phase	fixture_or_fault	expected	accounting	evidence
+T-E12-001	parse->attach->HIR	f(x)	Value{ExprId}; none	derived	end-to-end
+T-E12-002	parse->attach->HIR	(x)	Missing{recovery ExprId}; MissingCallee	derived	end-to-end
+T-E12-003	parse->attach->HIR	bad(x)	Value{poisoned ExprId}; InvalidCalleeExpression	derived	end-to-end
+T-E12-004	parse->attach->HIR	receiver.member(x)	Value{selected ExprId}; none/child issue	derived	end-to-end
+T-E12-005	parse->attach->HIR	Vec<I32>.with_capacity(8)	Associated Resolved DotFallback; none	derived	end-to-end
+T-E12-006	parse->attach->HIR	missing.member(x)	UnresolvedDot{value+nominal evidence}; UnresolvedDotMember	derived	end-to-end
+T-E12-007	parse->attach->HIR	Vec<I32>::with_capacity(8)	Associated Resolved ExplicitDoubleColon; none	derived	end-to-end
+T-E12-008	parse->attach->HIR	::member(x)	Associated Missing; MissingAssociatedReceiver	derived	end-to-end
+T-E12-009	parse->attach->HIR	Bad<>::member(x)	Associated InvalidPresent{poisoned TypeId}; InvalidAssociatedReceiver	derived	end-to-end
+T-E12-010	parse->attach->HIR	Vec.with_capacity(8)	Associated BareGenericArity{poisoned TypeId,1,0}; BareGenericArity	derived	end-to-end
+T-E12-011	parse->attach->HIR	Vec<I32> with_capacity(8)	Associated Missing{DotFallback}; MissingAssociatedSeparator	derived	end-to-end
+T-E12-012	parse->attach->HIR	Vec<I32>..with_capacity(8)	Associated InvalidPresent{DotFallback}; InvalidAssociatedSeparator	derived	end-to-end
+T-E12-013	parse->attach->HIR	Vec<I32>. (8)	Associated member Missing; MissingAssociatedMember	derived	end-to-end
+T-E12-014	parse->attach->HIR	Vec<I32>.9bad(8)	Associated member InvalidPresent; InvalidAssociatedMember	derived	end-to-end
+T-E12-015	parse->attach->HIR	f(name = x)	Value; none	derived	end-to-end
+T-E12-016	parse->attach->HIR	f(= x)	Value; MissingArgumentName(0)	derived	end-to-end
+T-E12-017	parse->attach->HIR	f(9bad = x)	Value; InvalidArgumentName(0)	derived	end-to-end
+T-E12-018	parse->attach->HIR	f(name = )	Value; MissingArgumentValue(0)	derived	end-to-end
+T-E12-019	parse->attach->HIR	f(,)	Value; MissingArgumentValue(0)	derived	end-to-end
+T-E12-020	parse->attach->HIR	f(xs...)	Value; none	derived	end-to-end
+T-E12-021	parse->attach->HIR	f(...)	Value; MissingArgumentValue(0)	derived	end-to-end
+T-E12-022	parse->attach->HIR	f(a = x, a = y)	Value; DuplicateNamedArgument{0,1}	derived	end-to-end
+T-E12-023	parse->attach->HIR	f(a = x, y)	Value; PositionalAfterNamed(1)	derived	end-to-end
+T-E12-024	parse->attach->HIR	f(xs..., y)	Value; SpreadNotLast(0)	derived	end-to-end
+T-E12-025	parse->attach->HIR	collect<Vec<T>>()	Value; none	derived	end-to-end
+T-E12-026	parse->attach->HIR	foo::<T>()	Value; none	derived	end-to-end
+T-E12-027	parse->attach->HIR	value.map::<T>(x)	Value; none	derived	end-to-end
+T-E12-028	parse->attach->HIR	Vec<T>::member::<U>(x)	Associated receiver TypeId<T>; none	derived	end-to-end
+T-E12-029	parse->attach->HIR	foo::<>()	Value; MissingTypeArgument(0)	derived	end-to-end
+T-E12-030	parse->attach->HIR	foo::<9bad>()	Value; InvalidTypeArgument(0)	derived	end-to-end
+T-E12-031	parse->attach->HIR	foo::<T()	Value; MissingTypeApplicationClose	derived	end-to-end
+T-E12-032	parse->attach->HIR	f(x	Value; MissingArgumentListClose	derived	end-to-end
+T-E12-033	parse->attach->HIR	f(a = , y, xs..., z)	Value; canonical complete issue sequence	derived	end-to-end
+T-CURSOR-R04	final source query	f(a, b) @open.start..open.end-1	NotApplicable	source queries only	typed query
+T-CURSOR-R05	final source query	f(a, b) @open.end	Argument(0)	source queries only	typed query
+T-CURSOR-R08	final source query	f(a, b) @comma.start	Argument(1)	source queries only	typed query
+T-CURSOR-R09	final source query	f(a, b) @comma.end	Argument(1)	source queries only	typed query
+T-CURSOR-R13	final source query	f(a,) @trailing_comma.start	OnePast(1)	source queries only	typed query
+T-CURSOR-R14	final source query	f(a) @close.start	Argument(0)	source queries only	typed query
+T-CURSOR-C-EMPTY	final source query	f() @open.end == close.start	Argument(0)	source queries only	typed query
+T-CURSOR-C-MISSING	final source query	f(a @recovery_end	Argument(0)	source queries only	typed query
+T-CURSOR-C-OUT	final source query	f(a) @close.end	NotApplicable	source queries only	typed query
+T-CURSOR-T-DIRECT-OPEN	final source query	foo<T>() @open_angle token	NotApplicable	source queries only	typed query
+T-CURSOR-T-DIRECT-S0	final source query	foo<T>() @open_angle.end	TypeArgument(0)	source queries only	typed query
+T-CURSOR-T-TURBO-PREFIX	final source query	foo::<T>() @'::' token	NotApplicable	source queries only	typed query
+T-CURSOR-T-COMMA	final source query	foo::<T, U>() @comma.start	TypeArgument(1)	source queries only	typed query
+T-CURSOR-T-TRAIL	final source query	foo::<T,>() @trailing.start	OnePast(1)	source queries only	typed query
+T-CURSOR-T-CLOSE	final source query	foo::<T>() @close_angle.start	TypeArgument(0)	source queries only	typed query
+T-CURSOR-T-EMPTY	final source query	foo::<>() @open.end == close.start	TypeArgument(0)	source queries only	typed query
+T-CURSOR-T-MISSING-CLOSE	final source query	foo::<T() @recovery_end	TypeArgument(0)	source queries only	typed query
+T-CURSOR-T-OUT	final source query	foo::<T>() @close_angle.end	NotApplicable	source queries only	typed query
+T-Q-12-001	source query	stale source revision	StaleSource before presence	0 publication	typed query
+T-Q-12-002	source query	foreign document	ForeignSource	0 publication	typed query
+T-Q-12-003	source query	foreign module	ForeignOwner	0 publication	typed query
+T-Q-12-004	source query	foreign database	ForeignDatabase	0 publication	typed query
+T-Q-12-005	source query	not-yet-live owner	NotYetLive{id,snapshot,born}	0 publication	typed query
+T-Q-12-006	source query	retired owner	Retired{id,snapshot,retired_at}	0 publication	typed query
+T-Q-12-007	source query	wrong retained source length	SourceLengthMismatch	0 publication	typed query
+T-Q-12-008	source query	optional trailing comma absent	AbsentOptional	read only	typed query
+T-Q-12-009	source query	positional Name role	RoleNotApplicable error	read only	typed query
+T-Q-12-010	source query	poisoned-present invalid name	Present Span + Poisoned owner	read only	typed query
+T-RB-12-001	rollback	source row staging fails	no root/child/source/fact/work	all zero	transaction
+T-RB-12-002	rollback	synthetic allocation fails	no partial rows or diagnostics	all zero	transaction
+T-RB-12-003	rollback	type argument 129	no TypeId/source rows	all zero	transaction
+T-RB-12-004	rollback	candidate 257	no candidate/fact/result publication	all zero	transaction
+T-RB-12-005	rollback	resolver work 4097	no facts/work accepted	all zero	transaction
+T-RB-12-006	rollback	diagnostic 129	no truncated semantic fact	all zero	transaction
+T-RB-12-007	retry	same source/project after rollback	same IDs/key/payload/primary issue	deterministic	transaction
+T-RB-12-008	perturbation	diagnostic scheduling reordered	same issue order/root hash	deterministic	behavior
+T-LIM-12-001	limit	128 ordinary args	admit; RecoveryOperand max128 reachable	logical=128	end-to-end
+T-LIM-12-002	limit	129 ordinary args	hard preflight rollback; no ordinal129	all zero	end-to-end
+T-LIM-12-003	limit	32 RichText args	admit	logical=32	end-to-end
+T-LIM-12-004	limit	33 RichText args	hard rollback	all zero	end-to-end
+T-LIM-12-005	limit	depth32	admit	depth=32	end-to-end
+T-LIM-12-006	limit	depth33	hard rollback	all zero	end-to-end
+T-LIM-12-007	limit	256 candidates	admit	probes=256*A	resolver
+T-LIM-12-008	limit	257 candidates	CandidateLimit rollback	all zero	resolver
+T-LIM-12-009	limit	Proof 2 witnesses	retain2 omitted0	facts complete	verifier
+T-LIM-12-010	limit	Proof 3 witnesses	retain2 omitted1	facts complete	verifier
+T-RES-12-001	resolver	associated arity failure with 3 args	resolver0; each arg logical/publication once	3/0/0/0/3	counter
+T-RES-12-002	resolver	selected singleton 3 args	probe once each; no replay	3/1/3/0/3	counter
+T-RES-12-003	resolver	selected 2 candidates 3 args	6 probes + 3 replay; logical3	3/1/6/3/3	counter
+T-RES-12-004	resolver	ambiguous 2 candidates 3 args	6 probes; no replay; logical3	3/1/6/0/3	counter
+T-RES-12-005	resolver	rejected singleton	specific diagnostics retained; no re-eval	A/1/A/0/A	counter
+T-RES-12-006	resolver	registered/non-registered	same target/facts/accounting	parity	behavior
+T-RES-12-007	resolver	ordered call type args	instantiation receives [TypeId] once	one instantiation	behavior
+T-RES-12-008	resolver	receiver T + member U	receiver and call type args remain distinct	one instantiation	behavior
+T-RES-12-009	facts	missing named name	Named(Missing), never Positional	one fact	public fact
+T-RES-12-010	signature	invalid named name	same recovered form/query in signature	one projection	public fact
+T-API-12-001	compile-fail	raw HirCallExpr field construction	private fields	compile fail	visibility
+T-API-12-002	compile-fail	public Serde on final Call	no implementation	compile fail	trait
+T-API-12-003	compile-fail	HirCallArgumentIndex	type absent	compile fail	API
+T-API-12-004	compile-fail	CallLoweringLimits	type absent	compile fail	API
+T-API-12-005	compile-fail	ResolverLimits	type absent	compile fail	API
+T-API-12-006	compile-fail	second Call source reader	API absent	compile fail	API
+T-API-12-007	dependency	HIR -> sema reverse dependency	absent	cargo metadata	structured graph
+T-API-12-008	dependency	source-string reparsing consumer	absent by API path	behavior/dependency	no source gate
+T-DEL-12-001	migration	all deletion rows	zero residual old readers after switch	workspace compile	consumer inventory
+T-DEL-12-002	grammar	wrong colon/prefix-spread fixtures	not present in normative tests	matrix validation	artifact check

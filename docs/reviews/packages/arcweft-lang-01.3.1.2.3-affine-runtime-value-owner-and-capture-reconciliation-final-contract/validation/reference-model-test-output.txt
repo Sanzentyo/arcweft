@@ -1,0 +1,25 @@
+test_capture_copy_and_move_commit_together (test_ownership_model.OwnershipLawTests.test_capture_copy_and_move_commit_together) ... ok
+test_capture_copy_of_affine_rejects_without_moving_other_source (test_ownership_model.OwnershipLawTests.test_capture_copy_of_affine_rejects_without_moving_other_source) ... ok
+test_capture_failure_after_copy_stage_is_non_mutating (test_ownership_model.OwnershipLawTests.test_capture_failure_after_copy_stage_is_non_mutating) ... ok
+test_consuming_iterator_moves_each_affine_element_exactly_once (test_ownership_model.OwnershipLawTests.test_consuming_iterator_moves_each_affine_element_exactly_once) ... ok
+test_dynamic_repeat_rejects_affine_even_when_observed_count_is_zero_or_one (test_ownership_model.OwnershipLawTests.test_dynamic_repeat_rejects_affine_even_when_observed_count_is_zero_or_one) ... ok
+test_failed_replace_validation_leaves_frozen_world_unchanged (test_ownership_model.OwnershipLawTests.test_failed_replace_validation_leaves_frozen_world_unchanged) ... ok
+test_iterator_drop_retires_remaining_owners_once (test_ownership_model.OwnershipLawTests.test_iterator_drop_retires_remaining_owners_once) ... ok
+test_nested_affine_duplicate_rejects_first_canonical_path (test_ownership_model.OwnershipLawTests.test_nested_affine_duplicate_rejects_first_canonical_path) ... ok
+test_preserving_index_and_slice_require_full_sequence_unrestricted (test_ownership_model.OwnershipLawTests.test_preserving_index_and_slice_require_full_sequence_unrestricted) ... ok
+test_repeat_one_moves_affine (test_ownership_model.OwnershipLawTests.test_repeat_one_moves_affine) ... ok
+test_repeat_two_rejects_affine_without_mutation (test_ownership_model.OwnershipLawTests.test_repeat_two_rejects_affine_without_mutation) ... ok
+test_repeat_zero_drops_affine_once (test_ownership_model.OwnershipLawTests.test_repeat_zero_drops_affine_once) ... ok
+test_restore_only_into_empty_or_replace_frozen (test_ownership_model.OwnershipLawTests.test_restore_only_into_empty_or_replace_frozen) ... ok
+test_slot_copy_retains_source_and_move_consumes_source (test_ownership_model.OwnershipLawTests.test_slot_copy_retains_source_and_move_consumes_source) ... ok
+test_snapshot_duplicate_owner_is_rejected (test_ownership_model.OwnershipLawTests.test_snapshot_duplicate_owner_is_rejected) ... ok
+test_snapshot_is_dormant_copyable_evidence_not_token_authority (test_ownership_model.OwnershipLawTests.test_snapshot_is_dormant_copyable_evidence_not_token_authority) ... ok
+test_structural_classification (test_ownership_model.OwnershipLawTests.test_structural_classification) ... ok
+test_token_copy_and_deepcopy_are_rejected (test_ownership_model.OwnershipLawTests.test_token_copy_and_deepcopy_are_rejected) ... ok
+test_unrestricted_duplicate_is_deep_and_source_is_unchanged (test_ownership_model.OwnershipLawTests.test_unrestricted_duplicate_is_deep_and_source_is_unchanged) ... ok
+test_unrestricted_repeat_materializes_n_minus_one_copies_and_original (test_ownership_model.OwnershipLawTests.test_unrestricted_repeat_materializes_n_minus_one_copies_and_original) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.002s
+
+OK

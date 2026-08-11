@@ -1,0 +1,184 @@
+{
+  "allocations": {
+    "awbc_abi": 1,
+    "awbc_codec_tag": 10,
+    "common_product_schema": 1,
+    "compatibility_readers": 0,
+    "new_numeric_section_or_abi_tags": [],
+    "session_save_schema": 2,
+    "view_program_magic_ascii": "AWVP\\r\\n\\x1a\\n",
+    "view_program_required_field": 1,
+    "view_program_section_kind": 9,
+    "view_text_codec_tag": 11,
+    "view_text_magic_ascii": "AWVT\\r\\n\\x1a\\n"
+  },
+  "baseline": {
+    "branch": "main",
+    "earlier_observed_request_only_main": "e619231de8fe0e7c2a9d0d7be15a3608be042058",
+    "production_commit": "a6805f7375499e5cce70f84f1531832583474527",
+    "repository": "Sanzentyo/arcweft",
+    "request_sha256": "5f1bf2335fb0c68f8aef66a3e7e63628bcaffdda80a29d131ee0930b24b3fda4"
+  },
+  "contract": "Lang-01.5.1.1.2",
+  "cuts": [
+    "C1",
+    "C2",
+    "C3",
+    "C4",
+    "C5",
+    "C6",
+    "C7",
+    "C8"
+  ],
+  "design_only": true,
+  "diagnostics": [
+    "sema.view.catalog.invalid_expression",
+    "sema.view.catalog.type_mismatch",
+    "sema.view.catalog.effect_invalid",
+    "sema.view.resource.missing",
+    "sema.view.resource.type_mismatch",
+    "sema.view.resource.stale_generation",
+    "sema.view.static.required_dynamic",
+    "compiler.view.catalog.generation_mismatch",
+    "compiler.view.catalog.incomplete",
+    "compiler.view.execution.unavailable",
+    "compiler.view.resource.binding_mismatch",
+    "bundle.view.program.invalid",
+    "bundle.view.program.binding_type_mismatch",
+    "bundle.view.certificate.digest_mismatch",
+    "bundle.view.certificate.stale_generation",
+    "runtime.view.binding.type_mismatch",
+    "runtime.view.evaluation.budget_exceeded",
+    "runtime.view.resource.unavailable",
+    "runtime.view.generation.stale",
+    "runtime.view.replacement.stale_candidate",
+    "save.view.program_mismatch",
+    "save.view.value_type_mismatch"
+  ],
+  "identity": {
+    "persistent": [
+      "ViewId",
+      "ViewProgramId",
+      "AcceptedViewProgramRevision"
+    ],
+    "program_local": [
+      "ViewProgramNodeId",
+      "ViewInstructionId",
+      "ViewEvaluationSiteId",
+      "ViewParameterRef",
+      "ViewLocalRef"
+    ],
+    "program_local_requires_exact_revision": true,
+    "session_only_non_serde": [
+      "SyntaxNodeId",
+      "ItemId",
+      "ExprId",
+      "LocalId",
+      "HirSnapshotId",
+      "CheckedViewCatalogGeneration"
+    ],
+    "source_map_is_diagnostic_not_semantic_identity": true
+  },
+  "image": {
+    "animated_formats": [
+      "gif",
+      "webp"
+    ],
+    "excluded": [
+      "apng"
+    ],
+    "owner": "typed ResourceRef<Image> consumed by EmitImage",
+    "still_formats": [
+      "png",
+      "jpeg",
+      "single-frame gif",
+      "single-frame webp"
+    ],
+    "view_element_kind": false
+  },
+  "limits": {
+    "awvp_transcript_bytes": 16777216,
+    "certificate_dependencies": 524288,
+    "dependency_edges_per_node": 4096,
+    "dependency_edges_total": 524288,
+    "exports_per_definition": 4096,
+    "exports_total": 65536,
+    "generated_awbc_functions": 65536,
+    "match_arms_per_match": 4096,
+    "match_arms_total": 65536,
+    "program_inputs_per_program": 1024,
+    "program_inputs_total": 262144,
+    "resource_references": 65536,
+    "runtime_awbc_ops_per_invocation": 65536,
+    "runtime_call_depth": 64,
+    "runtime_handlers_per_frame": 4096,
+    "runtime_instruction_ops_per_frame": 65536,
+    "runtime_program_invocations_per_frame": 65536,
+    "runtime_repeat_items_per_repeat": 4096,
+    "runtime_resource_binds_per_frame": 16384,
+    "runtime_scratch_bytes": 67108864,
+    "runtime_text_bytes_per_frame": 16777216,
+    "semantic_definitions": 65536,
+    "semantic_modules": 4096,
+    "semantic_nodes_per_definition": 65536,
+    "semantic_nodes_total": 262144,
+    "semantic_parameters_per_definition": 4096,
+    "semantic_parameters_total": 262144,
+    "static_certificate_bytes": 4194304,
+    "static_certificates": 65536,
+    "static_fragment_bytes": 8388608,
+    "static_fragments": 65536,
+    "value_programs": 65536,
+    "view_constant_bytes": 4194304,
+    "view_constants": 65536,
+    "view_instructions": 262144,
+    "view_nesting_depth": 64
+  },
+  "open_questions": 0,
+  "owners": {
+    "checked_view_catalog": "arcweft-lang-sema::final_analysis::view::CheckedViewCatalog",
+    "cross_program_binding": "stable ViewId/ViewProgramId plus parameter-table/parameter contract digests; accepted callee revision joined by candidate catalog, never embedded in caller digest",
+    "dynamic_value": "arcweft-core::RuntimeValue via ordinary synthetic AWBC functions",
+    "fx_projection": "existing FxRuntimeValue owner, projection-only",
+    "instruction_algebra": "arcweft-view::ViewInstruction",
+    "persistent_view_identity": "existing ViewId + ViewProgramId + AcceptedViewProgramRevision",
+    "product": "existing arcweft-bundle AWVP/ViewText/Input/Style/resource owners",
+    "program_local_coordinates": "ViewProgramNodeId/ViewInstructionId/ViewEvaluationSiteId/ViewParameterRef/ViewLocalRef; exact-revision scoped",
+    "resource_runtime_conversion": "arcweft-resource-model::ResourceRefValue inherent contextual conversion",
+    "runtime_catalog_and_evaluator": "arcweft-runtime-driver shared ViewProgramCatalog/evaluator",
+    "save": "existing runtime-driver session save schema 2",
+    "session_only_identity": "SyntaxNodeId and all HIR/catalog-generation IDs; non-Serde and excluded from digests"
+  },
+  "production_overlay": false,
+  "static": {
+    "absence_selects_dynamic": true,
+    "automatic_and_authored_share_analysis": true,
+    "certificate_serialized": true,
+    "fragment_serialized": true,
+    "granularity": [
+      "definition",
+      "subtree"
+    ],
+    "persisted_in_save": false,
+    "runtime_recomputes_and_validates_digests": true,
+    "source_sema_rerun_at_runtime": false
+  },
+  "status": "ready_for_implementation",
+  "test_groups": {
+    "API": 20,
+    "HOT": 10,
+    "IDN": 24,
+    "IMG": 26,
+    "INP": 46,
+    "LIM": 72,
+    "NEG": 8,
+    "PAR": 63,
+    "SAV": 18,
+    "STA": 58,
+    "STR": 40,
+    "T2": 18,
+    "TAM": 30,
+    "VAL": 40
+  },
+  "test_rows": 473
+}

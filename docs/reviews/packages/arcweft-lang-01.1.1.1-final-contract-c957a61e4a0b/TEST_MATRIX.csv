@@ -1,0 +1,136 @@
+id,layer,category,fixture_or_command,expected_result,exact_evidence,test_owner,cut,required
+SYN-001,syntax,positive exact AST,value?,Expr::Try(TryExpr); PostfixQuestion,whole 0..6; operand 0..5; question 5..6,arcweft-lang-syntax expr tests,Cut 1,yes
+SYN-002,syntax,positive exact AST,try value,Expr::Try(TryExpr); PrefixTry,whole 0..9; operand 4..9; try 0..3,arcweft-lang-syntax expr tests,Cut 1,yes
+SYN-003,syntax,Await grouping,try await need,one Await PropagateError; no Try,Await whole 0..14; await 4..9; operand 10..14; try 0..3,existing Await tests extended,Cut 1,yes
+SYN-004,syntax,Await grouping,await? need,one Await PropagateError; no Try,Await whole 0..11; await 0..5; operand 7..11; attached ? 5..6,existing Await tests extended,Cut 1,yes
+SYN-005,syntax,nested grouping,(await need)?,outer postfix Try wrapping Await PreserveResult,Try 0..13/operand 0..12/? 12..13; Await 1..11/await 1..6/operand 7..11,expr tests,Cut 1,yes
+SYN-006,syntax,nested grouping,await need?,Await PreserveResult whose operand is postfix Try,Await 0..11/operand 6..11; Try 6..11/operand 6..10/? 10..11,expr tests,Cut 1,yes
+SYN-007,syntax,lexical collision grouping,try (await need),general PrefixTry wrapping Await PreserveResult,Try 0..16/operand 4..16/try 0..3; Await 5..15/operand 11..15,expr tests,Cut 1,yes
+SYN-008,syntax,precedence,try value?,outer prefix Try; inner postfix Try,outer 0..10/operand 4..10; inner 4..10/? 9..10,expr tests,Cut 1,yes
+SYN-009,syntax,leading/trailing trivia,  value?  ,postfix Try excluding outer trivia,whole 2..8; operand 2..7; question 7..8,expr tests,Cut 1,yes
+SYN-010,syntax,leading/trailing trivia,  try value  ,prefix Try excluding outer trivia,whole 2..11; try 2..5; operand 6..11,expr tests,Cut 1,yes
+SYN-011,syntax,multiline operand,"try /* policy */
+value",prefix Try accepts comment/newline trivia,whole 0..22; try 0..3; operand 17..22,expr tests,Cut 1,yes
+SYN-012,syntax,multiline grouped postfix,"(call(
+  value
+))?",postfix Try owns complete parenthesized operand,whole 0..18; operand 0..17; question 17..18,expr tests,Cut 1,yes
+SYN-013,syntax,nested parentheses,((value))?,postfix Try operand includes both groups,whole 0..10; operand 0..9; question 9..10,expr tests,Cut 1,yes
+SYN-014,syntax,UTF-8 before operator,値?,"byte, not char, offsets",whole 0..4; operand 0..3; question 3..4,expr tests,Cut 1,yes
+SYN-015,syntax,UTF-8 operand prefix,try 値,byte offsets,whole 0..7; try 0..3; operand 4..7,expr tests,Cut 1,yes
+SYN-016,syntax,nonzero fragment base,parse value? at base 37,all ranges add 37,whole 37..43; operand 37..42; question 42..43,fragment parser tests,Cut 1,yes
+SYN-017,syntax,UTF-8 nonzero base,fragment try value after 10 UTF-8 bytes,all ranges add 10,whole 10..19; try 10..13; operand 14..19,fragment parser tests,Cut 1,yes
+SYN-018,syntax,private CST,ordinary expression fragment try value,one TryExpression with Operand child,operator token and operand node ranges match typed AST,private grammar tests,Cut 1,yes
+SYN-019,syntax,private grammar owner,try value in non-dialogue expression context,ordinary prefix production accepts it,no dialogue helper involved,private grammar tests,Cut 1,yes
+SYN-020,syntax,dialogue unification,try alice.say()[hello],ordinary Try wraps DialogueCall,same AST/CST/source facts as generic expression parse; no dual reader,dialogue/parser tests,Cut 1,yes
+SYN-021,syntax,typed source recursion,nested source-range collection for Try,collector uses TryExprSource.operand,works with interstitial comments and base offsets without spelling recovery,source-range tests,Cut 1,yes
+SYN-022,syntax,current bound fragment substrate,BoundExpressionFragment over value?,root TryExpression and fragment SourceSpan are exact,consume current typed fragment API; no redesign,incremental/bound fragment tests,Cut 1,yes
+SYN-023,syntax,Await substrate lock,public Await source/accessor tests,all existing Await fields and ranges unchanged,compile/runtime equality against pre-cut fixtures,existing Await tests,Cut 1,yes
+SYN-024,syntax,nested Await operand,try await need?,one propagating Await with postfix Try operand,Await 0..15/operand 10..15; inner Try 10..15/? 14..15,expr tests,Cut 1,yes
+SYN-025,syntax,nested attached Await operand,await? need?,one attached propagating Await with postfix Try operand,Await 0..12/operand 7..12; inner Try 7..12/? 11..12,expr tests,Cut 1,yes
+SYN-026,syntax,operator source variant,same semantic operand parsed with both spellings,semantic node kind equal; source variants distinct,no Boolean/string spelling field,expr tests,Cut 1,yes
+SYN-027,syntax,constructor visibility,external crate attempts direct TryExpr construction,not publicly constructible except public source enum values,compile visibility/API test if existing harness; otherwise rustdoc/API review,syntax API tests,Cut 1,yes
+REC-001,parser recovery,missing prefix operand,try,strict parse fails; lossless TryExpression has MissingExpression Operand,zero-width 3..3; ordinary syntax.expr.parse path,strict/lossless tests,Cut 1,yes
+REC-002,parser recovery,missing prefix operand after trivia,try /*x*/,strict parse fails; lossless missing operand,zero-width 9..9,strict/lossless tests,Cut 1,yes
+REC-003,parser recovery,missing attached Await operand,await?,no executable Await AST,zero-width 6..6,Await parser tests,Cut 1,yes
+REC-004,parser recovery,missing try-await operand,try await,no executable Await AST,zero-width 9..9,Await parser tests,Cut 1,yes
+REC-005,parser recovery,selected postfix slot missing operator,crate-private TryExpression production recovery fixture,existing MissingTokenNode/MissingToken at operand.end,uses ordinary event parser recovery; no source scan or public alternate grammar,private grammar test,Cut 1,yes
+REC-006,parser recovery,valid bare operand,value,plain Path; no Try and no missing-operator diagnostic,prevents false positive from optional postfix syntax,strict/lossless tests,Cut 1,yes
+REC-007,parser recovery,unexpected delimiter after prefix,try ),ordinary Error/MissingExpression recovery; no executable Try,smallest real/inserted ranges from event parser,parser tests,Cut 1,yes
+REC-008,parser recovery,nonzero-base missing operand,try fragment at base 41,failure insertion range 44..44,base-aware strict fragment test,fragment parser tests,Cut 1,yes
+REC-009,parser recovery,UTF-8 before missing operand,try fragment after UTF-8 prefix,zero-width byte offset equals base+3,byte-range assertion,fragment parser tests,Cut 1,yes
+REC-010,parser recovery,dialogue malformed prefix,try alice.say()[,ordinary expression/dialogue recovery,no dialogue-specific Try diagnostic or reader,dialogue tests,Cut 1,yes
+REC-011,parser recovery,prefix nesting limit,65 nested prefix Try operators,existing inclusive prefix-depth diagnostic,range is offending operator token; no stack overflow,expr limits tests,Cut 1,yes
+HIR-001,HIR,Try retention,syntax Try lowered/retained,TryExprSource survives unchanged through HIR-facing expression,operator source available to sema/tooling,HIR tests,Cut 1,yes
+HIR-002,HIR,flow source,"flow f() -> Result<T,E>",HirFlow retains FlowSignatureSource,header and exact E-bearing result type range available,HIR source-map tests,Cut 2,yes
+HIR-003,HIR,method source,"impl method -> Result<T,E>",ImplMember::Function retains existing FunctionSignatureSource,signature/result ranges exact,syntax/HIR tests,Cut 2,yes
+HIR-004,HIR,closure source,"|x| -> Result<T,E> body",ClosureExprSource whole/header/result/body exact,source survives expression lowering,syntax/HIR tests,Cut 2,yes
+HIR-005,HIR,function substrate lock,ordinary function source,existing FunctionSignatureSource/HirCallableSignatureSource unchanged,no second source record,HIR tests,Cut 2,yes
+HIR-006,HIR/sema,callable identity,catalogued function/controller,"same CallableDeclarationId at declaration, catalog record, boundary evidence",identity equality assertion,callable catalog tests,Cut 2,yes
+HIR-007,HIR/sema,single catalog,project with propagated functions,existing catalog record count/lookup remains authoritative,no duplicate publication/resolver/execution facts,catalog tests,Cut 2,yes
+SEM-001,sema,Result match,"fn -> Result<Int,E> { value_result? }",Try yields operand ok type,no diagnostic,sema expression tests,Cut 3,yes
+SEM-002,sema,generic symbolic match,"fn<E> -> Result<Int,E> with Result<Int,E> operand",same resolved GenericParam accepted,no diagnostic,generic sema tests,Cut 3,yes
+SEM-003,sema,generic substituted match,E substituted to IoError on both sides,concrete substituted types compared,no diagnostic,generic substitution tests,Cut 3,yes
+SEM-004,sema,generic mismatch,"boundary Result<_,E1>; operand Result<_,E2>",directional compatibility fails,sema.try.error_mismatch expected E1 actual E2,generic sema tests,Cut 3,yes
+SEM-005,sema,Choice acceptance,"boundary error Choice<E1,E2>; operand E1",existing unique Choice branch accepted,no diagnostic,compatibility tests,Cut 3,yes
+SEM-006,sema,wrong return envelope,"fn -> Unit with Result<T,E> Try",nearest boundary not skipped,sema.try.propagation_target_missing,sema tests,Cut 3,yes
+SEM-007,sema,no boundary,source-backed expression checked outside callable/flow,target missing,operator primary; no related target,sema tests,Cut 3,yes
+SEM-008,sema,Option match,fn -> Option<T> with option?,Try yields T,no diagnostic,sema tests,Cut 3,yes
+SEM-009,sema,Option to Result prohibited,"fn -> Result<T,E> with Option<T> Try",target missing,no implicit ok_or,sema tests,Cut 3,yes
+SEM-010,sema,Result to Option prohibited,"fn -> Option<T> with Result<T,E> Try",target missing,no envelope conversion,sema tests,Cut 3,yes
+SEM-011,sema,explicit conversion,map_err result to boundary error then ?,ordinary expression typing changes actual error,accepted after explicit conversion,sema tests,Cut 3,yes
+SEM-012,sema,implicit From prohibited,types have conceptual/available conversion but operand unchanged,no conversion lookup,error mismatch,sema tests,Cut 3,yes
+SEM-013,sema,Await match,"fn -> Result<T,E> with try await Need<T,E>",Await yields T,no diagnostic,suspension tests,Cut 3,yes
+SEM-014,sema,Await mismatch,"boundary Result<_,Expected>; Need<T,Actual>",compatibility fails,sema.await.error_mismatch,suspension tests,Cut 3,yes
+SEM-015,sema,Await no boundary,propagating Await outside boundary,target missing,sema.await.propagation_target_missing,suspension tests,Cut 3,yes
+SEM-016,sema,Await wrong envelope,fn -> Unit with propagating Await,nearest boundary incompatible,target missing with boundary evidence,suspension tests,Cut 3,yes
+SEM-017,sema,Await preserve result,await need under no boundary,"returns Result<T,E>",no propagation diagnostic,suspension tests,Cut 3,yes
+SEM-018,sema,non-propagatable Try operand,42?,ordinary Try operand-type error,not target-missing; no boundary comparison,sema tests,Cut 3,yes
+SEM-019,sema,double propagation,"Result<Result<T,E1>,E2>?? in Result<T,E1> boundary",inner propagates E2 then outer E1 according to nested types,each operator checked independently with exact source,sema tests,Cut 3,yes
+SEM-020,sema,resolution cascade suppression,operand/boundary has prior unresolved type error,no propagation mismatch cascade,original resolver diagnostic only,sema tests,Cut 3,yes
+BND-001,sema boundary,ordinary function,"fn -> Result<T,E>",Function boundary is nearest,evidence has existing declaration ID and result span,boundary tests,Cut 3,yes
+BND-002,sema boundary,task function,"task fn -> Result<T,E>",Function boundary,same propagation rules; no task-name special case,boundary tests,Cut 3,yes
+BND-003,sema boundary,dialogue function,"dialogue fn -> Result<T,E>",Function boundary,same rules; dialogue role does not alter propagation,boundary tests,Cut 3,yes
+BND-004,sema boundary,explicit closure,"|x| -> Result<T,E> { value? }",Closure boundary shadows outer,related range is closure result type,closure tests,Cut 3,yes
+BND-005,sema boundary,expected closure return,"closure expected as fn()->Result<T,E>",Known closure boundary from expected function type,compatible propagation succeeds,closure tests,Cut 3,yes
+BND-006,sema boundary,unconstrained closure,closure without declared/known expected return contains ?,Unconstrained is target missing,does not infer closure return from Try,closure tests,Cut 3,yes
+BND-007,sema boundary,closure shadowing,outer Result function; inner Unit/unconstrained closure contains ?,do not skip closure to outer function,target missing relates to closure header/result,closure tests,Cut 3,yes
+BND-008,sema boundary,method,"impl method -> Result<T,E>",Method boundary,method FunctionSignatureSource result is related,method tests,Cut 3,yes
+BND-009,sema boundary,flow declared return,"flow -> Result<T,E>",Flow boundary,all flow-owned nested expressions inherit it,flow tests,Cut 3,yes
+BND-010,sema boundary,flow omitted return,flow without result contains ?,Known(Unit) Flow boundary,target missing relates to flow header,flow tests,Cut 3,yes
+BND-011,sema boundary,Agent controller,entry agent controller points to ordinary fn,function boundary and same CallableDeclarationId,no controller-specific boundary,entry/catalog tests,Cut 3,yes
+BND-012,sema boundary,Agent role neutrality,same function bound by Agent and called ordinarily,identical propagation result/diagnostic,no role-name branch,entry/catalog tests,Cut 3,yes
+BND-013,sema boundary,stream function,stream fn body contains ?,GeneratorTerminal stops propagation,no Stream error terminal routing,generator semantic tests,Cut 3,yes
+BND-014,sema boundary,stream block,Result function contains stream { value? },inner GeneratorTerminal stops outer search,target missing relates to generator owner,generator semantic tests,Cut 3,yes
+BND-015,sema boundary,source block,Result function contains source { value? },inner GeneratorTerminal stops outer search,no Source terminal routing,generator semantic tests,Cut 3,yes
+BND-016,sema boundary,seq generator,Result function contains seq { value? },inner GeneratorTerminal stops outer search,no outer function propagation,generator semantic tests,Cut 3,yes
+BND-017,sema boundary,ordinary nested blocks,scope/if/loop inside Result function,no new frame,propagation targets function/flow boundary,control-flow tests,Cut 3,yes
+BND-018,sema boundary,nearest incompatible boundary,outer Result<E>; inner closure Result<F>; operand error E,inner boundary selected and mismatches,must not skip to compatible outer E,closure tests,Cut 3,yes
+DIA-001,diagnostic,Await target missing prefix,try await need without target,code sema.await.propagation_target_missing,primary exact try token,diagnostic tests,Cut 3,yes
+DIA-002,diagnostic,Await target missing attached,await? need without target,same code,primary exact attached ? token,diagnostic tests,Cut 3,yes
+DIA-003,diagnostic,Await mismatch prefix,"try await Need<T,Actual> in Result<_,Expected>",code sema.await.error_mismatch; typed expected/actual,primary try; related exact boundary result,diagnostic tests,Cut 3,yes
+DIA-004,diagnostic,Await mismatch attached,"await? Need<T,Actual> in Result<_,Expected>",same typed payload,primary attached ?; same related result,diagnostic tests,Cut 3,yes
+DIA-005,diagnostic,Try target missing prefix,try value in incompatible/missing boundary,code sema.try.propagation_target_missing,primary exact try; typed operand family/target,diagnostic tests,Cut 3,yes
+DIA-006,diagnostic,Try target missing postfix,value? in incompatible/missing boundary,same code,primary exact postfix ?,diagnostic tests,Cut 3,yes
+DIA-007,diagnostic,Try mismatch prefix,"try Result<T,Actual> in Result<_,Expected>",code sema.try.error_mismatch; typed expected/actual,primary try; related result,diagnostic tests,Cut 3,yes
+DIA-008,diagnostic,Try mismatch postfix,"Result<T,Actual>? in Result<_,Expected>",same typed payload,primary postfix ?; related result,diagnostic tests,Cut 3,yes
+DIA-009,diagnostic,header fallback,boundary has no authored result,related exact callable/flow/closure header,no fabricated result span,diagnostic tests,Cut 3,yes
+DIA-010,diagnostic,no target evidence,stack empty,target=None and no related label,primary remains exact operator,diagnostic tests,Cut 3,yes
+DIA-011,diagnostic,generator barrier evidence,operator inside generator terminal,target=GeneratorTerminal,related exact generator owner span,diagnostic tests,Cut 3,yes
+DIA-012,diagnostic,tooling serialization,same diagnostic through compiler/CLI/LSP-or-Agent surfaces,"compiler retains typed payload; CLI/LSP/Agent preserve stable code, expected/actual-derived message, primary, and related evidence",shared diagnostic projection only; no source spelling reconstruction or parallel serialized diagnostic catalog,tooling/integration tests,Cut 4,yes
+DIA-013,diagnostic,source variant neutrality,prefix and postfix forms with same types,same semantic code/payload except operator span,no spelling-specific code,diagnostic tests,Cut 3,yes
+DIA-014,diagnostic,smallest primary with UTF-8,UTF-8 text before ?,one-byte question SourceRange at byte offset,not whole expression range,diagnostic tests,Cut 3,yes
+FMT-001,formatter,round trip postfix,value?,parse-format-parse retains postfix Try,source variant PostfixQuestion; grouping equal,production formatter tests when owner exists,Cut 4,conditional-current-owner
+FMT-002,formatter,round trip prefix,try value,retains prefix Try,source variant PrefixTry; no rewrite to ?,production formatter tests when owner exists,Cut 4,conditional-current-owner
+FMT-003,formatter,round trip Await prefix,try await need,retains one Await PrefixTry,never general Try + Await,production formatter tests when owner exists,Cut 4,conditional-current-owner
+FMT-004,formatter,round trip Await attached,await? need,retains one Await AttachedQuestion,no rewrite to try await,production formatter tests when owner exists,Cut 4,conditional-current-owner
+FMT-005,formatter,parenthesize postfix operand,(await need)?,formatter emits parentheses,"reparse is Try(Await), not Await(Try)",production formatter tests when owner exists,Cut 4,conditional-current-owner
+FMT-006,formatter,Await operand postfix,await need?,formatter leaves postfix operand ungrouped,reparse is Await(Try),production formatter tests when owner exists,Cut 4,conditional-current-owner
+FMT-007,formatter,prefix lexical collision,try (await need),formatter preserves/adds parentheses,"reparse is general Try(Await PreserveResult), not Await PropagateError",production formatter tests when owner exists,Cut 4,conditional-current-owner
+FMT-008,formatter,whitespace normalization,comment/multiline retained spelling,only layout changes,source variant and semantic nesting equal,production formatter tests when owner exists,Cut 4,conditional-current-owner
+TOOL-001,tooling,semantic/fact traversal,all Try-containing AST fixtures,all visitors reach operand exactly once,source-facing visitors may read source; semantic visitors do not branch on spelling,sema traversal/index tests,Cut 1,yes
+TOOL-002,tooling,runtime-plan,prefix and postfix equivalent expressions,identical semantic runtime plan,no wire/AWBC/Stream change,runtime-plan tests,Cut 1,yes
+TOOL-003,tooling,verifier,prefix and postfix equivalent expressions,identical verification semantics,source only affects diagnostics,verify tests,Cut 1,yes
+TOOL-004,tooling,Agent REPL,Try expression binding/evaluation fixtures,new node handled and diagnostics preserved,no compatibility parser,agent-repl tests,"Cuts 1,4",yes
+TOOL-005,tooling,CLI snapshots,Try/Await diagnostics in CLI/Agent output,stable code and ranges serialized,snapshots updated only after final payload,CLI tests,Cut 4,yes
+TOOL-006,tooling,dialogue line plan,try dialogue call with attached plan,plan attaches through TryExpr operand,ordinary parser path only,dialogue tests,Cut 1,yes
+TOOL-007,tooling,LSP diagnostic projection,prefix/postfix Try and Await mismatch diagnostics in UTF-8 documents under negotiated UTF-8 and UTF-16 position encodings,"stable code, exact operator primary, exact boundary related range, and expected/actual-derived message survive shared ArcDiagnostic-to-LSP projection","TypeCheckErrorKind retains typed expected/actual before projection; LSP positions come from typed SourceSpan evidence; no spelling reconstruction, parallel payload catalog, or compatibility reader",arcweft-lsp diagnostics tests,Cut 4,yes
+NOC-001,no-compat,old Rust shape,workspace exhaustive matches,all targets compile only with Expr::Try(TryExpr),compiler errors expose stale call sites; no source scan,workspace check,Cut 1,yes
+NOC-002,no-compat,dual reader absence,same dialogue Try through generic and dialogue entrypoints,typed AST/CST/source facts equal,no helper-specific output path,dialogue integration test,Cut 1,yes
+NOC-003,no-compat,no source reconstruction,crate-owned synthetic typed Try source over tampered/nonoperator text,"diagnostic/traversal follows typed range, not text",parser-created production fixtures separately prove valid text; no runtime scan,typed sema test,Cut 3,yes
+NOC-004,no-compat,no alias/shim,downstream crates migrate directly,single public node/accessor API,no deprecated/compat constructor required,workspace compile/API review,Cut 1,yes
+NOC-005,no-compat,single callable catalog,Agent/function propagation project,one existing record and identical declaration ID,no second resolver/table,catalog integration test,Cut 3,yes
+NOC-006,no-compat,no source gate,acceptance suite,all invariants tested through parser/sema/tooling APIs,no repository text/path denylist,test review + structural audit,Cut 5,yes
+NOC-007,no-compat,no CSS/Takumi,full changed-file diff and dependency graph,no CSS/Takumi route/dependency/fixture added,"structured dependency/audit evidence, not source gate",structural audit,Cut 5,yes
+DOC-001,documentation,language docs,grammar/result-option-context,both forms canonical; no implicit conversion; no canonicalizing formatter preference,examples preserve grouping,doc review/tests,Cut 4,yes
+DOC-002,documentation,implementation record,Lang-01.1.1.1 completion note,"base SHA, changed files, commands/results, deviations, and no unresolved entries",request acceptance checklist closed,implementation note review,Cut 5,yes
+VAL-001,validation,focused syntax,cargo test -p arcweft-lang-syntax --lib --tests,pass,all SYN/REC required rows,command,"Cuts 1,5",yes
+VAL-002,validation,focused HIR/sema,cargo test -p arcweft-lang-hir -p arcweft-lang-sema --lib --tests,pass,all HIR/SEM/BND/DIA required rows,command,Cuts 2-5,yes
+VAL-003,validation,runtime/verifier,cargo test -p arcweft-runtime-plan -p arcweft-verify --lib --tests,pass,semantic consumer migration,command,"Cuts 1,5",yes
+VAL-004,validation,Agent/CLI,focused arcweft-agent-repl and arcweft-cli tests,pass,tooling/diagnostic payloads,command,"Cuts 1,4,5",yes
+VAL-005,validation,workspace check,cargo check --workspace --all-targets --all-features,pass,all exhaustive owners migrated,command,every reviewable cut,yes
+VAL-006,validation,format,just fmt-check,pass,Rust formatting,command,Cut 5,yes
+VAL-007,validation,Clippy,just clippy,pass,workspace all targets/features,command,"Cuts 2,3,5",yes
+VAL-008,validation,workspace tests,just test-workspace,pass,normal main gate,command,Cut 5,yes
+VAL-009,validation,doc tests,just test-doc,pass,public typed API docs,command,Cut 5,yes
+VAL-010,validation,structural audit,cargo +nightly -Zscript tools/structure-audit.rs --root .,pass or reviewed warnings with evidence,public contract/multi-crate ownership gate,command,Cut 5,yes
+VAL-011,validation,Tier 2,just test-tier2,pass,multi-crate public contract affects Agent/CLI paths,command,Cut 5,yes

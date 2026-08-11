@@ -1,0 +1,31 @@
+row	owner_form	role	presence	applicability	rule
+S-001	Call root	Whole	arena slot metadata	required	not a component row
+S-002	ordinary callee	CallCallee	Span or Insertion	required	missing callee insertion; invalid-present span
+S-003	associated	CallAssociatedReceiver	Span or Insertion	required for associated/unresolved-dot	poisoned-present stays Span
+S-004	associated	CallAssociatedSeparator	Span or Insertion	required for associated/unresolved-dot	Dot/:: state in payload
+S-005	associated	CallAssociatedMember	Span or Insertion	required for associated/unresolved-dot	missing/invalid distinct
+S-006	argument list	CallArgumentListOpen	Span	required parenthesized	opening token
+S-007	argument list	CallArgumentListClose	Span	optional alternative with recovery end	AbsentOptional when recovered
+S-008	argument list	CallArgumentListRecoveryEnd	Insertion	required only missing close	RoleNotApplicable error on closed
+S-009	argument list	CallArgumentListEmptyInsertion	Insertion	required only empty list	close start/open end
+S-010	argument list	CallArgumentSeparator{following=n}	Span	one per between comma	comma starts following slot
+S-011	argument list	CallArgumentTrailingSeparator	Span/AbsentOptional	optional	starts one-past
+S-012	positional	CallArgument{n,Whole}	Span	required	complete slot
+S-013	positional	CallArgument{n,Value}	Span or Insertion	required	missing value insertion
+S-014	positional	Name/Equals/Spread	typed inapplicable error	inapplicable	never stored
+S-015	named	CallArgument{n,Name}	Span or Insertion	required	invalid span or missing insertion
+S-016	named	CallArgument{n,Equals}	Span or Insertion	required	current '=' token
+S-017	named	CallArgument{n,Value}	Span or Insertion	required	missing recovery insertion
+S-018	named	CallArgument{n,Spread}	typed inapplicable error	inapplicable	never stored
+S-019	spread	CallArgument{n,Value}	Span or Insertion	required	expression precedes ellipsis
+S-020	spread	CallArgument{n,Spread}	Span or Insertion	required	postfix '...'
+S-021	type application	Whole	Span	required when present	callee head + application
+S-022	type application	TurbofishSeparator	Span/typed inapplicable	turbofish only	'::'
+S-023	type application	OpenAngle	Span	required when present	opening token
+S-024	type application	CloseAngle	Span/AbsentOptional	closed alternative	missing close uses recovery end
+S-025	type application	RecoveryEnd	Insertion/typed inapplicable	missing close only	accepted boundary
+S-026	type application	EmptyInsertion	Insertion	empty/recovered only	slot zero
+S-027	type argument	Argument{n,Whole}	Span or Insertion	required	missing has insertion
+S-028	type argument	Argument{n,Type}	Span or Insertion	required	invalid-present span retains TypeId
+S-029	type application	Separator{following=n}	Span	between comma	starts following type slot
+S-030	type application	TrailingSeparator	Span/AbsentOptional	optional	starts one-past

@@ -1,0 +1,11 @@
+owner	surface	constructor_or_signature	read_only_accessors	validation	visibility
+arcweft-lang-hir::identity	SyntheticOwner	retained 8 variants	kind(); module()	variant proves typed kind; no slot probe	public Copy enum; no Serde
+arcweft-lang-hir::identity	SyntheticRole::accepts_owner_kind	const fn(HirIdKind)->bool	none	complete 21-role typed-owner table; tails accept Expr|Scope	pub(crate) inherent
+arcweft-lang-hir::identity	SyntheticRole::accepts_ordinal	const fn(u32)->bool	none	exact-zero or <=1_023	pub(crate) inherent
+arcweft-lang-hir::identity	SyntheticRole::accepts_owner	const fn(HirIdKind,u32)->bool	none	conjunction of exact predicates	pub(crate) inherent
+arcweft-lang-hir::identity	SyntheticKey	try_new(SyntheticOwner,SyntheticRole,u32)	owner(); role(); ordinal(); fingerprint_input()	WrongOwnerKind precedes InvalidOrdinal; no liveness	public read-only Copy; ctor pub(crate); no Serde
+arcweft-lang-hir::identity	SyntheticKeyError	WrongOwnerKind; InvalidOrdinal	typed fields	structural construction only	public Copy error
+arcweft-lang-hir::identity	SyntheticKeyFingerprintInput	private [u8;51] constructor	as_bytes()	fixed retained v1 transcript; no decoder/digest	public read-only Copy; no Serde
+arcweft-lang-hir transaction owner	synthetic allocation	(SyntheticKey, child HirIdKind)	typed child ID / transaction receipt	typed liveness, staged owner, 1,024 aggregate limit, atomic rollback	crate-private transaction API
+arcweft-lang-hir expression/body/arm lowerers	tail owner selection	existing root ExprId or body/arm ScopeId -> SyntheticOwner	none	producer table; owner reserved before child; exact-zero role	crate-private inherent lowering context
+arcweft-lang-hir lowering contexts	source-ordered generators	existing typed child/token/pattern/use/candidate traversal	crate-internal transaction receipts in tests	checked deterministic order; no map/vector fallback	crate-private; no new facade

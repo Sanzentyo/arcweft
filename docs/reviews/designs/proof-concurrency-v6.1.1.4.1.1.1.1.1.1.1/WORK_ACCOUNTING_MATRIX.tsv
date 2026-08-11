@@ -1,0 +1,11 @@
+case_id	producer	syntax_diag_delta	parser_recovery_counter	hir_diag_delta	final_diag_delta	syntax_expression_nodes	syntax_identity_nodes	hir_expression_slots	hir_total_slots_delta	synthetic_descendants	member_name_bytes	select_components	full_component_total	slot_whole_rows	outcome
+W-E13-001	target.member	0	NOT_AN_EXISTING_COUNTER	0	0	2	4	2	2	0	6	2	retained Path child components + 2	2	commit clean
+W-E13-002	target.	0	NOT_AN_EXISTING_COUNTER	1	1	2	4	2	2	0	0	2	retained Path child components + 2	2	commit poisoned Missing
+W-E13-003	target?.member	0	NOT_AN_EXISTING_COUNTER	0	0	3	5	3	3	0	6	2	retained Path child components + Try 2 + Select 2	3	commit clean with distinct TryId
+W-E13-004	target?.	0	NOT_AN_EXISTING_COUNTER	1	1	3	5	3	3	0	0	2	retained Path child components + Try 2 + Select 2	3	commit Missing with TryId
+W-E13-005	(target.).member	0	NOT_AN_EXISTING_COUNTER	1	1	3	8	3	3	0	6	4	retained Path child components + inner Select 2 + outer Select 2	3	commit; inner diagnostic only
+W-E13-006	(target.).	0	NOT_AN_EXISTING_COUNTER	2	2	3	8	3	3	0	0	4	retained Path child components + inner Select 2 + outer Select 2	3	commit; two owner-distinct diagnostics
+W-E13-007	target.   	0	NOT_AN_EXISTING_COUNTER	1	1	2	4	2	2	0	0	2	retained Path child components + 2	2	insertion at 10, not 7
+W-E13-008	target./*c*/	0	NOT_AN_EXISTING_COUNTER	1	1	2	4	2	2	0	0	2	retained Path child components + 2	2	insertion at 12
+W-E13-009	.member	0	NOT_AN_EXISTING_COUNTER	0	0	ShortVariant authority	ShortVariant authority	0	0	0	0	0	n/a	0	no E13 transaction
+W-E13-010	target.42	generic outer authority	NOT_AN_EXISTING_COUNTER	inner Select 1 plus retained outer Error rule	delegated total	inner Select plus Error	Path+Select+MissingName+Error identities	inner Select plus retained outer Error	delegated	0	0	2	inner Select child manifest + generic Error manifest	delegated	proves no Invalid member only

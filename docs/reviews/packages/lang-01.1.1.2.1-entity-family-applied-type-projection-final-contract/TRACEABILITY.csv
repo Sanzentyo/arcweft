@@ -1,0 +1,16 @@
+requirement_id,request_requirement,normative_location,test_ids
+REQ-01,Decide canonical Ref syntax,FINAL_CONTRACT.md §2,RES-001;RES-002;CON-001;CON-002
+REQ-02,Select exactly one typed owner model,FINAL_CONTRACT.md §3; API_SHAPES.md §1,MODEL-001;MODEL-002
+REQ-03,Exact semantic result,"FINAL_CONTRACT.md §2, §5.4",RES-001;RES-002
+REQ-04,Arity and kind validation,FINAL_CONTRACT.md §5; API_SHAPES.md §3,RES-010..RES-026
+REQ-05,TypeNameResolution facts,FINAL_CONTRACT.md §6,RES-001;RES-012;RES-022;DET-004;IDX-001
+REQ-06,"Diagnostic code/subject, poison, source",DIAGNOSTICS_POISON_SOURCE.md,SRC-001..SRC-003;POI-001..POI-004
+REQ-07,Registration ownership and collisions,OWNERSHIP_COLLISIONS.md,COL-001..COL-008
+REQ-08,Detached behavior and inventory,FINAL_CONTRACT.md §7,DET-001..DET-006
+REQ-09,Checker/callable/entry/index/tooling/runtime/schema consumption,CONSUMERS_TOOLING_PERSISTENCE.md,CON-001..CON-006;IDX-001..IDX-003;LSP-001..LSP-007;BC-001..SAVE-001
+REQ-10,Speaker/SpeakerPreset relation,FINAL_CONTRACT.md §10,RES-004;MODEL-002
+REQ-11,Implementation order,IMPLEMENTATION_ORDER.md,VAL-001..VAL-003
+REQ-12,Exhaustive typed tests,TEST_MATRIX.csv,all rows
+REQ-13,One resolver/index; no forbidden fallbacks,"FINAL_CONTRACT.md §5, §9, §12; NON_GOALS.md",CON-003..IDX-003;VAL-003
+REQ-14,Production code unchanged by deliverable,README.md; VALIDATION_EVIDENCE.md,package validation
+REQ-15,Repository-aware verification evidence,REPOSITORY_EVIDENCE.csv; VALIDATION_EVIDENCE.md,package validation

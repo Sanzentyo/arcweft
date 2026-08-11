@@ -1,0 +1,198 @@
+ID,Requirement,Crate,Layer,TestKind,Setup,Assertion,RollbackOrFailure,TypedAPI
+ABI-001,typed package identity round trip,arcweft-rust-abi,wire,unit,"Manifest with package id truck_game, version, hash",JSON round trip preserves ArcweftRustPackageId exactly,none,ArcweftRustManifest::to_json_pretty/from_json
+ABI-002,package ID validation,arcweft-rust-abi,wire,unit,empty and control-character package IDs,typed identity errors include offending byte where applicable,manifest not constructed,ArcweftRustPackageId::try_new
+ABI-003,package-local path validation,arcweft-rust-abi,wire,unit,"empty path, invalid segment, 257 segments",non-empty/segment/limit errors are distinct,manifest not constructed,ArcweftRustTypePath::try_new
+ABI-004,nominal arguments round trip,arcweft-rust-abi,wire,unit,Nominal Envelope<Option<i32>>,"owner package, path, argument tree preserved",none,ArcweftRustTypeRef
+ABI-005,nested composites round trip,arcweft-rust-abi,wire,unit,"Option<Result<(Vec<T>, Seq<U>), E>> metadata tree",every child and order preserved,none,ArcweftRustTypeRef
+ABI-006,type parameter indices,arcweft-rust-abi,wire,unit,generic declaration with parameters 0 and 1,indices contiguous and references resolve to declared indices,invalid gaps rejected,ArcweftRustManifest::validate
+ABI-007,duplicate package-local type path,arcweft-rust-abi,wire,unit,two declarations at model.Rank,duplicate path error identifies both declaration positions,manifest validation fails,ArcweftRustManifest::validate
+ABI-008,generic arity carrier bound,arcweft-rust-abi,wire,unit,Nominal with 257 arguments,generic argument limit reported,manifest validation fails,ArcweftRustAbiLimits::PRODUCTION
+ABI-009,type node limit,arcweft-rust-abi,wire,unit,"nested graph crossing 4,096 nodes",type-node limit and observed count reported,manifest validation fails,ArcweftRustManifest::validate
+ABI-010,recursive depth limit,arcweft-rust-abi,wire,unit,257 nested Option nodes,depth limit reported at exact node,manifest validation fails,ArcweftRustManifest::validate
+ABI-011,enum payload shape,arcweft-rust-abi,wire,unit,"unit, tuple, and record enum variants",round trip preserves payload class and field order,none,ArcweftRustVariantPayload
+ABI-012,struct shape,arcweft-rust-abi,wire,unit,"unit, tuple, and record structs",round trip preserves shape,none,ArcweftRustStructShape
+ABI-013,generic derive emits nominal args,arcweft-rust-abi-macros,macro,trybuild/runtime,derive ArcweftType on Envelope<T>,Envelope<i32>::arcweft_type_ref has package/path and i32 argument,none,ArcweftType::arcweft_type_ref
+ABI-014,generic metadata templates,arcweft-rust-abi-macros,macro,trybuild/runtime,"derive metadata on Pair<T,U> fields",declaration has parameters 0/1 and field TypeParameter refs,none,ArcweftTypeMetadata::arcweft_type_decl
+ABI-015,lifetime generic rejection,arcweft-rust-abi-macros,macro,trybuild,derive on Borrowed<'a>,typed compile diagnostic rejects lifetime generic metadata,compile failure is expected,derive(ArcweftType)
+ABI-016,const generic rejection,arcweft-rust-abi-macros,macro,trybuild,derive on Bytes<const N: usize>,typed compile diagnostic rejects const generic metadata,compile failure is expected,derive(ArcweftType)
+ABI-017,callable generic rejection retained,arcweft-rust-abi-macros,macro,trybuild,export generic function fn map<T>,existing typed callable-generic rejection remains,compile failure is expected,arcweft_export
+ABI-018,deterministic JSON,arcweft-rust-abi,wire,unit,same typed manifest constructed twice,pretty JSON byte-identical,none,ArcweftRustManifest::to_json_pretty
+ADP-001,adapter nominal round trip,arcweft-adapter-context,manifest,unit,Environment nominal owner/path with generic argument,serde round trip preserves owner/path/args,none,AdapterNominalTypeRef
+ADP-002,Rust nominal round trip,arcweft-adapter-context,manifest,unit,RustPackage owner vendor.pkg.Rank,typed owner and path preserved,none,AdapterTypeKind::Nominal
+ADP-003,environment owner derivation,arcweft-adapter-context,manifest,unit,adapter id inference-tensor,owner is exactly adapter:inference-tensor,none,AdapterEnvironmentOwnerId::for_adapter
+ADP-004,mount join,arcweft-adapter-context,manifest,unit,prefix vendor.alpha and local model.Rank,accepted path vendor.alpha.model.Rank,none,AdapterNominalPathPrefix::join
+ADP-005,empty mount prefix,arcweft-adapter-context,manifest,unit,empty prefix and local Rank,accepted path Rank,none,AdapterNominalPathPrefix::join
+ADP-006,missing package mount,arcweft-adapter-context,manifest,unit,Rust function references package beta without beta mount,MissingRustPackageMount identifies package and item,manifest ingestion fails,AdapterManifest::try_with_rust_manifest
+ADP-007,duplicate package mount,arcweft-adapter-context,manifest,unit,same package mounted twice,DuplicateRustPackageMount identifies first and duplicate,manifest construction fails,AdapterManifest::try_with_rust_package_mount
+ADP-008,package metadata conflict,arcweft-adapter-context,manifest,unit,same package ID with different version/hash,typed conflict includes both claims,source-backed facts not produced,SourceBackedAdapterRegistrationFacts
+ADP-009,duplicate nominal declaration,arcweft-adapter-context,manifest,unit,same adapter-native full path twice,duplicate identifies both items,manifest construction fails,AdapterManifest::with_nominal_declaration
+ADP-010,adapter owner mismatch,arcweft-adapter-context,manifest,unit,persisted nominal declaration claims another adapter owner,AdapterOwnerMismatch,source-backed facts not produced,AdapterManifestFile::try_into_manifest
+ADP-011,structured file type round trip,arcweft-adapter-context,codec,unit,TOML with nested Nominal<Option<Result<...>>>,typed tree preserved without string parser,none,AdapterManifest::from_toml/to_toml
+ADP-012,unknown wire type tag,arcweft-adapter-context,codec,unit,type kind tag not in final schema,generic typed decode error,manifest not constructed,AdapterManifest::from_toml
+ADP-013,schema stays one,arcweft-adapter-context,codec,unit,final carrier encoded,schema_version equals 1 and round trips,none,ADAPTER_MANIFEST_SCHEMA_VERSION
+ADP-014,standard HttpRequestContext declaration,arcweft-adapter-context,standard,integration,standard manifest,symbol and signatures reference explicit environment accepted ID,registration fails if declaration removed,standard_adapter_manifest
+ADP-015,standard inference declarations,arcweft-adapter-context,standard,integration,"Conv2dApi, InferApi, TensorF32",all are explicit adapter-native declarations; no semantic text identity,none,standard registry typed APIs
+ADP-016,desktop Rust mount,arcweft-adapter-desktop,manifest,integration,WindowMode and CursorIcon Rust manifest,both map to RustPackage(arcweft-adapter-desktop) exact paths,registration fails on missing mount,desktop_adapter_manifest
+ADP-017,external public type admission,arcweft-project-loader,topology,integration,public external type mounted at mods.a.Rank,visible accepted inventory record emitted,none,extend_selected_adapter/source_backed_registration_facts
+ADP-018,external private type inventory,arcweft-project-loader,topology,integration,private external type Hidden,"inaccessible inventory fact emitted, no catalog record",later reference yields InaccessibleExport,typed external module APIs
+ADP-019,same terminal names in external mounts,arcweft-project-loader,topology,integration,mods.a.Rank and mods.b.Rank,full typed paths distinct,none,AdapterNominalPath
+ADP-020,manifest digest insertion-order independence,arcweft-adapter-context,digest,unit,same items inserted in reverse order,EnvironmentManifestDigest equal,none,SourceBackedAdapterRegistrationFacts::manifest_digest
+ADP-021,source map exact nested node,arcweft-adapter-context,source,unit,function result Option<Nominal<T>>,each root/child/argument site has unique exact SourceSpan,none,AdapterManifestSourceMap
+ADP-022,source map duplicate key rejection,arcweft-adapter-context,source,unit,producer attempts duplicate item+site,typed source-map error,facts not produced,AdapterManifestSourceMap::try_insert
+ADP-023,no final publication shortcut,arcweft-adapter-context,boundary,compile/API,construct source-backed facts,only environment registration input is exposed; no final publication API,compile succeeds only through typed boundary,SourceBackedAdapterRegistrationFacts::into_parts
+ADP-024,all mounts registered before ingest,arcweft-adapter-context,manifest,unit,ingest manifest then attempt late mount,ingestion is rejected until table is complete,manifest unchanged,AdapterManifest builder API
+NOM-001,exact Rust accepted lookup,arcweft-lang-sema,nominal,unit,"catalog record RustPackage alpha, path vendor.alpha.Rank",world lookup returns same AcceptedNominalId,none,AcceptedNominalWorld::accepted_record
+NOM-002,exact environment accepted lookup,arcweft-lang-sema,nominal,unit,"Environment(adapter:x), path Tensor",world lookup returns same record,none,AcceptedNominalWorld::accepted_record
+NOM-003,owner mismatch at occupied path,arcweft-lang-sema,nominal,unit,"path occupied by package alpha, request package beta",OwnerMismatch includes requested and visible IDs,projection fails,AcceptedNominalWorld::accepted_record
+NOM-004,unknown path,arcweft-lang-sema,nominal,unit,unseen owner/path,UnknownPath,projection fails,AcceptedNominalWorld::accepted_record
+NOM-005,inaccessible path,arcweft-lang-sema,nominal,unit,"private inventory entry, no catalog record",InaccessibleExport and declaration source,projection fails,AcceptedNominalVisibilityIndex
+NOM-006,wrong arity before commit,arcweft-lang-sema,nominal,unit,"record arity 2, one projected argument",WrongArity expected 2 actual 1,no TypeKind returned,AcceptedNominalRecord::try_instantiate
+NOM-007,opaque instantiation,arcweft-lang-sema,nominal,unit,Opaque record plus checked arguments,TypeKind::AcceptedNominal with exact ID/args,none,AcceptedNominalRecord::try_instantiate
+NOM-008,exact semantics reuse,arcweft-lang-sema,nominal,unit,Exact record arity 0,existing exact TypeKind returned,none,AcceptedNominalRecord::try_instantiate
+NOM-009,character semantics reuse,arcweft-lang-sema,nominal,unit,Character record arity 0,existing CharacterNominal returned,none,AcceptedNominalRecord::try_instantiate
+NOM-010,authored resolver uses same instantiation,arcweft-lang-sema,resolver,unit,authored extern references Rust Opaque record,resolver result equals direct record instantiation,existing poison/report unchanged,resolve_type_ref
+NOM-011,generic accepted owner identity,arcweft-lang-sema,types,unit,metadata parameter ordinal 0 for two accepted IDs,GenericTypeParameterId values differ,none,GenericTypeOwnerId::AcceptedNominal
+NOM-012,generic substitution in accepted nominal,arcweft-lang-sema,types,unit,AcceptedNominal<Box<T>> template and substitution T=i32,recursive result is AcceptedNominal<Box<i32>>,none,TypeKind::substitute_type_parameters
+NOM-013,duplicate full path across owners,arcweft-lang-sema,catalog,unit,alpha:shared.Rank then beta:shared.Rank,DuplicateExactPath includes both owners/sources,no catalog/world,AcceptedNominalCatalog
+NOM-014,same terminal distinct full paths,arcweft-lang-sema,catalog,unit,alpha.Rank and beta.Rank,both records admitted,none,AcceptedNominalCatalog
+NOM-015,catalog exact record limit,arcweft-lang-sema,catalog,unit,"4,097 exact records","existing limit error at 4,097",no world,AcceptedNominalCatalogLimits::PRODUCTION
+NOM-016,visibility conflict,arcweft-lang-sema,catalog,unit,same ID visible and inaccessible,ConflictingVisibility with both sources,no world,AcceptedNominalVisibilityIndex::try_new
+NOM-017,world stamp determinism,arcweft-lang-sema,nominal,unit,same world/revision/catalog built twice,stamps equal,none,AcceptedNominalWorld::stamp
+NOM-018,world stamp changes with catalog,arcweft-lang-sema,nominal,unit,add accepted record,catalog digest and stamp differ,none,AcceptedNominalWorld::stamp
+NOM-019,detached world fail closed,arcweft-lang-sema,projection,unit,detached/incomplete project registration input,DetachedWorld diagnostic,no publication,AcceptedNominalWorld projection API
+NOM-020,incomplete world fail closed,arcweft-lang-sema,projection,unit,missing visibility/owner component,IncompleteWorld diagnostic,no publication,AcceptedNominalWorld projection API
+NOM-021,malformed path caught before world,arcweft-adapter-context,carrier,integration,malformed nominal path in manifest,InvalidNominalPath with exact source,no ProjectRegistrationFacts,typed manifest constructor
+NOM-022,projection node count,arcweft-lang-sema,projection,unit,"4,097-node environment type tree",LimitExceeded TypeNodesPerReference,no publication,try_project_environment_publication
+NOM-023,projection depth,arcweft-lang-sema,projection,unit,257 nested composites,LimitExceeded RecursiveTypeDepth,no publication,try_project_environment_publication
+NOM-024,projection generic arguments,arcweft-lang-sema,projection,unit,257 nominal arguments,LimitExceeded GenericArgumentsPerApplication,no publication,try_project_environment_publication
+NOM-025,projection work budget,arcweft-lang-sema,projection,unit,"tree arranged to cross work 65,536",LimitExceeded WorkPerReference,no publication,try_project_environment_publication
+NOM-026,diagnostic cap,arcweft-lang-sema,projection,unit,more than 32 failures in one reference,32 retained plus exact omitted count,no publication,EnvironmentPublicationProjectionReport
+NOM-027,project diagnostic cap,arcweft-lang-sema,registration,integration,more than 512 projection diagnostics across documents,512 deterministic retained plus omitted count,no registered world,NominalAggregationLimits::PRODUCTION
+CALL-001,Rust nominal free parameter and result,arcweft-lang-sema,callable,integration,Rust export rank_identity(Rank)->Rank,parameter and result are equal AcceptedNominalType,none,try_project_environment_publication
+CALL-002,method receiver accepted nominal,arcweft-lang-sema,callable,integration,method Rank.promote,ReceiverMethodKey receiver is exact AcceptedNominal,none,EnvironmentCallableLookupInput::Method
+CALL-003,later curried group accepted nominal,arcweft-lang-sema,callable,integration,method receiver Rank; group 1 parameter Rank,receiver and later parameter IDs/args equal,none,CallableSignatureSchema groups
+CALL-004,nested Option accepted nominal,arcweft-lang-sema,callable,integration,Option<Rank> parameter,nested node projects to Option<AcceptedNominal>,none,EnvironmentTypeProjectionNode
+CALL-005,nested Result accepted nominal,arcweft-lang-sema,callable,integration,"Result<Rank, ErrorCode> result",both branches retain exact identities,none,EnvironmentTypeProjectionNode
+CALL-006,nested tuple accepted nominal,arcweft-lang-sema,callable,integration,"(Rank, i32, Rank) parameter",tuple order and repeated ID retained,none,EnvironmentTypeProjectionNode
+CALL-007,nested Seq/Vec accepted nominal,arcweft-lang-sema,callable,integration,Seq<Vec<Rank>> result,all wrappers and accepted ID retained,none,EnvironmentTypeProjectionNode
+CALL-008,generic accepted nominal argument,arcweft-lang-sema,callable,integration,Envelope<Rank> parameter where Envelope arity 1,AcceptedNominal Envelope has Rank argument,none,AcceptedNominalRecord::try_instantiate
+CALL-009,deep mixed required shape,arcweft-lang-sema,callable,integration,"Option<Result<(Seq<Envelope<Rank>>, Vec<Rank>), ErrorCode>>",exact full tree equals expected TypeKind,none,CallableSignatureSchema
+CALL-010,exact authored extern equality,arcweft-lang-sema,callable,integration,authored extern and Rust publication use same export,schema parameter/result TypeKinds are exactly equal,registration succeeds as equivalent source,source-backed resolver + publication projection
+CALL-011,same terminal two Rust packages,arcweft-lang-sema,callable,integration,alpha.Rank and beta.Rank overloads,schemas and semantic digests differ,none,CallableSignatureSchema
+CALL-012,same terminal project declaration,arcweft-lang-sema,callable,integration,project Rank plus alpha.Rank,ProjectNominal and AcceptedNominal never compare equal,overload matching selects exact candidate,TypeKind equality
+CALL-013,unknown nested argument path,arcweft-lang-sema,callable,integration,Envelope<Unknown> in second tuple item,diagnostic site includes TupleItem and NominalArgument,whole publication rejected,EnvironmentTypeSite
+CALL-014,inaccessible method receiver,arcweft-lang-sema,callable,integration,private nominal used as public method receiver,InaccessibleExport at MethodReceiver,no method candidate,projection report
+CALL-015,wrong arity result,arcweft-lang-sema,callable,integration,Envelope without required argument in result,WrongArity at Result,no record,projection report
+CALL-016,free type parameter in callable,arcweft-lang-sema,callable,integration,Rust function parameter TypeParameter(0),FreeTypeParameterInCallable,no publication,projection report
+CALL-017,all-or-nothing publication batch,arcweft-lang-sema,callable,integration,one valid and one invalid callable in same manifest,zero records from batch admitted,registered world unchanged,CharacterRegistrar::register
+CALL-018,publication stamp match,arcweft-lang-sema,callable,unit,publication projected by builder world,add_environment accepts,none,RegisteredCallableCatalogBuilder
+CALL-019,publication stamp mismatch,arcweft-lang-sema,callable,unit,publication from world A into builder B,CatalogDigestMismatch/WorldMismatch,builder remains unchanged,RegisteredCallableCatalogBuilder::add_environment
+CALL-020,deterministic record order,arcweft-lang-sema,callable,unit,records supplied in shuffled order,final order matches authority/provider/kind/overload/declaration contract,none,RegisteredCallableCatalog
+CALL-021,duplicate candidate rollback,arcweft-lang-sema,callable,integration,two final records same candidate ID,existing duplicate catalog error,no callable catalog/world,RegisteredCallableCatalogBuilder
+CALL-022,effect/purity preserved,arcweft-lang-sema,callable,integration,Rust nominal function with effects,projection changes only types; effect row/policy equal input,none,CallableSignatureSchema
+CALL-023,documentation/source preserved,arcweft-lang-sema,callable,integration,projected Rust callable with docs/spans,final record retains typed docs/source,none,EnvironmentCallablePublicationRecord
+CALL-024,Rust provenance package identity,arcweft-lang-sema,callable,integration,"callable provider adapter x, nominal package alpha",provider remains adapter x; nominal owner/provenance package alpha,none,RustCallableProvenance
+CALL-025,cross-package nominal reference allowed,arcweft-lang-sema,callable,integration,alpha function parameter beta.Type with both mounts,parameter owner is beta and registration succeeds,none,ArcweftRustTypeRef::Nominal
+CALL-026,unmounted cross-package reference fails,arcweft-adapter-context,callable,integration,alpha function parameter beta.Type without beta mount,MissingRustPackageMount before sema,no facts/world,AdapterManifest::try_with_rust_manifest
+CALL-027,adapter-native owner cannot impersonate Rust,arcweft-lang-sema,callable,integration,environment owner/path equal to Rust path,OwnerMismatch or duplicate catalog conflict; never equal,no publication/world as applicable,AcceptedNominalId
+CALL-028,untyped method explicit model unaffected,arcweft-lang-sema,callable,unit,pre-existing explicit untyped method record,still accepted only under existing invariant,projection errors do not create one,EnvironmentCallablePublicationRecord::try_new
+CALL-029,parameter group indices preserved,arcweft-lang-sema,callable,integration,three curried groups with accepted types,indices/passing/presence unchanged after projection,none,CallableSignatureSchema
+CALL-030,callable limits retained,arcweft-lang-sema,callable,unit,record/group/parameter counts above CallableLimits,existing structured limit error,no publication/catalog,CallableLimits
+META-001,Rust enum keyed by accepted ID,arcweft-lang-sema,metadata,integration,enum Rank with unit variants,catalog key is exact AcceptedNominalId,none,AcceptedRustTypeMetadataCatalog::get
+META-002,enum tuple payload projection,arcweft-lang-sema,metadata,integration,"Variant::Pair(Rank, i32)",payload contains AcceptedNominal Rank and i32,none,EnumVariantPayload
+META-003,enum record payload projection,arcweft-lang-sema,metadata,integration,Variant { rank: Rank },record field contains exact AcceptedNominal,none,EnumVariantPayload
+META-004,struct field projection,arcweft-lang-sema,metadata,integration,struct Holder { value: Rank },field template uses exact AcceptedNominal,none,AcceptedRustTypeMetadata
+META-005,newtype projection,arcweft-lang-sema,metadata,integration,newtype RankList(Vec<Rank>),inner retains Vec<AcceptedNominal>,none,AcceptedRustTypeMetadataKind::Newtype
+META-006,generic metadata substitution,arcweft-lang-sema,metadata,unit,Envelope<T> field T; instantiate Envelope<Rank>,instantiated field is exact Rank AcceptedNominal,none,AcceptedRustTypeMetadataCatalog::instantiate
+META-007,owner-distinct generic parameters,arcweft-lang-sema,metadata,unit,alpha.Envelope<T> and beta.Envelope<T>,template GenericParam IDs differ,none,GenericTypeOwnerId::AcceptedNominal
+META-008,unbound metadata parameter,arcweft-lang-sema,metadata,unit,field references parameter 1 but only parameter 0 declared,UnboundMetadataTypeParameter exact source,no metadata catalog,try_project_rust_metadata
+META-009,metadata owner package mismatch,arcweft-lang-sema,metadata,unit,Rust type ID owner beta but declaration package alpha,MetadataOwnerMismatch,no metadata catalog,try_project_rust_metadata
+META-010,metadata unknown nested nominal,arcweft-lang-sema,metadata,integration,enum payload references unknown type,UnknownPath at exact payload site,no metadata/callables/world,CharacterRegistrar::register
+META-011,metadata failure blocks callable admission,arcweft-lang-sema,registration,integration,valid callable plus invalid Rust metadata,no callable catalog committed,previous world unchanged,CharacterRegistrar::register
+META-012,metadata digest deterministic,arcweft-lang-sema,metadata,unit,same metadata inputs shuffled,digest equal,none,AcceptedRustTypeMetadataCatalog::digest
+META-013,metadata digest owner-sensitive,arcweft-lang-sema,metadata,unit,same display type under alpha/beta,digests differ,none,AcceptedRustTypeMetadataDigest
+META-014,metadata instantiation arity check,arcweft-lang-sema,metadata,unit,instantiate arity-2 metadata with one arg,typed arity error,no instantiated view,AcceptedRustTypeMetadataCatalog::instantiate
+META-015,no Rust enum Named key,arcweft-lang-sema,metadata,integration,register Rust enum then inspect typed catalogs,Rust metadata reachable only by AcceptedNominalId/Type,none,RegisteredTypeCheckEnv::rust_metadata
+META-016,non-Rust enum route retained,arcweft-lang-sema,metadata,unit,existing standard/character enum metadata,behavior unchanged,none,TypeCheckEnv enum APIs
+META-017,cross-package metadata field,arcweft-lang-sema,metadata,integration,alpha struct field beta.Rank,field owner beta and exact path,none,AcceptedRustTypeMetadata
+META-018,metadata source navigation,arcweft-lang-sema,metadata,integration,hover/navigate enum payload,declaration/member exact SourceSpan retained,none,AcceptedRustTypeMetadata source accessors
+REG-001,source-backed facts bind world/revision,arcweft-lang-sema,registration,unit,input plus project facts world/revision,bound input stores exact snapshot,none,ProjectRegistrationFacts::try_new
+REG-002,stale source revision,arcweft-lang-sema,registration,unit,span from previous generated source revision,SourceRevisionMismatch,no request/world,ProjectRegistrationFacts::try_new
+REG-003,environment owner uniqueness,arcweft-lang-sema,registration,unit,two batches claim same owner with different digest,typed owner/digest conflict,no request/world,ProjectRegistrationFacts::try_new
+REG-004,accepted world constructed once,arcweft-lang-sema,registration,integration,instrument typed constructor/count in crate test,"one world stamp used by project, metadata, publications",none,CharacterRegistrar
+REG-005,no registration-order dependence,arcweft-lang-sema,registration,integration,shuffle environment input order,same world/catalog/digests/diagnostics,none,CharacterRegistrar::register
+REG-006,previous world preserved on inventory error,arcweft-lang-sema,registration,integration,accepted duplicate with existing previous world,returned error and previous Arc/content unchanged,complete rollback,CharacterRegistrar::register
+REG-007,previous world preserved on metadata error,arcweft-lang-sema,registration,integration,metadata UnknownPath,previous world unchanged,complete rollback,CharacterRegistrar::register
+REG-008,previous world preserved on callable error,arcweft-lang-sema,registration,integration,callable WrongArity,previous world unchanged,complete rollback,CharacterRegistrar::register
+REG-009,previous world preserved on digest error,arcweft-lang-sema,registration,unit,forced checked digest length overflow via custom limit/test hook,previous world unchanged,complete rollback,CharacterRegistrar::register
+REG-010,successful atomic commit,arcweft-lang-sema,registration,integration,"valid inventory, metadata, callables",new world contains all three or none,none,RegisteredTypeCheckEnv
+REG-011,deterministic structured error order,arcweft-lang-sema,registration,unit,same failures in shuffled input,reports byte/structurally equal,none,EnvironmentPublicationProjectionReport
+REG-012,related duplicate sources,arcweft-lang-sema,registration,integration,duplicate full path from two generated docs,diagnostic has primary duplicate + related first,no world,AcceptedNominalCatalogError
+REG-013,diagnostic omission accounting,arcweft-lang-sema,registration,unit,cross project cap,retained count + omitted equals total checked count,no world,EnvironmentPublicationProjectionReport
+REG-014,project callable resolver unchanged,arcweft-lang-sema,registration,regression,existing project nominal/alias/poison suite,results and poison IDs unchanged,existing failures unchanged,source-backed callable resolver
+REG-015,single compiler input path,arcweft-compiler,registration,compile/API,construct ProjectCompilationContext,no separate final publication vector argument exists,compile-time direct-final API,ProjectCompilationContext::new
+REG-016,loader retains environment input,arcweft-project-loader,registration,integration,load adapter profile,ProjectRegistrationFacts receives source-backed environment input,none,environment loader APIs
+REG-017,standard + selected owner order,arcweft-lang-sema,registration,unit,standard and selected publications shuffled,canonical authority/provider order retained,none,RegisteredCallableCatalog
+REG-018,package claim agreement across adapters,arcweft-lang-sema,registration,integration,two adapters expose same package/version/hash/path set,one accepted package identity and deterministic sources,none,ProjectRegistrationFacts
+REG-019,package claim conflict across adapters,arcweft-lang-sema,registration,integration,same package with different hash or mount set,typed conflict with both sources,no world,ProjectRegistrationFacts
+REG-020,no partial persistent identity,arcweft-compiler,registration,integration,failed candidate world,no environment digest/key emitted for candidate,previous cache namespace remains,registered environment API
+DIG-001,accepted nominal semantic digest,arcweft-lang-sema,digest,unit,same accepted ID/args twice,digests equal,none,TypeKind::semantic_identity_digest
+DIG-002,owner-sensitive type digest,arcweft-lang-sema,digest,unit,alpha.Rank and beta.Rank same display leaf,digests differ,none,TypeKind::semantic_identity_digest
+DIG-003,argument-sensitive type digest,arcweft-lang-sema,digest,unit,Envelope<i32> vs Envelope<String>,digests differ,none,TypeKind::semantic_identity_digest
+DIG-004,exhaustive TypeKind encoding,arcweft-lang-sema,digest,compile/unit,construct representative of every current variant,all encode; exhaustive match prevents missing variant,none,TypeKind::semantic_identity_digest
+DIG-005,schema digest exact equality,arcweft-lang-sema,digest,unit,equal checked schemas,digests equal and semantic_eq true,none,CallableSignatureSchema::semantic_digest
+DIG-006,schema digest owner distinction,arcweft-lang-sema,digest,unit,only nominal owner differs,schema digests differ,none,CallableSignatureSchema::semantic_digest
+DIG-007,schema digest excludes docs,arcweft-lang-sema,digest,unit,"same schema, different docs",schema digests equal,none,CallableSignatureSchema::semantic_digest
+DIG-008,publication digest includes docs/source,arcweft-lang-sema,digest,unit,"same schema, different docs/source",publication digests differ,none,EnvironmentCallablePublication::digest
+DIG-009,publication digest order deterministic,arcweft-lang-sema,digest,unit,input record order shuffled,digest equal after canonicalization,none,EnvironmentCallablePublicationDigest
+DIG-010,callable catalog digest deterministic,arcweft-lang-sema,digest,unit,same catalog built from shuffled batches,digest equal,none,RegisteredCallableCatalog::digest
+DIG-011,metadata digest participates in environment,arcweft-lang-sema,digest,unit,change enum payload type only,metadata and environment digest change,none,RegisteredTypeCheckEnv::environment_digest
+DIG-012,mount participates in environment,arcweft-lang-sema,digest,integration,change package mount only,nominal/catalog/manifest/environment digest change,none,RegisteredEnvironmentDigest
+DIG-013,world revision participates,arcweft-lang-sema,digest,unit,same catalog different symbol revision,environment digest changes,none,RegisteredEnvironmentDigest
+DIG-014,no map-order influence,arcweft-lang-sema,digest,unit,BTree/Hash insertion order permutations,all final digests equal,none,canonical digest APIs
+DIG-015,source label not identity,arcweft-lang-sema,digest,unit,two typed IDs rendered to same terminal label in test presentation,identity/digests remain distinct,none,AcceptedNominalId + TypeKind digest
+PERSIST-001,non-zero environment key,arcweft-compiler,persistent,unit,complete registered world,"CompilerObjectKey.environment_digest equals registered digest, not ZERO",none,CompilerObjectKey
+PERSIST-002,environment key change invalidates,arcweft-project-loader,persistent,integration,change accepted owner/path,persistent query key changes and misses,none,persistent_query
+PERSIST-003,nested type change invalidates,arcweft-project-loader,persistent,integration,Rank -> Option<Rank> in callable schema,persistent query key changes,none,persistent_query
+PERSIST-004,same semantic environment hits,arcweft-project-loader,persistent,integration,rebuild identical typed environment,same key and hit behavior,none,persistent_query
+PERSIST-005,AWBO key round trip,arcweft-project,persistent,unit,CompilerObjectKey with non-zero environment digest,codec round trip exact,none,persistent_object codec
+PERSIST-006,AWBO schema unchanged,arcweft-project,persistent,unit,final key encoded,AWBO schema constant/field shape unchanged,none,AWBO_SCHEMA_VERSION
+PERSIST-007,typecheck gate key,arcweft-compiler,persistent,integration,typecheck object for accepted Rust nominal,key includes environment digest,none,TypecheckGateObject key construction
+PERSIST-008,stale publication not cached,arcweft-project-loader,persistent,integration,publication from old world stamp,registration fails before persistent write,no new cache record,registration + cache APIs
+PERSIST-009,manifest docs affect tooling cache,arcweft-project-loader,persistent,integration,change callable documentation only,full environment/tooling key changes; schema digest stable,none,environment digest
+PERSIST-010,syntax-only key unchanged contract,arcweft-compiler,persistent,unit,pre-registration parse query,does not require fabricated registered digest,none,parse query key API
+TOOL-001,signature help retains accepted ID,arcweft-lang-sema,tooling,unit,selected Rust callable with Rank parameter/result,SemanticSignature types expose exact AcceptedNominalId,none,semantic signature API
+TOOL-002,signature help display from type,arcweft-lsp,tooling,integration,request signature help,display label matches source_label while typed sema record retains ID,none,LSP signature help
+TOOL-003,method signature help receiver identity,arcweft-lsp,tooling,integration,method on alpha.Rank,selected candidate receiver owner is alpha,none,signature help + CallableCandidateId
+TOOL-004,same terminal overload selection,arcweft-lang-sema,tooling,integration,alpha.Rank/beta.Rank overloads,argument exact type selects matching candidate,none,overload resolver
+TOOL-005,hover accepted Rust nominal,arcweft-lsp,tooling,integration,hover Rust nominal occurrence,typed hover input has accepted ID; Markdown shows package/path/arity,none,features::nominal_types::hover
+TOOL-006,hover generic arguments,arcweft-lsp,tooling,integration,hover Envelope<Rank>,typed args and displayed args preserve order/identity,none,accepted nominal hover
+TOOL-007,hover source navigation,arcweft-lsp,tooling,integration,hover/navigate Rust enum,location comes from accepted metadata source span,none,accepted metadata source APIs
+TOOL-008,method lookup exact receiver,arcweft-lang-sema,tooling,unit,lookup alpha.Rank method with beta.Rank receiver,no match,none,ReceiverMethodKey
+TOOL-009,method lookup generic receiver,arcweft-lang-sema,tooling,unit,method on Envelope<Rank>,exact argument participates in receiver key,none,ReceiverMethodKey
+TOOL-010,inaccessible type absent from completion,arcweft-lsp,tooling,integration,private external nominal,not offered as accepted completion; explicit ref reports inaccessible,none,nominal completion + diagnostics
+TOOL-011,accepted completion owner detail,arcweft-lsp,tooling,integration,alpha.Rank and beta.Rank,both offered with distinct typed owner detail,none,features::nominal_types::completions
+TOOL-012,stale profile signature cancellation,arcweft-lsp,tooling,integration,environment digest/world changes during request,old request cancelled/rejected by accepted generation,none,LspProfileState/signature request registry
+TOOL-013,stale hover environment,arcweft-lsp,tooling,integration,hover against stale document/profile generation,no stale typed record rendered,none,LSP profile accepted snapshot
+TOOL-014,callable candidate identity survives projection,arcweft-lang-sema,tooling,unit,project publication and query,candidate ID and schema type remain available to tooling,none,CallableRecord
+TOOL-015,display label never reparsed,arcweft-lang-sema,tooling,unit,presentation label intentionally ambiguous,query results still use retained TypeKind/ID,none,semantic signature/hover typed APIs
+ERR-001,nested error site path,arcweft-lang-sema,errors,unit,"Result<Tuple<NominalUnknown>, i32> parameter","site steps exactly ResultOk, TupleItem(0)",no publication,EnvironmentTypeSite
+ERR-002,method receiver primary source,arcweft-lang-sema,errors,integration,unknown method receiver,primary span is receiver type; related is method item,no publication,projection diagnostic
+ERR-003,Rust item provenance in error,arcweft-lang-sema,errors,integration,unknown nominal in Rust function result,diagnostic item carries adapter/package/rust_item/callable path,no publication,EnvironmentPublicationItemId::RustFunction
+ERR-004,duplicate accepted source pair,arcweft-lang-sema,errors,integration,same full path from alpha/beta,error exposes first and duplicate exact spans,no world,AcceptedNominalCatalogError
+ERR-005,error ordering byte deterministic,arcweft-lang-sema,errors,unit,repeat multi-error projection 20 times,report equality and rendered stable code order,none,projection report
+ERR-006,arithmetic overflow structured,arcweft-lang-sema,errors,unit,test-only scalar at conversion boundary,"ArithmeticOverflow, no panic",no publication,checked constructors
+ERR-007,unknown versus inaccessible distinction,arcweft-lang-sema,errors,unit,one unknown and one private ID,different error kinds and related source only for private,no publication,visibility index
+ERR-008,owner mismatch versus duplicate distinction,arcweft-lang-sema,errors,unit,lookup occupied path wrong owner; inventory insertion same path,lookup OwnerMismatch; inventory DuplicateExactPath,no projection/world respectively,world lookup + catalog
+ERR-009,bounded related labels,arcweft-lang-sema,errors,unit,diagnostic with many related claims,existing related-label cap applied deterministically,no publication,NominalResolutionLimits
+ERR-010,no recovery semantic type,arcweft-lang-sema,errors,unit,any nominal projection failure,result is Err and no TypeKind::Error/Named value available,no publication,try_project_environment_publication
+CUT-001,context-free conversion removed,arcweft-adapter-context,API,compile,attempt final TypeKind conversion from AdapterTypeKind,no public method/trait implementation exists,compile failure is expected in compile-fail fixture,public API
+CUT-002,unstamped publication constructor narrowed,arcweft-lang-sema,API,compile,external crate attempts EnvironmentCallablePublication::try_new,constructor inaccessible,compile failure is expected,public API
+CUT-003,request no publication vector,arcweft-lang-sema,API,compile,attempt with_callable_publication,method absent,compile failure is expected,CharacterRegistrationRequest
+CUT-004,Rust package exports typed,arcweft-lang-sema,API,unit,inspect registered Rust package exports,"IDs are AcceptedNominalId, not strings",none,RegisteredTypeCheckEnv
+CUT-005,carrier schema final round trip,arcweft-rust-abi + adapter-context,wire,integration,Rust ABI -> adapter manifest -> source facts,package/path/args survive every typed boundary,none,typed carriers
+CUT-006,full repository standard profile,arcweft-cli,integration,integration,build/register standard profile,all standard publications project successfully,none,project registration APIs
+CUT-007,full desktop profile,arcweft-cli,integration,integration,build/register desktop adapter profile,desktop Rust nominal callables/metadata register,none,project registration APIs
+CUT-008,full external module profile,arcweft-project-loader,integration,integration,profile with public/private external types,"public accepted, private inaccessible, callables exact",none,project loader registration
+CUT-009,repository project nominal regression,arcweft-lang-sema,regression,integration,run Lang-01.1.1.2 project nominal suites,existing accepted project behavior unchanged,none,existing typed tests
+CUT-010,workspace behavior validation,workspace,validation,command,"run fmt, clippy all targets/features, targeted and workspace tests",all commands pass or exact environmental failures documented,implementation not accepted otherwise,Cargo commands in IMPLEMENTATION-MAP.md

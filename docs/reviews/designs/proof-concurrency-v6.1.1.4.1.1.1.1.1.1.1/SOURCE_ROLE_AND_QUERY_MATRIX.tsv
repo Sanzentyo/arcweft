@@ -1,0 +1,27 @@
+row_id	case	query_owner	role	site_or_error	owner_status	precedence_or_invariant
+Q-E13-001	clean direct	SelectId	Whole	Present slot Span 0..13	Clean	slot metadata, not component map
+Q-E13-002	clean direct	SelectId	Target	Present Span 0..6	Clean	required
+Q-E13-003	clean direct	SelectId	SelectedMember	Present Span 7..13	Clean	Name
+Q-E13-004	missing direct	SelectId	Whole	Present slot Span 0..7	Poisoned	poison changes status only
+Q-E13-005	missing direct	SelectId	Target	Present Span 0..6	Poisoned	required despite poison
+Q-E13-006	missing direct	SelectId	SelectedMember	Present Insertion 7..7	Poisoned	Missing
+Q-E13-007	Try+Select clean	OuterSelectId	Target	Present Span 0..7	Clean	complete inner Try span
+Q-E13-008	Try+Select missing	OuterSelectId	SelectedMember	Present Insertion 8..8	Poisoned	Try remains separate owner
+Q-E13-009	poison target Name	OuterSelectId	Target	Present group-authored Span 0..9	Poisoned	target ExprId is inner Select; authored target span includes parentheses
+Q-E13-010	poison target Name	OuterSelectId	SelectedMember	Present Span 10..16	Poisoned	component remains present
+Q-E13-011	poison target Missing	OuterSelectId	SelectedMember	Present Insertion 10..10	Poisoned	independent member obligation
+Q-E13-012	all Select	SelectId	Recovery	ExprRoleNotApplicable	n/a	applicability precedes document/revision/length
+Q-E13-013	all Select	SelectId	Index	ExprRoleNotApplicable	n/a	second inapplicable-role witness
+Q-E13-014	foreign module	ForeignExprId	Whole	ExprResolve(WrongModule)	n/a	owner module before role/source
+Q-E13-015	corrupted typed wrapper	ExprId with wrong arena kind	Whole	ExprResolve(KindMismatch)	n/a	owner kind before liveness
+Q-E13-016	not yet live	SelectId	Whole	ExprResolve(NotYetLive{id,snapshot,born})	n/a	exact retained payload
+Q-E13-017	retired	SelectId	Whole	ExprResolve(Retired{id,snapshot,retired_at})	n/a	exact retained payload
+Q-E13-018	role+wrong document	live local SelectId	Recovery	ExprRoleNotApplicable	n/a	role applicability wins before wrong document
+Q-E13-019	bad ordinal+wrong document	live owner with encoded SelectedMember ordinal 1	SelectedMember[1]	ExprOrdinalOutOfBounds	n/a	applicable role then ordinal before document
+Q-E13-020	wrong document	live local SelectId	Target	WrongSourceDocument	n/a	owner/role/ordinal valid
+Q-E13-021	stale revision	live local SelectId	Target	StaleSourceRevision	n/a	document valid
+Q-E13-022	retained length mismatch	live local SelectId	Target	SourceLengthMismatch	n/a	document and revision valid
+Q-E13-023	rolled back	reserved-but-unpublished SelectId	Whole	ExprResolve(NotYetLive or absent reservation, per retained allocator)	n/a	no source row or owner is published
+Q-E13-024	retry after rollback	same source/snapshot/module	Whole/Target/SelectedMember	same Present sites	same as committed owner	same qualified IDs and no duplicate records
+Q-E13-025	missing target source query	.member	Target	not queried	n/a	ShortVariant owns the source; no Select owner exists
+Q-E13-026	invalid member source query	target.42	SelectedMember	inner Select Insertion only; no Invalid span	Poisoned inner owner	non-name token belongs to generic outer recovery

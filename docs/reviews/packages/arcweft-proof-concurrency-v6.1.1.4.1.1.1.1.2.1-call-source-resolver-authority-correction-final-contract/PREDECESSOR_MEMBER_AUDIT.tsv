@@ -1,0 +1,22 @@
+archive_role	sequence	archive_sha256	bytes	members	member_or_scope	direct_finding	status
+leaf	proof-v6.1.1.4.1	61E2EE166BFF158FE83DCF1484B7B9380A81F60D865377503400D27D238CC708	64523	20	ALL_MEMBERS	manifest and accepted intake; relevant schema/matrix rows reconciled	CLOSED
+leaf	proof-v6.1.1.4.1				FINAL_CONTRACT.md	Call family, semantic-child order, associated direction, known-family poison	CLOSED
+leaf	proof-v6.1.1.4.1				LOWERING_MATRIX.tsv	E12/C01-C03 inherited rows superseded only where this request identifies conflict	CLOSED
+leaf	proof-v6.1.1.4.1				API_SURFACE.tsv	private construction/read-only surface retained	CLOSED
+leaf	proof-v6.1.1.4.1				IMPLEMENTATION_AND_DELETION_ORDER.md	single compiling public switch retained	CLOSED
+source-owner	proof-v6.1.1.4.1.1	2BCD3F78EFB76442C2698A24251C4D874F7A941C5A8985649EA157100908A72E	63092	24	ALL_MEMBERS	manifest/intake and source-query contract reconciled	CLOSED
+source-owner	proof-v6.1.1.4.1.1				source/query contract	one map + one query; Whole metadata; presence/status/error separation	CLOSED
+source-owner	proof-v6.1.1.4.1.1				qualified identity contract	database-qualified IDs and source validation order retained	CLOSED
+source-owner	proof-v6.1.1.4.1.1				test/rollback matrix	foreign/stale/not-live/retired/rollback behavior retained	CLOSED
+tail	proof-v6.1.1.4.1.1.1.1	69DC42FC7C985FED638D08D694ED301291A50AF3CEFA7117321D4219BE7E6471	50036	23	ALL_MEMBERS	manifest/intake and generator contract reconciled	CLOSED
+tail	proof-v6.1.1.4.1.1.1.1				AFFECTED_LOWERING_ROWS.tsv	root/Scope owners and direct production generator order	CLOSED
+tail	proof-v6.1.1.4.1.1.1.1				CONSTRUCTOR_AND_TRANSACTION_CONTRACT.md	atomic synthetic/source/diagnostic/accounting rollback	CLOSED
+tail	proof-v6.1.1.4.1.1.1.1				GENERATOR_EVIDENCE_CONTRACT.md	general 1023/1024 role boundary remains here, not E12	CLOSED
+tail	proof-v6.1.1.4.1.1.1.1				FINGERPRINT_TRANSCRIPT.md	identity transcript remains opaque and unchanged	CLOSED
+aw-accounting	AW-AH-009.3.3.3.1	060332BC62273C34F267F0F15767FE6BBD328BE177CB8035E83F210267AB0D41	30748	10	ALL_MEMBERS	intake confirms all nine non-manifest payloads	CLOSED
+aw-accounting	AW-AH-009.3.3.3.1				FAMILY_CLASSIFICATION.md	family accounting retained; Capacity arity row superseded by .4	CLOSED
+aw-accounting	AW-AH-009.3.3.3.1				OVERLOAD_ACCOUNTING.md	physical candidate evaluation separated from retained inference	CLOSED
+aw-accounting	AW-AH-009.3.3.3.1				TEST_MATRIX.md	CAP-005 superseded by AW-AH-009.3.3.4 T08/C17	CLOSED
+aw-associated	AW-AH-009.3.3.4	DD8096DEDEF9FE2446291B3849DCEABD8BB5192B88533AA12FEE2DFC3CCEC484		10	ALL_MEMBERS	accepted production authority and intake verification	CLOSED
+aw-associated	AW-AH-009.3.3.4				FINAL_CORRECTION.md	typed associated receiver, value-first dot, explicit nominal path	CLOSED
+aw-associated	AW-AH-009.3.3.4				TEST_MATRIX.md	bare generic arity fails before shared resolver; no placeholder	CLOSED

@@ -1,0 +1,15 @@
+PACKAGE_VERIFICATION_VERSION=1
+RESULT=PASS
+VERIFIER=verification/verify-final-contract.py
+SCOPE=EXTRACTED_ARTIFACT_ONLY
+REPOSITORY_SOURCE_SCAN=NO
+PRODUCTION_IMPLEMENTATION_VALIDATED=NO
+MEMBERS=19
+UTF8_LF_TEXT_FILES=19
+FROZEN_DECISIONS=34
+NORMATIVE_TEST_ROWS=260
+OPEN_QUESTIONS=0
+REQUEST_SHA256=250a1dc175c5281d79b391cdc0873d75c1ef4b7517f63458bf4b5816a3e23b63
+REPOSITORY_REVISION=f56ed157f8d9070d9d1c607f739d9bd0baa1675d
+CHECKS=manifest-membership,sha256,size,utf8-lf,status,open-questions,decision-index,test-row-count,deletion-coverage
+NOTE=The verifier was executed after final MANIFEST.txt generation. Implementation commands are specified but were not run because this package contains no production patch.

@@ -1,0 +1,44 @@
+id	path	git_blob_sha1	inspected_locator	classification	evidence
+R001	AGENTS.md	3965af50059b87df6aa7735890c831010c399b43	complete at final head	normative	latest root Git-only, ownership, deletion, validation and scoped-instruction rules
+R001A	crates/AGENTS.md	155f339fa3c50cd0dfa985a9ade669e6a7f6d620	complete	normative	workspace Rust/parser/deletion/API/testing rules
+R001B	docs/AGENTS.md	9ccd3926eba89e055901f32ae6341fe3fb220014	complete	normative	documentation authority and Git evidence rules
+R001C	docs/reviews/AGENTS.md	8d6e3831ee0f68061fe3899180140032a4b5665a	complete	normative	design-only readiness, ZIP and predecessor requirements
+R001D	docs/implementation/AGENTS.md	9bd29a2f9ec9b2a1602bbeb580fbd6cc1aa985f6	complete	normative	implementation evidence and validation status rules
+R001E	docs/README.md	92fc15437663e14e922c1035f85b664f0e3faf68	complete	normative-navigation	documentation structure and maintained chapters
+R001F	docs/reviews/README.md	780336582626ecc212354ef8ab23b6d4f3061207	complete	normative	review package intake and sidecar policy
+R001G	docs/00-overview/crate-map.md	34048e5135f6a7c4b74997b9ee658c9d43dde4bb	complete relevant language/tooling dependency rules	normative	crate ownership and dependency direction
+R001H	docs/implementation/test-execution-policy.md	d384125d20e97df9298729b29bfa680a74d668d4	complete	normative	focused/workspace/Tier2 selection and docs-only evidence
+R001I	docs/implementation/structural-audit-policy.md	f2e3573f916fcccca0af256a02d98dc0d5901b64	complete	normative	public-contract and mapping audit triggers
+R002	docs/reviews/requests/2026-08-02-seq-proof-01.1.1.2.1.1.1-ordinary-flow-evidence-schema-redelivery-correction.md	15da00ca6de4b9bbc399fc9312c745ab722f531f	complete	normative	correction request
+R003	docs/reviews/requests/2026-07-31-seq-proof-01.1.1.2.1.1-ordinary-flow-attached-hir-projection-reconciliation.md	54fa4f14f842085be1e8763a2b0080b255f64a02	complete	normative	primary Flow request
+R004	docs/reviews/requests/2026-07-25-seq-proof-01.1.1.2.1-final-hir-item-member-inventory-reconciliation.md	7e51718bd018c3f363a08d3d9c5d07f0e3286279	complete	historical-parent	parent gap audit; superseded by local decision
+R005	docs/implementation/2026-08-02-proof-ordinary-flow-return-intake.md	9571d010ab9cdc3f4ec2ce498462fcd8ed5d2c9f	complete	normative-rejection	rejected-return defects
+R006	docs/implementation/2026-07-26-proof-hir-local-schema-decisions.md	42e9a3ea5ad0f6b25e4445b86b1d901dc0aa337d	complete	normative	final item/member inventory and local statement decisions
+R007	docs/implementation/2026-07-17-proof-concurrency-v6-1-1-stage-1-flow-header.md	73b8eaaf911c46254e4b9ef424ff3aaba37e1413	complete	evidence	current staged Flow header and recovery evidence
+R008	docs/implementation/2026-07-31-proof-ordinary-flow-final-hir-design-gap.md	6a074ebb7197dc730ab3dd548767363383773c3a	complete	normative-gap	accepted rows and exact open Flow boundary
+R009	docs/implementation/2026-07-28-proof-01-1-1-4-1-1-source-owner-consistency-intake.md	ade311be79f245fa0cc925d6cf2f58035fc587f2	complete	normative	single typed source query and corrected limits
+R010	docs/implementation/2026-07-28-proof-01-1-1-4-1-1-1-1-tail-owner-generator-intake.md	0d5019c061a7093dfd5c58393279e2e1d6c9dc9e	complete	normative	synthetic owner, result/tail roles, generator and rollback
+R011	docs/implementation/2026-07-28-proof-database-qualified-hir-identity.md	edc6d2cd2c9e8fd5f77d324e0c0d3fcd77bf9bb4	complete	normative	database-qualified identities and liveness order
+R012	docs/implementation/2026-07-30-proof-01-1-1-4-1-1-1-1-1-1-1-select-central-return-intake.md	ff9e09ee707a24fdfb5015797a977a38158108d5	complete	normative	Select central projection, source query and accounting adjudication
+R013	docs/implementation/2026-07-30-proof-01-1-1-4-1-1-1-1-2-1-call-authority-return-intake.md	4ebfcff3b2dd868088364470b18333183329c7f5	complete	normative-repository-decision	Call syntax/HIR/source/resolver/accounting decisions
+R014	docs/01-language/grammar.md	a49a210ab69caf65882c78500a1ff6cea17a760c	complete	maintained-language	Flow grammar, identity, statement/Flow-item and dialogue surfaces
+R015	docs/01-language/contracts.md	84a5ea66f8218418a03001367ffd4d92b551f933	complete	maintained-language	contract families and modes
+R016	docs/01-language/block-scopes.md	8ee83056ac2b2ab8132807a12788d087a40602e7	complete	maintained-language	scope and block semantics
+R017	docs/01-language/syntax.md	160cab3376af98b1fd3641740b064e5083e321e4	complete	maintained-language	surface syntax
+R018	docs/01-language/scenario-surface-syntax.md	bf7790e458d81060604815f045f547cdf51a6781	complete	maintained-language	Flow-integrated dialogue, choice, include and scope syntax
+R019	docs/01-language/localization-dialogue.md	bcc6b9fa157cce46b9803907c2a1f9a83445deeb	complete	maintained-language	source-locale and line identity context
+R020	crates/arcweft-lang-syntax/src/ast/flow.rs	c8406543ddccaa3927bbd613b75c9e26cc2dc299	1-800 and remaining accessors	migration-evidence	detached Flow, ContractClause, FlowItem, Stmt and ThreadBlock clones
+R021	crates/arcweft-lang-syntax/src/parser/flow.rs	1b434b968e85ee924408a70b373f6c179b5abcec	full fetch and Flow parser symbol search	migration-evidence	current Flow header/body parser and raw fallback
+R022	crates/arcweft-lang-syntax/src/parser/headers.rs	0b4e00ccfd6772d07e7081a2cabb064ca14d7f72	complete fetch	migration-evidence	string contract parsing, Flow identity and signature parsing
+R023	crates/arcweft-lang-syntax/src/grammar/kinds.rs	f6e03b3f69295a48706a44b8ddbe5452cc5b269e	complete kind inventory fetch	migration-evidence	original SyntaxKind owner
+R024	crates/arcweft-lang-syntax/src/grammar/roles.rs	4453cc551a9eb713e70fbfcc2950e4df3b9ced7c	complete role inventory fetch	migration-evidence	original SyntaxRole owner
+R025	crates/arcweft-lang-syntax/src/grammar/budget.rs	ed574bdf7cf891fc4c80270817e009b06c9169c4	complete fetch	normative-limit-evidence	syntax transaction charging
+R026	crates/arcweft-lang-syntax/src/incremental/limits.rs	08708ed362da8f903b0653dd9b74067a199c0207	complete fetch	normative-limit-evidence	inclusive syntax limits
+R027	crates/arcweft-lang-syntax/src/attachment/node.rs	02dcd76d9554381e973dbeb327aca79ec713f138	marker inventory and AstNode fetch	migration-evidence	original typed marker and attached node owner
+R028	crates/arcweft-lang-syntax/src/attachment/family.rs	c80fb11d78472241b2a9e5060a11e909f2094f36	complete family fetch	migration-evidence	typed family predicates
+R029	crates/arcweft-lang-hir/src/identity.rs	2c5abea32ca7df642522b449af832064bd1dd1ce	complete identity fetch	normative	qualified IDs, owners, roles and HIR limits
+R030	crates/arcweft-lang-hir/src/model.rs	785788d7655926acf3c22a860d2d6d62a79f1232	1-450 and accessor search	migration-evidence	clone-HIR Flow/Thread/body/dialogue authority to delete
+R031	crates/arcweft-lang-hir/src/lower_flow.rs	0ab3d293048d6fe5dab80f2f49f4e1ed850e6e02	complete fetch	migration-evidence	current recursive clone-HIR Flow lowering
+R032	crates/arcweft-lang-hir/src/dialogue_application.rs	a7b061cd4cdf0732cfca53ed507184ba040446a7	complete fetch	normative-migration	accepted private dialogue carriers and source-site shapes
+R033	crates/arcweft-lang-syntax/src/expr/dialogue_application.rs	3f99d2c78d8d67ac905bfd1498c70a81b4173401	complete fetch	normative-migration	accepted private attached dialogue application
+R034	crates/arcweft-lang-sema/src/effect_contract.rs	7c32218cb603f7e00c6349497ddd87b07c14b6c9	complete fetch	migration-evidence	current syntax-Expr to EffectId reconstruction to delete

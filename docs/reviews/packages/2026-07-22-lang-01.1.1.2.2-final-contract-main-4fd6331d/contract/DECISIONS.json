@@ -1,0 +1,51 @@
+{
+  "accepted_instantiation_authority": "AcceptedNominalRecord::try_instantiate",
+  "adapter_native_nominal_owner": "AcceptedNominalOwnerId::Environment(EnvironmentBindingId::try_new(\"adapter:<adapter-id>\"))",
+  "baseline": {
+    "commit_message": "Implement project nominal type resolution",
+    "ref": "main",
+    "sha": "4fd6331dc342d30a7f4ac7774852b60801866ef7",
+    "verified_at": "2026-07-22 Asia/Tokyo"
+  },
+  "compatibility_layers": [],
+  "context_free_conversion": "AdapterTypeKind::to_sema_type_kind deleted; no public TypeKind conversion",
+  "contract": "Lang-01.1.1.2.2",
+  "failure_policy": "fail closed and roll back the complete candidate registered world",
+  "limits": {
+    "accepted_exact_records": 4096,
+    "diagnostics_per_document": 128,
+    "diagnostics_per_project": 512,
+    "diagnostics_per_type_reference": 32,
+    "generic_arguments_per_application": 256,
+    "recursive_type_depth": 256,
+    "type_nodes_per_reference": 4096,
+    "work_per_project": 1048576,
+    "work_per_reference": 65536
+  },
+  "metadata_migration": "same atomic cut; AcceptedRustTypeMetadataCatalog keyed by AcceptedNominalId",
+  "persistent_identity": "existing CompilerObjectKey.environment_digest populated from RegisteredTypeCheckEnv::environment_digest",
+  "production_code_modified": false,
+  "publication_boundary": "AcceptedNominalWorld projection inside CharacterRegistrar after world construction and before EnvironmentCallablePublication creation",
+  "registration_order": [
+    "validate request and source snapshots",
+    "link project symbols and external owners",
+    "assemble accepted nominal inventory and visibility index",
+    "construct AcceptedNominalWorld once",
+    "resolve project callable schemas",
+    "project Rust metadata",
+    "project environment callables",
+    "finish callable catalog",
+    "compute registered environment digest",
+    "commit RegisteredTypeCheckEnv"
+  ],
+  "repository": "Sanzentyo/arcweft",
+  "rust_nominal_owner": "AcceptedNominalOwnerId::RustPackage(RustPackageId)",
+  "rust_path_model": "package-local ArcweftRustTypePath mapped through AdapterRustPackageMountTable",
+  "schema_versions": {
+    "adapter_manifest": 1,
+    "arcweft_rust_abi": 1,
+    "awbo": "unchanged"
+  },
+  "status": "final",
+  "wire_model": "validated explicit owner + exact path + recursive arguments"
+}

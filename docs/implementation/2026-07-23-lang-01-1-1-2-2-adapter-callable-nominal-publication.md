@@ -3,7 +3,7 @@
 ## Source package and scope
 
 The implementation source of truth is
-[`docs/reviews/packages/2026-07-22-lang-01.1.1.2.2-final-contract-main-4fd6331d.zip`](../reviews/packages/2026-07-22-lang-01.1.1.2.2-final-contract-main-4fd6331d.zip),
+[`docs/reviews/packages/zips/2026-07-22-lang-01.1.1.2.2-final-contract-main-4fd6331d.zip`](../reviews/packages/zips/2026-07-22-lang-01.1.1.2.2-final-contract-main-4fd6331d.zip),
 with SHA-256
 `4518dc6d81a6435b7514ce7bdcd3887df87a857a8bc9eaa5df14df62dbd59c95`.
 The package was designed against Git

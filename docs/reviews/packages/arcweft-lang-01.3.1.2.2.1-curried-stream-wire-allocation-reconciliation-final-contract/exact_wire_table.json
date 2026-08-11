@@ -1,0 +1,186 @@
+{
+  "contract_id": "Lang-01.3.1.2.2.1",
+  "awbc_abi_version": 2,
+  "awbc_codec_version": 8,
+  "instruction_opcodes": [
+    {
+      "opcode": "0x27",
+      "instruction": "OpenStream",
+      "kind": "instruction",
+      "rust_fields": [
+        "dst",
+        "callee",
+        "definition",
+        "signature",
+        "group",
+        "arguments"
+      ],
+      "binary_fields": [
+        "opcode:u8",
+        "dst:varu32",
+        "callee:varu32",
+        "definition:varu32",
+        "signature:varu32",
+        "group:u16-le",
+        "arguments.coordinates:vec",
+        "arguments.values:vec"
+      ]
+    },
+    {
+      "opcode": "0x28",
+      "instruction": "FinishStream",
+      "kind": "instruction",
+      "rust_fields": [
+        "stream",
+        "outcome"
+      ],
+      "binary_fields": [
+        "opcode:u8",
+        "stream:varu32",
+        "outcome:u8+payload"
+      ]
+    },
+    {
+      "opcode": "0x29",
+      "instruction": "ApplyExternalStreamGroup",
+      "kind": "instruction",
+      "rust_fields": [
+        "dst",
+        "callee",
+        "definition",
+        "signature",
+        "group",
+        "arguments"
+      ],
+      "binary_fields": [
+        "opcode:u8",
+        "dst:varu32",
+        "callee:varu32",
+        "definition:varu32",
+        "signature:varu32",
+        "group:u16-le",
+        "arguments.coordinates:vec",
+        "arguments.values:vec"
+      ]
+    }
+  ],
+  "removed_invalid_instruction_opcodes": [
+    {
+      "opcode": "0x1c",
+      "removed_instruction": "StreamYield",
+      "codec8_disposition": "Unknown instruction opcode"
+    },
+    {
+      "opcode": "0x1d",
+      "removed_instruction": "StreamClose",
+      "codec8_disposition": "Unknown instruction opcode"
+    },
+    {
+      "opcode": "0x1e",
+      "removed_instruction": "SourceClose",
+      "codec8_disposition": "Unknown instruction opcode"
+    },
+    {
+      "opcode": "0x20",
+      "removed_instruction": "SourceYield",
+      "codec8_disposition": "Unknown instruction opcode"
+    }
+  ],
+  "retained_current_main_instruction_opcodes_relevant_to_correction": [
+    {
+      "opcode": "0x1f",
+      "instruction": "Drop"
+    },
+    {
+      "opcode": "0x21",
+      "instruction": "AssignField"
+    },
+    {
+      "opcode": "0x22",
+      "instruction": "CallTraitMethod"
+    },
+    {
+      "opcode": "0x23",
+      "instruction": "RegisterCleanup"
+    },
+    {
+      "opcode": "0x24",
+      "instruction": "CancelCleanup"
+    },
+    {
+      "opcode": "0x25",
+      "instruction": "MakeFunction"
+    },
+    {
+      "opcode": "0x26",
+      "instruction": "ApplyFunction"
+    }
+  ],
+  "unassigned_after_this_contract": {
+    "range": "0x2a..=0x7f",
+    "disposition": "unknown instruction opcode; no implicit/reserved instruction semantics"
+  },
+  "primitive_encoding": {
+    "opcode_and_enum_tag": "u8",
+    "u16": "fixed 2-byte little-endian",
+    "u32_and_table_register_ids": "canonical unsigned base-128 varint",
+    "u64": "fixed 8-byte little-endian",
+    "vector_length": "canonical unsigned base-128 u32 varint",
+    "digest": "32 raw bytes"
+  },
+  "operand_tags": [
+    {
+      "tag": 0,
+      "variant": "Explicit",
+      "payload": [
+        "value:varu32"
+      ]
+    },
+    {
+      "tag": 1,
+      "variant": "Defaulted",
+      "payload": [
+        "default:32-bytes",
+        "value:varu32"
+      ]
+    },
+    {
+      "tag": 2,
+      "variant": "OmittedOptional",
+      "payload": []
+    },
+    {
+      "tag": 3,
+      "variant": "RestPositional",
+      "payload": [
+        "value:varu32"
+      ]
+    },
+    {
+      "tag": 4,
+      "variant": "RestNamed",
+      "payload": [
+        "value:varu32"
+      ]
+    }
+  ],
+  "producer_outcome_tags": [
+    {
+      "tag": 0,
+      "variant": "Complete",
+      "payload": []
+    },
+    {
+      "tag": 1,
+      "variant": "Fail",
+      "payload": [
+        "error:varu32"
+      ]
+    },
+    {
+      "tag": 2,
+      "variant": "Cancelled",
+      "payload": []
+    }
+  ]
+}

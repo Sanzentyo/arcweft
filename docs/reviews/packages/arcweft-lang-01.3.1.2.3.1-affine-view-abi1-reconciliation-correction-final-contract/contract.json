@@ -1,0 +1,104 @@
+{
+  "activation": {
+    "candidate_clone_runnable": false,
+    "one_active_holder_per_execution": true,
+    "owner": "RuntimeExecutionDomain/RuntimeExecutionActivationAuthority",
+    "scope": "one runtime execution domain"
+  },
+  "allocator": {
+    "cursor_states": [
+      "next",
+      "exhausted"
+    ],
+    "first_post_restore_mint_exact": true,
+    "recomputed_from_live_owners": false,
+    "serialized_cursor": true
+  },
+  "awbc": {
+    "abi": 1,
+    "abi2_surface": false,
+    "codec": 8,
+    "compatibility_reader": false,
+    "copy_value_opcode": "0x2a",
+    "stream_opcodes": [
+      "0x27",
+      "0x28",
+      "0x29"
+    ]
+  },
+  "contract_id": "Lang-01.3.1.2.3.1",
+  "current_main_repin_required": true,
+  "drop": {
+    "commit_accepts_independent_value": false,
+    "prepared_owns_value": true,
+    "transaction_rollback_restores_source": true
+  },
+  "forbidden": [
+    "ABI2",
+    "ABI compatibility alias",
+    "dual reader",
+    "per-driver activation bypass",
+    "independent-value prepared drop commit",
+    "live RuntimeBinding save",
+    "affine retained View values",
+    "static origin without requirement",
+    "partial-overlap fallback",
+    "source gate",
+    "production overlay"
+  ],
+  "open_questions": 0,
+  "parents": {
+    "affine": {
+      "id": "Lang-01.3.1.2.3",
+      "sha256": "d053fae201afa104f7db9914aebbc08f2456875d1229f5325f86235d4bc0ea94"
+    },
+    "view": {
+      "id": "Lang-01.5.1.1.2",
+      "sha256": "87b7f7bea85bc54254e3a979f0d668026ab75cb1c71955fd7a0f740e4f30c1c6"
+    }
+  },
+  "production_patch": false,
+  "snapshot": {
+    "live_binding_serde": false,
+    "runtime_value_snapshot_eq": false,
+    "runtime_value_snapshot_partial_eq": true,
+    "schema": 2
+  },
+  "static": {
+    "absence_dynamic_only_without_requirement": true,
+    "authored_certificate_requires_requirement": true,
+    "fragment_dispatch": "outermost_wins",
+    "partial_overlap": "reject",
+    "requirement_digest_domain": "arcweft.view.static-requirement.v1\\0",
+    "requirement_serialized": true
+  },
+  "status": "READY_FOR_IMPLEMENTATION",
+  "tests": {
+    "groups": {
+      "ABI": 24,
+      "ACT": 28,
+      "ALC": 24,
+      "ATM": 10,
+      "DEL": 10,
+      "DRP": 18,
+      "FRG": 22,
+      "INT": 16,
+      "REQ": 28,
+      "SNP": 12,
+      "VOW": 42
+    },
+    "production_execution_claimed": false,
+    "rows": 234
+  },
+  "title": "affine runtime and final-HIR View ABI-1 reconciliation correction",
+  "view": {
+    "awbc_abi": 1,
+    "cross_section_borrow": false,
+    "direct_await_captures": "copy",
+    "direct_await_retained_result": "unrestricted",
+    "handler_captures": "copy",
+    "handler_input": "move",
+    "pure_inputs": "copy",
+    "retained_values": "unrestricted_only"
+  }
+}

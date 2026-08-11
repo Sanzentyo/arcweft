@@ -1,0 +1,872 @@
+{
+  "contract_id": "Lang-01.3.1.2.2.1",
+  "case_count": 105,
+  "area_counts": {
+    "codec8": 31,
+    "verifier": 22,
+    "runtime-owner": 2,
+    "signature": 6,
+    "product": 3,
+    "curried application": 5,
+    "atomicity": 1,
+    "effects": 1,
+    "affine": 1,
+    "function value": 1,
+    "authored generator": 4,
+    "RuntimePlan": 1,
+    "AWBC": 1,
+    "bundle": 1,
+    "runtime allocation": 1,
+    "host request": 1,
+    "save": 1,
+    "restore": 3,
+    "static formats": 1,
+    "definition key": 2,
+    "compile-fail": 11,
+    "dependency": 3,
+    "codec": 1,
+    "removal": 1
+  },
+  "cases": [
+    {
+      "id": "WIRE-001",
+      "area": "codec8",
+      "kind": "golden",
+      "setup": "Encode WB-OPEN-EMPTY-FINAL-GROUP",
+      "assertion": "Bytes equal `27 01 02 03 04 00 00 00 00` exactly.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-002",
+      "area": "codec8",
+      "kind": "golden",
+      "setup": "Encode WB-OPEN-DEFAULTED-AND-OMITTED",
+      "assertion": "Bytes equal the 52-byte vector in WORKED_BYTES.md exactly, including fixed little-endian u16 coordinates.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-003",
+      "area": "codec8",
+      "kind": "golden",
+      "setup": "Encode WB-APPLY-ONE-EXPLICIT",
+      "assertion": "Bytes equal `29 01 02 03 04 00 00 01 00 00 00 00 01 00 05` exactly.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-004",
+      "area": "codec8",
+      "kind": "golden",
+      "setup": "Encode FinishStream Complete",
+      "assertion": "Bytes equal `28 0c 00`.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-005",
+      "area": "codec8",
+      "kind": "golden",
+      "setup": "Encode FinishStream Fail(error=13)",
+      "assertion": "Bytes equal `28 0c 01 0d`.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-006",
+      "area": "codec8",
+      "kind": "golden",
+      "setup": "Encode FinishStream Cancelled",
+      "assertion": "Bytes equal `28 0c 02`.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-007",
+      "area": "codec8",
+      "kind": "nested-tag",
+      "setup": "Encode one Explicit operand",
+      "assertion": "First operand byte is tag 0; payload is exactly the field order in EXACT_WIRE_TABLE.md.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-008",
+      "area": "codec8",
+      "kind": "nested-tag",
+      "setup": "Encode one Defaulted operand",
+      "assertion": "First operand byte is tag 1; payload is exactly the field order in EXACT_WIRE_TABLE.md.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-009",
+      "area": "codec8",
+      "kind": "nested-tag",
+      "setup": "Encode one OmittedOptional operand",
+      "assertion": "First operand byte is tag 2; payload is exactly the field order in EXACT_WIRE_TABLE.md.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-010",
+      "area": "codec8",
+      "kind": "nested-tag",
+      "setup": "Encode one RestPositional operand",
+      "assertion": "First operand byte is tag 3; payload is exactly the field order in EXACT_WIRE_TABLE.md.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-011",
+      "area": "codec8",
+      "kind": "nested-tag",
+      "setup": "Encode one RestNamed operand",
+      "assertion": "First operand byte is tag 4; payload is exactly the field order in EXACT_WIRE_TABLE.md.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-012",
+      "area": "codec8",
+      "kind": "nested-tag",
+      "setup": "Encode Complete producer outcome",
+      "assertion": "Outcome tag is exactly 0; only Fail carries one register ID.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-013",
+      "area": "codec8",
+      "kind": "nested-tag",
+      "setup": "Encode Fail producer outcome",
+      "assertion": "Outcome tag is exactly 1; only Fail carries one register ID.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-014",
+      "area": "codec8",
+      "kind": "nested-tag",
+      "setup": "Encode Cancelled producer outcome",
+      "assertion": "Outcome tag is exactly 2; only Fail carries one register ID.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-015",
+      "area": "codec8",
+      "kind": "round-trip",
+      "setup": "For each of the six worked vectors decode, encode, decode, and encode again",
+      "assertion": "Both encodings are byte-identical and both decoded values are equal.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-016",
+      "area": "codec8",
+      "kind": "version-reject",
+      "setup": "Change only AWBC codec version from 8 to 7",
+      "assertion": "Decoder rejects at header/version validation before reading any new table or instruction payload.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-017",
+      "area": "codec8",
+      "kind": "version-reject",
+      "setup": "ABI 1 with codec 8",
+      "assertion": "Decoder rejects before payload tables; no compatibility mode.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-018",
+      "area": "codec8",
+      "kind": "removed-opcode",
+      "setup": "Decode instruction byte 0x1c",
+      "assertion": "Unknown instruction opcode at the opcode byte.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-019",
+      "area": "codec8",
+      "kind": "removed-opcode",
+      "setup": "Decode instruction byte 0x1d",
+      "assertion": "Unknown instruction opcode at the opcode byte.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-020",
+      "area": "codec8",
+      "kind": "removed-opcode",
+      "setup": "Decode instruction byte 0x1e",
+      "assertion": "Unknown instruction opcode at the opcode byte.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-021",
+      "area": "codec8",
+      "kind": "removed-opcode",
+      "setup": "Decode instruction byte 0x20",
+      "assertion": "Unknown instruction opcode at the opcode byte.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-022",
+      "area": "codec8",
+      "kind": "retained-opcode",
+      "setup": "Decode a valid current-main CallTraitMethod record beginning with 0x22",
+      "assertion": "It remains CallTraitMethod; it is not rejected or reinterpreted.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-023",
+      "area": "codec8",
+      "kind": "retained-opcode",
+      "setup": "Decode a valid current-main RegisterCleanup record beginning with 0x23",
+      "assertion": "It remains RegisterCleanup; it is not rejected or reinterpreted.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-024",
+      "area": "codec8",
+      "kind": "unknown-opcode",
+      "setup": "Decode instruction byte 0x2a",
+      "assertion": "Unknown instruction opcode; 0x2a is unassigned, not an implicit reserved instruction.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-025",
+      "area": "codec8",
+      "kind": "old-parent-shape",
+      "setup": "Decode parent flat Open bytes `27 02 03 02 00 04 01` as a codec-8 instruction",
+      "assertion": "It cannot become an accepted OpenStream; decoding or verification rejects the incomplete group-aware payload.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-026",
+      "area": "codec8",
+      "kind": "old-child-meaning",
+      "setup": "Use opcode 0x27 with a syntactically group-aware payload whose group is non-final",
+      "assertion": "It decodes only as OpenStream and verifier rejects non-final Open; there is no Apply alias.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-027",
+      "area": "codec8",
+      "kind": "old-child-meaning",
+      "setup": "Use opcode 0x28 followed by child Open fields with callee byte 0x08",
+      "assertion": "It decodes only as FinishStream and rejects outcome tag 0x08; there is no Open alias.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-028",
+      "area": "codec8",
+      "kind": "length-mismatch",
+      "setup": "Coordinate vector length differs from operand vector length",
+      "assertion": "Decoder/verifier rejects without zipping, sorting, or repairing vectors.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-029",
+      "area": "codec8",
+      "kind": "order-reject",
+      "setup": "Coordinates are duplicated or out of order",
+      "assertion": "Verifier rejects exact malformed order; encoder never canonicalizes it into validity.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "WIRE-030",
+      "area": "codec8",
+      "kind": "integer-shape",
+      "setup": "Encode group/parameter coordinate 1",
+      "assertion": "Each u16 is exactly two little-endian bytes `01 00`, not varint.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "WIRE-031",
+      "area": "codec8",
+      "kind": "integer-shape",
+      "setup": "Encode register/table ID 300",
+      "assertion": "ID is canonical u32 varint `ac 02`; noncanonical forms reject.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "VERIFY-001",
+      "area": "verifier",
+      "kind": "group-role",
+      "setup": "ApplyExternalStreamGroup targets final group",
+      "assertion": "Reject before execution: Apply requires group+1 < group_count.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-002",
+      "area": "verifier",
+      "kind": "group-role",
+      "setup": "OpenStream targets non-final group",
+      "assertion": "Reject before execution: Open requires group+1 == group_count.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-003",
+      "area": "verifier",
+      "kind": "producer-owner",
+      "setup": "FinishStream appears in Ordinary function",
+      "assertion": "Reject: owning function must be GeneratorProducer with OWNS_STREAM_PRODUCER.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-004",
+      "area": "verifier",
+      "kind": "producer-owner",
+      "setup": "FinishStream appears in GeneratorProducer lacking MAY_SUSPEND",
+      "assertion": "Reject before execution.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-005",
+      "area": "verifier",
+      "kind": "producer-owner",
+      "setup": "FinishStream appears in GeneratorProducer lacking OWNS_STREAM_PRODUCER",
+      "assertion": "Reject before execution.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-006",
+      "area": "runtime-owner",
+      "kind": "producer-owner",
+      "setup": "Current fiber producer_stream key/lease does not reciprocally match table producer owner",
+      "assertion": "Typed runtime trap/rejection before terminal mutation.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "VERIFY-007",
+      "area": "runtime-owner",
+      "kind": "producer-owner",
+      "setup": "Finish stream register key differs from FiberState.producer_stream.key",
+      "assertion": "Reject without terminalizing either stream.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "VERIFY-008",
+      "area": "verifier",
+      "kind": "definition",
+      "setup": "Apply/Open definition table index is out of bounds",
+      "assertion": "Reject before register or operand checks.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-009",
+      "area": "verifier",
+      "kind": "origin",
+      "setup": "Apply/Open definition has authored or derived origin",
+      "assertion": "Reject; the group-application instructions are external-origin only.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-010",
+      "area": "verifier",
+      "kind": "signature",
+      "setup": "Signature ID is not exactly the definition-owned callable signature",
+      "assertion": "Reject SignatureMismatch.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-011",
+      "area": "verifier",
+      "kind": "callee",
+      "setup": "Callee static type has wrong definition",
+      "assertion": "Reject before execution.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-012",
+      "area": "verifier",
+      "kind": "callee",
+      "setup": "Callee next_group differs from instruction group",
+      "assertion": "Reject before execution.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-013",
+      "area": "verifier",
+      "kind": "destination",
+      "setup": "Apply destination is not ExternalStreamCallable(definition, group+1)",
+      "assertion": "Reject before execution.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-014",
+      "area": "verifier",
+      "kind": "destination",
+      "setup": "Open destination is not matching StreamHandle(item,error)",
+      "assertion": "Reject before execution.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-015",
+      "area": "verifier",
+      "kind": "coordinates",
+      "setup": "Coordinate list omits one parameter in the group",
+      "assertion": "Reject MissingCoordinate.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-016",
+      "area": "verifier",
+      "kind": "coordinates",
+      "setup": "Coordinate list includes a coordinate from another group",
+      "assertion": "Reject UnknownCoordinate.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-017",
+      "area": "verifier",
+      "kind": "disposition",
+      "setup": "Required non-rest parameter uses OmittedOptional",
+      "assertion": "Reject IllegalDisposition.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-018",
+      "area": "verifier",
+      "kind": "disposition",
+      "setup": "Optional parameter uses Defaulted",
+      "assertion": "Reject IllegalDisposition.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-019",
+      "area": "verifier",
+      "kind": "default",
+      "setup": "Defaulted digest differs from parameter metadata",
+      "assertion": "Reject DefaultFingerprintMismatch.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-020",
+      "area": "verifier",
+      "kind": "type",
+      "setup": "Explicit operand register has wrong type",
+      "assertion": "Reject TypeMismatch.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-021",
+      "area": "verifier",
+      "kind": "rest",
+      "setup": "RestPositional register is not Sequence<parameter.ty>",
+      "assertion": "Reject malformed rest aggregate.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-022",
+      "area": "verifier",
+      "kind": "rest",
+      "setup": "RestNamed register is not Sequence<Tuple<String, parameter.ty>>",
+      "assertion": "Reject malformed named-rest aggregate.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-023",
+      "area": "verifier",
+      "kind": "finish-outcome",
+      "setup": "FinishStream Fail register has wrong definition error type",
+      "assertion": "Reject before execution.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "VERIFY-024",
+      "area": "verifier",
+      "kind": "finish-outcome",
+      "setup": "FinishStream follows an earlier terminal Finish in the same reachable producer path",
+      "assertion": "Reject single-terminal ownership violation.",
+      "evidence": "typed verifier"
+    },
+    {
+      "id": "LIMIT-001",
+      "area": "signature",
+      "kind": "minimum",
+      "setup": "One callable group with zero parameters",
+      "assertion": "Accepted; group remains explicit and completed_groups advances from 0 to 1.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "LIMIT-002",
+      "area": "signature",
+      "kind": "maximum",
+      "setup": "Exactly 16 groups and 128 total parameters",
+      "assertion": "Accepted when every coordinate is contiguous and all other invariants hold.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "LIMIT-003",
+      "area": "signature",
+      "kind": "one-over",
+      "setup": "17 groups",
+      "assertion": "Reject before allocation with group limit exceeded.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "LIMIT-004",
+      "area": "signature",
+      "kind": "one-over",
+      "setup": "129 total parameters",
+      "assertion": "Reject before allocation with parameter limit exceeded.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "LIMIT-005",
+      "area": "signature",
+      "kind": "maximum",
+      "setup": "One group with exactly 128 parameters",
+      "assertion": "Accepted.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "LIMIT-006",
+      "area": "signature",
+      "kind": "one-over",
+      "setup": "One group with 129 parameters",
+      "assertion": "Reject before allocating argument cells.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "LIMIT-007",
+      "area": "product",
+      "kind": "empty",
+      "setup": "Apply/Open an empty declared group with empty coordinate/value vectors",
+      "assertion": "Accepted when group role is otherwise valid; empty group is not inferred from product length.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "LIMIT-008",
+      "area": "product",
+      "kind": "maximum",
+      "setup": "Complete product contains exactly 128 cells",
+      "assertion": "Accepted.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "LIMIT-009",
+      "area": "product",
+      "kind": "one-over",
+      "setup": "Product contains 129 cells",
+      "assertion": "Reject without mutating partial, instance table, or request batch.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-001",
+      "area": "curried application",
+      "kind": "parity",
+      "setup": "Call a two-group external Stream directly in one source expression and via saved intermediate partial",
+      "assertion": "Final canonical product bytes and signature/argument fingerprints are equal.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-002",
+      "area": "curried application",
+      "kind": "parity",
+      "setup": "Call a three-group external Stream direct versus staged across suspension/save points",
+      "assertion": "Coordinates, dispositions, digests, completed_groups, and open request are equal.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-003",
+      "area": "curried application",
+      "kind": "non-final",
+      "setup": "Apply first group of a multi-group external Stream",
+      "assertion": "Produces only ExternalStreamPartial(next_group=1); allocates no instance and emits no request.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-004",
+      "area": "curried application",
+      "kind": "non-final",
+      "setup": "Apply a middle group",
+      "assertion": "Joins exactly one canonical group, advances once, and emits no request.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-005",
+      "area": "curried application",
+      "kind": "final",
+      "setup": "Apply final group after valid prefix",
+      "assertion": "Validates full product, allocates one ordinal/key, inserts one Opening entry, yields one handle, emits one Open request atomically.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-006",
+      "area": "atomicity",
+      "kind": "failure",
+      "setup": "Final group value/type/default/generation validation fails",
+      "assertion": "No ordinal, lease, request ID, instance entry, handle, or request batch mutation is observable.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-007",
+      "area": "effects",
+      "kind": "evaluation",
+      "setup": "Earlier authored group has effectful argument/default",
+      "assertion": "It executes once when that group is applied and is never replayed at final Open.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-008",
+      "area": "affine",
+      "kind": "ownership",
+      "setup": "Captured product contains an affine value",
+      "assertion": "ExternalStreamPartial is affine and cannot be duplicated by ordinary closure cloning.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "RUNTIME-009",
+      "area": "function value",
+      "kind": "single-owner",
+      "setup": "Load external callable constant, partially apply, save, restore, and apply again",
+      "assertion": "Every phase uses RuntimeFunctionValue::ExternalStreamPartial; no parallel function-value representation appears.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "GEN-001",
+      "area": "authored generator",
+      "kind": "complete-parity",
+      "setup": "Correct producer executes FinishStream Complete in structured runtime, AWBC VM, and compiled region",
+      "assertion": "All paths commit End exactly once and later NextStream yields Closed(End).",
+      "evidence": "behavior"
+    },
+    {
+      "id": "GEN-002",
+      "area": "authored generator",
+      "kind": "fail-parity",
+      "setup": "Correct producer executes FinishStream Fail(error)",
+      "assertion": "All paths commit TerminalError payload exactly once; later NextStream yields Closed(Error).",
+      "evidence": "behavior"
+    },
+    {
+      "id": "GEN-003",
+      "area": "authored generator",
+      "kind": "cancel-parity",
+      "setup": "Correct producer executes FinishStream Cancelled",
+      "assertion": "All paths commit Cancelled exactly once; later NextStream yields Closed(Cancelled).",
+      "evidence": "behavior"
+    },
+    {
+      "id": "GEN-004",
+      "area": "authored generator",
+      "kind": "wrong-owner",
+      "setup": "A different fiber tries to finish the instance",
+      "assertion": "Reject without terminal mutation in structured runtime, VM, and compiled region.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "IDENT-001",
+      "area": "RuntimePlan",
+      "kind": "round-trip",
+      "setup": "Build sorted stream_definitions table",
+      "assertion": "RuntimeStreamDefinitionId equals table index; RuntimeStreamDefinitionKey survives encode/decode unchanged.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "IDENT-002",
+      "area": "AWBC",
+      "kind": "round-trip",
+      "setup": "Lower RuntimePlan definition to AwbcStreamDefinition",
+      "assertion": "AwbcStreamDefinitionId is the table index and semantic_key is the exact RuntimeStreamDefinitionKey bytes.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "IDENT-003",
+      "area": "bundle",
+      "kind": "round-trip",
+      "setup": "Package and load the codec-8 AWBC payload",
+      "assertion": "Definition index/key mapping is unchanged; bundle contains no fabricated live instance key.",
+      "evidence": "canonical bytes"
+    },
+    {
+      "id": "IDENT-004",
+      "area": "runtime allocation",
+      "kind": "construction",
+      "setup": "Open definition key K in generation G at ordinal O",
+      "assertion": "Only StreamInstanceKey { definition_key: K, generation: G, ordinal: O } is the complete live identity.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "IDENT-005",
+      "area": "host request",
+      "kind": "round-trip",
+      "setup": "Serialize and deserialize RuntimeStreamRequest::Open",
+      "assertion": "The complete StreamInstanceKey and RuntimeStreamDefinitionKey round-trip exactly; no bare ordinal field exists.",
+      "evidence": "canonical JSON"
+    },
+    {
+      "id": "IDENT-006",
+      "area": "save",
+      "kind": "round-trip",
+      "setup": "Save a live/restorable Stream instance and external partial",
+      "assertion": "Definition key, generation, ordinal, declaration, signature fingerprint, group progress, coordinates, and dispositions survive exactly.",
+      "evidence": "canonical save bytes"
+    },
+    {
+      "id": "IDENT-007",
+      "area": "restore",
+      "kind": "round-trip",
+      "setup": "Restore against the same bundle and generation set",
+      "assertion": "Reconstructed StreamInstanceKey equals the saved key and binds to the loaded definition key/index.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "IDENT-008",
+      "area": "restore",
+      "kind": "mismatch",
+      "setup": "Saved instance definition key is absent or mapped to different loaded definition",
+      "assertion": "Restore rejects before installing candidate state.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "IDENT-009",
+      "area": "restore",
+      "kind": "mismatch",
+      "setup": "Saved generation or ordinal is altered",
+      "assertion": "Restore rejects; it never substitutes a current generation or allocates a replacement ordinal.",
+      "evidence": "behavior"
+    },
+    {
+      "id": "IDENT-010",
+      "area": "static formats",
+      "kind": "absence",
+      "setup": "Inspect RuntimePlan, AWBC, and bundle data models",
+      "assertion": "They carry definition ID/key only; live StreamInstanceKey begins at runtime allocation and is not added to static formats.",
+      "evidence": "typed API"
+    },
+    {
+      "id": "IDENT-011",
+      "area": "definition key",
+      "kind": "grouped-transcript",
+      "setup": "Compute two definitions with identical flattened parameters but different group boundaries/coordinates",
+      "assertion": "RuntimeStreamDefinitionKey values differ; the old flat 394-byte/06c9... golden is not accepted.",
+      "evidence": "canonical digest transcript"
+    },
+    {
+      "id": "IDENT-012",
+      "area": "definition key",
+      "kind": "golden",
+      "setup": "Encode one final grouped definition-key fixture using the exact nested transcript",
+      "assertion": "Implementation records exact transcript bytes and BLAKE3-256 golden and round-trips the same key through RuntimePlan/AWBC/bundle.",
+      "evidence": "canonical digest transcript"
+    },
+    {
+      "id": "API-001",
+      "area": "compile-fail",
+      "kind": "removed-owner",
+      "setup": "External integration test imports or constructs `StreamDefinitionId`",
+      "assertion": "Compilation fails because no compatibility alias or parallel owner is published.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-002",
+      "area": "compile-fail",
+      "kind": "removed-owner",
+      "setup": "External integration test imports or constructs `GenerationId`",
+      "assertion": "Compilation fails because no compatibility alias or parallel owner is published.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-003",
+      "area": "compile-fail",
+      "kind": "removed-owner",
+      "setup": "External integration test imports or constructs `StreamInstanceId`",
+      "assertion": "Compilation fails because no compatibility alias or parallel owner is published.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-004",
+      "area": "compile-fail",
+      "kind": "removed-owner",
+      "setup": "External integration test imports or constructs `RuntimeTypeLayoutHash`",
+      "assertion": "Compilation fails because no compatibility alias or parallel owner is published.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-005",
+      "area": "compile-fail",
+      "kind": "removed-owner",
+      "setup": "External integration test imports or constructs `RuntimeExternalStreamCallableSignature`",
+      "assertion": "Compilation fails because no compatibility alias or parallel owner is published.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-006",
+      "area": "compile-fail",
+      "kind": "removed-owner",
+      "setup": "External integration test imports or constructs `RuntimeExternalStreamParameterGroup`",
+      "assertion": "Compilation fails because no compatibility alias or parallel owner is published.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-007",
+      "area": "compile-fail",
+      "kind": "removed-owner",
+      "setup": "External integration test imports or constructs `RuntimeExternalStreamParameter`",
+      "assertion": "Compilation fails because no compatibility alias or parallel owner is published.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-008",
+      "area": "compile-fail",
+      "kind": "removed-owner",
+      "setup": "External integration test imports or constructs `RuntimeExternalStreamResult`",
+      "assertion": "Compilation fails because no compatibility alias or parallel owner is published.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-009",
+      "area": "compile-fail",
+      "kind": "flat-product",
+      "setup": "Construct external Stream Open from RuntimeResolvedArguments/RuntimeHostResolvedArguments",
+      "assertion": "Compilation fails or typed constructor rejects because external Open requires RuntimeExternalStreamArgumentProduct.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-010",
+      "area": "compile-fail",
+      "kind": "flat-boundary",
+      "setup": "Construct RuntimeCallableBoundarySignature with `parameters` field",
+      "assertion": "Compilation fails; sole field is grouped `groups`.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-011",
+      "area": "compile-fail",
+      "kind": "bare-instance",
+      "setup": "Construct RuntimeStreamRequest::Open with StreamInstanceOrdinal as instance",
+      "assertion": "Compilation fails; field type is StreamInstanceKey.",
+      "evidence": "compile-fail API"
+    },
+    {
+      "id": "API-012",
+      "area": "dependency",
+      "kind": "layering",
+      "setup": "Run cargo metadata over changed graph",
+      "assertion": "arcweft-core and data-format owners remain Sans I/O; runtime-plan does not depend on sema; compiler is sole sema-to-core projection.",
+      "evidence": "structured dependency"
+    },
+    {
+      "id": "API-013",
+      "area": "dependency",
+      "kind": "one-schema",
+      "setup": "Inspect public API/type graph",
+      "assertion": "One RuntimeCallableBoundarySignature parameter schema and one RuntimeExternalStreamArgumentProduct owner exist.",
+      "evidence": "structured dependency"
+    },
+    {
+      "id": "API-014",
+      "area": "dependency",
+      "kind": "one-function-shape",
+      "setup": "Inspect RuntimeValue::Function payload and serde/codec tags",
+      "assertion": "One RuntimeFunctionValue enum owns Closure and ExternalStreamPartial; no sidecar/adapter shape.",
+      "evidence": "structured dependency"
+    },
+    {
+      "id": "API-015",
+      "area": "codec",
+      "kind": "no-dual-reader",
+      "setup": "Feed old flat and child-conflicting opcode bytes",
+      "assertion": "Only final codec-8 meanings are accepted; no alias, migration, or dual reader path.",
+      "evidence": "codec behavior"
+    },
+    {
+      "id": "API-016",
+      "area": "removal",
+      "kind": "non-text-evidence",
+      "setup": "Run removal acceptance suite",
+      "assertion": "Pass/fail derives only from typed API, canonical codec behavior, behavior tests, and cargo metadata; no repository source-text gate is used.",
+      "evidence": "structured dependency"
+    }
+  ]
+}

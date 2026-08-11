@@ -1,0 +1,443 @@
+{
+  "schema": "arcweft.lang-01.3.1.2.3.2.codec-goldens.v1",
+  "endianness": "little",
+  "enum_tag_width_bytes": 1,
+  "vector_count_width_bytes": 4,
+  "u64_json": "strict_decimal_string",
+  "u32_json": "integer",
+  "goldens": [
+    {
+      "name": "execution-1",
+      "type": "ExecutionInstanceId",
+      "typed_value": "1",
+      "binary_hex": "0100000000000000",
+      "binary_length": 8,
+      "canonical_json": "\"1\"",
+      "note": ""
+    },
+    {
+      "name": "execution-max",
+      "type": "ExecutionInstanceId",
+      "typed_value": "18446744073709551615",
+      "binary_hex": "ffffffffffffffff",
+      "binary_length": 8,
+      "canonical_json": "\"18446744073709551615\"",
+      "note": ""
+    },
+    {
+      "name": "cursor-next-1",
+      "type": "RuntimeIdCursor",
+      "typed_value": "Next(1)",
+      "binary_hex": "000100000000000000",
+      "binary_length": 9,
+      "canonical_json": "{\"state\":\"next\",\"value\":\"1\"}",
+      "note": ""
+    },
+    {
+      "name": "cursor-exhausted",
+      "type": "RuntimeIdCursor",
+      "typed_value": "Exhausted",
+      "binary_hex": "01",
+      "binary_length": 1,
+      "canonical_json": "{\"state\":\"exhausted\"}",
+      "note": ""
+    },
+    {
+      "name": "record-field-1",
+      "type": "RuntimeRecordFieldId",
+      "typed_value": "1",
+      "binary_hex": "01000000",
+      "binary_length": 4,
+      "canonical_json": "1",
+      "note": ""
+    },
+    {
+      "name": "local-slot-2",
+      "type": "RuntimeLocalSlotId",
+      "typed_value": "2",
+      "binary_hex": "0200000000000000",
+      "binary_length": 8,
+      "canonical_json": "\"2\"",
+      "note": ""
+    },
+    {
+      "name": "slot-revision-3",
+      "type": "RuntimeSlotRevision",
+      "typed_value": "3",
+      "binary_hex": "0300000000000000",
+      "binary_length": 8,
+      "canonical_json": "\"3\"",
+      "note": ""
+    },
+    {
+      "name": "affine-owner-1-7",
+      "type": "RuntimeAffineOwnerId",
+      "typed_value": "execution=1,ordinal=7",
+      "binary_hex": "01000000000000000700000000000000",
+      "binary_length": 16,
+      "canonical_json": "{\"execution\":\"1\",\"ordinal\":\"7\"}",
+      "note": ""
+    },
+    {
+      "name": "transaction-1-9",
+      "type": "RuntimeOwnershipTransactionId",
+      "typed_value": "execution=1,ordinal=9",
+      "binary_hex": "01000000000000000900000000000000",
+      "binary_length": 16,
+      "canonical_json": "{\"execution\":\"1\",\"ordinal\":\"9\"}",
+      "note": ""
+    },
+    {
+      "name": "owned-slot-environment-local",
+      "type": "RuntimeOwnedSlotId",
+      "typed_value": "exec/1/env/2",
+      "binary_hex": "0001000000000000000200000000000000",
+      "binary_length": 17,
+      "canonical_json": "{\"kind\":\"environment_local\",\"execution\":\"1\",\"local\":\"2\"}",
+      "note": "canonical_render=exec/1/env/2"
+    },
+    {
+      "name": "owned-slot-closure-capture",
+      "type": "RuntimeOwnedSlotId",
+      "typed_value": "exec/1/closure/2/capture/3",
+      "binary_hex": "010100000000000000020000000000000003000000",
+      "binary_length": 21,
+      "canonical_json": "{\"kind\":\"closure_capture\",\"execution\":\"1\",\"closure\":\"2\",\"capture\":3}",
+      "note": "canonical_render=exec/1/closure/2/capture/3"
+    },
+    {
+      "name": "owned-slot-awbc-register",
+      "type": "RuntimeOwnedSlotId",
+      "typed_value": "exec/1/awbc/fiber/2/frame/3/register/4",
+      "binary_hex": "0201000000000000000200000000000000030000000000000004000000",
+      "binary_length": 29,
+      "canonical_json": "{\"kind\":\"awbc_register\",\"execution\":\"1\",\"fiber\":\"2\",\"frame\":\"3\",\"register\":4}",
+      "note": "canonical_render=exec/1/awbc/fiber/2/frame/3/register/4"
+    },
+    {
+      "name": "owned-slot-awbc-frame-local",
+      "type": "RuntimeOwnedSlotId",
+      "typed_value": "exec/1/awbc/fiber/2/frame/3/local/4",
+      "binary_hex": "0301000000000000000200000000000000030000000000000004000000",
+      "binary_length": 29,
+      "canonical_json": "{\"kind\":\"awbc_frame_local\",\"execution\":\"1\",\"fiber\":\"2\",\"frame\":\"3\",\"local\":4}",
+      "note": "canonical_render=exec/1/awbc/fiber/2/frame/3/local/4"
+    },
+    {
+      "name": "owned-slot-mailbox-lane",
+      "type": "RuntimeOwnedSlotId",
+      "typed_value": "exec/1/mailbox/2/lane/3",
+      "binary_hex": "040100000000000000020000000000000003000000",
+      "binary_length": 21,
+      "canonical_json": "{\"kind\":\"mailbox_lane\",\"execution\":\"1\",\"mailbox\":\"2\",\"lane\":3}",
+      "note": "canonical_render=exec/1/mailbox/2/lane/3"
+    },
+    {
+      "name": "owned-slot-child-packet",
+      "type": "RuntimeOwnedSlotId",
+      "typed_value": "exec/1/child/2/packet/3",
+      "binary_hex": "050100000000000000020000000000000003000000",
+      "binary_length": 21,
+      "canonical_json": "{\"kind\":\"child_packet\",\"execution\":\"1\",\"child\":\"2\",\"packet\":3}",
+      "note": "canonical_render=exec/1/child/2/packet/3"
+    },
+    {
+      "name": "owned-slot-transfer-packet",
+      "type": "RuntimeOwnedSlotId",
+      "typed_value": "exec/1/transfer/2/packet/3",
+      "binary_hex": "060100000000000000020000000000000003000000",
+      "binary_length": 21,
+      "canonical_json": "{\"kind\":\"transfer_packet\",\"execution\":\"1\",\"transfer\":\"2\",\"packet\":3}",
+      "note": "canonical_render=exec/1/transfer/2/packet/3"
+    },
+    {
+      "name": "owned-slot-cleanup-slot",
+      "type": "RuntimeOwnedSlotId",
+      "typed_value": "exec/1/cleanup/2/slot/3",
+      "binary_hex": "070100000000000000020000000000000003000000",
+      "binary_length": 21,
+      "canonical_json": "{\"kind\":\"cleanup_slot\",\"execution\":\"1\",\"scope\":\"2\",\"slot\":3}",
+      "note": "canonical_render=exec/1/cleanup/2/slot/3"
+    },
+    {
+      "name": "path-root",
+      "type": "RuntimeValuePath",
+      "typed_value": "[]",
+      "binary_hex": "00000000",
+      "binary_length": 4,
+      "canonical_json": "[]",
+      "note": ""
+    },
+    {
+      "name": "path-record2-seq4-variant",
+      "type": "RuntimeValuePath",
+      "typed_value": "[RecordField(2), SequenceElement(4), VariantPayload]",
+      "binary_hex": "03000000030200000001040000000000000007",
+      "binary_length": 19,
+      "canonical_json": "[{\"kind\":\"record_field\",\"field\":2},{\"kind\":\"sequence_element\",\"index\":\"4\"},{\"kind\":\"variant_payload\"}]",
+      "note": ""
+    },
+    {
+      "name": "path-capture3-iterator6",
+      "type": "RuntimeValuePath",
+      "typed_value": "[FunctionCapture(3), IteratorRemainder(6)]",
+      "binary_hex": "020000000603000000080600000000000000",
+      "binary_length": 18,
+      "canonical_json": "[{\"kind\":\"function_capture\",\"capture\":3},{\"kind\":\"iterator_remainder\",\"index\":\"6\"}]",
+      "note": ""
+    },
+    {
+      "name": "path-witness-state",
+      "type": "RuntimeValuePath",
+      "typed_value": "[IteratorWitnessState]",
+      "binary_hex": "0100000009",
+      "binary_length": 5,
+      "canonical_json": "[{\"kind\":\"iterator_witness_state\"}]",
+      "note": ""
+    },
+    {
+      "name": "identity-snapshot",
+      "type": "RuntimeExecutionIdentitySnapshotV2",
+      "typed_value": "execution1 cursors10/20/30/40",
+      "binary_hex": "0100000000000000000a00000000000000001400000000000000001e00000000000000002800000000000000",
+      "binary_length": 44,
+      "canonical_json": "{\"execution\":\"1\",\"next_occurrence\":{\"state\":\"next\",\"value\":\"10\"},\"next_local_slot\":{\"state\":\"next\",\"value\":\"20\"},\"next_ownership_transaction\":{\"state\":\"next\",\"value\":\"30\"},\"next_affine_owner\":{\"state\":\"next\",\"value\":\"40\"}}",
+      "note": "core-owned; no driver activation epoch"
+    },
+    {
+      "name": "domain-snapshot",
+      "type": "RuntimeExecutionDomainSnapshotV2",
+      "typed_value": "next_execution3 + epoch2 + core identity snapshot",
+      "binary_hex": "00030000000000000002000000000000000100000000000000000a00000000000000001400000000000000001e00000000000000002800000000000000",
+      "binary_length": 61,
+      "canonical_json": "{\"next_execution\":{\"state\":\"next\",\"value\":\"3\"},\"activation_epoch\":\"2\",\"active\":{\"execution\":\"1\",\"next_occurrence\":{\"state\":\"next\",\"value\":\"10\"},\"next_local_slot\":{\"state\":\"next\",\"value\":\"20\"},\"next_ownership_transaction\":{\"state\":\"next\",\"value\":\"30\"},\"next_affine_owner\":{\"state\":\"next\",\"value\":\"40\"}}}",
+      "note": "driver envelope carries epoch; active identity remains core-owned"
+    }
+  ],
+  "invalid_binary": [
+    {
+      "name": "execution-zero",
+      "type": "ExecutionInstanceId",
+      "binary_hex": "0000000000000000",
+      "expected": "reject zero nonzero ID"
+    },
+    {
+      "name": "execution-truncated",
+      "type": "ExecutionInstanceId",
+      "binary_hex": "01010101010101",
+      "expected": "reject wrong fixed length"
+    },
+    {
+      "name": "execution-trailing",
+      "type": "ExecutionInstanceId",
+      "binary_hex": "010000000000000000",
+      "expected": "reject trailing byte"
+    },
+    {
+      "name": "cursor-unknown-tag",
+      "type": "RuntimeIdCursor",
+      "binary_hex": "02",
+      "expected": "reject unknown tag"
+    },
+    {
+      "name": "cursor-next-zero",
+      "type": "RuntimeIdCursor",
+      "binary_hex": "000000000000000000",
+      "expected": "reject zero next value"
+    },
+    {
+      "name": "cursor-exhausted-trailing",
+      "type": "RuntimeIdCursor",
+      "binary_hex": "0100",
+      "expected": "reject trailing byte"
+    },
+    {
+      "name": "record-field-zero",
+      "type": "RuntimeRecordFieldId",
+      "binary_hex": "00000000",
+      "expected": "reject zero field ID"
+    },
+    {
+      "name": "owned-slot-unknown-tag",
+      "type": "RuntimeOwnedSlotId",
+      "binary_hex": "08",
+      "expected": "reject unknown variant tag"
+    },
+    {
+      "name": "owned-slot-env-zero-execution",
+      "type": "RuntimeOwnedSlotId",
+      "binary_hex": "0000000000000000000200000000000000",
+      "expected": "reject zero nested execution"
+    },
+    {
+      "name": "owned-slot-env-zero-local",
+      "type": "RuntimeOwnedSlotId",
+      "binary_hex": "0001000000000000000000000000000000",
+      "expected": "reject zero nested local"
+    },
+    {
+      "name": "path-unknown-tag",
+      "type": "RuntimeValuePath",
+      "binary_hex": "010000000a",
+      "expected": "reject unknown segment tag"
+    },
+    {
+      "name": "path-record-zero",
+      "type": "RuntimeValuePath",
+      "binary_hex": "010000000300000000",
+      "expected": "reject zero record field ID"
+    },
+    {
+      "name": "path-count-truncated",
+      "type": "RuntimeValuePath",
+      "binary_hex": "0200000007",
+      "expected": "reject missing second segment"
+    },
+    {
+      "name": "path-trailing",
+      "type": "RuntimeValuePath",
+      "binary_hex": "0000000000",
+      "expected": "reject trailing byte"
+    },
+    {
+      "name": "domain-zero-epoch",
+      "type": "RuntimeExecutionDomainSnapshotV2",
+      "binary_hex": "00030000000000000000000000000000000100000000000000000a00000000000000001400000000000000001e00000000000000002800000000000000",
+      "expected": "reject zero activation epoch in driver envelope"
+    },
+    {
+      "name": "identity-zero-affine-cursor",
+      "type": "RuntimeExecutionIdentitySnapshotV2",
+      "binary_hex": "0100000000000000000a00000000000000001400000000000000001e00000000000000000000000000000000",
+      "expected": "reject zero Next cursor"
+    },
+    {
+      "name": "domain-truncated",
+      "type": "RuntimeExecutionDomainSnapshotV2",
+      "binary_hex": "00030000000000000002000000000000000100000000000000000a00000000000000001400000000000000001e000000000000000028000000000000",
+      "expected": "reject truncated active snapshot"
+    },
+    {
+      "name": "domain-trailing",
+      "type": "RuntimeExecutionDomainSnapshotV2",
+      "binary_hex": "00030000000000000002000000000000000100000000000000000a00000000000000001400000000000000001e0000000000000000280000000000000000",
+      "expected": "reject trailing byte"
+    }
+  ],
+  "invalid_json": [
+    {
+      "name": "u64-number-token",
+      "input": "1",
+      "target": "ExecutionInstanceId",
+      "expected": "reject numeric token"
+    },
+    {
+      "name": "u64-zero",
+      "input": "\"0\"",
+      "target": "ExecutionInstanceId",
+      "expected": "reject zero"
+    },
+    {
+      "name": "u64-leading-zero",
+      "input": "\"01\"",
+      "target": "ExecutionInstanceId",
+      "expected": "reject leading zero"
+    },
+    {
+      "name": "u64-plus",
+      "input": "\"+1\"",
+      "target": "ExecutionInstanceId",
+      "expected": "reject sign"
+    },
+    {
+      "name": "u64-minus",
+      "input": "\"-1\"",
+      "target": "ExecutionInstanceId",
+      "expected": "reject sign"
+    },
+    {
+      "name": "u64-space",
+      "input": "\" 1\"",
+      "target": "ExecutionInstanceId",
+      "expected": "reject whitespace"
+    },
+    {
+      "name": "u64-overflow",
+      "input": "\"18446744073709551616\"",
+      "target": "ExecutionInstanceId",
+      "expected": "reject overflow"
+    },
+    {
+      "name": "cursor-extra-field",
+      "input": "{\"state\":\"exhausted\",\"value\":\"1\"}",
+      "target": "RuntimeIdCursor",
+      "expected": "reject extra field"
+    },
+    {
+      "name": "cursor-duplicate-state",
+      "input": "{\"state\":\"next\",\"state\":\"exhausted\",\"value\":\"1\"}",
+      "target": "RuntimeIdCursor",
+      "expected": "reject duplicate field"
+    },
+    {
+      "name": "owned-unknown-kind",
+      "input": "{\"kind\":\"other\",\"execution\":\"1\"}",
+      "target": "RuntimeOwnedSlotId",
+      "expected": "reject unknown kind"
+    },
+    {
+      "name": "owned-missing-field",
+      "input": "{\"kind\":\"environment_local\",\"execution\":\"1\"}",
+      "target": "RuntimeOwnedSlotId",
+      "expected": "reject missing local"
+    },
+    {
+      "name": "path-u64-number",
+      "input": "[{\"kind\":\"sequence_element\",\"index\":4}]",
+      "target": "RuntimeValuePath",
+      "expected": "reject numeric u64 index token"
+    },
+    {
+      "name": "path-zero-record",
+      "input": "[{\"kind\":\"record_field\",\"field\":0}]",
+      "target": "RuntimeValuePath",
+      "expected": "reject zero typed ID"
+    },
+    {
+      "name": "identity-driver-epoch-field",
+      "input": "{\"execution\":\"1\",\"activation_epoch\":\"2\",\"next_occurrence\":{\"state\":\"next\",\"value\":\"10\"},\"next_local_slot\":{\"state\":\"next\",\"value\":\"20\"},\"next_ownership_transaction\":{\"state\":\"next\",\"value\":\"30\"},\"next_affine_owner\":{\"state\":\"next\",\"value\":\"40\"}}",
+      "target": "RuntimeExecutionIdentitySnapshotV2",
+      "expected": "reject driver-owned epoch as unknown core field"
+    },
+    {
+      "name": "domain-missing-epoch",
+      "input": "{\"next_execution\":{\"state\":\"next\",\"value\":\"3\"},\"active\":{\"execution\":\"1\",\"next_occurrence\":{\"state\":\"next\",\"value\":\"10\"},\"next_local_slot\":{\"state\":\"next\",\"value\":\"20\"},\"next_ownership_transaction\":{\"state\":\"next\",\"value\":\"30\"},\"next_affine_owner\":{\"state\":\"next\",\"value\":\"40\"}}}",
+      "target": "RuntimeExecutionDomainSnapshotV2",
+      "expected": "reject missing activation_epoch"
+    }
+  ],
+  "owned_slot_expected_order": [
+    "environment-local",
+    "closure-capture",
+    "awbc-register",
+    "awbc-frame-local",
+    "mailbox-lane",
+    "child-packet",
+    "transfer-packet",
+    "cleanup-slot"
+  ],
+  "path_expected_order": [
+    "[]",
+    "[TupleElement(0)]",
+    "[TupleElement(0),VariantPayload]",
+    "[TupleElement(1)]",
+    "[SequenceElement(0)]",
+    "[RecordField(1)]",
+    "[RecordField(2)]",
+    "[NominalRecordField(1)]",
+    "[FunctionCapture(1)]",
+    "[VariantPayload]",
+    "[IteratorRemainder(4)]",
+    "[IteratorWitnessState]"
+  ]
+}

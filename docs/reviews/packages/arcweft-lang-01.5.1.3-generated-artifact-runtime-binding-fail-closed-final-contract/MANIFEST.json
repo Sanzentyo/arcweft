@@ -1,0 +1,101 @@
+{
+  "archive_root": "arcweft-lang-01.5.1.3-generated-artifact-runtime-binding-fail-closed-final-contract",
+  "contract": "Lang-01.5.1.3 generated artifact runtime-binding fail-closed final contract",
+  "entries": [
+    {
+      "bytes": 581,
+      "path": "ARCHIVE_IDENTITY.md",
+      "sha256": "c5ba50911f76ef59edde830502815307971271496ecd068248ce5f640cdf25e4"
+    },
+    {
+      "bytes": 7115,
+      "path": "CANONICALIZATION_AND_CODEC.md",
+      "sha256": "f9cb597a8b731fcee35b389a5bc86dac1b063ee78003e4ea176e86f0da8afa54"
+    },
+    {
+      "bytes": 9178,
+      "path": "CRATE_AND_FILE_DELTA.md",
+      "sha256": "8706ea11fba02711e0c8f69e05fec6111fc605e0ceb42a35b852f09041c1f206"
+    },
+    {
+      "bytes": 3131,
+      "path": "DELETION_MATRIX.md",
+      "sha256": "e0a7fa25d80f41c4c40ee16c0e6a56e67918d8f3b97c360ac7a9297d6fc45069"
+    },
+    {
+      "bytes": 7713,
+      "path": "ERRORS_AND_LIFETIME.md",
+      "sha256": "8c1bb8985fb04270279fb8ceebff10fd888d9fe6cec7edb63c5409121a9e20fe"
+    },
+    {
+      "bytes": 21002,
+      "path": "FINAL_CONTRACT.md",
+      "sha256": "289f6b67cd2dbb769380f1d29a10e40424c71c7c53006d93075efae56a3d16c4"
+    },
+    {
+      "bytes": 25,
+      "path": "FINAL_STATUS",
+      "sha256": "9cfe844241b3057b5b9744ad7fd94d42b90b31f9c96c35dad40a7afb94ed395c"
+    },
+    {
+      "bytes": 6291,
+      "path": "IMPLEMENTATION_ORDER.md",
+      "sha256": "37d536ded5fc068d7ee7b0898b196719d38b7f429178715001094cb4657ddc64"
+    },
+    {
+      "bytes": 1838,
+      "path": "NON_GOALS.md",
+      "sha256": "da5ccde9a9eb8b86f2232719a014f5f3e41d73d211df4834bdbf6d46003e3e22"
+    },
+    {
+      "bytes": 5,
+      "path": "OPEN_QUESTIONS.md",
+      "sha256": "fcf33dfbe13c2354bf0e1b063f9fb422747a46cee00b7420bceff2b81457b345"
+    },
+    {
+      "bytes": 3410,
+      "path": "README.md",
+      "sha256": "1a73a25947b50d30433dc726f6076a452dd7eefb021fb6673d9b3089d40548ff"
+    },
+    {
+      "bytes": 6447,
+      "path": "REPOSITORY_EVIDENCE.md",
+      "sha256": "2c611cda8d6fa42ad548a37c03d6c9c8fb0cedb8fd084eb635df995dea74045e"
+    },
+    {
+      "bytes": 4417,
+      "path": "REQUEST.md",
+      "sha256": "bfbce1dd3f1e893382930baa6f4e52bc53b5fb78b777c01793961abacaedcec1"
+    },
+    {
+      "bytes": 21560,
+      "path": "RUST_API_SHAPES.md",
+      "sha256": "8a5249f8508ebb33b9171aaa15a98598dc1475a224e47071bb4fb5f125cc7618"
+    },
+    {
+      "bytes": 14722,
+      "path": "TEST_MATRIX.md",
+      "sha256": "aa02765f34916ca3c1375fc8b30c90a4c04e3c1a137da8c668289dac9c74e23d"
+    },
+    {
+      "bytes": 8489,
+      "path": "TOPOLOGY_RUNTIME_FLOW.md",
+      "sha256": "a4da2f8fd3d1d0f4cf58535061f63319df154ea376155b58e96d2d93d41765e6"
+    },
+    {
+      "bytes": 3871,
+      "path": "TRACEABILITY.md",
+      "sha256": "a18a3c3abaa1038291bbd41874c176a5f07cdf5d9575107f5dc7f871910feadc"
+    },
+    {
+      "bytes": 3274,
+      "path": "VERIFICATION.md",
+      "sha256": "81ebd50da2ad96499ba1feb05a0b44b7ece9c54df1847d4cba8b1de2d01629f9"
+    }
+  ],
+  "inspected_commit": "0c8cb74dd96116a8b987cc419c9a280b6cabe4a4",
+  "manifest_policy": "entries cover all members except MANIFEST.json and SHA256SUMS; SHA256SUMS covers MANIFEST.json and all payload members but excludes itself",
+  "open_questions": 0,
+  "repository": "Sanzentyo/arcweft",
+  "status": "READY_FOR_IMPLEMENTATION"
+}

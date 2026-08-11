@@ -1,0 +1,81 @@
+{
+  "argument_expectation": {
+    "index": 0,
+    "kind": "EntityFamily"
+  },
+  "arity": {
+    "Ref": 1,
+    "Speaker": 1,
+    "SpeakerPreset": 1
+  },
+  "authored_other_entity_kind_allowed": false,
+  "baseline": {
+    "branch": "main",
+    "commit": "4fd6331dc342d30a7f4ac7774852b60801866ef7"
+  },
+  "canonical_syntax": "Ref<Entity>",
+  "child_resolution_fact": "TypeNameResolution::EntityFamily(EntityKind)",
+  "collision_policy": {
+    "direct_Ref_reserved": true,
+    "qualified_pkg_Ref_allowed": true
+  },
+  "detached_inventory_available": true,
+  "diagnostic_codes": {
+    "wrong_arity": "sema.nominal.wrong_arity",
+    "wrong_kind": "sema.nominal.wrong_kind"
+  },
+  "fallback_success_allowed": false,
+  "outer_resolution_fact": "TypeNameResolution::Builtin(BuiltinTypeConstructor::Ref)",
+  "owner_model": {
+    "accepted_nominal_semantics_changed": false,
+    "entity_family_projection_subset": [
+      "Ref",
+      "Speaker",
+      "SpeakerPreset"
+    ],
+    "enum": "BuiltinTypeConstructor",
+    "kind": "corrected_closed_builtin_constructor_table",
+    "new_variant": "Ref",
+    "second_resolver_allowed": false
+  },
+  "persistence": {
+    "bytecode_schema_change": false,
+    "named_encoding_allowed": false,
+    "save_replay_round_trip_in_scope": false,
+    "type_shape_ref_added": false,
+    "unsupported_persisted_shape_remains_error": true
+  },
+  "production_code_changed": false,
+  "repository": "Sanzentyo/arcweft",
+  "request": "Lang-01.1.1.2.1",
+  "request_integrity": {
+    "git_blob": "5445ff2e48c47a4cb2455b56fb5348784038beb6",
+    "sha256": "80ec56d3c7afdbbc96550416f0c7a86b4d32649755011052dde4d1f202c6bde5"
+  },
+  "requirements": [
+    "REQ-01",
+    "REQ-02",
+    "REQ-03",
+    "REQ-04",
+    "REQ-05",
+    "REQ-06",
+    "REQ-07",
+    "REQ-08",
+    "REQ-09",
+    "REQ-10",
+    "REQ-11",
+    "REQ-12",
+    "REQ-13",
+    "REQ-14",
+    "REQ-15"
+  ],
+  "schema": "arcweft.final-contract.v1",
+  "semantic_projection": {
+    "Ref": "TypeKind::Ref(EntityType { kind: E, value: None })",
+    "Speaker": "TypeKind::Speaker(E)",
+    "SpeakerPreset": "TypeKind::SpeakerPreset(E)"
+  },
+  "status": "final",
+  "test_matrix_rows": 71,
+  "wrong_arity_target": "TypeArityTarget::Builtin(BuiltinTypeConstructor::Ref)"
+}

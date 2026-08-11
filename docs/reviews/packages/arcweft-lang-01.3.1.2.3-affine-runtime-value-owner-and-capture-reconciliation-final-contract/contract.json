@@ -1,0 +1,239 @@
+{
+  "contract_id": "Lang-01.3.1.2.3",
+  "title": "affine runtime value owner and capture reconciliation",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "open_questions": 0,
+  "open_result_changing_decisions": 0,
+  "baseline_git": "177ba1e61e43fb2da2149869ce35e165d1e93b66",
+  "production_patch_included": false,
+  "current_main_repin_required": true,
+  "ownership": {
+    "classification_type": "RuntimeValueOwnership",
+    "variants": [
+      "Unrestricted",
+      "Affine"
+    ],
+    "rule": "structural recursive join; any live affine leaf makes the enclosing graph affine",
+    "leaf_authority": "RuntimeAffineOwnerToken",
+    "token_properties": [
+      "opaque",
+      "not Clone",
+      "not Copy",
+      "not Serde",
+      "no public constructor"
+    ],
+    "first_production_mint": "successful atomic final Stream Open at P4+C1 after G3.4",
+    "side_table": false
+  },
+  "runtime_value_api": {
+    "checked_copy": "RuntimeValue::try_duplicate_unrestricted(&self) -> Result<RuntimeValue, RuntimeDuplicateError>",
+    "move": "typed RuntimeValueSlot prepare_move/take and destination put/commit",
+    "drop": "prepared table-aware language drop with deterministic reverse release order",
+    "runtime_value_clone": false,
+    "runtime_value_copy": false,
+    "payload_clone": "allowed only for closed recursively RuntimePayload-safe data"
+  },
+  "capture": {
+    "membership": "accepted HIR free locals only",
+    "identity": "(closure_expr_id, outer_local_id)",
+    "order": "first source use",
+    "resolution": "nearest visible binding; parameters excluded",
+    "modes": {
+      "unrestricted": "Copy",
+      "affine": "Move"
+    },
+    "escaping_borrow": false,
+    "whole_environment_fallback": false,
+    "source_reconstruction": false,
+    "failure_atomicity": "preflight all; stage unrestricted copies; validate and lock source slot revisions plus canonical owner-ID set under exclusive transaction; commit all source moves and closure publication once; no token-state rotation"
+  },
+  "sequence": {
+    "index": "source-preserving; entire sequence recursively Unrestricted",
+    "slice": "source-preserving; entire sequence recursively Unrestricted, including empty slice",
+    "affine_extraction": "consuming destructure, consuming iterator, or internal whole-sequence take only",
+    "repeat": {
+      "exact_0": "consume and drop source; produce empty sequence",
+      "exact_1": "move source once",
+      "exact_ge_2": "requires Unrestricted; n-1 checked copies plus original",
+      "dynamic": "requires Unrestricted"
+    },
+    "iterator": "construction consumes source; next moves each element exactly once",
+    "owner": "existing arcweft_core::value::RuntimeSeq and RuntimeIterator, changed in place",
+    "parallel_wrapper": false,
+    "push": "consumes RuntimeSeq and element; preflights type/capacity; failure returns both owners; matching storage extends directly, otherwise consuming materialization to RuntimeSeq::Values"
+  },
+  "awbc": {
+    "abi": 2,
+    "codec": 8,
+    "register_states": [
+      "Uninitialized",
+      "Live",
+      "Moved",
+      "Dropped"
+    ],
+    "move": "existing opcode, consuming source transition",
+    "drop_opcode": "0x1f",
+    "copy_value": {
+      "opcode": "0x2a",
+      "shape": "CopyValue { dst, src }",
+      "wire": "2a <dst:canonical-varu32> <src:canonical-varu32>",
+      "precondition": "source statically and dynamically Unrestricted; destination reusable/empty",
+      "effect": "source remains Live; destination receives checked duplicate"
+    },
+    "unknown_opcode_range_after_copy": "0x2b..=0x7f",
+    "stream_opcodes": {
+      "OpenStream": "0x27",
+      "FinishStream": "0x28",
+      "ApplyExternalStreamGroup": "0x29"
+    },
+    "stream_specific_register_model": false,
+    "trap_atomicity": "prepare/stage/record-and-recheck source revisions and owner sets before any source or table mutation; commit is non-fallible"
+  },
+  "snapshot": {
+    "schema": 2,
+    "scope": "whole execution",
+    "source_state": "Frozen",
+    "image": "strict dormant non-runnable value/owner evidence",
+    "image_clone": true,
+    "runnable_candidate_clone": false,
+    "restore_targets": [
+      "empty driver",
+      "atomic replacement of frozen session"
+    ],
+    "alongside_install": false,
+    "activation_rule": "validate and allocate privately; retire old owners before activating replacement tokens",
+    "failure_rule": "active/frozen source remains byte/state identical; candidate owners are cleaned without publication",
+    "generation_pins": "exact set equality over all nested external partials and Stream handles",
+    "forbidden_during_restore": [
+      "Stream Open",
+      "authored/default expression evaluation",
+      "host/provider call",
+      "replay execution",
+      "lease rotation"
+    ]
+  },
+  "host_replay_persistence": {
+    "general_runtime_payload_allows_affine": false,
+    "general_canonical_data_allows_affine": false,
+    "stream_handle_boundary": "accepted typed Stream runtime/save owner only",
+    "external_partial_boundary": "runtime function snapshot/save owner with exact generation pins",
+    "native_web_agent_endpoint_dto": false
+  },
+  "plan": {
+    "removed_variants": [
+      "RuntimeExpr::Value(RuntimeValue)",
+      "RuntimePattern::Literal(RuntimeValue)"
+    ],
+    "expression_replacement": "RuntimeExpr::Constant(RuntimeConstantId)",
+    "pattern_replacement": "RuntimePattern::Literal(RuntimeConstantId)",
+    "constant_owner": "RuntimeConstantTable",
+    "constant_entry": "RuntimePlanConstant(RuntimePayload)",
+    "constant_requirements": [
+      "Unrestricted",
+      "PlanConstantEligible"
+    ],
+    "table_clone": false,
+    "cache_sharing": "Arc<RuntimePlan>; RuntimePlan owns one RuntimeConstantTable directly",
+    "expression_instantiation": "clone closed RuntimePlanConstant data and consume it into a fresh RuntimeValue; no executable graph clone",
+    "pattern_match": "borrow checked constant through table; no materialization",
+    "direct_runtime_plan_serde": false,
+    "codec_owner": "parent bundle strict constant-table artifact",
+    "runtime_plan_clone": false,
+    "cache_owner": "Arc<RuntimePlan>",
+    "engine_plan_owner": "Arc<RuntimePlan>",
+    "flow_owner": "existing RuntimeFlow/FlowOp normalized in place to RuntimeFlowBlockId arena",
+    "removed_runtime_flow_variants": [
+      "FlowOp::Bind(Vec<RuntimeBinding>)",
+      "FlowOp::LoopNext",
+      "FlowOp::WhileNext",
+      "FlowOp::WhileLetNext",
+      "FlowOp::ForNext"
+    ],
+    "pending_op_values": false,
+    "execution_continuation_owner": "existing FlowControlStackEntryKind; For variant solely owns RuntimeIterator",
+    "engine_clone": false,
+    "fiber_clone": false,
+    "optional_binding_plan_invariant": "binding.is_some() == binding_plan.is_some()",
+    "suspension_plan_reference": "AwaitState/AwaitManyState/HostCallState retain owner FlowCursor, not cloned pattern/target",
+    "child_join_reference": "FlowFiberStatus::JoiningChildren re-dispatches owner FlowCursor; no cloned Return op"
+  },
+  "implementation_boundaries": {
+    "stage_0": "re-read current root/nested AGENTS and re-pin production paths",
+    "generic_foundation": [
+      "G1 APIs/evidence",
+      "G2 RuntimePlan and structured runtime",
+      "G3 AWBC/fiber/compiled/snapshot and final Clone removal"
+    ],
+    "unconditional_clone_disappears": "G3.4 exit",
+    "first_stream_handle_constructible": "P4+C1 after G3.4",
+    "remaining_parent_order": [
+      "P5+C2",
+      "C3",
+      "P6+C4 protected ABI2/codec8 publication",
+      "P7+C5",
+      "P8+C6",
+      "final full matrix"
+    ]
+  },
+  "parents": [
+    {
+      "contract_id": "Lang-01.3.1.2.1",
+      "zip_sha256": "66809a1280a507f69bb78d9df3bf7af227a91cd68b86cf8771cbf9ee20aa856a",
+      "retained_test_cases": 530
+    },
+    {
+      "contract_id": "Lang-01.3.1.2.2",
+      "zip_sha256": "d1bd7fb5301509ca88be7c9d3662942ca88472d11143499c0c3067d626df9418",
+      "retained_test_cases": 168
+    },
+    {
+      "contract_id": "Lang-01.3.1.2.2.1",
+      "zip_sha256": "8aded7b1cb5d92f9d820c2cc82121ac6d070f3cf26d1618dc23ff144081090ad",
+      "retained_test_cases": 105
+    }
+  ],
+  "tests": {
+    "new_case_count": 395,
+    "retained_parent_case_count": 803,
+    "reference_model_case_count": 20,
+    "production_test_execution_claimed": false
+  },
+  "forbidden": [
+    "panic-on-Clone",
+    "silent owner sharing",
+    "lease rotation without sole table",
+    "debug-string affine side table",
+    "Stream-only RuntimeValue enum",
+    "second environment",
+    "second register model",
+    "copied capture registry",
+    "source-text free-variable reconstruction",
+    "compatibility alias",
+    "dual reader",
+    "migration shim",
+    "endpoint DTO",
+    "source gate",
+    "removed-syntax diagnostic",
+    "CSS",
+    "Takumi"
+  ],
+  "runtime_payload": {
+    "owner": "arcweft_core::value::RuntimePayload",
+    "current_tuple_wrapper_replaced_in_place": true,
+    "shape": "closed recursive non-runnable enum mirroring retained safe RuntimeValue Serde variants",
+    "clone": true,
+    "serde": "strict shared core payload codec only",
+    "contains_runtime_value": false,
+    "from_runtime_value": false,
+    "opaque_escape_variant": false,
+    "conversion": "borrowed full eligibility/type/layout/budget pass, then infallible consuming conversion; error returns original owner"
+  },
+  "pattern": {
+    "owner": "existing arcweft_core::pattern::RuntimePattern",
+    "removed_live_literal": "RuntimePattern::Literal(RuntimeValue)",
+    "replacement_literal": "RuntimePattern::Literal(RuntimeConstantId)",
+    "selection": "borrow plan constant and use typed equality without materialization",
+    "binding_plan": "RuntimePatternBindingPlan attached directly to the existing pattern/decision owner",
+    "global_or_copied_registry": false
+  }
+}

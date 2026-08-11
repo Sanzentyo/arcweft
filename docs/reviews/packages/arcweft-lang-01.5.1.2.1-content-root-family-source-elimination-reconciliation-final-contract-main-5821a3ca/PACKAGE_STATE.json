@@ -1,0 +1,82 @@
+{
+  "artifact_validation": {
+    "checks": [
+      "utf8_and_lf",
+      "path_containment",
+      "entry_uniqueness",
+      "no_symlinks",
+      "json_csv_parse",
+      "decision_id_uniqueness",
+      "test_id_uniqueness",
+      "closed_family_inventory",
+      "legacy_positive_shape_lint",
+      "no_placeholder_lint",
+      "fallback_false",
+      "open_questions_zero",
+      "no_production_patch_entries",
+      "manifest_hash_agreement",
+      "zip_testzip",
+      "independent_extract_and_hash",
+      "deterministic_rebuild_byte_equality"
+    ],
+    "deterministic_zip": true,
+    "independent_extraction": true,
+    "internal_hash_manifest": true,
+    "status": "passed"
+  },
+  "baseline": {
+    "entry_count": 26,
+    "git_blob": "4b9a0303f33744f0504b2ed79a2f61397f0f71ff",
+    "package": "arcweft-lang-01.5.1.2-typed-content-root-admission-final-contract.zip",
+    "sha256": "CA72FD70C657A11B7BECDB331D131177B6DEFD6094D034BBECFC3AF1A232E1C0"
+  },
+  "closed_inventory": {
+    "authored_entity_families": [
+      "Flow",
+      "View",
+      "Action",
+      "Activity",
+      "Asset",
+      "Signal",
+      "Metric",
+      "Layer"
+    ],
+    "callable": false,
+    "character": true,
+    "configured_resource": true,
+    "source": false
+  },
+  "contract_agent_validated": true,
+  "decision_count": 55,
+  "fallback": false,
+  "final_contract": true,
+  "implementation_preconditions": [
+    "Land/reuse the Source-independent Lang-01.5.1.2 binary/topology substrate.",
+    "Complete the final ordinary-function/project-symbol substrate.",
+    "Complete Lang-01.3.1 Source elimination and consume its final typed inventory."
+  ],
+  "implementation_ready": true,
+  "independently_usable": true,
+  "open_questions": 0,
+  "production_code_changed": false,
+  "production_validation": {
+    "cargo_commands_executed": [],
+    "reason": "No repository checkout was exposed and the user required production code to remain unchanged.",
+    "required_after_implementation": true,
+    "tier2_executed": false
+  },
+  "repository_aware_validation": {
+    "access": "private GitHub connector",
+    "checkout_available": false,
+    "ci_result_inferred": false,
+    "commit_status_context_count": 0,
+    "head": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6",
+    "ref": "main",
+    "repository": "Sanzentyo/arcweft",
+    "status": "passed"
+  },
+  "request": "Lang-01.5.1.2.1",
+  "schema": "arcweft.final-contract.package-state.v1",
+  "status": "FINAL_CONTRACT",
+  "test_count": 160
+}

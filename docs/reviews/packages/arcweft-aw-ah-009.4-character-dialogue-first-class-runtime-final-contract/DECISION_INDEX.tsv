@@ -1,0 +1,35 @@
+decision_id	status	decision
+D001	FROZEN:RUNTIME_VALUE	CharacterDialogue is a genuine immutable nominal runtime value.
+D002	FROZEN:NO_GENERIC_FUNCTION_REDESIGN	CharacterDialogue is not RuntimeFunctionValue and does not alter ordinary currying.
+D003	FROZEN:CORE_NOMINAL_RECORD	Add RuntimeValue::NominalRecord because current AWBC nominal records lose identity.
+D004	FROZEN:DIALOGUE_OWNS_DOMAIN	arcweft-dialogue owns CharacterDialogue/config/patch/application domain types.
+D005	FROZEN:CHARACTER_ID_OWNER	arcweft-character remains the sole CharacterId and look identity owner.
+D006	FROZEN:PATCH_NOT_SOURCE_FIRST_CLASS	CharacterDialoguePatch is a checked/runtime instruction operand, not a standalone author-constructible value.
+D007	FROZEN:CONFIG_EFFECTIVE_SNAPSHOT	CharacterDialogue stores an effective immutable config and contract digests.
+D008	FROZEN:CLEAR_IS_TOMBSTONE	Explicit None clears earlier values; required view resets to std.view.dialogue.
+D009	FROZEN:ID_APPLICATION_ONLY	id and text_key are accepted only by the outer configuration call immediately consumed by content.
+D010	FROZEN:CUSTOM_TYPED_REGISTRY	Custom named arguments resolve to typed stable field IDs in an immutable registry.
+D011	FROZEN:SOURCE_PROVENANCE_SIDECAR	Source spans remain in syntax/HIR/sema/AWBC source maps, not runtime identity.
+D012	FROZEN:DEDICATED_CALL_SURFACES	Parentheses configure; brackets/colon apply content through shared resolver families.
+D013	FROZEN:EXACT_OR_ANY_CHARACTER_TYPE	TypeKind::CharacterDialogue carries Exact(CharacterId) or Any.
+D014	FROZEN:DYNAMIC_ALLOWED	Aliases, branches, returns, captures, collections, and indirect content application are allowed.
+D015	FROZEN:SAY_FAMILY_RETAINED	@say.* remains only a line-entity namespace.
+D016	FROZEN:SOURCE_SITE_GENERATED_IDS	Generated line IDs derive from typed source owner/scope/ordinal, never character.
+D017	FROZEN:TEXT_KEY_DERIVATION	Absent text_key derives text.<line suffix>; explicit keys remain text.*.
+D018	FROZEN:DIALOGUE_LINE_NONESCAPING	DialogueLine is a checked executable line operation; plan out determines the user result.
+D019	FROZEN:AWBC_ABI2_CODEC8	AWBC switches atomically to ABI 2 / codec 8 with no previous reader.
+D020	FROZEN:SAVE_SCHEMA2	Bundle session save switches atomically to schema 2 with no schema-1 reader.
+D021	FROZEN:DIALOGUE_REGISTER_TERMINATOR	AWBC Dialogue terminator consumes a validated CharacterDialogue register.
+D022	FROZEN:DISPLAY_SPLIT	Static content catalog and runtime effective character/config frame are separate.
+D023	FROZEN:CHARACTER_WIRE_NAMES	Runtime/display/Agent identity fields are character_id and character_display_name, not callee/speaker_label.
+D024	FROZEN:GENERATION_CONTRACT_DIGEST	Hot-reload rebinding requires exact contract sub-digests; otherwise stale.
+D025	FROZEN:NO_AUTOMATIC_MIGRATION	Old Speaker/preset values, AWBC1/codec7, save1, and dialogue-callee observation/debug payloads are rejected; generic root replay v1 is retained.
+D026	FROZEN:TOOLING_BRACKET_CANONICAL	Canonicalization expands colon to brackets and never emits .say.
+D027	FROZEN:FORMATTER_SYNTAX_ONLY	Formatter formats accepted surface without semantic rewrites; canonicalizer owns colon expansion.
+D028	FROZEN:NORMAL_SAY_REJECTION	.say fails through ordinary missing-method/type resolution only.
+D029	FROZEN:VIEW_HANDOFF_FIXED	AW-AH-009.4 publishes typed character payload; 009.4.1 only maps authored View projection.
+D030	FROZEN:ALL_OLD_CONCEPTS_DELETE	Every required Speaker/SayOptions/preset/suffix path is deleted directly.
+D031	FROZEN:TRANSACTIONAL_PATCH	Patch expressions evaluate in source order, validate completely, and commit atomically.
+D032	FROZEN:CANONICAL_VALUE_HASH	Equality/hash use canonical normalized bytes and exclude source/display spellings.
+D033	FROZEN:NO_CSS_TAKUMI	Only native typed View/text path is permitted.
+D034	FROZEN:OPEN_QUESTIONS_ZERO	All result-changing decisions are frozen in this package.

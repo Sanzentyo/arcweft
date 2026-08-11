@@ -1,0 +1,22 @@
+source,access,identity_or_path,sha256_if_local,use
+request,local exact attachment,SOURCE_REQUEST.md,5f1bf2335fb0c68f8aef66a3e7e63628bcaffdda80a29d131ee0930b24b3fda4,read completely; exact bytes embedded
+Rust skill,local exact attachment,/mnt/data/Rust Skill.txt,1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665,read completely; not embedded as requested design input
+project precondition,local exact attachment,/mnt/data/前提(Sanzentyo-arcweft).txt,cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1,read completely
+root AGENTS,local retained current copy / GitHub,AGENTS.md,90bae8bface6d390246538c60842da7d71d1ebd576ae3fa403019caa35a91498,read completely
+scoped crates AGENTS,GitHub raw/source inspection,crates/AGENTS.md,,read completely
+scoped review AGENTS,GitHub raw/source inspection,docs/reviews/AGENTS.md,,read completely
+scoped implementation AGENTS,GitHub raw/source inspection,docs/implementation/AGENTS.md,,read completely
+request baseline tree,GitHub raw/API at immutable commit,a6805f7375499e5cce70f84f1531832583474527,,production facts pinned to this commit
+later main,GitHub request-only documentation commit,e619231de8fe0e7c2a9d0d7be15a3608be042058,,observed earlier; not used as changed production substrate
+syntax View/attributes,GitHub source inspection,crates/arcweft-lang-syntax,,current language and attached-body ownership
+final HIR/project/source roles,GitHub source inspection,crates/arcweft-lang-hir,,View items/ExprId/member/scope/generation/project view
+final semantic analysis,GitHub source inspection,crates/arcweft-lang-sema,,generation authority/current four-way View classification/type/effect/resource facts
+compiler View product,GitHub source inspection,crates/arcweft-compiler/src/view,,final-HIR generation check/current lowering/fallback/source IDs
+View runtime model,GitHub source inspection,crates/arcweft-view,,instructions/value program/mount/parts/style identities
+bundle View codecs,GitHub source inspection,crates/arcweft-bundle/src/resource_codec/view,,AWVP/AWVT/common envelope/transcript/static fields
+generic runtime value/AWBC,GitHub source inspection,crates/arcweft-core/src/value.rs and AWBC owners,,RuntimeValue/RuntimeFunctionBody/AWBC allocations
+AWBC schema,GitHub raw/source inspection,crates/arcweft-core/src/awbc/schema.rs,,"ABI 1, codec 10, existing AwbcFunctionKind::Synthetic and ordinary runtime type tables"
+image decoder,GitHub raw/source inspection,crates/arcweft-image/src/lib.rs,,PNG/JPEG/GIF/WebP closed ImageFormat; GIF/WebP animation; APNG absent
+typed resource registry,GitHub source inspection,crates/arcweft-resource-model,,ResourceRefValue/type/digest and image format/animation facts
+runtime driver/save/replacement,GitHub source inspection,crates/arcweft-runtime-driver,,catalog/evaluator/save schema 2/replacement
+dialogue profile predecessor,File Library/repository evidence,Lang-01.5.1.1.1 accepted result,,owner/admission chain preserved

@@ -3,7 +3,7 @@
 ## Baseline and source package
 
 - implementation baseline: `126f7ece0f69`
-- package: `docs/reviews/packages/arcweft-lang-01.1.1.2-project-nominal-type-resolution-production-reconciliation-final-contract.zip`
+- package: `docs/reviews/packages/zips/arcweft-lang-01.1.1.2-project-nominal-type-resolution-production-reconciliation-final-contract.zip`
 - package SHA-256: `FF695EADEF1A4C833D86F53CA5E9010C7DF3D3643418109980B0E9F1D6CFE1AB`
 - package status: implementation-ready, with no open design questions
 

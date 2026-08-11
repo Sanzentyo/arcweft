@@ -1,0 +1,11 @@
+row	case	owner	role	ordinal	child	result
+Y-001	missing callee	Call root ExprId	RecoveryOperand	0	ExprId poison child	CallCallee::Missing
+Y-002	missing arg value 0	Call root ExprId	RecoveryOperand	1	ExprId poison child	HirCallValue::Missing
+Y-003	missing arg value 127	Call root ExprId	RecoveryOperand	128	ExprId poison child	reachable exact max
+Y-004	129 arguments	none	none	none	hard preflight rollback	no ordinal 129
+Y-005	missing name	Call root non-ID state	none	none	no child	HirRecoveredName::Missing
+Y-006	invalid name	Call root non-ID state	none	none	no child	HirRecoveredName::InvalidPresent
+Y-007	missing type arg	Call type application non-ID state	none	none	no TypeId	HirCallTypeArgument::Missing
+Y-008	invalid-present type arg	existing qualified TypeId	none	none	poisoned TypeId retained	InvalidPresent
+Y-009	general exact role	predecessor generator owner	RecoveryOperand	1023	admitted in predecessor	not an E12 Call test
+Y-010	general one-over role	predecessor generator owner	RecoveryOperand	1024	rejected atomically	not an E12 Call test

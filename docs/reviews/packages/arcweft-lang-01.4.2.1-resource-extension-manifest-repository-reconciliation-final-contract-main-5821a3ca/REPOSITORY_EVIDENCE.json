@@ -1,0 +1,285 @@
+{
+  "files": [
+    {
+      "blob_sha": "e91f99213dde67953beda6aa078c370a8dc4541d",
+      "facts": [
+        "repository-wide policy",
+        "Sans-I/O boundaries",
+        "direct replacement for unreleased formats",
+        "inherent behavior on original Arcweft types",
+        "typed architecture evidence",
+        "ZIP intake reconciliation"
+      ],
+      "path": "AGENTS.md"
+    },
+    {
+      "blob_sha": "1517a271c0f6b28516623e179d0c18ad6ed8c08f",
+      "facts": [
+        "workspace edition 2024",
+        "rust-version 1.96",
+        "unsafe forbidden",
+        "workspace dependency versions",
+        "resource-model already a member",
+        "json-spanned-value 0.2.2 available"
+      ],
+      "path": "Cargo.toml"
+    },
+    {
+      "blob_sha": "8f12266388723215eb495b4e2814e3981d75d976",
+      "facts": [
+        "current redelivery request",
+        "fallback archive is not implementation-ready"
+      ],
+      "path": "docs/reviews/requests/2026-07-22-lang-01.4.2.1-resource-extension-manifest-repository-reconciliation.md"
+    },
+    {
+      "blob_sha": "01184ecd2370e45af17e87b278ac77785c5be6b0",
+      "facts": [
+        "old Lang-01.4.2 ZIP classified received/not implementation-ready",
+        "01.4.2.1 required before public decoder/encoder"
+      ],
+      "path": "docs/implementation/2026-07-22-reviews-zip-intake-audit.md"
+    },
+    {
+      "blob_sha": "a5d16c8579de4d1449cbea2c0620cdaba3685d20",
+      "facts": [
+        "predecessor decision inventory",
+        "strict one-reader/no-alias constraints"
+      ],
+      "path": "docs/reviews/requests/2026-07-20-lang-01.4.2-resource-extension-manifest-wire-contract-correction.md"
+    },
+    {
+      "blob_sha": "2285a2114643271dc52d6592806943587ce09a66",
+      "facts": [
+        "ResourceDeclarationItem/ResourceBody/ResourceFieldInitializer are private attached grammar kinds"
+      ],
+      "path": "crates/arcweft-lang-syntax/src/grammar/kinds.rs"
+    },
+    {
+      "blob_sha": "fe75126d40e96068116fa0531b0381df7bbfa937",
+      "facts": [
+        "current private res spelling",
+        "resource field initializer grammar and diagnostics"
+      ],
+      "path": "crates/arcweft-lang-syntax/src/parser/resource_grammar.rs"
+    },
+    {
+      "blob_sha": "e2cf59d657050f815cf8cbd94c58105a9b54a42b",
+      "facts": [
+        "res recognized by private full-source grammar"
+      ],
+      "path": "crates/arcweft-lang-syntax/src/parser/item.rs"
+    },
+    {
+      "blob_sha": "f136c3b42c91a154bfbc5bd20ba2875e6569ed54",
+      "facts": [
+        "typed private resource grammar markers"
+      ],
+      "path": "crates/arcweft-lang-syntax/src/attachment/node.rs"
+    },
+    {
+      "blob_sha": "4bfb7753d85603c2bd66ced4d5e386a33f325447",
+      "facts": [
+        "public detached res AST/HIR/sema authority remains blocked",
+        "registry substrate exists"
+      ],
+      "path": "docs/implementation/2026-07-21-proof-public-switch-readiness.md"
+    },
+    {
+      "blob_sha": "8a3e6bf69e430ebfe6eabb7fb7af4e60ce76aebf",
+      "facts": [
+        "Sans-I/O typed model",
+        "no parser/HIR/filesystem/package discovery"
+      ],
+      "path": "crates/arcweft-resource-model/src/lib.rs"
+    },
+    {
+      "blob_sha": "f3d66f32ec3750af4c951b960af86f2093e1770b",
+      "facts": [
+        "exact resource ID classes/validators",
+        "nominal identity shape",
+        "nonzero u32 IDs"
+      ],
+      "path": "crates/arcweft-resource-model/src/identity.rs"
+    },
+    {
+      "blob_sha": "0f257d88388f050f81c32b46a44e710b1adbee50",
+      "facts": [
+        "exact schemas/fields/variants/capabilities/lowering/provenance/descriptor shapes"
+      ],
+      "path": "crates/arcweft-resource-model/src/descriptor.rs"
+    },
+    {
+      "blob_sha": "97a6f85e45ad9d4374817c7ad07beefc82d92d11",
+      "facts": [
+        "closed scalar/type/constant inventories",
+        "finite ResourceFloat",
+        "MAX_RESOURCE_VALUE_NESTING=64",
+        "no byte scalar"
+      ],
+      "path": "crates/arcweft-resource-model/src/value.rs"
+    },
+    {
+      "blob_sha": "9f61a57cd227db83896c5f274787f3eff8f4f704",
+      "facts": [
+        "seven exact retained categories",
+        "presentation target scope",
+        "scroll region ownership"
+      ],
+      "path": "crates/arcweft-resource-model/src/retained.rs"
+    },
+    {
+      "blob_sha": "cbdb76a17232a8e9d6b51f1d8bb6169d53e06746",
+      "facts": [
+        "only retained-reference standalone transcripts frozen",
+        "not a full manifest codec"
+      ],
+      "path": "crates/arcweft-resource-model/src/canonical.rs"
+    },
+    {
+      "blob_sha": "40b759690fc99f9f8b8c80be07decfb0c3f03c8d",
+      "facts": [
+        "schema version 1",
+        "immutable registry",
+        "complete typed issue inventory",
+        "atomic publish"
+      ],
+      "path": "crates/arcweft-resource-model/src/registry.rs"
+    },
+    {
+      "blob_sha": "f0981076c83f47381c17a76f92b80a001e6c74d3",
+      "facts": [
+        "schema/registry derive-key contexts",
+        "descriptor transcript",
+        "canonical tags and integer/string encoding"
+      ],
+      "path": "crates/arcweft-resource-model/src/registry/digest.rs"
+    },
+    {
+      "blob_sha": "6dfa8150a60576e21c914d501fb5a459ed1da27d",
+      "facts": [
+        "canonical input sorting",
+        "issue aggregation",
+        "reference/default/capability validation"
+      ],
+      "path": "crates/arcweft-resource-model/src/registry/validation.rs"
+    },
+    {
+      "blob_sha": "5634dc2bfbeb43c4150c5c5af01c5afe36aeecf0",
+      "facts": [
+        "PackageId lower reverse-domain validator",
+        "PackageVersion semver"
+      ],
+      "path": "crates/arcweft-manifest-model/src/identity.rs"
+    },
+    {
+      "blob_sha": "610694715700b6894dd1cf56f018dc9f54e69062",
+      "facts": [
+        "canonical JSON key sorting",
+        "no null",
+        "no float",
+        "compact UTF-8"
+      ],
+      "path": "crates/arcweft-manifest-model/src/canonical.rs"
+    },
+    {
+      "blob_sha": "19c8a6daccb41185ce102c3dc95c528ccab8db88",
+      "facts": [
+        "RawDigest",
+        "SemanticDigest",
+        "lowercase blake3 text"
+      ],
+      "path": "crates/arcweft-manifest-model/src/digest.rs"
+    },
+    {
+      "blob_sha": "453e5bbbd513ffcdd78687f98be4ad2ad3bd2a75",
+      "facts": [
+        "duplicate-preserving source-backed strict JSON pattern",
+        "8MiB/64/65536 production envelope"
+      ],
+      "path": "crates/arcweft-adapter-metadata/src/strict_json.rs"
+    },
+    {
+      "blob_sha": "f305a3b2c7060764e92fe1d47557ba188ff0b667",
+      "facts": [
+        "single syntax-tree reader pattern",
+        "source-backed typed acceptance"
+      ],
+      "path": "crates/arcweft-launch/src/decode.rs"
+    },
+    {
+      "blob_sha": "e1b1a545d28f62704a7e7b517620b85b6ffe73b6",
+      "facts": [
+        "SourceDocument",
+        "8MiB registration source limit",
+        "revision-backed ranges"
+      ],
+      "path": "crates/arcweft-source/src/document.rs"
+    },
+    {
+      "blob_sha": "e6660ed1933b02382bc1c7d2d5f3fe25eaac7029",
+      "facts": [
+        "EntityId/PublicId validators",
+        "reserved public prefixes"
+      ],
+      "path": "crates/arcweft-id/src/lib.rs"
+    },
+    {
+      "blob_sha": "801c86774a3a2d95d536bb6a803dbd2a93fca705",
+      "facts": [
+        "LocaleId canonicalization",
+        "64-byte locale limit"
+      ],
+      "path": "crates/arcweft-core/src/locale.rs"
+    },
+    {
+      "blob_sha": "12e8473e23def637de38e74a9b8f1914070542bd",
+      "facts": [
+        "closed LayoutUnit snake_case tokens"
+      ],
+      "path": "crates/arcweft-layout/src/lib.rs"
+    },
+    {
+      "blob_sha": "26f180d9576f8ad2496cbd4a24e36ee62d56a5c6",
+      "facts": [
+        "explicit topology resource seeds",
+        "SourceDocument retention",
+        "no implicit directory discovery"
+      ],
+      "path": "crates/arcweft-project-loader/src/topology/model.rs"
+    },
+    {
+      "blob_sha": "6ad5ca6c2b0325370f4a39520936b21bc676ef35",
+      "facts": [
+        "owner-qualified normalized resource paths"
+      ],
+      "path": "crates/arcweft-project-loader/src/topology/id.rs"
+    },
+    {
+      "blob_sha": "e86be861f4bccc0bf7d470dcbcc6c6922f76a833",
+      "facts": [
+        "strict top-level project manifest owner",
+        "no resource manifest path yet"
+      ],
+      "path": "crates/arcweft-launch/src/manifest.rs"
+    },
+    {
+      "blob_sha": "648b5d4594ed35b23ea72d9030e35537969b4345",
+      "facts": [
+        "Arc<ResourceTypeRegistry> already enters compilation context"
+      ],
+      "path": "crates/arcweft-compiler/src/project/registration.rs"
+    },
+    {
+      "blob_sha": "4ddc43ededd8fd121983bb81c4510c1fa964af71",
+      "facts": [
+        "typed BundleSectionKind code table 1..21",
+        "required unknown sections reject",
+        "deterministic section digest/budget owner"
+      ],
+      "path": "crates/arcweft-bundle/src/container.rs"
+    }
+  ],
+  "repository": "Sanzentyo/arcweft",
+  "revision": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6"
+}

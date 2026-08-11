@@ -1,0 +1,50 @@
+Path	Baseline	Access	Repository-aware finding
+AGENTS.md	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	repository-wide architecture, direct-final change, owned-enum behavior, behavior tests, artifact packaging rules
+Cargo.toml	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	workspace members, edition 2024, rust-version 1.96, dependency directions
+docs/implementation/2026-07-22-lang-01-1-1-2-project-nominal-resolution-intake.md	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	implemented nominal resolver boundary and pending adapter projection split
+crates/arcweft-rust-abi/Cargo.toml	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	Sans I/O dependency surface
+crates/arcweft-rust-abi/src/lib.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current Named carrier, package/type/function metadata, JSON codec, trait boundary
+crates/arcweft-rust-abi-macros/src/lib.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	derive/export emission and current generic limitations
+crates/arcweft-adapter-context/Cargo.toml	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	optional sema dependency direction
+crates/arcweft-adapter-context/src/manifest.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	AdapterTypeKind, Rust manifest ingestion, current context-free conversion
+crates/arcweft-adapter-context/src/callable.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	curried parameter groups and method receiver carrier
+crates/arcweft-adapter-context/src/publication.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current pre-world publication construction and Rust provenance
+crates/arcweft-adapter-context/src/codec.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current string type carrier and schema version
+crates/arcweft-adapter-context/src/manifest/registration.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	source-backed fact generation and current fact split
+crates/arcweft-adapter-context/src/manifest/tests.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current Rust type/publication expectations
+crates/arcweft-adapter-context/src/standard.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current standard Named nominal uses
+crates/arcweft-adapter-desktop/src/manifest.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	desktop embedded Rust types and current nominal references
+crates/arcweft-lang-syntax/src/types.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	TypePath ownership and syntax type graph limits
+crates/arcweft-lang-syntax/src/types/source.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	TypePath source model and typed construction
+crates/arcweft-lang-sema/Cargo.toml	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	no adapter dependency; blake3 already available
+crates/arcweft-lang-sema/src/types.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	TypeKind variants, AcceptedNominal, internal Named contract
+crates/arcweft-lang-sema/src/types/nominal.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	AcceptedNominalType and GenericTypeOwnerId
+crates/arcweft-lang-sema/src/types/substitution.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	recursive generic substitution through accepted nominal arguments
+crates/arcweft-lang-sema/src/env/identity.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	EnvironmentBindingId validation
+crates/arcweft-lang-sema/src/env/nominal.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	AcceptedNominalOwnerId/Id/catalog/record/digest and RustPackageId
+crates/arcweft-lang-sema/src/env/base.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	TypeCheckEnv, Rust export strings, enum metadata route
+crates/arcweft-lang-sema/src/env/enums.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	typed EnumVariantPayload model
+crates/arcweft-lang-sema/src/nominal/input.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	accepted/detached type resolution input snapshots
+crates/arcweft-lang-sema/src/nominal/cache.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	world/revision/catalog digest in nominal cache keys
+crates/arcweft-lang-sema/src/nominal/limits.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	production type/depth/argument/diagnostic/work/catalog limits
+crates/arcweft-lang-sema/src/nominal/resolver/engine/resolution.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	exact accepted lookup, arity, nested resolution, semantics
+crates/arcweft-lang-sema/src/callable/nominal_signature.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	source-backed project callable type resolution
+crates/arcweft-lang-sema/src/callable/schema.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	checked schema and exact semantic equality
+crates/arcweft-lang-sema/src/callable/publication.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	final environment publication record shape
+crates/arcweft-lang-sema/src/callable/identity.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	candidate IDs and TypeKind method receiver key
+crates/arcweft-lang-sema/src/callable/catalog.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	record ordering and final catalog indexes
+crates/arcweft-lang-sema/src/callable/builder.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	project/environment admission order and alias schema matching
+crates/arcweft-lang-sema/src/registration/model.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	ProjectRegistrationFacts, AcceptedNominalWorld, request publication vector
+crates/arcweft-lang-sema/src/registration/registrar.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current accepted-world-before-callables transaction order
+crates/arcweft-lang-sema/src/signature/project.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	semantic signature projection preserves exact TypeKind
+crates/arcweft-project-loader/src/topology/external.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	mounted external type conversion and visibility filtering
+crates/arcweft-project-loader/src/environment.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current source-backed fact collection/discarded publication data
+crates/arcweft-compiler/src/project/registration.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	compiler registration plumbing
+crates/arcweft-compiler/src/persistent.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	persistent object integration and environment identity slots
+crates/arcweft-compiler/src/incremental.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current zero environment digest placeholders
+crates/arcweft-cli/src/app/project.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	separate prebuilt callable publication path
+crates/arcweft-project/src/persistent_object/payload.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	typecheck gate signature/environment payload
+crates/arcweft-project/src/persistent_object/schema.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	existing persistent key/environment_digest shape
+crates/arcweft-lsp/src/session.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	hover/signature request/profile generation lifecycle
+crates/arcweft-lsp/src/features/hover.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	current typed TypeKind hover inputs and string presentation
+crates/arcweft-lsp/src/features/nominal_types.rs	4fd6331dc342d30a7f4ac7774852b60801866ef7	GitHub connector read at exact commit	accepted project/environment nominal hover/completion

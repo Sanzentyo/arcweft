@@ -11,7 +11,7 @@ claiming completion of the project asset catalog cohort.
 ## Contract and intake
 
 The governing correction package is
-[`arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip`](../reviews/packages/arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip),
+[`arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip`](../reviews/packages/zips/arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip),
 SHA-256
 `0E30A91FA2F7A288E9A12D8AFC7356525604CBDC907D659CD97311207D26A68E`.
 Its retained-declaration inventory makes Asset catalog-only: source may refer to

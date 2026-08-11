@@ -1,0 +1,13 @@
+PASS: final-contract package validated (197 typed-API tests, 20 package files).
+
+Baseline: main@4fd6331dc342d30a7f4ac7774852b60801866ef7
+Production repository writes: 0
+Required decision files: present
+Machine-readable decisions/evidence: valid JSON
+Test matrix: 197 unique typed-API rows
+Inspected repository files: 49
+Required owner, publication boundary, metadata migration, digest, tooling, persistence, and rollback decisions: present
+Unresolved decision markers: 0
+Alternative-design headings: 0
+Package manifest: complete and hash-valid
+ZIP integrity: PASS

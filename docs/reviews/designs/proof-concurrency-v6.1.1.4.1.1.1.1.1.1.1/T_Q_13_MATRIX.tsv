@@ -1,0 +1,25 @@
+test_id	classification	fixture	query	assertion	expected
+T-Q-13-001	END_TO_END	target.member	Whole	exact 0..13 slot metadata; clean	Present
+T-Q-13-002	END_TO_END	target.member	Target	0..6 Span	Present
+T-Q-13-003	END_TO_END	target.member	SelectedMember	7..13 Span	Present
+T-Q-13-004	END_TO_END	target.	SelectedMember	7..7 Insertion; poisoned owner status	Present
+T-Q-13-005	END_TO_END	target?.member	Try Operand/Operator and Select Target	Try sites0..6/6..7; outer Target0..7	Present distinct owners
+T-Q-13-006	END_TO_END	target?.	SelectedMember	Insertion8; Try remains queryable	Present
+T-Q-13-007	END_TO_END	(target.).member	outer Target	authored target Span0..9; owner poisoned	Present
+T-Q-13-008	END_TO_END	(target.).	outer SelectedMember	Insertion10; owner poisoned	Present
+T-Q-13-009	END_TO_END_NEGATIVE	any Select	Recovery	role inapplicable before source identity	ExprRoleNotApplicable
+T-Q-13-010	END_TO_END_NEGATIVE	any Select	Index	second role inapplicable witness	ExprRoleNotApplicable
+T-Q-13-011	TYPED_RESOLVER	foreign ExprId	Whole	module check first	WrongModule
+T-Q-13-012	DIRECT_INVARIANT	corrupted ExprId wrapper	Whole	kind check before liveness	KindMismatch
+T-Q-13-013	TYPED_RESOLVER	born after snapshot	Whole	exact id/snapshot/born payload	NotYetLive
+T-Q-13-014	TYPED_RESOLVER	retired owner	Whole	exact id/snapshot/retired_at payload	Retired
+T-Q-13-015	COMBINED_FAILURE	Recovery + wrong document	Recovery	role applicability wins	ExprRoleNotApplicable
+T-Q-13-016	COMBINED_FAILURE	SelectedMember ordinal1 + wrong document	SelectedMember[1]	ordinal wins	ExprOrdinalOutOfBounds
+T-Q-13-017	END_TO_END_NEGATIVE	valid owner/role, wrong document	Target	document ID branch	WrongSourceDocument
+T-Q-13-018	END_TO_END_NEGATIVE	valid document, old revision	Target	revision branch	StaleSourceRevision
+T-Q-13-019	END_TO_END_NEGATIVE	valid revision, wrong retained length	Target	length branch	SourceLengthMismatch
+T-Q-13-020	ROLLBACK_QUERY	failed transaction	Whole	owner/source absent	NotYetLive or absent reservation per allocator
+T-Q-13-021	RETRY_QUERY	same fixture after retry	all Select roles	same IDs/sites; no duplicate	Present
+T-Q-13-022	UNREACHABLE	.member	Target	no Select owner	not queried
+T-Q-13-023	UNREACHABLE	target.42	Invalid member span	no such role state; inner insertion only	not representable
+T-Q-13-024	OWNER_STATUS	poison target + Name	all applicable roles	presence unchanged; status Poisoned	Present/Poisoned

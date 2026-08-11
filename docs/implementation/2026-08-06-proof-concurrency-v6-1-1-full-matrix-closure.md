@@ -2,7 +2,7 @@
 
 - Date: 2026-08-06
 - Contract authority:
-  `docs/reviews/packages/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip`
+  `docs/reviews/packages/zips/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip`
 - Matrix scope: base-package `TEST_MATRIX.md` only; later accepted correction
   matrices are not yet rolled into this inventory
 - Working copy: protected, uncommitted Proof public-switch integration

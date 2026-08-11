@@ -1,0 +1,21 @@
+audit_id	dimension	assertion	result	evidence
+C-001	source authority	exactly one final component map/query	PASS	no Call-specific stored map or reader
+C-002	Whole	root Whole only slot metadata	PASS	no nested Call Whole
+C-003	optional/inapplicable/poison	lookup presence/status/error separated	PASS	not stored as source values
+C-004	grammar	all normative fixtures use '=' and postfix '...'	PASS	wrong forms confined to rejected-intake explanation
+C-005	cursor open	opening token outside; open.end slot0	PASS	matches production
+C-006	cursor comma	comma start following slot	PASS	matches production
+C-007	cursor close	no-trailing final remains active	PASS	matches production
+C-008	terminal states	missing/unresolved/receiver/separator/member/arity distinct	PASS	structural variants
+C-009	present-invalid type	poisoned TypeId retained	PASS	only Missing lacks ID
+C-010	argument identity	HirCallArgumentOrdinal only	PASS	no duplicate index
+C-011	limits	HirLimit/CallableLimits only	PASS	no duplicate limit record
+C-012	candidate ceiling	256 production retained	PASS	Proof 2 is witness projection
+C-013	facts	complete CallTargetFacts preserved	PASS	only lossy name/form fields corrected
+C-014	accounting	logical/probe/replay/publication/projection separate	PASS	zero-resolver path closed
+C-015	attached owner	central ExpressionProjection::Call	PASS	detached readers deleted
+C-016	identities	all new types defined	PASS	no placeholder names
+C-017	reachable ordinals	Call 0..128 only	PASS	1023/1024 predecessor-only
+C-018	migration	every consumer has replacement and deletion	PASS	no compatibility interval
+C-019	root poison	single primary + complete derived issues	PASS	canonical total key
+C-020	rollback	all staging/facts/work/project generation atomic	PASS	retry deterministic

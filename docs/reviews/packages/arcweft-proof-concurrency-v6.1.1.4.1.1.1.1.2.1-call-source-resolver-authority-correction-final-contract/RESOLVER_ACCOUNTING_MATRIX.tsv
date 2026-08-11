@@ -1,0 +1,14 @@
+row	path	logical_checks	resolver_invocations	candidate_probes	selected_replay_visits	fact_publications	signature_projections	rule
+A-001	associated arity failure	3	0	0	0	3	3	all retained args checked once; resolver zero
+A-002	associated invalid receiver	2	0	0	0	2	2	same zero-resolver recovery
+A-003	selected singleton	3	1	3	0	3	3	single candidate checkpoint commits
+A-004	rejected singleton	3	1	3	0	3	3	probe evidence retained; no replay
+A-005	selected two candidates	3	1	6	3	3	3	two probes then selected replay
+A-006	ambiguous two candidates	3	1	6	0	3	3	no selected replay
+A-007	rejected two candidates	3	1	6	0	3	3	candidate-zero UI focus only
+A-008	registered parity	4	1	8	4	4	4	same formulas as focused path
+A-009	non-registered focused parity	4	1	8	4	4	4	collection mode differs, semantics equal
+A-010	candidate exact	1	1	256	1	1	1	256 candidates admitted; probes=256*A
+A-011	candidate one-over	1	0	0	0	0	0	257 fails before candidate/fact publication
+A-012	Proof witnesses=2	1	1	3	1	1	1	retains 2 canonical witnesses, omitted=0 when 2
+A-013	Proof witnesses=3	1	1	4	1	1	1	retains 2, omitted=1; semantic set complete

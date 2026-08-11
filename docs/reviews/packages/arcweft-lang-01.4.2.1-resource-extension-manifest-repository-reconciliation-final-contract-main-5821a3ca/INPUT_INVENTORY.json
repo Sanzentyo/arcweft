@@ -1,0 +1,28 @@
+{
+  "project_premise": {
+    "path": "前提(Sanzentyo-arcweft).txt",
+    "read_to_end": true,
+    "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1"
+  },
+  "repository_request": {
+    "blob_sha": "8f12266388723215eb495b4e2814e3981d75d976",
+    "path": "docs/reviews/requests/2026-07-22-lang-01.4.2.1-resource-extension-manifest-repository-reconciliation.md",
+    "pinned_revision": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6"
+  },
+  "request_difference": {
+    "adjudication": "the substantive requirements are identical; pinned-main repository evidence governs the old archive identity",
+    "only_materially_observed_difference": "the uploaded request names fallback archive SHA-256 01F308C9A4D322892628488872ED38EAC3BBBD8090DCFF27440554CB4A6295D3, while pinned main and its intake ledger name 01F308C08FE818E247E41E94278EB2D69D5A12AC597794A9109390840C0D95D3"
+  },
+  "rust_skill": {
+    "lines": 56,
+    "path": "Rust Skill.txt",
+    "read_to_end": true,
+    "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665"
+  },
+  "uploaded_request": {
+    "lines": 128,
+    "path": "2026-07-22-lang-01.4.2.1-resource-extension-manifest-repository-reconciliation.md",
+    "read_to_end": true,
+    "sha256": "f777b83579f4212bd3e582e565545f996f7bae070b3608676e74394f74aa3d86"
+  }
+}

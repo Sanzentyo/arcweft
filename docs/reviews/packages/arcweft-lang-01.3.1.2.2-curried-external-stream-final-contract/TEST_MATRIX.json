@@ -1,0 +1,1013 @@
+{
+  "contract_id": "Lang-01.3.1.2.2",
+  "tests": [
+    {
+      "id": "P-001",
+      "layer": "sema/compiler",
+      "scenario": "Two groups, positional-only parameters",
+      "expected": "Accepted resolver coordinates project as `(0,0)`, `(1,0)` with no lookup by name."
+    },
+    {
+      "id": "P-002",
+      "layer": "sema/compiler",
+      "scenario": "Three groups, positional-or-named parameters supplied positionally",
+      "expected": "Signature has three groups; authored order and canonical coordinate order are both retained."
+    },
+    {
+      "id": "P-003",
+      "layer": "sema/compiler",
+      "scenario": "Three groups, positional-or-named parameters supplied by names in reverse declaration order",
+      "expected": "Values evaluate in source order; product cells are declaration-coordinate order."
+    },
+    {
+      "id": "P-004",
+      "layer": "sema/compiler",
+      "scenario": "Named-only parameters",
+      "expected": "Names map through accepted resolver evidence and remain signature fingerprint inputs."
+    },
+    {
+      "id": "P-005",
+      "layer": "sema/compiler",
+      "scenario": "Defaulted parameter in group 0",
+      "expected": "Default plan/fingerprint belongs to group 0 and no later application contains the default expression."
+    },
+    {
+      "id": "P-006",
+      "layer": "sema/compiler",
+      "scenario": "Optional omitted parameter",
+      "expected": "Canonical slot is `OmittedOptional`; coordinate cell still exists."
+    },
+    {
+      "id": "P-007",
+      "layer": "sema/compiler",
+      "scenario": "Empty middle group",
+      "expected": "`completed_groups` advances across the empty group even though no coordinate is added."
+    },
+    {
+      "id": "P-008",
+      "layer": "sema/compiler",
+      "scenario": "Positional rest with zero values",
+      "expected": "One empty `RestPositional` cell is emitted."
+    },
+    {
+      "id": "P-009",
+      "layer": "sema/compiler",
+      "scenario": "Positional rest with three values",
+      "expected": "Values retain authored order inside the one rest cell."
+    },
+    {
+      "id": "P-010",
+      "layer": "sema/compiler",
+      "scenario": "Named rest with three names authored out of order",
+      "expected": "Expressions evaluate in source order; entries are stored in UTF-8 name order."
+    },
+    {
+      "id": "P-011",
+      "layer": "sema/compiler",
+      "scenario": "Imported/re-exported alias of the same declaration",
+      "expected": "Declaration digest and coordinates equal the original declaration; visible alias is not runtime identity."
+    },
+    {
+      "id": "P-012",
+      "layer": "sema/compiler",
+      "scenario": "Two different declarations with textually equal signatures",
+      "expected": "Declaration digests and signature fingerprints differ."
+    },
+    {
+      "id": "P-013",
+      "layer": "runtime",
+      "scenario": "Initial external callable value",
+      "expected": "`next_group=0`, empty product, no instance, no request."
+    },
+    {
+      "id": "P-014",
+      "layer": "runtime",
+      "scenario": "Apply first of two groups",
+      "expected": "Arguments/defaults evaluated once; returns partial with `next_group=1`; zero open requests."
+    },
+    {
+      "id": "P-015",
+      "layer": "runtime",
+      "scenario": "Apply first and second of three groups",
+      "expected": "Each commit advances exactly one; all earlier cells remain unchanged; zero open requests."
+    },
+    {
+      "id": "P-016",
+      "layer": "runtime",
+      "scenario": "Explicit expressions with observable counters",
+      "expected": "Counter sequence equals authored source order exactly once."
+    },
+    {
+      "id": "P-017",
+      "layer": "runtime",
+      "scenario": "Two selected defaults",
+      "expected": "Defaults evaluate exactly once in ascending parameter coordinate after authored expressions."
+    },
+    {
+      "id": "P-018",
+      "layer": "runtime",
+      "scenario": "Unrestricted captured values",
+      "expected": "Partial ownership is unrestricted and checked duplication preserves product equality."
+    },
+    {
+      "id": "P-019",
+      "layer": "runtime",
+      "scenario": "One affine captured value in rest aggregate",
+      "expected": "Partial and aggregate are affine; one owner token exists."
+    },
+    {
+      "id": "P-020",
+      "layer": "runtime",
+      "scenario": "Drop non-final partial",
+      "expected": "Captures are released according to affine rules; no close/open request is emitted."
+    },
+    {
+      "id": "P-021",
+      "layer": "runtime",
+      "scenario": "Final group of two-group call",
+      "expected": "Exactly one instance, Opening state, handle, and full open request commit."
+    },
+    {
+      "id": "P-022",
+      "layer": "runtime",
+      "scenario": "Final group of three-group call",
+      "expected": "Request contains every coordinate from all three groups in strict order."
+    },
+    {
+      "id": "P-023",
+      "layer": "runtime",
+      "scenario": "Single-group external Stream call",
+      "expected": "Initial callable is opened by `OpenStream` directly; full product has `completed_groups=1`."
+    },
+    {
+      "id": "P-024",
+      "layer": "runtime",
+      "scenario": "All groups empty",
+      "expected": "Final application emits one request with `completed_groups=group_count` and empty vectors."
+    },
+    {
+      "id": "P-025",
+      "layer": "parity",
+      "scenario": "Direct chained application versus staged local partials",
+      "expected": "Full products and argument fingerprints equal; request differs only in allocated instance when allocator histories differ."
+    },
+    {
+      "id": "P-026",
+      "layer": "parity",
+      "scenario": "Structured RuntimePlan versus AWBC VM",
+      "expected": "Equal effects, partials, open request, handle types, and state transitions."
+    },
+    {
+      "id": "P-027",
+      "layer": "parity",
+      "scenario": "AWBC VM versus compiled region across FiberState handoff",
+      "expected": "Partial/function value and group cursor survive tier exchange exactly."
+    },
+    {
+      "id": "P-028",
+      "layer": "AWBC",
+      "scenario": "Encode/decode/re-encode valid two-group program",
+      "expected": "Canonical bytes are identical."
+    },
+    {
+      "id": "P-029",
+      "layer": "AWBC",
+      "scenario": "Encode/decode/re-encode valid three-group program with default/rest",
+      "expected": "Canonical bytes are identical."
+    },
+    {
+      "id": "P-030",
+      "layer": "AWBC",
+      "scenario": "String-table canonicalization",
+      "expected": "Parameter names/capability/operation remap correctly; digests and coordinates do not change."
+    },
+    {
+      "id": "P-031",
+      "layer": "host",
+      "scenario": "Native/Web/Agent serialize the same request",
+      "expected": "UTF-8 bytes are identical."
+    },
+    {
+      "id": "P-032",
+      "layer": "host",
+      "scenario": "Wide integer payloads",
+      "expected": "All wide/runtime integers use canonical decimal strings on every host."
+    },
+    {
+      "id": "P-033",
+      "layer": "host",
+      "scenario": "Structural coordinate/count integers",
+      "expected": "JSON numbers decode exactly and remain within `u16`."
+    },
+    {
+      "id": "P-034",
+      "layer": "save",
+      "scenario": "Snapshot after group 1 of 3 and restore",
+      "expected": "Partial product/next group/generation/ownership equal; zero reevaluations and zero opens."
+    },
+    {
+      "id": "P-035",
+      "layer": "save",
+      "scenario": "Snapshot with empty applied group",
+      "expected": "`completed_groups` survives even with no cells."
+    },
+    {
+      "id": "P-036",
+      "layer": "save",
+      "scenario": "Snapshot with defaulted/optional/rest captures",
+      "expected": "Dispositions, default digest, order, types, value digests, and affine owners survive."
+    },
+    {
+      "id": "P-037",
+      "layer": "save",
+      "scenario": "Snapshot during safe suspended expression evaluation",
+      "expected": "Exact cursor and already evaluated temporaries resume without replay."
+    },
+    {
+      "id": "P-038",
+      "layer": "hot reload",
+      "scenario": "Identical group/signature layout, code-only compatible change",
+      "expected": "Swap accepted; existing partial stays pinned; new callable uses new generation."
+    },
+    {
+      "id": "P-039",
+      "layer": "hot reload",
+      "scenario": "Identical code and content-only change",
+      "expected": "Partial remains valid and no fingerprint field changes."
+    },
+    {
+      "id": "P-040",
+      "layer": "hot reload",
+      "scenario": "Code-generational signature change with retained old generation",
+      "expected": "Existing partial completes against old definition; new calls use new definition."
+    },
+    {
+      "id": "P-041",
+      "layer": "limits",
+      "scenario": "Exactly 16 groups and 128 total parameters",
+      "expected": "Accepted; final product has exact complete coordinate coverage."
+    },
+    {
+      "id": "P-042",
+      "layer": "rest",
+      "scenario": "Unicode named-rest keys",
+      "expected": "Canonical order uses UTF-8 bytes, not locale collation."
+    },
+    {
+      "id": "P-043",
+      "layer": "hashing",
+      "scenario": "Equivalent direct/staged full products",
+      "expected": "Argument fingerprints are equal."
+    },
+    {
+      "id": "P-044",
+      "layer": "hashing",
+      "scenario": "Same values under different declaration",
+      "expected": "Argument fingerprints differ."
+    },
+    {
+      "id": "N-001",
+      "layer": "signature",
+      "scenario": "Zero groups",
+      "expected": "Typed signature error."
+    },
+    {
+      "id": "N-002",
+      "layer": "signature",
+      "scenario": "17 groups",
+      "expected": "Group-limit error before allocation beyond budget."
+    },
+    {
+      "id": "N-003",
+      "layer": "signature",
+      "scenario": "129 total parameters",
+      "expected": "Parameter-limit error."
+    },
+    {
+      "id": "N-004",
+      "layer": "signature",
+      "scenario": "First group marked `Curried`",
+      "expected": "Group-kind error."
+    },
+    {
+      "id": "N-005",
+      "layer": "signature",
+      "scenario": "Later group marked `Initial`",
+      "expected": "Group-kind error."
+    },
+    {
+      "id": "N-006",
+      "layer": "signature",
+      "scenario": "Noncontiguous group index",
+      "expected": "Coordinate/index error."
+    },
+    {
+      "id": "N-007",
+      "layer": "signature",
+      "scenario": "Noncontiguous parameter index",
+      "expected": "Coordinate/index error."
+    },
+    {
+      "id": "N-008",
+      "layer": "signature",
+      "scenario": "Stored coordinate differs from vector position",
+      "expected": "Coordinate/index error."
+    },
+    {
+      "id": "N-009",
+      "layer": "signature",
+      "scenario": "Duplicate name in one name-visible group",
+      "expected": "Signature name-collision error."
+    },
+    {
+      "id": "N-010",
+      "layer": "signature",
+      "scenario": "Two positional-rest parameters in one group",
+      "expected": "Signature rest-shape error."
+    },
+    {
+      "id": "N-011",
+      "layer": "signature",
+      "scenario": "Two named-rest parameters in one group",
+      "expected": "Signature rest-shape error."
+    },
+    {
+      "id": "N-012",
+      "layer": "signature",
+      "scenario": "Rest parameter marked optional/defaulted",
+      "expected": "Illegal presence error."
+    },
+    {
+      "id": "N-013",
+      "layer": "compiler",
+      "scenario": "Accepted slot lacks coordinate evidence",
+      "expected": "Compiler invariant error; no source recovery."
+    },
+    {
+      "id": "N-014",
+      "layer": "compiler",
+      "scenario": "Checked sema index does not fit runtime `u16`",
+      "expected": "Checked projection error."
+    },
+    {
+      "id": "N-015",
+      "layer": "compiler",
+      "scenario": "RuntimePlan production tries to depend on sema",
+      "expected": "Cargo/dependency architecture test fails."
+    },
+    {
+      "id": "N-016",
+      "layer": "runtime",
+      "scenario": "Apply group 1 to initial partial",
+      "expected": "`GroupNotNext`; no evaluation or mutation."
+    },
+    {
+      "id": "N-017",
+      "layer": "runtime",
+      "scenario": "Repeat already captured group",
+      "expected": "`GroupNotNext`; original partial unchanged."
+    },
+    {
+      "id": "N-018",
+      "layer": "runtime",
+      "scenario": "Retrograde group after group 2",
+      "expected": "`GroupNotNext`; original partial unchanged."
+    },
+    {
+      "id": "N-019",
+      "layer": "runtime",
+      "scenario": "Group out of range",
+      "expected": "`GroupOutOfRange`; no evaluation."
+    },
+    {
+      "id": "N-020",
+      "layer": "runtime",
+      "scenario": "Wrong Stream definition",
+      "expected": "`WrongDefinition`; no evaluation/open/state mutation."
+    },
+    {
+      "id": "N-021",
+      "layer": "runtime",
+      "scenario": "Foreign declaration with equal visible name/signature",
+      "expected": "`ForeignDeclaration`; no evaluation/open/state mutation."
+    },
+    {
+      "id": "N-022",
+      "layer": "runtime",
+      "scenario": "Signature fingerprint mismatch",
+      "expected": "`SignatureMismatch`; no evaluation/open/state mutation."
+    },
+    {
+      "id": "N-023",
+      "layer": "runtime",
+      "scenario": "Stale/unretained generation",
+      "expected": "`StaleGeneration`; no evaluation/affine move/open."
+    },
+    {
+      "id": "N-024",
+      "layer": "product",
+      "scenario": "Coordinate/value length mismatch",
+      "expected": "Typed length error; candidate rejected."
+    },
+    {
+      "id": "N-025",
+      "layer": "product",
+      "scenario": "Missing required coordinate",
+      "expected": "`MissingCoordinate`; no commit."
+    },
+    {
+      "id": "N-026",
+      "layer": "product",
+      "scenario": "Duplicate coordinate",
+      "expected": "`DuplicateCoordinate`; no commit."
+    },
+    {
+      "id": "N-027",
+      "layer": "product",
+      "scenario": "Unknown coordinate",
+      "expected": "`UnknownCoordinate`; no commit."
+    },
+    {
+      "id": "N-028",
+      "layer": "product",
+      "scenario": "Coordinates reordered",
+      "expected": "`OutOfOrderCoordinate`; implementation must not sort them."
+    },
+    {
+      "id": "N-029",
+      "layer": "product",
+      "scenario": "Cell for a later group in prefix",
+      "expected": "Completed-group/unknown-coordinate error."
+    },
+    {
+      "id": "N-030",
+      "layer": "product",
+      "scenario": "Required parameter uses `OmittedOptional`",
+      "expected": "`IllegalDisposition`."
+    },
+    {
+      "id": "N-031",
+      "layer": "product",
+      "scenario": "Optional parameter uses `Defaulted`",
+      "expected": "`IllegalDisposition`."
+    },
+    {
+      "id": "N-032",
+      "layer": "product",
+      "scenario": "Defaulted parameter carries wrong default digest",
+      "expected": "`DefaultFingerprintMismatch`."
+    },
+    {
+      "id": "N-033",
+      "layer": "product",
+      "scenario": "Non-rest parameter uses rest disposition",
+      "expected": "`IllegalDisposition`."
+    },
+    {
+      "id": "N-034",
+      "layer": "product",
+      "scenario": "Wrong checked value type",
+      "expected": "`TypeMismatch`."
+    },
+    {
+      "id": "N-035",
+      "layer": "product",
+      "scenario": "Positional-rest member wrong type",
+      "expected": "`MalformedPositionalRest`/`TypeMismatch`."
+    },
+    {
+      "id": "N-036",
+      "layer": "product",
+      "scenario": "Named-rest duplicate key",
+      "expected": "`DuplicateNamedRestEntry`."
+    },
+    {
+      "id": "N-037",
+      "layer": "product",
+      "scenario": "Named-rest keys out of canonical order",
+      "expected": "`OutOfOrderNamedRestEntry`; implementation must not sort them."
+    },
+    {
+      "id": "N-038",
+      "layer": "product",
+      "scenario": "Named-rest value wrong type",
+      "expected": "`TypeMismatch`."
+    },
+    {
+      "id": "N-039",
+      "layer": "affine",
+      "scenario": "Same affine token appears in two cells",
+      "expected": "Affine ownership error; no commit."
+    },
+    {
+      "id": "N-040",
+      "layer": "affine",
+      "scenario": "Apply an already moved affine partial",
+      "expected": "Use-after-move error; no open."
+    },
+    {
+      "id": "N-041",
+      "layer": "affine",
+      "scenario": "Attempt unrestricted clone of affine partial",
+      "expected": "Checked duplication error."
+    },
+    {
+      "id": "N-042",
+      "layer": "runtime",
+      "scenario": "Instance ID allocator overflow on final apply",
+      "expected": "`InstanceIdOverflow`; partial/request/state remain unchanged."
+    },
+    {
+      "id": "N-043",
+      "layer": "runtime",
+      "scenario": "Host request batch capacity/budget failure",
+      "expected": "Prepared transaction rejected before live mutation."
+    },
+    {
+      "id": "N-044",
+      "layer": "limits",
+      "scenario": "Rest aggregate exceeds collection-item budget",
+      "expected": "Limit error before allocation/host request."
+    },
+    {
+      "id": "N-045",
+      "layer": "limits",
+      "scenario": "Nested captured value exceeds nesting budget",
+      "expected": "Limit error before commit."
+    },
+    {
+      "id": "T-001",
+      "layer": "codec",
+      "scenario": "Codec version 7 with ABI-2 payload",
+      "expected": "Unsupported codec before table decode."
+    },
+    {
+      "id": "T-002",
+      "layer": "codec",
+      "scenario": "ABI 1 with codec 8",
+      "expected": "ABI mismatch."
+    },
+    {
+      "id": "T-003",
+      "layer": "codec",
+      "scenario": "Removed Source table bytes",
+      "expected": "Payload/table mismatch or unknown removed layout; never accepted."
+    },
+    {
+      "id": "T-004",
+      "layer": "codec",
+      "scenario": "Removed Source opcode `0x22`",
+      "expected": "Unknown instruction opcode."
+    },
+    {
+      "id": "T-005",
+      "layer": "codec",
+      "scenario": "Removed Source opcode `0x23`",
+      "expected": "Unknown instruction opcode."
+    },
+    {
+      "id": "T-006",
+      "layer": "codec",
+      "scenario": "Unknown runtime type tag 23",
+      "expected": "Unknown runtime-type tag at exact offset."
+    },
+    {
+      "id": "T-007",
+      "layer": "codec",
+      "scenario": "Unknown constant tag 19",
+      "expected": "Unknown constant tag at exact offset."
+    },
+    {
+      "id": "T-008",
+      "layer": "codec",
+      "scenario": "Unknown argument operand tag 5",
+      "expected": "Unknown operand tag at exact offset."
+    },
+    {
+      "id": "T-009",
+      "layer": "codec",
+      "scenario": "Noncanonical vector length integer",
+      "expected": "Noncanonical integer error."
+    },
+    {
+      "id": "T-010",
+      "layer": "codec",
+      "scenario": "Coordinate vector count exceeds budget",
+      "expected": "Budget error before allocation."
+    },
+    {
+      "id": "T-011",
+      "layer": "metadata",
+      "scenario": "Group range out of bounds",
+      "expected": "Structural verifier error."
+    },
+    {
+      "id": "T-012",
+      "layer": "metadata",
+      "scenario": "Group owner mismatch",
+      "expected": "Structural verifier error."
+    },
+    {
+      "id": "T-013",
+      "layer": "metadata",
+      "scenario": "Parameter range overlaps another group",
+      "expected": "Structural verifier error."
+    },
+    {
+      "id": "T-014",
+      "layer": "metadata",
+      "scenario": "Group index reordered",
+      "expected": "Structural verifier error."
+    },
+    {
+      "id": "T-015",
+      "layer": "metadata",
+      "scenario": "Parameter coordinate reordered",
+      "expected": "Structural verifier error."
+    },
+    {
+      "id": "T-016",
+      "layer": "metadata",
+      "scenario": "Signature fingerprint byte changed",
+      "expected": "Fingerprint verifier error."
+    },
+    {
+      "id": "T-017",
+      "layer": "instruction",
+      "scenario": "Coordinate/value vector lengths differ",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-018",
+      "layer": "instruction",
+      "scenario": "Duplicate coordinate",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-019",
+      "layer": "instruction",
+      "scenario": "Missing optional coordinate",
+      "expected": "Instruction verifier error; optional must have an omission cell."
+    },
+    {
+      "id": "T-020",
+      "layer": "instruction",
+      "scenario": "Apply opcode used for final group",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-021",
+      "layer": "instruction",
+      "scenario": "Open opcode used for non-final group",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-022",
+      "layer": "instruction",
+      "scenario": "Callee static type has another definition",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-023",
+      "layer": "instruction",
+      "scenario": "Callee static type has another next group",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-024",
+      "layer": "instruction",
+      "scenario": "Destination partial next group wrong",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-025",
+      "layer": "instruction",
+      "scenario": "Open destination item/error type wrong",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-026",
+      "layer": "instruction",
+      "scenario": "Operand register type wrong",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-027",
+      "layer": "instruction",
+      "scenario": "Default digest changed",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-028",
+      "layer": "instruction",
+      "scenario": "Rest operand uses scalar register",
+      "expected": "Instruction verifier error."
+    },
+    {
+      "id": "T-029",
+      "layer": "codec",
+      "scenario": "Valid bytes plus trailing data",
+      "expected": "Trailing/payload-length error."
+    },
+    {
+      "id": "T-030",
+      "layer": "parity",
+      "scenario": "Decode then re-encode a tampered-but-repairable ordering",
+      "expected": "Decode rejects; it never normalizes to valid bytes."
+    },
+    {
+      "id": "J-001",
+      "layer": "all hosts",
+      "scenario": "Duplicate top-level `generation`",
+      "expected": "Duplicate-field error."
+    },
+    {
+      "id": "J-002",
+      "layer": "all hosts",
+      "scenario": "Unknown top-level field",
+      "expected": "Unknown-field error."
+    },
+    {
+      "id": "J-003",
+      "layer": "all hosts",
+      "scenario": "Unknown `arguments.flat_arguments`",
+      "expected": "Unknown-field error."
+    },
+    {
+      "id": "J-004",
+      "layer": "all hosts",
+      "scenario": "Duplicate coordinate field",
+      "expected": "Duplicate-field error."
+    },
+    {
+      "id": "J-005",
+      "layer": "all hosts",
+      "scenario": "Unknown value `kind`",
+      "expected": "Unknown-tag error."
+    },
+    {
+      "id": "J-006",
+      "layer": "all hosts",
+      "scenario": "`omitted_optional` with `value: null`",
+      "expected": "Unknown-field error."
+    },
+    {
+      "id": "J-007",
+      "layer": "all hosts",
+      "scenario": "Uppercase/short/nonhex digest",
+      "expected": "Digest format error."
+    },
+    {
+      "id": "J-008",
+      "layer": "all hosts",
+      "scenario": "Numeric generation instead of string",
+      "expected": "Scalar-kind error."
+    },
+    {
+      "id": "J-009",
+      "layer": "all hosts",
+      "scenario": "Generation `\"007\"`",
+      "expected": "Noncanonical decimal error."
+    },
+    {
+      "id": "J-010",
+      "layer": "all hosts",
+      "scenario": "Generation `\"+7\"` or whitespace",
+      "expected": "Noncanonical decimal error."
+    },
+    {
+      "id": "J-011",
+      "layer": "all hosts",
+      "scenario": "Signed payload `\"-0\"`",
+      "expected": "Noncanonical decimal error."
+    },
+    {
+      "id": "J-012",
+      "layer": "all hosts",
+      "scenario": "Coordinate `65536` or negative",
+      "expected": "Bounds/type error."
+    },
+    {
+      "id": "J-013",
+      "layer": "all hosts",
+      "scenario": "Coordinate/value length mismatch",
+      "expected": "Product validation error before provider call."
+    },
+    {
+      "id": "J-014",
+      "layer": "all hosts",
+      "scenario": "Reordered coordinates",
+      "expected": "Product validation error before provider call."
+    },
+    {
+      "id": "J-015",
+      "layer": "all hosts",
+      "scenario": "Named-rest duplicate/out-of-order keys",
+      "expected": "Rest validation error before provider call."
+    },
+    {
+      "id": "J-016",
+      "layer": "parity",
+      "scenario": "Native accepts input rejected by Web/Agent",
+      "expected": "Test fails; acceptance sets must be identical."
+    },
+    {
+      "id": "S-001",
+      "layer": "save",
+      "scenario": "Save at non-safe-point structured group application",
+      "expected": "`ExternalStreamGroupApplicationActive` blocker."
+    },
+    {
+      "id": "S-002",
+      "layer": "save",
+      "scenario": "Partial capture is unsnapshotable",
+      "expected": "Typed unsnapshotable-capture blocker."
+    },
+    {
+      "id": "S-003",
+      "layer": "save",
+      "scenario": "Partial's generation artifact missing",
+      "expected": "Typed missing-generation blocker."
+    },
+    {
+      "id": "S-004",
+      "layer": "save",
+      "scenario": "Partial only, no external instance",
+      "expected": "No external-live Stream blocker."
+    },
+    {
+      "id": "S-005",
+      "layer": "save",
+      "scenario": "Final application already created Opening external instance",
+      "expected": "Parent external-live blocker applies."
+    },
+    {
+      "id": "S-006",
+      "layer": "restore",
+      "scenario": "Schema version 1",
+      "expected": "Unsupported schema; no migration."
+    },
+    {
+      "id": "S-007",
+      "layer": "restore",
+      "scenario": "Artifact identity mismatch",
+      "expected": "Atomic restore failure."
+    },
+    {
+      "id": "S-008",
+      "layer": "restore",
+      "scenario": "AWBC ABI/codec mismatch",
+      "expected": "Atomic restore failure."
+    },
+    {
+      "id": "S-009",
+      "layer": "restore",
+      "scenario": "Wrong definition/declaration/signature",
+      "expected": "Atomic restore failure before value installation."
+    },
+    {
+      "id": "S-010",
+      "layer": "restore",
+      "scenario": "`next_group != completed_groups`",
+      "expected": "Atomic restore failure."
+    },
+    {
+      "id": "S-011",
+      "layer": "restore",
+      "scenario": "Corrupt coordinate/value product",
+      "expected": "Atomic restore failure."
+    },
+    {
+      "id": "S-012",
+      "layer": "restore",
+      "scenario": "Value digest mismatch",
+      "expected": "Atomic restore failure."
+    },
+    {
+      "id": "S-013",
+      "layer": "restore",
+      "scenario": "Duplicate affine token across registers/partial",
+      "expected": "Atomic restore failure."
+    },
+    {
+      "id": "S-014",
+      "layer": "restore",
+      "scenario": "Restore succeeds",
+      "expected": "No expression evaluation, instance allocation, provider call, or open request."
+    },
+    {
+      "id": "H-001",
+      "layer": "hot reload",
+      "scenario": "Group count changes",
+      "expected": "At least `CodeGenerational`; never code-compatible."
+    },
+    {
+      "id": "H-002",
+      "layer": "hot reload",
+      "scenario": "Group order/kind changes",
+      "expected": "At least `CodeGenerational`."
+    },
+    {
+      "id": "H-003",
+      "layer": "hot reload",
+      "scenario": "Parameter coordinate/name/order changes",
+      "expected": "At least `CodeGenerational`."
+    },
+    {
+      "id": "H-004",
+      "layer": "hot reload",
+      "scenario": "Passing/rest kind changes",
+      "expected": "At least `CodeGenerational`."
+    },
+    {
+      "id": "H-005",
+      "layer": "hot reload",
+      "scenario": "Presence/default digest changes",
+      "expected": "At least `CodeGenerational`."
+    },
+    {
+      "id": "H-006",
+      "layer": "hot reload",
+      "scenario": "Parameter/item/error type changes",
+      "expected": "At least `CodeGenerational`."
+    },
+    {
+      "id": "H-007",
+      "layer": "hot reload",
+      "scenario": "Provider ABI/adapter requirements change",
+      "expected": "`RestartRequired` under existing policy."
+    },
+    {
+      "id": "H-008",
+      "layer": "hot reload",
+      "scenario": "Active old partial receives new-generation plan",
+      "expected": "Typed signature/generation error before evaluation."
+    },
+    {
+      "id": "H-009",
+      "layer": "hot reload",
+      "scenario": "Old generation prematurely retired",
+      "expected": "Subsequent apply returns `StaleGeneration` atomically; retention test must prevent this in valid flow."
+    },
+    {
+      "id": "H-010",
+      "layer": "hot reload",
+      "scenario": "Attempt to translate old captures to new layout",
+      "expected": "No API exists; compile/type-level test proves absence of migration path."
+    },
+    {
+      "id": "A-001",
+      "layer": "Cargo metadata",
+      "scenario": "`arcweft-core` dependencies",
+      "expected": "No syntax/HIR/sema/verifier/tooling/host/I/O dependency."
+    },
+    {
+      "id": "A-002",
+      "layer": "Cargo metadata",
+      "scenario": "`arcweft-runtime-plan` production dependencies",
+      "expected": "No sema dependency."
+    },
+    {
+      "id": "A-003",
+      "layer": "Cargo metadata",
+      "scenario": "compiler dependencies",
+      "expected": "Compiler can consume sema and emit core/RuntimePlan types."
+    },
+    {
+      "id": "A-004",
+      "layer": "public API",
+      "scenario": "Function-value owner",
+      "expected": "Closed `Closure`/`ExternalStreamPartial` enum; no public sidecar/extension trait."
+    },
+    {
+      "id": "A-005",
+      "layer": "public API",
+      "scenario": "Open request",
+      "expected": "Requires group-aware product; a final-group-only construction does not type-check or fails constructor validation."
+    },
+    {
+      "id": "A-006",
+      "layer": "codec",
+      "scenario": "Codec-8 decoder",
+      "expected": "Has no accepted Source/codec-7/flat request variant."
+    },
+    {
+      "id": "A-007",
+      "layer": "behavior",
+      "scenario": "Resolver invocation accounting",
+      "expected": "Accepted lowering does not perform a second callable lookup."
+    },
+    {
+      "id": "A-008",
+      "layer": "structure audit",
+      "scenario": "Changed owner files",
+      "expected": "Responsibilities, exact LOC/bytes, and dependency fan-in/out satisfy current AGENTS thresholds or have explicit rationale."
+    },
+    {
+      "id": "A-009",
+      "layer": "broad validation",
+      "scenario": "Workspace/Agent/runtime path",
+      "expected": "`fmt`, workspace check/clippy/tests, Tier 2, metadata, and structure audit all pass at final implementation commit."
+    }
+  ]
+}

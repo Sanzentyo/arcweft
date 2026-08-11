@@ -8,7 +8,7 @@ Status: `IMPLEMENTED_PRIVATE_SUBSTRATE`
 
 This cut implements the standalone-fragment boundary from the accepted
 Proof-concurrency v6.1.1 package
-[`arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip`](../reviews/packages/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip),
+[`arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip`](../reviews/packages/zips/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip),
 SHA-256
 `1B7DE5F2C10A5B29D67C72011E4272DF9A76AF8907FD21FE162DE54809FC69EF`.
 

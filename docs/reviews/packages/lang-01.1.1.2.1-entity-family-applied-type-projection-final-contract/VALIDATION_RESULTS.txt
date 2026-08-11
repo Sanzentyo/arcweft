@@ -1,0 +1,19 @@
+PASS
+
+Baseline: 4fd6331dc342d30a7f4ac7774852b60801866ef7
+Request blob: 5445ff2e48c47a4cb2455b56fb5348784038beb6
+Final main recheck: 4fd6331dc342d30a7f4ac7774852b60801866ef7 (unchanged)
+Contract status: final
+Production code changed: false
+Fallback success allowed: false
+Manifest member hashes: PASS
+JSON parse and invariant checks: PASS
+CSV parse, unique IDs, category coverage: PASS
+Traceability requirement coverage: PASS
+Deterministic ZIP member order/timestamps: PASS
+ZIP CRC test: PASS
+Extracted-package offline validator: PASS
+
+Dynamic Cargo/Clippy/Tier 2 execution is not claimed by this artifact-generation
+session; see VALIDATION_EVIDENCE.md for the exact boundary and the mandatory
+implementation-time commands.

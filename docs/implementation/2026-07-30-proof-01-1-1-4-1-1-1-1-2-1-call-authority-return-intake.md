@@ -16,7 +16,7 @@ Repository inputs:
 The inspected archive is now retained as repository evidence at:
 
 ```text
-docs/reviews/packages/arcweft-proof-concurrency-v6.1.1.4.1.1.1.1.2.1-call-source-resolver-authority-correction-final-contract.zip
+docs/reviews/packages/zips/arcweft-proof-concurrency-v6.1.1.4.1.1.1.1.2.1-call-source-resolver-authority-correction-final-contract.zip
 ```
 
 - byte length: `38,626`;

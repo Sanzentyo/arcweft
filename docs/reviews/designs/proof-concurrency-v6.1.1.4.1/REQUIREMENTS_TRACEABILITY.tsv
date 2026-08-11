@@ -1,0 +1,25 @@
+requirement_id	source	requirement	status	contract_decision	validation_or_test
+C1	correction request	preserve accepted ID/Dialogue	CLOSED	RUST_SCHEMAS I; SOURCE roles; precedence	T-ID-01, E33/E34, source tests
+C2	correction request	separate regions/registry	CLOSED	RUST_SCHEMAS D; path/lifetime contract	T-REGION-01, C11/C12
+C3	correction request	path roots/module context	CLOSED	RUST_SCHEMAS C; path contract	T-PATH-01, E05
+C4	correction request	overflow numeric/decimal/Duration/sequence	CLOSED	RUST_SCHEMAS E/J; numeric contract	T-NUM/DEC/FLOAT/DUR/SEQ
+C5	correction request	associated type receiver	CLOSED	RUST_SCHEMAS F; call contract	T-CALL-01, E12
+C6	correction request	Thread body ownership	CLOSED	RUST_SCHEMAS H; Thread contract	T-THREAD-01, E18/C15
+C7	correction request	exhaustive Dialogue/RichText	CLOSED	RUST_SCHEMAS I; Dialogue contract	T-DIALOGUE/RT, C16-C35
+C8	correction request	exhaustive lowering matrix	CLOSED	LOWERING_MATRIX.tsv	all E/P/C rows
+C9	correction request	consumer/deletion migration	CLOSED	IMPLEMENTATION_AND_DELETION_ORDER.md	T-MIGRATION-01
+P1	primary request	35 expression variants	CLOSED	FINAL_CONTRACT + RUST_SCHEMAS B	E01-E35
+P2	primary request	closed names/paths/lifetimes/ID	CLOSED	RUST_SCHEMAS C/D	T-ID/PATH/REGION
+P3	primary request	closed literals/numeric	CLOSED	RUST_SCHEMAS E + numeric contract	T-NUM/DEC/FLOAT/DUR/SEQ
+P4	primary request	closed child records	CLOSED	RUST_SCHEMAS F	C01-C10
+P5	primary request	source query roles/ordinals	CLOSED	SOURCE_ROLE_AND_QUERY_CONTRACT.md	T-SOURCE-01
+P6	primary request	pattern decision	CLOSED	RUST_SCHEMAS G; full HirIdRef family	P01-P12
+P7	primary request	no duplicate operator vocabularies	CLOSED	HIR-owned exact projections; no syntax dependency	E23/E24/E26
+P8	primary request	RichText allocation limits	CLOSED	Dialogue contract	T-RT-LIMIT-01
+P9	primary request	exact/one-over rollback	CLOSED	all matrix rows	all *RB tests
+P10	primary request	complete test matrix	CLOSED	TEST_MATRIX.tsv	all rows
+X1	constraints	design-only/no production patch	CLOSED	archive contains documents/data only	manifest inspection
+X2	constraints	no aliases/wrappers/shims/dual readers	CLOSED	final API + deletion order	T-MIGRATION-01
+X3	constraints	no reparsing/source gates/removed diagnostics	CLOSED	direct typed lowering and behavior tests	T-AUTHORITY-01
+X4	constraints	all sidecars inside ZIP	CLOSED	README/status/questions/requests/schemas/matrices/evidence/manifest	ZIP validator
+X5	constraints	OPEN_QUESTIONS exactly none	CLOSED	OPEN_QUESTIONS.md	byte assertion

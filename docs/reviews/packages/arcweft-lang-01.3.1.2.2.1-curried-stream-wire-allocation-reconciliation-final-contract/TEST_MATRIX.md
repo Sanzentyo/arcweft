@@ -1,0 +1,142 @@
+# Complete acceptance test matrix
+
+Total cases: **105**. Removal evidence is typed API, codec, behavior, canonical bytes, or structured dependency evidence; no source-text gate is used.
+
+## Coverage summary
+
+| Area | Cases |
+| --- | ---: |
+| AWBC | 1 |
+| RuntimePlan | 1 |
+| affine | 1 |
+| atomicity | 1 |
+| authored generator | 4 |
+| bundle | 1 |
+| codec | 1 |
+| codec8 | 31 |
+| compile-fail | 11 |
+| curried application | 5 |
+| definition key | 2 |
+| dependency | 3 |
+| effects | 1 |
+| function value | 1 |
+| host request | 1 |
+| product | 3 |
+| removal | 1 |
+| restore | 3 |
+| runtime allocation | 1 |
+| runtime-owner | 2 |
+| save | 1 |
+| signature | 6 |
+| static formats | 1 |
+| verifier | 22 |
+
+## Normative cases
+
+| ID | Area | Kind | Setup | Required assertion | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| `WIRE-001` | codec8 | golden | Encode WB-OPEN-EMPTY-FINAL-GROUP | Bytes equal `27 01 02 03 04 00 00 00 00` exactly. | canonical bytes |
+| `WIRE-002` | codec8 | golden | Encode WB-OPEN-DEFAULTED-AND-OMITTED | Bytes equal the 52-byte vector in WORKED_BYTES.md exactly, including fixed little-endian u16 coordinates. | canonical bytes |
+| `WIRE-003` | codec8 | golden | Encode WB-APPLY-ONE-EXPLICIT | Bytes equal `29 01 02 03 04 00 00 01 00 00 00 00 01 00 05` exactly. | canonical bytes |
+| `WIRE-004` | codec8 | golden | Encode FinishStream Complete | Bytes equal `28 0c 00`. | canonical bytes |
+| `WIRE-005` | codec8 | golden | Encode FinishStream Fail(error=13) | Bytes equal `28 0c 01 0d`. | canonical bytes |
+| `WIRE-006` | codec8 | golden | Encode FinishStream Cancelled | Bytes equal `28 0c 02`. | canonical bytes |
+| `WIRE-007` | codec8 | nested-tag | Encode one Explicit operand | First operand byte is tag 0; payload is exactly the field order in EXACT_WIRE_TABLE.md. | canonical bytes |
+| `WIRE-008` | codec8 | nested-tag | Encode one Defaulted operand | First operand byte is tag 1; payload is exactly the field order in EXACT_WIRE_TABLE.md. | canonical bytes |
+| `WIRE-009` | codec8 | nested-tag | Encode one OmittedOptional operand | First operand byte is tag 2; payload is exactly the field order in EXACT_WIRE_TABLE.md. | canonical bytes |
+| `WIRE-010` | codec8 | nested-tag | Encode one RestPositional operand | First operand byte is tag 3; payload is exactly the field order in EXACT_WIRE_TABLE.md. | canonical bytes |
+| `WIRE-011` | codec8 | nested-tag | Encode one RestNamed operand | First operand byte is tag 4; payload is exactly the field order in EXACT_WIRE_TABLE.md. | canonical bytes |
+| `WIRE-012` | codec8 | nested-tag | Encode Complete producer outcome | Outcome tag is exactly 0; only Fail carries one register ID. | canonical bytes |
+| `WIRE-013` | codec8 | nested-tag | Encode Fail producer outcome | Outcome tag is exactly 1; only Fail carries one register ID. | canonical bytes |
+| `WIRE-014` | codec8 | nested-tag | Encode Cancelled producer outcome | Outcome tag is exactly 2; only Fail carries one register ID. | canonical bytes |
+| `WIRE-015` | codec8 | round-trip | For each of the six worked vectors decode, encode, decode, and encode again | Both encodings are byte-identical and both decoded values are equal. | canonical bytes |
+| `WIRE-016` | codec8 | version-reject | Change only AWBC codec version from 8 to 7 | Decoder rejects at header/version validation before reading any new table or instruction payload. | codec behavior |
+| `WIRE-017` | codec8 | version-reject | ABI 1 with codec 8 | Decoder rejects before payload tables; no compatibility mode. | codec behavior |
+| `WIRE-018` | codec8 | removed-opcode | Decode instruction byte 0x1c | Unknown instruction opcode at the opcode byte. | codec behavior |
+| `WIRE-019` | codec8 | removed-opcode | Decode instruction byte 0x1d | Unknown instruction opcode at the opcode byte. | codec behavior |
+| `WIRE-020` | codec8 | removed-opcode | Decode instruction byte 0x1e | Unknown instruction opcode at the opcode byte. | codec behavior |
+| `WIRE-021` | codec8 | removed-opcode | Decode instruction byte 0x20 | Unknown instruction opcode at the opcode byte. | codec behavior |
+| `WIRE-022` | codec8 | retained-opcode | Decode a valid current-main CallTraitMethod record beginning with 0x22 | It remains CallTraitMethod; it is not rejected or reinterpreted. | canonical bytes |
+| `WIRE-023` | codec8 | retained-opcode | Decode a valid current-main RegisterCleanup record beginning with 0x23 | It remains RegisterCleanup; it is not rejected or reinterpreted. | canonical bytes |
+| `WIRE-024` | codec8 | unknown-opcode | Decode instruction byte 0x2a | Unknown instruction opcode; 0x2a is unassigned, not an implicit reserved instruction. | codec behavior |
+| `WIRE-025` | codec8 | old-parent-shape | Decode parent flat Open bytes `27 02 03 02 00 04 01` as a codec-8 instruction | It cannot become an accepted OpenStream; decoding or verification rejects the incomplete group-aware payload. | codec behavior |
+| `WIRE-026` | codec8 | old-child-meaning | Use opcode 0x27 with a syntactically group-aware payload whose group is non-final | It decodes only as OpenStream and verifier rejects non-final Open; there is no Apply alias. | codec behavior |
+| `WIRE-027` | codec8 | old-child-meaning | Use opcode 0x28 followed by child Open fields with callee byte 0x08 | It decodes only as FinishStream and rejects outcome tag 0x08; there is no Open alias. | codec behavior |
+| `WIRE-028` | codec8 | length-mismatch | Coordinate vector length differs from operand vector length | Decoder/verifier rejects without zipping, sorting, or repairing vectors. | codec behavior |
+| `WIRE-029` | codec8 | order-reject | Coordinates are duplicated or out of order | Verifier rejects exact malformed order; encoder never canonicalizes it into validity. | codec behavior |
+| `WIRE-030` | codec8 | integer-shape | Encode group/parameter coordinate 1 | Each u16 is exactly two little-endian bytes `01 00`, not varint. | canonical bytes |
+| `WIRE-031` | codec8 | integer-shape | Encode register/table ID 300 | ID is canonical u32 varint `ac 02`; noncanonical forms reject. | canonical bytes |
+| `VERIFY-001` | verifier | group-role | ApplyExternalStreamGroup targets final group | Reject before execution: Apply requires group+1 < group_count. | typed verifier |
+| `VERIFY-002` | verifier | group-role | OpenStream targets non-final group | Reject before execution: Open requires group+1 == group_count. | typed verifier |
+| `VERIFY-003` | verifier | producer-owner | FinishStream appears in Ordinary function | Reject: owning function must be GeneratorProducer with OWNS_STREAM_PRODUCER. | typed verifier |
+| `VERIFY-004` | verifier | producer-owner | FinishStream appears in GeneratorProducer lacking MAY_SUSPEND | Reject before execution. | typed verifier |
+| `VERIFY-005` | verifier | producer-owner | FinishStream appears in GeneratorProducer lacking OWNS_STREAM_PRODUCER | Reject before execution. | typed verifier |
+| `VERIFY-006` | runtime-owner | producer-owner | Current fiber producer_stream key/lease does not reciprocally match table producer owner | Typed runtime trap/rejection before terminal mutation. | behavior |
+| `VERIFY-007` | runtime-owner | producer-owner | Finish stream register key differs from FiberState.producer_stream.key | Reject without terminalizing either stream. | behavior |
+| `VERIFY-008` | verifier | definition | Apply/Open definition table index is out of bounds | Reject before register or operand checks. | typed verifier |
+| `VERIFY-009` | verifier | origin | Apply/Open definition has authored or derived origin | Reject; the group-application instructions are external-origin only. | typed verifier |
+| `VERIFY-010` | verifier | signature | Signature ID is not exactly the definition-owned callable signature | Reject SignatureMismatch. | typed verifier |
+| `VERIFY-011` | verifier | callee | Callee static type has wrong definition | Reject before execution. | typed verifier |
+| `VERIFY-012` | verifier | callee | Callee next_group differs from instruction group | Reject before execution. | typed verifier |
+| `VERIFY-013` | verifier | destination | Apply destination is not ExternalStreamCallable(definition, group+1) | Reject before execution. | typed verifier |
+| `VERIFY-014` | verifier | destination | Open destination is not matching StreamHandle(item,error) | Reject before execution. | typed verifier |
+| `VERIFY-015` | verifier | coordinates | Coordinate list omits one parameter in the group | Reject MissingCoordinate. | typed verifier |
+| `VERIFY-016` | verifier | coordinates | Coordinate list includes a coordinate from another group | Reject UnknownCoordinate. | typed verifier |
+| `VERIFY-017` | verifier | disposition | Required non-rest parameter uses OmittedOptional | Reject IllegalDisposition. | typed verifier |
+| `VERIFY-018` | verifier | disposition | Optional parameter uses Defaulted | Reject IllegalDisposition. | typed verifier |
+| `VERIFY-019` | verifier | default | Defaulted digest differs from parameter metadata | Reject DefaultFingerprintMismatch. | typed verifier |
+| `VERIFY-020` | verifier | type | Explicit operand register has wrong type | Reject TypeMismatch. | typed verifier |
+| `VERIFY-021` | verifier | rest | RestPositional register is not Sequence<parameter.ty> | Reject malformed rest aggregate. | typed verifier |
+| `VERIFY-022` | verifier | rest | RestNamed register is not Sequence<Tuple<String, parameter.ty>> | Reject malformed named-rest aggregate. | typed verifier |
+| `VERIFY-023` | verifier | finish-outcome | FinishStream Fail register has wrong definition error type | Reject before execution. | typed verifier |
+| `VERIFY-024` | verifier | finish-outcome | FinishStream follows an earlier terminal Finish in the same reachable producer path | Reject single-terminal ownership violation. | typed verifier |
+| `LIMIT-001` | signature | minimum | One callable group with zero parameters | Accepted; group remains explicit and completed_groups advances from 0 to 1. | typed API |
+| `LIMIT-002` | signature | maximum | Exactly 16 groups and 128 total parameters | Accepted when every coordinate is contiguous and all other invariants hold. | typed API |
+| `LIMIT-003` | signature | one-over | 17 groups | Reject before allocation with group limit exceeded. | typed API |
+| `LIMIT-004` | signature | one-over | 129 total parameters | Reject before allocation with parameter limit exceeded. | typed API |
+| `LIMIT-005` | signature | maximum | One group with exactly 128 parameters | Accepted. | typed API |
+| `LIMIT-006` | signature | one-over | One group with 129 parameters | Reject before allocating argument cells. | typed API |
+| `LIMIT-007` | product | empty | Apply/Open an empty declared group with empty coordinate/value vectors | Accepted when group role is otherwise valid; empty group is not inferred from product length. | behavior |
+| `LIMIT-008` | product | maximum | Complete product contains exactly 128 cells | Accepted. | behavior |
+| `LIMIT-009` | product | one-over | Product contains 129 cells | Reject without mutating partial, instance table, or request batch. | behavior |
+| `RUNTIME-001` | curried application | parity | Call a two-group external Stream directly in one source expression and via saved intermediate partial | Final canonical product bytes and signature/argument fingerprints are equal. | behavior |
+| `RUNTIME-002` | curried application | parity | Call a three-group external Stream direct versus staged across suspension/save points | Coordinates, dispositions, digests, completed_groups, and open request are equal. | behavior |
+| `RUNTIME-003` | curried application | non-final | Apply first group of a multi-group external Stream | Produces only ExternalStreamPartial(next_group=1); allocates no instance and emits no request. | behavior |
+| `RUNTIME-004` | curried application | non-final | Apply a middle group | Joins exactly one canonical group, advances once, and emits no request. | behavior |
+| `RUNTIME-005` | curried application | final | Apply final group after valid prefix | Validates full product, allocates one ordinal/key, inserts one Opening entry, yields one handle, emits one Open request atomically. | behavior |
+| `RUNTIME-006` | atomicity | failure | Final group value/type/default/generation validation fails | No ordinal, lease, request ID, instance entry, handle, or request batch mutation is observable. | behavior |
+| `RUNTIME-007` | effects | evaluation | Earlier authored group has effectful argument/default | It executes once when that group is applied and is never replayed at final Open. | behavior |
+| `RUNTIME-008` | affine | ownership | Captured product contains an affine value | ExternalStreamPartial is affine and cannot be duplicated by ordinary closure cloning. | behavior |
+| `RUNTIME-009` | function value | single-owner | Load external callable constant, partially apply, save, restore, and apply again | Every phase uses RuntimeFunctionValue::ExternalStreamPartial; no parallel function-value representation appears. | typed API |
+| `GEN-001` | authored generator | complete-parity | Correct producer executes FinishStream Complete in structured runtime, AWBC VM, and compiled region | All paths commit End exactly once and later NextStream yields Closed(End). | behavior |
+| `GEN-002` | authored generator | fail-parity | Correct producer executes FinishStream Fail(error) | All paths commit TerminalError payload exactly once; later NextStream yields Closed(Error). | behavior |
+| `GEN-003` | authored generator | cancel-parity | Correct producer executes FinishStream Cancelled | All paths commit Cancelled exactly once; later NextStream yields Closed(Cancelled). | behavior |
+| `GEN-004` | authored generator | wrong-owner | A different fiber tries to finish the instance | Reject without terminal mutation in structured runtime, VM, and compiled region. | behavior |
+| `IDENT-001` | RuntimePlan | round-trip | Build sorted stream_definitions table | RuntimeStreamDefinitionId equals table index; RuntimeStreamDefinitionKey survives encode/decode unchanged. | typed API |
+| `IDENT-002` | AWBC | round-trip | Lower RuntimePlan definition to AwbcStreamDefinition | AwbcStreamDefinitionId is the table index and semantic_key is the exact RuntimeStreamDefinitionKey bytes. | canonical bytes |
+| `IDENT-003` | bundle | round-trip | Package and load the codec-8 AWBC payload | Definition index/key mapping is unchanged; bundle contains no fabricated live instance key. | canonical bytes |
+| `IDENT-004` | runtime allocation | construction | Open definition key K in generation G at ordinal O | Only StreamInstanceKey { definition_key: K, generation: G, ordinal: O } is the complete live identity. | typed API |
+| `IDENT-005` | host request | round-trip | Serialize and deserialize RuntimeStreamRequest::Open | The complete StreamInstanceKey and RuntimeStreamDefinitionKey round-trip exactly; no bare ordinal field exists. | canonical JSON |
+| `IDENT-006` | save | round-trip | Save a live/restorable Stream instance and external partial | Definition key, generation, ordinal, declaration, signature fingerprint, group progress, coordinates, and dispositions survive exactly. | canonical save bytes |
+| `IDENT-007` | restore | round-trip | Restore against the same bundle and generation set | Reconstructed StreamInstanceKey equals the saved key and binds to the loaded definition key/index. | behavior |
+| `IDENT-008` | restore | mismatch | Saved instance definition key is absent or mapped to different loaded definition | Restore rejects before installing candidate state. | behavior |
+| `IDENT-009` | restore | mismatch | Saved generation or ordinal is altered | Restore rejects; it never substitutes a current generation or allocates a replacement ordinal. | behavior |
+| `IDENT-010` | static formats | absence | Inspect RuntimePlan, AWBC, and bundle data models | They carry definition ID/key only; live StreamInstanceKey begins at runtime allocation and is not added to static formats. | typed API |
+| `IDENT-011` | definition key | grouped-transcript | Compute two definitions with identical flattened parameters but different group boundaries/coordinates | RuntimeStreamDefinitionKey values differ; the old flat 394-byte/06c9... golden is not accepted. | canonical digest transcript |
+| `IDENT-012` | definition key | golden | Encode one final grouped definition-key fixture using the exact nested transcript | Implementation records exact transcript bytes and BLAKE3-256 golden and round-trips the same key through RuntimePlan/AWBC/bundle. | canonical digest transcript |
+| `API-001` | compile-fail | removed-owner | External integration test imports or constructs `StreamDefinitionId` | Compilation fails because no compatibility alias or parallel owner is published. | compile-fail API |
+| `API-002` | compile-fail | removed-owner | External integration test imports or constructs `GenerationId` | Compilation fails because no compatibility alias or parallel owner is published. | compile-fail API |
+| `API-003` | compile-fail | removed-owner | External integration test imports or constructs `StreamInstanceId` | Compilation fails because no compatibility alias or parallel owner is published. | compile-fail API |
+| `API-004` | compile-fail | removed-owner | External integration test imports or constructs `RuntimeTypeLayoutHash` | Compilation fails because no compatibility alias or parallel owner is published. | compile-fail API |
+| `API-005` | compile-fail | removed-owner | External integration test imports or constructs `RuntimeExternalStreamCallableSignature` | Compilation fails because no compatibility alias or parallel owner is published. | compile-fail API |
+| `API-006` | compile-fail | removed-owner | External integration test imports or constructs `RuntimeExternalStreamParameterGroup` | Compilation fails because no compatibility alias or parallel owner is published. | compile-fail API |
+| `API-007` | compile-fail | removed-owner | External integration test imports or constructs `RuntimeExternalStreamParameter` | Compilation fails because no compatibility alias or parallel owner is published. | compile-fail API |
+| `API-008` | compile-fail | removed-owner | External integration test imports or constructs `RuntimeExternalStreamResult` | Compilation fails because no compatibility alias or parallel owner is published. | compile-fail API |
+| `API-009` | compile-fail | flat-product | Construct external Stream Open from RuntimeResolvedArguments/RuntimeHostResolvedArguments | Compilation fails or typed constructor rejects because external Open requires RuntimeExternalStreamArgumentProduct. | compile-fail API |
+| `API-010` | compile-fail | flat-boundary | Construct RuntimeCallableBoundarySignature with `parameters` field | Compilation fails; sole field is grouped `groups`. | compile-fail API |
+| `API-011` | compile-fail | bare-instance | Construct RuntimeStreamRequest::Open with StreamInstanceOrdinal as instance | Compilation fails; field type is StreamInstanceKey. | compile-fail API |
+| `API-012` | dependency | layering | Run cargo metadata over changed graph | arcweft-core and data-format owners remain Sans I/O; runtime-plan does not depend on sema; compiler is sole sema-to-core projection. | structured dependency |
+| `API-013` | dependency | one-schema | Inspect public API/type graph | One RuntimeCallableBoundarySignature parameter schema and one RuntimeExternalStreamArgumentProduct owner exist. | structured dependency |
+| `API-014` | dependency | one-function-shape | Inspect RuntimeValue::Function payload and serde/codec tags | One RuntimeFunctionValue enum owns Closure and ExternalStreamPartial; no sidecar/adapter shape. | structured dependency |
+| `API-015` | codec | no-dual-reader | Feed old flat and child-conflicting opcode bytes | Only final codec-8 meanings are accepted; no alias, migration, or dual reader path. | codec behavior |
+| `API-016` | removal | non-text-evidence | Run removal acceptance suite | Pass/fail derives only from typed API, canonical codec behavior, behavior tests, and cargo metadata; no repository source-text gate is used. | structured dependency |

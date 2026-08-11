@@ -1,0 +1,39 @@
+id	source	requirement	closure_evidence	status
+TR001	correction Assignment	standalone complete replacement, not delta	README.md; all schemas/matrices; rejected archive absent as dependency	CLOSED
+TR002	correction repository reconciliation	latest Git main, scoped AGENTS, Rust skill, requests/intake/predecessors/consumers	EVIDENCE_SCOPE.md; REPOSITORY_EVIDENCE_LEDGER.tsv; PREDECESSOR_LEDGER.tsv; LOCAL_INSTRUCTION_EVIDENCE.tsv	CLOSED
+TR003	correction exact attached owner	records, fields, visibility, constructors, accessors	ATTACHED_SYNTAX_RUST_SCHEMA.md	CLOSED
+TR004	correction identity states	name, public ID, both, missing; semantic vs presentation identity	ATTACHED_SYNTAX_RUST_SCHEMA.md; FINAL_HIR_RUST_SCHEMA.md; IDENTITY_SIGNATURE_MATRIX.tsv I01-I07; T-ID-*	CLOSED
+TR005	correction generics/parameter group	typed generics, zero/one group, second group recovery, types/locals	schemas; IDENTITY_SIGNATURE_MATRIX.tsv S01-S13; T-SIG-*	CLOSED
+TR006	correction return/where	authored vs omitted Unit, missing type, typed where	FINAL_HIR_RUST_SCHEMA.md; S14-S21; T-SIG-11..22	CLOSED
+TR007	correction scope graph	callable/requires/ensures/body parents and order	FINAL_HIR_RUST_SCHEMA.md; SCOPE_LOCAL_MATRIX.tsv; T-SCOPE-*	CLOSED
+TR008	correction result local	existence/type/source/visibility/generation/poison	FINAL_HIR_RUST_SCHEMA.md; SL09/SL12; C02; T-SCOPE-04..07; T-CTR-32/43/44	CLOSED
+TR009	correction all contract clauses	nine exact attached/HIR variants and typed payloads	schemas; CONTRACT_CLAUSE_MATRIX.tsv C01-C09; T-CTR-*	CLOSED
+TR010	correction contract order/duplicates/recovery	heterogeneous order, exact duplicate rules, missing payloads	CONTRACT_CLAUSE_MATRIX.tsv; SOURCE_RECOVERY_DIAGNOSTIC_MATRIX.tsv; T-CTR-30..48	CLOSED
+TR011	correction effect/place/proof/callable authority	sole accepted catalogs/resolvers, no Flow-local copy	FINAL_HIR_RUST_SCHEMA.md contract section; C01-C09; consumer U028-U041	CLOSED
+TR012	correction statement-only bodies	Flow and Thread owners, no tail, empty/missing/unclosed	schemas; IDENTITY_SIGNATURE_MATRIX.tsv B01-B06; T-BODY-*	CLOSED
+TR013	correction exhaustive item matrix	all sixteen variants, exact StmtId/ExprId and both contexts	FLOW_THREAD_ITEM_MATRIX.tsv F01-F16; T-ITEM-F-*; T-ITEM-T-*; T-ITEM-R-*	CLOSED
+TR014	correction contextual classification	let forms, thread statement, if-let, dot Select, dialogue	FLOW_THREAD_ITEM_MATRIX.tsv; T-CAT-*	CLOSED
+TR015	correction source roles and query	components, ordinals, spans/insertions, sole API	FINAL_HIR_RUST_SCHEMA.md source section; SOURCE_RECOVERY_DIAGNOSTIC_MATRIX.tsv Q01-Q29; T-SRC-*	CLOSED
+TR016	correction source freeze	substitution/duplicate/reorder/stale/foreign/rollback checks	FLOW_THREAD_ITEM_MATRIX.tsv source_freeze; Q19-Q29; T-SRC-15..18; T-TXN-*	CLOSED
+TR017	correction poison precedence	one deterministic primary/related order	POISON_PRECEDENCE.md; D01-D11; T-CTR/T-BODY/T-SRC recovery rows	CLOSED
+TR018	correction limits/accounting	exact charges and inclusive exact/one-over outcomes	ACCOUNTING_LIMIT_TRANSACTION_MATRIX.tsv A01-A37; T-LIMIT-*	CLOSED
+TR019	correction failure atomicity	failure/cancel/panic/stale/foreign publish nothing	A32-A37; IMPLEMENTATION_ORDER.md Cut 2; T-TXN-*	CLOSED
+TR020	correction candidates	project, call and postfix candidate rows	A29-A31; T-PROJ-*; T-TXN-11	CLOSED
+TR021	correction consumer deletion inventory	syntax/HIR/sema/compiler/verify/runtime/formatter/LSP/CLI/Agent/project/cache/tests	CONSUMER_DELETION_INVENTORY.tsv U001-U060	CLOSED
+TR022	correction migration order	compile-clean deletion-driven series	IMPLEMENTATION_ORDER.md Cuts 0-6; consumer migration_order column	CLOSED
+TR023	correction complete test contract	positive/malformed/negative/recovery/compile/stale/cancel/panic/rollback/limit/project/source/migration	TEST_MATRIX.tsv 288 rows	CLOSED
+TR024	correction no source gates	typed behavior, compile-fail, codecs/dependencies only	RUST_SKILL_APPLIED_RULES.md; TEST_MATRIX evidence_kind; IMPLEMENTATION_ORDER.md	CLOSED
+TR025	primary accepted Flow item	one attached TypedItemNode/final HirItemKind Flow	schemas; README decision 1	CLOSED
+TR026	primary optional public ID/name	four identity states, no fabrication	I01-I07; T-ID-*	CLOSED
+TR027	primary non-curried Flow	second group recovery	S10; T-SIG-06	CLOSED
+TR028	primary contract phase scopes	existing closed scope vocabulary, no provisional scopes	SL02-SL05; FINAL_HIR scope section	CLOSED
+TR029	primary shared HirThreadBody	Flow/Thread context owners, one final body	FINAL_HIR_RUST_SCHEMA.md; F01-F16	CLOSED
+TR030	primary dialogue handoff	AW-AH typed application, no legacy Flow carrier	F02; U005/U025/U026/U055; T-MIG-07	CLOSED
+TR031	parent final item inventory	HirItemKind::Flow and Error recovery without fabricated item	FINAL_HIR_RUST_SCHEMA.md item payload; B03; F16	CLOSED
+TR032	constraints no compatibility	no alias/wrapper/shim/dual reader/V2/source gate	PRECEDENCE_AND_NON_GOALS.md; IMPLEMENTATION_ORDER.md Cut 5; T-CF-*	CLOSED
+TR033	constraints preserve accepted IDs/transactions/project/Call/Select/Dialogue	explicit preserved authorities	PRECEDENCE_AND_NON_GOALS.md; PREDECESSOR_LEDGER.tsv	CLOSED
+TR034	required status/questions	READY only with exact none	FINAL_STATUS.md; OPEN_QUESTIONS.md exact 4 bytes	CLOSED
+TR035	required request copies	verbatim parent/primary/correction	PARENT_REQUEST_COPY.md; PRIMARY_REQUEST_COPY.md; CORRECTION_REQUEST_COPY.md; validation hashes	CLOSED
+TR036	required repository/predecessor ledger	revision/hashes/evidence	REPOSITORY_EVIDENCE_LEDGER.tsv; PREDECESSOR_LEDGER.tsv	CLOSED
+TR037	required manifest	sorted exact length/SHA-256 all non-self members	MANIFEST.sha256; VALIDATION_REPORT.md	CLOSED
+TR038	design only	no production change/patch/branch/PR/overlay	README.md; VALIDATION_REPORT.md	CLOSED

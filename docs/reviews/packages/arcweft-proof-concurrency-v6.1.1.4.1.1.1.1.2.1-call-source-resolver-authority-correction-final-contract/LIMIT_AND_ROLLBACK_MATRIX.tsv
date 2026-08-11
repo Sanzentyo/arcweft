@@ -1,0 +1,23 @@
+row	resource	observed	result	atomicity
+L-001	ordinary arguments	128	admit	root/children/source/facts may stage
+L-002	ordinary arguments	129	hard rollback	checked before recovery ordinal generation
+L-003	RichText call arguments	32	admit	context configuration
+L-004	RichText call arguments	33	hard rollback	same central ordinal type
+L-005	call type arguments	128	admit	ordinals 0..127
+L-006	call type arguments	129	hard rollback	no partial TypeId/source rows
+L-007	call depth	32	admit	CallableLimits/HirLimit agree
+L-008	call depth	33	hard rollback	no facts
+L-009	type depth	32	admit	qualified TypeId
+L-010	type depth	33	hard rollback	no partial TypeId
+L-011	type work	4096	admit	central HirLimit
+L-012	type work	4097	hard rollback	no source/fact publication
+L-013	resolver candidates	256	admit	CallableLimits
+L-014	resolver candidates	257	hard rollback	CandidateLimit
+L-015	call diagnostics	128	admit	CallableLimits/HirLimit
+L-016	call diagnostics	129	hard rollback	no truncated semantic fact
+L-017	Call RecoveryOperand	128	admit	missing argument 127
+L-018	Call RecoveryOperand	129	unreachable	129 args rejected first
+L-019	general RecoveryOperand	1023	admit predecessor	tail generator suite
+L-020	general RecoveryOperand	1024	reject predecessor	tail generator suite
+L-021	Proof retained witnesses	2	retain all	not a resolver limit
+L-022	Proof retained witnesses	3	retain 2 + omitted=1	semantic candidates remain complete

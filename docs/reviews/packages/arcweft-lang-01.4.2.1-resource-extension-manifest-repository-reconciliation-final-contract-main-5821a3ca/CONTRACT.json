@@ -1,0 +1,56 @@
+{
+  "atomic_publication": true,
+  "bundle": {
+    "code": 22,
+    "kind": "ResourceTypeManifests",
+    "required_when_present": true,
+    "schema": 1
+  },
+  "bytes_value": {
+    "attempted_tag_error": "resource_manifest.unknown_tag",
+    "supported": false
+  },
+  "contract": "Lang-01.4.2.1",
+  "descriptor_digest": {
+    "context": "arcweft-resource-type-descriptor-v1",
+    "required": true
+  },
+  "format": "arcweft.final-contract",
+  "limits": {
+    "bytes": 8388608,
+    "collection_items": 16384,
+    "lexical_nodes": 65536,
+    "nesting_depth": 64,
+    "object_members": 4096,
+    "semantic_records": 16384,
+    "string_bytes": 1048576,
+    "work_units": 1048576
+  },
+  "owner": "arcweft-resource-manifest",
+  "package_coordinate": {
+    "documents_per_coordinate": 1,
+    "shape": {
+      "id": "PackageId",
+      "version": "PackageVersion"
+    }
+  },
+  "retained_tokens": [
+    "character",
+    "view",
+    "action",
+    "layer",
+    "signal",
+    "presentation_target",
+    "scroll_region"
+  ],
+  "revision": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6",
+  "wire": {
+    "aliases": [],
+    "encoder": "arcweft_resource_manifest::encode_resource_type_manifest_v1",
+    "fallback": false,
+    "format": "arcweft.resource-type-manifest",
+    "reader": "arcweft_resource_manifest::decode_resource_type_manifest",
+    "schema": 1,
+    "transport": "strict UTF-8 JSON"
+  }
+}

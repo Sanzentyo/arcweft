@@ -1,0 +1,25 @@
+inventory_id	layer	path_or_symbol	current_or_protected_use	required_atomic_action	preserve_or_delete
+M-E13-001	syntax lexer	crates/arcweft-lang-syntax/src/parser/lexer.rs :: MULTI	combined ?. token	remove ?. entry; retain .. longest-match range	DELETE_COMBINED_ONLY
+M-E13-002	lossless parser	.../src/parser/expression.rs :: is_postfix_operator / emit_postfix	?. routed as Select; dot projection absent	route ? to Try then . to Select; set central projection	REPLACE_IN_ORIGINAL_OWNER
+M-E13-003	expression path events	.../src/parser/path.rs and expression-context caller	ordinary dot can be absorbed by shared path walk	expression context leaves ordinary dot to central Select event; declaration/type path behavior unchanged	REPAIR_ORIGINAL_CONTEXT
+M-E13-004	central projection	protected ExpressionProjection / PendingExpressionProjection	Select variant absent	add Select(SyntaxSelectedMember) directly	ADD_TO_ORIGINAL_ENUM
+M-E13-005	central components	protected expression-component role enum	SelectedMember absent	add fixed SelectedMember; reuse Target	ADD_TO_ORIGINAL_ENUM
+M-E13-006	attachment	central AttachedExpressionNode	sole protected owner	publish read-only projection/components during same switch	PRESERVE_SOLE_OWNER
+M-E13-007	wrong attachment path	standalone AttachedSelectExpr / try_from_node	introduced by rejected return only	do not implement; delete any WIP copy/test	DELETE
+M-E13-008	detached syntax AST	crates/arcweft-lang-syntax/src/expr.rs :: Expr::Select / SelectExpr	current HIR-facing detached carrier	remove HIR/sema/tooling consumers; parser-private clean carrier may remain only if unreachable outside syntax	DELETE_CONSUMERS_FREEZE_PRIVATE
+M-E13-009	detached semantic parser	.../src/expr/pratt.rs :: parse_select_postfix	current typed-tree producer	ceases to be public HIR input; no recovery repairs	DELETE_AS_READER
+M-E13-010	final HIR	crates/arcweft-lang-hir/src/expr.rs	private HirName substrate	add HirSelectedMember/HirSelectExpr and inherent behavior directly	EXTEND_ORIGINAL_OWNER
+M-E13-011	old HIR model/lowering	crates/arcweft-lang-hir/src/model.rs, lower.rs, lower_flow.rs	syntax-cloning expression paths and source fallbacks	migrate to final arena/central attached lowerer; delete E13 reads	DELETE_OBSOLETE_E13_PATHS
+M-E13-012	sema member checker	crates/arcweft-lang-sema/src/checker/expr/member.rs	imports detached SelectExpr and member()/target()	read final HirSelectExpr and HirSelectedMember	MIGRATE
+M-E13-013	sema traversal/facts	checker/expr.rs, checker/helpers.rs, checker/expr/support.rs, semantic.rs, effect_contract.rs, fact_layer.rs, symbols.rs	Expr::Select match arms	migrate typed IDs and Missing poison; delete Invalid/old arms	MIGRATE_DELETE_OLD
+M-E13-014	signature/project	crates/arcweft-lang-sema/src/signature/surface.rs and signature/project.rs	detached selector traversal	consume final HIR/query only	MIGRATE
+M-E13-015	verifier	crates/arcweft-verify/src/lib.rs and contract_smt.rs	Expr::Select traversal	consume final ExprId arena and poison state	MIGRATE
+M-E13-016	runtime plan	crates/arcweft-runtime-plan/src/expr.rs, expr/desugar.rs, labels.rs, function_values.rs	detached Select and dotted selector use	consume checked final-HIR facts; preserve Try before Select	MIGRATE
+M-E13-017	runtime plan auxiliary	render_text/helpers.rs, render_text/inline_failure.rs, flow/syntax_helpers.rs, fx/sampler.rs, host_request.rs, trait_methods.rs	detached selector helpers	migrate or delete compile fallout; no display-string fallback	MIGRATE_DELETE_HELPERS
+M-E13-018	compiler	crates/arcweft-compiler/src/view/schema.rs and view/lowering/content.rs	detached Select lowering	consume final runtime-plan product	MIGRATE
+M-E13-019	CLI/Agent	crates/arcweft-cli/src/commands/agent_repl/binding.rs and structured expectations	detached expression inspection	consume final debug/query projection	MIGRATE
+M-E13-020	LSP/formatter	all compile-fallout consumers in arcweft-lsp and formatter crates	old member shape/source fallback	use sole source_site query and final payload; delete fallback	MIGRATE_BY_COMPILE_FALLOUT
+M-E13-021	project/cache	HIR project publication, persistent compiler/cache/debug products	old payload/cache key/source map	publish structural Name/Missing and Try+Select identities; invalidate provisional cache format	MIGRATE_DELETE_OLD_FORMAT
+M-E13-022	unrelated flow Select	arcweft-lang-hir::model::HirSelect / SelectStatement	statement/block Select family	do not delete or redesign; only expression E13 is in scope	PRESERVE
+M-E13-023	invalid branch	all AttachedSelectedMember::Invalid / HirSelectedMember::Invalid tests and match arms	no producer	delete, do not alias or map to Missing	DELETE
+M-E13-024	compatibility paths	aliases, wrappers, dual readers, source reparses/gates	prohibited	must not exist after switch	ABSENT

@@ -1,7 +1,7 @@
 # Lang-01.5.1.3 generated artifact runtime-binding intake
 
 > Superseded on 2026-08-08 by the retained
-> [`generated-artifact runtime-binding fail-closed final contract`](../reviews/packages/arcweft-lang-01.5.1.3-generated-artifact-runtime-binding-fail-closed-final-contract.zip)
+> [`generated-artifact runtime-binding fail-closed final contract`](../reviews/packages/zips/arcweft-lang-01.5.1.3-generated-artifact-runtime-binding-fail-closed-final-contract.zip)
 > at SHA-256
 > `342D38E521C14F2CCE340355F4F4BC07241C8BFA89DA9B7C324B169869482027`.
 > In particular, the final crate owner is `arcweft-runtime-binding`, not

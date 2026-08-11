@@ -1,0 +1,45 @@
+{
+  "correction_group_counts": {
+    "ABI": 24,
+    "ACT": 28,
+    "ALC": 24,
+    "ATM": 10,
+    "DEL": 10,
+    "DRP": 18,
+    "FRG": 22,
+    "INT": 16,
+    "REQ": 28,
+    "SNP": 12,
+    "VOW": 42
+  },
+  "correction_rows": 234,
+  "parents": [
+    {
+      "contract": "Lang-01.3.1.2.3",
+      "rows": 395,
+      "rule": "retain except exact supersession rows",
+      "zip_sha256": "d053fae201afa104f7db9914aebbc08f2456875d1229f5325f86235d4bc0ea94"
+    },
+    {
+      "contract": "Lang-01.5.1.1.2",
+      "rows": 473,
+      "rule": "retain except exact supersession rows",
+      "zip_sha256": "87b7f7bea85bc54254e3a979f0d668026ab75cb1c71955fd7a0f740e4f30c1c6"
+    },
+    {
+      "contract": "Lang-01.3.1.2.1",
+      "rows": 530,
+      "zip_sha256": "66809a1280a507f69bb78d9df3bf7af227a91cd68b86cf8771cbf9ee20aa856a"
+    },
+    {
+      "contract": "Lang-01.3.1.2.2",
+      "rows": 168,
+      "zip_sha256": "d1bd7fb5301509ca88be7c9d3662942ca88472d11143499c0c3067d626df9418"
+    },
+    {
+      "contract": "Lang-01.3.1.2.2.1",
+      "rows": 105,
+      "zip_sha256": "8aded7b1cb5d92f9d820c2cc82121ac6d070f3cf26d1618dc23ff144081090ad"
+    }
+  ]
+}

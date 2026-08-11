@@ -1,0 +1,307 @@
+id	layer	context	test_name	operation_or_fixture	expected_typed_observation	covers	evidence_kind
+T-ID-01	syntax/hir/project	Flow	ordinary_flow_name_only	flow opening {}	AttachedFlowIdentity::Name; HirFlowIdentity::Name; ItemId internal; one project-derived public candidate	I01	behavior
+T-ID-02	syntax/hir/project	Flow	ordinary_flow_public_id_only	flow @flow.opening {}	PublicId state; no presentation name; authored public identity retained	I02	behavior
+T-ID-03	syntax/hir/project	Flow	ordinary_flow_public_id_and_name	flow @flow.opening opening {}	PublicIdAndName state; coherent publication and name presentation	I03	behavior
+T-ID-04	syntax/hir/project	Flow	ordinary_flow_missing_identity	flow { }	MissingName insertion; HirFlowIdentity::Missing; typed Flow poison; no candidate	I04	recovery
+T-ID-05	syntax/hir/project	Flow	ordinary_flow_empty_relative_marker	flow @. opening {}	DerivedFromEmptyMarker; exact marker and name source components; module-scoped flow ID	I05	behavior
+T-ID-06	syntax/hir/project	Flow	ordinary_flow_empty_family_marker	flow @flow:. opening {}	same as marker-derived flow family; no source reparse	I06	behavior
+T-ID-07	syntax/hir/project	Flow	ordinary_flow_id_name_mismatch	flow @flow.opening start {}	Identity primary at name, public ID related; no callable/project candidate	I07	negative
+T-ID-08	syntax/hir/project	Flow	ordinary_flow_wrong_public_family	flow @view.opening {}	typed wrong-family identity issue; no prefix repair	I02	negative
+T-ID-09	syntax/hir/project	Flow	ordinary_flow_same_name_two_modules	two modules each `flow opening {}`	distinct ItemId/module-qualified project identity; no collision	I01	multi-module
+T-ID-10	syntax/hir/project	Flow	ordinary_flow_incremental_name_reorder	reorder sibling declarations without editing Flow node	stable attached identity/reconciliation; accepted generation updates; public identity unchanged	I01	incremental
+T-SIG-01	syntax/hir/sema	Flow	ordinary_flow_signature_zero_parameter_group	flow f {}	empty parameter slice; no parameter locals	S05	behavior
+T-SIG-02	syntax/hir/sema	Flow	ordinary_flow_signature_one_empty_group	flow f() {}	one attached group, zero HIR parameters	S06	behavior
+T-SIG-03	syntax/hir/sema	Flow	ordinary_flow_signature_one_typed_parameter	flow f(x: i32) {}	PatternId, TypeId, LocalId in callable scope	S07	behavior
+T-SIG-04	syntax/hir/sema	Flow	ordinary_flow_signature_destructured_parameter	flow f((x, y): Pair) {}	locals in pattern preorder and visible to contracts/body	S08	behavior
+T-SIG-05	syntax/hir/sema	Flow	ordinary_flow_signature_missing_parameter_type	flow f(x:) {}	MissingType -> error TypeId; signature poison; no candidate	S09	recovery
+T-SIG-06	syntax/hir/sema	Flow	ordinary_flow_signature_second_group	flow f(x:i32)(y:i32) {}	second group only recovery; no y LocalId	S10	negative
+T-SIG-07	syntax/hir/sema	Flow	ordinary_flow_signature_parameter_default	flow f(x:i32=1) {}	default rejected through current grammar recovery; no default ExprId field	S11	negative
+T-SIG-08	syntax/hir/sema	Flow	ordinary_flow_signature_fixed_parameter_exact	construct 256 typed parameters	syntax and HIR commit subject to local/global limits	S12	exact-limit
+T-SIG-09	syntax/hir/sema	Flow	ordinary_flow_signature_fixed_parameter_one_over	construct 257 typed parameters	SyntaxLimit::FixedParameters; no attached/HIR item	S12	one-over
+T-SIG-10	syntax/hir/sema	Flow	ordinary_flow_signature_reserved_result_parameter	flow f(result: i32) ensures result > 0 {}	authored result binding poisoned; synthetic ensures result remains distinct	S13	negative
+T-SIG-11	syntax/hir/sema	Flow	ordinary_flow_signature_omitted_return	flow f() ensures result == () {}	OmittedUnit; no TypeId; result local SemanticUnit	S14	behavior
+T-SIG-12	syntax/hir/sema	Flow	ordinary_flow_signature_authored_return	flow f() -> i32 ensures result >= 0 {}	Authored TypeId; result local Authored(TypeId)	S15	behavior
+T-SIG-13	syntax/hir/sema	Flow	ordinary_flow_signature_missing_return_type	flow f() -> ensures result == result {}	MissingType error TypeId, not OmittedUnit; result local poisoned	S16	recovery
+T-SIG-14	syntax/hir/sema	Flow	ordinary_flow_signature_malformed_return_type	flow f() -> Result< {}	ErrorType source and typed poison	S17	recovery
+T-SIG-15	syntax/hir/sema	Flow	ordinary_flow_signature_generic_lifetime_and_type	flow f<'a,T:Bound>(x:&'a T) where T:Other {}	typed generic/lifetime nodes and source-order HIR generics	S02,S19	behavior
+T-SIG-16	syntax/hir/sema	Flow	ordinary_flow_signature_generic_missing_close	flow f<T(x:T) {}	missing close insertion and signature poison	S03	recovery
+T-SIG-17	syntax/hir/sema	Flow	ordinary_flow_signature_generic_exact	construct 256 generic parameters	exact syntax limit commits	S04	exact-limit
+T-SIG-18	syntax/hir/sema	Flow	ordinary_flow_signature_generic_one_over	construct 257 generic parameters	SyntaxLimit::GenericParameters; total rollback	S04	one-over
+T-SIG-19	syntax/hir/sema	Flow	ordinary_flow_signature_where_valid	flow f<T>(x:T) where T: A + B {}	source-ordered TypeId subject/bounds	S19	behavior
+T-SIG-20	syntax/hir/sema	Flow	ordinary_flow_signature_where_malformed	flow f<T>() where T: {}	typed error bound and signature poison	S20	recovery
+T-SIG-21	syntax/hir/sema	Flow	ordinary_flow_signature_where_exact	construct 256 where predicates	exact limit commits	S21	exact-limit
+T-SIG-22	syntax/hir/sema	Flow	ordinary_flow_signature_where_one_over	construct 257 where predicates	SyntaxLimit::WherePredicates; no partial Flow	S21	one-over
+T-SIG-23	syntax/hir/sema	Flow	ordinary_flow_signature_signature_end_source	query result local synthetic origin	source_site returns signature-end insertion before first contract/body	S14,S15,SL09,Q17	source-query
+T-SIG-24	syntax/hir/sema	Flow	ordinary_flow_signature_parameter_visibility_order	later parameter type refers to earlier binding and earlier refers to later	only accepted language visibility succeeds; source-order local publication deterministic	S07,SL08	behavior
+T-SIG-25	syntax/hir/sema	Flow	ordinary_flow_signature_signature_retry	cancel after preflight then retry same snapshot	same Item/Scope/Local identities once; no generation leak	S02,S07,S19,A37	rollback
+T-CTR-01A	syntax/hir/sema	Flow	flow_contract_requires_standalone	Flow with `requires x > 0`	dedicated attached requires node, one heterogeneous clause ordinal, exact HIR requires variant and declared scope	C01	behavior
+T-CTR-01B	syntax/hir	Flow	flow_contract_requires_missing_payload	Flow with `requires` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C01	recovery
+T-CTR-01C	source	Flow	flow_contract_requires_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C01,Q10	source-query
+T-CTR-02A	syntax/hir/sema	Flow	flow_contract_ensures_standalone	Flow with `ensures result >= 0`	dedicated attached ensures node, one heterogeneous clause ordinal, exact HIR ensures variant and declared scope	C02	behavior
+T-CTR-02B	syntax/hir	Flow	flow_contract_ensures_missing_payload	Flow with `ensures` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C02	recovery
+T-CTR-02C	source	Flow	flow_contract_ensures_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C02,Q10	source-query
+T-CTR-03A	syntax/hir/sema	Flow	flow_contract_invariant_standalone	Flow with `invariant state.valid`	dedicated attached invariant node, one heterogeneous clause ordinal, exact HIR invariant variant and declared scope	C03	behavior
+T-CTR-03B	syntax/hir	Flow	flow_contract_invariant_missing_payload	Flow with `invariant` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C03	recovery
+T-CTR-03C	source	Flow	flow_contract_invariant_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C03,Q10	source-query
+T-CTR-04A	syntax/hir/sema	Flow	flow_contract_assume_standalone	Flow with `assume external_ok`	dedicated attached assume node, one heterogeneous clause ordinal, exact HIR assume variant and declared scope	C04	behavior
+T-CTR-04B	syntax/hir	Flow	flow_contract_assume_missing_payload	Flow with `assume` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C04	recovery
+T-CTR-04C	source	Flow	flow_contract_assume_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C04,Q10	source-query
+T-CTR-05A	syntax/hir/sema	Flow	flow_contract_reads_standalone	Flow with `reads { state.a, state.b }`	dedicated attached reads node, one heterogeneous clause ordinal, exact HIR reads variant and declared scope	C05	behavior
+T-CTR-05B	syntax/hir	Flow	flow_contract_reads_missing_payload	Flow with `reads` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C05	recovery
+T-CTR-05C	source	Flow	flow_contract_reads_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C05,Q10	source-query
+T-CTR-06A	syntax/hir/sema	Flow	flow_contract_effects_standalone	Flow with `effects { asset.read, audio.play }`	dedicated attached effects node, one heterogeneous clause ordinal, exact HIR effects variant and declared scope	C06	behavior
+T-CTR-06B	syntax/hir	Flow	flow_contract_effects_missing_payload	Flow with `effects` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C06	recovery
+T-CTR-06C	source	Flow	flow_contract_effects_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C06,Q10	source-query
+T-CTR-07A	syntax/hir/sema	Flow	flow_contract_no_effect_standalone	Flow with `ensures no_effect network.request`	dedicated attached no_effect node, one heterogeneous clause ordinal, exact HIR no_effect variant and declared scope	C07	behavior
+T-CTR-07B	syntax/hir	Flow	flow_contract_no_effect_missing_payload	Flow with `no_effect` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C07	recovery
+T-CTR-07C	source	Flow	flow_contract_no_effect_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C07,Q10	source-query
+T-CTR-08A	syntax/hir/sema	Flow	flow_contract_modifies_standalone	Flow with `modifies { state.a }`	dedicated attached modifies node, one heterogeneous clause ordinal, exact HIR modifies variant and declared scope	C08	behavior
+T-CTR-08B	syntax/hir	Flow	flow_contract_modifies_missing_payload	Flow with `modifies` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C08	recovery
+T-CTR-08C	source	Flow	flow_contract_modifies_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C08,Q10	source-query
+T-CTR-09A	syntax/hir/sema	Flow	flow_contract_decreases_standalone	Flow with `decreases graph.remaining`	dedicated attached decreases node, one heterogeneous clause ordinal, exact HIR decreases variant and declared scope	C09	behavior
+T-CTR-09B	syntax/hir	Flow	flow_contract_decreases_missing_payload	Flow with `decreases` keyword and no required operand/list	typed MissingExpression/delimiter recovery, contract poison, no raw clause text	C09	recovery
+T-CTR-09C	source	Flow	flow_contract_decreases_source_roles	query Whole, Keyword, Mode when applicable, operands, and delimiters	exact Span/Insertion or RoleNotApplicable; ordinals validated before expected source	C09,Q10	source-query
+T-MODE-01	syntax/hir/sema	Flow	flow_requires_all_modes	four Flows using `requires` default/prove/check/debug	AttachedContractMode and HirContractMode exact mapping; no string mode	C01	behavior
+T-MODE-02	syntax/hir/sema	Flow	flow_ensures_all_modes	four Flows using `ensures` default/prove/check/debug	AttachedContractMode and HirContractMode exact mapping; no string mode	C02	behavior
+T-MODE-03	syntax/hir/sema	Flow	flow_invariant_all_modes	four Flows using `invariant` default/prove/check/debug	AttachedContractMode and HirContractMode exact mapping; no string mode	C03	behavior
+T-CTR-30	syntax/hir/sema/project	Flow	flow_contract_interleaving	requires/effects/ensures/reads/invariant/no_effect/modifies/assume/decreases interleaved	one source-ordered slice with ordinals 0..8; no family concatenation	C01-C09	ordering
+T-CTR-31	syntax/hir/sema/project	Flow	flow_requires_duplicates	two requires	both retained and conjunct in source order	C01	behavior
+T-CTR-32	syntax/hir/sema/project	Flow	flow_ensures_shared_result	three ensures	exactly one result LocalId shared by all conditions	C02,SL09	behavior
+T-CTR-33	syntax/hir/sema/project	Flow	flow_invariant_entry_exit	one invariant	one HIR row, checker applies entry and successful exit without duplicate ExprId	C03	behavior
+T-CTR-34	syntax/hir/sema/project	Flow	flow_assume_policy	two assume	both retained; accepted trust policy observes typed expressions	C04	behavior
+T-CTR-35	syntax/hir/sema/project	Flow	flow_reads_duplicates	duplicate typed place	HIR rows retained; canonical place fact deduplicates exact identity	C05	behavior
+T-CTR-36	syntax/hir/sema/project	Flow	flow_effects_union	two effects rows with repeated EffectId	HIR rows retained; accepted effect set is union/deduplicated	C06	behavior
+T-CTR-37	syntax/hir/sema/project	Flow	flow_effects_empty	effects {}	zero operands is valid explicit empty effect set	C06	behavior
+T-CTR-38	syntax/hir/sema/project	Flow	flow_no_effect_duplicate	two same no_effect	rows retained; forbidden set deduplicates	C07	behavior
+T-CTR-39	syntax/hir/sema/project	Flow	flow_effect_conflict_later_no_effect	effects { network.request } then no_effect network.request	later no_effect primary, earlier allowed selector related	C06,C07,D06	negative
+T-CTR-40	syntax/hir/sema/project	Flow	flow_effect_conflict_later_effects	no_effect network.request then effects { network.request }	later effects selector primary, earlier prohibition related	C06,C07,D06	negative
+T-CTR-41	syntax/hir/sema/project	Flow	flow_modifies_duplicates	repeated typed place	HIR rows retained; semantic place fact exact-deduplicates	C08	behavior
+T-CTR-42	syntax/hir/sema/project	Flow	flow_decreases_duplicate	two decreases	first syntactic row remains authority; later keyword primary, first related	C09,D07	negative
+T-CTR-43	syntax/hir/sema/project	Flow	flow_result_not_visible_requires	requires result == 0	normal typed name-visibility failure in requires scope	C01,SL09	negative
+T-CTR-44	syntax/hir/sema/project	Flow	flow_result_not_visible_no_effect	ensures no_effect result	NoEffect uses requires scope and cannot see result	C07,SL09	negative
+T-CTR-45	syntax/hir/sema/project	Flow	flow_parameter_visible_all_clauses	each clause refers to parameter	parameter resolves through callable parent in every phase	C01-C09,SL08	behavior
+T-CTR-46	syntax/hir/sema/project	Flow	flow_clause_exact_limit	64 heterogeneous clauses	syntax/HIR transaction commits	A06	exact-limit
+T-CTR-47	syntax/hir/sema/project	Flow	flow_clause_one_over	65th heterogeneous clause	SyntaxLimit::ContractClauses; no Flow snapshot/HIR/candidate	A06	one-over
+T-CTR-48	syntax/hir/sema/project	Flow	flow_contract_transaction_rollback	force EffectCatalog failure plus cancellation before commit	no clause fact, result local, diagnostic or candidate publication	C06,A32	rollback
+T-BODY-01	syntax/hir	Flow	ordinary_flow_body_empty_closed	flow f {}	empty HirThreadBody; no tail ExprId; semantic Unit	B01	behavior
+T-BODY-02	syntax/hir	Flow	ordinary_flow_body_nonempty	Flow with mixed 16 variants	exact source order and correct StmtId/ExprId discriminants	B02,F01-F16	behavior
+T-BODY-03	syntax/hir	Flow	ordinary_flow_body_missing	flow f with no body	MissingBody insertion, stable body scope, poison, no candidate	B03,D08	recovery
+T-BODY-04	syntax/hir	Flow	ordinary_flow_body_unclosed	flow f { statement	retained child then BodyClose insertion; UnclosedBody issue	B04,D10	recovery
+T-BODY-05	syntax/hir	Flow	ordinary_flow_body_terminal_expr	flow f { compute() }	ExpressionStatement StmtId; body exposes no tail	B05,F01	behavior
+T-BODY-06	syntax/hir	Flow	ordinary_flow_body_trailing_recovery	malformed tokens after body/header boundary	typed trailing recovery and last poison class	B06,D11	recovery
+T-BODY-07	syntax/hir	Flow	ordinary_flow_body_body_no_tail_api	compile crate trying body.tail()	compile failure: no tail/value accessor	B01-B05	compile-fail
+T-BODY-08	syntax/hir	Flow	ordinary_flow_body_thread_no_tail_api	compile crate trying Thread body tail	compile failure	F01-F16	compile-fail
+T-ITEM-F-01	syntax/hir/sema	Flow	flow_statement_projection	minimal valid Statement authored in Flow body	AttachedThreadFlowItem::Statement -> HirThreadFlowItem::Statement; exact child ID kind, body scope parent and source ordinal	F01	behavior
+T-ITEM-T-01	syntax/hir/sema	ThreadExpression	threadexpression_statement_projection	minimal valid Statement authored in ThreadExpression body	AttachedThreadFlowItem::Statement -> HirThreadFlowItem::Statement; exact child ID kind, body scope parent and source ordinal	F01	behavior
+T-ITEM-R-01	syntax/hir	Flow+ThreadExpression	recovered_statement_projection	malformed required child for Statement	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F01	recovery
+T-ITEM-F-02	syntax/hir/sema	Flow	flow_dialogueapplication_projection	minimal valid DialogueApplication authored in Flow body	AttachedThreadFlowItem::DialogueApplication -> HirThreadFlowItem::DialogueApplication; exact child ID kind, body scope parent and source ordinal	F02	behavior
+T-ITEM-T-02	syntax/hir/sema	ThreadExpression	threadexpression_dialogueapplication_projection	minimal valid DialogueApplication authored in ThreadExpression body	AttachedThreadFlowItem::DialogueApplication -> HirThreadFlowItem::DialogueApplication; exact child ID kind, body scope parent and source ordinal	F02	behavior
+T-ITEM-R-02	syntax/hir	Flow+ThreadExpression	recovered_dialogueapplication_projection	malformed required child for DialogueApplication	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F02	recovery
+T-ITEM-F-03	syntax/hir/sema	Flow	flow_choice_projection	minimal valid Choice authored in Flow body	AttachedThreadFlowItem::Choice -> HirThreadFlowItem::Choice; exact child ID kind, body scope parent and source ordinal	F03	behavior
+T-ITEM-T-03	syntax/hir/sema	ThreadExpression	threadexpression_choice_projection	minimal valid Choice authored in ThreadExpression body	AttachedThreadFlowItem::Choice -> HirThreadFlowItem::Choice; exact child ID kind, body scope parent and source ordinal	F03	behavior
+T-ITEM-R-03	syntax/hir	Flow+ThreadExpression	recovered_choice_projection	malformed required child for Choice	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F03	recovery
+T-ITEM-F-04	syntax/hir/sema	Flow	flow_if_projection	minimal valid If authored in Flow body	AttachedThreadFlowItem::If -> HirThreadFlowItem::If; exact child ID kind, body scope parent and source ordinal	F04	behavior
+T-ITEM-T-04	syntax/hir/sema	ThreadExpression	threadexpression_if_projection	minimal valid If authored in ThreadExpression body	AttachedThreadFlowItem::If -> HirThreadFlowItem::If; exact child ID kind, body scope parent and source ordinal	F04	behavior
+T-ITEM-R-04	syntax/hir	Flow+ThreadExpression	recovered_if_projection	malformed required child for If	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F04	recovery
+T-ITEM-F-05	syntax/hir/sema	Flow	flow_iflet_projection	minimal valid IfLet authored in Flow body	AttachedThreadFlowItem::IfLet -> HirThreadFlowItem::IfLet; exact child ID kind, body scope parent and source ordinal	F05	behavior
+T-ITEM-T-05	syntax/hir/sema	ThreadExpression	threadexpression_iflet_projection	minimal valid IfLet authored in ThreadExpression body	AttachedThreadFlowItem::IfLet -> HirThreadFlowItem::IfLet; exact child ID kind, body scope parent and source ordinal	F05	behavior
+T-ITEM-R-05	syntax/hir	Flow+ThreadExpression	recovered_iflet_projection	malformed required child for IfLet	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F05	recovery
+T-ITEM-F-06	syntax/hir/sema	Flow	flow_match_projection	minimal valid Match authored in Flow body	AttachedThreadFlowItem::Match -> HirThreadFlowItem::Match; exact child ID kind, body scope parent and source ordinal	F06	behavior
+T-ITEM-T-06	syntax/hir/sema	ThreadExpression	threadexpression_match_projection	minimal valid Match authored in ThreadExpression body	AttachedThreadFlowItem::Match -> HirThreadFlowItem::Match; exact child ID kind, body scope parent and source ordinal	F06	behavior
+T-ITEM-R-06	syntax/hir	Flow+ThreadExpression	recovered_match_projection	malformed required child for Match	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F06	recovery
+T-ITEM-F-07	syntax/hir/sema	Flow	flow_loop_projection	minimal valid Loop authored in Flow body	AttachedThreadFlowItem::Loop -> HirThreadFlowItem::Loop; exact child ID kind, body scope parent and source ordinal	F07	behavior
+T-ITEM-T-07	syntax/hir/sema	ThreadExpression	threadexpression_loop_projection	minimal valid Loop authored in ThreadExpression body	AttachedThreadFlowItem::Loop -> HirThreadFlowItem::Loop; exact child ID kind, body scope parent and source ordinal	F07	behavior
+T-ITEM-R-07	syntax/hir	Flow+ThreadExpression	recovered_loop_projection	malformed required child for Loop	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F07	recovery
+T-ITEM-F-08	syntax/hir/sema	Flow	flow_while_projection	minimal valid While authored in Flow body	AttachedThreadFlowItem::While -> HirThreadFlowItem::While; exact child ID kind, body scope parent and source ordinal	F08	behavior
+T-ITEM-T-08	syntax/hir/sema	ThreadExpression	threadexpression_while_projection	minimal valid While authored in ThreadExpression body	AttachedThreadFlowItem::While -> HirThreadFlowItem::While; exact child ID kind, body scope parent and source ordinal	F08	behavior
+T-ITEM-R-08	syntax/hir	Flow+ThreadExpression	recovered_while_projection	malformed required child for While	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F08	recovery
+T-ITEM-F-09	syntax/hir/sema	Flow	flow_whilelet_projection	minimal valid WhileLet authored in Flow body	AttachedThreadFlowItem::WhileLet -> HirThreadFlowItem::WhileLet; exact child ID kind, body scope parent and source ordinal	F09	behavior
+T-ITEM-T-09	syntax/hir/sema	ThreadExpression	threadexpression_whilelet_projection	minimal valid WhileLet authored in ThreadExpression body	AttachedThreadFlowItem::WhileLet -> HirThreadFlowItem::WhileLet; exact child ID kind, body scope parent and source ordinal	F09	behavior
+T-ITEM-R-09	syntax/hir	Flow+ThreadExpression	recovered_whilelet_projection	malformed required child for WhileLet	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F09	recovery
+T-ITEM-F-10	syntax/hir/sema	Flow	flow_for_projection	minimal valid For authored in Flow body	AttachedThreadFlowItem::For -> HirThreadFlowItem::For; exact child ID kind, body scope parent and source ordinal	F10	behavior
+T-ITEM-T-10	syntax/hir/sema	ThreadExpression	threadexpression_for_projection	minimal valid For authored in ThreadExpression body	AttachedThreadFlowItem::For -> HirThreadFlowItem::For; exact child ID kind, body scope parent and source ordinal	F10	behavior
+T-ITEM-R-10	syntax/hir	Flow+ThreadExpression	recovered_for_projection	malformed required child for For	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F10	recovery
+T-ITEM-F-11	syntax/hir/sema	Flow	flow_select_projection	minimal valid Select authored in Flow body	AttachedThreadFlowItem::Select -> HirThreadFlowItem::Select; exact child ID kind, body scope parent and source ordinal	F11	behavior
+T-ITEM-T-11	syntax/hir/sema	ThreadExpression	threadexpression_select_projection	minimal valid Select authored in ThreadExpression body	AttachedThreadFlowItem::Select -> HirThreadFlowItem::Select; exact child ID kind, body scope parent and source ordinal	F11	behavior
+T-ITEM-R-11	syntax/hir	Flow+ThreadExpression	recovered_select_projection	malformed required child for Select	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F11	recovery
+T-ITEM-F-12	syntax/hir/sema	Flow	flow_sourcelocale_projection	minimal valid SourceLocale authored in Flow body	AttachedThreadFlowItem::SourceLocale -> HirThreadFlowItem::SourceLocale; exact child ID kind, body scope parent and source ordinal	F12	behavior
+T-ITEM-T-12	syntax/hir/sema	ThreadExpression	threadexpression_sourcelocale_projection	minimal valid SourceLocale authored in ThreadExpression body	AttachedThreadFlowItem::SourceLocale -> HirThreadFlowItem::SourceLocale; exact child ID kind, body scope parent and source ordinal	F12	behavior
+T-ITEM-R-12	syntax/hir	Flow+ThreadExpression	recovered_sourcelocale_projection	malformed required child for SourceLocale	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F12	recovery
+T-ITEM-F-13	syntax/hir/sema	Flow	flow_scope_projection	minimal valid Scope authored in Flow body	AttachedThreadFlowItem::Scope -> HirThreadFlowItem::Scope; exact child ID kind, body scope parent and source ordinal	F13	behavior
+T-ITEM-T-13	syntax/hir/sema	ThreadExpression	threadexpression_scope_projection	minimal valid Scope authored in ThreadExpression body	AttachedThreadFlowItem::Scope -> HirThreadFlowItem::Scope; exact child ID kind, body scope parent and source ordinal	F13	behavior
+T-ITEM-R-13	syntax/hir	Flow+ThreadExpression	recovered_scope_projection	malformed required child for Scope	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F13	recovery
+T-ITEM-F-14	syntax/hir/sema	Flow	flow_include_projection	minimal valid Include authored in Flow body	AttachedThreadFlowItem::Include -> HirThreadFlowItem::Include; exact child ID kind, body scope parent and source ordinal	F14	behavior
+T-ITEM-T-14	syntax/hir/sema	ThreadExpression	threadexpression_include_projection	minimal valid Include authored in ThreadExpression body	AttachedThreadFlowItem::Include -> HirThreadFlowItem::Include; exact child ID kind, body scope parent and source ordinal	F14	behavior
+T-ITEM-R-14	syntax/hir	Flow+ThreadExpression	recovered_include_projection	malformed required child for Include	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F14	recovery
+T-ITEM-F-15	syntax/hir/sema	Flow	flow_awaitwith_projection	minimal valid AwaitWith authored in Flow body	AttachedThreadFlowItem::AwaitWith -> HirThreadFlowItem::AwaitWith; exact child ID kind, body scope parent and source ordinal	F15	behavior
+T-ITEM-T-15	syntax/hir/sema	ThreadExpression	threadexpression_awaitwith_projection	minimal valid AwaitWith authored in ThreadExpression body	AttachedThreadFlowItem::AwaitWith -> HirThreadFlowItem::AwaitWith; exact child ID kind, body scope parent and source ordinal	F15	behavior
+T-ITEM-R-15	syntax/hir	Flow+ThreadExpression	recovered_awaitwith_projection	malformed required child for AwaitWith	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F15	recovery
+T-ITEM-F-16	syntax/hir/sema	Flow	flow_error_projection	minimal valid Error authored in Flow body	AttachedThreadFlowItem::Error -> HirThreadFlowItem::Error; exact child ID kind, body scope parent and source ordinal	F16	behavior
+T-ITEM-T-16	syntax/hir/sema	ThreadExpression	threadexpression_error_projection	minimal valid Error authored in ThreadExpression body	AttachedThreadFlowItem::Error -> HirThreadFlowItem::Error; exact child ID kind, body scope parent and source ordinal	F16	behavior
+T-ITEM-R-16	syntax/hir	Flow+ThreadExpression	recovered_error_projection	malformed required child for Error	typed recovery child and roleful BodyChild issue; no Raw(String), no item substitution	F16	recovery
+T-CAT-01	syntax/hir	Flow+ThreadExpression	let_choice_is_statement	let x = choice ...	HirThreadFlowItem::Statement with HirStmtKind::LetChoice, not Choice	F01,F03	negative-disambiguation
+T-CAT-02	syntax/hir	Flow+ThreadExpression	let_scope_is_statement	let x = scope ...	Statement, not Scope	F01,F13	negative-disambiguation
+T-CAT-03	syntax/hir	Flow+ThreadExpression	let_loop_is_statement	let x = loop ...	Statement, not Loop	F01,F07	negative-disambiguation
+T-CAT-04	syntax/hir	Flow+ThreadExpression	let_await_is_statement	let x = await ... with ...	Statement, not AwaitWith	F01,F15	negative-disambiguation
+T-CAT-05	syntax/hir	Flow+ThreadExpression	thread_statement_is_statement	thread detached worker { ... }	outer Statement StmtId; nested body uses HirThreadBody	F01	negative-disambiguation
+T-CAT-06	syntax/hir	Flow+ThreadExpression	iflet_typed_head	if let p = x {}	IfLet selected from typed head; no source text check	F05	negative-disambiguation
+T-CAT-07	syntax/hir	Flow+ThreadExpression	dot_select_expression_not_select_stmt	obj.member expression statement	Statement/ExpressionStatement, not Select	F01,F11	negative-disambiguation
+T-CAT-08	syntax/hir	Flow+ThreadExpression	dialogue_only_expr_root	alice: text	DialogueApplication ExprId, not ExpressionStatement or legacy Dialogue	F02	negative-disambiguation
+T-SCOPE-01	hir/sema	Flow	flow_scope_four_scope_graph	valid Flow	callable->requires,ensures,body exact sibling graph	SL02-SL05	behavior
+T-SCOPE-02	hir/sema	Flow	flow_scope_empty_contract_scopes	Flow no contracts	requires/ensures scopes still exist with signature-end origin	SL03,SL04	behavior
+T-SCOPE-03	hir/sema	Flow	flow_scope_parameter_visibility	parameter used in all clauses/body	same LocalId resolves through callable parent	SL08	behavior
+T-SCOPE-04	hir/sema	Flow	flow_scope_result_exists	Flow with Ensures	one result local in ensures scope	SL09	behavior
+T-SCOPE-05	hir/sema	Flow	flow_scope_result_absent	Flow with only NoEffect	no result local reservation/publication	SL09,C07	behavior
+T-SCOPE-06	hir/sema	Flow	flow_scope_result_unit	omitted return plus Ensures	result local type SemanticUnit, no TypeId	SL09,S14	behavior
+T-SCOPE-07	hir/sema	Flow	flow_scope_result_poisoned_type	missing authored return type plus Ensures	result local Authored(error TypeId) and poison	SL09,S16	recovery
+T-SCOPE-08	hir/sema	Flow	flow_scope_branch_local_nonleak	if-let/match/for local referenced outside	typed not-visible diagnostic	SL11	negative
+T-SCOPE-09	hir/sema	Flow	flow_scope_foreign_scope_parent	construct staged Flow with scope from another module	HirFlowInvariantError::WrongScopeGraph; rollback	SL02-SL07	negative
+T-SCOPE-10	hir/sema	Flow	flow_scope_local_generation_rollback	cancel after local allocation then retry	same generations once; no gap/leak	SL12,A32,A37	rollback
+T-SCOPE-11	hir/sema	Flow	flow_scope_repeated_spelling	two nested scopes use same name	distinct LocalId/LocalGeneration and lexical resolution	SL10,SL12	behavior
+T-SCOPE-12	hir/sema	Flow	flow_scope_source_order_vs_slot_order	reserve nested children in deliberately different raw arena order in test harness	published slices/source manifests follow attached order only	SL08-SL12	ordering
+T-SRC-01	hir/source	Flow	flow_source_item_components	query all applicable item roles	exact spans/insertions from same SourceDocumentIdentity	Q01-Q12	source-query
+T-SRC-02	hir/source	Flow	flow_source_optional_role_absent	query PublicId on name-only Flow	RoleNotApplicable before source identity	Q04,Q25	negative
+T-SRC-03	hir/source	Flow	flow_source_bad_contract_ordinal	query clause 9 on two-clause Flow with wrong expected document	OrdinalOutOfBounds wins	Q10,Q25,Q26	negative
+T-SRC-04	hir/source	Flow	flow_source_bad_body_ordinal	query item one-over	OrdinalOutOfBounds	Q19,Q25	negative
+T-SRC-05	hir/source	Flow	flow_source_child_relation	query ThreadBody ChildWhole and child Stmt/Expr Whole	same SourceSpan identity; no copied range	Q19,Q20	source-query
+T-SRC-06	hir/source	Flow	flow_source_wrong_module	foreign ItemId	WrongModule first	Q21	negative
+T-SRC-07	hir/source	Flow	flow_source_not_yet_live	future staged ID against older snapshot	NotYetLive exact fields	Q22	negative
+T-SRC-08	hir/source	Flow	flow_source_retired	retired ID	Retired exact fields	Q23	negative
+T-SRC-09	hir/source	Flow	flow_source_kind_mismatch	test-only corrupted wrapper/slot	KindMismatch exact fields	Q24	negative
+T-SRC-10	hir/source	Flow	flow_source_wrong_document	valid query with different SourceDocumentIdentity	WrongSourceDocument; no search	Q26	negative
+T-SRC-11	hir/source	Flow	flow_source_stale_revision	valid document ID with stale revision	StaleSourceRevision; no latest fallback	Q27	negative
+T-SRC-12	hir/source	Flow	flow_source_rolled_back_unqueryable	failed transaction reservation	no public ID/query key exists	Q28	rollback
+T-SRC-13	hir/source	Flow	flow_source_retry_same_sites	retry same snapshot	same deterministic source sites exactly once	Q29	rollback
+T-SRC-14	hir/source	Flow	flow_source_utf8_insertions	missing name/type/body adjacent to multibyte text	all insertions are checked UTF-8 boundaries	Q05,Q07,Q08,Q11	source-query
+T-SRC-15	hir/source	Flow	flow_source_incremental_reorder	move body item without editing child	item ordinal changes; child identity/revision behavior follows accepted reconciliation; no stale old relation	Q19	incremental
+T-SRC-16	hir/source	Flow	flow_source_substituted_child	source manifest pairs item ordinal with equal-kind sibling ID	SourceFreeze invariant error and full rollback	Q19	negative
+T-SRC-17	hir/source	Flow	flow_source_duplicated_child	same child ID in two body ordinals	DuplicateBodyChild; rollback	Q19	negative
+T-SRC-18	hir/source	Flow	flow_source_foreign_child	body child from another HIR module	WrongModule; rollback	Q19,Q21	negative
+T-LIMIT-01A	syntax/hir transaction	Flow	prefix_depth_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A01	exact-limit
+T-LIMIT-01B	syntax/hir transaction	Flow	prefix_depth_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A01	one-over
+T-LIMIT-02A	syntax/hir transaction	Flow	assertion_conditions_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A02	exact-limit
+T-LIMIT-02B	syntax/hir transaction	Flow	assertion_conditions_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A02	one-over
+T-LIMIT-03A	syntax/hir transaction	Flow	generic_parameters_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A03	exact-limit
+T-LIMIT-03B	syntax/hir transaction	Flow	generic_parameters_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A03	one-over
+T-LIMIT-04A	syntax/hir transaction	Flow	where_predicates_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A04	exact-limit
+T-LIMIT-04B	syntax/hir transaction	Flow	where_predicates_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A04	one-over
+T-LIMIT-05A	syntax/hir transaction	Flow	fixed_parameters_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A05	exact-limit
+T-LIMIT-05B	syntax/hir transaction	Flow	fixed_parameters_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A05	one-over
+T-LIMIT-06A	syntax/hir transaction	Flow	contract_clauses_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A06	exact-limit
+T-LIMIT-06B	syntax/hir transaction	Flow	contract_clauses_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A06	one-over
+T-LIMIT-07A	syntax/hir transaction	Flow	top_level_items_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A07	exact-limit
+T-LIMIT-07B	syntax/hir transaction	Flow	top_level_items_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A07	one-over
+T-LIMIT-08A	syntax/hir transaction	Flow	syntax_statements_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A08	exact-limit
+T-LIMIT-08B	syntax/hir transaction	Flow	syntax_statements_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A08	one-over
+T-LIMIT-09A	syntax/hir transaction	Flow	syntax_expressions_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A09	exact-limit
+T-LIMIT-09B	syntax/hir transaction	Flow	syntax_expressions_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A09	one-over
+T-LIMIT-10A	syntax/hir transaction	Flow	syntax_types_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A10	exact-limit
+T-LIMIT-10B	syntax/hir transaction	Flow	syntax_types_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A10	one-over
+T-LIMIT-11A	syntax/hir transaction	Flow	syntax_patterns_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A11	exact-limit
+T-LIMIT-11B	syntax/hir transaction	Flow	syntax_patterns_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A11	one-over
+T-LIMIT-12A	syntax/hir transaction	Flow	identity_nodes_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A12	exact-limit
+T-LIMIT-12B	syntax/hir transaction	Flow	identity_nodes_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A12	one-over
+T-LIMIT-13A	syntax/hir transaction	Flow	syntax_diagnostics_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A13	exact-limit
+T-LIMIT-13B	syntax/hir transaction	Flow	syntax_diagnostics_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A13	one-over
+T-LIMIT-14A	syntax/hir transaction	Flow	hir_items_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A14	exact-limit
+T-LIMIT-14B	syntax/hir transaction	Flow	hir_items_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A14	one-over
+T-LIMIT-15A	syntax/hir transaction	Flow	hir_scopes_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A15	exact-limit
+T-LIMIT-15B	syntax/hir transaction	Flow	hir_scopes_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A15	one-over
+T-LIMIT-16A	syntax/hir transaction	Flow	hir_statements_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A16	exact-limit
+T-LIMIT-16B	syntax/hir transaction	Flow	hir_statements_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A16	one-over
+T-LIMIT-17A	syntax/hir transaction	Flow	hir_expressions_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A17	exact-limit
+T-LIMIT-17B	syntax/hir transaction	Flow	hir_expressions_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A17	one-over
+T-LIMIT-18A	syntax/hir transaction	Flow	hir_types_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A18	exact-limit
+T-LIMIT-18B	syntax/hir transaction	Flow	hir_types_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A18	one-over
+T-LIMIT-19A	syntax/hir transaction	Flow	hir_patterns_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A19	exact-limit
+T-LIMIT-19B	syntax/hir transaction	Flow	hir_patterns_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A19	one-over
+T-LIMIT-20A	syntax/hir transaction	Flow	locals_per_scope_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A20	exact-limit
+T-LIMIT-20B	syntax/hir transaction	Flow	locals_per_scope_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A20	one-over
+T-LIMIT-21A	syntax/hir transaction	Flow	locals_per_module_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A21	exact-limit
+T-LIMIT-21B	syntax/hir transaction	Flow	locals_per_module_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A21	one-over
+T-LIMIT-22A	syntax/hir transaction	Flow	hir_diagnostics_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A23	exact-limit
+T-LIMIT-22B	syntax/hir transaction	Flow	hir_diagnostics_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A23	one-over
+T-LIMIT-23A	syntax/hir transaction	Flow	synthetic_descendants_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A24	exact-limit
+T-LIMIT-23B	syntax/hir transaction	Flow	synthetic_descendants_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A24	one-over
+T-LIMIT-24A	syntax/hir transaction	Flow	total_slots_exact	construct exact inclusive maximum in isolated transaction	commit succeeds and all expected identities/source rows/facts publish once	A25	exact-limit
+T-LIMIT-24B	syntax/hir transaction	Flow	total_slots_one_over	construct first one-over	typed limit error and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A25	one-over
+T-TXN-01	hir/project transaction	Flow	cancel_before_preflight	cancel token already set	Cancelled; no reservation	A32	cancellation
+T-TXN-02	hir/project transaction	Flow	cancel_after_reservation	inject cancellation after scopes reserved	guard rolls back all ledgers and IDs	A32	cancellation
+T-TXN-03	hir/project transaction	Flow	cancel_before_commit	inject cancellation after source/facts staged	no publication or invalidation	A32	cancellation
+T-TXN-04	hir/project transaction	Flow	panic_during_child_lowering	test hook panics after child reserve	unwind guard restores all staging; panic observable	A33	panic
+T-TXN-05	hir/project transaction	Flow	panic_during_source_freeze	test hook panics during manifest compare	no source row/diagnostic/candidate publication	A33	panic
+T-TXN-06	hir/project transaction	Flow	stale_snapshot	replace source generation before lowering	typed stale error; no HIR allocation	A34	stale
+T-TXN-07	hir/project transaction	Flow	foreign_module_input	bind Flow attached node to wrong module request	typed foreign error; no allocation	A35	foreign
+T-TXN-08	hir/project transaction	Flow	simultaneous_limits	exceed Statements and TotalSlots	first HirLimit discriminant deterministically selected	A36	negative
+T-TXN-09	hir/project transaction	Flow	retry_cancelled	retry T-TXN-03	same IDs/generations/sites once	A37	rollback
+T-TXN-10	hir/project transaction	Flow	retry_panicked	catch panic in test harness and retry fresh transaction	same deterministic committed result	A33,A37	rollback
+T-TXN-11	hir/project transaction	Flow	project_acceptance_failure	force duplicate public ID at project commit	HIR/project candidate/checked/cache/invalidation all roll back as one publication transaction	A29	rollback
+T-TXN-12	hir/project transaction	Flow	diagnostic_one_over	produce first one-over normalized HIR diagnostic	no diagnostics or Flow HIR commit	A23	one-over
+T-PROJ-01	project/sema	multi-module	flow_project_name_derived_public_id	name-only Flow	one module-scoped public identity and exact CallableRecord	I01	project
+T-PROJ-02	project/sema	multi-module	flow_project_authored_id	ID-only Flow	authored ID exact; no presentation name fabrication	I02	project
+T-PROJ-03	project/sema	multi-module	flow_project_id_name_coherent	ID+name Flow	one accepted candidate	I03	project
+T-PROJ-04	project/sema	multi-module	flow_project_id_name_mismatch	mismatch	zero candidate; typed primary/related diagnostics	I07	project
+T-PROJ-05	project/sema	multi-module	flow_project_missing_identity	Missing	zero candidate; recovery item retained	I04	project
+T-PROJ-06	project/sema	multi-module	flow_project_duplicate_public_id	two modules/declarations publish same absolute public ID	project collision transaction rejects later/defined policy with related source	I02,I03	project
+T-PROJ-07	project/sema	multi-module	flow_project_same_name_different_modules	same local name in different modules	distinct module-preserving identity	I01	multi-module
+T-PROJ-08	project/sema	multi-module	flow_project_include_resolution	Include target family-relative and absolute forms	same accepted Flow identity; wrong family typed failure	F14	project
+T-PROJ-09	project/sema	multi-module	flow_project_accepted_generation	change unrelated module then query checked Flow	generation identity and stale policy exact; no local fallback	Q27	incremental
+T-PROJ-10	project/sema	multi-module	flow_project_reorder_without_semantic_change	reorder Flow items	source order/index updates; accepted identity remains module/item coherent	Q19	incremental
+T-CF-01	public API	downstream crate	removed_detached_flow_constructor	downstream constructs old syntax Flow	type or constructor unavailable	U001-U002	compile-fail
+T-CF-02	public API	downstream crate	removed_detached_flowitem_enum	match old FlowItem variants	old type unavailable	U002	compile-fail
+T-CF-03	public API	downstream crate	removed_old_contract_clause	use old syntax ContractClause as HIR input	unavailable; final attached/HIR types required	U001,U033	compile-fail
+T-CF-04	public API	downstream crate	removed_old_hirflow	construct HirFlow clone record	unavailable	U020-U021	compile-fail
+T-CF-05	public API	downstream crate	removed_old_hirflowitem	match HirFlowItem clone variants	unavailable	U020-U021	compile-fail
+T-CF-06	public API	downstream crate	removed_old_hirthread	construct HirThread clone body	unavailable	U020-U021	compile-fail
+T-CF-07	public API	downstream crate	removed_legacy_hirdialogue	construct/match HirDialogue	unavailable	U025,U055	compile-fail
+T-CF-08	public API	downstream crate	removed_legacy_speakerline	construct SpeakerLine/ContentCall final public path	unavailable after switch	U005,U025	compile-fail
+T-CF-09	public API	downstream crate	removed_flow_tail_accessor	call Flow body tail/value	no method/field	U020-U021	compile-fail
+T-CF-10	public API	downstream crate	removed_source_string_effect	call effect lowering with syntax Expr/raw string from Flow HIR consumer	old API unavailable; typed ExprId catalog route	U033	compile-fail
+T-CF-11	public API	downstream crate	removed_flow_source_convenience	call flow_source_site or raw range accessor	unavailable; HirModule::source_site required	Q01-Q29	compile-fail
+T-CF-12	public API	downstream crate	removed_public_source_less_constructor	construct attached/HIR nodes without snapshot/transaction	private-field/visibility failure	ATTACHED_SYNTAX_RUST_SCHEMA,FINAL_HIR_RUST_SCHEMA	compile-fail
+T-CF-13	public API	downstream crate	removed_serde_hir_ids	serialize ItemId/ScopeId/LocalId/body	trait bound unavailable	R029	compile-fail
+T-CF-14	public API	downstream crate	removed_compatibility_v2	import FlowV2/LegacyFlow adapter	no such public API	U001-U060	compile-fail
+T-MIG-01	consumer integration	workspace	syntax_consumer_parity	parser/lint/formatter use same ParsedSource snapshot	same identities, diagnostics and ranges	U001-U019	behavior
+T-MIG-02	consumer integration	workspace	hir_consumer_parity	lower/project/cache use same HirModule snapshot	same ItemId/body/source manifest	U020-U027	behavior
+T-MIG-03	consumer integration	workspace	sema_consumer_parity	resolve/check/index/signature use same accepted project generation	same checked identity/effects/source	U028-U041	behavior
+T-MIG-04	consumer integration	workspace	verify_runtime_parity	verify and runtime-plan consume same checked Flow	same body order and contracts	U042-U046	behavior
+T-MIG-05	consumer integration	workspace	compiler_lsp_parity	compiler and LSP read same accepted generation	diagnostic/source identity equality	U047-U049	behavior
+T-MIG-06	consumer integration	workspace	cli_agent_parity	CLI and Agent observation derive from runtime-plan identity	no HIR/source clone	U050-U055	behavior
+T-MIG-07	consumer integration	workspace	dialogue_handoff	Flow dialogue through bracket/colon	same typed application meaning and line identity, distinct source roles	U005,U025,U026,U055	behavior
+T-MIG-08	consumer integration	workspace	formatter_bound_document	format exact SourceDocument	edits valid for same revision; stale document rejected	U017-U019	behavior
+T-MIG-09	consumer integration	workspace	cache_digest_order	raw arena order differs from source order	digest uses typed source-ordered slices	U024,U047	behavior
+T-MIG-10	consumer integration	workspace	structured_dependency	cargo metadata after switch	layer direction unchanged; no lower->tooling edge	R001A,R001G	dependency
+T-MIG-11	consumer integration	workspace	no_compat_execution	exercise all public parse/HIR/compiler entries	only final attached/HIR path observed	U001-U060	behavior
+T-MIG-12	consumer integration	workspace	ordinary_removed_syntax_rejection	feed removed legacy-only spelling if no longer current grammar	ordinary parser recovery and no executable typed node; no dedicated historical diagnostic	R001A	negative
+T-VAL-01	implementation validation	workspace	t_val_01	cargo fmt --all -- --check	formatter pass	IMPLEMENTATION_ORDER	command
+T-VAL-02	implementation validation	workspace	t_val_02	focused arcweft-lang-syntax tests	all attached schema/recovery/limit rows pass	IMPLEMENTATION_ORDER	command
+T-VAL-03	implementation validation	workspace	t_val_03	focused arcweft-lang-hir tests	identity/scope/source/transaction rows pass	IMPLEMENTATION_ORDER	command
+T-VAL-04	implementation validation	workspace	t_val_04	focused arcweft-lang-sema tests	contracts/result/effect/place/project rows pass	IMPLEMENTATION_ORDER	command
+T-VAL-05	implementation validation	workspace	t_val_05	arcweft-verify tests	obligation rows pass	IMPLEMENTATION_ORDER	command
+T-VAL-06	implementation validation	workspace	t_val_06	arcweft-runtime-plan tests	16 variants and dialogue handoff pass	IMPLEMENTATION_ORDER	command
+T-VAL-07	implementation validation	workspace	t_val_07	arcweft-compiler tests	accepted generation/cache rows pass	IMPLEMENTATION_ORDER	command
+T-VAL-08	implementation validation	workspace	t_val_08	arcweft-lsp tests	typed source query and stale behavior pass	IMPLEMENTATION_ORDER	command
+T-VAL-09	implementation validation	workspace	t_val_09	cargo check --workspace --all-targets --all-features	pass	IMPLEMENTATION_ORDER	command
+T-VAL-10	implementation validation	workspace	t_val_10	cargo clippy --workspace --all-targets --all-features -- -D warnings	pass	IMPLEMENTATION_ORDER	command
+T-VAL-11	implementation validation	workspace	t_val_11	just test-workspace	pass or exact unrelated baseline recorded; cannot claim completion with in-scope failure	IMPLEMENTATION_ORDER	command
+T-VAL-12	implementation validation	workspace	t_val_12	just test-tier2	pass because public multi-crate cut affects runtime-plan and Agent	IMPLEMENTATION_ORDER	command
+T-VAL-13	implementation validation	workspace	t_val_13	structural audit	zero errors or explicit repository-approved exception; no source gates	IMPLEMENTATION_ORDER	command
+T-VAL-14	implementation validation	workspace	t_val_14	git diff --check	pass	IMPLEMENTATION_ORDER	command
+T-SIG-26	syntax/hir/sema	Flow	ordinary_flow_signature_omitted_generics_and_where	flow f() {}	no GenericGroup or WhereClause source role; empty HIR slices; no generic binding or predicate allocation	S01,S18	behavior
+T-SCOPE-13	hir/project	Flow	flow_scope_module_root_authority	lower two Flows in one module and one in a foreign module	all four Flow scopes parent through the existing module-root ScopeId; foreign/stale module root aborts before item publication	SL01	behavior
+T-DIAG-01	syntax/hir/project	Flow	flow_diagnostic_missing_identity	flow {} followed by a clean sibling item	MissingName insertion and `flow.identity.missing` are primary; recovered Flow commits but publishes no candidate; sibling remains independent	D01,I04	recovery
+T-DIAG-02	syntax/hir	Flow	flow_diagnostic_second_parameter_group	flow f(x:i32)(y:i32) {}	`flow.signature.curried_flow` at second group; no y PatternId/TypeId/LocalId	D02,S10	negative
+T-DIAG-03	syntax/hir	Flow	flow_diagnostic_missing_annotated_type	flow f(x:) -> {}	parameter/return MissingType owns checked insertion and error TypeId; omitted-Unit path is not selected	D03,S09,S16	recovery
+T-DIAG-04	syntax/hir	Flow	flow_diagnostic_malformed_where	flow f<T>() where T: {}	earliest typed predicate/bound site is primary; error TypeId remains source-queryable	D04,S20	recovery
+T-DIAG-05	syntax/hir	Flow	flow_diagnostic_missing_contract_operand	flow f() requires {}	dedicated Requires clause owns MissingExpression ExprId and `flow.contract.missing_operand`; no raw text payload	D05,C01	recovery
+T-DIAG-06	syntax/hir/sema	Flow	flow_diagnostic_poisoned_body_child	Flow body containing one malformed known-family statement between two valid items	body ordinal remains continuous; roleful `flow.body.recovered_child` does not copy child terminal diagnostic; runtime publication suppressed	D09,F16	recovery
+T-LIMIT-25A	hir transaction	Flow	hir_captures_exact	construct closures in Flow expressions reaching exactly HirLimit::Captures	exact 65536 captures commit within all aggregate limits	A22	exact-limit
+T-LIMIT-25B	hir transaction	Flow	hir_captures_one_over	construct first capture beyond HirLimit::Captures	typed limit failure and zero partial Flow/item/scope/local/source/diagnostic/candidate/cache/invalidation publication	A22	one-over
+T-LIMIT-26	syntax/hir transaction	Flow+ThreadExpression	body_items_have_no_parallel_limit	construct bodies whose root counts remain within Statements/Expressions and total slots	each item charges exactly one StmtId or ExprId root; no independent FlowBodyItems counter or one-over behavior exists	A26	behavior
+T-LIMIT-27	hir/source transaction	Flow+ThreadExpression	source_components_are_exact_manifest_not_parallel_budget	preflight every applicable role for a maximal valid owner shape	checked finite source manifest commits with owning IDs; checked arithmetic/invariant or owning-limit failure rolls every row back; no configurable source-component limit	A27	behavior
+T-LIMIT-28	syntax transaction	Flow	source_document_limit_owned_before_flow	attempt Flow parsing in an input rejected by the existing SourceDocument owner	no syntax or HIR transaction begins and Flow does not recopy or impose a source-byte limit	A28	negative
+T-LIMIT-30A	sema resolver	Flow	semantic_call_candidates_exact	Flow clause/body call with exactly 256 semantic candidates	shared resolver may consider all complete facts and transaction proceeds to ordinary ambiguity/selection policy	A30	exact-limit
+T-LIMIT-30B	sema resolver	Flow	semantic_call_candidates_one_over	Flow clause/body call exposing candidate 257	one shared resolver invocation returns CandidateLimit; no candidate/fact/result/project/cache publication	A30	one-over
+T-LIMIT-31A	syntax/hir	Flow+ThreadExpression	postfix_candidate_pair_exact	ambiguous postfix with both index and dialogue interpretations	exact two typed candidates retained under the accepted source-backed root owner	A31	exact-limit
+T-LIMIT-31B	syntax/hir	Flow+ThreadExpression	postfix_candidate_work_bounded	malformed postfix with neither or only one viable interpretation	0 or 1 typed candidate/recovery fact retained; API cannot construct a third candidate or unbounded list	A31	negative
+T-BODY-09	hir/source	Flow+ThreadExpression	nested_thread_body_owner_uniqueness	if/else, match arms, Select branches and AwaitWith branches under one parent statement	each nested body uses HirThreadBodyOwner::NestedScope with a distinct exact body ScopeId; source queries cannot collide under the shared parent StmtId	F04,F05,F06,F11,F15,SL10,Q19	behavior

@@ -1,0 +1,26 @@
+requirement_id	request_requirement	contract_owner	evidence_rows	status
+REQ-E13-001	final Name|Missing payload only	AFFECTED_RUST_SCHEMAS.md	T-E13-017..023; C-E13-001..010	CLOSED
+REQ-E13-002	central projection sole attached owner	AFFECTED_RUST_SCHEMAS.md; CONSUMER_DELETION_INVENTORY.tsv	P-E13-001..010; T-E13-019; M-E13-004..007	CLOSED
+REQ-E13-003	real producer/CST/projection geometry	PRODUCER_CST_PROJECTION_GEOMETRY.tsv	T-E13-001..016	CLOSED
+REQ-E13-004	missing target unreachable	producer matrix	P-E13-011; T-E13-011; T-Q-13-022	CLOSED
+REQ-E13-005	invalid member unreachable	producer and poison matrices	P-E13-014/015; C-E13-010; T-E13-014/015/018	CLOSED
+REQ-E13-006	?. retains Try identity	TRY_SELECT_IDENTITY_AND_SOURCE.md	P-E13-003/004; T-E13-003/004/023; T-RB-13-020/021	CLOSED
+REQ-E13-007	tokenization-safe poisoned target	producer matrix	P-E13-005/006/009/010; T-E13-005/006/009/010	CLOSED
+REQ-E13-008	exact root poison precedence	poison matrix	C-E13-001..008; T-RB-13-017..019	CLOSED
+REQ-E13-009	owner-keyed diagnostics/freeze	LOWERING_FREEZE_ROLLBACK_ORDER.md	C-E13-002/005/006; T-RB-13-012..019/022/023	CLOSED
+REQ-E13-010	sole source query and roles	SOURCE_ROLE_AND_QUERY_MATRIX.tsv	T-Q-13-001..024	CLOSED
+REQ-E13-011	query validation precedence	source matrix	T-Q-13-011..019	CLOSED
+REQ-E13-012	syntax/HIR diagnostic deltas	WORK_ACCOUNTING_MATRIX.tsv; LIMIT_BOUNDARY_MATRIX.tsv	W-E13-001..008; L-E13-001/002/007/008/009	CLOSED
+REQ-E13-013	syntax Expressions exact/one-over	LIMIT_BOUNDARY_MATRIX.tsv	L-E13-003; T-E13-027/028	CLOSED
+REQ-E13-014	identity nodes exact/one-over	LIMIT_BOUNDARY_MATRIX.tsv	L-E13-004; T-E13-029/030	CLOSED
+REQ-E13-015	source bytes exact/one-over	LIMIT_BOUNDARY_MATRIX.tsv	L-E13-005; T-E13-031/032; T-RB-13-002	CLOSED
+REQ-E13-016	NameBytes exact/one-over/Missing zero	LIMIT_BOUNDARY_MATRIX.tsv	L-E13-006; T-E13-024..026; T-RB-13-006	CLOSED
+REQ-E13-017	HIR Diagnostics exact/one-over	LIMIT_BOUNDARY_MATRIX.tsv	L-E13-007..009; T-RB-13-007/008	CLOSED
+REQ-E13-018	HIR Expressions independent	LIMIT_BOUNDARY_MATRIX.tsv	L-E13-010; T-RB-13-009	CLOSED
+REQ-E13-019	TotalSlots independent	LIMIT_BOUNDARY_MATRIX.tsv	L-E13-011; T-RB-13-010	CLOSED
+REQ-E13-020	source components and metadata	WORK_ACCOUNTING_MATRIX.tsv	W-E13-001..008; L-E13-012; T-RB-13-011	CLOSED
+REQ-E13-021	no E13 synthetic descendant	schemas/limits/producer matrices	P-E13-011; L-E13-013; T-RB-13-025	CLOSED
+REQ-E13-022	atomic rollback/retry/perturbation	LOWERING_FREEZE_ROLLBACK_ORDER.md	T-RB-13-001..024	CLOSED
+REQ-E13-023	concrete deletion switch	CONSUMER_DELETION_INVENTORY.tsv	M-E13-001..024; T-RB-13-030	CLOSED
+REQ-E13-024	direct predecessor audit	PREDECESSOR_MEMBER_AUDIT.tsv	85 member rows; four archive identities	CLOSED
+REQ-E13-025	no forbidden compatibility/source-gate paths	schemas, deletion inventory, compile-fail rows	T-E13-017..022; T-RB-13-028..030	CLOSED

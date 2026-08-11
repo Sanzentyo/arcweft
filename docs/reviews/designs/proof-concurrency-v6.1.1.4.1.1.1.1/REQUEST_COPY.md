@@ -1,0 +1,182 @@
+# Design request: Proof-concurrency 01.1.1.4.1.1.1.1 tail-owner and generator-evidence correction
+
+- Date: 2026-07-28
+- Sequence: Proof-concurrency v6.1.1.4.1.1.1.1, narrowly correcting the
+  rejected v6.1.1.4.1.1.1 synthetic-role admission return
+- Kind: independently throwable, GitHub-only, design-only correction
+- Production changes: prohibited
+- Required archive name:
+  `arcweft-proof-concurrency-v6.1.1.4.1.1.1.1-tail-owner-and-generator-evidence-correction-final-contract.zip`
+
+## Assignment
+
+Prepare one decision-complete correction for the rejected Proof
+v6.1.1.4.1.1.1 return in the latest GitHub `main` of:
+
+`https://github.com/Sanzentyo/arcweft`
+
+Read repository `AGENTS.md`, this complete request, the rejected archive, its
+intake, the retained v6.1.1.4.1.1 package, the v6.1.1.4.1 leaf-expression
+package, the base Proof v6.1.1 package, and AW-AH-009.4.2:
+
+- `docs/reviews/designs/proof-concurrency-v6.1.1.4.1.1.1/arcweft-proof-concurrency-v6.1.1.4.1.1.1-synthetic-role-owner-admission-correction-final-contract.zip`
+- `docs/implementation/2026-07-28-proof-01-1-1-4-1-1-1-synthetic-role-admission-intake.md`
+- `docs/reviews/designs/proof-concurrency-v6.1.1.4.1.1/arcweft-proof-concurrency-v6.1.1.4.1.1-source-owner-and-semantic-consistency-correction-final-contract.zip`
+- `docs/reviews/designs/proof-concurrency-v6.1.1.4.1/arcweft-proof-concurrency-v6.1.1.4.1-final-hir-semantic-leaf-expression-payload-correction-final-contract.zip`
+- `docs/reviews/packages/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip`
+- `docs/reviews/packages/arcweft-aw-ah-009.4.2-dialogue-content-application-syntax-hir-ownership-production-reconciliation-final-contract.zip`
+
+This is not permission to redesign the accepted eight-variant
+`SyntheticOwner`, qualified typed HIR IDs, `SyntheticRole` vocabulary,
+fingerprint transcript, typed source query, final HIR body/arm payloads,
+Dialogue candidate ownership, or deletion-driven migration. Correct only the
+remaining tail-owner and test-evidence defects below and restate every affected
+schema and matrix row completely.
+
+## Why the correction is required
+
+The rejected return makes both `ImplicitUnitTail` and
+`MissingRequiredTail` accept only `SyntheticOwner::Expr`. That does not cover
+the retained final consumers:
+
+1. Base `HirPredicateBody::Block` and `HirProofBody::Block` are exactly:
+
+   ```rust
+   Block {
+       scope: ScopeId,
+       statements: Box<[StmtId]>,
+       tail: ExprId,
+   }
+   ```
+
+   The block has no source-backed `ExprId`. Base `PROOF_BLOCK.md` requires Unit
+   proof, non-Unit proof, and predicate omitted tails to allocate an `ExprId`
+   from the block owner. The tail cannot own its own key.
+
+2. Final `HirMatchArm` has no independent expression ID, each arm creates a
+   distinct `ScopeId`, and multiple arms may each lack a required value.
+   `MissingRequiredTail` is exact-zero, so assigning all arm tails to the one
+   parent match `ExprId` would collide.
+
+3. Ordinary `Block`, `ComputationBlock`, `NamedBlock`, closure, `If`, and
+   `IfLet` remain source-backed expression owners. Their valid existing owner
+   must not be lost while fixing predicate/proof and match-arm ownership.
+
+The rejected return also claims complete generator evidence while using
+identity-table unit tests for production ordering. Those tests cannot prove
+semantic child-role order, source-token plus recipe order, pattern preorder,
+or first-use capture order.
+
+## Required decisions
+
+### 1. Exact tail-owner policy by producer
+
+Give the complete typed owner set and exact producer mapping for both roles:
+
+- ordinary block-like and conditional expression tails;
+- closure or other source-backed requiring-expression tails;
+- predicate block tails;
+- proof block tails; and
+- every missing match-arm value.
+
+Preserve the accepted final HIR payloads. Use existing typed identities and
+their actual allocation order. In particular, evaluate whether the already
+required predicate/proof body scope and match-arm scope are the final typed
+owners for those non-expression containers. If another existing typed owner is
+selected, prove unique non-circular identity for multiple arms and every body
+form.
+
+State whether `ImplicitUnitTail` and `MissingRequiredTail` admit
+`Expr | Scope` or another exact existing set. Give the exact
+`SyntheticRole::accepts_owner_kind` rows, ordinal predicate, allocation order,
+source insertion anchor, liveness lookup, and `(SyntheticKey, child
+HirIdKind)` reuse behavior. Do not add `SyntheticOwner::Syntax`, a raw owner,
+a new match-arm ID solely for compatibility, or an ordinal workaround that
+changes the accepted exact-zero roles.
+
+### 2. Production generator evidence
+
+For each source-ordered role below, add direct production lowering/transaction
+test rows in addition to boolean admission tests:
+
+- `RecoveryOperand`: prove declared semantic child-role ordinal and optional
+  absence without vector-position reconstruction;
+- `DesugaredTemporary`: prove source-token order plus fixed recipe-step order,
+  checked increment, and independence from map iteration;
+- `DestructuredBinding`: prove depth-first authored preorder and the first
+  or-pattern alternative's shared ordinal map;
+- `ClosureCapture`: prove first source-ordered use allocation and later-use
+  reuse independent of map iteration;
+- both postfix candidate roles: retain root zero, shared-target exclusion,
+  per-child-kind preorder, interpretation separation, and selected-key
+  non-reuse.
+
+Specify concrete representative source/HIR fixtures, expected typed IDs or
+keys, perturbation cases, exact/one-over boundaries, and rollback assertions.
+Do not label an identity admission unit test as evidence of lowerer ordering.
+
+### 3. Exact liveness payload vocabulary
+
+Correct the test rows to use the retained and current variants exactly:
+
+```rust
+NotYetLive {
+    id: RawHirIdView,
+    snapshot: HirSnapshotId,
+    born: HirRevision,
+}
+Retired {
+    id: RawHirIdView,
+    snapshot: HirSnapshotId,
+    retired_at: HirRevision,
+}
+```
+
+Do not use an undefined `last_live` field or erase the exact ID/snapshot
+payloads.
+
+### 4. Standalone corrected authority
+
+Restate the complete 21-role owner/ordinal table, constructor precedence,
+implementation order, affected Rust schemas, and full focused test matrix so
+an implementer need not merge prose mentally. Retain unchanged the rejected
+archive's 51-byte fingerprint layout, explicit owner/role tags, fixed vectors,
+digest boundary, ordinal bounds, candidate semantics, and compatibility
+prohibitions unless a concrete contradiction is demonstrated.
+
+## Constraints
+
+- Design only: do not edit production code, create a patch, branch, PR, or
+  implementation overlay.
+- Preserve the final eight-variant `SyntheticOwner`; do not restore Syntax or
+  raw-ID owner variants.
+- Preserve accepted predicate/proof body and match-arm schemas; do not invent a
+  carrier merely to make the rejected owner row compile.
+- No alias, wrapper, extension trait, compatibility shim, dual reader,
+  source-string reparse, source gate, CSS/Takumi path, or permanent
+  removed-syntax-specific diagnostic.
+- Do not repair old `SpeakerLine`, `ContentCall`, stringly `HirDialogue`, or
+  detached syntax readers.
+- Use typed behavioral, transaction, compile-fail, and fingerprint tests. Do
+  not inspect checked-in source spellings as automated acceptance evidence.
+
+## Required return
+
+Return exactly one ZIP with every sidecar inside and no required adjacent
+files:
+
+```text
+arcweft-proof-concurrency-v6.1.1.4.1.1.1.1-tail-owner-and-generator-evidence-correction-final-contract.zip
+```
+
+Include README, complete request copy, FINAL_STATUS, OPEN_QUESTIONS,
+predecessor precedence, complete affected Rust schemas, the full 21-role
+owner/ordinal table, producer-to-owner allocation table, retained fingerprint
+contract, implementation/deletion order, focused test matrix, traceability,
+repository evidence, validation report, and manifest.
+
+Use `READY_FOR_IMPLEMENTATION` only when `OPEN_QUESTIONS.md` is exactly `none`
+and every producer has a real existing typed owner, every exact-zero key is
+unique and non-circular, each production generator has direct behavioral
+evidence, and every liveness payload is exact. Otherwise return the same
+correctly named ZIP with `NOT_READY` and explicit unresolved decisions.

@@ -6,7 +6,7 @@ Date: 2026-07-25
 
 The returned archive is retained at:
 
-- [`arcweft-lang-01.1.1.3 effect-trait reconciliation`](../reviews/packages/arcweft-lang-01.1.1.3-effect-trait-contract-and-dynamic-dispatch-production-reconciliation-final-contract.zip),
+- [`arcweft-lang-01.1.1.3 effect-trait reconciliation`](../reviews/packages/zips/arcweft-lang-01.1.1.3-effect-trait-contract-and-dynamic-dispatch-production-reconciliation-final-contract.zip),
   SHA-256
   `4FD834564C458639CD4EBE46615E4EC79C54F91D686439AAAACCC7F2B3714B5E`,
   46,663 bytes.

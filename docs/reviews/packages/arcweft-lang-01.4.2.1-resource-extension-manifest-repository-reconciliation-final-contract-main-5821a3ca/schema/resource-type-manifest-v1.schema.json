@@ -1,0 +1,1495 @@
+{
+  "type": "object",
+  "properties": {
+    "format": {
+      "const": "arcweft.resource-type-manifest"
+    },
+    "schema": {
+      "const": 1
+    },
+    "package": {
+      "$ref": "#/$defs/packageCoordinate"
+    },
+    "schemas": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resourceSchema"
+      }
+    },
+    "resource_types": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/resourceType"
+      }
+    },
+    "codecs": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/codec"
+      }
+    }
+  },
+  "required": [
+    "format",
+    "schema",
+    "package",
+    "schemas",
+    "resource_types",
+    "codecs"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://arcweft.invalid/schema/resource-type-manifest-v1.json",
+  "title": "Arcweft ResourceTypeManifestFileV1",
+  "$defs": {
+    "packageId": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]*[a-z0-9](?:\\.[a-z0-9][a-z0-9-]*[a-z0-9])+$|^[a-z0-9](?:\\.[a-z0-9])+$"
+    },
+    "packageCoordinate": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/packageId"
+        },
+        "version": {
+          "type": "string",
+          "minLength": 5,
+          "format": "semver"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "additionalProperties": false
+    },
+    "nominalType": {
+      "type": "object",
+      "properties": {
+        "package": {
+          "$ref": "#/$defs/packageId"
+        },
+        "module": {
+          "type": "string",
+          "minLength": 1,
+          "format": "arcweft-resource-module-path"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "format": "arcweft-resource-type-name"
+        }
+      },
+      "required": [
+        "package",
+        "module",
+        "name"
+      ],
+      "additionalProperties": false
+    },
+    "scalarValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "unit"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "bool"
+            },
+            "value": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "signed_integer"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -9223372036854775808,
+              "maximum": 9223372036854775807
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "unsigned_integer"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "float"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^0x[0-9a-f]{16}$"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "string"
+            },
+            "value": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "char"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "duration"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 18446744073709551615
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "ratio"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 1000000
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "length"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "milli_units": {
+                  "type": "integer",
+                  "minimum": -9223372036854775808,
+                  "maximum": 9223372036854775807
+                },
+                "unit": {
+                  "enum": [
+                    "px",
+                    "sp",
+                    "percent",
+                    "vw",
+                    "vh",
+                    "cw",
+                    "ch",
+                    "em",
+                    "glyph_ch",
+                    "safe_area_top",
+                    "safe_area_right",
+                    "safe_area_bottom",
+                    "safe_area_left"
+                  ]
+                }
+              },
+              "required": [
+                "milli_units",
+                "unit"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "gain"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -120000,
+              "maximum": 24000
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "pan"
+            },
+            "value": {
+              "type": "integer",
+              "minimum": -1000,
+              "maximum": 1000
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "locale"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "pattern": "^[A-Za-z]{2,8}(?:-[A-Za-z0-9]{1,8})*$",
+              "format": "arcweft-locale-id"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "public_id"
+            },
+            "value": {
+              "type": "string",
+              "minLength": 1,
+              "format": "arcweft-public-id"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "valueType": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "scalar"
+            },
+            "value": {
+              "enum": [
+                "unit",
+                "bool",
+                "signed_integer",
+                "unsigned_integer",
+                "float",
+                "string",
+                "char",
+                "duration",
+                "ratio",
+                "length",
+                "gain",
+                "pan",
+                "locale",
+                "public_id"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "option"
+            },
+            "value": {
+              "$ref": "#/$defs/valueType"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "list"
+            },
+            "value": {
+              "$ref": "#/$defs/valueType"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "non_empty_list"
+            },
+            "value": {
+              "$ref": "#/$defs/valueType"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "ordered_map"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "key": {
+                  "$ref": "#/$defs/valueType"
+                },
+                "value": {
+                  "$ref": "#/$defs/valueType"
+                }
+              },
+              "required": [
+                "key",
+                "value"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "record"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "enum"
+            },
+            "value": {
+              "type": "string",
+              "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "asset_ref"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "payload_kind": {
+                  "type": "string",
+                  "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+                }
+              },
+              "required": [
+                "payload_kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "resource_ref"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "type_id": {
+                  "$ref": "#/$defs/nominalType"
+                }
+              },
+              "required": [
+                "type_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "retained_identity_ref"
+            },
+            "value": {
+              "enum": [
+                "character",
+                "view",
+                "action",
+                "layer",
+                "signal",
+                "presentation_target",
+                "scroll_region"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "constrained_scalar"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "scalar": {
+                  "enum": [
+                    "unit",
+                    "bool",
+                    "signed_integer",
+                    "unsigned_integer",
+                    "float",
+                    "string",
+                    "char",
+                    "duration",
+                    "ratio",
+                    "length",
+                    "gain",
+                    "pan",
+                    "locale",
+                    "public_id"
+                  ]
+                },
+                "lower": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "inclusive",
+                        "exclusive"
+                      ]
+                    },
+                    "value": {
+                      "$ref": "#/$defs/scalarValue"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                "upper": {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "enum": [
+                        "inclusive",
+                        "exclusive"
+                      ]
+                    },
+                    "value": {
+                      "$ref": "#/$defs/scalarValue"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "scalar"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "constValue": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "scalar"
+            },
+            "value": {
+              "$ref": "#/$defs/scalarValue"
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "option"
+            },
+            "value": {
+              "$ref": "#/$defs/constValue"
+            }
+          },
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "list"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/constValue"
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "ordered_map"
+            },
+            "value": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "key": {
+                    "$ref": "#/$defs/constValue"
+                  },
+                  "value": {
+                    "$ref": "#/$defs/constValue"
+                  }
+                },
+                "required": [
+                  "key",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "record"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "schema_id": {
+                  "type": "string",
+                  "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4294967295
+                      },
+                      "value": {
+                        "$ref": "#/$defs/constValue"
+                      }
+                    },
+                    "required": [
+                      "field_id",
+                      "value"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "schema_id",
+                "fields"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "enum"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "schema_id": {
+                  "type": "string",
+                  "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+                },
+                "variant_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4294967295
+                },
+                "payload": {
+                  "$ref": "#/$defs/constValue"
+                }
+              },
+              "required": [
+                "schema_id",
+                "variant_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "asset_ref"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "public_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "format": "arcweft-public-id"
+                },
+                "payload_kind": {
+                  "type": "string",
+                  "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+                }
+              },
+              "required": [
+                "public_id",
+                "payload_kind"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "resource_ref"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "entity_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "format": "arcweft-entity-id"
+                },
+                "public_id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "format": "arcweft-public-id"
+                },
+                "type_id": {
+                  "$ref": "#/$defs/nominalType"
+                }
+              },
+              "required": [
+                "entity_id",
+                "public_id",
+                "type_id"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "retained_identity_ref"
+            },
+            "value": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "character"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "entity_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "format": "arcweft-entity-id"
+                        }
+                      },
+                      "required": [
+                        "entity_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "view"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "entity_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "format": "arcweft-entity-id"
+                        }
+                      },
+                      "required": [
+                        "entity_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "action"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "entity_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "format": "arcweft-entity-id"
+                        }
+                      },
+                      "required": [
+                        "entity_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "layer"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "entity_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "format": "arcweft-entity-id"
+                        }
+                      },
+                      "required": [
+                        "entity_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "signal"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "entity_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "format": "arcweft-entity-id"
+                        }
+                      },
+                      "required": [
+                        "entity_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "presentation_target"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "scope": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "const": "global"
+                                }
+                              },
+                              "required": [
+                                "kind"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "kind": {
+                                  "const": "view"
+                                },
+                                "value": {
+                                  "type": "object",
+                                  "properties": {
+                                    "owner_view_entity_id": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "format": "arcweft-entity-id"
+                                    }
+                                  },
+                                  "required": [
+                                    "owner_view_entity_id"
+                                  ],
+                                  "additionalProperties": false
+                                }
+                              },
+                              "required": [
+                                "kind",
+                                "value"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "target_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "format": "arcweft-public-id"
+                        }
+                      },
+                      "required": [
+                        "scope",
+                        "target_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "const": "scroll_region"
+                    },
+                    "value": {
+                      "type": "object",
+                      "properties": {
+                        "owner_view_entity_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "format": "arcweft-entity-id"
+                        },
+                        "region_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "format": "arcweft-public-id"
+                        }
+                      },
+                      "required": [
+                        "owner_view_entity_id",
+                        "region_id"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "value"
+                  ],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "resourceSchema": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "record"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "schema_id": {
+                  "type": "string",
+                  "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+                },
+                "nominal_type": {
+                  "type": "object",
+                  "properties": {
+                    "package": {
+                      "$ref": "#/$defs/packageId"
+                    },
+                    "module": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "package",
+                    "module",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4294967295
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "field_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4294967295
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "format": "arcweft-resource-field-name"
+                      },
+                      "value_type": {
+                        "$ref": "#/$defs/valueType"
+                      },
+                      "presence": {
+                        "enum": [
+                          "required",
+                          "optional"
+                        ]
+                      },
+                      "default": {
+                        "$ref": "#/$defs/constValue"
+                      },
+                      "docs": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "field_id",
+                      "name",
+                      "value_type",
+                      "presence"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "schema_id",
+                "nominal_type",
+                "version",
+                "fields"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "enum"
+            },
+            "value": {
+              "type": "object",
+              "properties": {
+                "schema_id": {
+                  "type": "string",
+                  "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+                },
+                "nominal_type": {
+                  "type": "object",
+                  "properties": {
+                    "package": {
+                      "$ref": "#/$defs/packageId"
+                    },
+                    "module": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "required": [
+                    "package",
+                    "module",
+                    "name"
+                  ],
+                  "additionalProperties": false
+                },
+                "version": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4294967295
+                },
+                "variants": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "variant_id": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4294967295
+                      },
+                      "name": {
+                        "type": "string",
+                        "minLength": 1,
+                        "format": "arcweft-resource-variant-name"
+                      },
+                      "payload": {
+                        "$ref": "#/$defs/valueType"
+                      },
+                      "docs": {
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "variant_id",
+                      "name"
+                    ],
+                    "additionalProperties": false
+                  }
+                }
+              },
+              "required": [
+                "schema_id",
+                "nominal_type",
+                "version",
+                "variants"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "kind",
+            "value"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "resourceType": {
+      "type": "object",
+      "properties": {
+        "type_id": {
+          "type": "object",
+          "properties": {
+            "package": {
+              "$ref": "#/$defs/packageId"
+            },
+            "module": {
+              "type": "string",
+              "minLength": 1
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "package",
+            "module",
+            "name"
+          ],
+          "additionalProperties": false
+        },
+        "public_id_family": {
+          "type": "string",
+          "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?$"
+        },
+        "family_group": {
+          "type": "string",
+          "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+        },
+        "body_schema": {
+          "type": "string",
+          "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+        },
+        "capabilities": {
+          "type": "object",
+          "properties": {
+            "runtime_handle_kind": {
+              "type": "string",
+              "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+            },
+            "agent_exposure": {
+              "enum": [
+                "hidden",
+                "catalog",
+                "catalog_and_runtime"
+              ]
+            },
+            "save_definition_reference": {
+              "type": "boolean"
+            },
+            "hot_reload": {
+              "enum": [
+                "restart_required",
+                "replace_definition",
+                "update_live_handle"
+              ]
+            }
+          },
+          "required": [
+            "agent_exposure",
+            "save_definition_reference",
+            "hot_reload"
+          ],
+          "additionalProperties": false
+        },
+        "lowering": {
+          "type": "object",
+          "properties": {
+            "codec_id": {
+              "type": "string",
+              "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+            },
+            "codec_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            },
+            "section_id": {
+              "type": "string",
+              "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+            },
+            "section_version": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4294967295
+            }
+          },
+          "required": [
+            "codec_id",
+            "codec_version",
+            "section_id",
+            "section_version"
+          ],
+          "additionalProperties": false
+        },
+        "docs": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "summary"
+          ],
+          "additionalProperties": false
+        },
+        "descriptor_digest": {
+          "type": "string",
+          "pattern": "^blake3:[0-9a-f]{64}$"
+        }
+      },
+      "required": [
+        "type_id",
+        "public_id_family",
+        "family_group",
+        "body_schema",
+        "capabilities",
+        "lowering",
+        "descriptor_digest"
+      ],
+      "additionalProperties": false
+    },
+    "codec": {
+      "type": "object",
+      "properties": {
+        "codec_id": {
+          "type": "string",
+          "pattern": "^[a-z](?:[a-z0-9_-]*[a-z0-9])?(?:\\.[a-z](?:[a-z0-9_-]*[a-z0-9])?)*$"
+        },
+        "versions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4294967295
+          }
+        }
+      },
+      "required": [
+        "codec_id",
+        "versions"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$comment": "Custom arcweft-* and semver formats are normative semantic constructor checks. The direct-final decoder enforces them even when a generic JSON Schema implementation treats unknown formats as annotations."
+}

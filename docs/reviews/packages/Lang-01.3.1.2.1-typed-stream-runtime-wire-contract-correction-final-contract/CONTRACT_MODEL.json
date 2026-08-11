@@ -1,0 +1,109 @@
+{
+  "awbc_allocations": {
+    "function_kind": {
+      "Flow": 0,
+      "GeneratorProducer": 9,
+      "LineTask": 6,
+      "Ordinary": 8,
+      "PureHelper": 1,
+      "Synthetic": 7,
+      "TraitMethod": 2
+    },
+    "instruction": {
+      "FinishStream": 40,
+      "OpenStream": 39
+    },
+    "rejected_function_kind_tags": [
+      3,
+      4,
+      5
+    ],
+    "runtime_type": {
+      "StreamHandle": 21
+    },
+    "safe_point": {
+      "StreamNext": 12,
+      "StreamYield": 13
+    },
+    "terminator": {
+      "NextStream": 143,
+      "YieldStream": 144
+    }
+  },
+  "closed_decisions": {
+    "dropped_consumer": "registry synchronously disposes queue under policy; no unreachable drain owner",
+    "exhaustion": "valid envelope may atomically terminalize RuntimeLimit; malformed/stale envelope is rejection with no mutation",
+    "instance_owner": "session StreamInstanceTable; fibers contain references/handles only",
+    "old_formats": "direct rejection; no shims, aliases, dual readers, or legacy dispatch",
+    "optional_parameters": "represented losslessly as Omitted or Value; never rejected solely for Optional",
+    "replay_owner": "inside each sole live/tombstone entry"
+  },
+  "contract": "Lang-01.3.1.2.1",
+  "integration_base": {
+    "branch": "main",
+    "commit": "23ed5d93824630d8ead9092d32f7fc70f0a8f314",
+    "repository": "Sanzentyo/arcweft",
+    "request_sha256": "b8ec6b3efcbe31739b2d2b7bad119c2a9dcc394b95777941c4210fc485315f64"
+  },
+  "open_questions": 0,
+  "owners": {
+    "callable_parameter_semantics": "arcweft-lang-sema shared callable catalog/resolver",
+    "effect_sets_awbc": "AwbcProgram.effect_sets",
+    "effect_sets_runtime_plan": "RuntimePlan.effect_sets",
+    "frames_cfg_resume": "existing AWBC FiberState/AwbcFrameLayout/AwbcFunction/AwbcBlock/AwbcResumePoint",
+    "live_and_tombstone_instances": "one StreamInstanceTable per active executor/session",
+    "profile": {
+      "authored_values": "arcweft-manifest-model::stream_profile embedded by arcweft-launch::manifest::ProfileSpec",
+      "source_spans": "arcweft-launch::SourceBackedManifest/ManifestSourceMap",
+      "typed_projection": "arcweft-compiler::ProjectCompilationContext",
+      "baseline_and_resolution": "arcweft-runtime-plan::stream_profile",
+      "runtime_evidence": "arcweft-core::plan::RuntimePlan.stream_profile"
+    },
+    "source_maps": "existing debug source-map owner; excluded from semantic identity"
+  },
+  "runtime_step_boundary": {
+    "ingress": "RuntimeStepInput.stream_events",
+    "observations": "RuntimeEffectBatch.stream_observations",
+    "outcomes": "RuntimeStepOutput.stream_event_outcomes",
+    "removed": [
+      "RuntimeStepInput.source_events",
+      "RuntimeEffectBatch.source_events",
+      "RuntimeEffectBatch.stream_events",
+      "HostRequestBatch.source_close"
+    ],
+    "requests": "HostRequestBatch.stream_requests"
+  },
+  "status": "implementation-ready",
+  "versions": {
+    "awbc_abi": {
+      "contract": 2,
+      "current_main": 1,
+      "owner": "arcweft-core::awbc"
+    },
+    "awbc_codec": {
+      "contract": 8,
+      "current_main": 7,
+      "owner": "arcweft-core::awbc::codec"
+    },
+    "bundle_awbc_encoding": {
+      "contract": "awbc_v2",
+      "current_main": "awbc_v1",
+      "owner": "arcweft-bundle::product_awbc"
+    },
+    "bundle_schema": {
+      "contract": 6,
+      "current_main": 5,
+      "owner": "arcweft-bundle"
+    },
+    "session_save": {
+      "contract": 2,
+      "current_main": 1,
+      "owner": "arcweft-runtime-driver::session_save"
+    }
+  },
+  "worked_hashes": {
+    "bundle_stream_fingerprint": "7ee9a40fbd4025897267158027764cca41dba79dce5b56d14fec7283764600b3",
+    "definition_key": "06c9bbdb24b2d49e046351ed1abc232b56a36f2fcbb7001cbe5c88342f7725dd",
+    "replay_digest": "947ea4e1562aaadb16a5541cb6f9d229a9ebbe451e9aa40dda0564e30f9a14eb"
+  }
+}

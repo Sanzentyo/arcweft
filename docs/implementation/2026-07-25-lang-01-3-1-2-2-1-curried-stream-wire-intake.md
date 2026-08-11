@@ -8,7 +8,7 @@ Date: 2026-07-25
 
 The returned archive is retained at:
 
-- [`arcweft-lang-01.3.1.2.2.1 curried Stream wire-allocation reconciliation`](../reviews/packages/arcweft-lang-01.3.1.2.2.1-curried-stream-wire-allocation-reconciliation-final-contract.zip),
+- [`arcweft-lang-01.3.1.2.2.1 curried Stream wire-allocation reconciliation`](../reviews/packages/zips/arcweft-lang-01.3.1.2.2.1-curried-stream-wire-allocation-reconciliation-final-contract.zip),
   SHA-256
   `8ADED7B1CB5D92F9D820C2CC82121AC6D070F3CF26D1618DC23FF144081090AD`,
   56,620 bytes.

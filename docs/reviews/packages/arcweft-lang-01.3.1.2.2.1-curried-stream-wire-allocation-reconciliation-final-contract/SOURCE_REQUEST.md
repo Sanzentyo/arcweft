@@ -1,0 +1,135 @@
+# Request: curried Stream wire-allocation reconciliation
+
+## Sequence position
+
+This is Lang-01.3.1.2.2.1, a narrow self-consistency correction for the
+returned Lang-01.3.1.2.2 contract. It follows Lang-01.3.1.2.1 and must preserve
+the selected group-aware callable signature, canonical argument product,
+partial function value, affine Stream lifecycle, and Source-elimination
+direction.
+
+The assignee must inspect the current production `main` rather than treating
+the request-authoring revision as a frozen implementation baseline, and must
+record matching Git and Jujutsu identities for that inspected checkout.
+
+## Dispatch contract
+
+Send this request and these three complete returned archives to one design
+assignee with access to the current Arcweft `main`, repository `AGENTS.md`, and
+the applicable Rust skill:
+
+- `lang-01.3.1.2-typed-stream-runtime-wire-model-final-contract.zip`;
+- `Lang-01.3.1.2.1-typed-stream-runtime-wire-contract-correction-final-contract.zip`;
+  and
+- `arcweft-lang-01.3.1.2.2-curried-external-stream-final-contract.zip`.
+
+This is design-only work. Do not edit production Rust, tests, manifests,
+fixtures, schemas, or stable design chapters, and do not return a repository
+overlay or patch. Do not redesign landed callable selection, direct suspension,
+or affine Stream substrate unless current repository evidence demonstrates a
+concrete defect.
+
+## Why this correction is required
+
+Lang-01.3.1.2.2 says that it supersedes only the parent's flat external-Stream
+argument projection and preserves unrelated ABI-2 lifecycle choices. Its
+integrated opcode table nevertheless assigns:
+
+```text
+0x27 = ApplyExternalStreamGroup
+0x28 = OpenStream
+```
+
+while Lang-01.3.1.2.1 assigns:
+
+```text
+0x27 = OpenStream
+0x28 = FinishStream
+```
+
+The child package allocates no replacement for the retained `FinishStream`.
+The parent's pre-implementation collision rule applies only when current
+`main` has consumed a proposed value; it does not decide which of two accepted
+contract meanings wins. Local selection would change canonical codec-8 bytes,
+verifier dispatch, VM dispatch, and rejection vectors.
+
+The child Rust document also repeats parent identities under shorter names.
+Repository adjudication maps them without compatibility aliases:
+
+| Child spelling | Retained parent owner |
+| --- | --- |
+| `StreamDefinitionId([u8; 32])` | `RuntimeStreamDefinitionKey([u8; 32])` |
+| `GenerationId(u64)` | `StreamGeneration(u64)` |
+| `StreamInstanceId(u64)` allocation component | `StreamInstanceOrdinal(u64)`; public identity remains `StreamInstanceKey` |
+| `RuntimeTypeLayoutHash` | existing `TypeLayoutHash` |
+
+The correction should ratify this mapping, not introduce duplicate types.
+
+## Required decisions
+
+1. Allocate non-conflicting codec-8 opcodes for exactly
+   `ApplyExternalStreamGroup`, `OpenStream`, and retained `FinishStream`.
+2. State which allocation rows are superseded and list every removed opcode
+   that remains invalid. No implicit or reserved instruction is acceptable.
+3. Give exact Rust variants, field order, binary field order, verifier rules,
+   and worked bytes for the three instructions.
+4. Confirm the parent identity mapping above while retaining
+   `RuntimeStreamDefinitionId(u32)` as the table index and
+   `StreamInstanceKey { definition_key, generation, ordinal }` as the complete
+   runtime identity.
+5. Reconcile the group-aware callable signature with the parent's flat
+   `RuntimeCallableBoundarySignature`: specify the one final owner and the
+   exact replacement boundary. No duplicated parameter schema or flattening
+   adapter is allowed.
+6. Give one compile-clean interleave for Lang-01.3.1.2.1 Cuts 3--8 and
+   Lang-01.3.1.2.2 Cuts 1--6. It must never publish codec 8 with incomplete
+   tables, a flat external argument product, or two function-value shapes.
+
+## Tests to specify
+
+- exact opcode/tag golden bytes for all three instructions;
+- decode/encode/re-encode equality and direct codec-7 rejection;
+- verifier rejection for group-apply on the final group, open on a non-final
+  group, and finish outside the correct producer owner;
+- empty, exact-max, and one-over group/parameter products;
+- direct versus staged curried application product equality;
+- authored generator completion/failure/cancellation parity;
+- definition index/key and instance-key round trips through RuntimePlan, AWBC,
+  host request, bundle, save, and restore; and
+- typed or compile-fail evidence that no parallel identity alias or flat
+  external argument owner remains.
+
+Removal evidence must be behavior, codec, compile-fail API, or structured
+dependency evidence, never a source-text gate.
+
+## Constraints
+
+- Do not redesign the shared callable resolver, coordinate model, affine
+  lifecycle table, replay/tombstone policy, direct suspension, generator
+  classification, or Source-elimination direction.
+- Do not add compatibility aliases, dual readers/writers, serde aliases,
+  endpoint DTOs, migration shims, feature/source gates, removed-syntax
+  diagnostics, CSS, or Takumi.
+- Keep `arcweft-core` and data-format owners Sans I/O.
+- Preserve `StreamInstanceKey`; a bare ordinal is not a globally meaningful
+  instance ID.
+- Reuse parent owner names where the mapping above is accepted.
+- Do not redesign verified AW-AH-009.3 selection/accounting or Lang-01.1.1
+  semantic execution facts without a demonstrated defect.
+
+## Expected output
+
+Return exactly one independently usable archive named:
+
+`arcweft-lang-01.3.1.2.2.1-curried-stream-wire-allocation-reconciliation-final-contract.zip`
+
+It must contain the final contract and every sidecar: status, summary,
+manifest/hashes, normative delta, exact wire table, Rust-shaped owners,
+implementation order, test matrix, and worked bytes. Summary, status, and
+manifest sidecars belong inside the ZIP. An external `.sha256` for the
+completed ZIP is the only unavoidable adjacent sidecar.
+
+The package must report `OPEN_QUESTIONS=0`, identify
+Lang-01.3.1.2.2.1, and list exactly which rows of Lang-01.3.1.2.1 and
+Lang-01.3.1.2.2 it supersedes. It must contain no production code or
+compatibility overlay.

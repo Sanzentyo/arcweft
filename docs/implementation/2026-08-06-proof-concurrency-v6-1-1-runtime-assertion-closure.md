@@ -14,7 +14,7 @@ Proof-concurrency v6.1.1. It does not award completion credit to uncommitted or
 unvalidated code.
 
 The design authority is the accepted
-[Proof-concurrency v6.1.1 package](../reviews/packages/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip),
+[Proof-concurrency v6.1.1 package](../reviews/packages/zips/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip),
 SHA-256
 `1B7DE5F2C10A5B29D67C72011E4272DF9A76AF8907FD21FE162DE54809FC69EF`.
 The repository-visible

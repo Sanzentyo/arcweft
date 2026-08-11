@@ -1,0 +1,35 @@
+{
+  "contract_id": "Lang-01.3.1.2.2.1",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "open_questions": 0,
+  "design_only": true,
+  "inspected_main": {
+    "git_commit": "0b7e095f4193b9f7fbbc95cc350a626a8a63640a",
+    "jujutsu_backend_commit": "0b7e095f4193b9f7fbbc95cc350a626a8a63640a",
+    "jujutsu_revset": "commit_id(\"0b7e095f4193b9f7fbbc95cc350a626a8a63640a\")",
+    "agents_blob": "e91f99213dde67953beda6aa078c370a8dc4541d"
+  },
+  "allocation": {
+    "OpenStream": "0x27",
+    "FinishStream": "0x28",
+    "ApplyExternalStreamGroup": "0x29"
+  },
+  "removed_invalid_opcodes": [
+    "0x1c",
+    "0x1d",
+    "0x1e",
+    "0x20"
+  ],
+  "callable_owner": "arcweft-core::entry::RuntimeCallableBoundarySignature (grouped in place)",
+  "function_value_owner": "arcweft-core::value::RuntimeFunctionValue",
+  "argument_product_owner": "RuntimeExternalStreamArgumentProduct",
+  "complete_instance_identity": "StreamInstanceKey { definition_key, generation, ordinal }",
+  "compatibility": {
+    "aliases": false,
+    "shims": false,
+    "dual_readers": false,
+    "source_gates": false,
+    "removed_syntax_diagnostics": false
+  },
+  "test_case_count": 105
+}

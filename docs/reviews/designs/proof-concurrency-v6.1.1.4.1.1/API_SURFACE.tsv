@@ -1,0 +1,28 @@
+owner_crate_module	type_or_method	constructor_or_signature	read_only_accessors	validation	visibility
+arcweft-lang-hir::source_index	HirSourceQuery	Expr/Pattern/Type typed variants	owner and typed role through matching variant	owner/role type pairing unrepresentable incorrectly	public enum; no Serde
+arcweft-lang-hir::source_index	HirModule::source_site	(&SourceDocumentIdentity,HirSourceQuery)->Result<HirSourceLookup,HirSourceQueryError>	lookup only	ID liveness, role applicability, ordinal, source identity	public read-only sole query
+arcweft-lang-hir::source_index	HirSourceLookup	pub(crate) new	presence, owner_status	Present or AbsentOptional; clean/poison status	public read-only
+arcweft-lang-hir::source_index	HirExprSourceRole	enum variants	variant fields	applicability against Expr payload	public
+arcweft-lang-hir::source_index	HirPatternSourceRole	enum variants	variant fields	applicability against Pattern payload	public
+arcweft-lang-hir::source_index	HirTypeSourceRole	enum variants	variant fields	applicability against Type payload	public
+arcweft-lang-hir::source_index	HirSourceQueryError	owner-specific variants	structured fields	no erased owner/role	public error
+arcweft-lang-hir::identity	SyntheticOwner	enum variants over every typed Hir ID, including Type(TypeId)	kind()->HirIdKind; module()->HirModuleId	variant itself proves kind; no arena probe	public Copy enum
+arcweft-lang-hir::identity	SyntheticKey	try_new(SyntheticOwner,SyntheticRole,u32)->Result<Self,SyntheticKeyError>	owner()->SyntheticOwner; role()->SyntheticRole; ordinal()->u32	inherent role owner-kind/ordinal policy; module/liveness resolved by owning transaction	public read-only Copy; ctor pub(crate)
+arcweft-lang-hir::identity	SyntheticRole::accepts_owner	const fn(self,HirIdKind,u32)->bool	none	ElidedRegion accepts only Type and ordinal0	pub(crate) inherent
+arcweft-lang-hir::expr	HirElidedRegion	try_new(TypeId,SyntheticKey)->Result<Self,HirElidedRegionError>	owner_type()->TypeId; key()->SyntheticKey	key owner exact TypeId; key construction already proves ElidedRegion/ordinal0	public read-only Copy; ctor pub(crate)
+arcweft-lang-hir::expr	HirVariantPattern	try_new(head,name,payload)	head,name,payload	qualified nonempty; payload live same-module Tuple/Record	public read-only; ctor pub(crate)
+arcweft-lang-hir::expr	HirVariantPatternHead	Qualified/Unqualified	variant access	no empty-path state	public
+arcweft-lang-hir::expr	HirUnqualifiedVariantForm	DotShorthand/BareExpectedType	variant	closed	public
+arcweft-lang-hir::expr	HirDurationSemanticValue	try_new(HirBigUint)	nanoseconds	whole nonnegative nanoseconds	public read-only; ctor pub(crate)
+arcweft-lang-hir::expr	HirDurationValue	new(semantic,authored_unit)	semantic_value,authored_unit	canonical semantic value and normalized unit	public read-only; ctor pub(crate)
+arcweft-lang-sema::literal	FloatLiteralCheckResult	Accepted/Rejected	variant	only clean HIR input	public checker product
+arcweft-lang-sema::literal	FloatLiteralCheckError	WidthOverflow	expression,width,observed	canonical decimal rounds to infinity	public diagnostic product
+arcweft-lang-sema::literal	DurationLiteralCheckResult	Accepted/Rejected	variant	only clean whole-ns HIR input	public checker product
+arcweft-lang-sema::literal	DurationLiteralCheckError	RuntimeRangeOverflow	expression,observed,maximum	observed > u64::MAX	public diagnostic product
+arcweft-lang-hir::identity	HirLimit	original enum extended	maximum	closed per-variant inclusive maximum	public
+arcweft-lang-hir::identity	HirLimitError	new(limit,observed)	limit,observed,maximum	observed > maximum or checked arithmetic overflow	public error
+arcweft-lang-hir::expr	HirPath	try_new(root,segments)	root,segments	nonempty typed segments; lowering context preflights name/count/semantic-byte limits atomically	public read-only; ctor pub(crate)
+arcweft-lang-hir::expr	HirLifetimeRegistryPath	try_new(scope,segments,optional)	scope,segments,optional	typed scope/segments and optional-read invariant; lowering context preflights count/name/semantic-byte limits	public read-only; ctor pub(crate)
+arcweft-lang-hir::expr	HirCallExpr	try_new(callee,args)	callee,arguments	same module; accepted 128/32 contextual limits	public read-only; ctor pub(crate)
+arcweft-lang-hir::expr	HirThreadExpr	try_new(name,mode,scope,body)	name,mode,scope,body	same module/scope; static detached captures	public read-only; ctor pub(crate)
+arcweft-lang-hir::dialogue_application	accepted outer records	unchanged	unchanged	AW-AH-009.4.2 exact fields/ordinals	unchanged

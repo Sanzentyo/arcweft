@@ -1,0 +1,19 @@
+requirement	decision	evidence	status
+REQ-01	sole source authority	RUST_FACING_SCHEMAS.md; SOURCE_AUTHORITY_AND_CURSOR.md; SOURCE_ROLE_APPLICABILITY_MATRIX.tsv	CLOSED
+REQ-02	current named/spread grammar	CALL_PAYLOAD_MATRIX.tsv; TEST_MATRIX.tsv	CLOSED
+REQ-03	active-slot boundaries and AW rows	ACTIVE_SLOT_MATRIX.tsv	CLOSED
+REQ-04	terminal Call/associated states	RUST_FACING_SCHEMAS.md; CALL_PAYLOAD_MATRIX.tsv	CLOSED
+REQ-05	invalid-present type retains TypeId	RUST_FACING_SCHEMAS.md; E12-030	CLOSED
+REQ-06	reuse ordinal/limits/256/RichText32	LIMIT_AND_TRANSACTION_CONTRACT.md; LIMIT_AND_ROLLBACK_MATRIX.tsv	CLOSED
+REQ-07	existing resolver/facts/probes/replay	RESOLVER_AND_ACCOUNTING.md; RESOLVER_ACCOUNTING_MATRIX.tsv	CLOSED
+REQ-08	Proof two vs resolver256	RESOLVER_AND_ACCOUNTING.md; L-021/L-022	CLOSED
+REQ-09	zero resolver and exactly-once args	A-001/A-002; T-RES-12-001	CLOSED
+REQ-10	central attached geometry owner	ATTACHED_CALL_PROJECTION.md	CLOSED
+REQ-11	no undefined placeholder identities	RUST_FACING_SCHEMAS.md; CONTRADICTION_AUDIT.tsv	CLOSED
+REQ-12	reachable exact/one-over tests	LIMIT_AND_ROLLBACK_MATRIX.tsv; TEST_MATRIX.tsv	CLOSED
+REQ-13	deletion-driven all-consumer migration	DELETION_MIGRATION_MATRIX.tsv; IMPLEMENTATION_AND_DELETION_ORDER.md	CLOSED
+REQ-14	root poison canonical relationship	RUST_FACING_SCHEMAS.md issue section	CLOSED
+REQ-15	explicit type application and receiver separation	CALL_PAYLOAD_MATRIX.tsv E12-025..030	CLOSED
+REQ-16	rollback/retry/perturbation	LIMIT_AND_TRANSACTION_CONTRACT.md; T-RB rows	CLOSED
+REQ-17	direct predecessor audit/precedence	PREDECESSOR_MEMBER_AUDIT.tsv; PREDECESSOR_PRECEDENCE.md	CLOSED
+REQ-18	no shim/reparse/source gate	DELETION_MIGRATION_MATRIX.tsv; compile-fail tests	CLOSED

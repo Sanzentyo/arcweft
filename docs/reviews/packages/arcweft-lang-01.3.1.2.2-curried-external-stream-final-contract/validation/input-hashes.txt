@@ -1,0 +1,4 @@
+b19943dba0dbedc2de93288354355e9f7b124f0fa602e31e9c099b135483377d  request/2026-07-22-lang-01.3.1.2.2-curried-external-stream-runtime-argument-projection-correction.md
+1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665  inputs/Rust Skill.txt
+cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1  inputs/前提(Sanzentyo-arcweft).txt
+6d24910f7961c56faaffddea5cfa6775b48578a1  request Git blob

@@ -1,0 +1,160 @@
+{
+  "cases": [
+    {
+      "id": "NEG-001",
+      "mutation": "root omits format",
+      "expected_code": "resource_manifest.missing_format"
+    },
+    {
+      "id": "NEG-002",
+      "mutation": "format is an array",
+      "expected_code": "resource_manifest.malformed_format"
+    },
+    {
+      "id": "NEG-003",
+      "mutation": "format is another string",
+      "expected_code": "resource_manifest.unsupported_format"
+    },
+    {
+      "id": "NEG-004",
+      "mutation": "root omits schema",
+      "expected_code": "resource_manifest.missing_schema_version"
+    },
+    {
+      "id": "NEG-005",
+      "mutation": "schema is a string",
+      "expected_code": "resource_manifest.malformed_schema_version"
+    },
+    {
+      "id": "NEG-006",
+      "mutation": "schema is 2",
+      "expected_code": "resource_manifest.unsupported_schema_version"
+    },
+    {
+      "id": "NEG-007",
+      "mutation": "duplicate root key",
+      "expected_code": "resource_manifest.duplicate_key"
+    },
+    {
+      "id": "NEG-008",
+      "mutation": "explicit null at an optional field",
+      "expected_code": "resource_manifest.null_not_allowed"
+    },
+    {
+      "id": "NEG-009",
+      "mutation": "unknown object member",
+      "expected_code": "resource_manifest.unknown_field"
+    },
+    {
+      "id": "NEG-010",
+      "mutation": "known tag with forbidden or missing content",
+      "expected_code": "resource_manifest.wrong_tag_content"
+    },
+    {
+      "id": "NEG-011",
+      "mutation": "descriptor digest changed without descriptor change",
+      "expected_code": "resource_manifest.descriptor_digest_mismatch"
+    },
+    {
+      "id": "NEG-012",
+      "mutation": "float bits 0x7ff0000000000000",
+      "expected_code": "resource_manifest.non_finite_float"
+    },
+    {
+      "id": "NEG-013",
+      "mutation": "float bits 0x7ff8000000000000",
+      "expected_code": "resource_manifest.non_finite_float"
+    },
+    {
+      "id": "NEG-014",
+      "mutation": "float bits 0x8000000000000000",
+      "expected_code": "resource_manifest.non_canonical_float"
+    },
+    {
+      "id": "NEG-015",
+      "mutation": "signed integer 9223372036854775808",
+      "expected_code": "resource_manifest.integer_overflow"
+    },
+    {
+      "id": "NEG-016",
+      "mutation": "unsigned integer 18446744073709551616",
+      "expected_code": "resource_manifest.integer_overflow"
+    },
+    {
+      "id": "NEG-017",
+      "mutation": "UTF-8 byte sequence c3 28",
+      "expected_code": "resource_manifest.invalid_utf8"
+    },
+    {
+      "id": "NEG-018",
+      "mutation": "kind bytes with base64 content",
+      "expected_code": "resource_manifest.unknown_tag"
+    },
+    {
+      "id": "NEG-019",
+      "mutation": "malformed package or typed ID",
+      "expected_code": "resource_manifest.invalid_id"
+    },
+    {
+      "id": "NEG-020",
+      "mutation": "retained character value supplied to ResourceRef",
+      "expected_code": "resource_manifest.registry_validation"
+    },
+    {
+      "id": "NEG-021",
+      "mutation": "duplicate schema/type/codec/field/variant/map/record key",
+      "expected_code": "resource_manifest.duplicate_record"
+    },
+    {
+      "id": "NEG-022",
+      "mutation": "package coordinate differs from selected resolver coordinate",
+      "expected_code": "resource_manifest.package_mismatch"
+    },
+    {
+      "id": "NEG-023",
+      "mutation": "two selected versions for one PackageId",
+      "expected_code": "resource_manifest.version_conflict"
+    },
+    {
+      "id": "NEG-024",
+      "mutation": "cross-package type reference absent from selected base/dependency registry",
+      "expected_code": "resource_manifest.registry_validation"
+    },
+    {
+      "id": "NEG-025",
+      "mutation": "nested wrong type in record default",
+      "expected_code": "resource_manifest.registry_validation",
+      "range_assertion": "primary is nested value; related is field value_type"
+    },
+    {
+      "id": "NEG-026",
+      "mutation": "one byte over document limit",
+      "expected_code": "resource_manifest.byte_limit"
+    },
+    {
+      "id": "NEG-027",
+      "mutation": "one nesting level over limit",
+      "expected_code": "resource_manifest.depth_limit"
+    },
+    {
+      "id": "NEG-028",
+      "mutation": "one decoded string byte over limit",
+      "expected_code": "resource_manifest.string_limit"
+    },
+    {
+      "id": "NEG-029",
+      "mutation": "one array item over limit",
+      "expected_code": "resource_manifest.collection_limit"
+    },
+    {
+      "id": "NEG-030",
+      "mutation": "one object member or semantic record over limit",
+      "expected_code": "resource_manifest.record_limit"
+    },
+    {
+      "id": "NEG-031",
+      "mutation": "one deterministic work unit over limit",
+      "expected_code": "resource_manifest.work_limit"
+    }
+  ]
+}

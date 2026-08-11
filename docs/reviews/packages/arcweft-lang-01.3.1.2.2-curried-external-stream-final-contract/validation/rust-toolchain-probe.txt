@@ -1,0 +1,19 @@
+Probe date: 2026-07-22
+Environment: artifact container
+
+$ command -v rustc
+<not found>
+
+$ command -v cargo
+<not found>
+
+$ command -v rustfmt
+<not found>
+
+$ command -v cargo-clippy
+<not found>
+
+$ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs
+curl: (6) Could not resolve host: sh.rustup.rs
+
+Classification: Rust model fmt/test/clippy not executed; no pass claimed.

@@ -1,0 +1,484 @@
+# Request: AW-AH-009.4 first-class `CharacterDialogue` runtime contract
+
+Date: 2026-07-19
+
+## Sequence and independence
+
+This is the first of two sequential, independently throwable design requests:
+
+1. **AW-AH-009.4** — this request; fixes the language, semantic, runtime, and
+   persistence contract for first-class `CharacterDialogue`;
+2. **AW-AH-009.4.1** — fixes the authored View projection
+   `dialogue.character.*` after the value and wire model from this request is
+   settled.
+
+Return one implementation-ready final-contract ZIP for this request. Do not
+require the assignee to read the original conversation or any audit ZIP.
+
+Expected artifact name:
+
+```text
+arcweft-aw-ah-009.4-character-dialogue-first-class-runtime-final-contract.zip
+```
+
+## Accepted direction
+
+The following decisions are final and are not open for redesign.
+
+### Canonical source surface
+
+```arcw
+alice[
+    おはよう。[p]
+]
+
+alice(
+    look = smile,
+    voice = auto,
+    view = @view.MainDialogue,
+)[
+    おはよう。[p]
+]
+
+alice:
+    おはよう。[p]
+
+let phone_alice = alice(
+    view = @view.PhoneMessage,
+    voice = auto,
+)
+
+let worried = phone_alice(
+    look = worried,
+)
+
+worried[
+    ……聞こえる？[p]
+]
+```
+
+The operation types are fixed:
+
+```text
+Ref<Character>()                         -> CharacterDialogue
+Ref<Character>(CharacterDialoguePatch)   -> CharacterDialogue
+CharacterDialogue(CharacterDialoguePatch)
+                                           -> CharacterDialogue
+CharacterDialogue[DialogueContent]       -> DialogueLine
+CharacterDialogue: DialogueContent       -> DialogueLine
+```
+
+`(...)` creates or immutably reconfigures a dialogue value. `[...]` applies
+content. `:` is only concise content-application syntax. `with:` applies a line
+plan to the resulting `DialogueLine`.
+
+### Required deletion
+
+Delete these language and public API concepts rather than aliasing them:
+
+```text
+Character.say(...)
+SpeakerPreset.say(...)
+SpeakerPreset.call(...)
+Speaker
+SpeakerRef
+SpeakerPreset
+DialogueSpeakerPreset
+SayOptions
+DialogueLineBuilder::say()
+TypeKind::Speaker
+TypeKind::SpeakerPreset
+DialogueCalleeIdentity::Speaker
+DialogueCalleeIdentity::SpeakerPreset
+DialogueCallableId::SpeakerLine
+speaker_preset_chain
+all `.say` suffix stripping or reconstruction
+```
+
+Use `CharacterId` / `Ref<Character>` for character identity and one nominal
+`CharacterDialogue` value for configured dialogue behavior.
+
+Do not add:
+
+- a deprecated `.say` method;
+- a `.say` alias or compatibility shim;
+- a dual AST/HIR/runtime reader;
+- a permanent removed-syntax recognizer or dedicated `.say` diagnostic;
+- a formatter-only compatibility rewrite;
+- a version bump whose only purpose is to preserve an unreleased discarded
+  representation.
+
+The final parser must reject `.say` through ordinary current-grammar method
+resolution. A separate explicitly requested one-shot external migration tool
+would be the only allowed migration mechanism.
+
+## Current implementation problem
+
+The current repository does not yet carry one typed value through the full
+pipeline:
+
+- syntax accepts both direct bracket application and `.say`-shaped ordinary
+  calls;
+- HIR stores dialogue callee identity text and strips `.say` suffixes while
+  deriving line IDs;
+- sema has `Speaker` / `SpeakerPreset` type variants and special callable
+  resolution;
+- tooling canonicalization expands concise dialogue toward `.say(...)`;
+- runtime-plan reconstructs preset chains from callee strings and lexical
+  `let` bindings;
+- `arcweft-dialogue` exposes `SpeakerRef`, `SpeakerPreset`, `SayOptions`, and
+  `.say()` builders;
+- display/save/AWBC boundaries do not yet state whether a configured dialogue
+  is a real runtime value or a statically eliminated compiler value.
+
+Renaming these symbols without choosing one value and wire model would leave
+the same defect under new names.
+
+## Established substrate to preserve
+
+- `arcweft-character` owns validated immutable `CharacterId` identity and
+  character manifests.
+- AW-AH-009 and its reconciliations establish nominal character registration,
+  alias diagnostics, source indexing, signature help, and shared callable
+  resolution. Reuse that substrate; do not restore name-based character
+  inference.
+- Ordinary call groups, bracket postfix parsing, dialogue content parsing, line
+  plans, effects, and accepted-HIR lifecycle are existing substrate.
+- Dialogue presentation already reaches a persistent authored View through a
+  required typed `ViewId`.
+- `syntax -> HIR -> sema -> runtime-plan/verify -> tooling` remains the layer
+  direction.
+- Existing function/callable unification and typed stream work are unrelated.
+  Do not redesign them.
+- CSS/Takumi authoring paths have been removed and are out of scope.
+
+Do not redesign already implemented and verified substrate unless current
+implementation evidence demonstrates a concrete flaw.
+
+## Design objective
+
+Specify one first-class immutable nominal `CharacterDialogue` value from source
+typing through runtime execution and every real persistence boundary. The
+design must make character identity, configuration inheritance, content
+application, source identity, diagnostics, and deletion order explicit enough
+to implement without another string reconstruction layer.
+
+## Required decisions
+
+### 1. Exact owned types
+
+Define exact Rust-facing and semantic shapes for:
+
+```text
+CharacterDialogue
+CharacterDialogueConfig
+CharacterDialoguePatch
+CharacterDialogueValue or equivalent runtime carrier, if one exists
+CharacterDialogueContentApplication
+```
+
+State which crate owns each type and why the dependency direction is valid.
+`CharacterDialogue` must contain immutable `CharacterId` ownership and must not
+recover it from a variable name, callee label, source alias, or string suffix.
+
+### 2. Configuration and merge table
+
+Cover every currently supported dialogue option:
+
+```text
+id
+text_key
+voice
+look
+stage
+portrait
+focus
+cleanup
+view
+source_locale
+hooks
+style
+rich_text
+inline failure policy
+custom named line arguments
+```
+
+For each field, specify:
+
+- typed value and owning crate;
+- whether it belongs to the reusable configured value or only to one content
+  application;
+- absent/default/explicit-clear representation;
+- immutable patch merge rule;
+- validation phase;
+- source provenance retained for diagnostics;
+- serialization decision and limit, if it crosses a wire.
+
+Fixed merge behavior:
+
+- a later specified scalar replaces the earlier scalar;
+- an unspecified scalar preserves the earlier value;
+- structured style merges field-by-field and later values win for the same
+  field;
+- custom named arguments preserve distinct keys and later values replace the
+  same key;
+- character identity cannot be changed by a patch.
+
+Do not use one untyped `BTreeMap<String, String>` as the canonical config.
+
+### 3. Runtime-value decision
+
+Choose exactly one of these final models and justify it with current
+requirements:
+
+#### `RUNTIME_VALUE`
+
+`CharacterDialogue` is a genuine callable runtime value that may be returned,
+stored, captured, passed through ordinary functions, placed in collections when
+type rules allow it, saved when reachable, encoded in AWBC, and invoked after
+runtime control flow.
+
+#### `PROVEN_STATIC_ELIMINATION`
+
+`CharacterDialogue` is a compile-time/HIR value that must be fully resolved and
+eliminated before executable runtime code. Specify the proof obligations and
+structured errors for every escape, dynamic branch, closure capture, return,
+collection insertion, save reachability, or indirect call that cannot be
+eliminated.
+
+Do not leave a hybrid model in which simple locals are compiler presets while
+other uses silently become string callees. List actual authored examples that
+each model accepts and rejects.
+
+### 4. Grammar, CST, AST, and HIR
+
+Define explicit nodes and ranges for:
+
+- `Ref<Character>(patch)`;
+- `CharacterDialogue(patch)`;
+- `CharacterDialogue[DialogueContent]`;
+- colon content sugar;
+- attached `with:` / `with {}` line plan;
+- incomplete and malformed bracket/colon/config forms.
+
+The typed node must not depend on a callee string ending in `.say`. Define
+parser recovery and ambiguity with indexing, collection literals, ordinary
+call/bracket postfixes, record literals, and line-plan attachment. Reuse the
+existing bracket/dialogue parser substrate where correct.
+
+### 5. HIR/sema/callable resolution
+
+Define:
+
+- the new `TypeKind::CharacterDialogue` payload;
+- character-reference call typing;
+- same-type immutable reconfiguration typing;
+- content-application typing;
+- expected-type and generic behavior;
+- aliases, imports, local bindings, branch joins, function parameters/returns,
+  closures, partial calls, and indirect calls;
+- structured mismatch diagnostics;
+- how the shared callable catalog/resolver publishes these call surfaces;
+- how signature help distinguishes configuration `(...)` from content `[...]`.
+
+Remove `Speaker` and `SpeakerPreset` classifications directly. Do not preserve
+their enum ordering, digest tags, aliases, or constructors without released
+compatibility evidence.
+
+### 6. Line identity and the `@say.*` family
+
+The `.say` method and the existing `@say.*` line-identity namespace are
+different concerns. Choose and document one final line-ID family:
+
+- retain `@say.*` strictly as a stable line entity namespace while deleting all
+  method semantics; or
+- rename it to a new line/dialogue family and migrate all unreleased data
+  directly.
+
+Define generated ID derivation for direct bracket and colon forms, explicit ID
+validation, relative references, collision rules, tooling rename, save/replay
+identity, and diagnostics. Never infer character identity by stripping this
+line-ID family.
+
+### 7. Runtime-plan, verifier, and execution
+
+Define the typed lowering from accepted HIR to:
+
+- line display plan;
+- dialogue content and line plan;
+- character identity;
+- effective immutable configuration;
+- typed `ViewId`;
+- voice/look/stage/style/Fx inputs;
+- result/handle behavior.
+
+Delete `DialogueSpeakerPreset`, `speaker_preset_from_let`,
+`speaker_preset_chain`, callee-label inheritance, and `.say` suffix stripping.
+If configuration values exist at runtime, define deterministic invocation,
+equality/hash rules, capture semantics, effects, budgets, and errors. If they
+are statically eliminated, prove that no executable node or save value remains.
+
+### 8. AWBC, bundle, patch, save, replay, and hot reload
+
+Inventory every real wire:
+
+- HIR/compiler query cache;
+- runtime plan;
+- AWBC constants/instructions;
+- bundle display catalog;
+- patch/hot-reload payload;
+- save snapshot;
+- replay/debug trace;
+- Agent observation.
+
+For each boundary, explicitly choose:
+
+- no representation because the value is already eliminated; or
+- one typed representation with discriminant, validated IDs, canonical
+  ordering, limits, tamper behavior, and source provenance.
+
+Define hot-reload equality/stale detection when a character manifest,
+configuration field, referenced View, or source line changes. Do not serialize
+source labels as semantic identity and do not add a dual reader for the
+discarded preset format.
+
+### 9. Tooling
+
+Define formatter, canonicalization, LSP completion, hover, signature help,
+go-to-definition, rename, semantic tokens, and code action behavior.
+
+Canonical expansion is:
+
+```arcw
+alice:
+    text
+```
+
+to:
+
+```arcw
+alice[
+    text
+]
+```
+
+and:
+
+```arcw
+alice(look = worried):
+    text
+```
+
+to:
+
+```arcw
+alice(look = worried)[
+    text
+]
+```
+
+Tooling must never emit `.say(...)`. It must use accepted HIR/sema identity,
+not callee spelling heuristics.
+
+## Ownership constraints
+
+- Character nominal identity remains owned by `arcweft-character`.
+- Syntax owns only grammar/CST/AST and source recovery.
+- HIR owns structured language meaning and source identity.
+- Sema/shared callable resolution owns typing and accepted-call evidence.
+- Runtime-plan/verifier own checked lowering and executable obligations.
+- AWBC/bundle/save own typed deterministic codecs only when the chosen model
+  crosses them.
+- Runtime-driver owns dialogue state transitions, not source grammar or
+  `.say` parsing.
+- LSP/tooling consume semantic queries.
+
+Keep lower crates Sans I/O and do not introduce circular dependencies.
+
+## Diagnostics and limits
+
+Specify stable structured diagnostics for:
+
+- calling a non-character as a character dialogue factory;
+- reconfiguring a non-`CharacterDialogue` value;
+- applying dialogue content to the wrong type;
+- attempting to change immutable character identity;
+- duplicate or conflicting config keys;
+- invalid/unknown look, voice, View, style, locale, line ID, or custom field;
+- disallowed dynamic escape under `PROVEN_STATIC_ELIMINATION`;
+- malformed/tampered runtime value or wire under `RUNTIME_VALUE`;
+- stale identity after hot reload or restore;
+- config nesting, custom-key count, string length, style/Fx payload, and
+  collection/capture limits.
+
+Malformed current syntax is rejected through normal grammar/type diagnostics.
+Do not add spelling-specific `.say` diagnostics or source gates.
+
+## Implementation order to specify
+
+1. Freeze the exact type/config/patch and runtime-value decision.
+2. Freeze line-ID family and every real wire boundary.
+3. Add final typed syntax/HIR/sema/shared-resolver shapes behind no legacy
+   reader.
+4. Migrate runtime-plan/verifier and either implement the typed runtime/wire or
+   complete static elimination.
+5. Migrate dialogue model, bundles, patch/save/replay, and hot reload in
+   dependency order.
+6. Migrate formatter/LSP/tooling canonicalization.
+7. Convert canonical samples and tests.
+8. Delete every old type, suffix recognizer, preset chain, builder, alias,
+   digest tag, and compatibility branch.
+9. Run focused tests, normal workspace validation, Tier 2 Agent/MCP/render
+   validation when runtime presentation changes, and the structural audit.
+
+## Required tests
+
+- Direct character bracket and colon forms produce the same typed line.
+- Character call with no content returns a `CharacterDialogue` and emits no
+  line.
+- Reconfiguration is immutable and preserves/replaces/merges every field by
+  the normative table.
+- Character identity cannot be patched.
+- Configured values survive aliases, branches, parameters, returns, closures,
+  and indirect calls exactly where the chosen model permits them.
+- Wrong callee/config/content types produce source-ranged diagnostics.
+- Shared callable resolution and signature help use typed identity.
+- Generated and explicit line IDs obey the chosen family and collision rules.
+- HIR/runtime-plan contain no callee spelling dependency.
+- Effective View/voice/look/stage/style/Fx behavior matches direct and reused
+  configured values.
+- Every actual codec has deterministic round-trip plus malformed ID, wrong
+  discriminant, duplicate, truncated, oversized, stale, and noncanonical tests.
+- Save/restore/replay/hot reload follow the chosen runtime-value model.
+- Formatter expands colon to direct bracket application and never emits
+  `.say`.
+- `.say` has no executable AST/HIR node, alias, compatibility API, or dedicated
+  removed-syntax diagnostic.
+- Compile/API tests prove deleted `Speaker*`, `SayOptions`, and `.say()` public
+  APIs cannot be used.
+
+Use behavior, codec, type, and compile-fail evidence. Do not search repository
+source text as a test.
+
+## Expected output
+
+The returned package must include:
+
+- a normative source/type/merge table;
+- exact Rust/HIR/sema/runtime shapes and crate ownership;
+- the selected runtime-value model with rejected alternative;
+- line-ID family decision;
+- complete wire/persistence inventory;
+- diagnostics, limits, migration/deletion order, and test matrix;
+- explicit handling of every old type/helper/public API listed above;
+- implementation patch only if the package is asked to include implementation;
+- verification script, logs, traceability, and final status.
+
+## Acceptance criteria
+
+The contract is implementation-ready only when a configured dialogue has one
+nominal identity-bearing representation; character identity never comes from a
+callee string; configuration merge is complete; runtime versus static
+elimination is unambiguous; every real wire is decided; the line-ID family is
+settled; tooling has a `.say`-free canonical form; and the migration deletes
+the entire old Speaker/preset/suffix path without compatibility residue.

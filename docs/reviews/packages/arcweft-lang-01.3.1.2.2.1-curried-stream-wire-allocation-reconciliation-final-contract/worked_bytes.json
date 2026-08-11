@@ -1,0 +1,134 @@
+{
+  "contract_id": "Lang-01.3.1.2.2.1",
+  "codec": 8,
+  "vectors": [
+    {
+      "id": "WB-APPLY-ONE-EXPLICIT",
+      "instruction": "ApplyExternalStreamGroup",
+      "opcode": "0x29",
+      "inputs": {
+        "dst": 1,
+        "callee": 2,
+        "definition": 3,
+        "signature": 4,
+        "group": 0,
+        "coordinates": [
+          [
+            0,
+            0
+          ]
+        ],
+        "values": [
+          {
+            "tag": 0,
+            "kind": "Explicit",
+            "value": 5
+          }
+        ]
+      },
+      "byte_count": 15,
+      "bytes_hex": "29 01 02 03 04 00 00 01 00 00 00 00 01 00 05",
+      "sha256": "4ad85dd86da44a3a003cc30d471c4caabc630189ec9a51602d828803b64ba868"
+    },
+    {
+      "id": "WB-OPEN-EMPTY-FINAL-GROUP",
+      "instruction": "OpenStream",
+      "opcode": "0x27",
+      "inputs": {
+        "dst": 1,
+        "callee": 2,
+        "definition": 3,
+        "signature": 4,
+        "group": 0,
+        "coordinates": [],
+        "values": []
+      },
+      "byte_count": 9,
+      "bytes_hex": "27 01 02 03 04 00 00 00 00",
+      "sha256": "54901812e21086a34e954d54e2a38f61521f522e641f8edd547ce2e24dc99e3c"
+    },
+    {
+      "id": "WB-OPEN-DEFAULTED-AND-OMITTED",
+      "instruction": "OpenStream",
+      "opcode": "0x27",
+      "inputs": {
+        "dst": 7,
+        "callee": 8,
+        "definition": 9,
+        "signature": 10,
+        "group": 1,
+        "coordinates": [
+          [
+            1,
+            0
+          ],
+          [
+            1,
+            1
+          ]
+        ],
+        "values": [
+          {
+            "tag": 1,
+            "kind": "Defaulted",
+            "default_hex": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "value": 11
+          },
+          {
+            "tag": 2,
+            "kind": "OmittedOptional"
+          }
+        ]
+      },
+      "byte_count": 52,
+      "bytes_hex": "27 07 08 09 0a 01 00 02 01 00 00 00 01 00 01 00 02 01 aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa aa 0b 02",
+      "sha256": "7186b528596faabb756c04e3985fb701ee70112bb088e2165e8b401b930e50c4"
+    },
+    {
+      "id": "WB-FINISH-COMPLETE",
+      "instruction": "FinishStream",
+      "opcode": "0x28",
+      "inputs": {
+        "stream": 12,
+        "outcome": {
+          "tag": 0,
+          "kind": "Complete"
+        }
+      },
+      "byte_count": 3,
+      "bytes_hex": "28 0c 00",
+      "sha256": "f469a54e07ffff5a7a711d796d5a7dee73ae2ac20929a31886b823de5fb2a561"
+    },
+    {
+      "id": "WB-FINISH-FAIL",
+      "instruction": "FinishStream",
+      "opcode": "0x28",
+      "inputs": {
+        "stream": 12,
+        "outcome": {
+          "tag": 1,
+          "kind": "Fail",
+          "error": 13
+        }
+      },
+      "byte_count": 4,
+      "bytes_hex": "28 0c 01 0d",
+      "sha256": "5e006262fac79d998351ed06574a4607b827e9f90f0eb1e1dffd945ac53236aa"
+    },
+    {
+      "id": "WB-FINISH-CANCELLED",
+      "instruction": "FinishStream",
+      "opcode": "0x28",
+      "inputs": {
+        "stream": 12,
+        "outcome": {
+          "tag": 2,
+          "kind": "Cancelled"
+        }
+      },
+      "byte_count": 3,
+      "bytes_hex": "28 0c 02",
+      "sha256": "5800ba7574840a44cd9dce0bcb6a36884e36041028896a91d672fe962d206f3d"
+    }
+  ]
+}

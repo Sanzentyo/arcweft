@@ -1,0 +1,35 @@
+{
+  "package_schema": 1,
+  "generated_at_utc": "2026-07-21T15:22:14.459960+00:00",
+  "repository": "Sanzentyo/arcweft",
+  "branch": "main",
+  "pinned_revision": "23ed5d93824630d8ead9092d32f7fc70f0a8f314",
+  "commit_subject": "Move View and image products into compiler ownership",
+  "access": "GitHub connector",
+  "local_checkout_used": false,
+  "request_sha256": "5a318c3499ef3082aff829eafc00e9259b37bc200beb273ffa3c143dcb618065",
+  "rust_skill_sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+  "premise_sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1",
+  "prior_lang_01_4_2_zip_sha256": "01f308c08fe818e247e41e94278eb2d69d5a12ac597794a9109390840c0d95d3",
+  "agents_blob_sha": "ea4a46132ff8cd004f860c89c854e4cbfe807d86",
+  "test_matrix_rows": 115,
+  "implementation_performed": false,
+  "open_questions": 0,
+  "markers": {
+    "OPEN_QUESTIONS": "0",
+    "IMPLEMENTATION_PERFORMED": "NO",
+    "COMPATIBILITY_SHIM": "FORBIDDEN",
+    "DUAL_READER": "FORBIDDEN",
+    "SOURCE_GATE": "FORBIDDEN",
+    "LAST_KNOWN_GOOD_FALLBACK": "FORBIDDEN",
+    "CSS_TAKUMI_PATH": "FORBIDDEN"
+  },
+  "actual_repository_commands": [],
+  "package_validation": {
+    "request_copy_equal": true,
+    "required_markers_present": true,
+    "test_matrix_ids_sequential": true,
+    "internal_hashes_verified_before_zip": true,
+    "pre_zip_errors": []
+  }
+}

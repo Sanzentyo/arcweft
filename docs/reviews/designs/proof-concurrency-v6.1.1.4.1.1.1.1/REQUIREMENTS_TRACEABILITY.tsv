@@ -1,0 +1,22 @@
+requirement_id	request_clause	decision	normative_owner	tests	status
+R1	§1 tail roles	ImplicitUnitTail and MissingRequiredTail accept exactly Expr|Scope and ordinal0	RUST_SCHEMAS §3; ROLE_OWNER_ORDINAL_MATRIX rows0x01/0x08	T-ROLE-01; T-ROLE-08; T-ERROR-01; T-ERROR-02; T-ERROR-03	CLOSED
+R2	§1 ordinary producer	source-backed block/computation/named/closure/if/if-let root ExprId owns tail	TAIL_PRODUCER_OWNER_MATRIX TP-01..07	T-TAIL-BLOCK-01; T-TAIL-COMPUTE-01; T-TAIL-COMPUTE-02; T-TAIL-NAMED-01; T-TAIL-CLOSURE-01; T-TAIL-IF-01; T-TAIL-IFLET-01	CLOSED
+R3	§1 predicate producer	predicate body ScopeId owns MissingRequiredTail0	TP-08; AR-PB01	T-TAIL-PREDICATE-01; T-TAIL-SCOPE-LIVE-01	CLOSED
+R4	§1 proof producer	proof body ScopeId owns ImplicitUnitTail0 for Unit or MissingRequiredTail0 for non-Unit	TP-09..10; AR-PB02	T-TAIL-PROOF-UNIT-01; T-TAIL-PROOF-NONUNIT-01; T-TAIL-SCOPE-LIVE-01	CLOSED
+R5	§1 match arms	each existing distinct HirMatchArm ScopeId owns MissingRequiredTail0	TP-11; AR-E32	T-TAIL-MATCH-01; T-TAIL-MATCH-02; T-TAIL-SCOPE-LIVE-01	CLOSED
+R6	§1 non-circular order	root Expr or Scope reservation precedes tail key/child; no tail self-owner	CONSTRUCTOR_AND_TRANSACTION_CONTRACT §2	T-TAIL-BLOCK-01; T-TAIL-CLOSURE-01; T-TAIL-PREDICATE-01; T-TAIL-PROOF-UNIT-01; T-TAIL-PROOF-NONUNIT-01; T-TAIL-MATCH-01; T-TAIL-SCOPE-LIVE-01	CLOSED
+R7	§1 source/reuse	exact insertion anchors; source row belongs to child ExprId; same key+Expr reuses	FINAL_CORRECTION §§3-4; producer matrix	T-TAIL-REUSE-01; T-TAIL-BLOCK-01; T-TAIL-PREDICATE-01; T-TAIL-MATCH-01	CLOSED
+R8	§2 RecoveryOperand	direct semantic-child-role lowerer, perturbation, exact/one-over tests	GENERATOR_EVIDENCE_CONTRACT §2	T-GEN-RECOVERY-01; T-GEN-RECOVERY-02; T-GEN-RECOVERY-03	CLOSED
+R9	§2 DesugaredTemporary	source-token then immutable recipe-step order with checked counter	GENERATOR_EVIDENCE_CONTRACT §3	T-GEN-TEMP-01; T-GEN-TEMP-STMT-01; T-GEN-TEMP-02; T-GEN-TEMP-03	CLOSED
+R10	§2 DestructuredBinding	depth-first authored preorder and first-alternative shared map	GENERATOR_EVIDENCE_CONTRACT §4	T-GEN-BIND-01; T-GEN-BIND-02; T-GEN-BIND-03	CLOSED
+R11	§2 ClosureCapture	first source-use order and later-use reuse independent of map order	GENERATOR_EVIDENCE_CONTRACT §5	T-GEN-CAPTURE-01; T-GEN-CAPTURE-02; T-GEN-CAPTURE-03	CLOSED
+R12	§2 candidate roles	direct index/dialogue production tests preserve root0, shared target, per-kind preorder, separation, non-reuse	GENERATOR_EVIDENCE_CONTRACT §6	T-GEN-CAND-INDEX-01; T-GEN-CAND-DIALOGUE-01; T-GEN-CAND-PERTURB-01; T-GEN-CAND-LIMIT-01; T-GEN-CAND-LIMIT-02; T-CAND-01; T-CAND-02; T-CAND-03; T-CAND-04	CLOSED
+R13	§2 boundary/rollback	0..1023 structural; exact1024 aggregate commits; one-over rolls back full producer transaction	CONSTRUCTOR_AND_TRANSACTION_CONTRACT §§3,5	T-GEN-RECOVERY-03; T-GEN-TEMP-03; T-GEN-BIND-03; T-GEN-CAPTURE-03; T-GEN-CAND-LIMIT-01; T-GEN-CAND-LIMIT-02; T-LIMIT-01; T-LIMIT-02; T-LIMIT-03	CLOSED
+R14	§3 NotYetLive	exact id,snapshot,born payload	RUST_SCHEMAS §5	T-LIVE-02	CLOSED
+R15	§3 Retired	exact id,snapshot,retired_at payload; no last_live	RUST_SCHEMAS §5	T-LIVE-03	CLOSED
+R16	§4 full table	all21 roles and arbitrary-u32 predicates restated	ROLE_OWNER_ORDINAL_MATRIX.tsv; RUST_SCHEMAS §3	T-ROLE-01; T-ROLE-02; T-ROLE-03; T-ROLE-04; T-ROLE-05; T-ROLE-06; T-ROLE-07; T-ROLE-08; T-ROLE-09; T-ROLE-10; T-ROLE-11; T-ROLE-12; T-ROLE-13; T-ROLE-14; T-ROLE-15; T-ROLE-16; T-ROLE-17; T-ROLE-18; T-ROLE-19; T-ROLE-20; T-ROLE-21	CLOSED
+R17	§4 constructor precedence	WrongOwnerKind before InvalidOrdinal; liveness separate	RUST_SCHEMAS §4; constructor contract §1	T-ERROR-01; T-ERROR-02; T-ERROR-03; T-LIVE-01; T-LIVE-02; T-LIVE-03; T-LIVE-04	CLOSED
+R18	§4 fingerprint	51-byte layout/tags/vectors/digest boundary retained byte-for-byte	FINGERPRINT_TRANSCRIPT.md	T-FP-01; T-FP-02; T-FP-03; T-FP-04; T-FP-05; T-FP-06	CLOSED
+R19	§4 body/arm schemas	no body/arm carrier or payload change	RUST_SCHEMAS §6; AFFECTED_LOWERING_ROWS	T-TAIL-PREDICATE-01; T-TAIL-PROOF-UNIT-01; T-TAIL-PROOF-NONUNIT-01; T-TAIL-MATCH-01	CLOSED
+R20	constraints	no Syntax/raw owner, wrapper, alias, dual reader, reparse, source gate, CSS/Takumi, old Dialogue repair	PREDECESSOR_PRECEDENCE; implementation order	T-COMPILE-01; T-COMPILE-02; T-COMPILE-03; T-COMPILE-04; T-MIGRATION-01	CLOSED
+R21	required return	single standalone ZIP; all sidecars internal; exact none/status/manifest	README; FINAL_STATUS; OPEN_QUESTIONS; MANIFEST	artifact validation	CLOSED

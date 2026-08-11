@@ -1,0 +1,19 @@
+row	surface	fixture	cursor	result	authority
+R04	ordinary clean	f(a, b)	open.start..open.end-1	NotApplicable	opening token outside
+R05	ordinary clean	f(a, b)	open.end	Argument(0)	first interior byte boundary
+R08	ordinary clean	f(a, b)	comma.start	Argument(1)	comma starts following slot
+R09	ordinary clean	f(a, b)	comma.end	Argument(1)	following slot remains active
+R13	ordinary trailing	f(a,)	trailing_comma.start	OnePast(1)	trailing comma starts one-past
+R14	ordinary no trailing	f(a)	close.start	Argument(0)	final argument active at close
+C-EMPTY	empty	f()	open.end == close.start	Argument(0)	empty insertion slot
+C-MISSING	missing close	f(a	recovery_end	Argument(0)	inclusive recovery end
+C-OUT	ordinary	f(a)	close.end	NotApplicable	outside list
+T-DIRECT-OPEN	direct type app	foo<T>()	open_angle token	NotApplicable	opening token outside
+T-DIRECT-S0	direct type app	foo<T>()	open_angle.end	TypeArgument(0)	slot zero
+T-TURBO-PREFIX	turbofish	foo::<T>()	'::' token	NotApplicable	prefix outside type list
+T-COMMA	two type args	foo::<T, U>()	comma.start	TypeArgument(1)	following slot
+T-TRAIL	trailing type comma	foo::<T,>()	trailing.start	OnePast(1)	one-past
+T-CLOSE	no trailing	foo::<T>()	close_angle.start	TypeArgument(0)	final remains active
+T-EMPTY	empty recovered	foo::<>()	open.end == close.start	TypeArgument(0)	missing type slot
+T-MISSING-CLOSE	recovered	foo::<T()	recovery_end	TypeArgument(0)	inclusive recovery end
+T-OUT	type app	foo::<T>()	close_angle.end	NotApplicable	outside type list

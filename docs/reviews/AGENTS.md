@@ -27,9 +27,16 @@ the review inbox.
   traceability, and repository evidence before adjudicating readiness.
 - Keep every sidecar inside the returned ZIP. Do not require adjacent summary,
   status, hash, or manifest files.
-- Keep throwable Markdown requests in `requests/`, inspected returned archives
-  in `packages/` when repository retention is intentional, and reusable
-  accepted material in a sequence-named `designs/` directory.
+- Keep throwable Markdown requests in `requests/`, retained source archives in
+  `packages/zips/`, their searchable extracted contents in
+  `packages/<zip-basename>/`, and reusable accepted material in a
+  sequence-named `designs/` directory. Within each design directory, retain
+  source archives in `zips/` and place their searchable extracted contents in
+  that same design directory after safe collision checking.
+- Treat extracted package and design files as frozen mirrors of their retained
+  ZIP members. Historical request copies, ledgers, and other returned evidence
+  may therefore preserve paths that were current when the ZIP was produced;
+  update maintained navigation instead of rewriting those mirrored files.
 - Record an external archive's verified path and hash in its implementation
   intake note when copying the binary into Git is not useful.
 

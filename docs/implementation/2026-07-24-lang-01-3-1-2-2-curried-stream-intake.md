@@ -7,10 +7,10 @@ Baseline: `7aefd1daeeb04d165151f78965bee0b5033afa4c`
 ## Accepted packages
 
 - Lang-01.3.1.2.1 typed Stream runtime/wire correction:
-  `docs/reviews/packages/Lang-01.3.1.2.1-typed-stream-runtime-wire-contract-correction-final-contract.zip`
+  `docs/reviews/packages/zips/Lang-01.3.1.2.1-typed-stream-runtime-wire-contract-correction-final-contract.zip`
   (`SHA-256 66809A1280A507F69BB78D9DF3BF7AF227A91CD68B86CF8771CBF9EE20AA856A`).
 - Lang-01.3.1.2.2 curried external Stream correction:
-  `docs/reviews/packages/arcweft-lang-01.3.1.2.2-curried-external-stream-final-contract.zip`
+  `docs/reviews/packages/zips/arcweft-lang-01.3.1.2.2-curried-external-stream-final-contract.zip`
   (`SHA-256 D1BD7FB5301509CA88BE7C9D3662942CA88472D11143499C0C3067D626DF9418`).
 
 Both packages are final and useful implementation inputs. The later package

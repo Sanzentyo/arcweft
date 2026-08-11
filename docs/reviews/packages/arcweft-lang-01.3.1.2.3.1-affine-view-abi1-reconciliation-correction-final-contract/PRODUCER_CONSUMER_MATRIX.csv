@@ -1,0 +1,9 @@
+producer,artifact_or_fact,consumer,required_join,failure
+arcweft-core type/layout,RuntimeValueOwnership,AWBC verifier,exact closed layout ownership,bundle.view.input.ownership_mismatch
+arcweft-lang-sema CheckedViewCatalog,CheckedViewValueInput,compiler View value lowering,type+role+source+transfer,compiler.view.input.transfer_invalid
+compiler AWBC lowerer,ABI1 synthetic function,bundle ViewProgram decoder,ABI=1+function digest+input facts,bundle.view.program.invalid
+compiler static analyzer,ViewStaticRequirementResource,bundle decoder,subject+requirement digest+certificate,bundle.view.static.requirement_mismatch
+bundle decoder,ValidatedViewProgramCatalog,runtime View evaluator,accepted revision+outermost span graph,runtime.view.static.fragment_dispatch_invalid
+runtime snapshot builder,allocator cursor+RuntimeValueSnapshotV2,runtime restore candidate,execution+digest+owner order,runtime.restore.affine_allocator_cursor_invalid
+RuntimeExecutionDomain,activation lease,RuntimeDriver,execution+holder+generation,runtime.restore.execution_already_active
+RuntimeOwnershipTransaction,RuntimePreparedDrop,Stream/value domains,source reservation+owned value,internal invariant failure only after successful prepare

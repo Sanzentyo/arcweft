@@ -11,7 +11,7 @@ line counters. It adds no temporary replacement.
 ## Package decision
 
 The accepted AW-AH-009.4.3 package is
-`docs/reviews/packages/arcweft-aw-ah-009.4.3-source-site-line-identity-project-diagnostics-production-reconciliation-final-contract.zip`
+`docs/reviews/packages/zips/arcweft-aw-ah-009.4.3-source-site-line-identity-project-diagnostics-production-reconciliation-final-contract.zip`
 with SHA-256
 `FD9F97D37B857991120DD5E5E5DB27953257121FC48C79BEEF4FA03DF1F23396`.
 It is `READY_FOR_IMPLEMENTATION` and explicitly forbids Character, speaker,

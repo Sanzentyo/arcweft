@@ -1,0 +1,92 @@
+{
+  "baseline_commit": "4fd6331dc342d30a7f4ac7774852b60801866ef7",
+  "files": [
+    {
+      "bytes": 13270,
+      "path": "API_SHAPES.md",
+      "sha256": "cb91c85fe6bee29490f8e42ec0bc28ad299335202fd28b74d3e03f90851fc43f"
+    },
+    {
+      "bytes": 2345,
+      "path": "CHANGE_SURFACE.md",
+      "sha256": "8ee78f99eeb34a9dd6fdab67b32cd29987e71938ee87a222204c155d55fb9336"
+    },
+    {
+      "bytes": 5757,
+      "path": "CONSUMERS_TOOLING_PERSISTENCE.md",
+      "sha256": "58532cc183b249a669ed19a5ad37b928f6df2bfcd338c12d3960340da5002d58"
+    },
+    {
+      "bytes": 4903,
+      "path": "DIAGNOSTICS_POISON_SOURCE.md",
+      "sha256": "470eb7834ef733504a502c15e50aa04a665968ed57f9cd935fb579c80093811f"
+    },
+    {
+      "bytes": 12823,
+      "path": "FINAL_CONTRACT.md",
+      "sha256": "cf4e39cd32c885e86590670c9fe825cf4e20d0fec3a2be0368709a4236838e14"
+    },
+    {
+      "bytes": 3942,
+      "path": "IMPLEMENTATION_ORDER.md",
+      "sha256": "9830b8b13fe98392630b598c81abb6f28e20df16297aa78586c25b61f3a72692"
+    },
+    {
+      "bytes": 1340,
+      "path": "NON_GOALS.md",
+      "sha256": "6001668c7367864d7231fe3971f1ac37e59e139cfe15d9154635f0e0fce3dbad"
+    },
+    {
+      "bytes": 3834,
+      "path": "OWNERSHIP_COLLISIONS.md",
+      "sha256": "10fd092a50393f5f57d38668dd365a601bd62aab917a06e177410b1361776f24"
+    },
+    {
+      "bytes": 2606,
+      "path": "README.md",
+      "sha256": "f649ea857539965971f8bd6cb29e021adbcf60e316842087e086b52fc143e9db"
+    },
+    {
+      "bytes": 4399,
+      "path": "REPOSITORY_EVIDENCE.csv",
+      "sha256": "1612a9e56793f400a96b21f8805d7013a4b7303ebde8934eb02b111e84345639"
+    },
+    {
+      "bytes": 5269,
+      "path": "REQUEST.md",
+      "sha256": "80ec56d3c7afdbbc96550416f0c7a86b4d32649755011052dde4d1f202c6bde5"
+    },
+    {
+      "bytes": 12500,
+      "path": "TEST_MATRIX.csv",
+      "sha256": "041bb38e64d283754467af538c9bd28156cdd0e368457299f47ef207f755a77a"
+    },
+    {
+      "bytes": 1507,
+      "path": "TRACEABILITY.csv",
+      "sha256": "34eaaede7dbf18d30075fe023b0e036f27ccb1eb4bf026b2b2aeb24acee4e8a5"
+    },
+    {
+      "bytes": 2952,
+      "path": "VALIDATION_EVIDENCE.md",
+      "sha256": "3dc4e7879ee17bd6851c9bc7b46738bb20580879ea5119aab2cba2cddac27149"
+    },
+    {
+      "bytes": 723,
+      "path": "VALIDATION_RESULTS.txt",
+      "sha256": "6ee817a0cbd4891e8354cca3c3780d660a3c0d55b07e2bebc2ab9703af353989"
+    },
+    {
+      "bytes": 2225,
+      "path": "contract.json",
+      "sha256": "57f7fc9d396a35f05b5d23cea057b61daaf5c257e419177f7dc4f94e3023ef30"
+    },
+    {
+      "bytes": 3668,
+      "path": "validate_package.py",
+      "sha256": "6c030d2e923216f98e51ecbf3c708b37d82d1b684e68851d47c0cc5deabc7fee"
+    }
+  ],
+  "request_git_blob": "5445ff2e48c47a4cb2455b56fb5348784038beb6",
+  "schema": "arcweft.final-contract-manifest.v1"
+}

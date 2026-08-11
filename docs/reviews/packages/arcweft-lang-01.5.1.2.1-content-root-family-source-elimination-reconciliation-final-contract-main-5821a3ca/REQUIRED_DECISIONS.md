@@ -1,0 +1,57 @@
+# Required decisions
+
+- **RD-001** — The final package status is FINAL_CONTRACT with OPEN_QUESTIONS=0 and fallback=false.
+- **RD-002** — Production code is not modified by this delivery.
+- **RD-003** — The safe Lang-01.5.1.2 binary/topology/Character/overlay/transaction substrate remains authoritative.
+- **RD-004** — ContentRootFamily is closed to Character, eight authored-entity families, and exact configured resources.
+- **RD-005** — The eight authored-entity families are Flow, View, Action, Activity, Asset, Signal, Metric, and Layer.
+- **RD-006** — There is no Source family variant, alias, tombstone variant, or provisional tag.
+- **RD-007** — AcceptedContentRootTarget has Character, AuthoredEntity, and ConfiguredResource variants only.
+- **RD-008** — The old source-named family/target type and variant spellings are not retained as aliases.
+- **RD-009** — Character identity is arcweft-character::id::CharacterId.
+- **RD-010** — Authored entity identity is arcweft-id::EntityId plus exact AuthoredContentRootFamily.
+- **RD-011** — Configured resource identity is ResourceDeclarationIdentity including exact ResourceTypeId.
+- **RD-012** — ContentRootRef remains authored only in content-units.<id>.roots.
+- **RD-013** — Profile content selects units and policy; it does not own another root list.
+- **RD-014** — Entry selection is separate and an Entry is never a content root.
+- **RD-015** — Removed Source references use ordinary typed unresolved/wrong-kind diagnostics.
+- **RD-016** — No Source-specific migration diagnostic is added.
+- **RD-017** — Ordinary Stream passthrough functions are never roots by return type.
+- **RD-018** — Authored Stream generators are never roots by yield/execution mode.
+- **RD-019** — External Stream capability operations are never roots by origin.
+- **RD-020** — No function-name, attribute, or prefix heuristic creates a root.
+- **RD-021** — EntityKind root classification is an inherent owner method.
+- **RD-022** — Configured-resource lookup is implemented on the accepted declaration/index owner.
+- **RD-023** — The loader's character strip_prefix classifier is replaced by typed classification.
+- **RD-024** — Aliases/reexports canonicalize to original identities and retain exact occurrence/binding spans.
+- **RD-025** — Ambiguity/collision never uses first-wins behavior.
+- **RD-026** — Visibility is checked through the accepted world and manifest visibility cannot escalate target visibility.
+- **RD-027** — Only Character is file-backed and eligible for optional-absence facts in v1.
+- **RD-028** — Unresolved authored/configured roots never become optional absence.
+- **RD-029** — Present-invalid Character content always fails.
+- **RD-030** — Typed references from source, generated metadata, and resource values are collected exactly once.
+- **RD-031** — Every exact typed occurrence counts as runtime-referenced, including dead branches.
+- **RD-032** — Optional-absent Character reservations are typed but are not symbols/catalog/runtime nodes.
+- **RD-033** — ProjectTopologyRevision keeps the existing v1 transcript and frozen tags.
+- **RD-034** — Source elimination adds no topology semantic/presence tag.
+- **RD-035** — Accepted-target determinism is derived from existing authoritative transcript inputs.
+- **RD-036** — Disk/overlay origin is excluded; exact bytes determine revision.
+- **RD-037** — No directory scan or source reparse reconstructs roots.
+- **RD-038** — Explicit unconsumed binary overlays fail.
+- **RD-039** — ProjectIndex stores manifest-owned content unit/root facts directly.
+- **RD-040** — No EntityKind::Content compatibility node is synthesized.
+- **RD-041** — The old source-content PublicId relation producer is deleted.
+- **RD-042** — Project graph endpoint/relation enums are extended in place for typed content facts.
+- **RD-043** — Bundle consumes accepted inventory and never decides missing-content admissibility.
+- **RD-044** — Watch uses exact present resources and optional Character expected paths only.
+- **RD-045** — LSP publishes manifest facts/links and no Source/content compatibility symbols.
+- **RD-046** — ProgramHash includes ProjectTopologyRevision through an inherent constructor/projection.
+- **RD-047** — All candidate products are built off to the side and published atomically.
+- **RD-048** — Any failure publishes no partial topology/index/catalog/cache/bundle/watch/LSP state.
+- **RD-049** — A previous accepted snapshot is not returned or labelled as success for a failed revision.
+- **RD-050** — Source declaration/runtime/AWBC/wire paths are deleted without compatibility readers.
+- **RD-051** — Source content syntax/HIR/sema/tooling ownership is deleted with manifest fact publication.
+- **RD-052** — Removal is proven by parser/compiler rejection and absence of executable typed nodes.
+- **RD-053** — Repository substring scans are review evidence only, never an automated source gate.
+- **RD-054** — Core/data-format owners remain Sans I/O.
+- **RD-055** — Focused, workspace, Tier 2, and structural validation are required for production completion.

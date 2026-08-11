@@ -1,0 +1,104 @@
+{
+  "format": "arcweft-design-package-manifest-v1",
+  "archive_name": "arcweft-proof-concurrency-v6.1.1.4.1-final-hir-semantic-leaf-expression-payload-correction-final-contract.zip",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "baseline_main": "ac9ce44fe9423efd85280e26832dd30c725b3b34",
+  "manifest_self_row": "omitted: embedding the manifest byte length/hash would be self-referential and non-verifiable",
+  "members": [
+    {
+      "path": "API_SURFACE.tsv",
+      "bytes": 9419,
+      "sha256": "f3bfaed5c16f0744d99e05627eaca578fc8408047ad1f26e8487e0db4db1af07"
+    },
+    {
+      "path": "CORRECTION_REQUEST_COPY.md",
+      "bytes": 12997,
+      "sha256": "57ca90e569ff57a308eb22f4debdff9314c814758229551b04c50c4f877200ce"
+    },
+    {
+      "path": "DIALOGUE_RICHTEXT_CONTRACT.md",
+      "bytes": 5272,
+      "sha256": "aac1a01dd0ce62883eff7a0f7506b24ad130aca3933a1d158b03ea1d24cf6d47"
+    },
+    {
+      "path": "FINAL_CONTRACT.md",
+      "bytes": 6686,
+      "sha256": "01f3cc141d5afd80e0812df4a7d75ebb2fa5ae4ca7cb6e844fd9475c1c0d5466"
+    },
+    {
+      "path": "FINAL_STATUS.md",
+      "bytes": 25,
+      "sha256": "9cfe844241b3057b5b9744ad7fd94d42b90b31f9c96c35dad40a7afb94ed395c"
+    },
+    {
+      "path": "IMPLEMENTATION_AND_DELETION_ORDER.md",
+      "bytes": 3406,
+      "sha256": "54ad353a33cd3e623affea16959cc8824d03d65786f66fec1d46c41a2da0d3cf"
+    },
+    {
+      "path": "LITERAL_NUMERIC_CONTRACT.md",
+      "bytes": 5464,
+      "sha256": "f8ceaf37b34336461e226c885851941f8ed392eefd1759335638683bba112a1c"
+    },
+    {
+      "path": "LOWERING_MATRIX.tsv",
+      "bytes": 81402,
+      "sha256": "247d135d0c750ec7c37f1efbcdceb46212d7414b5f718a9e13ca7c919742dddc"
+    },
+    {
+      "path": "OPEN_QUESTIONS.md",
+      "bytes": 4,
+      "sha256": "140bedbf9c3f6d56a9846d2ba7088798683f4da0c248231336e6a05679e4fdfe"
+    },
+    {
+      "path": "PATH_LIFETIME_CALL_THREAD_CONTRACT.md",
+      "bytes": 5791,
+      "sha256": "6eb37987244e23bd75f91661267af0fbe585d01bfec4f180b9cbd07a501e1f31"
+    },
+    {
+      "path": "PREDECESSOR_PRECEDENCE.md",
+      "bytes": 4684,
+      "sha256": "772323bd9075a77e073193e726f8a451f667c7a3e70db62d385b0aa9224788af"
+    },
+    {
+      "path": "PRIMARY_REQUEST_COPY.md",
+      "bytes": 22460,
+      "sha256": "59b5e893512a6af619d44cb2e99fc80a42e2495209d3e197d9201f3aeaf59bc3"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1813,
+      "sha256": "c31b8e459c6e816565f503f4a26fc038708cc93732e6e8a390daadf9fe67c525"
+    },
+    {
+      "path": "REPOSITORY_EVIDENCE.md",
+      "bytes": 7284,
+      "sha256": "4d0df9b484ddf80491f78dfcc779c15e2eb2d69f51a01ade85bd36a6159b9df8"
+    },
+    {
+      "path": "REQUIREMENTS_TRACEABILITY.tsv",
+      "bytes": 2530,
+      "sha256": "7eec02467e912e03f6917a3a8d2fd3c765705f69b318d021a4d09f816a1550b5"
+    },
+    {
+      "path": "RUST_SCHEMAS.md",
+      "bytes": 26856,
+      "sha256": "402f7bfb3dfad3097756b4265f790908d6afcab472a38e5f8ed205379a60048f"
+    },
+    {
+      "path": "SOURCE_ROLE_AND_QUERY_CONTRACT.md",
+      "bytes": 5542,
+      "sha256": "e4832ad57f7d1be7ae99816cd28790c5e21427dc3d62cb66c61b8a41ef563c82"
+    },
+    {
+      "path": "TEST_MATRIX.tsv",
+      "bytes": 146826,
+      "sha256": "5fedc9b61fa69b263ef1c3d6f32da209ea5a2a56269b1a3fcec6821840b521c4"
+    },
+    {
+      "path": "VALIDATION_REPORT.md",
+      "bytes": 2044,
+      "sha256": "9a4e94986714dc8dc04c7e1df59c6c3073f299d77bf410073a4d5dc216075cf0"
+    }
+  ]
+}

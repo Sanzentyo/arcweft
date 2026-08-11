@@ -17,7 +17,9 @@ only their waiting status, not their production observations or non-goals.
 ## Returned archives
 
 The following attached archives were copied without modification to
-`docs/reviews/packages/` after inspection:
+`docs/reviews/packages/zips/` after inspection; their searchable extracted
+contents are in the matching `docs/reviews/packages/<zip-basename>/`
+directories:
 
 | Sequence | Bytes | SHA-256 | Classification |
 |---|---:|---|---|

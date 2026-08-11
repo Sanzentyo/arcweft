@@ -1,0 +1,12 @@
+owner	surface	constructor_or_signature	read_only_accessors	validation	visibility
+arcweft-lang-hir::identity	SyntheticOwner	existing 8 variants	kind(); module()	variant proves typed kind; no slot probe	public Copy enum; no Serde
+arcweft-lang-hir::identity	SyntheticRole::accepts_owner_kind	const fn(HirIdKind)->bool	none	complete 21-role typed-owner table	pub(crate) inherent
+arcweft-lang-hir::identity	SyntheticRole::accepts_ordinal	const fn(u32)->bool	none	zero or <=1_023 exact policy	pub(crate) inherent
+arcweft-lang-hir::identity	SyntheticRole::accepts_owner	const fn(HirIdKind,u32)->bool	none	conjunction of exact predicates	pub(crate) inherent
+arcweft-lang-hir::identity	SyntheticKey	try_new(SyntheticOwner,SyntheticRole,u32)	owner(); role(); ordinal(); fingerprint_input()	WrongOwnerKind precedes InvalidOrdinal; no liveness	public read-only Copy; ctor pub(crate); no Serde
+arcweft-lang-hir::identity	SyntheticKeyError	WrongOwnerKind; InvalidOrdinal	typed fields	structural construction only	public Copy error
+arcweft-lang-hir::identity	SyntheticKeyFingerprintInput	private [u8;51] constructor	as_bytes()	fixed v1 transcript; no decoder/digest	public read-only Copy; no Serde
+arcweft-lang-hir::identity	SyntheticOwner::fingerprint_tag	const inherent match	none	0x01..0x08 explicit	pub(crate)
+arcweft-lang-hir::identity	SyntheticRole::fingerprint_tag	const inherent match	none	0x01..0x15 explicit	pub(crate)
+arcweft-lang-hir transaction owner	synthetic allocation	(SyntheticKey, child HirIdKind)	typed child ID	typed liveness then 1,024 aggregate limit; atomic rollback	crate-private transaction API
+arcweft-lang-hir::expr	HirElidedRegion	existing try_new(TypeId,SyntheticKey)	owner_type(); key()	exact Type owner, ElidedRegion, ordinal 0	unchanged public read-only

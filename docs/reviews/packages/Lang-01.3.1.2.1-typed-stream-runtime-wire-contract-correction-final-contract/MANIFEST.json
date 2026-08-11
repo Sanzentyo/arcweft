@@ -1,0 +1,121 @@
+{
+  "manifest_version": 1,
+  "package": {
+    "contract": "Lang-01.3.1.2.1",
+    "status": "implementation-ready",
+    "open_questions": 0,
+    "implementation_performed": false,
+    "repository": "Sanzentyo/arcweft",
+    "branch": "main",
+    "integration_base": "23ed5d93824630d8ead9092d32f7fc70f0a8f314",
+    "request_sha256": "b8ec6b3efcbe31739b2d2b7bad119c2a9dcc394b95777941c4210fc485315f64"
+  },
+  "integrity_policy": {
+    "artifacts": "all payload files; MANIFEST.json and MANIFEST.sha256 are integrity envelopes",
+    "manifest_sha256_file": "MANIFEST.sha256 covers every package file except itself, including MANIFEST.json",
+    "zip_sha256": "published in the sibling .zip.sha256 file to avoid recursive archive hashing"
+  },
+  "summary": {
+    "artifact_count": 16,
+    "artifact_bytes": 673922,
+    "test_matrix_rows": 530
+  },
+  "artifacts": [
+    {
+      "path": "CONTRACT_MODEL.json",
+      "bytes": 3838,
+      "sha256": "384a0b351983c81ccf2a5da44df4ef16ac9500751fd5973160f8e9388360fb8e",
+      "role": "machine-readable closed decision and allocation summary"
+    },
+    {
+      "path": "DELETION_INVENTORY.md",
+      "bytes": 7999,
+      "sha256": "178ee97a46ba34e8c3731652cfeb2e55fcad58f5b6b01355a7bfaf295a3f2232",
+      "role": "Source and provisional Stream deletion/equivalence inventory"
+    },
+    {
+      "path": "FINAL_CONTRACT.md",
+      "bytes": 29942,
+      "sha256": "8eb7161a8db81779c8bca4b906d8085ef1c025701bd8dcb0b0a6de83c29a1f8d",
+      "role": "normative contract entrypoint; OPEN_QUESTIONS=0"
+    },
+    {
+      "path": "IMPLEMENTATION_ORDER.md",
+      "bytes": 6998,
+      "sha256": "8656cf094604939ec49deaac78e7aef3fbd1fb2b39b8fe9dfebcada8e3008b3f",
+      "role": "ordered compile-clean cuts and protected version migration group"
+    },
+    {
+      "path": "NORMATIVE_DELTA.md",
+      "bytes": 15353,
+      "sha256": "0bd4c889fae3d00a5b92731b36f014d42a91cc0238f4a35a67bb8e15fcf23f3e",
+      "role": "corrected field/owner/variant/invariant/tag ledger"
+    },
+    {
+      "path": "POLICY_PROFILE.md",
+      "bytes": 13190,
+      "sha256": "e2c07a583d40a4798761bb162edf3e8dbc70a9c6a21a4b5464e50425ebcaeae0",
+      "role": "typed target/profile ownership, tightening, and resolution contract"
+    },
+    {
+      "path": "REPOSITORY_EVIDENCE.md",
+      "bytes": 8182,
+      "sha256": "14e4af9f40b02af442ececaa15f720291428138febf86c0daaed69d902a91172",
+      "role": "inspected substrate versus proposed production changes"
+    },
+    {
+      "path": "REQUEST_COVERAGE.md",
+      "bytes": 5583,
+      "sha256": "4a11a2b1eafeba6dc9ec523ba7abe4d31a1665cd09ad28ef679fd29c256130f3",
+      "role": "required-decision, implementation-order, and test coverage map"
+    },
+    {
+      "path": "RUST_SCHEMAS.md",
+      "bytes": 61446,
+      "sha256": "fa6db56819c03da75ad64e3caf0c259791f0739f65801b272491399354f294a3",
+      "role": "exact Rust-shaped ownership and wire schemas"
+    },
+    {
+      "path": "SOURCE_REQUEST.md",
+      "bytes": 17535,
+      "sha256": "b8ec6b3efcbe31739b2d2b7bad119c2a9dcc394b95777941c4210fc485315f64",
+      "role": "sole normative request copied byte-for-byte into the package basis"
+    },
+    {
+      "path": "TEST_MATRIX.csv",
+      "bytes": 126429,
+      "sha256": "43e154ea08702aa46ced0cb35e9009ace49598cfeb4fab48d1fd0d70956256dc",
+      "role": "tabular exhaustive test matrix"
+    },
+    {
+      "path": "TEST_MATRIX.json",
+      "bytes": 205522,
+      "sha256": "9ed80d15f083c8020e3cdc8bb5e0314897595d15c38c0c932e9105afc75a794b",
+      "role": "machine-readable exhaustive test matrix"
+    },
+    {
+      "path": "TEST_MATRIX.md",
+      "bytes": 138573,
+      "sha256": "1362ce211ad566933ecd2f5c6566fee8801b9f59dc2bf5f1fd6012084d7c08e6",
+      "role": "human-readable exhaustive test matrix"
+    },
+    {
+      "path": "VERIFICATION_REPORT.md",
+      "bytes": 5302,
+      "sha256": "1c848bfeb553e1496e067e9d272b7594af0b087506a1b9ca63b5da1eba7ae21a",
+      "role": "actual package/static-review verification and deferred implementation gates"
+    },
+    {
+      "path": "WIRE_AND_VERSION_ALLOCATIONS.md",
+      "bytes": 16393,
+      "sha256": "5c8cde9d513a8686ed55193544c4f08811e83aba58688e2758f4777a7a6c9769",
+      "role": "current-main version, tag, and canonical ordering allocation"
+    },
+    {
+      "path": "WORKED_EXAMPLES.md",
+      "bytes": 11637,
+      "sha256": "ec3a21d518ed25f945c02f7a98b3203f1f8e5bce61e0fa71c6fd503b503bf56e",
+      "role": "canonical host/AWBC/replay/save/fingerprint/exhaustion/drop examples"
+    }
+  ]
+}

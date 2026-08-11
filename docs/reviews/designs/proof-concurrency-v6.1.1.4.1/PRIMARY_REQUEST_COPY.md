@@ -1,0 +1,392 @@
+# Design request: proof-concurrency 01.1.1.4 final HIR semantic leaf and expression-payload reconciliation
+
+- Date: 2026-07-25
+- Sequence: proof-concurrency v6.1.1.4, after the accepted v6.1.1 base
+  contract and AW-AH-009.4.2 precedence correction, and before the public HIR
+  expression authority switch
+- Kind: independently throwable, design-only correction contract
+- Production changes: prohibited
+- Output language: English
+- Required archive name:
+  `arcweft-proof-concurrency-v6.1.1.4-final-hir-semantic-leaf-expression-payload-reconciliation-final-contract.zip`
+
+## Goal and authority
+
+Return one decision-complete correction that defines the exact final
+`HirExprKind` inventory, every expression payload and semantic leaf reachable
+from it, and the closed child records required by the accepted
+`HirExprKind` / `HirPatternKind` schemas. Use:
+
+1. latest Arcweft `main`, current `AGENTS.md`, and the applicable Rust skill;
+2. proof-concurrency v6.1.1, SHA-256
+   `1B7DE5F2C10A5B29D67C72011E4272DF9A76AF8907FD21FE162DE54809FC69EF`;
+3. AW-AH-009.3.1 call-surface syntax reconciliation, SHA-256
+   `6EDE771A895AF981A583FDFD50A080F2ECA57BF7A2925216CF725F7DBB418588`;
+4. AW-AH-009.3.3 shared callable resolver reconciliation, SHA-256
+   `9D1F989F5E0E698AEFF1098DD7ECEE7E01A66616A00A0571EE333A3B1B7DDC78`;
+5. AW-AH-009.3.3.3.1 overload-accounting reconciliation, SHA-256
+   `060332BC62273C34F267F0F15767FE6BBD328BE177CB8035E83F210267AB0D41`;
+6. AW-AH-009.3.3.4 typed associated-capacity authority, SHA-256
+   `DD8096DEDEF9FE2446291B3849DCEABD8BB5192B88533AA12FEE2DFC3CCEC484`;
+7. the parent AW-AH-009.4 CharacterDialogue contract, SHA-256
+   `A86044FEA7AAFF3EC3829DFA0AD6552C88377CA61FA2911C3B96EA34CA0FFA5E`;
+8. AW-AH-009.4.2, SHA-256
+   `05E825DDE033F308F24FC1F6E504B4C26BBA2D61FD33852CE880DC666BA8F2A8`;
+9. AW-AH-007/008 typed RichText validation, SHA-256
+   `DBF72681E97377FC6A5B592579BF29F1E5640105ACF1D4446D13D0209FCFD209`;
+10. current repository-owned typed syntax literal/name/path/ID-reference,
+    RichText tag/argument, and expression-component authorities and accepted
+    downstream package decisions; and
+11. this request, copied into the returned archive.
+
+Do not redesign the accepted syntax database, attached IDs, typed arenas,
+transactions, scopes, source maps, outer dialogue-application record, project
+identity, or literal language semantics unless current evidence proves a
+concrete contradiction. The correction must nevertheless define the exact
+shared `HirDialogueContent` payload reached by that accepted outer application;
+neither accepted archive defines it. This request closes undefined public HIR
+value shapes; it does not authorize implementation.
+
+Dispatch this Markdown by itself to exactly one design assignee with access to
+latest `main`, `AGENTS.md`, the Rust skill, and all eight contract archives
+listed above. Seven are retained under `docs/reviews/packages/`. The RichText
+archive is currently retained externally at
+`D:/sanze/Downloads/arcweft-aw-ah-007-008-typed-rich-text-attribute-validation-final-contract.zip`;
+attach that exact verified archive rather than substituting an earlier failed
+delivery. Do not combine this request with the item/member or statement
+requests; all three may be designed concurrently by different assignees.
+
+### GitHub-only dispatch correction (2026-07-26)
+
+For an assignee who can read GitHub but cannot receive attachments, this
+paragraph supersedes only the delivery mechanism above. Do not require or wait
+for the external RichText archive. The accepted RichText constraints relevant
+to this correction are restated exhaustively in this request: provisional
+D3.2 payload placement is not authority; RichText limits remain normative;
+semantic children use the final expression/call records; authored tag/name/
+argument/value locations belong to the revision-bound source-component table;
+and the retained RichText `DialogueCall` tag action is distinct from the
+deleted ordinary-expression variant. Use those clauses together with the
+GitHub-visible RichText request, implementation intake/evidence, current typed
+syntax/owner code, and the seven repository-retained archives. Absence of the
+external binary by itself is not a `NOT_READY` reason; return `NOT_READY` only
+for a concrete unresolved semantic decision after inspecting those sources.
+
+The item/member and statement requests are now resolved locally by
+`docs/implementation/2026-07-26-proof-hir-local-schema-decisions.md` and must
+not be dispatched. Treat the dedicated declaration-member arena,
+`HirStmtKind::IfLet(HirIfLetStmt)`, and typed source-component
+`UnsafeAuditInsertion` owners recorded there as fixed adjacent decisions, not
+as scope for this archive.
+
+## Why a correction is required
+
+The base archive calls its core HIR records exact, but references the following
+types without defining their Rust-level variants, fields, validation, or
+normalization:
+
+```text
+HirName
+HirPath
+HirEntityReference
+HirLifetimeKey
+HirLiteral
+HirNumericSequence
+HirCallArgument
+HirRecordField
+HirClosureParameter
+HirMatchArm
+HirPatternField
+```
+
+The same audit found expression-level holes and one obsolete base variant:
+
+- AW-AH-009.4.2 replaces the base inline call payload with
+  `Call(HirCallExpr)`, but does not define `HirCallExpr`;
+- the base `Placeholder` payload does not preserve the current typed syntax
+  distinction between partial-application and pipe-left placeholders;
+- the base `Thread { scope, body }` payload does not decide the current authored
+  optional name and detached/attached execution distinction;
+- the base still names `MemoBlock`, although that unreleased language surface
+  has since been removed and must not be resurrected; and
+- AW-AH-009.4.2 reaches `HirDialogueContent`, but neither package defines its
+  exhaustive variants, fields, nested-expression ownership, or lowering
+  boundary.
+
+AW-AH-007/008 adds a second precedence problem. Its D3.2 HIR sketch predates
+the Proof arena/source-component contract and places `HirRichTextTagId`,
+multiple public `SourceSpan` fields, and nested `HirCall`/`HirExpr` values
+directly in HIR payloads. It also names a RichText payload variant
+`DialogueCall`, which must not be confused with the removed ordinary
+`HirExprKind::DialogueCall`. The accepted RichText limits remain normative,
+but their allocation and recovery boundary must be reconciled with the final
+attached syntax, arena, and `HirDialogueContent` ownership instead of preserving
+that provisional field layout.
+
+The accepted AW-AH-009.3 chain is the final authority for ordinary call
+surface, `HirCallExpr`-adjacent callable identity, the single shared resolver,
+associated-capacity receivers, overload families, candidate accounting, and
+work/resource charging. This correction may choose the final arena record
+shape, but must not create a second call AST/HIR, callable catalog, resolver,
+family classifier, static-capacity dispatcher, argument replay pass, or
+signature-help candidate authority.
+
+Finally, Proof `LOSSLESS_TYPED_IDENTITY.md` gives call arguments, record
+fields, closure parameters, and match arms independent attached
+`SyntaxNodeId`s, while the base HIR sketch stores them as inline helpers. The
+final schema must retain revision-bound component diagnostics through an exact
+parent-expression plus role/ordinal source query or another single qualified
+component owner; silently discarding those identities is not acceptable.
+
+The repository inspected by that package did not contain those HIR types. The
+current implementation therefore cannot determine from the accepted contract
+whether a string literal stores decoded content or authored body, how integer
+overflow and canonical digits are retained, whether `Unit` is an expression
+only or also a literal variant, how float/unit/duration values are normalized,
+or what validation a HIR name/path performs. Those decisions affect checking,
+runtime values, equality, hashing, cache keys, diagnostics, and save/replay
+artifact identity; they are not field-name implementation details.
+
+There is also a precedence conflict to close explicitly. The base archive uses
+`HirExprKind::EntityReference(HirEntityReference)`, while the later accepted
+AW-AH-009.4.2 contract replaces that payload with `HirIdRef` and defines
+absolute, relative, and family-relative HIR carriers. It still calls
+`HirEntityReference` an existing absolute payload even though no exact shape is
+defined by either archive.
+
+Current WIP records are not authority. Do not preserve a provisional local
+shape merely because it is present in the checkout, and do not introduce a
+compatibility conversion between two unfinished leaf models.
+
+## Required decision: one exhaustive final expression inventory
+
+1. Reconcile the base archive, AW-AH-009.4.2 precedence correction, current
+   typed syntax, and later accepted language removals into one exhaustive final
+   `HirExprKind`. Include a precedence table for every base and corrected
+   variant, classifying it as retained, field-corrected, payload-replaced, or
+   deleted. No unclassified variant may remain.
+   The returned table must start from this accepted-contract baseline and may
+   change it only with explicit later-authority evidence:
+
+   - retain `Unit`, `Tuple`, `BracketSequence`, `ArrayRepeat`, `Select`,
+     `Index`, `Pipe`, `Try`, `Await`, `Range`, `Record`, `RecordLiteral`,
+     `Binary`, `Borrow`, `Dereference`, `Closure`, `Unary`, `Block`,
+     `ComputationBlock`, `NamedBlock`, `If`, `IfLet`, `Match`, and `Error`;
+   - retain `Literal`, `LifetimePath`, `Path`, `ShortVariant`, and
+     `NumericBracketSequence` after selecting the exact leaf schemas;
+   - replace `EntityReference(HirEntityReference)` with
+     `EntityReference(HirIdRef)` and the inline call fields with
+     `Call(HirCallExpr)`;
+   - correct the payloads of `Placeholder` and `Thread`;
+   - delete ordinary-expression `DialogueCall` and `MemoBlock`; and
+   - add AW-AH-009.4.2's
+     `DialogueContentApplication(HirDialogueContentApplication)` and
+     `PostfixBracket(HirPostfixBracket)`.
+2. Give the exact Rust enum/record schema, private fields, lowering-only
+   constructors, validation, and read-only accessors for every retained
+   payload. Inline fields are permitted only when the returned contract makes
+   them exact.
+3. Define `HirCallExpr` completely, including callee ownership, ordered
+   arguments, scope/child identities, and the interaction with the accepted
+   associated-capacity/shared-callable authority. It must not clone syntax or
+   retain a callee display string.
+4. Define a typed HIR placeholder payload which preserves the current semantic
+   distinction between partial-application and pipe-left placeholders. State
+   the exact attached-syntax metadata/accessor and lowering projection required
+   to retain that distinction; do not infer it later from source text or
+   surrounding HIR.
+5. Define the exact final thread-expression payload, including whether and how
+   its authored optional name and detached/attached distinction survive, along
+   with scope/body ownership. Reconcile it with the existing runtime/compiler
+   thread semantics rather than silently dropping fields.
+6. Delete `MemoBlock` from the final expression inventory unless a later
+   accepted package supplies concrete evidence that the removed language
+   surface was restored. Do not provide a removed-syntax carrier or diagnostic.
+7. Define exhaustive `HirDialogueContent` variants and fields, including direct
+   typed ownership of nested expression IDs in the same arena, and its direct
+   projection from current attached content syntax. Reconcile the current
+   text, raw-text, ruby, RichText tag, interpolation, control, and other
+   accepted content families with AW-AH-009.4.2 without reviving
+   `SpeakerLine`, string `ContentCall`, `DialogueCall`, source-coordinate maps,
+   or a second expression arena.
+8. Reconcile AW-AH-007/008 RichText HIR with the Proof arena and source-table
+   authority. Define the final owner for stable RichText tag identity; move
+   authored tag/name/argument/value spans into the revision-bound source
+   component table rather than public semantic payload fields; represent nested
+   call/condition children with the final `ExprId`/call records rather than
+   cloned `HirCall` or `HirExpr` values; and distinguish the retained RichText
+   dialogue-call tag action from the deleted ordinary-expression
+   `DialogueCall` variant.
+9. Preserve and reconcile the accepted RichText allocation limits, including
+   4,096 tag nodes and 32,768 argument records per `DialogueContent`, 16,384
+   bytes per tag body, 32 arguments per tag/declared inline call, 4,096 encoded
+   or decoded value bytes, 64-byte keys, and the accepted nesting/numeric
+   limits. State which syntax transaction, HIR arena, checker, and decoder
+   charges each limit and how exact/one-over recovery avoids partially
+   publishing source identities or semantic records.
+10. Reconcile, rather than merge, the distinct call budgets: ordinary authored
+    call arguments and callback parameters are bounded at 128, nested calls at
+    32, recovery nodes at 256, diagnostics at 128, and candidate attempts and
+    retained results at most two under AW-AH-009.4.2 and the AW-AH-009.3 chain;
+    RichText-context
+    tag and declared inline Fx/dialogue calls remain bounded at 32 arguments.
+    State the exact parser/HIR/checker boundary for each charge, how it composes
+    with the Proof `HirLimits`, and prove exact succeeds while one-over fails
+    atomically without truncation, replay, or partial candidate publication.
+
+## Required decisions: names, paths, lifetimes, and ID references
+
+1. Define exact Rust records/enums, private fields, lowering-only constructors,
+   and read-only accessors for `HirName`, `HirPath`, `HirLifetime`, and
+   `HirLifetimeKey` (or delete/merge a redundant name with explicit evidence).
+2. Specify identifier validation and normalization, Unicode/case policy, empty
+   and recovered names, segment ordering, absolute/qualified path state, and
+   semantic equality and ordering requirements. State which Rust traits are
+   required, but do not describe `std::hash::Hash` output as a stable artifact
+   identity. If deterministic codec or fingerprint bytes are required, define
+   them separately. HIR must copy parser-validated typed components, never
+   split dotted strings.
+3. Define the exact absolute `HirEntityReference` payload and reconcile it with
+   AW-AH-009.4.2's exact `HirIdRef::{Absolute, Relative, FamilyRelative}`,
+   `HirIdSuffix`, `HirIdFamily`, `HirRelativeId`, and
+   `HirFamilyRelativeId`. Publish one final `HirExprKind` entity-reference
+   payload; do not retain both base and corrected variants.
+   Separately decide whether entity references in `HirPatternKind` remain
+   absolute-only or accept the complete `HirIdRef` family. The current old
+   pattern semantics and the attached token grammar do not establish the same
+   answer, so implementation must not infer it from the expression decision.
+4. State which existing repository-owned types (`PublicId`, typed ID-reference
+   syntax components, lifetime enums, or other semantic IDs) are reused
+   directly and why crate dependency direction remains valid.
+5. Keep revision-bound ranges, source spellings, Rowan nodes, syntax handles,
+   and display strings out of semantic leaf records.
+
+## Required decisions: literals and numeric summaries
+
+1. Define one exhaustive `HirLiteral` enum and every supporting integer,
+   float, unit, duration, string, character, and boolean record/enum.
+2. For each syntax literal family, specify the exact semantic value copied into
+   HIR, authored facts that remain relevant to type checking (radix, explicit
+   suffix, unit, overflow/recovery state), and authored display facts that stay
+   only in the source map.
+3. Select exact string/raw-string escape decoding and malformed/unterminated
+   ownership; character decoding; integer separator/prefix/suffix and
+   out-of-range behavior; float exponent/suffix/canonical representation; and
+   unit-number/duration representation. Do not delegate behavior to a source
+   string that HIR reparses later.
+4. Reconcile `HirExprKind::Unit` with any proposed literal-unit value and
+   prohibit duplicate semantic encodings unless the language has two distinct
+   observable values.
+5. Define exact `HirNumericSequence` fields, common-suffix behavior, value and
+   ordering semantics, exact/one-over limits, and recovery for a missing final
+   element. Per-element syntax/HIR expression identities must not be invented
+   for the accepted compact-summary form.
+6. Specify one direct lowering conversion from the canonical attached typed
+   literal owner. `raw_text()`, Rowan token scans, source slicing, and a second
+   literal lexer are prohibited.
+
+## Required decisions: closed expression child records
+
+Define exact fields, variants, ordering, constructor validation, and read-only
+accessors for:
+
+- positional, named, and spread `HirCallArgument`;
+- `HirRecordField` including shorthand and initializer ownership;
+- `HirClosureParameter` including pattern and optional type;
+- expression `HirMatchArm` including pattern, optional guard, value, scope, and
+  local ownership;
+- `HirPatternField`; and
+- any additional helper record that is required to make the accepted
+  `HirExprKind` / `HirPatternKind` exhaustive without syntax clones or generic
+  maps.
+
+For every inline expression helper, define its qualified source-component
+query. Reconcile the independent attached child `SyntaxNodeId` with the final
+HIR representation using the parent `ExprId`, semantic role, ordinal, and
+source-table key (or an equally exact single owner selected by the contract).
+Diagnostics, LSP, formatter, and Agent consumers must not recover component
+identity from vector position alone or copy `SourceSpan` into the semantic
+payload.
+
+State whether owned operator/value enums such as `BinaryOp`, `UnaryOp`,
+`BorrowKind`, and `ComputationBlockKind` are reused from their current owner or
+projected to an exact HIR-owned type. Do not create duplicate vocabularies
+without a dependency or semantic reason.
+
+This request must not redesign AW-AH-009.4.2's final outer
+`HirDialogueContentApplication`, `HirPostfixBracket`, coordinate, line-plan,
+source-role, or synthetic-role records. It must make their shared
+`HirDialogueContent`, leaf, and ordinary-expression dependencies unambiguous.
+
+## Required allocation, recovery, and scope matrix
+
+Return an exhaustive variant-by-variant lowering matrix. For every final
+expression, pattern, and component record, specify:
+
+- an authored expression's qualified `(SyntaxNodeId, HirIdKind::Expr)` source
+  owner and the exact semantic role/ordinal of every child;
+- known-family recovery as the same typed variant plus poison state, versus
+  generic recovery as `HirExprKind::Error`;
+- omitted tails as `ImplicitUnitTail`, required missing tails as poisoned
+  `MissingRequiredTail`, and missing operands as `RecoveryOperand`;
+- inherited scope versus every construct that creates a new block, closure,
+  match-arm, or other scope;
+- source, synthetic, poisoned, stale, and foreign identity behavior; and
+- exact-limit success and one-over transactional rollback, with no leaked
+  source slots, HIR slots, scopes, candidates, diagnostics, or partial records.
+
+Do not change AW-AH-009.4.2's candidate-only roles or ordinals while closing
+this matrix.
+
+## Migration, consumers, and constraints
+
+Specify a deletion-driven order that privately installs the selected records,
+lowers attached typed children directly, migrates sema/verifier/runtime-plan/
+compiler/LSP/Agent consumers, and deletes syntax-value clones, raw literal or
+path readers, old `HirExprKind::DialogueCall`, and any provisional duplicate
+leaf shape in the same public authority switch. Do not add aliases, extension
+traits, dual readers, source gates, source-string fallbacks, removed-syntax
+diagnostics, or compatibility codecs.
+
+Independent arena, slot-liveness, type/pattern/scope, project, item/member, and
+statement work may continue while this contract is returned. Implementers must
+not publish or complete the blocked leaf/expression-payload rows by guessing.
+
+## Tests to specify
+
+Define direct tests for every final expression variant; every literal family
+and malformed/recovered case; both placeholder meanings; named/unnamed and
+attached/detached thread cases; every dialogue-content variant;
+every RichText payload/tag/argument/source-component variant and the accepted
+exact/one-over limits;
+typed-child-versus-disagreeing-display-source authority; numeric exact/one-over
+and missing-final-element recovery; name/path Unicode and invalid/recovered
+cases; absolute/relative/family-relative ID references; all call argument and
+child-record variants; semantic equality/order and any separately defined
+deterministic codec/fingerprint; stale/foreign source rejection at lowering;
+and rollback.
+
+Require source-query round trips for call arguments, record fields, closure
+parameters, match arms, RichText tags, and RichText arguments across accepted,
+stale, foreign, poisoned, and rolled-back snapshots. Require explicit evidence
+that a RichText `DialogueCall` tag action survives while ordinary removed
+`HirExprKind::DialogueCall` cannot be constructed or executed.
+
+Use compile-fail tests only for observable public type/API constraints such as
+absence of public raw constructors, public Serde, old public payload variants,
+or compatibility APIs. A compile-fail test cannot prove that a private
+string/source fallback is absent. Prove typed-child authority behaviorally with
+disagreeing display/source fixtures, and require a one-off implementation
+review plus the normal structural audit for residual private paths. Do not turn
+that review into a checked-in source gate or spelling scan.
+
+## Required returned archive
+
+Return one ZIP with all sidecars inside it. Include at least `README.md`,
+`FINAL_STATUS.md` (`READY_FOR_IMPLEMENTATION` or `NOT_READY`),
+`OPEN_QUESTIONS.md`, a copy of this request, exact Rust schemas and invariants,
+precedence/deletion tables, implementation order, full test matrix,
+requirements traceability, and a manifest with every non-self member's byte
+length and SHA-256. Return no production patch, overlay, compatibility code, or
+required external sidecar. If one exact leaf/payload authority cannot be
+selected, return `NOT_READY` and name the blocking decision.

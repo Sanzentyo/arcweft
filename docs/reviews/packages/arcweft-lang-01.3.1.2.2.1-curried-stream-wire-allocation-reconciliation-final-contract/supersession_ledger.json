@@ -1,0 +1,197 @@
+{
+  "contract_id": "Lang-01.3.1.2.2.1",
+  "rows": [
+    {
+      "id": "PARENT-121-CALLABLE-FLAT-OWNER",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "RUST_SCHEMAS.md",
+      "location": "lines 95-140, §4 General callable boundary projection",
+      "old": "RuntimeParameterIndex(u32), RuntimeCallableParameter.index, and RuntimeCallableBoundarySignature.parameters: Vec<RuntimeCallableParameter>",
+      "replacement": "The same RuntimeCallableBoundarySignature owner is changed in place to groups: Vec<RuntimeCallableParameterGroup>; each parameter carries RuntimeCallableParameterCoordinate. RuntimeParameterIndex is removed."
+    },
+    {
+      "id": "PARENT-121-FINAL-CALLABLE-PROJECTION",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "FINAL_CONTRACT.md",
+      "location": "lines 70-95, §4 Lossless callable parameter projection",
+      "old": "External Stream projection consumes one flat declaration-order RuntimeResolvedArguments entry per selected non-curried parameter group; defaults are fully materialized before RuntimePlan.",
+      "replacement": "For external Stream only, every callable group is retained, defaults keep their accepted fingerprint and evaluate in their owning group, and the canonical coordinate/value product replaces the flat projection. Unrelated flat call boundaries may retain RuntimeResolvedArguments."
+    },
+    {
+      "id": "PARENT-121-OPEN-RUST-SHAPE",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "RUST_SCHEMAS.md",
+      "location": "lines 1372-1376, §18 AwbcInstruction::OpenStream",
+      "old": "OpenStream { dst, definition, args: Vec<AwbcResolvedArgument> }",
+      "replacement": "OpenStream { dst, callee, definition, signature, group, arguments: AwbcExternalStreamGroupArguments }"
+    },
+    {
+      "id": "PARENT-121-OPEN-HOST-ARGS",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "RUST_SCHEMAS.md",
+      "location": "lines 1088-1101, RuntimeStreamRequest::Open",
+      "old": "arguments: RuntimeHostResolvedArguments and no declaration/signature identity",
+      "replacement": "arguments: RuntimeExternalStreamArgumentProduct plus declaration and signature fingerprints; instance remains StreamInstanceKey."
+    },
+    {
+      "id": "PARENT-121-INSTRUCTION-ALLOCATION-ROW",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "WIRE_AND_VERSION_ALLOCATIONS.md",
+      "location": "line 123, §5 Instruction allocation row",
+      "old": "OpenStream=0x27; FinishStream=0x28",
+      "replacement": "OpenStream=0x27; FinishStream=0x28; ApplyExternalStreamGroup=0x29. The first two meanings are retained, and the row is superseded only to become complete."
+    },
+    {
+      "id": "PARENT-121-DEFINITION-KEY-FLAT-PARAMETERS",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "WIRE_AND_VERSION_ALLOCATIONS.md",
+      "location": "lines 212-225, §8 transcript step 8 and worked hash",
+      "old": "One flat parameter count/index sequence and worked 394-byte/06c9... definition-key example",
+      "replacement": "Definition-key transcript step 8 is the exact nested group/coordinate transcript in FINAL_CONTRACT.md §7. The old worked byte count and digest are invalid and must be replaced by a final grouped golden generated from that transcript."
+    },
+    {
+      "id": "PARENT-121-OPEN-FIELD-ROW",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "WIRE_AND_VERSION_ALLOCATIONS.md",
+      "location": "lines 181-182, §7 OpenStream field encoding",
+      "old": "destination, definition, flat Vec<AwbcResolvedArgument>",
+      "replacement": "destination, callee, definition, callable signature, group:u16-le, complete coordinate vector, parallel operand vector."
+    },
+    {
+      "id": "PARENT-121-DELTA-AWBC-005",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "NORMATIVE_DELTA.md",
+      "location": "line 70, DELTA-AWBC-005",
+      "old": "OpenStream/FinishStream + NextStream/YieldStream; 0x27,0x28,0x8f,0x90",
+      "replacement": "OpenStream/FinishStream/ApplyExternalStreamGroup + NextStream/YieldStream; 0x27,0x28,0x29,0x8f,0x90."
+    },
+    {
+      "id": "PARENT-121-WORKED-FLAT-OPEN",
+      "archive": "Lang-01.3.1.2.1",
+      "file": "WORKED_EXAMPLES.md",
+      "location": "lines 83 and 87-89, §4 OpenStream bytes",
+      "old": "27 02 03 02 00 04 01",
+      "replacement": "The flat vector is invalid under codec 8; use the group-aware OpenStream vectors in WORKED_BYTES.md."
+    },
+    {
+      "id": "CHILD-122-SOURCE-OPCODE-CLAIM",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "AWBC_AND_WIRE.md",
+      "location": "lines 153-155, §5",
+      "old": "0x22 and 0x23 are removed Source instruction bytes and invalid",
+      "replacement": "0x22=CallTraitMethod and 0x23=RegisterCleanup remain valid. Removed codec-8 instruction bytes are exactly 0x1c,0x1d,0x1e,0x20."
+    },
+    {
+      "id": "CHILD-122-INSTRUCTION-ALLOCATION",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "AWBC_AND_WIRE.md",
+      "location": "lines 157-162, §5 allocation table",
+      "old": "0x27=ApplyExternalStreamGroup; 0x28=OpenStream; no FinishStream",
+      "replacement": "0x27=OpenStream; 0x28=FinishStream; 0x29=ApplyExternalStreamGroup."
+    },
+    {
+      "id": "CHILD-122-INCOMPLETE-RUST-FAMILY",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "AWBC_AND_WIRE.md",
+      "location": "lines 181-199, §5 AwbcInstruction excerpt",
+      "old": "Only ApplyExternalStreamGroup and OpenStream are listed",
+      "replacement": "The exact family has OpenStream, FinishStream, and ApplyExternalStreamGroup in numeric order. Apply/Open field shapes are retained."
+    },
+    {
+      "id": "CHILD-122-DELTA-ROW-23",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "DELTA_FROM_LANG-01.3.1.2.1.md",
+      "location": "line 23, AWBC partial application row",
+      "old": "Add opcode 0x27 ApplyExternalStreamGroup",
+      "replacement": "Add opcode 0x29 ApplyExternalStreamGroup."
+    },
+    {
+      "id": "CHILD-122-DELTA-ROW-24",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "DELTA_FROM_LANG-01.3.1.2.1.md",
+      "location": "line 24, AWBC Stream open row",
+      "old": "Use opcode 0x28 OpenStream",
+      "replacement": "Use retained opcode 0x27 OpenStream with the child group-aware payload."
+    },
+    {
+      "id": "CHILD-122-IMPLEMENTATION-CUT4-OPCODES",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "IMPLEMENTATION_PLAN.md",
+      "location": "line 97, Cut 4 step 3",
+      "old": "Add opcodes 0x27/0x28",
+      "replacement": "Install the complete integrated 0x27/0x28/0x29 table in the same codec-8 cut."
+    },
+    {
+      "id": "CHILD-122-TEST-T004",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "TEST_MATRIX.md / TEST_MATRIX.json",
+      "location": "T-004",
+      "old": "0x22 must reject as removed Source opcode",
+      "replacement": "0x1c must reject as removed StreamYield; 0x22 retains CallTraitMethod acceptance."
+    },
+    {
+      "id": "CHILD-122-TEST-T005",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "TEST_MATRIX.md / TEST_MATRIX.json",
+      "location": "T-005",
+      "old": "0x23 must reject as removed Source opcode",
+      "replacement": "0x1d/0x1e/0x20 rejection rows complete the removed set; 0x23 retains RegisterCleanup acceptance."
+    },
+    {
+      "id": "CHILD-122-IDENTITY-SHORT-NAMES",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "RUST_TYPES_AND_OWNERS.md",
+      "location": "lines 39 and 50-56, and all downstream field references",
+      "old": "RuntimeTypeLayoutHash, StreamDefinitionId, StreamInstanceId, GenerationId",
+      "replacement": "TypeLayoutHash, RuntimeStreamDefinitionKey, StreamInstanceOrdinal only as allocation component with StreamInstanceKey as public identity, and StreamGeneration."
+    },
+    {
+      "id": "CHILD-122-PARALLEL-SIGNATURE-OWNER",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "RUST_TYPES_AND_OWNERS.md",
+      "location": "lines 64-123, §2",
+      "old": "RuntimeExternalStreamCallableSignature, RuntimeExternalStreamParameterGroup, RuntimeExternalStreamParameter, RuntimeExternalStreamResult",
+      "replacement": "Do not introduce these parallel schema types. Change RuntimeCallableBoundarySignature in place to grouped coordinates; RuntimeStreamDefinition remains the external binding owner."
+    },
+    {
+      "id": "CHILD-122-FINAL-INSTANCE-ALLOCATION",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "FINAL_CONTRACT.md",
+      "location": "lines 182-188, §6 atomic commit row 2",
+      "old": "allocate one generation-owned StreamInstanceId",
+      "replacement": "Allocate one StreamInstanceOrdinal, then form the complete StreamInstanceKey from definition key, generation, and ordinal before atomic commit."
+    },
+    {
+      "id": "CHILD-122-FINAL-RUNTIMEPLAN-SIGNATURE",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "FINAL_CONTRACT.md",
+      "location": "lines 197-204, §7 RuntimePlan projection",
+      "old": "Emit one RuntimeExternalStreamCallableSignature nested by group",
+      "replacement": "Emit the one grouped RuntimeCallableBoundarySignature owned by arcweft-core::entry; the external definition references that same owner."
+    },
+    {
+      "id": "CHILD-122-PRODUCT-IDENTITY-FIELDS",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "RUST_TYPES_AND_OWNERS.md",
+      "location": "lines 199-208, §4",
+      "old": "definition: StreamDefinitionId; generation: GenerationId",
+      "replacement": "definition: RuntimeStreamDefinitionKey; generation: StreamGeneration. The product is otherwise retained as the sole canonical coordinate/value product."
+    },
+    {
+      "id": "CHILD-122-PARTIAL-IDENTITY-FIELDS",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "RUST_TYPES_AND_OWNERS.md",
+      "location": "lines 310-319, §6",
+      "old": "definition: StreamDefinitionId; generation: GenerationId",
+      "replacement": "definition: RuntimeStreamDefinitionKey; generation: StreamGeneration; same sole RuntimeFunctionValue::ExternalStreamPartial owner."
+    },
+    {
+      "id": "CHILD-122-OPEN-REQUEST-IDENTITY",
+      "archive": "Lang-01.3.1.2.2",
+      "file": "RUST_TYPES_AND_OWNERS.md",
+      "location": "lines 366-377, §7",
+      "old": "definition: StreamDefinitionId; generation: GenerationId; instance: StreamInstanceId",
+      "replacement": "Parent RuntimeStreamRequest::Open remains the owner; definition is RuntimeStreamDefinitionKey and instance is StreamInstanceKey. There is no separate bare instance ID or duplicated generation field."
+    }
+  ]
+}

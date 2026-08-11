@@ -9,7 +9,7 @@ Date: 2026-07-24
 The returned archive is retained at:
 
 - [`arcweft-aw-ah-009.3.3.3.1 Capacity, Dialogue, and overload accounting
-  reconciliation`](../reviews/packages/arcweft-aw-ah-009.3.3.3.1-capacity-dialogue-and-overload-accounting-reconciliation-final-contract.zip),
+  reconciliation`](../reviews/packages/zips/arcweft-aw-ah-009.3.3.3.1-capacity-dialogue-and-overload-accounting-reconciliation-final-contract.zip),
   SHA-256
   `060332BC62273C34F267F0F15767FE6BBD328BE177CB8035E83F210267AB0D41`,
   30,748 bytes.

@@ -1,0 +1,38 @@
+id	family	inclusive_maximum	charge_phase	charged_unit	exact_and_one_over	atomic_or_interaction
+A01	Syntax PrefixDepth	64	syntax parser cursor enter-prefix	each live prefix ancestor	64 accepts; 65th aborts syntax transaction	no Flow special value
+A02	Syntax AssertionConditions	64	grammar budget	each direct assertion condition	64 accepts; 65th aborts	applies inside generic Statement
+A03	Syntax GenericParameters	256	Flow generic node start	each generic/lifetime parameter	256 accepts; 257th aborts	no partial Flow node
+A04	Syntax WherePredicates	256	where predicate node start	each predicate	256 accepts; 257th aborts	no partial clauses/body
+A05	Syntax FixedParameters	256	parameter node start	each admitted first-group parameter	256 accepts; 257th aborts	second group is recovery, not admitted parameters
+A06	Syntax ContractClauses	64	every heterogeneous Flow clause node start	one per requires/ensures/invariant/assume/reads/effects/no_effect/modifies/decreases row	64 accepts; 65th aborts syntax transaction	family does not reset counter
+A07	Syntax TopLevelItems	16384	top-level item start	Flow item 1	exact commits; first one-over rejects	no HIR invoked
+A08	Syntax Statements	65536	statement-kind node start	every non-dialogue body item including Error	exact commits; first one-over rejects	Dialogue row charges Expression instead
+A09	Syntax Expressions	262144	expression node start	dialogue application and all expression descendants	exact commits; first one-over rejects	missing expressions charge as expressions
+A10	Syntax TypeNodes	131072	type-node start	parameter/return/where and descendants	exact commits; first one-over rejects	MissingType/ErrorType included
+A11	Syntax PatternNodes	131072	pattern-node start	parameter and body-child patterns	exact commits; first one-over rejects	MissingPattern/ErrorPattern included
+A12	Syntax IdentityBearingNodes	1048576	every identity-bearing grammar node	all Flow header/clause/body nodes	exact commits; first one-over rejects	tokens are not charged
+A13	Syntax Diagnostics	1024	deduplicated pending diagnostic insert	normalized typed diagnostic	1024 commits; 1025th aborts syntax transaction	no diagnostic-only partial snapshot
+A14	HIR Items	16384	HIR preflight before reservation	Flow ItemId 1	exact commits; first one-over full rollback	HirLimit enum order chooses first simultaneous failure
+A15	HIR Scopes	16384	HIR preflight	4 per recognized Flow plus nested child scopes	exact commits; first one-over full rollback	callable/requires/ensures/body always counted
+A16	HIR Statements	65536	HIR preflight	one for every body row except DialogueApplication plus nested statements	exact commits; first one-over rollback	Error StmtId included
+A17	HIR Expressions	262144	HIR preflight	DialogueApplication root, contract operands and all expression descendants	exact commits; first one-over rollback	MissingExpression included
+A18	HIR Types	131072	HIR preflight	authored/error type nodes; omitted Unit 0	exact commits; first one-over rollback	OmittedUnit has no TypeId
+A19	HIR Patterns	131072	HIR preflight	parameter/body patterns	exact commits; first one-over rollback	pattern recovery included
+A20	HIR LocalsPerScope	4096	HIR preflight per scope	parameter bindings, result, body/nested locals	4096 commits; 4097th rollback	result counts once in ensures scope
+A21	HIR LocalsPerModule	65536	HIR preflight module aggregate	all new Flow locals	exact commits; first one-over rollback	LocalGeneration ledger rolls back
+A22	HIR Captures	65536	HIR preflight	closures inside Flow expressions	exact commits; first one-over rollback	existing owner
+A23	HIR Diagnostics	1024	HIR preflight/final normalized issue set	one per unique final diagnostic key	1024 commits; 1025th rollback	child terminal diagnostics not copied
+A24	HIR SyntheticDescendantsPerOwner	1024	synthetic-key transaction	contract scopes/result and nested accepted synthetic children per owner	1024 commits; 1025th rollback	no wrap/sentinel
+A25	HIR TotalSlotsPerModule	786432	HIR preflight aggregate	Item+Scope+Local+Stmt+Expr+Type+Pattern+Capture slots	exact commits; first one-over rollback	source rows are not arena slots
+A26	body items	no separate limit	derived preflight count	each row charges exactly one Stmt or Expr root	bounded by Statements/Expressions and total slots	no FlowBodyItems limit introduced
+A27	source components	no separate limit	exact checked usize manifest built in preflight	finite role cardinality per committed owner; child sites owned by child	overflow/invariant aborts; owning limit failure rolls all rows back	no configurable/source-byte Flow limit
+A28	source document bytes	existing SourceDocument owner; no Flow-specific limit	before syntax transaction	entire immutable document	existing SourceDocument failure; no partial syntax/HIR	Flow does not recopy bytes
+A29	project Flow candidates	no Flow-specific limit; one candidate maximum per valid Flow item	project acceptance staging	0 for missing/poisoned identity, 1 for coherent identity	failure rolls back candidate and accepted generation	same ItemId/callable record authority
+A30	semantic call candidates	256	existing shared resolver invocation	calls occurring in clauses/body	256 facts may be considered; 257th CandidateLimit rollback	Proof witness projection may retain at most 2 after complete facts
+A31	postfix interpretation candidates	2	accepted syntax/HIR postfix owner	index and dialogue candidates	0/1/2 retained; no unbounded list	Flow Dialogue row consumes selected/poisoned accepted owner
+A32	cancellation	N/A	poll at syntax and HIR transaction checkpoints	entire staged Flow	returns typed Cancelled and drops staging	no identity/source/diagnostic/candidate/cache/invalidation publication
+A33	panic	N/A	transaction unwind guard	entire staged Flow	guard drops staging and restores ledgers; panic propagates	no poisoned partial commit
+A34	stale attached snapshot	N/A	before HIR preflight	snapshot/source generation	typed stale error, no reservation	no latest-snapshot fallback
+A35	foreign module/database child	N/A	preflight ID/module validation	every child ID	WrongModule before other publication	no cross-project join
+A36	simultaneous limit failures	enum-defined order	preflight result selection	all calculated counts	first failing SyntaxLimit/HirLimit discriminant returned	result deterministic and no partial diagnostics
+A37	retry after failed/cancelled attempt	same limits	fresh transaction with same accepted snapshot	all rows	same deterministic IDs/sites/generations published exactly once	no reservation leak

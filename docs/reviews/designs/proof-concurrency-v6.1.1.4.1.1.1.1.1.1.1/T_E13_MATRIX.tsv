@@ -1,0 +1,35 @@
+test_id	classification	fixture_or_api	pipeline	assertions	expected
+T-E13-001	END_TO_END	target.member	ParsedSource -> central Select -> HIR -> query	exact tokens/CST/projection; PathId then SelectId; Name; zero diagnostics	commit clean
+T-E13-002	END_TO_END	target.	same	MissingName 7..7; Missing payload; one root diagnostic; no syntax diag	commit poisoned
+T-E13-003	END_TO_END	target?.member	ParsedSource after ?. split -> Try -> Select -> HIR	distinct PathId/TryId/SelectId; exact Try/Select roles; no optional flag	commit clean
+T-E13-004	END_TO_END	target?.	same	distinct TryId; Missing insertion8; one diagnostic	commit poisoned
+T-E13-005	END_TO_END	(target.).member	ParsedSource -> inner Select -> group -> outer Select -> HIR	three HIR expr slots; outer RecoveredChild(Target); inner diagnostic only	commit
+T-E13-006	END_TO_END	(target.).	same	two Select owners; outer Missing obligation; diagnostics inner then outer	commit
+T-E13-007	END_TO_END	target.   	same	attached insertion10; not dot end; zero syntax diag	commit
+T-E13-008	END_TO_END	target./*c*/	same	lossless comment; insertion12; zero syntax diag	commit
+T-E13-009	END_TO_END	(target.   ).member	same	inner insertion11 and outer Name span13..19	commit
+T-E13-010	END_TO_END	(target./*c*/).member	same	inner insertion13; descendant diagnostic source preserved	commit
+T-E13-011	END_TO_END_NEGATIVE	.member	ParsedSource -> ShortVariant	no Select projection/ID/source/diagnostic/synthetic child	ShortVariant
+T-E13-012	END_TO_END_NEGATIVE	target..member	ParsedSource -> Range	compact .. one token; no Select evidence	Range
+T-E13-013	END_TO_END_NEGATIVE	target..	ParsedSource -> Range recovery	no E13 slots/components/diagnostics	Range authority
+T-E13-014	END_TO_END_NEGATIVE	target.42	ParsedSource -> Missing Select subtree + generic Error	no Invalid member; number remains outer recovery input	delegated E35 outer result
+T-E13-015	END_TO_END_NEGATIVE	target. 42	same	Missing insertion follows trivia; no Invalid span	delegated E35 outer result
+T-E13-016	DIRECT_GRAMMAR_EVIDENCE	target. .member	current parser/path events	not used as acceptance producer; parenthesized replacement recorded	NOT_NORMATIVE
+T-E13-017	COMPILE_FAIL	construct HirSelectExpr fields externally	rustc visibility	private fields/constructor	fails
+T-E13-018	COMPILE_FAIL	HirSelectedMember::Invalid	rustc enum resolution	variant absent	fails
+T-E13-019	COMPILE_FAIL	AttachedSelectExpr	rustc type resolution	standalone owner absent	fails
+T-E13-020	COMPILE_FAIL	OptionalDot or Select optional flag	rustc type/field resolution	combined path absent	fails
+T-E13-021	COMPILE_FAIL	Serialize/Deserialize HirSelectExpr	trait bound	no public Serde	fails
+T-E13-022	COMPILE_FAIL	old constructor new(target,HirName)	type check	requires HirSelectedMember	fails
+T-E13-023	API_BEHAVIOR	HirSelectExpr accessors	crate/public API	target copy; member borrowed; structural Eq/Hash/Ord	passes
+T-E13-024	END_TO_END_LIMIT	1024-byte valid selected name	ParsedSource -> central -> HIR	NameBytes exact then unchanged constructor	commit
+T-E13-025	END_TO_END_LIMIT	1025-byte valid selected name	same	NameBytes observed1025 before ID/source/diag	rollback
+T-E13-026	END_TO_END_LIMIT	target.	same	Missing charges zero NameBytes	commit
+T-E13-027	END_TO_END_LIMIT	clean Select chain n=262143	ParsedSource attachment	Syntax Expressions exact; identity/source room	commit syntax
+T-E13-028	END_TO_END_LIMIT	clean Select chain n=262144	ParsedSource attachment	Syntax Expressions observed262145 first	rollback syntax
+T-E13-029	END_TO_END_LIMIT	grouped-use identity N=1048572	ParsedSource attachment	IdentityBearingNodes exact	commit syntax
+T-E13-030	END_TO_END_LIMIT	grouped-use identity N=1048573	ParsedSource attachment	IdentityBearingNodes observed1048577	rollback syntax
+T-E13-031	END_TO_END_LIMIT	source bytes exact padding	registration -> ParsedSource -> HIR	8388608 accepted	commit
+T-E13-032	END_TO_END_LIMIT	source bytes one-over	registration	8388609 rejected before syntax/HIR	rollback
+T-E13-033	END_TO_END_LIMIT	1024 `use a as` diagnostics	ParsedSource	real SyntaxEvent::Diagnostic exact	commit syntax
+T-E13-034	END_TO_END_LIMIT	1025 `use a as` diagnostics	ParsedSource	Syntax Diagnostics observed1025	rollback syntax

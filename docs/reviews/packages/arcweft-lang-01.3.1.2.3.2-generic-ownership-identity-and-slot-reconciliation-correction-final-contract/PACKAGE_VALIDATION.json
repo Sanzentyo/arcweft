@@ -1,0 +1,106 @@
+{
+  "schema": "arcweft.lang-01.3.1.2.3.2.package-validation.v1",
+  "status": "PASS",
+  "archive_name": "arcweft-lang-01.3.1.2.3.2-generic-ownership-identity-and-slot-reconciliation-correction-final-contract.zip",
+  "archive_sha256": "reported_at_delivery_not_self_embedded",
+  "fixed_member_count": 26,
+  "checks": {
+    "source_request_sha256": {
+      "status": "PASS",
+      "actual": "dc9d39578e4706b7b518bc2cfdd37fda33d6be38352007c957e2360704afcf76"
+    },
+    "rust_skill_complete_read": {
+      "status": "PASS",
+      "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+      "lines": 56
+    },
+    "open_questions_exact_none": {
+      "status": "PASS",
+      "bytes_hex": "6e6f6e650a"
+    },
+    "required_decision_groups": {
+      "status": "PASS",
+      "required": 10,
+      "closed": 10
+    },
+    "decision_register": {
+      "status": "PASS",
+      "entries": 72
+    },
+    "symbol_closure": {
+      "status": "PASS",
+      "entries": 108,
+      "request_symbols_present": true
+    },
+    "test_matrix": {
+      "status": "PASS",
+      "rows": 438,
+      "unique_ids": 438,
+      "kinds": {
+        "boundary": 47,
+        "compile_fail": 34,
+        "full_gate": 18,
+        "golden": 30,
+        "negative": 121,
+        "parity": 12,
+        "positive": 109,
+        "structural": 8,
+        "tamper": 59
+      }
+    },
+    "codec_goldens": {
+      "status": "PASS",
+      "valid": 23,
+      "invalid_binary": 18,
+      "invalid_json": 15
+    },
+    "reference_model": {
+      "status": "PASS",
+      "checks": 77,
+      "scope": "design reference model only"
+    },
+    "python_syntax": {
+      "status": "PASS",
+      "scripts": [
+        "validation/model_checks.py",
+        "validation/validate_package.py"
+      ]
+    },
+    "forbidden_production_overlay": {
+      "status": "PASS",
+      "rust_files": 0,
+      "patch_files": 0,
+      "cargo_manifests": 0
+    },
+    "manifest": {
+      "status": "PASS_AFTER_SEAL",
+      "self_digest": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "zip_crc": {
+      "status": "PASS_AFTER_SEAL"
+    },
+    "zip_path_safety": {
+      "status": "PASS_AFTER_SEAL"
+    },
+    "zip_member_byte_parity": {
+      "status": "PASS_AFTER_SEAL"
+    },
+    "zip_deterministic_metadata": {
+      "status": "PASS_AFTER_SEAL",
+      "timestamp": "1980-01-01T00:00:00",
+      "mode": "0644",
+      "order": "lexical"
+    },
+    "deterministic_rebuild": {
+      "status": "PASS_AFTER_SEAL"
+    }
+  },
+  "not_performed": [
+    "production implementation",
+    "Arcweft local checkout build",
+    "cargo fmt/check/clippy/test",
+    "Tier-2/native/Web/Agent gates",
+    "Rust compilation of target declarations",
+    "parent ZIP member rehash in this build"
+  ]
+}

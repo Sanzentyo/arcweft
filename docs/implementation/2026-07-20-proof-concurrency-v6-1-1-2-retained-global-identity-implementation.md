@@ -3,7 +3,7 @@
 ## Current reconciled package
 
 The implementation source of truth is
-[`docs/reviews/packages/arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip`](../reviews/packages/arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip).
+[`docs/reviews/packages/zips/arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip`](../reviews/packages/zips/arcweft-proof-concurrency-v6.1.1.2-retained-global-identity-declaration-grammar-reconciliation-final-contract.zip).
 Its SHA-256 is
 `0e30a91fa2f7a288e9a12d8afc7356525604cbdc907d659cd97311207d26a68e`.
 All 18 archive members match `MANIFEST.txt`, the entries are in lexical order,

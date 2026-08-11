@@ -1,0 +1,133 @@
+{
+  "awbc": {
+    "abi_version": 1,
+    "change": "none_use_existing_synthetic_function_and_nominal_runtime_value",
+    "codec_tag": 10,
+    "new_opcodes": [],
+    "new_runtime_value_tags": []
+  },
+  "contract": "Lang-01.5.1.1.2",
+  "hash_domains": [
+    "arcweft.view.semantic.v1\\0",
+    "arcweft.view.value-semantic.v1\\0",
+    "arcweft.view.dependency-closure.v1\\0",
+    "arcweft.view.static-fragment.v1\\0",
+    "arcweft.view.static-certificate.v1\\0",
+    "arcweft.view.program-semantic.v1\\0",
+    "arcweft.view.program-revision.v1\\0",
+    "arcweft.view.parameter-contract.v1\\0",
+    "arcweft.view.parameter-table-contract.v1\\0",
+    "arcweft.view.export-contract.v1\\0"
+  ],
+  "outer_awfb": {
+    "common_schema_version": 1,
+    "compatibility": "direct_replace_unreleased_strict_reject_old_no_dual_reader",
+    "fields": [
+      {
+        "encoding": "canonical_compact_json_utf8",
+        "id": 1,
+        "max_bytes": 16777216,
+        "name": "transcript",
+        "required": true
+      }
+    ],
+    "magic_ascii_escaped": "AWVP\\r\\n\\x1a\\n",
+    "magic_hex": "415756500d0a1a0a",
+    "new_fields": [],
+    "new_numeric_section_or_abi_tags": [],
+    "new_sections": [],
+    "view_program_codec_tag": 9,
+    "view_program_section_kind": 9
+  },
+  "save": {
+    "binding": "existing_exact_artifact_identity_plus_view_program_id",
+    "certificate_serialized_in_save": false,
+    "new_fields": [],
+    "removed_fields": [],
+    "schema_id": "arcweft.bundle_session",
+    "schema_version": 2,
+    "static_path_selection_serialized": false
+  },
+  "status": "READY_FOR_IMPLEMENTATION",
+  "transcript": {
+    "binding_kinds": [
+      "constant",
+      "program"
+    ],
+    "canonical_reencode_must_equal_input": true,
+    "deny_duplicate_members": true,
+    "deny_unknown_fields": true,
+    "enum_case": "snake_case",
+    "enum_tag": "kind",
+    "instruction_kinds": [
+      "open_element",
+      "close_element",
+      "emit_text",
+      "emit_image",
+      "emit_custom",
+      "call_view",
+      "branch",
+      "match",
+      "repeat_keyed",
+      "await",
+      "bind_local",
+      "apply_modifier",
+      "apply_fx",
+      "bind_event",
+      "attach_part",
+      "attach_semantic"
+    ],
+    "new_string_tagged_variants": [
+      "view_instruction.match",
+      "view_binding.program",
+      "view_text_source.runtime_program"
+    ],
+    "program_roles": [
+      "pure",
+      "direct_await",
+      "handler"
+    ],
+    "projection_kinds": [
+      "identity",
+      "bool",
+      "stable_key",
+      "plain_text",
+      "rich_text",
+      "fx",
+      "resource_ref",
+      "signed_integer",
+      "unsigned_integer",
+      "length",
+      "logical_rect",
+      "enum_policy",
+      "handler_input"
+    ],
+    "proof_origins": [
+      "automatic",
+      "authored_required"
+    ],
+    "schema_value": "arcweft.view_program.v1",
+    "static_subject_kinds": [
+      "definition",
+      "subtree"
+    ],
+    "top_level_member_order": [
+      "schema",
+      "accepted_revision",
+      "program",
+      "value_programs",
+      "definitions",
+      "resolved_resources",
+      "static_fragments",
+      "static_certificates",
+      "source_map_digest"
+    ]
+  },
+  "view_text": {
+    "codec_tag": 11,
+    "magic_ascii_escaped": "AWVT\\r\\n\\x1a\\n",
+    "magic_hex": "415756540d0a1a0a",
+    "new_codec_tag": null,
+    "schema_change": "replace_string_projection_and_local_with_typed_program_reference"
+  }
+}

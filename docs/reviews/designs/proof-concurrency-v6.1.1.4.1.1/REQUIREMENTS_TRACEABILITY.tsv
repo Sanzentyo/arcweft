@@ -1,0 +1,15 @@
+requirement_id	source	requirement	status	normative_location	validation_or_test
+R1	01.1.1.4.1.1 §1	Expr/Pattern/Type source owner/query	CLOSED	SOURCE_ROLE_AND_QUERY_CONTRACT.md; RUST_SCHEMAS D	T-SOURCE-01; all Q/PQ/CQ subtests
+R2	01.1.1.4.1.1 §2	pathless variant pattern	CLOSED	RUST_SCHEMAS G; PATH_LIFETIME_CALL_THREAD_CONTRACT.md; P05	T-PATHLESS-VARIANT-01; T-P05
+R3	01.1.1.4.1.1 §3	Duration structural vs semantic comparison	CLOSED	RUST_SCHEMAS E; LITERAL_NUMERIC_CONTRACT.md	T-DURATION-IDENTITY-01; T-DUR-01
+R4	01.1.1.4.1.1 §4	checker-only float/Duration overflow	CLOSED	RUST_SCHEMAS E; LITERAL_NUMERIC_CONTRACT.md	T-CHECKER-OVERFLOW-01; T-FLOAT-01; T-DUR-01
+R5	01.1.1.4.1.1 §5	TypeId elided-region SyntheticOwner	CLOSED	RUST_SCHEMAS D; C12	T-SYNTHETIC-OWNER-01; T-C12
+R6	01.1.1.4.1.1 §6	exact limits/accounting	CLOSED	LIMITS_AND_ACCOUNTING.md; RUST_SCHEMAS J	T-HIR-LIMIT-01; all RB families
+R7	01.1.1.4.1.1 §7	matrix/test traceability	CLOSED	complete LOWERING_MATRIX.tsv, TEST_MATRIX.tsv, SUBTEST_REGISTRY.tsv	T-SUBTEST-REGISTRY-01
+P1	retained 01.1.1.4.1	35 expression variants	RETAINED	RUST_SCHEMAS B; LOWERING E01-E35	T-E01..T-E35
+P2	retained 01.1.1.4.1	12 pattern variants	CORRECTED/RETAINED	RUST_SCHEMAS G; LOWERING P01-P12	T-P01..T-P12
+P3	AW-AH-009.4.2	Dialogue/ID outer shapes and candidate ordinals	RETAINED	DIALOGUE_RICHTEXT_CONTRACT.md; RUST_SCHEMAS I	E33/E34; C16-C35
+P4	AW-AH-009.3	single shared resolver/accounting	RETAINED	PATH_LIFETIME_CALL_THREAD_CONTRACT.md	T-CALL-01
+P5	retained 01.1.1.4.1	Thread ordered body	RETAINED	RUST_SCHEMAS H	T-THREAD-01
+P6	constraints	no aliases/wrappers/dual readers/reparse/source gates	CLOSED	FINAL_CORRECTION.md; IMPLEMENTATION_AND_DELETION_ORDER.md	T-MIGRATION-01
+P7	required return	all sidecars in one ZIP, no adjacent requirements	CLOSED	README; status; questions; manifest	package validator

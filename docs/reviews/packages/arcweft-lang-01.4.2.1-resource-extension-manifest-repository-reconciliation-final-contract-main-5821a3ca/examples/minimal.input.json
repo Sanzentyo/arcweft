@@ -1,0 +1,75 @@
+{
+  "format": "arcweft.resource-type-manifest",
+  "schema": 1,
+  "package": {
+    "id": "org.example.weather",
+    "version": "1.0.0"
+  },
+  "resource_types": [
+    {
+      "type_id": {
+        "package": "org.example.weather",
+        "module": "weather",
+        "name": "Station"
+      },
+      "public_id_family": "station",
+      "family_group": "org.example.weather",
+      "body_schema": "org.example.weather.station",
+      "capabilities": {
+        "agent_exposure": "catalog",
+        "save_definition_reference": true,
+        "hot_reload": "replace_definition"
+      },
+      "lowering": {
+        "codec_id": "org.example.resource-json",
+        "codec_version": 1,
+        "section_id": "org.example.resource-section",
+        "section_version": 1
+      },
+      "docs": {
+        "summary": "A package-defined weather station resource."
+      },
+      "descriptor_digest": "blake3:d5ee2afe4c115782169c8428574689716e5d9d621e202883c2beb1af8a76bb59"
+    }
+  ],
+  "schemas": [
+    {
+      "kind": "record",
+      "value": {
+        "schema_id": "org.example.weather.station",
+        "nominal_type": {
+          "package": "org.example.weather",
+          "module": "weather",
+          "name": "Station"
+        },
+        "version": 1,
+        "fields": [
+          {
+            "field_id": 1,
+            "name": "label",
+            "value_type": {
+              "kind": "scalar",
+              "value": "string"
+            },
+            "presence": "optional",
+            "default": {
+              "kind": "scalar",
+              "value": {
+                "kind": "string",
+                "value": "Station"
+              }
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "codecs": [
+    {
+      "codec_id": "org.example.resource-json",
+      "versions": [
+        1
+      ]
+    }
+  ]
+}

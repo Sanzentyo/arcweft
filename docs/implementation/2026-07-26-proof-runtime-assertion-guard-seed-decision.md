@@ -10,7 +10,7 @@ This cut fixes the deterministic encoding of the accepted Proof-concurrency
 v6.1.1 runtime assertion guard seed. Its design source is:
 
 ```text
-docs/reviews/packages/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip
+docs/reviews/packages/zips/arcweft-proof-concurrency-v6.1.1-typed-ast-proof-block-hir-runtime-identity-final-contract.zip
 SHA-256: 1b7de5f2c10a5b29d67c72011e4272df9a76af8907fd21fe162de54809fc69ef
 ```
 

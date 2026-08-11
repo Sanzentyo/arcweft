@@ -1,0 +1,124 @@
+phase=closed-directory-validation-before-archive-receipt-closure
+date=2026-07-22
+command=python3 tools/validate_contract.py .
+result=PASS
+checks=117
+note=The archive receipt was still a skeleton in this run; after receipt closure, the directory and final archive are revalidated without modifying final bytes.
+PASS package root exists
+PASS required document exists: OWNERSHIP_AND_DEPENDENCIES.md
+PASS required document exists: RECONCILIATION_MATRIX.md
+PASS required document exists: VALIDATION.md
+PASS required document exists: WIRE_SCHEMA.md
+PASS required document exists: NO_PRODUCTION_CHANGES.md
+PASS required document exists: TEST_MATRIX.md
+PASS required document exists: README.md
+PASS required document exists: DTO_AND_CONVERSION.md
+PASS required document exists: REPOSITORY_INVENTORY.md
+PASS required document exists: DIAGNOSTICS_AND_LIMITS.md
+PASS required document exists: PACKAGE_AND_ARTIFACT_PUBLICATION.md
+PASS required document exists: IMPLEMENTATION_ORDER.md
+PASS required document exists: FINAL_CONTRACT.md
+PASS FINAL_CONTRACT=true
+PASS FALLBACK=false
+PASS BLOCKED=false
+PASS OPEN_QUESTIONS=0
+PASS IMPLEMENTATION_READY=true
+PASS contract_agent_validated=true
+PASS repository_contract_validation_succeeded=true
+PASS production_code_modified=false
+PASS repository build execution is not falsely claimed
+PASS status uses the pinned main revision
+PASS unexecuted Cargo/build scope is explicit
+PASS CONTRACT.json revision matches pin
+PASS all eight exact limits match
+PASS no compatibility aliases
+PASS wire dispatch has no fallback
+PASS typed AWFB section decision is exact
+PASS retained tokens preserve repository enum order
+PASS main and origin/main pin are equal
+PASS PINNED_REVISION.equal=true
+PASS all applicable AGENTS.md files were read to end
+PASS uploaded Rust Skill is inventoried as read to end
+PASS uploaded request is inventoried as read to end
+PASS project premise is inventoried as read to end
+PASS repository evidence uses the pin
+PASS repository evidence inventory is substantive
+PASS all repository evidence entries carry pinned blob SHAs and facts
+PASS minimal: decode/normalize semantic result equals canonical example
+PASS minimal: byte-for-byte canonical regeneration
+PASS minimal: canonical file is compact UTF-8 with sorted keys
+PASS full: decode/normalize semantic result equals canonical example
+PASS full: byte-for-byte canonical regeneration
+PASS full: canonical file is compact UTF-8 with sorted keys
+PASS strict JSON rejects duplicate keys
+PASS strict JSON rejects floating number tokens
+PASS strict JSON rejects explicit null
+PASS strict JSON rejects invalid UTF-8
+PASS finite-float decoder rejects negative zero bits
+PASS finite-float decoder rejects infinity bits
+PASS signed integer overflow is rejected
+PASS unsigned integer overflow is rejected
+PASS char accepts exactly one non-BMP Unicode scalar
+PASS char rejects two Unicode scalars
+PASS gain and pan inclusive repository bounds are admitted
+PASS one-over gain bound is rejected
+PASS one-over pan bound is rejected
+PASS inclusive string-byte budget is admitted
+PASS one-over string-byte budget is rejected
+PASS inclusive collection budget is admitted
+PASS one-over collection budget is rejected
+PASS inclusive semantic nesting budget is admitted
+PASS one-over semantic nesting budget is rejected
+PASS stable dotted ID rejects trailing punctuation
+PASS PublicId rejects reserved prefixes
+PASS forged descriptor digest is rejected
+PASS unsupported schema version is rejected without fallback
+PASS BLAKE3 official empty vector
+PASS BLAKE3 official abc vector
+PASS minimal: canonical byte length vector
+PASS minimal: canonical raw digest vector
+PASS full: canonical byte length vector
+PASS full: canonical raw digest vector
+PASS descriptor ('org.example.weather', 'weather', 'Station'): derive-key context
+PASS descriptor ('org.example.weather', 'weather', 'Station'): transcript bytes
+PASS descriptor ('org.example.weather', 'weather', 'Station'): semantic digest
+PASS descriptor ('org.example.weather', 'weather', 'Station'): manifest claim recomputes
+PASS descriptor ('org.example.resources', 'catalog', 'Catalog'): derive-key context
+PASS descriptor ('org.example.resources', 'catalog', 'Catalog'): transcript bytes
+PASS descriptor ('org.example.resources', 'catalog', 'Catalog'): semantic digest
+PASS descriptor ('org.example.resources', 'catalog', 'Catalog'): manifest claim recomputes
+PASS descriptor ('org.example.resources', 'catalog', 'Target'): derive-key context
+PASS descriptor ('org.example.resources', 'catalog', 'Target'): transcript bytes
+PASS descriptor ('org.example.resources', 'catalog', 'Target'): semantic digest
+PASS descriptor ('org.example.resources', 'catalog', 'Target'): manifest claim recomputes
+PASS full example covers every current scalar type
+PASS full example covers every current scalar constant shape
+PASS full example covers every current ResourceValueType variant
+PASS full example covers every current ResourceConstValue variant
+PASS full example covers every retained-reference type category
+PASS full example covers every resolved retained value category
+PASS full example covers global and View-scoped presentation targets
+PASS JSON Schema freezes the exact scalar token set
+PASS JSON Schema freezes the exact retained token set
+PASS JSON Schema freezes every current LayoutUnit token
+PASS JSON Schema uses the exact stable dotted-ID terminal rule
+PASS JSON Schema uses the exact public-family terminal rule
+PASS negative vector matrix is contiguous NEG-001..NEG-031
+PASS negative vectors cover every required diagnostic family
+PASS negative vectors include nested primary/related range assertion
+PASS Draft 2020-12 schema validates all four examples
+PASS FINAL_CONTRACT.md closes required term: OPEN_QUESTIONS=0
+PASS FINAL_CONTRACT.md closes required term: IMPLEMENTATION_READY=true
+PASS FINAL_CONTRACT.md closes required term: FALLBACK=false
+PASS FINAL_CONTRACT.md closes required term: decode_resource_type_manifest
+PASS FINAL_CONTRACT.md closes required term: encode_resource_type_manifest_v1
+PASS FINAL_CONTRACT.md closes required term: ResourceTypeManifestFileV1
+PASS FINAL_CONTRACT.md closes required term: PackageCoordinateFile
+PASS FINAL_CONTRACT.md closes required term: ResourceTypeManifests
+PASS FINAL_CONTRACT.md closes required term: atomic
+PASS archive contains only contract artifacts and validator material
+PASS archive contains no Rust production source
+PASS MANIFEST.sha256 exists
+PASS MANIFEST.sha256 lists every package file exactly once
+PASS verified 30 package SHA-256 entries
+RESULT PASS checks=117 root=/mnt/data/arcweft-lang-01.4.2.1-resource-extension-manifest-repository-reconciliation-final-contract-main-5821a3ca

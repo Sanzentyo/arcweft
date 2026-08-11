@@ -1,0 +1,19 @@
+row	consumer	obsolete_reader_or_shape	final_owner	migration	deletion
+D-001	syntax parser	CallExpr/CallSurfaceSyntax/ArgumentListSyntax	emit central pending Call projection	private construction input no longer retained	delete final/tooling exposure
+D-002	syntax source_ranges	collect_call_source_ranges/source scanner	central component manifest	typed attached component projection	delete scanner call path
+D-003	attachment	detached Call/argument/type syntax lookup	ExpressionProjection::Call	one revision-bound node	delete detached lookup/cache
+D-004	HIR provisional call	old clean-only HirCallExpr/HirCallArgument	corrected original owner variants	private constructors	replace directly
+D-005	HIR source	expr_source_site/call-specific helper	HirModule::source_site + HirSourceQuery	one query	delete helper
+D-006	tooling source	call_surface/components second map	HirSourceIndex components	one map	delete second map/read API
+D-007	sema callee	string Capacity helper	typed associated callee	project/TypeId route	already deleted; never restore
+D-008	sema resolver	early Capacity success/parallel dispatcher	resolve_call_target	single resolver	delete/keep deleted
+D-009	sema facts	authored_name Option + spread bool	CheckedCallArgumentForm/Name in same fact	lossless recovered form	direct field migration
+D-010	sema source facts	argument/name raw source spans as authority	HirSourceQuery coordinates	module query resolves spans	remove component-span authority
+D-011	signature focus	FocusedCallSite ArgumentListSyntax cursor reader	final source-query active-slot view	expected source required	delete detached cursor reader
+D-012	LSP	direct parser ranges	semantic signature projection from final query	one source path	delete fallback
+D-013	Proof	two-candidate ResolverLimits	two-witness projection over CallTargetFacts	256 semantic ceiling preserved	delete duplicate limit
+D-014	tests	f(name: x)	f(name = x)	current grammar	replace fixture
+D-015	tests	f(...xs)	f(xs...)	current grammar	replace fixture
+D-016	tests	Call ordinal 1023/1024	Call exact 128/unreachable129	general boundary remains predecessor	delete unreachable rows
+D-017	all consumers	compat aliases/wrappers/extension traits	direct compile-error repair	original types gain behavior	zero residual symbols
+D-018	docs/audits	source spelling gates	behavior/compile/dependency tests	structured evidence	delete source gates

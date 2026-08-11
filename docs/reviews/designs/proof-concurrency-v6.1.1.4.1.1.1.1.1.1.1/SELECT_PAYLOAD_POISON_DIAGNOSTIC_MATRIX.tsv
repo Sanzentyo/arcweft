@@ -1,0 +1,11 @@
+case_id	producer	target_state	member_payload	select_root_poison	member_obligation	diagnostic_owners_in_order	select_root_primary	final_payload	synthetic_descendants
+C-E13-001	target.member	Clean	Name(member)	Clean	zero	none	n/a	HirSelectExpr{target=PathId,member=Name(member)}	0
+C-E13-002	target.	Clean	Missing	MissingOperand{role=SelectedMember}	exactly one root member diagnostic	SelectRoot	ExprRole(SelectedMember) @ insertion 7..7	HirSelectExpr{target=PathId,member=Missing}	0
+C-E13-003	target?.member	Clean Try target	Name(member)	Clean	zero	none	n/a	HirSelectExpr{target=TryId,member=Name(member)}	0
+C-E13-004	target?.	Clean Try target	Missing	MissingOperand{role=SelectedMember}	exactly one root member diagnostic	SelectRoot	ExprRole(SelectedMember) @ insertion 8..8	HirSelectExpr{target=TryId,member=Missing}	0
+C-E13-005	(target.).member	Poisoned inner Select	Name(member)	InvalidExpression(RecoveredChild{role=Target})	zero outer member diagnostics	InnerSelectRoot	outer has no diagnostic	Outer HirSelectExpr{target=InnerSelectId,member=Name(member)}	0
+C-E13-006	(target.).	Poisoned inner Select	Missing	InvalidExpression(RecoveredChild{role=Target})	exactly one outer member diagnostic	InnerSelectRoot; OuterSelectRoot	Outer ExprRole(SelectedMember) @ 10..10	Outer HirSelectExpr{target=InnerSelectId,member=Missing}	0
+C-E13-007	(target.   ).member	Poisoned inner Select	Name(member)	InvalidExpression(RecoveredChild{role=Target})	zero outer member diagnostics	InnerSelectRoot	outer has no diagnostic	same as C-E13-005; inner primary at 11..11	0
+C-E13-008	(target./*c*/).member	Poisoned inner Select	Name(member)	InvalidExpression(RecoveredChild{role=Target})	zero outer member diagnostics	InnerSelectRoot	outer has no diagnostic	same as C-E13-005; inner primary at 13..13	0
+C-E13-009	.member	n/a	n/a	n/a	n/a	none	n/a	ShortVariant; no Select payload	n/a
+C-E13-010	target.42	clean target for inner subtree	Missing only; Invalid impossible	inner MissingOperand{SelectedMember}; outer generic Error authority	one inner Select diagnostic	InnerSelectRoot; generic outer according to E35	inner insertion 7..7	no HirSelectedMember::Invalid exists	0

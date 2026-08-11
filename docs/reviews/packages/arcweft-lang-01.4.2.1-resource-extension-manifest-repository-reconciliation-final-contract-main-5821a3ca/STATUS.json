@@ -1,0 +1,60 @@
+{
+  "BLOCKED": false,
+  "FALLBACK": false,
+  "FINAL_CONTRACT": true,
+  "IMPLEMENTATION_READY": true,
+  "OPEN_QUESTIONS": 0,
+  "archive_self_validation_succeeded": true,
+  "artifact_only_changes": true,
+  "bundle_section_kind": {
+    "encoded": 22,
+    "name": "ResourceTypeManifests",
+    "schema_version": 1
+  },
+  "canonical_encoder": "arcweft_resource_manifest::encode_resource_type_manifest_v1",
+  "contract_agent_validated": true,
+  "contract_id": "Lang-01.4.2.1",
+  "direct_final_reader": "arcweft_resource_manifest::decode_resource_type_manifest",
+  "final_main_reresolved_before_packaging": true,
+  "generated_on": "2026-07-22",
+  "pinned_commit_combined_status_count": 0,
+  "pinned_commit_workflow_run_count": 0,
+  "pinned_revision": "5821a3ca479b5b89ca6ede997b9cf4f42f6280a6",
+  "pinned_revision_short": "5821a3ca",
+  "production_code_modified": false,
+  "repository": "Sanzentyo/arcweft",
+  "repository_access": "github_connector",
+  "repository_build_commands_executed": false,
+  "repository_checkout_available": false,
+  "repository_contract_validation_succeeded": true,
+  "standalone_validator_checks": 117,
+  "target_branch": "main",
+  "target_equals_origin_main": true,
+  "title": "Resource extension-manifest repository reconciliation",
+  "validation_scope": {
+    "artifact": [
+      "JSON Schema validation for minimal and full input/canonical manifests",
+      "canonical regeneration",
+      "BLAKE3 official empty/abc self-tests",
+      "descriptor transcript and semantic digest recomputation",
+      "canonical manifest raw digest recomputation",
+      "closed variant coverage checks",
+      "machine-readable status and package hash-manifest checks",
+      "ZIP central-directory and extracted-package revalidation"
+    ],
+    "not_claimed": [
+      "Cargo compilation, formatting, clippy, or repository test execution; no checkout was available and no production code was authored",
+      "implementation validation of code that does not yet exist"
+    ],
+    "repository": [
+      "latest main resolved through the private GitHub connector",
+      "applicable root AGENTS.md read completely",
+      "uploaded Rust Skill read completely",
+      "current res syntax path, resource model, retained identities, strict decoders, package loader, compiler registry handoff, and bundle section owner inspected by pinned blob",
+      "current request, predecessor correction, Lang-01.4/Lang-01.4.1 notes, and ZIP intake audit reconciled"
+    ]
+  },
+  "wire_format": "strict UTF-8 JSON",
+  "wire_format_marker": "arcweft.resource-type-manifest",
+  "wire_schema_version": 1
+}

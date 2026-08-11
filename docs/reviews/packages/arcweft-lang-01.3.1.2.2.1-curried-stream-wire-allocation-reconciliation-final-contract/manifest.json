@@ -1,0 +1,117 @@
+{
+  "contract_id": "Lang-01.3.1.2.2.1",
+  "root": "arcweft-lang-01.3.1.2.2.1-curried-stream-wire-allocation-reconciliation-final-contract",
+  "entry_count": 22,
+  "entries": [
+    {
+      "path": "EXACT_WIRE_TABLE.md",
+      "bytes": 2199,
+      "sha256": "f408edab7a080c7532e7f72c4d7cf7ac16c0d9bbcf1b0759ca3f212f21446b55"
+    },
+    {
+      "path": "FINAL_CONTRACT.md",
+      "bytes": 16669,
+      "sha256": "86534f409f538d8c987b30ed9cd9eeb23d35ae06e918051863d7dfa925490f71"
+    },
+    {
+      "path": "FINAL_STATUS.md",
+      "bytes": 753,
+      "sha256": "94bc81a86f56c25e914fcb68c3b011e830709db03d1f13ac0158d3d53b2b19f4"
+    },
+    {
+      "path": "IMPLEMENTATION_ORDER.md",
+      "bytes": 4201,
+      "sha256": "c25264be6c5ead2395e98ac1cba952fedec55bb66f8945adbaf3d2f885c3a68c"
+    },
+    {
+      "path": "INPUTS.md",
+      "bytes": 1979,
+      "sha256": "bdf76614c7b32f14c6d87ba3aa851b12720a170370a9cd724c96e6848d42cdb7"
+    },
+    {
+      "path": "NORMATIVE_DELTA.md",
+      "bytes": 8957,
+      "sha256": "d8fc9ee461e2d71be79830513ba2a4a8e9e719c0e3c3943a15924611b8ff298c"
+    },
+    {
+      "path": "README.md",
+      "bytes": 1101,
+      "sha256": "b40a09cfa36867dc9cd5b34a36cbbfa9186acf77c53f06a53bd4d14f99006aa6"
+    },
+    {
+      "path": "REPOSITORY_EVIDENCE.md",
+      "bytes": 4080,
+      "sha256": "2df8e59ccb3189bdf4cccab34debab5b7cfaf44082f72f75447516b52f6354ba"
+    },
+    {
+      "path": "REQUEST_COVERAGE.md",
+      "bytes": 1181,
+      "sha256": "507697c15d375c0e2fcf5e513720fd24de45faed18dac246c558be3960f4ed7f"
+    },
+    {
+      "path": "RUST_SHAPED_OWNERS.md",
+      "bytes": 6808,
+      "sha256": "cbad4dcfe455b9857e82c9e59167e4d8596cf41cb50902e0e25a8cfef0819be3"
+    },
+    {
+      "path": "SOURCE_REQUEST.md",
+      "bytes": 6104,
+      "sha256": "a07f05f4ad901e323eec528b31cb0064d26f0ae23fe91cbfec9758d215a2f170"
+    },
+    {
+      "path": "SUMMARY.md",
+      "bytes": 2040,
+      "sha256": "796301afe7b83a3e93aa7154f65d9c5a963c02c8f2534166a138596a4a9d91e3"
+    },
+    {
+      "path": "TEST_MATRIX.csv",
+      "bytes": 17702,
+      "sha256": "319f9d474374e42f0b259bbec0e45ee44f31c59a45fd066e02815bc020c86a8e"
+    },
+    {
+      "path": "TEST_MATRIX.json",
+      "bytes": 31041,
+      "sha256": "e49c8b4ef2b8c97362b5ecde1d7ae1d35ee89dc240ca84bd934aafab9e6a40de"
+    },
+    {
+      "path": "TEST_MATRIX.md",
+      "bytes": 20121,
+      "sha256": "b3cd8205ad12d37c723b4e12fd83b7e0963acc58a2b8b01d14a04d7c724cca53"
+    },
+    {
+      "path": "VALIDATION.md",
+      "bytes": 2138,
+      "sha256": "261be459007159c728e4b66fe0745d9d40b52fd74d14aa1e6619bc073098ba65"
+    },
+    {
+      "path": "WORKED_BYTES.md",
+      "bytes": 2772,
+      "sha256": "47d7d987984a591b6e7c508dd80c7ea13fc2fa5e22338fcb9304d9a8031d568a"
+    },
+    {
+      "path": "contract.json",
+      "bytes": 1148,
+      "sha256": "8c279b1d1c3749e185a858b6c6c1398137d2f60f4783d727088130af6f24e85e"
+    },
+    {
+      "path": "exact_wire_table.json",
+      "bytes": 3938,
+      "sha256": "23761e9e1da8e95287ae4f0a429757a9238b634afcda512a2aed345406409b3c"
+    },
+    {
+      "path": "inputs.json",
+      "bytes": 1243,
+      "sha256": "87f06b8e8190c090c117c3914a96c827f8defd5c6e89211933e7b467978de2b3"
+    },
+    {
+      "path": "supersession_ledger.json",
+      "bytes": 10413,
+      "sha256": "8a048f780efeab276d612d7ab651d8a39a296e04552cf56036c2738baeb1bcff"
+    },
+    {
+      "path": "worked_bytes.json",
+      "bytes": 3313,
+      "sha256": "3627b6ba7724d8a5a9a1920795dac78347f23898a208daa4d1f0a8082b0575ff"
+    }
+  ]
+}

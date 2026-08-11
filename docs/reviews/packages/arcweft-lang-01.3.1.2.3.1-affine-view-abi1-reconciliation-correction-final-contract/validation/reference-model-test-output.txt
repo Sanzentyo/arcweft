@@ -1,0 +1,21 @@
+test_authored_origin_without_requirement (test_model.CorrectionModelTests.test_authored_origin_without_requirement) ... ok
+test_automatic_has_no_requirement (test_model.CorrectionModelTests.test_automatic_has_no_requirement) ... ok
+test_cursor_exhaustion (test_model.CorrectionModelTests.test_cursor_exhaustion) ... ok
+test_cursor_rejects_reuse (test_model.CorrectionModelTests.test_cursor_rejects_reuse) ... ok
+test_cursor_valid_and_first_mint (test_model.CorrectionModelTests.test_cursor_valid_and_first_mint) ... ok
+test_domain_rejects_second_driver (test_model.CorrectionModelTests.test_domain_rejects_second_driver) ... ok
+test_handler_capture_copies_unrestricted (test_model.CorrectionModelTests.test_handler_capture_copies_unrestricted) ... ok
+test_handler_input_moves (test_model.CorrectionModelTests.test_handler_input_moves) ... ok
+test_partial_overlap_rejected (test_model.CorrectionModelTests.test_partial_overlap_rejected) ... ok
+test_pure_input_copy_unrestricted (test_model.CorrectionModelTests.test_pure_input_copy_unrestricted) ... ok
+test_replacement_may_switch_to_inactive_execution (test_model.CorrectionModelTests.test_replacement_may_switch_to_inactive_execution) ... ok
+test_replacement_requires_exact_holder (test_model.CorrectionModelTests.test_replacement_requires_exact_holder) ... ok
+test_separate_domains_are_separate_universes (test_model.CorrectionModelTests.test_separate_domains_are_separate_universes) ... ok
+test_static_requirement_missing_certificate (test_model.CorrectionModelTests.test_static_requirement_missing_certificate) ... ok
+test_static_requirement_success (test_model.CorrectionModelTests.test_static_requirement_success) ... ok
+test_strict_nested_spans (test_model.CorrectionModelTests.test_strict_nested_spans) ... ok
+
+----------------------------------------------------------------------
+Ran 16 tests in 0.001s
+
+OK

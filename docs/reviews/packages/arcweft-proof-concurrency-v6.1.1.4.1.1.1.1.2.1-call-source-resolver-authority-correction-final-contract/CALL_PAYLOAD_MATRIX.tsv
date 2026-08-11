@@ -1,0 +1,34 @@
+row	case	fixture	callee_payload	type_application	arguments	derived_issue	root_poison	authority
+E12-001	clean value	f(x)	Value{ExprId}	Absent	Positional Present	none	Clean	resolver once
+E12-002	missing callee	(x)	Missing{recovery ExprId}	Absent	Positional Present	MissingCallee	Poisoned	RecoveryOperand 0
+E12-003	invalid callee child	bad(x)	Value{poisoned ExprId}	Absent	Positional Present	InvalidCalleeExpression	Poisoned	real child retained
+E12-004	dot value wins	receiver.member(x)	Value{selected ExprId}	Absent	Positional Present	none/child issue	derived	nominal evidence discarded after final value classification
+E12-005	dot nominal fallback	Vec<I32>.with_capacity(8)	Associated Resolved DotFallback	Absent	Positional Present	none	Clean	shared resolver once
+E12-006	unresolved dot	missing.member(x)	UnresolvedDot{value+nominal evidence}	Absent	Positional Present	UnresolvedDotMember	Poisoned	no fabricated member
+E12-007	explicit associated	Vec<I32>::with_capacity(8)	Associated Resolved ExplicitDoubleColon	Absent	Positional Present	none	Clean	nominal-only
+E12-008	missing receiver	::member(x)	Associated Missing	Absent	Positional Present	MissingAssociatedReceiver	Poisoned	resolver zero; args checked once
+E12-009	invalid receiver present	Bad<>::member(x)	Associated InvalidPresent{poisoned TypeId}	Absent	Positional Present	InvalidAssociatedReceiver	Poisoned	real TypeId retained
+E12-010	bare generic arity	Vec.with_capacity(8)	Associated BareGenericArity{poisoned TypeId,1,0}	Absent	Positional Present	BareGenericArity	Poisoned	resolver zero; args checked once
+E12-011	missing separator	Vec<I32> with_capacity(8)	Associated Missing{DotFallback}	Absent	Positional Present	MissingAssociatedSeparator	Poisoned	insertion source
+E12-012	invalid separator	Vec<I32>..with_capacity(8)	Associated InvalidPresent{DotFallback}	Absent	Positional Present	InvalidAssociatedSeparator	Poisoned	invalid span retained
+E12-013	missing member	Vec<I32>. (8)	Associated member Missing	Absent	Positional Present	MissingAssociatedMember	Poisoned	no HirName
+E12-014	invalid member	Vec<I32>.9bad(8)	Associated member InvalidPresent	Absent	Positional Present	InvalidAssociatedMember	Poisoned	invalid span retained
+E12-015	named clean	f(name = x)	Value	Absent	Named Valid + Present	none	Clean	authored form preserved
+E12-016	named name missing	f(= x)	Value	Absent	Named Missing + Present	MissingArgumentName(0)	Poisoned	no name child
+E12-017	named name invalid	f(9bad = x)	Value	Absent	Named InvalidPresent + Present	InvalidArgumentName(0)	Poisoned	span retained
+E12-018	named value missing	f(name = )	Value	Absent	Named Valid + Missing recovery	MissingArgumentValue(0)	Poisoned	RecoveryOperand 1
+E12-019	positional value missing	f(,)	Value	Absent	Positional Missing recovery	MissingArgumentValue(0)	Poisoned	RecoveryOperand 1
+E12-020	spread clean	f(xs...)	Value	Absent	Spread Present	none	Clean	postfix ellipsis
+E12-021	spread value missing	f(...)	Value	Absent	Spread Missing recovery	MissingArgumentValue(0)	Poisoned	RecoveryOperand 1
+E12-022	duplicate named	f(a = x, a = y)	Value	Absent	two Named in authored order	DuplicateNamedArgument{0,1}	Poisoned	both retained
+E12-023	positional after named	f(a = x, y)	Value	Absent	Named then Positional	PositionalAfterNamed(1)	Poisoned	no rewrite/drop
+E12-024	spread not last	f(xs..., y)	Value	Absent	Spread then Positional	SpreadNotLast(0)	Poisoned	authored order
+E12-025	direct type application	collect<Vec<T>>()	Value	Present DirectAngle [Resolved TypeId]	empty	none	Clean	TypeId ordered
+E12-026	turbofish type application	foo::<T>()	Value	Present Turbofish [Resolved TypeId]	empty	none	Clean	TypeId ordered
+E12-027	member type application	value.map::<T>(x)	Value	Present Turbofish [Resolved TypeId]	Positional	none	Clean	member call args distinct
+E12-028	associated member type application	Vec<T>::member::<U>(x)	Associated receiver TypeId<T>	Present Turbofish [TypeId<U>]	Positional	none	Clean	receiver T != call U
+E12-029	missing type argument	foo::<>()	Value	Present Turbofish [Missing]	empty	MissingTypeArgument(0)	Poisoned	no TypeId
+E12-030	invalid-present type argument	foo::<9bad>()	Value	Present Turbofish [InvalidPresent poisoned TypeId]	empty	InvalidTypeArgument(0)	Poisoned	qualified ID retained
+E12-031	missing type close	foo::<T()	Value	Present Turbofish [Resolved TypeId], recovered terminator	empty	MissingTypeApplicationClose	Poisoned	recovery end source
+E12-032	missing call close	f(x	Value	Absent	Positional Present	MissingArgumentListClose	Poisoned	recovery end source
+E12-033	multiple issues	f(a = , y, xs..., z)	Value	Absent	all four slots retained	canonical complete issue sequence	Poisoned	root uses first canonical only

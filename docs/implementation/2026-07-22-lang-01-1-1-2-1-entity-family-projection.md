@@ -2,7 +2,7 @@
 
 ## Intake
 
-- package: `docs/reviews/packages/lang-01.1.1.2.1-entity-family-applied-type-projection-final-contract.zip`
+- package: `docs/reviews/packages/zips/lang-01.1.1.2.1-entity-family-applied-type-projection-final-contract.zip`
 - package SHA-256: `FDAFDCA7B5D6682504A901274EB05C7B74C19816063C9A959C69DE0157A01906`
 - baseline: `4fd6331dc342d30a7f4ac7774852b60801866ef7`
 - package verification: 17/17 members matched the manifest; 71 matrix rows were present

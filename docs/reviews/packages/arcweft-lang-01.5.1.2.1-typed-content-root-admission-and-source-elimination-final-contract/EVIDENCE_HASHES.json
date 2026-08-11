@@ -1,0 +1,70 @@
+{
+  "correction_copy": {
+    "provenance": "reconstructed from complete semantic content returned by File Library; original bytes unavailable",
+    "sha256_of_reconstructed_copy": "fd8adbfb7d171e2baec9c1429eed56ba32397b0e4b7d00424adeb5a3d9814045"
+  },
+  "inputs": {
+    "2026-07-20-lang-01.5.1.2-typed-content-root-admission-contract-correction(2).md": {
+      "bytes": 6409,
+      "sha256": "5a318c3499ef3082aff829eafc00e9259b37bc200beb273ffa3c143dcb618065"
+    },
+    "Rust Skill.txt": {
+      "bytes": 5045,
+      "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665"
+    },
+    "arcweft_AGENTS.md": {
+      "bytes": 5412,
+      "sha256": "90bae8bface6d390246538c60842da7d71d1ebd576ae3fa403019caa35a91498"
+    },
+    "arcweft_crates_AGENTS.md": {
+      "bytes": 6943,
+      "sha256": "9dc887815ef05b1e7c2f63937926a908cdd7d9e36b916600fe9a278787966565"
+    },
+    "arcweft_docs_AGENTS.md": {
+      "bytes": 2247,
+      "sha256": "40ef407718c7b6f44b1f79d8dcd92c562d3ff4649557ecfeff37a33d7fd86c2d"
+    },
+    "arcweft_docs_reviews_AGENTS.md": {
+      "bytes": 3569,
+      "sha256": "49d35db3276b2f2efe4d7e2343cf888455b610f5704a9607ec0acd93a3cb130a"
+    },
+    "arcweft_docs_reviews_README.md": {
+      "bytes": 2265,
+      "sha256": "0727936af481b2eb78e158763048128a68044d2cc351277c1cf067aab0de27a8"
+    },
+    "\u524d\u63d0(Sanzentyo-arcweft).txt": {
+      "bytes": 250,
+      "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1"
+    }
+  },
+  "local_repository_snapshots": {
+    "content.rs": {
+      "bytes": 18948,
+      "sha256": "de06268d1b742ae221f79011849923b02ee155c4f3023c9de20143eee7694d8e"
+    },
+    "model.rs": {
+      "bytes": 35179,
+      "sha256": "6a427888cb05d96a0cd68e0b84b03debf7f1c1416e17dc15583843b4119777a0"
+    },
+    "project_index.rs": {
+      "bytes": 37155,
+      "sha256": "a6673111144efe1a9b8fef7a9b33d9c810298fb2d11a51025f62dbad1bcb60af"
+    },
+    "project_index_entities.rs": {
+      "bytes": 37115,
+      "sha256": "cd25a1359a8b2c47b3e0ff79952d39147323b4838fffbb58e4f8e01924353c51"
+    },
+    "project_index_relations.rs": {
+      "bytes": 42544,
+      "sha256": "c51956ceada3c6db2d13b125a4d39efc6c578cf7dae4fd9495187b5135afefcb"
+    },
+    "repo/arcweft-character/src/package.rs": {
+      "bytes": 11278,
+      "sha256": "fd33f3964ad673957167ff502cdff62f618a03091bd13017adba1dd937da3bbc"
+    },
+    "sema_types.rs": {
+      "bytes": 37623,
+      "sha256": "f12ed18905c6f37e61c894e749df743fa0b75cff71e97420b3173dad9e54e734"
+    }
+  }
+}

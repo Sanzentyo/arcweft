@@ -3,7 +3,7 @@
 ## Acceptance source and baseline
 
 - package:
-  `docs/reviews/packages/arcweft-lang-01.1.1.1-final-contract-c957a61e4a0b.zip`
+  `docs/reviews/packages/zips/arcweft-lang-01.1.1.1-final-contract-c957a61e4a0b.zip`
 - package SHA-256:
   `024A13F98A7F46764A79CCBBD8F7ED317C30A4F5E24332E6AE1E2FF7B2A7E18C`
 - package repository pin:

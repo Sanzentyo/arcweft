@@ -1,0 +1,1119 @@
+{
+  "schema": "arcweft.lang-01.3.1.2.3.2.symbol-closure.v1",
+  "symbol_count": 108,
+  "required_request_symbols": [
+    "ExecutionInstanceId",
+    "RuntimeFreshExecution",
+    "RuntimeRecordFieldId",
+    "RuntimeLocalSlotId",
+    "RuntimeOwnedSlotId",
+    "RuntimeOwnershipTransactionId",
+    "RuntimeSlotRevision",
+    "RuntimeMovedValueEvidence",
+    "RuntimeDroppedValueEvidence",
+    "RuntimePreparedCopy",
+    "RuntimePreparedMove",
+    "RuntimeTransferCommitError",
+    "RuntimeOwnershipLimits",
+    "RuntimeOwnershipTransaction",
+    "RuntimeValuePath"
+  ],
+  "symbols": [
+    {
+      "symbol": "ExecutionInstanceId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "identity",
+      "visibility": "public type/private raw fields",
+      "serialized": "yes except error namespace context",
+      "construction": "domain/core inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeIdCursor",
+      "owner": "arcweft_core::runtime_id",
+      "category": "identity",
+      "visibility": "public type/private raw fields",
+      "serialized": "yes except error namespace context",
+      "construction": "domain/core inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeIdNamespace",
+      "owner": "arcweft_core::runtime_id",
+      "category": "identity",
+      "visibility": "public type/private raw fields",
+      "serialized": "yes except error namespace context",
+      "construction": "domain/core inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeIdExhausted",
+      "owner": "arcweft_core::runtime_id",
+      "category": "identity",
+      "visibility": "public type/private raw fields",
+      "serialized": "yes except error namespace context",
+      "construction": "domain/core inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeScopeInstanceId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeClosureInstanceId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeFiberInstanceId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeFrameInstanceId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeMailboxInstanceId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeChildInstanceId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferInstanceId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCleanupScopeId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeLocalSlotId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "dynamic identity",
+      "visibility": "public type/private raw field",
+      "serialized": "yes",
+      "construction": "RuntimeExecutionIdentityState crate-private allocator",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeLocalDeclarationId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "static/owner-local identity",
+      "visibility": "public type/private raw field",
+      "serialized": "where carried",
+      "construction": "owning validator crate-private",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCaptureSlotId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "static/owner-local identity",
+      "visibility": "public type/private raw field",
+      "serialized": "where carried",
+      "construction": "owning validator crate-private",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeFrameLocalId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "static/owner-local identity",
+      "visibility": "public type/private raw field",
+      "serialized": "where carried",
+      "construction": "owning validator crate-private",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeMailboxLaneId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "static/owner-local identity",
+      "visibility": "public type/private raw field",
+      "serialized": "where carried",
+      "construction": "owning validator crate-private",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeChildPacketId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "static/owner-local identity",
+      "visibility": "public type/private raw field",
+      "serialized": "where carried",
+      "construction": "owning validator crate-private",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferPacketId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "static/owner-local identity",
+      "visibility": "public type/private raw field",
+      "serialized": "where carried",
+      "construction": "owning validator crate-private",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCleanupSlotId",
+      "owner": "arcweft_core::runtime_id",
+      "category": "static/owner-local identity",
+      "visibility": "public type/private raw field",
+      "serialized": "where carried",
+      "construction": "owning validator crate-private",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeRecordFieldId",
+      "owner": "arcweft_core::value",
+      "category": "identity/revision",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "owning inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeRecordFieldIdError",
+      "owner": "arcweft_core::value",
+      "category": "identity/revision",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "owning inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeSlotRevision",
+      "owner": "arcweft_core::value::ownership",
+      "category": "identity/revision",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "owning inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeRevisionExhausted",
+      "owner": "arcweft_core::value::ownership",
+      "category": "identity/revision",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "owning inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeAffineOwnerId",
+      "owner": "arcweft_core::value::ownership",
+      "category": "identity/revision",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "owning inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipTransactionId",
+      "owner": "arcweft_core::value::ownership",
+      "category": "identity/revision",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "owning inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeFieldValue",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeRecordAdmissionError",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeBindingMutability",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeSlotStateKind",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeSlotState",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeSlotReservationRole",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeSlotReservation",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeSlotCell",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeBinding",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeBindingAccessError",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCaptureBinding",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCaptureAccessError",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeScopeView",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeScopeExitView",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "crate-private construction; borrowed public type as declared",
+      "serialized": "no",
+      "construction": "RuntimeEnv::scope_exit_view",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": "borrowed two-phase scope cleanup view; not a second environment owner"
+    },
+    {
+      "symbol": "RuntimeEnvBindError",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeScopeExitError",
+      "owner": "arcweft_core::value",
+      "category": "storage/record",
+      "visibility": "mixed; storage internals crate-private",
+      "serialized": "snapshot projection only",
+      "construction": "owning record/env/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeValuePath",
+      "owner": "arcweft_core::value::ownership",
+      "category": "path/diagnostic owner",
+      "visibility": "public typed evidence",
+      "serialized": "yes",
+      "construction": "owning inherent visitor/constructors",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeValuePathSegment",
+      "owner": "arcweft_core::value::ownership",
+      "category": "path/diagnostic owner",
+      "visibility": "public typed evidence",
+      "serialized": "yes",
+      "construction": "owning inherent visitor/constructors",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeValuePathError",
+      "owner": "arcweft_core::value::ownership",
+      "category": "path/diagnostic owner",
+      "visibility": "public typed evidence",
+      "serialized": "yes",
+      "construction": "owning inherent visitor/constructors",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnedSlotId",
+      "owner": "arcweft_core::value::ownership",
+      "category": "path/diagnostic owner",
+      "visibility": "public typed evidence",
+      "serialized": "yes",
+      "construction": "owning inherent visitor/constructors",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferStepIndex",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferEndpoint",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeDropReason",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferStep",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferPlan",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferPlanError",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipLimits",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipLimitKind",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipLimitError",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipAllocationKind",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipBudgetKind",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction plan/limits",
+      "visibility": "public type/private construction where identity-sensitive",
+      "serialized": "plan/evidence where specified",
+      "construction": "transaction/plan inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeAffineOwnerOccurrence",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCopiedValueEvidence",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeMovedValueEvidence",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeDroppedValueEvidence",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimePreparedCopy",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimePreparedMove",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimePreparedDrop",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimePreparedTransfer",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimePreparedRootHandle",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimePreparedSlotHandle",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeSlotObservation",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeSlotAccessError",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipSlotStore",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCommitMutation",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCommitPermit",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction prepared/evidence",
+      "visibility": "evidence public; prepared/store internals crate-private",
+      "serialized": "evidence yes; prepared no",
+      "construction": "transaction/store only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipPrepareErrorKind",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipPrepareError",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipTransaction",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimePreparedOwnershipTransaction",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferAbortReason",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferCommitErrorKind",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeAbortedOwnershipTransaction",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeTransferCommitError",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeCommittedOwnershipTransaction",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeAffineOwnerAllocator",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeExecutionIdentityState",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeOwnershipTransactionStartError",
+      "owner": "arcweft_core::value::ownership",
+      "category": "transaction owner/state",
+      "visibility": "public owner/private fields",
+      "serialized": "identity/evidence snapshots only",
+      "construction": "execution identity/transaction API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeActivationEpoch",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeExecutionReservationId",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeExecutionSource",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeActivationMode",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeExecutionReservationRecord",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeActiveExecutionRecord",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeExecutionDomainState",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeExecutionDomain",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeDormantExecution",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeFreshExecutionInput",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeExecutionReservation",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeFreshExecution",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeFreshExecutionErrorKind",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeFreshExecutionError",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeActiveExecution",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeActivationErrorKind",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeActivationError",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeReplacementErrorKind",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeReplacementError",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public owner or crate-private internal as declared",
+      "serialized": "only epoch/source/mode via snapshot; linear owners no",
+      "construction": "shared domain/driver only",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    },
+    {
+      "symbol": "RuntimeExecutionIdentitySnapshotV2",
+      "owner": "arcweft_core::value::ownership",
+      "category": "snapshot",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "snapshot projection/strict decoder",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": "core-owned allocator identity snapshot; contains no activation epoch"
+    },
+    {
+      "symbol": "RuntimeExecutionDomainSnapshotV2",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "snapshot",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "snapshot projection/strict decoder",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": "driver envelope owns next-execution cursor, activation epoch, and core active snapshot"
+    },
+    {
+      "symbol": "RuntimeSnapshotF32Bits",
+      "owner": "arcweft_core::value::ownership",
+      "category": "snapshot",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "snapshot projection/strict decoder",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": "core-owned canonical floating bit carrier"
+    },
+    {
+      "symbol": "RuntimeSnapshotF64Bits",
+      "owner": "arcweft_core::value::ownership",
+      "category": "snapshot",
+      "visibility": "public type/private fields",
+      "serialized": "yes",
+      "construction": "snapshot projection/strict decoder",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": "core-owned canonical floating bit carrier"
+    },
+    {
+      "symbol": "RuntimeActivationEpochExhausted",
+      "owner": "arcweft_runtime_driver::execution",
+      "category": "activation/domain",
+      "visibility": "public error type",
+      "serialized": "no",
+      "construction": "activation epoch inherent API",
+      "definition_file": "RUST_OWNERS_AND_APIS.md",
+      "notes": ""
+    }
+  ],
+  "existing_imported_owners": [
+    "RuntimeValue",
+    "RuntimeValueOwnership",
+    "RuntimeCheckedType",
+    "AwbcRegisterId",
+    "RuntimeExecutionSnapshotV2",
+    "BundleSession",
+    "RuntimeNominalRecordSchema",
+    "RuntimeNominalRecordError",
+    "RecordSeq",
+    "RecordSeqError",
+    "RuntimeNominalRecordValue",
+    "RuntimeEnv",
+    "RuntimeSeq"
+  ],
+  "placeholder_policy": "Every listed new symbol has a target declaration; imported owners are named and not duplicated."
+}

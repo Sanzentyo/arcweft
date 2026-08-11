@@ -1,0 +1,31 @@
+test_id	classification	fixture_or_prefill	failure_stage	required_observation	rollback_and_retry
+T-RB-13-001	END_TO_END	wrong SourceDocumentIdentity	source identity	no attachment/HIR staging	nothing published
+T-RB-13-002	END_TO_END	source bytes8388609	source bytes	registration owner error	no ParsedSource
+T-RB-13-003	DIRECT_INVARIANT	missing central Select projection	attachment invariant	MissingExpressionProjection	no standalone fallback
+T-RB-13-004	DIRECT_INVARIANT	duplicate/wrong Target component	attachment invariant	typed access error	no HIR reservation
+T-RB-13-005	DIRECT_INVARIANT	Name fails impossible post-parser invariant	name construction	hard invariant error, not Invalid payload	complete rollback
+T-RB-13-006	END_TO_END	1025-byte valid member	NameBytes	observed1025 maximum1024	no ID/source/diag/work leak; retry shorter same lineage deterministic
+T-RB-13-007	END_TO_END	syntax diag prefill1024 + target.	HIR Diagnostics	observed1025	direct Select transaction rolls back
+T-RB-13-008	END_TO_END	syntax diag prefill1023 + (target.).	HIR Diagnostics	observed1025 from delta2	inner/outer staged diagnostics and IDs roll back together
+T-RB-13-009	END_TO_END	HIR expression one-over generator	Hir Expressions	syntax exact262144; HIR observed262145	all module staging rolls back
+T-RB-13-010	END_TO_END	global slot prefill786431 + direct Select	TotalSlotsPerModule	Expressions room; total observed786433	new Path/Select reservations and source rows roll back
+T-RB-13-011	DIRECT_INVARIANT	component count checked-add overflow	source manifest arithmetic	overflow before reservations	no fabricated SourceComponents limit
+T-RB-13-012	FREEZE	Missing payload with zero root diagnostic	freeze obligation	missing required owner diagnostic	rollback
+T-RB-13-013	FREEZE	Name payload with root member diagnostic	freeze obligation	extra diagnostic	rollback
+T-RB-13-014	FREEZE	two diagnostics for same Select owner	owner uniqueness	duplicate owner	rollback
+T-RB-13-015	FREEZE	Missing diagnostic primary Target	primary validation	expected SelectedMember	rollback
+T-RB-13-016	FREEZE	Missing diagnostic with wrong insertion	site validation	primary site mismatch	rollback
+T-RB-13-017	FREEZE	poison target Name plus outer propagation diagnostic	propagation obligation	unexpected outer diagnostic	rollback
+T-RB-13-018	FREEZE	poison target Missing with child only	payload-derived member obligation	missing outer root diagnostic	rollback
+T-RB-13-019	FREEZE	poison target Missing outer only	descendant terminal obligation	missing child diagnostic	rollback
+T-RB-13-020	END_TO_END	target?. lowering drops TryId	identity/freeze	outer target must resolve to retained TryId	rollback
+T-RB-13-021	END_TO_END	target?. source maps outer Target to0..6	source manifest	expected complete Try span0..7	rollback
+T-RB-13-022	RETRY	fail diagnostics then reduce prefill	commit retry	same qualified IDs/owners as deterministic reservation	one diagnostic per owner
+T-RB-13-023	RETRY	repeat successful lowering	diagnostic map	deduplicate by owner, do not append	stable count/order
+T-RB-13-024	PERTURBATION	evaluate child/name/source manifests in alternate internal order	prepublication	same error precedence and final bytes	identical commit/rollback
+T-RB-13-025	END_TO_END_NEGATIVE	.member	producer classification	no Select transaction begins	no synthetic child/work
+T-RB-13-026	END_TO_END_NEGATIVE	target..member	token classification	Range before E13	no Select work
+T-RB-13-027	END_TO_END_NEGATIVE	target.42	member classification	no Invalid member branch	generic outer rule only
+T-RB-13-028	API	old member accessor/match arm	compile time	type mismatch or missing variant	no compatibility reader
+T-RB-13-029	API	public Serde/raw fields	compile time	trait/visibility failure	semantic payload remains private/structural
+T-RB-13-030	DELETION_SWITCH	compile all consumers after old reader deletion	compile fallout	every listed layer migrated to final owner	single compiling authority change

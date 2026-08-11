@@ -1,0 +1,19 @@
+{
+  "algorithm": "BLAKE3 over exact canonical UTF-8 JSON bytes",
+  "vectors": [
+    {
+      "example": "minimal",
+      "bytes": 1155,
+      "raw_digest": "blake3:fba4266ffcf2c61bccaf179546dd2311f7aa4495538733c91438771e5c75f22f"
+    },
+    {
+      "example": "full",
+      "bytes": 10818,
+      "raw_digest": "blake3:303b2035f837ee6593bf33cb02aeb4f7140ecf85cf3eb2ff7c40a20fd568ffaa"
+    }
+  ],
+  "blake3_self_tests": {
+    "empty": "af1349b9f5f9a1a6a0404dea36dcc9499bcb25c9adc112b7cc9a93cae41f3262",
+    "abc": "6437b3ac38465133ffb63b75273a8db548c558465d79db03fd359c6cd5bd9d85"
+  }
+}
