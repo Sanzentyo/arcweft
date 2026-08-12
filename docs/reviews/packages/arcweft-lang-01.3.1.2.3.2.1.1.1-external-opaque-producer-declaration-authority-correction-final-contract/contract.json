@@ -1,0 +1,60 @@
+{
+  "admission": {
+    "external": "ExactIdentity",
+    "producer_wide": "CharacterDialogue fixed semantic top only"
+  },
+  "digest_domains": {
+    "accepted_nominal_catalog": "arcweft.accepted-nominal-catalog.v2\\0",
+    "environment_manifest": "arcweft.environment-manifest.v2\\0",
+    "external_type_input": "arcweft.environment-type-input.v1\\0"
+  },
+  "implementation_gates": [
+    "G0",
+    "G1",
+    "G2",
+    "G3a+G3b protected",
+    "G4",
+    "G5",
+    "G6"
+  ],
+  "implementation_performed": false,
+  "inventory_rows": 61,
+  "open_questions": 0,
+  "open_result_changing_decisions": 0,
+  "parent_contract_zip_sha256": "93af482a2914ca4a9e6b985aa7a09c040f569bd71141611dcaa4d579ac01640c",
+  "producer_types": {
+    "adapter": "AdapterOpaqueTypeProducerId",
+    "core": "RuntimeOpaqueTypeProducerId",
+    "rust_abi": "ArcweftRustOpaqueTypeProducerId"
+  },
+  "production_overlay_included": false,
+  "repository": {
+    "branch": "main",
+    "commit": "78f50f5b5ac082745bab91b7373a6602918a436d",
+    "name": "Sanzentyo/arcweft",
+    "parent": "7636b61a1c4c8e81127cb81a8fd27ef765d5ce2a"
+  },
+  "request_sha256": "a7ab7d47f50804bae5a5b9fff1e5e39b7c97922bdda191b444216724d56ba9a7",
+  "schemas": {
+    "adapter_manifest": 2,
+    "rust_abi": 2
+  },
+  "semantic_identity_excludes": [
+    "opaque_producer"
+  ],
+  "semantic_identity_includes": [
+    "accepted_nominal_declaration",
+    "normalized_arguments"
+  ],
+  "sequence": "Lang-01.3.1.2.3.2.1.1.1",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "test_rows": 127,
+  "validation": {
+    "case_sensitive": true,
+    "empty": "reject",
+    "max_length": null,
+    "normalization": "none",
+    "reserved_prefix": "std.",
+    "unicode_control": "reject"
+  }
+}

@@ -1,0 +1,133 @@
+# Normative test matrix
+
+Rows: **127**. Each row is independently required unless a later exact test subsumes it while preserving the same typed assertion and evidence.
+
+| ID | Area | Kind | Owner | Setup | Action | Expected | Gate |
+|---|---|---|---|---|---|---|---|
+| EOP-001 | producer-id | positive | arcweft-adapter-context | value `example.gameplay` | try_new and round-trip Display/serde | exact bytes retained | G1/G2 |
+| EOP-002 | producer-id | positive | arcweft-adapter-context | value containing non-ASCII printable Unicode | try_new | accepted; UTF-8 preserved | G1/G2 |
+| EOP-003 | producer-id | boundary | arcweft-adapter-context | value `std` | try_new | accepted because only `std.` is reserved | G1/G2 |
+| EOP-004 | producer-id | boundary | arcweft-adapter-context | value `Std.example` | try_new | accepted; reservation is case-sensitive | G1/G2 |
+| EOP-005 | producer-id | negative | arcweft-adapter-context | empty string | try_new | exact adapter Empty variant | G1/G2 |
+| EOP-006 | producer-id | negative | arcweft-adapter-context | ASCII newline at byte 3 | try_new | exact adapter ControlCharacter byte 3 | G1/G2 |
+| EOP-007 | producer-id | negative | arcweft-adapter-context | non-ASCII control scalar | try_new | control error reports UTF-8 byte index | G1/G2 |
+| EOP-008 | producer-id | negative | arcweft-adapter-context | `std.character_dialogue` | try_new | ReservedStandardNamespace with exact string | G1/G2 |
+| EOP-009 | producer-id | positive | arcweft-adapter-context | leading/trailing printable space | try_new | accepted and not trimmed | G1/G2 |
+| EOP-010 | producer-id | boundary | arcweft-adapter-context | very long value within existing codec/input budget | try_new | no producer-specific maximum; exact bytes retained | G1/G2 |
+| EOP-011 | producer-id | positive | arcweft-rust-abi | value `example.gameplay` | try_new and round-trip Display/serde | exact bytes retained | G1/G2 |
+| EOP-012 | producer-id | positive | arcweft-rust-abi | value containing non-ASCII printable Unicode | try_new | accepted; UTF-8 preserved | G1/G2 |
+| EOP-013 | producer-id | boundary | arcweft-rust-abi | value `std` | try_new | accepted because only `std.` is reserved | G1/G2 |
+| EOP-014 | producer-id | boundary | arcweft-rust-abi | value `Std.example` | try_new | accepted; reservation is case-sensitive | G1/G2 |
+| EOP-015 | producer-id | negative | arcweft-rust-abi | empty string | try_new | exact Rust ABI Empty variant | G1/G2 |
+| EOP-016 | producer-id | negative | arcweft-rust-abi | ASCII newline at byte 3 | try_new | exact Rust ABI ControlCharacter byte 3 | G1/G2 |
+| EOP-017 | producer-id | negative | arcweft-rust-abi | non-ASCII control scalar | try_new | control error reports UTF-8 byte index | G1/G2 |
+| EOP-018 | producer-id | negative | arcweft-rust-abi | `std.character_dialogue` | try_new | ReservedStandardNamespace with exact string | G1/G2 |
+| EOP-019 | producer-id | positive | arcweft-rust-abi | leading/trailing printable space | try_new | accepted and not trimmed | G1/G2 |
+| EOP-020 | producer-id | boundary | arcweft-rust-abi | very long value within existing codec/input budget | try_new | no producer-specific maximum; exact bytes retained | G1/G2 |
+| EOP-021 | adapter-codec | positive | arcweft-adapter-context::codec | schema-2 JSON, one nominal with valid explicit producer | decode and re-encode | accepted; exact key/value retained | G2 |
+| EOP-022 | adapter-codec | positive | arcweft-adapter-context::codec | schema-2 JSON, two nominals share producer | decode | both declarations retained; no collision | G2 |
+| EOP-023 | adapter-codec | positive | arcweft-adapter-context::codec | schema-2 JSON, no nominal_types rows | decode | accepted without producer datum | G2 |
+| EOP-024 | adapter-codec | negative | arcweft-adapter-context::codec | schema-1 JSON, missing producer | decode | UnsupportedSchema before missing producer | G2 |
+| EOP-025 | adapter-codec | negative | arcweft-adapter-context::codec | JSON missing schema_version | decode | MissingSchemaVersion | G2 |
+| EOP-026 | adapter-codec | negative | arcweft-adapter-context::codec | JSON malformed schema_version type | decode | MalformedSchemaVersion with exact value kind | G2 |
+| EOP-027 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 JSON, row missing opaque_producer | decode | MissingOpaqueProducer with row site | G2 |
+| EOP-028 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 JSON, producer is array/integer | decode | MalformedOpaqueProducer with value kind | G2 |
+| EOP-029 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 JSON, empty producer | decode | InvalidOpaqueProducer::Empty | G2 |
+| EOP-030 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 JSON, control producer | decode | InvalidOpaqueProducer::ControlCharacter with byte | G2 |
+| EOP-031 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 JSON, reserved `std.x` | decode | InvalidOpaqueProducer::ReservedStandardNamespace | G2 |
+| EOP-032 | adapter-codec | precedence | arcweft-adapter-context::codec | schema-2 JSON, earlier invalid body and later missing producer | decode | missing required producer wins globally | G2 |
+| EOP-033 | adapter-codec | precedence | arcweft-adapter-context::codec | schema-2 JSON, row 0 reserved and row 1 empty | decode | row 1 empty wins because spelling phase precedes reserved | G2 |
+| EOP-034 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 JSON, descriptor includes admission | decode | unknown field/body error; no external admission | G2 |
+| EOP-035 | adapter-codec | positive | arcweft-adapter-context::codec | schema-2 TOML, one nominal with valid explicit producer | decode and re-encode | accepted; exact key/value retained | G2 |
+| EOP-036 | adapter-codec | positive | arcweft-adapter-context::codec | schema-2 TOML, two nominals share producer | decode | both declarations retained; no collision | G2 |
+| EOP-037 | adapter-codec | positive | arcweft-adapter-context::codec | schema-2 TOML, no nominal_types rows | decode | accepted without producer datum | G2 |
+| EOP-038 | adapter-codec | negative | arcweft-adapter-context::codec | schema-1 TOML, missing producer | decode | UnsupportedSchema before missing producer | G2 |
+| EOP-039 | adapter-codec | negative | arcweft-adapter-context::codec | TOML missing schema_version | decode | MissingSchemaVersion | G2 |
+| EOP-040 | adapter-codec | negative | arcweft-adapter-context::codec | TOML malformed schema_version type | decode | MalformedSchemaVersion with exact value kind | G2 |
+| EOP-041 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 TOML, row missing opaque_producer | decode | MissingOpaqueProducer with row site | G2 |
+| EOP-042 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 TOML, producer is array/integer | decode | MalformedOpaqueProducer with value kind | G2 |
+| EOP-043 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 TOML, empty producer | decode | InvalidOpaqueProducer::Empty | G2 |
+| EOP-044 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 TOML, control producer | decode | InvalidOpaqueProducer::ControlCharacter with byte | G2 |
+| EOP-045 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 TOML, reserved `std.x` | decode | InvalidOpaqueProducer::ReservedStandardNamespace | G2 |
+| EOP-046 | adapter-codec | precedence | arcweft-adapter-context::codec | schema-2 TOML, earlier invalid body and later missing producer | decode | missing required producer wins globally | G2 |
+| EOP-047 | adapter-codec | precedence | arcweft-adapter-context::codec | schema-2 TOML, row 0 reserved and row 1 empty | decode | row 1 empty wins because spelling phase precedes reserved | G2 |
+| EOP-048 | adapter-codec | negative | arcweft-adapter-context::codec | schema-2 TOML, descriptor includes admission | decode | unknown field/body error; no external admission | G2 |
+| EOP-049 | adapter-codec | negative | arcweft-adapter-context::codec | JSON duplicate schema_version | decode | MalformedSchemaVersion::DuplicateSchemaVersion | G2 |
+| EOP-050 | adapter-codec | negative | arcweft-adapter-context::codec | TOML duplicate schema_version | decode | raw TOML syntax error before header interpretation | G2 |
+| EOP-051 | adapter-codec | negative | arcweft-adapter-context::codec | malformed JSON body after valid-looking header | decode | raw JSON syntax error first | G2 |
+| EOP-052 | rust-abi-codec | positive | arcweft-rust-abi | schema 2, one type with valid producer | from_json | accepted and re-encoded with exact key | G1 |
+| EOP-053 | rust-abi-codec | positive | arcweft-rust-abi | schema 2, two types share producer | from_json | accepted; no producer collision | G1 |
+| EOP-054 | rust-abi-codec | positive | arcweft-rust-abi | schema 2, zero types and functions present | from_json | accepted without producer datum | G1 |
+| EOP-055 | rust-abi-codec | negative | arcweft-rust-abi | schema 1, missing producer | from_json | UnsupportedSchema before missing producer | G1 |
+| EOP-056 | rust-abi-codec | negative | arcweft-rust-abi | missing schema_version | from_json | MissingSchemaVersion | G1 |
+| EOP-057 | rust-abi-codec | negative | arcweft-rust-abi | schema_version string/float/out-of-u32 | from_json | typed MalformedSchemaVersion | G1 |
+| EOP-058 | rust-abi-codec | negative | arcweft-rust-abi | schema 2, missing type producer | from_json | MissingOpaqueProducer at type row | G1 |
+| EOP-059 | rust-abi-codec | negative | arcweft-rust-abi | schema 2, non-string producer | from_json | MalformedOpaqueProducer | G1 |
+| EOP-060 | rust-abi-codec | negative | arcweft-rust-abi | schema 2, empty producer | from_json | InvalidOpaqueProducer::Empty | G1 |
+| EOP-061 | rust-abi-codec | negative | arcweft-rust-abi | schema 2, control producer | from_json | InvalidOpaqueProducer::ControlCharacter | G1 |
+| EOP-062 | rust-abi-codec | negative | arcweft-rust-abi | schema 2, reserved producer | from_json | InvalidOpaqueProducer::ReservedStandardNamespace | G1 |
+| EOP-063 | rust-abi-model | negative | arcweft-rust-abi | programmatic manifest schema 1 | validate | UnsupportedSchema before declaration validation | G1 |
+| EOP-064 | rust-abi-model | negative | arcweft-rust-abi | programmatic declaration with invalid producer injected through private test seam | validate | InvalidOpaqueProducer with declaration index | G1 |
+| EOP-065 | rust-abi-model | positive | arcweft-rust-abi | programmatic manifest with zero types | validate | no producer required | G1 |
+| EOP-066 | rust-abi-artifact | digest | arcweft-rust-abi-build | same manifest except producer | serialize/hash | pretty JSON and BLAKE3 hash differ | G1 |
+| EOP-067 | rust-abi-artifact | determinism | arcweft-rust-abi-build | same schema-2 manifest twice | serialize/hash | byte-identical JSON and hash | G1 |
+| EOP-068 | derive | positive | arcweft-rust-abi-macros | valid one helper attribute | compile trybuild fixture | derive emits exact producer | G1 |
+| EOP-069 | derive | positive | arcweft-rust-abi-macros | valid helper with trailing comma | compile trybuild fixture | derive emits exact producer | G1 |
+| EOP-070 | derive | positive | arcweft-rust-abi-macros | two types share explicit value | compile trybuild fixture | both declarations carry same producer | G1 |
+| EOP-071 | derive | negative | arcweft-rust-abi-macros | missing helper | compile trybuild fixture | exact missing diagnostic on ADT ident | G1 |
+| EOP-072 | derive | negative | arcweft-rust-abi-macros | duplicate key in one attribute | compile trybuild fixture | duplicate diagnostic on second key | G1 |
+| EOP-073 | derive | negative | arcweft-rust-abi-macros | duplicate across two attributes | compile trybuild fixture | duplicate diagnostic on second key | G1 |
+| EOP-074 | derive | negative | arcweft-rust-abi-macros | bare `#[arcweft]` | compile trybuild fixture | malformed diagnostic on attribute | G1 |
+| EOP-075 | derive | negative | arcweft-rust-abi-macros | `#[arcweft(opaque_producer)]` | compile trybuild fixture | malformed diagnostic | G1 |
+| EOP-076 | derive | negative | arcweft-rust-abi-macros | integer value | compile trybuild fixture | string-literal diagnostic | G1 |
+| EOP-077 | derive | negative | arcweft-rust-abi-macros | unknown option | compile trybuild fixture | unsupported-option diagnostic on key | G1 |
+| EOP-078 | derive | negative | arcweft-rust-abi-macros | empty literal | compile trybuild fixture | empty diagnostic on literal | G1 |
+| EOP-079 | derive | negative | arcweft-rust-abi-macros | escaped newline literal | compile trybuild fixture | control diagnostic with decoded-byte index | G1 |
+| EOP-080 | derive | negative | arcweft-rust-abi-macros | `std.foo` | compile trybuild fixture | reserved diagnostic on literal | G1 |
+| EOP-081 | derive | negative | arcweft-rust-abi-macros | lifetime generic type with valid producer | compile trybuild fixture | existing lifetime error remains first | G1 |
+| EOP-082 | derive | negative | arcweft-rust-abi-macros | const generic type with valid producer | compile trybuild fixture | existing const-generic error remains first | G1 |
+| EOP-083 | derive | negative | arcweft-rust-abi-macros | reference field with valid producer | compile trybuild fixture | existing reference-field error remains first | G1 |
+| EOP-084 | mounted-rust-type | positive | arcweft-adapter-context::manifest | valid Rust declaration and package mount | try_with_rust_manifest then accessor | accessor equals declaration producer | G1/G2 |
+| EOP-085 | mounted-rust-type | api | arcweft-adapter-context::manifest | public API compile-fail probe | attempt producer setter/field override | no such public authority | G2 |
+| EOP-086 | adapter-sema | positive | arcweft-adapter-sema | adapter-native valid producer | source_backed_facts | mandatory core producer and payload source span published | G3a |
+| EOP-087 | adapter-sema | positive | arcweft-adapter-sema | Rust-export valid producer | source_backed_facts | same exact declaration producer published | G3a |
+| EOP-088 | adapter-sema | negative | arcweft-adapter-sema | private seam injects empty/control producer | source_backed_facts | typed InvalidOpaqueProducer with source and RuntimeIdentityError | G3a |
+| EOP-089 | adapter-sema | negative | arcweft-adapter-sema | private seam injects std. producer | source_backed_facts | typed ReservedOpaqueProducer with payload span | G3a |
+| EOP-090 | adapter-sema | negative | arcweft-adapter-sema | duplicate source-map producer site | render | DuplicateOpaqueProducerSource; atomic abort | G3a |
+| EOP-091 | adapter-sema | negative | arcweft-adapter-sema | missing source-map producer site | publication | MissingOpaqueProducerSource; atomic abort | G3a |
+| EOP-092 | adapter-sema | precedence | arcweft-adapter-sema | invalid producer plus duplicate nominal identity | publish | producer error before duplicate/accounting | G3a |
+| EOP-093 | adapter-sema | atomicity | arcweft-adapter-sema | one valid and one invalid producer | publish | no partial external/environment rows | G3a |
+| EOP-094 | catalog | positive | arcweft-lang-sema | two exact IDs share one producer | build catalog | two records; no producer collision | G3b |
+| EOP-095 | catalog | positive | arcweft-lang-sema | same producer and unequal semantic identity | project owners | two exact owners; cross-acceptance false | G3b |
+| EOP-096 | catalog | positive | arcweft-lang-sema | generic accepted nominal instantiation | instantiate | producer copied unchanged | G3b |
+| EOP-097 | catalog | positive | arcweft-lang-sema | generic substitution changes argument | substitute | producer retained; semantic identity changes by arguments | G3b |
+| EOP-098 | catalog | negative | arcweft-lang-sema | compile-fail producerless inventory construction | compile | constructor unavailable | G3b |
+| EOP-099 | catalog | negative | arcweft-lang-sema | compile-fail producerless opaque semantics | compile | unit variant unavailable | G3b |
+| EOP-100 | admission | negative | arcweft-lang-sema/runtime-plan | external descriptor attempts producer-wide field | decode/project | descriptor rejected; only exact owner emitted | G2/G3b |
+| EOP-101 | digest | digest | arcweft-adapter-sema | only adapter nominal producer changes | hash environment manifest | v2 digest changes | G3a |
+| EOP-102 | digest | digest | arcweft-adapter-sema | only Rust export producer changes | hash environment manifest | v2 digest changes | G3a |
+| EOP-103 | digest | digest | arcweft-lang-sema | only accepted row producer changes | hash catalog | v2 digest changes | G3b |
+| EOP-104 | digest | invariance | arcweft-lang-sema | same declaration/args, producer changes | hash semantic type identity | identity unchanged | G3b |
+| EOP-105 | digest | invariance | arcweft-adapter-sema | producer changes, recursive type refs unchanged | hash external type input | v1 digest unchanged | G3a |
+| EOP-106 | digest | invariance | arcweft-lang-sema | producer changes, Rust structural kind unchanged | hash Rust structural metadata | unchanged | G3b |
+| EOP-107 | generated-source | positive | arcweft-adapter-sema::registration::input::source | ASCII producer | render | length prefix and payload range exact | G3a |
+| EOP-108 | generated-source | positive | arcweft-adapter-sema::registration::input::source | multibyte UTF-8 producer | render | length counts bytes; payload range selects exact bytes | G3a |
+| EOP-109 | generated-source | determinism | arcweft-adapter-sema::registration::input::source | same manifest twice | render | byte-identical v2 source and map | G3a |
+| EOP-110 | generated-source | ordering | arcweft-adapter-sema::registration::input::source | input rows shuffled but semantic identities same | render | existing canonical order retained | G3a |
+| EOP-111 | standard | positive | arcweft-adapter-context::standard | native HTTP manifest | build/decode | HttpRequestContext has explicit native-http producer | G2 |
+| EOP-112 | standard | positive | arcweft-adapter-context::standard | inference tensor manifest | build/decode | three nominals share explicit inference-tensor producer | G2 |
+| EOP-113 | loader | positive | arcweft-project-loader | all maintained schema-2 fixtures | run owning suite | explicit producers accepted and snapshots updated | G4 |
+| EOP-114 | loader | negative | arcweft-project-loader | schema-1 fixture | run owning suite | unsupported-version diagnostic wins | G4 |
+| EOP-115 | compiler | positive | arcweft-compiler | all maintained schema-2 fixtures | run owning suite | explicit producers accepted and snapshots updated | G4 |
+| EOP-116 | compiler | negative | arcweft-compiler | schema-1 fixture | run owning suite | unsupported-version diagnostic wins | G4 |
+| EOP-117 | lsp | positive | arcweft-lsp | all maintained schema-2 fixtures | run owning suite | explicit producers accepted and snapshots updated | G4 |
+| EOP-118 | lsp | negative | arcweft-lsp | schema-1 fixture | run owning suite | unsupported-version diagnostic wins | G4 |
+| EOP-119 | verify-lsp | positive | arcweft-verify-lsp | all maintained schema-2 fixtures | run owning suite | explicit producers accepted and snapshots updated | G4 |
+| EOP-120 | verify-lsp | negative | arcweft-verify-lsp | schema-1 fixture | run owning suite | unsupported-version diagnostic wins | G4 |
+| EOP-121 | desktop | positive | desktop/Rust export owners | all maintained schema-2 fixtures | run owning suite | explicit producers accepted and snapshots updated | G4 |
+| EOP-122 | desktop | negative | desktop/Rust export owners | schema-1 fixture | run owning suite | unsupported-version diagnostic wins | G4 |
+| EOP-123 | deletion | source-audit | workspace | all old-success search patterns | run G5 closure commands | zero production schema-1/producerless/fallback matches | G5 |
+| EOP-124 | layering | structural | workspace | cargo metadata after changes | run dependency audit | adapter-context/Rust ABI have no core/sema dependency | G5 |
+| EOP-125 | workspace | compile | workspace | all gates merged | cargo check all targets/features | pass | G5 |
+| EOP-126 | workspace | lint | workspace | all gates merged | clippy -D warnings | pass | G5 |
+| EOP-127 | workspace | verification | workspace | all gates merged | just verify and structure audit | pass; no hidden compatibility path | G5 |

@@ -1,0 +1,5 @@
+adapter-manifest-v2
+nominal path=example.RequestContext arity=0 opaque-producer=20:example.adapter.http visibility=public label=14:RequestContext
+nominal path=example.ResponseContext arity=0 opaque-producer=20:example.adapter.http visibility=public label=15:ResponseContext
+rust-type package=20:example-rust-adapter accepted=PlayerScore opaque-producer=16:example.gameplay rust-item=20:example::PlayerScore shape=struct
+rust-type package=20:example-rust-adapter accepted=Rank opaque-producer=16:example.gameplay rust-item=13:example::Rank shape=enum

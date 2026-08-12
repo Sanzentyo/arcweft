@@ -1,0 +1,64 @@
+{
+  "schema_version": 2,
+  "package": {
+    "id": "example-rust-adapter",
+    "version": "1.0.0",
+    "metadata_hash": null
+  },
+  "types": [
+    {
+      "path": [
+        "PlayerScore"
+      ],
+      "rust_path": "example::PlayerScore",
+      "opaque_producer": "example.gameplay",
+      "parameters": [],
+      "kind": {
+        "kind": "struct",
+        "shape": {
+          "kind": "record",
+          "fields": [
+            {
+              "name": "value",
+              "ty": {
+                "kind": "i64"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "path": [
+        "Rank"
+      ],
+      "rust_path": "example::Rank",
+      "opaque_producer": "example.gameplay",
+      "parameters": [],
+      "kind": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Bronze",
+            "payload": {
+              "kind": "unit"
+            }
+          },
+          {
+            "name": "Silver",
+            "payload": {
+              "kind": "unit"
+            }
+          },
+          {
+            "name": "Gold",
+            "payload": {
+              "kind": "unit"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "functions": []
+}

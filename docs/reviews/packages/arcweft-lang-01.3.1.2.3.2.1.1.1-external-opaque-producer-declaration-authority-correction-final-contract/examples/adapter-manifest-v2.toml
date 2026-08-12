@@ -1,0 +1,17 @@
+schema_version = 2
+id = "example-adapter"
+display_name = "Example Adapter"
+
+[[nominal_types]]
+path = ["example", "RequestContext"]
+arity = 0
+opaque_producer = "example.adapter.http"
+visibility = "public"
+source_label = "RequestContext"
+
+[[nominal_types]]
+path = ["example", "ResponseContext"]
+arity = 0
+opaque_producer = "example.adapter.http"
+visibility = "public"
+source_label = "ResponseContext"

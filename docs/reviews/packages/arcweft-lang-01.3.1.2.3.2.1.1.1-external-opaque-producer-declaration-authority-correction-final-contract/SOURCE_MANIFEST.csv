@@ -1,0 +1,30 @@
+kind,path,identity,purpose
+request attachment,SOURCE_REQUEST.md,a7ab7d47f50804bae5a5b9fff1e5e39b7c97922bdda191b444216724d56ba9a7,complete attached request
+repository,AGENTS.md,commit:78f50f5b5ac082745bab91b7373a6602918a436d,root policy
+repository,crates/AGENTS.md,commit:78f50f5b5ac082745bab91b7373a6602918a436d,Rust/workspace policy
+repository,docs/AGENTS.md,commit:78f50f5b5ac082745bab91b7373a6602918a436d,documentation policy
+repository,docs/reviews/AGENTS.md,commit:78f50f5b5ac082745bab91b7373a6602918a436d,review-package policy
+repository,docs/implementation/AGENTS.md,commit:78f50f5b5ac082745bab91b7373a6602918a436d,implementation evidence policy
+repository,docs/README.md,commit:78f50f5b5ac082745bab91b7373a6602918a436d,repository structure/design navigation
+repository,docs/implementation/2026-08-12-lang-01-3-1-2-3-2-1-1-return-intake.md,commit:78f50f5b5ac082745bab91b7373a6602918a436d,parent intake and split evidence
+parent package,docs/reviews/packages/zips/arcweft-lang-01.3.1.2.3.2.1.1-opaque-composite-checked-type-owner-reconciliation-correction-final-contract.zip,93af482a2914ca4a9e6b985aa7a09c040f569bd71141611dcaa4d579ac01640c,retained-byte authority
+parent mirror,docs/reviews/packages/arcweft-lang-01.3.1.2.3.2.1.1-opaque-composite-checked-type-owner-reconciliation-correction-final-contract/**,commit:78f50f5b5ac082745bab91b7373a6602918a436d,frozen searchable parent contract
+repository,crates/arcweft-adapter-context/src/manifest.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,AdapterManifest/AdapterRustType/try_with_rust_manifest
+repository,crates/arcweft-adapter-context/src/manifest/nominal.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,producerless declaration/model owner
+repository,crates/arcweft-adapter-context/src/codec.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,schema-1 JSON/TOML codec
+repository,crates/arcweft-adapter-context/src/standard.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,standard nominal declarations
+repository,crates/arcweft-rust-abi/src/model.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,schema-1 model/type declaration
+repository,crates/arcweft-rust-abi/src/validation.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,manifest validation
+repository,crates/arcweft-rust-abi/src/display.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,display consumer
+repository,crates/arcweft-rust-abi/src/lib.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,codec/export entry points
+repository,crates/arcweft-rust-abi/src/tests.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,direct literals/tests
+repository,crates/arcweft-rust-abi-build/src/lib.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,deterministic JSON/hash artifact
+repository,crates/arcweft-rust-abi-macros/src/lib.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,derive parser/expansion
+repository,crates/arcweft-rust-abi-macros/tests/**,commit:78f50f5b5ac082745bab91b7373a6602918a436d,trybuild pass/fail fixtures
+repository,crates/arcweft-adapter-sema/src/registration.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,source-backed publication/errors
+repository,crates/arcweft-adapter-sema/src/registration/input/**,commit:78f50f5b5ac082745bab91b7373a6602918a436d,input/digest/source owners
+repository,crates/arcweft-lang-sema/src/registration/environment_input.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,accepted inventory owner
+repository,crates/arcweft-lang-sema/src/env/nominal.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,accepted catalog/semantics/digest
+repository,crates/arcweft-lang-sema/src/types/substitution.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,accepted nominal substitution
+repository,crates/arcweft-lang-sema/src/types/digest.rs,commit:78f50f5b5ac082745bab91b7373a6602918a436d,semantic type identity
+repository,standard/desktop/loader/compiler/LSP/verify-LSP fixtures and direct literals,commit:78f50f5b5ac082745bab91b7373a6602918a436d,downstream migration closure
