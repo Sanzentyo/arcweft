@@ -2037,6 +2037,11 @@ impl EntryParameterCollector {
                     self.collect_expr(&field.value);
                 }
             }
+            RuntimeExpr::NominalRecord(record) => {
+                for initializer in record.initializers() {
+                    self.collect_expr(initializer.value());
+                }
+            }
             RuntimeExpr::Variant { payload, .. } => {
                 if let Some(payload) = payload {
                     self.collect_expr(payload);

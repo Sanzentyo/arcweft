@@ -427,11 +427,21 @@ fn visit_runtime_type_strings(
             }
         }
         AwbcRuntimeType::Nominal { public_id, .. } => visit_string_id(public_id, visitor),
+        AwbcRuntimeType::NominalRecord {
+            public_id, fields, ..
+        } => {
+            visit_string_id(public_id, visitor);
+            for field in fields {
+                visit_string_id(&mut field.name, visitor);
+            }
+        }
         AwbcRuntimeType::Opaque { producer, .. } => visit_string_id(producer, visitor),
         AwbcRuntimeType::Unit
         | AwbcRuntimeType::Bool
         | AwbcRuntimeType::Int(_)
         | AwbcRuntimeType::UInt(_)
+        | AwbcRuntimeType::Bytes
+        | AwbcRuntimeType::Never
         | AwbcRuntimeType::F32
         | AwbcRuntimeType::F64
         | AwbcRuntimeType::String
@@ -634,12 +644,23 @@ pub enum AwbcRuntimeType {
         semantic_identity: [u8; 32],
         layout: [u8; 32],
     },
+    /// Executable nominal-record descriptor in defining field order.
+    NominalRecord {
+        public_id: AwbcStringId,
+        semantic_identity: [u8; 32],
+        layout: [u8; 32],
+        fields: Vec<AwbcRecordField>,
+    },
     /// Opaque checked-type identity and its producer-owned admission rule.
     Opaque {
         producer: AwbcStringId,
         semantic_identity: [u8; 32],
         admission: RuntimeOpaqueTypeAdmission,
     },
+    /// Canonical byte-buffer checked type, distinct from `Sequence<U8>`.
+    Bytes,
+    /// Uninhabited checked type, distinct from an authored empty choice.
+    Never,
     MatrixF32,
     MatrixF64,
     TensorF32,

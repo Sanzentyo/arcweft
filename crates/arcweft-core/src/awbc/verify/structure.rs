@@ -15,7 +15,7 @@ use crate::awbc::schema::{
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowParameterMode};
 use crate::pattern::RuntimeOpaqueTypeAdmission;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct Verifier<'program, 'context> {
     pub(super) program: &'program AwbcProgram,
@@ -96,6 +96,7 @@ fn verify_strings(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
 }
 
 fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
+    let mut nominal_records = BTreeMap::new();
     for (index, ty) in program.runtime_types.iter().enumerate() {
         let at = format!("runtime type {index}");
         match ty {
@@ -158,6 +159,50 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             AwbcRuntimeType::Nominal { public_id, .. } => {
                 check_string(program, *public_id, &at)?;
             }
+            AwbcRuntimeType::NominalRecord {
+                public_id,
+                semantic_identity,
+                layout,
+                fields,
+            } => {
+                check_string(program, *public_id, &at)?;
+                let key = (*public_id, *semantic_identity, *layout);
+                if nominal_records.insert(key, index).is_some() {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: "nominal record identity has more than one executable descriptor"
+                            .to_owned(),
+                    });
+                }
+                let mut names = BTreeSet::new();
+                for field in fields {
+                    check_string(program, field.name, &at)?;
+                    check_index(
+                        program.runtime_types.len(),
+                        field.ty.0,
+                        "runtime_types",
+                        &at,
+                    )?;
+                    if !names.insert(field.name) {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "nominal record type contains duplicate field names"
+                                .to_owned(),
+                        });
+                    }
+                }
+                program
+                    .nominal_record_layout(AwbcTypeId(u32::try_from(index).map_err(|_| {
+                        AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "runtime type index exceeds u32".to_owned(),
+                        }
+                    })?))
+                    .map_err(|error| AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: error.to_string(),
+                    })?;
+            }
             AwbcRuntimeType::Opaque { producer, .. } => {
                 check_string(program, *producer, &at)?;
                 ty.try_opaque_owner(&program.strings).map_err(|error| {
@@ -171,6 +216,8 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcRuntimeType::Bool
             | AwbcRuntimeType::Int(_)
             | AwbcRuntimeType::UInt(_)
+            | AwbcRuntimeType::Bytes
+            | AwbcRuntimeType::Never
             | AwbcRuntimeType::F32
             | AwbcRuntimeType::F64
             | AwbcRuntimeType::String
@@ -230,6 +277,10 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                 }
                 match &program.runtime_types[ty.index()] {
                     AwbcRuntimeType::Record {
+                        fields: type_fields,
+                        ..
+                    }
+                    | AwbcRuntimeType::NominalRecord {
                         fields: type_fields,
                         ..
                     } => {
@@ -740,8 +791,15 @@ fn verify_patterns(verifier: &Verifier<'_, '_>) -> Result<(), AwbcVerifyError> {
                 if let Some(ty) = ty {
                     check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
                 }
+                let mut ordinals = BTreeSet::new();
                 for field in fields {
                     check_index(program.patterns.len(), field.pattern.0, "patterns", &at)?;
+                    if !ordinals.insert(field.field) {
+                        return Err(AwbcVerifyError::InvalidInvariant {
+                            at: at.clone(),
+                            message: "record pattern contains duplicate field ordinals".to_owned(),
+                        });
+                    }
                 }
             }
             AwbcPattern::Variant {
@@ -2109,6 +2167,36 @@ fn types_compatible_inner(
                     .flatten(),
             )
             .is_some_and(|(expected, actual)| expected.accepts_owner(&actual)),
+        (
+            AwbcRuntimeType::Nominal {
+                public_id: expected_public,
+                semantic_identity: expected_semantic,
+                layout: expected_layout,
+            },
+            AwbcRuntimeType::NominalRecord {
+                public_id: actual_public,
+                semantic_identity: actual_semantic,
+                layout: actual_layout,
+                ..
+            },
+        )
+        | (
+            AwbcRuntimeType::NominalRecord {
+                public_id: expected_public,
+                semantic_identity: expected_semantic,
+                layout: expected_layout,
+                ..
+            },
+            AwbcRuntimeType::Nominal {
+                public_id: actual_public,
+                semantic_identity: actual_semantic,
+                layout: actual_layout,
+            },
+        ) => {
+            expected_public == actual_public
+                && expected_semantic == actual_semantic
+                && expected_layout == actual_layout
+        }
         (AwbcRuntimeType::Choice(expected), AwbcRuntimeType::Choice(actual)) => {
             actual.iter().all(|actual| {
                 expected

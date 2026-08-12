@@ -822,6 +822,13 @@ pub(super) fn runtime_expr_work_units(expr: &RuntimeExpr) -> usize {
                 .map(|field| runtime_expr_work_units(&field.value))
                 .sum::<usize>()
         }
+        RuntimeExpr::NominalRecord(record) => {
+            1 + record
+                .initializers()
+                .iter()
+                .map(|field| runtime_expr_work_units(field.value()))
+                .sum::<usize>()
+        }
         RuntimeExpr::Variant { payload, .. } => {
             1 + payload.as_deref().map_or(0, runtime_expr_work_units)
         }

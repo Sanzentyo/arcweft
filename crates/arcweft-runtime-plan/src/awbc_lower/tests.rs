@@ -7,6 +7,7 @@ use arcweft_core::awbc::schema::{
 use arcweft_core::awbc::vm::{self, VmError, VmExit, VmHost, VmObservation, VmStepOptions};
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::entry::{EntryBindingIdentity, RuntimeCallableId, RuntimeEntryRoles};
+use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
 use arcweft_core::pattern::{
     RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission,
     RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimePattern, RuntimeSemanticTypeId,
@@ -18,8 +19,10 @@ use arcweft_core::plan::{
     RuntimePureInputType, RuntimePureOutputType, RuntimeRouteSpec,
 };
 use arcweft_core::value::{
-    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeValue,
+    RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeFieldExpr, RuntimeNominalRecordExpr,
+    RuntimeNominalRecordLayout, RuntimeValue,
 };
+use std::sync::Arc;
 
 fn flow_id(value: &str) -> FlowRuntimeId {
     FlowRuntimeId::canonical(value).expect("test flow ID is valid")
@@ -215,6 +218,46 @@ struct CountingProbeHost {
     calls: usize,
 }
 
+#[derive(Default)]
+struct OrderedNominalProbeHost {
+    calls: Vec<String>,
+}
+
+impl VmHost for OrderedNominalProbeHost {
+    fn call_intrinsic(
+        &mut self,
+        program: &AwbcProgram,
+        intrinsic: arcweft_core::awbc::schema::AwbcIntrinsicId,
+        _args: &[RuntimeValue],
+    ) -> Result<Option<RuntimeValue>, VmError> {
+        let record = program
+            .intrinsics
+            .get(intrinsic.index())
+            .ok_or(VmError::MissingIntrinsic(intrinsic))?;
+        let label = program.strings[record.public_id.index()].clone();
+        self.calls.push(label.clone());
+        match label.as_str() {
+            "probe.z" => Ok(Some(RuntimeValue::String("second".to_owned()))),
+            "probe.a" => Ok(Some(RuntimeValue::Bool(true))),
+            _ => Err(VmError::Runtime(format!(
+                "unexpected nominal test intrinsic `{label}`"
+            ))),
+        }
+    }
+
+    fn call_pure_helper(
+        &mut self,
+        _program: &AwbcProgram,
+        helper: arcweft_core::awbc::schema::AwbcPureHelperId,
+        _args: &[RuntimeValue],
+    ) -> Result<RuntimeValue, VmError> {
+        Err(VmError::Runtime(format!(
+            "unexpected pure helper {}",
+            helper.0
+        )))
+    }
+}
+
 impl VmHost for CountingProbeHost {
     fn call_intrinsic(
         &mut self,
@@ -374,6 +417,84 @@ fn lowers_constant_return_plan_to_awbc_tables() {
             .diagnostics
             .iter()
             .all(|diagnostic| !diagnostic.is_error())
+    );
+}
+
+#[test]
+fn nominal_record_expression_lowers_and_executes_with_layout_identity() {
+    let layout = Arc::new(
+        RuntimeNominalRecordLayout::try_from_checked_projection(
+            RuntimeNominalTypeId::try_new("game.Pair").unwrap(),
+            RuntimeSemanticTypeId::from_bytes([21; 32]),
+            TypeLayoutHash::from_bytes([22; 32]),
+            vec![
+                ("alpha".to_owned(), RuntimeCheckedType::Bool),
+                ("zeta".to_owned(), RuntimeCheckedType::String),
+            ],
+        )
+        .unwrap(),
+    );
+    let expression = RuntimeNominalRecordExpr::try_from_checked_initializers(
+        layout.clone(),
+        vec![
+            (
+                "zeta".to_owned(),
+                RuntimeExpr::Call {
+                    callee: RuntimeCallTarget::callable(
+                        RuntimeCallableId::try_new("probe.z").unwrap(),
+                    ),
+                    args: Vec::new(),
+                },
+            ),
+            (
+                "alpha".to_owned(),
+                RuntimeExpr::Call {
+                    callee: RuntimeCallTarget::callable(
+                        RuntimeCallableId::try_new("probe.a").unwrap(),
+                    ),
+                    args: Vec::new(),
+                },
+            ),
+        ],
+    )
+    .unwrap();
+    let plan = RuntimePlan::new(
+        vec![RuntimeFlow {
+            id: flow_id("main"),
+            ops: vec![FlowOp::ReturnExpr(RuntimeExpr::NominalRecord(expression))],
+        }],
+        Vec::new(),
+    )
+    .unwrap();
+    let report = lower_plan(&with_test_entry(plan, flow_id("main")));
+
+    let descriptor = report
+        .program
+        .runtime_types
+        .iter()
+        .find_map(|ty| match ty {
+            AwbcRuntimeType::NominalRecord { fields, .. } => Some(fields),
+            _ => None,
+        })
+        .expect("nominal expression publishes one executable descriptor");
+    assert_eq!(report.program.strings[descriptor[0].name.index()], "alpha");
+    assert_eq!(report.program.strings[descriptor[1].name.index()], "zeta");
+
+    let mut host = OrderedNominalProbeHost::default();
+    let VmExit::Returned(Some(RuntimeValue::NominalRecord(value))) =
+        run_entry(&report.program, &mut host)
+    else {
+        panic!("nominal record must survive AWBC execution");
+    };
+    assert_eq!(value.type_id(), layout.nominal());
+    assert_eq!(value.layout(), layout.layout());
+    assert_eq!(host.calls, ["probe.z", "probe.a"]);
+    assert_eq!(
+        value.fields(),
+        &[
+            RuntimeValue::Bool(true),
+            RuntimeValue::String("second".to_owned())
+        ]
     );
 }
 

@@ -15,6 +15,7 @@ use crate::pure::{
     RuntimeCallBackend, RuntimeFixedArgs, RuntimeFloat32Args, RuntimeFloat64Args, RuntimeI32Args,
     RuntimeI64Args, RuntimePureCallBackend, RuntimePureScalarInteger, VmRuntimePureCallBackend,
 };
+use crate::value::RuntimeNominalRecordExpr;
 use crate::value::{RuntimeBinaryOp, RuntimeExactInteger, RuntimeFieldExpr};
 use crate::value::{
     RuntimeCallTarget, RuntimeIntrinsic, evaluate_core_iter_into_iter_intrinsic,
@@ -131,6 +132,7 @@ impl Engine {
             | RuntimeExpr::RepeatSeq { .. }
             | RuntimeExpr::Range { .. }
             | RuntimeExpr::Record(_)
+            | RuntimeExpr::NominalRecord(_)
             | RuntimeExpr::Variant { .. }
             | RuntimeExpr::Field { .. }
             | RuntimeExpr::ProjectTuple { .. }
@@ -234,6 +236,9 @@ impl Engine {
                 self.evaluate_range_expr(start.as_deref(), end.as_deref(), *inclusive, pure_backend)
             }
             RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields, pure_backend),
+            RuntimeExpr::NominalRecord(record) => {
+                self.evaluate_nominal_record_expr(record, pure_backend)
+            }
             RuntimeExpr::Variant {
                 owner,
                 ordinal,
@@ -718,6 +723,43 @@ impl Engine {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeValue::Record)
+    }
+
+    fn evaluate_nominal_record_expr(
+        &mut self,
+        record: &RuntimeNominalRecordExpr,
+        pure_backend: &mut impl RuntimeCallBackend,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        record.validate().map_err(|error| {
+            RuntimeEvalError::PatternMismatch(format!("invalid nominal record expression: {error}"))
+        })?;
+        let mut fields = std::iter::repeat_with(|| None)
+            .take(record.layout().len())
+            .collect::<Vec<_>>();
+        for initializer in record.initializers() {
+            let value = self.evaluate_expr_with_backend(initializer.value(), pure_backend)?;
+            let ordinal = usize::try_from(initializer.field().zero_based()).map_err(|_| {
+                RuntimeEvalError::PatternMismatch(
+                    "nominal record field identity does not fit this target".to_owned(),
+                )
+            })?;
+            fields[ordinal] = Some(value);
+        }
+        let fields = fields
+            .into_iter()
+            .map(|field| {
+                field.ok_or_else(|| {
+                    RuntimeEvalError::PatternMismatch(
+                        "validated nominal record initializer is incomplete".to_owned(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        crate::value::RuntimeNominalRecordValue::try_from_accepted_layout(record.layout(), fields)
+            .map(RuntimeValue::NominalRecord)
+            .map_err(|error| {
+                RuntimeEvalError::PatternMismatch(format!("invalid nominal record value: {error}"))
+            })
     }
 
     fn evaluate_field_expr(

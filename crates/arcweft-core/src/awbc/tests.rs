@@ -8,8 +8,8 @@ use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{FlowContractHash, RuntimeFlowExecutable};
 use crate::pattern::{
-    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
-    RuntimeSemanticTypeId,
+    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner,
+    RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
 };
 use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
 use crate::value::{RuntimeFunctionValue, RuntimeValue};
@@ -62,6 +62,81 @@ fn minimal_program() -> AwbcProgram {
         }],
         ..AwbcProgram::default()
     }
+}
+
+#[test]
+fn nominal_record_bytes_and_never_types_roundtrip_and_project_exactly() {
+    let mut program = AwbcProgram {
+        strings: vec![
+            "alpha".to_owned(),
+            "game.Pair".to_owned(),
+            "zeta".to_owned(),
+        ],
+        runtime_types: vec![
+            AwbcRuntimeType::Bool,
+            AwbcRuntimeType::Bytes,
+            AwbcRuntimeType::Never,
+            AwbcRuntimeType::NominalRecord {
+                public_id: AwbcStringId(1),
+                semantic_identity: [31; 32],
+                layout: [32; 32],
+                fields: vec![
+                    AwbcRecordField {
+                        name: AwbcStringId(0),
+                        ty: AwbcTypeId(1),
+                    },
+                    AwbcRecordField {
+                        name: AwbcStringId(2),
+                        ty: AwbcTypeId(2),
+                    },
+                ],
+            },
+        ],
+        ..AwbcProgram::default()
+    };
+    program.canonicalize_string_table();
+    let encoded = program.encode_canonical().unwrap();
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default()).unwrap();
+    let layout = decoded
+        .nominal_record_layout(AwbcTypeId(3))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(
+        layout.fields()[0].checked_type(),
+        &RuntimeCheckedType::Bytes
+    );
+    assert_eq!(
+        layout.fields()[1].checked_type(),
+        &RuntimeCheckedType::Never
+    );
+}
+
+#[test]
+fn verifier_rejects_duplicate_nominal_record_descriptor_authority() {
+    let descriptor = AwbcRuntimeType::NominalRecord {
+        public_id: AwbcStringId(0),
+        semantic_identity: [41; 32],
+        layout: [42; 32],
+        fields: Vec::new(),
+    };
+    let program = AwbcProgram {
+        strings: vec!["game.Empty".to_owned()],
+        runtime_types: vec![descriptor.clone(), descriptor],
+        ..AwbcProgram::default()
+    };
+
+    assert!(matches!(
+        program.verify(
+            AwbcVerifyBudget::default(),
+            AwbcVerifyContext {
+                require_entrypoint: false,
+                ..AwbcVerifyContext::default()
+            }
+        ),
+        Err(AwbcVerifyError::InvalidInvariant { message, .. })
+            if message.contains("more than one executable descriptor")
+    ));
 }
 
 #[test]

@@ -1,10 +1,12 @@
 use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::value::{
-    RuntimeBinding, RuntimeEvalError, RuntimeOpaqueValue, RuntimeOpaqueValueError, RuntimeSeq,
-    RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue, runtime_sequence_values,
+    RuntimeBinding, RuntimeEvalError, RuntimeNominalRecordLayout, RuntimeOpaqueValue,
+    RuntimeOpaqueValueError, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
+    RuntimeValue, runtime_sequence_values,
 };
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 /// Stable semantic identity for a checked type after alias and projection
 /// normalization.
@@ -247,7 +249,7 @@ pub enum RuntimePattern {
     Entity(String),
     Tuple(Vec<RuntimePattern>),
     Record {
-        owner: Option<RuntimeCheckedType>,
+        nominal_layout: Option<Arc<RuntimeNominalRecordLayout>>,
         fields: Vec<RuntimeRecordPatternField>,
         rest: bool,
     },
@@ -555,10 +557,16 @@ fn collect_pattern_bindings(
             collect_pattern_list(patterns, values, bindings)
         }
         RuntimePattern::Record {
-            owner,
+            nominal_layout,
             fields,
             rest,
-        } => collect_record_pattern_bindings(owner.as_ref(), fields, *rest, value, bindings),
+        } => collect_record_pattern_bindings(
+            nominal_layout.as_deref(),
+            fields,
+            *rest,
+            value,
+            bindings,
+        ),
         RuntimePattern::BracketSeq { items, rest } => {
             collect_bracket_seq_pattern_bindings(items, rest.as_deref(), value, bindings)
         }
@@ -589,13 +597,13 @@ fn collect_pattern_bindings(
 }
 
 fn collect_record_pattern_bindings(
-    owner: Option<&RuntimeCheckedType>,
+    nominal_layout: Option<&RuntimeNominalRecordLayout>,
     fields: &[RuntimeRecordPatternField],
     rest: bool,
     value: &RuntimeValue,
     bindings: &mut Vec<RuntimeBinding>,
 ) -> Result<bool, RuntimeEvalError> {
-    match (owner, value) {
+    match (nominal_layout, value) {
         (None, RuntimeValue::Record(values)) => {
             if !rest && fields.len() != values.len() {
                 return Ok(false);
@@ -612,16 +620,22 @@ fn collect_record_pattern_bindings(
             }
             Ok(true)
         }
-        (
-            Some(RuntimeCheckedType::Nominal { nominal, .. }),
-            RuntimeValue::NominalRecord(record),
-        ) if record.type_id() == nominal => {
+        (Some(layout), RuntimeValue::NominalRecord(record)) => {
+            if record.validate_against_layout(layout).is_err() {
+                return Ok(false);
+            }
             if (!rest && fields.len() != record.fields().len())
                 || fields.len() > record.fields().len()
             {
                 return Ok(false);
             }
-            for (field, value) in fields.iter().zip(record.fields()) {
+            for field in fields {
+                let Some((field_id, _)) = layout.field_by_name(&field.name) else {
+                    return Ok(false);
+                };
+                let Some(value) = record.field(field_id) else {
+                    return Ok(false);
+                };
                 if !collect_pattern_bindings(&field.pattern, value, bindings)? {
                     return Ok(false);
                 }
@@ -729,4 +743,80 @@ fn collect_pattern_list(
         }
     }
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::entry::TypeLayoutHash;
+    use crate::value::RuntimeNominalRecordValue;
+
+    fn nominal_layout() -> Arc<RuntimeNominalRecordLayout> {
+        Arc::new(
+            RuntimeNominalRecordLayout::try_from_checked_projection(
+                RuntimeNominalTypeId::try_new("game.Pair").unwrap(),
+                RuntimeSemanticTypeId::from_bytes([17; 32]),
+                TypeLayoutHash::from_bytes([19; 32]),
+                vec![
+                    ("alpha".to_owned(), RuntimeCheckedType::Bool),
+                    ("zeta".to_owned(), RuntimeCheckedType::String),
+                ],
+            )
+            .unwrap(),
+        )
+    }
+
+    #[test]
+    fn nominal_record_pattern_resolves_name_to_layout_field_id() {
+        let layout = nominal_layout();
+        let value = RuntimeValue::NominalRecord(
+            RuntimeNominalRecordValue::try_from_accepted_layout(
+                &layout,
+                vec![
+                    RuntimeValue::Bool(true),
+                    RuntimeValue::String("selected".to_owned()),
+                ],
+            )
+            .unwrap(),
+        );
+        let pattern = RuntimePattern::Record {
+            nominal_layout: Some(layout),
+            fields: vec![RuntimeRecordPatternField {
+                name: "zeta".to_owned(),
+                pattern: RuntimePattern::Ident("chosen".to_owned()),
+            }],
+            rest: true,
+        };
+
+        let bindings = match_runtime_pattern(&pattern, &value).unwrap().unwrap();
+        assert_eq!(bindings.len(), 1);
+        assert_eq!(bindings[0].name, "chosen");
+        assert_eq!(
+            bindings[0].value,
+            RuntimeValue::String("selected".to_owned())
+        );
+    }
+
+    #[test]
+    fn nominal_record_pattern_rejects_wrong_layout_before_child_binding() {
+        let layout = nominal_layout();
+        let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+            layout.nominal().clone(),
+            TypeLayoutHash::from_bytes([99; 32]),
+            vec![
+                RuntimeValue::Bool(true),
+                RuntimeValue::String("bad".to_owned()),
+            ],
+        ));
+        let pattern = RuntimePattern::Record {
+            nominal_layout: Some(layout),
+            fields: vec![RuntimeRecordPatternField {
+                name: "zeta".to_owned(),
+                pattern: RuntimePattern::Ident("chosen".to_owned()),
+            }],
+            rest: true,
+        };
+
+        assert!(match_runtime_pattern(&pattern, &value).unwrap().is_none());
+    }
 }

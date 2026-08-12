@@ -1077,6 +1077,7 @@ fn runtime_type_declaration(
             AwbcRuntimeType::Record { .. }
             | AwbcRuntimeType::Variant { .. }
             | AwbcRuntimeType::Nominal { .. }
+            | AwbcRuntimeType::NominalRecord { .. }
             | AwbcRuntimeType::Opaque { .. } => TypeCompatibilityLabel::RestartRequired,
             _ => TypeCompatibilityLabel::CodeCompatible,
         },
@@ -1095,7 +1096,8 @@ fn runtime_type_public_id(program: &AwbcProgram, ty: &AwbcRuntimeType) -> Option
             AwbcVariantIdentity::Option => Some("Option".to_owned()),
             AwbcVariantIdentity::Result => Some("Result".to_owned()),
         },
-        AwbcRuntimeType::Nominal { public_id, .. } => {
+        AwbcRuntimeType::Nominal { public_id, .. }
+        | AwbcRuntimeType::NominalRecord { public_id, .. } => {
             program.strings.get(public_id.index()).cloned()
         }
         _ => None,
@@ -1113,11 +1115,13 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeType::Duration => RuntimeValueKind::Duration,
         AwbcRuntimeType::EntityRef => RuntimeValueKind::EntityRef,
         AwbcRuntimeType::Tuple(_) => RuntimeValueKind::Tuple,
-        AwbcRuntimeType::Sequence(_) => RuntimeValueKind::Sequence,
+        AwbcRuntimeType::Sequence(_) | AwbcRuntimeType::Bytes => RuntimeValueKind::Sequence,
         AwbcRuntimeType::Record { .. } => RuntimeValueKind::Record,
         AwbcRuntimeType::Variant { .. } => RuntimeValueKind::Variant,
-        AwbcRuntimeType::Choice(_) => RuntimeValueKind::Choice,
-        AwbcRuntimeType::Nominal { .. } => RuntimeValueKind::Nominal,
+        AwbcRuntimeType::Choice(_) | AwbcRuntimeType::Never => RuntimeValueKind::Choice,
+        AwbcRuntimeType::Nominal { .. } | AwbcRuntimeType::NominalRecord { .. } => {
+            RuntimeValueKind::Nominal
+        }
         AwbcRuntimeType::Opaque { .. } => RuntimeValueKind::Opaque,
         AwbcRuntimeType::MatrixF32 | AwbcRuntimeType::MatrixF64 => RuntimeValueKind::Matrix,
         AwbcRuntimeType::TensorF32 | AwbcRuntimeType::TensorF64 => RuntimeValueKind::Tensor,

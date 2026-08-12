@@ -168,6 +168,40 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                     });
                 dst
             }
+            RuntimeExpr::NominalRecord(record) => {
+                let ty = crate::awbc_lower::pattern::intern_nominal_record_type(
+                    self.inventory,
+                    record.layout(),
+                );
+                let mut registers = vec![None; record.layout().len()];
+                for initializer in record.initializers() {
+                    let value = self.lower(initializer.value());
+                    registers[initializer.field().zero_based() as usize] = Some(value);
+                }
+                let registers = registers
+                    .into_iter()
+                    .map(|register| {
+                        register.expect(
+                            "checked nominal record expression must initialize every layout field",
+                        )
+                    })
+                    .collect();
+                let field_names = record
+                    .layout()
+                    .fields()
+                    .iter()
+                    .map(|field| self.inventory.intern_string(field.name()))
+                    .collect();
+                let dst = self.frame.temp(ty);
+                self.inventory
+                    .push_instruction(AwbcInstruction::MakeRecord {
+                        dst,
+                        ty,
+                        field_names,
+                        fields: registers,
+                    });
+                dst
+            }
             RuntimeExpr::Variant {
                 owner,
                 ordinal,
@@ -1072,6 +1106,11 @@ impl RuntimeExprFreeLocalCollector {
             RuntimeExpr::Record(fields) => {
                 for field in fields {
                     self.collect_expr(&field.value);
+                }
+            }
+            RuntimeExpr::NominalRecord(record) => {
+                for initializer in record.initializers() {
+                    self.collect_expr(initializer.value());
                 }
             }
             RuntimeExpr::Variant { payload, .. } => {

@@ -17,6 +17,7 @@ mod env;
 mod integer;
 mod nesting;
 mod nominal_record;
+mod nominal_record_expr;
 mod opaque;
 mod option_value;
 pub mod ownership;
@@ -30,6 +31,9 @@ pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
 pub use nominal_record::{
     RuntimeNominalRecordError, RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError,
     RuntimeNominalRecordLayoutField, RuntimeNominalRecordValue,
+};
+pub use nominal_record_expr::{
+    RuntimeNominalRecordExpr, RuntimeNominalRecordFieldExpr, RuntimeNominalRecordInitializerError,
 };
 pub use opaque::{RuntimeOpaqueValue, RuntimeOpaqueValueError};
 pub use option_value::{
@@ -887,6 +891,7 @@ pub enum RuntimeExpr {
         inclusive: bool,
     },
     Record(Vec<RuntimeFieldExpr>),
+    NominalRecord(RuntimeNominalRecordExpr),
     Variant {
         owner: RuntimeCheckedType,
         ordinal: u32,
@@ -980,6 +985,118 @@ pub enum RuntimeExpr {
 }
 
 impl RuntimeExpr {
+    /// Revalidates every checked nominal-record carrier reachable from this
+    /// expression after an interim plan has been deserialized.
+    #[allow(
+        clippy::too_many_lines,
+        reason = "carrier validation exhaustively traverses every recursive RuntimeExpr variant"
+    )]
+    pub fn validate_nominal_record_carriers(
+        &self,
+    ) -> Result<(), RuntimeNominalRecordInitializerError> {
+        match self {
+            Self::NominalRecord(record) => {
+                record.validate()?;
+                for initializer in record.initializers() {
+                    initializer.value().validate_nominal_record_carriers()?;
+                }
+            }
+            Self::Let { expr, body, .. } => {
+                expr.validate_nominal_record_carriers()?;
+                body.validate_nominal_record_carriers()?;
+            }
+            Self::Tuple(items) | Self::BracketSeq(items) => {
+                validate_nominal_record_exprs(items)?;
+            }
+            Self::RepeatSeq { value, .. }
+            | Self::Field { target: value, .. }
+            | Self::ProjectTuple { target: value, .. }
+            | Self::ProjectRecord { target: value, .. }
+            | Self::Function { body: value, .. }
+            | Self::SpreadArg(value)
+            | Self::Sum { source: value }
+            | Self::Unary { expr: value, .. } => value.validate_nominal_record_carriers()?,
+            Self::Range { start, end, .. } => {
+                if let Some(start) = start {
+                    start.validate_nominal_record_carriers()?;
+                }
+                if let Some(end) = end {
+                    end.validate_nominal_record_carriers()?;
+                }
+            }
+            Self::Record(fields) => {
+                for field in fields {
+                    field.value.validate_nominal_record_carriers()?;
+                }
+            }
+            Self::Variant { payload, .. } => {
+                if let Some(payload) = payload {
+                    payload.validate_nominal_record_carriers()?;
+                }
+            }
+            Self::AssignField {
+                target, expr, body, ..
+            } => {
+                target.validate_nominal_record_carriers()?;
+                expr.validate_nominal_record_carriers()?;
+                body.validate_nominal_record_carriers()?;
+            }
+            Self::Call { args, .. } | Self::PureCall { args, .. } => {
+                validate_nominal_record_exprs(args)?;
+            }
+            Self::Apply { callee, args } => {
+                callee.validate_nominal_record_carriers()?;
+                validate_nominal_record_exprs(args)?;
+            }
+            Self::TraitCall { receiver, args, .. } | Self::MethodCall { receiver, args, .. } => {
+                receiver.validate_nominal_record_carriers()?;
+                validate_nominal_record_exprs(args)?;
+            }
+            Self::Map { source, body, .. } | Self::Filter { source, body, .. } => {
+                source.validate_nominal_record_carriers()?;
+                body.validate_nominal_record_carriers()?;
+            }
+            Self::Binary { lhs, rhs, .. } => {
+                lhs.validate_nominal_record_carriers()?;
+                rhs.validate_nominal_record_carriers()?;
+            }
+            Self::If {
+                condition,
+                then_expr,
+                else_expr,
+            } => {
+                condition.validate_nominal_record_carriers()?;
+                then_expr.validate_nominal_record_carriers()?;
+                else_expr.validate_nominal_record_carriers()?;
+            }
+            Self::IfLet {
+                expr,
+                guard,
+                then_expr,
+                else_expr,
+                ..
+            } => {
+                expr.validate_nominal_record_carriers()?;
+                if let Some(guard) = guard {
+                    guard.validate_nominal_record_carriers()?;
+                }
+                then_expr.validate_nominal_record_carriers()?;
+                else_expr.validate_nominal_record_carriers()?;
+            }
+            Self::Match { scrutinee, arms } => {
+                scrutinee.validate_nominal_record_carriers()?;
+                for arm in arms {
+                    if let Some(guard) = &arm.guard {
+                        guard.validate_nominal_record_carriers()?;
+                    }
+                    arm.value.validate_nominal_record_carriers()?;
+                }
+            }
+            Self::Value(_) | Self::Local(_) | Self::EntityRef(_) => {}
+        }
+        Ok(())
+    }
+
     /// Returns whether this expression can use the allocation-light scalar pure evaluator.
     pub fn supports_scalar_pure_eval(&self) -> bool {
         match self {
@@ -1014,6 +1131,7 @@ impl RuntimeExpr {
             | Self::RepeatSeq { .. }
             | Self::Range { .. }
             | Self::Record(_)
+            | Self::NominalRecord(_)
             | Self::Variant { .. }
             | Self::Field { .. }
             | Self::ProjectTuple { .. }
@@ -1035,6 +1153,15 @@ impl RuntimeExpr {
     }
 }
 
+fn validate_nominal_record_exprs(
+    expressions: &[RuntimeExpr],
+) -> Result<(), RuntimeNominalRecordInitializerError> {
+    for expression in expressions {
+        expression.validate_nominal_record_carriers()?;
+    }
+    Ok(())
+}
+
 impl fmt::Display for RuntimeExpr {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -1051,6 +1178,12 @@ impl fmt::Display for RuntimeExpr {
                 "range"
             }),
             Self::Record(fields) => write!(f, "record/{}", fields.len()),
+            Self::NominalRecord(record) => write!(
+                f,
+                "nominal_record/{}/{}",
+                record.layout().nominal().as_str(),
+                record.initializers().len()
+            ),
             Self::Variant { name, .. } => write!(f, ".{name}"),
             Self::Field { field, .. } => write!(f, ".{field}"),
             Self::ProjectTuple { ordinal, .. } => write!(f, ".{ordinal}"),

@@ -90,7 +90,7 @@ impl<'hir> FinalPatternLowerer<'hir> {
                 .collect::<Result<Vec<_>, _>>()
                 .map(RuntimePattern::Tuple),
             HirPatternKind::Record { path, fields } => {
-                let owner = match path {
+                let nominal_layout = match path {
                     HirPatternRecordPath::Absent => None,
                     HirPatternRecordPath::Resolved(_) => Some(
                         self.facts
@@ -98,7 +98,8 @@ impl<'hir> FinalPatternLowerer<'hir> {
                             .ok_or_else(|| {
                                 format!("checked nominal fact is missing for pattern {id:?}")
                             })?
-                            .checked_type(),
+                            .layout()
+                            .clone(),
                     ),
                     HirPatternRecordPath::Recovered(_) => {
                         return Err(format!("record pattern {id:?} has a recovered path"));
@@ -134,7 +135,7 @@ impl<'hir> FinalPatternLowerer<'hir> {
                     }
                 }
                 Ok(RuntimePattern::Record {
-                    owner,
+                    nominal_layout,
                     fields: lowered,
                     rest,
                 })

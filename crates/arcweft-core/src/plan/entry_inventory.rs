@@ -282,6 +282,11 @@ pub enum RuntimePlanError {
     UnreachableFlowExecutable(String),
     #[error("entry `{entry}` route targets missing flow `{flow}`")]
     MissingRouteTarget { entry: String, flow: String },
+    #[error("runtime plan expression at {location} has an invalid nominal record: {source}")]
+    InvalidNominalRecordExpression {
+        location: String,
+        source: crate::value::RuntimeNominalRecordInitializerError,
+    },
 }
 
 impl RuntimePlan {
@@ -304,6 +309,7 @@ impl RuntimePlan {
 
     /// Verifies the complete executable entry inventory before selection.
     pub fn verify(&self) -> Result<(), RuntimePlanError> {
+        self.validate_nominal_record_carriers()?;
         let mut flow_ids = BTreeSet::new();
         for flow in &self.flows {
             if !flow_ids.insert(flow.id.clone()) {

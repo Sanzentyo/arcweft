@@ -21,9 +21,9 @@ use super::schema::{
 use crate::task::NeedId;
 use crate::time::LogicalDuration;
 use crate::value::{
-    RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeSeq, RuntimeValue,
-    evaluate_binary, evaluate_unary, runtime_sequence_from_literal_values,
-    runtime_sequence_repeat_value, runtime_value_label,
+    RuntimeBinding, RuntimeFunctionBody, RuntimeFunctionValue, RuntimeNominalRecordValue,
+    RuntimeSeq, RuntimeValue, evaluate_binary, evaluate_unary,
+    runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
 };
 use thiserror::Error;
 
@@ -506,23 +506,45 @@ fn execute_instruction(
         }
         AwbcInstruction::MakeRecord {
             dst,
+            ty,
             field_names,
             fields,
-            ..
         } => {
-            let fields = fields
-                .iter()
-                .zip(field_names)
-                .map(|(register_id, field_name)| {
-                    Ok(crate::value::RuntimeFieldValue {
-                        name: string(program, *field_name)?.to_owned(),
-                        value: register(fiber, *register_id)?.clone(),
-                    })
-                })
-                .collect::<Result<Vec<_>, VmError>>()?;
-            fiber
-                .active_frame_mut()?
-                .set_register(*dst, RuntimeValue::Record(fields))?;
+            let value = match program.runtime_types.get(ty.index()) {
+                Some(AwbcRuntimeType::NominalRecord { .. }) => {
+                    let layout = program
+                        .nominal_record_layout(*ty)
+                        .map_err(|error| VmError::Runtime(error.to_string()))?
+                        .expect("nominal-record AWBC row projects a nominal-record layout");
+                    let fields = fields
+                        .iter()
+                        .map(|register_id| register(fiber, *register_id).cloned())
+                        .collect::<Result<Vec<_>, _>>()?;
+                    RuntimeNominalRecordValue::try_from_accepted_layout(&layout, fields)
+                        .map(RuntimeValue::NominalRecord)
+                        .map_err(|error| VmError::Runtime(error.to_string()))?
+                }
+                Some(AwbcRuntimeType::Record { .. } | AwbcRuntimeType::Dynamic) => {
+                    let fields = fields
+                        .iter()
+                        .zip(field_names)
+                        .map(|(register_id, field_name)| {
+                            Ok(crate::value::RuntimeFieldValue {
+                                name: string(program, *field_name)?.to_owned(),
+                                value: register(fiber, *register_id)?.clone(),
+                            })
+                        })
+                        .collect::<Result<Vec<_>, VmError>>()?;
+                    RuntimeValue::Record(fields)
+                }
+                Some(_) => {
+                    return Err(VmError::Runtime(
+                        "record construction references a non-record type".to_owned(),
+                    ));
+                }
+                None => return Err(VmError::MissingType(*ty)),
+            };
+            fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
         AwbcInstruction::MakeVariant {
             dst,
@@ -1309,6 +1331,10 @@ fn terminal_exit(fiber: &FiberState) -> VmExit {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "constant materialization exhaustively mirrors the closed AWBC constant family"
+)]
 pub(crate) fn constant_value(
     program: &AwbcProgram,
     constant: AwbcConstantId,
@@ -1347,21 +1373,44 @@ pub(crate) fn constant_value(
                 .collect::<Result<Vec<_>, _>>()?,
         )),
         AwbcConstant::Record {
+            ty,
             field_names,
             fields,
-            ..
-        } => Ok(RuntimeValue::Record(
-            fields
+        } => {
+            let values = fields
                 .iter()
-                .zip(field_names)
-                .map(|(field, field_name)| {
-                    Ok(crate::value::RuntimeFieldValue {
-                        name: string(program, *field_name)?.to_owned(),
-                        value: constant_value(program, *field)?,
-                    })
-                })
-                .collect::<Result<Vec<_>, VmError>>()?,
-        )),
+                .map(|field| constant_value(program, *field))
+                .collect::<Result<Vec<_>, VmError>>()?;
+            match program.runtime_types.get(ty.index()) {
+                Some(AwbcRuntimeType::NominalRecord { .. }) => {
+                    let layout = program
+                        .nominal_record_layout(*ty)
+                        .map_err(|error| VmError::Runtime(error.to_string()))?
+                        .expect("nominal-record AWBC row projects a nominal-record layout");
+                    RuntimeNominalRecordValue::try_from_accepted_layout(&layout, values)
+                        .map(RuntimeValue::NominalRecord)
+                        .map_err(|error| VmError::Runtime(error.to_string()))
+                }
+                Some(AwbcRuntimeType::Record { .. } | AwbcRuntimeType::Dynamic) => {
+                    Ok(RuntimeValue::Record(
+                        values
+                            .into_iter()
+                            .zip(field_names)
+                            .map(|(value, field_name)| {
+                                Ok(crate::value::RuntimeFieldValue {
+                                    name: string(program, *field_name)?.to_owned(),
+                                    value,
+                                })
+                            })
+                            .collect::<Result<Vec<_>, VmError>>()?,
+                    ))
+                }
+                Some(_) => Err(VmError::Runtime(
+                    "record constant references a non-record type".to_owned(),
+                )),
+                None => Err(VmError::MissingType(*ty)),
+            }
+        }
         AwbcConstant::Variant {
             ty,
             case,

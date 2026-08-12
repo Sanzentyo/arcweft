@@ -744,4 +744,346 @@ impl RuntimePlan {
         FlowRuntimeId::resolve_runtime_target(value, self.flows.iter().map(|flow| &flow.id))
             .cloned()
     }
+
+    fn validate_nominal_record_carriers(&self) -> Result<(), RuntimePlanError> {
+        for (index, helper) in self.pure_helpers.iter().enumerate() {
+            validate_plan_expr(&helper.expr, format!("pure helper {index}"))?;
+        }
+        for (index, method) in self.trait_methods.iter().enumerate() {
+            validate_plan_expr(&method.body, format!("trait method {index}"))?;
+        }
+        for (index, flow) in self.flows.iter().enumerate() {
+            validate_flow_ops(&flow.ops, &format!("flow {index}"))?;
+        }
+        for (index, stream) in self.stream_plans.iter().enumerate() {
+            validate_stream_ops(&stream.ops, &format!("stream {index}"))?;
+        }
+        for (index, source) in self.source_plans.iter().enumerate() {
+            validate_plan_expr(&source.from, format!("source {index} input"))?;
+            for (handler, plan) in source.handlers.iter().enumerate() {
+                let ops = match plan {
+                    crate::source::SourceHandlerPlan::Item { ops, .. }
+                    | crate::source::SourceHandlerPlan::Error { ops, .. }
+                    | crate::source::SourceHandlerPlan::Progress { ops, .. }
+                    | crate::source::SourceHandlerPlan::Disconnected { ops }
+                    | crate::source::SourceHandlerPlan::PermissionRevoked { ops }
+                    | crate::source::SourceHandlerPlan::End { ops } => ops,
+                };
+                validate_source_ops(ops, &format!("source {index} handler {handler}"))?;
+            }
+        }
+        Ok(())
+    }
+}
+
+fn validate_plan_expr(expr: &RuntimeExpr, location: String) -> Result<(), RuntimePlanError> {
+    expr.validate_nominal_record_carriers()
+        .map_err(|source| RuntimePlanError::InvalidNominalRecordExpression { location, source })
+}
+
+#[allow(
+    clippy::too_many_lines,
+    reason = "plan ingress validation exhaustively visits every expression-bearing Flow operation"
+)]
+fn validate_flow_ops(ops: &[FlowOp], owner: &str) -> Result<(), RuntimePlanError> {
+    for (index, op) in ops.iter().enumerate() {
+        let at = format!("{owner} op {index}");
+        match op {
+            FlowOp::LetElse { expr, else_ops, .. } => {
+                validate_plan_expr(expr, format!("{at} expression"))?;
+                validate_flow_ops(else_ops, &format!("{at} else"))?;
+            }
+            FlowOp::Await {
+                target, pending, ..
+            } => {
+                validate_task_request(&target.request, &at)?;
+                validate_line_effects(pending, &at)?;
+            }
+            FlowOp::AwaitMany {
+                target, pending, ..
+            } => {
+                validate_plan_expr(&target.source, format!("{at} source"))?;
+                validate_task_request(&target.request, &at)?;
+                validate_line_effects(pending, &at)?;
+            }
+            FlowOp::HostCall { target, .. } => {
+                for (argument, expr) in target.args.iter().enumerate() {
+                    validate_plan_expr(expr, format!("{at} argument {argument}"))?;
+                }
+            }
+            FlowOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => {
+                validate_plan_expr(condition, format!("{at} condition"))?;
+                validate_flow_ops(then_ops, &format!("{at} then"))?;
+                validate_flow_ops(else_ops, &format!("{at} else"))?;
+            }
+            FlowOp::IfLet {
+                expr,
+                guard,
+                then_ops,
+                else_ops,
+                ..
+            } => {
+                validate_plan_expr(expr, format!("{at} expression"))?;
+                if let Some(guard) = guard {
+                    validate_plan_expr(guard, format!("{at} guard"))?;
+                }
+                validate_flow_ops(then_ops, &format!("{at} then"))?;
+                validate_flow_ops(else_ops, &format!("{at} else"))?;
+            }
+            FlowOp::Match { scrutinee, arms } => {
+                validate_plan_expr(scrutinee, format!("{at} scrutinee"))?;
+                for (arm_index, arm) in arms.iter().enumerate() {
+                    if let Some(guard) = &arm.guard {
+                        validate_plan_expr(guard, format!("{at} arm {arm_index} guard"))?;
+                    }
+                    validate_flow_ops(&arm.ops, &format!("{at} arm {arm_index}"))?;
+                }
+            }
+            FlowOp::Loop { body }
+            | FlowOp::LetLoop { body, .. }
+            | FlowOp::Thread { body, .. }
+            | FlowOp::Scope(body) => validate_flow_ops(body, &at)?,
+            FlowOp::LoopNext { body } | FlowOp::ForNext { body, .. } => {
+                validate_flow_ops(body, &at)?;
+            }
+            FlowOp::While { condition, body } => {
+                validate_plan_expr(condition, format!("{at} condition"))?;
+                validate_flow_ops(body, &at)?;
+            }
+            FlowOp::WhileNext {
+                condition, body, ..
+            } => {
+                validate_plan_expr(condition, format!("{at} condition"))?;
+                validate_flow_ops(body, &at)?;
+            }
+            FlowOp::WhileLet {
+                expr, guard, body, ..
+            } => {
+                validate_plan_expr(expr, format!("{at} expression"))?;
+                if let Some(guard) = guard {
+                    validate_plan_expr(guard, format!("{at} guard"))?;
+                }
+                validate_flow_ops(body, &at)?;
+            }
+            FlowOp::WhileLetNext {
+                expr, guard, body, ..
+            } => {
+                validate_plan_expr(expr, format!("{at} expression"))?;
+                if let Some(guard) = guard {
+                    validate_plan_expr(guard, format!("{at} guard"))?;
+                }
+                validate_flow_ops(body, &at)?;
+            }
+            FlowOp::For { source, body, .. } => {
+                validate_plan_expr(source, format!("{at} source"))?;
+                validate_flow_ops(body, &at)?;
+            }
+            FlowOp::LetScope { ops, value, .. } => {
+                validate_flow_ops(ops, &at)?;
+                validate_plan_expr(value, format!("{at} value"))?;
+            }
+            FlowOp::Break(expr) => {
+                if let Some(expr) = expr {
+                    validate_plan_expr(expr, at)?;
+                }
+            }
+            FlowOp::Let { expr, .. }
+            | FlowOp::GotoExpr(expr)
+            | FlowOp::ReturnExpr(expr)
+            | FlowOp::ExitScopeBind { expr, .. } => validate_plan_expr(expr, at)?,
+            FlowOp::EvaluatedEffect(effect) => {
+                for (argument, expr) in effect.argument_exprs().into_iter().enumerate() {
+                    validate_plan_expr(expr, format!("{at} argument {argument}"))?;
+                }
+            }
+            FlowOp::Effect(effect) | FlowOp::RegisterCleanup { effect, .. } => {
+                validate_line_effect(effect, &at)?;
+            }
+            FlowOp::Bind(_)
+            | FlowOp::Dialogue { .. }
+            | FlowOp::Choice { .. }
+            | FlowOp::Continue
+            | FlowOp::Goto(_)
+            | FlowOp::Return(_)
+            | FlowOp::CancelCleanup { .. }
+            | FlowOp::EnterScope
+            | FlowOp::ExitScope
+            | FlowOp::Noop => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_task_request(
+    request: &crate::task::HostTaskRequestTemplate,
+    owner: &str,
+) -> Result<(), RuntimePlanError> {
+    for (index, argument) in request.args.iter().enumerate() {
+        let expr = match argument {
+            crate::task::HostTaskArgTemplate::Positional(expr)
+            | crate::task::HostTaskArgTemplate::Spread(expr)
+            | crate::task::HostTaskArgTemplate::Named { value: expr, .. } => expr,
+        };
+        validate_plan_expr(expr, format!("{owner} task argument {index}"))?;
+    }
+    Ok(())
+}
+
+fn validate_stream_ops(
+    ops: &[crate::stream::StreamOp],
+    owner: &str,
+) -> Result<(), RuntimePlanError> {
+    for (index, op) in ops.iter().enumerate() {
+        let at = format!("{owner} op {index}");
+        match op {
+            crate::stream::StreamOp::Let { expr, .. }
+            | crate::stream::StreamOp::Yield { expr }
+            | crate::stream::StreamOp::Close { source: expr } => validate_plan_expr(expr, at)?,
+            crate::stream::StreamOp::ForNext { source, body, .. } => {
+                validate_plan_expr(source, format!("{at} source"))?;
+                validate_stream_ops(body, &at)?;
+            }
+            crate::stream::StreamOp::If {
+                condition,
+                then_ops,
+                else_ops,
+            } => {
+                validate_plan_expr(condition, format!("{at} condition"))?;
+                validate_stream_ops(then_ops, &format!("{at} then"))?;
+                validate_stream_ops(else_ops, &format!("{at} else"))?;
+            }
+            crate::stream::StreamOp::Match { scrutinee, arms } => {
+                validate_plan_expr(scrutinee, format!("{at} scrutinee"))?;
+                for (arm, branch) in arms.iter().enumerate() {
+                    if let Some(guard) = &branch.guard {
+                        validate_plan_expr(guard, format!("{at} arm {arm} guard"))?;
+                    }
+                    validate_stream_ops(&branch.ops, &format!("{at} arm {arm}"))?;
+                }
+            }
+            crate::stream::StreamOp::Return => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_source_ops(
+    ops: &[crate::source::SourceOp],
+    owner: &str,
+) -> Result<(), RuntimePlanError> {
+    for (index, op) in ops.iter().enumerate() {
+        let at = format!("{owner} op {index}");
+        match op {
+            crate::source::SourceOp::Yield(expr) => validate_plan_expr(expr, at)?,
+            crate::source::SourceOp::Effect(effect) => validate_line_effect(effect, &at)?,
+            crate::source::SourceOp::EvaluatedEffect(effect) => {
+                for (argument, expr) in effect.argument_exprs().into_iter().enumerate() {
+                    validate_plan_expr(expr, format!("{at} argument {argument}"))?;
+                }
+            }
+            crate::source::SourceOp::SignalWrite(_)
+            | crate::source::SourceOp::Log(_)
+            | crate::source::SourceOp::Close(_) => {}
+        }
+    }
+    Ok(())
+}
+
+fn validate_line_effects(
+    effects: &[LineEffectRequest],
+    owner: &str,
+) -> Result<(), RuntimePlanError> {
+    for (index, effect) in effects.iter().enumerate() {
+        validate_line_effect(effect, &format!("{owner} pending effect {index}"))?;
+    }
+    Ok(())
+}
+
+fn validate_line_effect(effect: &LineEffectRequest, owner: &str) -> Result<(), RuntimePlanError> {
+    if let LineEffectRequest::Audio(command) = effect {
+        validate_audio_command(command, owner)?;
+    }
+    Ok(())
+}
+
+fn validate_audio_command(
+    command: &crate::audio::RuntimeAudioCommand,
+    owner: &str,
+) -> Result<(), RuntimePlanError> {
+    use crate::audio::RuntimeAudioCommand;
+    let expressions: Vec<&RuntimeExpr> = match command {
+        RuntimeAudioCommand::Play {
+            voice,
+            resource,
+            bus,
+            gain_db_milli,
+            pan_milli,
+            start_frame,
+            fade_in_millis,
+            ..
+        } => vec![
+            voice,
+            resource,
+            bus,
+            gain_db_milli,
+            pan_milli,
+            start_frame,
+            fade_in_millis,
+        ],
+        RuntimeAudioCommand::Stop {
+            voice,
+            fade_out_millis,
+        } => vec![voice, fade_out_millis],
+        RuntimeAudioCommand::StopAll { fade_out_millis } => vec![fade_out_millis],
+        RuntimeAudioCommand::SetVoiceGain {
+            voice,
+            gain_db_milli,
+            transition_millis,
+        } => vec![voice, gain_db_milli, transition_millis],
+        RuntimeAudioCommand::SetVoicePan {
+            voice,
+            pan_milli,
+            transition_millis,
+        } => vec![voice, pan_milli, transition_millis],
+        RuntimeAudioCommand::SetBusGain {
+            bus,
+            gain_db_milli,
+            transition_millis,
+        } => vec![bus, gain_db_milli, transition_millis],
+        RuntimeAudioCommand::SetBusMute { bus, muted } => vec![bus, muted],
+        RuntimeAudioCommand::SetEffectEnabled {
+            bus,
+            effect,
+            enabled,
+        } => vec![bus, effect, enabled],
+        RuntimeAudioCommand::SetEffectParameter {
+            bus,
+            effect,
+            value,
+            transition_millis,
+            ..
+        } => vec![bus, effect, value, transition_millis],
+        RuntimeAudioCommand::ApplySnapshot {
+            snapshot,
+            transition_millis,
+        } => vec![snapshot, transition_millis],
+        RuntimeAudioCommand::RequestMicrophone { capture, .. }
+        | RuntimeAudioCommand::StopMicrophone { capture } => vec![capture],
+        RuntimeAudioCommand::SetCaptureMonitor {
+            capture,
+            bus,
+            gain_db_milli,
+        } => std::iter::once(capture)
+            .chain(bus.iter())
+            .chain(std::iter::once(gain_db_milli))
+            .collect(),
+    };
+    for (index, expr) in expressions.into_iter().enumerate() {
+        validate_plan_expr(expr, format!("{owner} audio argument {index}"))?;
+    }
+    Ok(())
 }

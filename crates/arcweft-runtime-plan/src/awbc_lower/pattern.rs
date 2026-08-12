@@ -2,12 +2,17 @@ use crate::awbc_lower::frame::FrameBuilder;
 use crate::awbc_lower::inventory::AwbcInventory;
 use crate::awbc_lower::table_index;
 use arcweft_core::awbc::schema::{
-    AwbcPattern, AwbcPatternId, AwbcRecordPatternField, AwbcRuntimeType, AwbcSignedIntKind,
-    AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
+    AwbcPattern, AwbcPatternId, AwbcRecordField, AwbcRecordPatternField, AwbcRuntimeType,
+    AwbcSignedIntKind, AwbcTypeId, AwbcUnsignedIntKind, AwbcVariantCase, AwbcVariantIdentity,
 };
 use arcweft_core::pattern::{RuntimeCheckedType, RuntimePattern, RuntimeRecordPatternField};
+use arcweft_core::value::RuntimeNominalRecordLayout;
 
 /// Lowers runtime patterns into executable AWBC pattern graph nodes.
+#[allow(
+    clippy::too_many_lines,
+    reason = "pattern lowering exhaustively mirrors the closed RuntimePattern family"
+)]
 pub(crate) fn lower_pattern(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,
@@ -50,18 +55,30 @@ pub(crate) fn lower_pattern(
             inventory.intern_pattern(AwbcPattern::Tuple(items))
         }
         RuntimePattern::Record {
-            owner,
+            nominal_layout,
             fields,
             rest,
         } => {
             let fields = fields
                 .iter()
                 .enumerate()
-                .map(|(index, field)| record_field(inventory, frame, index, field))
+                .map(|(index, field)| {
+                    let ordinal = nominal_layout.as_ref().map_or_else(
+                        || table_index(index),
+                        |layout| {
+                            layout
+                                .field_by_name(&field.name)
+                                .expect("checked nominal record pattern field must exist in layout")
+                                .0
+                                .zero_based()
+                        },
+                    );
+                    record_field(inventory, frame, ordinal, field)
+                })
                 .collect();
-            let ty = owner
-                .as_ref()
-                .map(|owner| intern_runtime_type(inventory, owner));
+            let ty = nominal_layout
+                .as_deref()
+                .map(|layout| intern_nominal_record_type(inventory, layout));
             inventory.intern_pattern(AwbcPattern::Record {
                 ty,
                 fields,
@@ -148,14 +165,35 @@ pub(crate) fn pattern_binding_names(pattern: &RuntimePattern) -> Vec<String> {
 fn record_field(
     inventory: &mut AwbcInventory,
     frame: &mut FrameBuilder,
-    index: usize,
+    ordinal: u32,
     field: &RuntimeRecordPatternField,
 ) -> AwbcRecordPatternField {
     let _ = inventory.intern_string(&field.name);
     AwbcRecordPatternField {
-        field: table_index(index),
+        field: ordinal,
         pattern: lower_pattern(inventory, frame, &field.pattern),
     }
+}
+
+pub(crate) fn intern_nominal_record_type(
+    inventory: &mut AwbcInventory,
+    layout: &RuntimeNominalRecordLayout,
+) -> AwbcTypeId {
+    let fields = layout
+        .fields()
+        .iter()
+        .map(|field| AwbcRecordField {
+            name: inventory.intern_string(field.name()),
+            ty: intern_runtime_type(inventory, field.checked_type()),
+        })
+        .collect();
+    let public_id = inventory.intern_string(layout.nominal().as_str());
+    inventory.intern_type(AwbcRuntimeType::NominalRecord {
+        public_id,
+        semantic_identity: *layout.semantic_identity().as_bytes(),
+        layout: *layout.layout().as_bytes(),
+        fields,
+    })
 }
 
 #[allow(
@@ -167,7 +205,7 @@ pub(crate) fn intern_runtime_type(
     ty: &RuntimeCheckedType,
 ) -> AwbcTypeId {
     let projected = match ty {
-        RuntimeCheckedType::Never => AwbcRuntimeType::Choice(Vec::new()),
+        RuntimeCheckedType::Never => AwbcRuntimeType::Never,
         RuntimeCheckedType::Unit => AwbcRuntimeType::Unit,
         RuntimeCheckedType::Bool => AwbcRuntimeType::Bool,
         RuntimeCheckedType::Signed(width) => AwbcRuntimeType::Int(match width {
@@ -192,10 +230,7 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::Char => AwbcRuntimeType::Char,
         RuntimeCheckedType::Duration => AwbcRuntimeType::Duration,
         RuntimeCheckedType::EntityReference => AwbcRuntimeType::EntityRef,
-        RuntimeCheckedType::Bytes => {
-            let item = inventory.intern_type(AwbcRuntimeType::UInt(AwbcUnsignedIntKind::U8));
-            AwbcRuntimeType::Sequence(item)
-        }
+        RuntimeCheckedType::Bytes => AwbcRuntimeType::Bytes,
         RuntimeCheckedType::Sequence(item) => {
             AwbcRuntimeType::Sequence(intern_runtime_type(inventory, item))
         }

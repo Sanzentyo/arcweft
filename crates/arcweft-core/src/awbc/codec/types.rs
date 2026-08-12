@@ -252,6 +252,20 @@ impl Wire for AwbcRuntimeType {
                 semantic_identity.write_wire(writer)?;
                 admission.write_wire(writer)?;
             }
+            Self::NominalRecord {
+                public_id,
+                semantic_identity,
+                layout,
+                fields,
+            } => {
+                writer.write_u8(24);
+                public_id.write_wire(writer)?;
+                semantic_identity.write_wire(writer)?;
+                layout.write_wire(writer)?;
+                fields.write_wire(writer)?;
+            }
+            Self::Bytes => writer.write_u8(25),
+            Self::Never => writer.write_u8(26),
         }
         Ok(())
     }
@@ -297,6 +311,14 @@ impl Wire for AwbcRuntimeType {
                 semantic_identity: <[u8; 32]>::read_wire(reader)?,
                 admission: RuntimeOpaqueTypeAdmission::read_wire(reader)?,
             },
+            24 => Self::NominalRecord {
+                public_id: AwbcStringId::read_wire(reader)?,
+                semantic_identity: <[u8; 32]>::read_wire(reader)?,
+                layout: <[u8; 32]>::read_wire(reader)?,
+                fields: Vec::<AwbcRecordField>::read_wire(reader)?,
+            },
+            25 => Self::Bytes,
+            26 => Self::Never,
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "runtime type",

@@ -1329,6 +1329,7 @@ impl PureEvaluator {
                 inclusive,
             } => self.evaluate_range_expr(start.as_deref(), end.as_deref(), *inclusive),
             RuntimeExpr::Record(fields) => self.evaluate_record_expr(fields),
+            RuntimeExpr::NominalRecord(record) => self.evaluate_nominal_record_expr(record),
             RuntimeExpr::Variant {
                 owner,
                 ordinal,
@@ -1409,6 +1410,42 @@ impl PureEvaluator {
             })
             .collect::<Result<Vec<_>, _>>()
             .map(RuntimeValue::Record)
+    }
+
+    fn evaluate_nominal_record_expr(
+        &mut self,
+        record: &crate::value::RuntimeNominalRecordExpr,
+    ) -> Result<RuntimeValue, RuntimeEvalError> {
+        record.validate().map_err(|error| {
+            RuntimeEvalError::PatternMismatch(format!("invalid nominal record expression: {error}"))
+        })?;
+        let mut fields = std::iter::repeat_with(|| None)
+            .take(record.layout().len())
+            .collect::<Vec<_>>();
+        for initializer in record.initializers() {
+            let value = self.evaluate_expr(initializer.value())?;
+            let ordinal = usize::try_from(initializer.field().zero_based()).map_err(|_| {
+                RuntimeEvalError::PatternMismatch(
+                    "nominal record field identity does not fit this target".to_owned(),
+                )
+            })?;
+            fields[ordinal] = Some(value);
+        }
+        let fields = fields
+            .into_iter()
+            .map(|field| {
+                field.ok_or_else(|| {
+                    RuntimeEvalError::PatternMismatch(
+                        "validated nominal record initializer is incomplete".to_owned(),
+                    )
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        crate::value::RuntimeNominalRecordValue::try_from_accepted_layout(record.layout(), fields)
+            .map(RuntimeValue::NominalRecord)
+            .map_err(|error| {
+                RuntimeEvalError::PatternMismatch(format!("invalid nominal record value: {error}"))
+            })
     }
 
     fn evaluate_variant_expr(

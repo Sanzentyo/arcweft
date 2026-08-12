@@ -201,9 +201,33 @@ pub enum RuntimeNominalRecordError {
     },
     #[error("nominal record has {actual} fields, expected {expected}")]
     FieldCount { expected: usize, actual: usize },
+    #[error("nominal record layout ordinal {ordinal} has invalid field identity")]
+    InvalidFieldIdentity {
+        ordinal: usize,
+        source: RuntimeRecordFieldIdError,
+    },
+    #[error("nominal record field {field:?} (`{name}`) does not satisfy {expected:?}")]
+    FieldType {
+        field: RuntimeRecordFieldId,
+        name: String,
+        expected: RuntimeCheckedType,
+    },
 }
 
 impl RuntimeNominalRecordValue {
+    /// Constructs a value from fields already arranged in defining-layout order.
+    pub(crate) fn try_from_accepted_layout(
+        layout: &RuntimeNominalRecordLayout,
+        fields_in_layout_order: Vec<RuntimeValue>,
+    ) -> Result<Self, RuntimeNominalRecordError> {
+        validate_layout_fields(layout, &fields_in_layout_order)?;
+        Ok(Self {
+            type_id: layout.nominal().clone(),
+            layout: layout.layout(),
+            fields: fields_in_layout_order,
+        })
+    }
+
     /// Constructs an already schema-ordered nominal record.
     #[must_use]
     pub const fn new(
@@ -242,6 +266,43 @@ impl RuntimeNominalRecordValue {
         self.fields
     }
 
+    /// Derives the accepted field identity for one stored ordinal.
+    #[must_use]
+    pub fn field_id(&self, zero_based_ordinal: usize) -> Option<RuntimeRecordFieldId> {
+        if zero_based_ordinal >= self.fields.len() {
+            return None;
+        }
+        RuntimeRecordFieldId::from_accepted_zero_based(zero_based_ordinal).ok()
+    }
+
+    /// Reads a stored field by its accepted one-based identity.
+    #[must_use]
+    pub fn field(&self, field: RuntimeRecordFieldId) -> Option<&RuntimeValue> {
+        usize::try_from(field.zero_based())
+            .ok()
+            .and_then(|ordinal| self.fields.get(ordinal))
+    }
+
+    /// Validates a restored or otherwise pre-existing value against one layout.
+    pub fn validate_against_layout(
+        &self,
+        layout: &RuntimeNominalRecordLayout,
+    ) -> Result<(), RuntimeNominalRecordError> {
+        if self.type_id() != layout.nominal() {
+            return Err(RuntimeNominalRecordError::Type {
+                expected: layout.nominal().clone(),
+                actual: self.type_id().clone(),
+            });
+        }
+        if self.layout() != layout.layout() {
+            return Err(RuntimeNominalRecordError::Layout {
+                expected: layout.layout(),
+                actual: self.layout(),
+            });
+        }
+        validate_layout_fields(layout, self.fields())
+    }
+
     /// Verifies identity, layout, and exact schema field count together.
     pub fn validate_shape(
         &self,
@@ -269,6 +330,31 @@ impl RuntimeNominalRecordValue {
         }
         Ok(())
     }
+}
+
+fn validate_layout_fields(
+    layout: &RuntimeNominalRecordLayout,
+    fields: &[RuntimeValue],
+) -> Result<(), RuntimeNominalRecordError> {
+    if fields.len() != layout.len() {
+        return Err(RuntimeNominalRecordError::FieldCount {
+            expected: layout.len(),
+            actual: fields.len(),
+        });
+    }
+    for (ordinal, (field_layout, value)) in layout.fields().iter().zip(fields).enumerate() {
+        let field = RuntimeRecordFieldId::from_accepted_zero_based(ordinal).map_err(|source| {
+            RuntimeNominalRecordError::InvalidFieldIdentity { ordinal, source }
+        })?;
+        if !field_layout.checked_type().accepts_value(value) {
+            return Err(RuntimeNominalRecordError::FieldType {
+                field,
+                name: field_layout.name().to_owned(),
+                expected: field_layout.checked_type().clone(),
+            });
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

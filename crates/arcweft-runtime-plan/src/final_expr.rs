@@ -2,7 +2,7 @@
 
 use arcweft_core::value::{
     RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeExprMatchArm, RuntimeFieldExpr,
-    RuntimeUnaryOp, RuntimeValue,
+    RuntimeNominalRecordExpr, RuntimeUnaryOp, RuntimeValue,
 };
 use arcweft_lang_hir::expr::{
     HirBinaryOp, HirCallArgument, HirExprKind, HirRecordField, HirUnaryOp,
@@ -145,7 +145,7 @@ impl<'hir> FinalExprLowerer<'hir> {
                 .lower_record_fields(id, record.fields())
                 .map(RuntimeExpr::Record),
             HirExprKind::Record(record) => {
-                let _ = self
+                let nominal = self
                     .facts
                     .nominal_record(id)
                     .ok_or_else(|| {
@@ -153,8 +153,14 @@ impl<'hir> FinalExprLowerer<'hir> {
                             "nominal record expression {id:?} requires a typed runtime nominal-expression owner"
                         )
                     })?;
-                self.lower_record_fields(id, record.fields())
-                    .map(RuntimeExpr::Record)
+                RuntimeNominalRecordExpr::try_from_checked_initializers(
+                    nominal.layout().clone(),
+                    self.lower_record_initializers(id, record.fields())?,
+                )
+                .map(RuntimeExpr::NominalRecord)
+                .map_err(|error| {
+                    format!("nominal record expression {id:?} failed runtime admission: {error}")
+                })
             }
             HirExprKind::Binary(binary) => {
                 let op = runtime_binary(binary.operator()).ok_or_else(|| {
@@ -590,6 +596,28 @@ impl<'hir> FinalExprLowerer<'hir> {
                     name: name.as_str().to_owned(),
                     value: RuntimeExpr::Local(self.local_name(*local)?),
                 }),
+                HirRecordField::Invalid { .. } => {
+                    Err(format!("record expression {owner:?} has an invalid field"))
+                }
+            })
+            .collect()
+    }
+
+    fn lower_record_initializers(
+        &self,
+        owner: ExprId,
+        fields: &[HirRecordField],
+    ) -> Result<Vec<(String, RuntimeExpr)>, String> {
+        fields
+            .iter()
+            .map(|field| match field {
+                HirRecordField::Explicit { name, value } => {
+                    Ok((name.as_str().to_owned(), self.lower(*value)?))
+                }
+                HirRecordField::Shorthand { name, local } => Ok((
+                    name.as_str().to_owned(),
+                    RuntimeExpr::Local(self.local_name(*local)?),
+                )),
                 HirRecordField::Invalid { .. } => {
                     Err(format!("record expression {owner:?} has an invalid field"))
                 }

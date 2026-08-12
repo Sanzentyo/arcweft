@@ -1693,6 +1693,10 @@ impl FiberFrame {
     }
 }
 
+#[allow(
+    clippy::too_many_lines,
+    reason = "runtime value admission exhaustively mirrors the closed AWBC runtime-type family"
+)]
 pub(crate) fn runtime_value_matches_type(
     program: &AwbcProgram,
     value: &RuntimeValue,
@@ -1723,6 +1727,11 @@ pub(crate) fn runtime_value_matches_type(
         | (RuntimeValue::MatrixF64(_), AwbcRuntimeType::MatrixF64)
         | (RuntimeValue::TensorF32(_), AwbcRuntimeType::TensorF32)
         | (RuntimeValue::TensorF64(_), AwbcRuntimeType::TensorF64) => true,
+        (RuntimeValue::Seq(values), AwbcRuntimeType::Bytes) => values
+            .clone()
+            .into_values()
+            .iter()
+            .all(|value| matches!(value, RuntimeValue::UInt(value) if value.width() == crate::value::RuntimeUnsignedIntWidth::U8)),
         (RuntimeValue::Int(value), AwbcRuntimeType::Int(kind)) => signed_kind(*value) == *kind,
         (RuntimeValue::UInt(value), AwbcRuntimeType::UInt(kind)) => unsigned_kind(*value) == *kind,
         (RuntimeValue::Opaque(value), AwbcRuntimeType::Opaque { .. }) => program
@@ -1795,6 +1804,14 @@ pub(crate) fn runtime_value_matches_type(
                 .is_some_and(|expected| record.type_id().as_str() == expected)
                 && record.layout().as_bytes() == layout
         }
+        (
+            RuntimeValue::NominalRecord(record),
+            AwbcRuntimeType::NominalRecord { .. },
+        ) => program
+            .nominal_record_layout(type_id)
+            .ok()
+            .flatten()
+            .is_some_and(|layout| record.validate_against_layout(&layout).is_ok()),
         _ => false,
     }
 }

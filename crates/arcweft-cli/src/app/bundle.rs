@@ -918,6 +918,7 @@ fn static_image_asset_ref_expr(expr: &RuntimeExpr) -> Option<String> {
         | RuntimeExpr::RepeatSeq { .. }
         | RuntimeExpr::Range { .. }
         | RuntimeExpr::Record(_)
+        | RuntimeExpr::NominalRecord(_)
         | RuntimeExpr::Variant { .. }
         | RuntimeExpr::Field { .. }
         | RuntimeExpr::ProjectTuple { .. }

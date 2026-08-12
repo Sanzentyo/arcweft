@@ -429,10 +429,16 @@ fn apply_instruction(
             let dst_ty = register_type(verifier, function, block, *dst)?;
             require_compatible(program, dst_ty, *ty, &at)?;
             match program.runtime_types.get(ty.index()) {
-                Some(AwbcRuntimeType::Record {
-                    fields: type_fields,
-                    ..
-                }) => {
+                Some(
+                    AwbcRuntimeType::Record {
+                        fields: type_fields,
+                        ..
+                    }
+                    | AwbcRuntimeType::NominalRecord {
+                        fields: type_fields,
+                        ..
+                    },
+                ) => {
                     if type_fields.len() != fields.len() {
                         return argument_count(&at, type_fields.len(), fields.len());
                     }
@@ -519,7 +525,10 @@ fn apply_instruction(
             let target_ty = read_register(verifier, function, block, *target, state)?;
             let dst_ty = register_type(verifier, function, block, *dst)?;
             match program.runtime_types.get(target_ty.index()) {
-                Some(AwbcRuntimeType::Record { fields, .. }) => {
+                Some(
+                    AwbcRuntimeType::Record { fields, .. }
+                    | AwbcRuntimeType::NominalRecord { fields, .. },
+                ) => {
                     let Some(field_layout) =
                         fields.iter().find(|candidate| candidate.name == *field)
                     else {
@@ -1530,10 +1539,16 @@ fn validate_pattern(
             }
             let record_ty = ty.unwrap_or(value_ty);
             match program.runtime_types.get(record_ty.index()) {
-                Some(AwbcRuntimeType::Record {
-                    fields: type_fields,
-                    ..
-                }) => {
+                Some(
+                    AwbcRuntimeType::Record {
+                        fields: type_fields,
+                        ..
+                    }
+                    | AwbcRuntimeType::NominalRecord {
+                        fields: type_fields,
+                        ..
+                    },
+                ) => {
                     for field in fields {
                         let Some(field_ty) = type_fields.get(field.field as usize) else {
                             return Err(AwbcVerifyError::IndexOutOfBounds {
@@ -1548,26 +1563,6 @@ fn validate_pattern(
                             block,
                             field.pattern,
                             field_ty.ty,
-                            mode,
-                            state,
-                            depth + 1,
-                        )?;
-                    }
-                }
-                Some(AwbcRuntimeType::Nominal { .. }) => {
-                    let field_ty =
-                        dynamic_type(program).ok_or_else(|| AwbcVerifyError::InvalidInvariant {
-                            at: "record pattern".to_owned(),
-                            message: "nominal record fields require the dynamic leaf type"
-                                .to_owned(),
-                        })?;
-                    for field in fields {
-                        validate_pattern(
-                            verifier,
-                            function,
-                            block,
-                            field.pattern,
-                            field_ty,
                             mode,
                             state,
                             depth + 1,
@@ -1867,7 +1862,7 @@ fn constant_matches_type(
         | (AwbcConstant::Char(_), AwbcRuntimeType::Char)
         | (AwbcConstant::DurationNanos(_), AwbcRuntimeType::Duration)
         | (AwbcConstant::EntityRef(_), AwbcRuntimeType::EntityRef)
-        | (AwbcConstant::Bytes(_), AwbcRuntimeType::Sequence(_))
+        | (AwbcConstant::Bytes(_), AwbcRuntimeType::Bytes)
         | (AwbcConstant::TensorF32 { .. }, AwbcRuntimeType::MatrixF32)
         | (AwbcConstant::TensorF32 { .. }, AwbcRuntimeType::TensorF32)
         | (AwbcConstant::TensorF64 { .. }, AwbcRuntimeType::MatrixF64)
@@ -1891,7 +1886,10 @@ fn constant_matches_type(
                     .is_some_and(|value| constant_matches_type(program, value, *item_ty, depth + 1))
             })
         }
-        (AwbcConstant::Record { ty: actual, .. }, AwbcRuntimeType::Record { .. }) => actual == &ty,
+        (
+            AwbcConstant::Record { ty: actual, .. },
+            AwbcRuntimeType::Record { .. } | AwbcRuntimeType::NominalRecord { .. },
+        ) => actual == &ty,
         (AwbcConstant::Variant { ty: actual, .. }, AwbcRuntimeType::Variant { .. }) => {
             actual == &ty
         }

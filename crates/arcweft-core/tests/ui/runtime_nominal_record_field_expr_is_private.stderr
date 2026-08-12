@@ -1,0 +1,11 @@
+error[E0451]: fields `field`, `name` and `value` of struct `RuntimeNominalRecordFieldExpr` are private
+ --> tests/ui/runtime_nominal_record_field_expr_is_private.rs:7:9
+  |
+6 |     let _ = RuntimeNominalRecordFieldExpr {
+  |             ----------------------------- in this type
+7 |         field: todo!(),
+  |         ^^^^^ private field
+8 |         name: "field".to_owned(),
+  |         ^^^^ private field
+9 |         value: RuntimeExpr::Value(RuntimeValue::Unit),
+  |         ^^^^^ private field
