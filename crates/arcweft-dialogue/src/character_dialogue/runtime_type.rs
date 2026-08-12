@@ -1,4 +1,15 @@
+//! Canonical semantic and opaque runtime owner for `CharacterDialogue`.
+
 use arcweft_character::id::CharacterId;
+use arcweft_core::pattern::{
+    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+    RuntimeSemanticTypeIdentityEncoder,
+};
+
+pub(super) fn character_dialogue_opaque_type_producer() -> RuntimeOpaqueTypeProducerId {
+    RuntimeOpaqueTypeProducerId::try_new("std.character_dialogue")
+        .expect("the canonical CharacterDialogue producer is valid")
+}
 
 /// Character identity precision retained by a checked `CharacterDialogue` value.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -77,13 +88,53 @@ impl CharacterDialogueType {
             CharacterDialogueCharacterType::Any => "CharacterDialogue".to_owned(),
         }
     }
+
+    /// Appends the canonical `CharacterDialogue` fragment to a semantic identity.
+    pub fn encode_runtime_semantic_identity(
+        &self,
+        encoder: &mut RuntimeSemanticTypeIdentityEncoder,
+    ) {
+        encoder.write_tag(69);
+        match self.character() {
+            CharacterDialogueCharacterType::Exact(character) => {
+                encoder.write_u8(0);
+                encoder.write_str(character.as_str());
+            }
+            CharacterDialogueCharacterType::Any => encoder.write_u8(1),
+        }
+    }
+
+    /// Complete semantic identity for this `CharacterDialogue` type.
+    #[must_use]
+    pub fn runtime_semantic_identity(&self) -> RuntimeSemanticTypeId {
+        let mut encoder = RuntimeSemanticTypeIdentityEncoder::new();
+        self.encode_runtime_semantic_identity(&mut encoder);
+        encoder.finish()
+    }
+
+    /// Canonical exact or producer-wide opaque runtime owner.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the compile-time canonical producer literal violates the
+    /// core producer identity grammar.
+    #[must_use]
+    pub fn runtime_opaque_owner(&self) -> RuntimeOpaqueTypeOwner {
+        let producer = character_dialogue_opaque_type_producer();
+        match self.character() {
+            CharacterDialogueCharacterType::Exact(_) => {
+                RuntimeOpaqueTypeOwner::exact(producer, self.runtime_semantic_identity())
+            }
+            CharacterDialogueCharacterType::Any => {
+                RuntimeOpaqueTypeOwner::producer_wide(producer, self.runtime_semantic_identity())
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use arcweft_character::id::CharacterId;
-
-    use super::{CharacterDialogueCharacterType, CharacterDialogueType};
+    use super::*;
 
     fn character(value: &str) -> CharacterId {
         CharacterId::try_new(value).expect("Character ID")
@@ -110,6 +161,24 @@ mod tests {
         assert_eq!(
             CharacterDialogueCharacterType::join(alice, &bob),
             CharacterDialogueCharacterType::Any
+        );
+    }
+
+    #[test]
+    fn exact_and_any_owners_use_one_canonical_producer() {
+        let exact = CharacterDialogueType::exact(character("character.alice"));
+        let any = CharacterDialogueType::any();
+        assert_eq!(
+            exact.runtime_opaque_owner().producer().as_str(),
+            "std.character_dialogue"
+        );
+        assert_eq!(
+            any.runtime_opaque_owner().producer().as_str(),
+            "std.character_dialogue"
+        );
+        assert_ne!(
+            exact.runtime_semantic_identity(),
+            any.runtime_semantic_identity()
         );
     }
 }

@@ -425,22 +425,28 @@ impl<'a> EntryContractBuilder<'a> {
                 ));
             }
             TypeKind::AcceptedNominal(nominal) => {
-                let constructor =
-                    crate::types::direct_type_name(nominal.declaration().canonical_path())
-                        .and_then(canonical_constructor)
-                        .ok_or_else(|| {
-                            format!(
-                                "accepted nominal `{}` has no entry contract constructor",
-                                nominal.declaration().canonical_path()
-                            )
-                        })?;
-                CanonicalType::Applied {
-                    constructor,
-                    args: nominal
-                        .arguments()
-                        .iter()
-                        .map(|argument| self.canonical_type_kind(argument))
-                        .collect::<Result<Vec<_>, _>>()?,
+                let name = crate::types::direct_type_name(nominal.declaration().canonical_path())
+                    .ok_or_else(|| {
+                    format!(
+                        "accepted nominal `{}` has no direct entry contract identity",
+                        nominal.declaration().canonical_path()
+                    )
+                })?;
+                if nominal.arguments().is_empty() {
+                    CanonicalType::Atomic(canonical_atomic(name).ok_or_else(|| {
+                        format!("accepted nominal `{name}` has no entry contract atom")
+                    })?)
+                } else {
+                    CanonicalType::Applied {
+                        constructor: canonical_constructor(name).ok_or_else(|| {
+                            format!("accepted nominal `{name}` has no entry contract constructor")
+                        })?,
+                        args: nominal
+                            .arguments()
+                            .iter()
+                            .map(|argument| self.canonical_type_kind(argument))
+                            .collect::<Result<Vec<_>, _>>()?,
+                    }
                 }
             }
             TypeKind::Vec(inner) => {

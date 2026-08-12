@@ -608,13 +608,19 @@ impl Resolver<'_, '_> {
             .into_iter()
             .map(|(owner, value)| self.require_type(context, owner, value))
             .collect::<Vec<_>>();
-        let nominal = AcceptedNominalType::new(record.id().clone(), checked);
         let ty = record
-            .try_instantiate(nominal.arguments().to_vec())
+            .try_instantiate(checked)
             .expect("accepted catalog records retain valid semantics and checked arity");
+        let outcome = match &ty {
+            TypeKind::AcceptedNominal(nominal) => TypeNameResolution::Accepted(nominal.clone()),
+            _ => TypeNameResolution::AcceptedExact {
+                accepted: record.id().clone(),
+                ty: ty.clone(),
+            },
+        };
         NameResult {
             value: NodeValue::typed(ty, child_causes),
-            outcome: TypeNameResolution::Accepted(nominal),
+            outcome,
         }
     }
 
@@ -707,8 +713,7 @@ impl Resolver<'_, '_> {
                 },
             )
         } else {
-            let accepted = AcceptedNominalType::new(record.id().clone(), checked);
-            Self::external_nominal_product(&record, site.external, accepted)
+            Self::external_nominal_product(&record, site.external, checked)
         };
         Ok(NameResult {
             value: NodeValue::typed(ty, child_causes),
@@ -807,19 +812,24 @@ impl Resolver<'_, '_> {
     fn external_nominal_product(
         record: &AcceptedNominalRecord,
         external: &ExternalSymbol,
-        accepted: AcceptedNominalType,
+        arguments: Vec<TypeKind>,
     ) -> (TypeKind, ExternalNominalResolution) {
         let instantiated = record
-            .try_instantiate(accepted.arguments().to_vec())
+            .try_instantiate(arguments)
             .expect("accepted catalog records retain valid semantics and checked arity");
         match record.semantics() {
-            AcceptedNominalSemantics::Opaque => (
-                instantiated,
-                ExternalNominalResolution::Accepted {
-                    external: external.declaration(),
-                    nominal: accepted,
-                },
-            ),
+            AcceptedNominalSemantics::Opaque { .. } => {
+                let TypeKind::AcceptedNominal(accepted) = &instantiated else {
+                    unreachable!("opaque accepted records instantiate as accepted nominals")
+                };
+                (
+                    instantiated.clone(),
+                    ExternalNominalResolution::Accepted {
+                        external: external.declaration(),
+                        nominal: accepted.clone(),
+                    },
+                )
+            }
             AcceptedNominalSemantics::Exact(_) => (
                 instantiated.clone(),
                 ExternalNominalResolution::Exact {

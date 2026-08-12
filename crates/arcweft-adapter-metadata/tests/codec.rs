@@ -12,15 +12,15 @@ fn canonical_rust_fixture_matches_all_published_hashes() {
     let metadata = sourced.metadata();
     assert_eq!(
         metadata.abi_hash.to_string(),
-        "blake3:3dcd9ee62412b77d378faa808f5975e87e16c692b40bd2fc1f5093b9f3c6fac2"
+        "blake3:69ecedf29d819880d3a5fcb1058fbecadc3a9581fac68c8e574c1e96e103055a"
     );
     assert_eq!(
         metadata.payload_hash.to_string(),
-        "blake3:9e816b9128414a1c9acc72e405076da5e8f0c9a129a6778a2f98b469e0961b47"
+        "blake3:46b5fbf8dc329eed43cd08e00de6e2e376a55d5df562f5fd6d4005d25e091b93"
     );
     assert_eq!(
         RawDigest::for_bytes(RUST_METADATA.as_bytes()).to_string(),
-        "blake3:07f76b02974f97d7ce43bf62835f0f94f4b61802d7361b1633a92d52dfb68612"
+        "blake3:083fdc0211e9f2497b85ec91c2362239e328455c7d3b33da04d33ce7ac582c2d"
     );
 }
 
@@ -28,8 +28,8 @@ fn canonical_rust_fixture_matches_all_published_hashes() {
 fn wasm_and_process_use_the_same_neutral_envelope_and_hash_rules() {
     let wasm = RUST_METADATA
         .replace(
-            "blake3:3dcd9ee62412b77d378faa808f5975e87e16c692b40bd2fc1f5093b9f3c6fac2",
-            "blake3:5de2833365190622f084db5ed5ed3324159b338dfa080047f902f845b92bad03",
+            "blake3:69ecedf29d819880d3a5fcb1058fbecadc3a9581fac68c8e574c1e96e103055a",
+            "blake3:c865c37a460777e93d83e84e67576d4c4a810469d09b765480af7332fa72a87e",
         )
         .replace(
             "blake3:be46e89f4e355d945dcef1765b077c4054aafbe857e3b1a4142b7287663ee61a",
@@ -39,8 +39,8 @@ fn wasm_and_process_use_the_same_neutral_envelope_and_hash_rules() {
         .replace("\"size\": 41", "\"size\": 51")
         .replace("arcweft-rust-metadata", "arcweft-wasm-metadata")
         .replace(
-            "blake3:9e816b9128414a1c9acc72e405076da5e8f0c9a129a6778a2f98b469e0961b47",
-            "blake3:f93ca0b35f71adcf9753d9029b289d303bc8e07312a31c59553b92d825ee022a",
+            "blake3:46b5fbf8dc329eed43cd08e00de6e2e376a55d5df562f5fd6d4005d25e091b93",
+            "blake3:a3461ff5b04b828dd6b7954d1922f82d699713a2ccbc90d3b906fe7387fef4e5",
         )
         .replace(
             "\"abi\": \"arcweft-rust-v1\",\n    \"family\": \"rust\",\n    \"target_triple\": \"x86_64-unknown-linux-gnu\"",
@@ -50,8 +50,8 @@ fn wasm_and_process_use_the_same_neutral_envelope_and_hash_rules() {
 
     let process = RUST_METADATA
         .replace(
-            "blake3:3dcd9ee62412b77d378faa808f5975e87e16c692b40bd2fc1f5093b9f3c6fac2",
-            "blake3:859b1ed7b20c780a6636ff13eac422e98f955c8d75b387e170ce98032b4c5043",
+            "blake3:69ecedf29d819880d3a5fcb1058fbecadc3a9581fac68c8e574c1e96e103055a",
+            "blake3:054e328a6ae88cafdcb7d650f7d4a504d47e888dd532f1108ec1d70d5f53513d",
         )
         .replace(
             "blake3:be46e89f4e355d945dcef1765b077c4054aafbe857e3b1a4142b7287663ee61a",
@@ -61,8 +61,8 @@ fn wasm_and_process_use_the_same_neutral_envelope_and_hash_rules() {
         .replace("\"size\": 41", "\"size\": 53")
         .replace("arcweft-rust-metadata", "arcweft-process-metadata")
         .replace(
-            "blake3:9e816b9128414a1c9acc72e405076da5e8f0c9a129a6778a2f98b469e0961b47",
-            "blake3:7b44a1d1653ee3938ca60d51bef80c15c98f8ae85e5a9d9aee7d89fef19def78",
+            "blake3:46b5fbf8dc329eed43cd08e00de6e2e376a55d5df562f5fd6d4005d25e091b93",
+            "blake3:c15164edaed6af67647dd384ad26141b2e2453811cfc37e1669745de360c6356",
         )
         .replace(
             "\"abi\": \"arcweft-rust-v1\",\n    \"family\": \"rust\",\n    \"target_triple\": \"x86_64-unknown-linux-gnu\"",
@@ -162,7 +162,7 @@ fn payload_and_abi_tampering_are_distinguished() {
 fn duplicate_exports_and_requirements_are_rejected_before_hash_verification() {
     let duplicate_export = RUST_METADATA.replacen(
         "\"types\": [",
-        "\"types\": [{\"name\":\"TruckResult\",\"visibility\":\"public\",\"shape\":{\"kind\":\"opaque\"}},",
+        "\"types\": [{\"name\":\"TruckResult\",\"visibility\":\"public\",\"opaque_producer\":\"fixture.project.external-types\",\"shape\":{\"kind\":\"opaque\"}},",
         1,
     );
     assert!(matches!(

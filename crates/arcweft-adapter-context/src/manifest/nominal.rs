@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::fmt;
 
+use arcweft_manifest_model::AdapterOpaqueTypeProducerId;
 use arcweft_rust_abi::{ArcweftRustPackageId, ArcweftRustTypePath, ArcweftRustTypePathSegment};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -68,6 +69,7 @@ pub enum AdapterNominalVisibility {
 pub struct AdapterNominalDeclaration {
     path: AdapterNominalPath,
     arity: u16,
+    opaque_producer: AdapterOpaqueTypeProducerId,
     visibility: AdapterNominalVisibility,
     source_label: String,
 }
@@ -250,6 +252,7 @@ impl AdapterNominalDeclaration {
     pub fn try_new(
         path: AdapterNominalPath,
         arity: u16,
+        opaque_producer: AdapterOpaqueTypeProducerId,
         visibility: AdapterNominalVisibility,
         source_label: impl Into<String>,
     ) -> Result<Self, AdapterTypeModelError> {
@@ -272,6 +275,7 @@ impl AdapterNominalDeclaration {
         Ok(Self {
             path,
             arity,
+            opaque_producer,
             visibility,
             source_label,
         })
@@ -283,6 +287,10 @@ impl AdapterNominalDeclaration {
 
     pub const fn arity(&self) -> u16 {
         self.arity
+    }
+
+    pub const fn opaque_producer(&self) -> &AdapterOpaqueTypeProducerId {
+        &self.opaque_producer
     }
 
     pub const fn visibility(&self) -> AdapterNominalVisibility {

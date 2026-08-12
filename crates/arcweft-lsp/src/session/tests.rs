@@ -6,7 +6,8 @@ use arcweft_adapter_metadata::{
     AdapterTypeField, AdapterTypeShape, FunctionPurity,
 };
 use arcweft_manifest_model::{
-    AdapterTypeName, FieldName, FunctionName, ManifestVisibility, RawDigest, TypeReference,
+    AdapterOpaqueTypeProducerId, AdapterTypeName, FieldName, FunctionName, ManifestVisibility,
+    RawDigest, TypeReference,
 };
 use lsp_server::{Connection, Message};
 use lsp_types::{
@@ -1688,6 +1689,8 @@ fn quest_adapter_metadata() -> String {
     metadata.exports.types = vec![AdapterTypeExport {
         name: AdapterTypeName::new("PlayerStats").expect("type name"),
         visibility: ManifestVisibility::Public,
+        opaque_producer: AdapterOpaqueTypeProducerId::try_new("fixture.project.external-types")
+            .expect("opaque type producer"),
         shape: AdapterTypeShape::Record {
             fields: vec![
                 AdapterTypeField {

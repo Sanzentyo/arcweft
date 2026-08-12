@@ -2422,6 +2422,7 @@ fn typed_runtime_patterns_match_result_option_choice_and_nominal_shapes() {
     let agent_error = RuntimeCheckedType::Nominal {
         nominal: RuntimeNominalTypeId::try_new("AgentError").expect("nominal identity"),
         semantic_identity: RuntimeSemanticTypeId::from_bytes([7; 32]),
+        layout: TypeLayoutHash::from_bytes([10; 32]),
     };
     let result = RuntimePattern::Typed {
         name: "result".to_owned(),
@@ -2504,6 +2505,7 @@ fn typed_runtime_patterns_match_result_option_choice_and_nominal_shapes() {
         ty: RuntimeCheckedType::Nominal {
             nominal: nominal_id.clone(),
             semantic_identity: RuntimeSemanticTypeId::from_bytes([9; 32]),
+            layout: TypeLayoutHash::from_bytes([11; 32]),
         },
     };
     let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(

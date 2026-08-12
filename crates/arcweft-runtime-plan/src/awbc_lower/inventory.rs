@@ -400,6 +400,10 @@ impl AwbcInventory {
         id
     }
 
+    #[allow(
+        clippy::too_many_lines,
+        reason = "one exhaustive conversion owns the complete runtime-value constant vocabulary"
+    )]
     fn runtime_value_constant(&mut self, value: &RuntimeValue) -> AwbcConstant {
         match value {
             RuntimeValue::Unit => AwbcConstant::Unit,
@@ -443,6 +447,10 @@ impl AwbcInventory {
                     record.type_id().as_str()
                 )
             }
+            RuntimeValue::Opaque(value) => panic!(
+                "opaque runtime value from producer `{}` requires a checked opaque AWBC constant row",
+                value.producer().as_str()
+            ),
             RuntimeValue::Variant {
                 owner,
                 ordinal,

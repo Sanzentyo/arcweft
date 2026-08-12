@@ -557,6 +557,7 @@ fn display_runtime_value(value: &RuntimeValue) -> String {
         RuntimeValue::NominalRecord(record) => {
             format!("<{}>", record.type_id().as_str())
         }
+        RuntimeValue::Opaque(value) => format!("<opaque:{}>", value.producer().as_str()),
         RuntimeValue::Function(function) => format!("<function/{}>", function.arity()),
         RuntimeValue::Variant { name, .. } => format!(".{name}"),
     }

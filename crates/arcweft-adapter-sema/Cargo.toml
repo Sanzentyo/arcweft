@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 arcweft-adapter-context = { workspace = true }
+arcweft-core = { workspace = true }
 arcweft-lang-hir = { workspace = true }
 arcweft-lang-sema = { workspace = true }
 arcweft-lang-syntax = { workspace = true }

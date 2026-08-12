@@ -20,8 +20,10 @@ pub use cache_batch::{InMemoryProjectCompileCache, NoProjectCompileCache, Projec
 pub use dialogue_profile::{
     CheckedDialogueProfile, DialogueProfileAdmissionError, DialogueProfileOwner,
 };
-pub(crate) use entry_runtime::EntryRuntimeProjection;
 use entry_runtime::runtime_entry_lowering_input;
+pub(crate) use entry_runtime::{
+    EntryRuntimeProjection, EntryRuntimeProjectionError, RuntimeSchemaProjection,
+};
 pub use registration::{
     AcceptedLaunchProfileInput, ProjectCompilationContext, ProjectEntrySelection,
     ProjectEntrySelectionKind,
@@ -1318,7 +1320,7 @@ fn build_unit_fingerprints(
     for &unit_id in project.graph().compile_order() {
         let unit = project.graph().compile_unit(unit_id);
         let mut hasher = blake3::Hasher::new();
-        hasher.update(b"arcweft-project-compile-unit-v2\0");
+        hasher.update(b"arcweft-project-compile-unit-v1\0");
         hasher.update(project.package().id.as_str().as_bytes());
         for module in unit.modules() {
             hasher.update(module.to_string().as_bytes());

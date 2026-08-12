@@ -1,9 +1,9 @@
 use super::*;
 use arcweft_rust_abi::{
-    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId,
-    ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl, ArcweftRustTypeKind,
-    ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustTypeRef, ArcweftRustVariant,
-    ArcweftRustVariantPayload,
+    ArcweftRustFunction, ArcweftRustManifest, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage,
+    ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustTypeDecl,
+    ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustTypeRef,
+    ArcweftRustVariant, ArcweftRustVariantPayload,
 };
 
 #[test]
@@ -84,6 +84,8 @@ fn rank_rust_manifest() -> ArcweftRustManifest {
     .with_type(ArcweftRustTypeDecl {
         path: rust_type_path("Rank"),
         rust_path: "truck_game::Rank".to_owned(),
+        opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new("fixture.adapter-context.rank")
+            .expect("valid producer"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: vec![

@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+use arcweft_core::pattern::{
+    RuntimeCheckedType, RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeProducerId,
+};
 use arcweft_core::plan::{FlowRuntimeId, RuntimeLineId};
 use arcweft_core::value::RuntimeValue;
 use arcweft_lang_hir::database::HirDatabase;
@@ -15,10 +18,12 @@ use arcweft_source::identity::SourceSnapshotId;
 use arcweft_source::{SourceDocument, SourceDocumentId, SourceName};
 
 use super::{
-    RuntimeCallResultShape, RuntimePlanSemanticFactInput, RuntimePlanSemanticFacts,
-    RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
-    RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedValue,
-    RuntimeSemanticFactFamily, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
+    RuntimeCallResultShape, RuntimeCheckedTypeProjectionError, RuntimePlanSemanticFactInput,
+    RuntimePlanSemanticFacts, RuntimeReductionConstructor, RuntimeRegisteredValueId,
+    RuntimeResolvedCall, RuntimeResolvedCallArgument, RuntimeResolvedCallTarget,
+    RuntimeResolvedValue, RuntimeResolvedVariant, RuntimeSemanticFactFamily,
+    RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeTypeProjectionStep, RuntimeTypeShape,
+    RuntimeUnsupportedTypeShape,
 };
 
 fn project_fixture(label: &str, source: &str) -> HirProject {
@@ -329,4 +334,87 @@ fn reduction_constructor_fact_requires_one_authored_value_argument() {
             RuntimeSemanticFactsError::InvalidReductionConstructorCall,
         );
     }
+}
+
+#[test]
+fn opaque_composite_projection_preserves_complete_owner_and_first_error_path() {
+    let producer = RuntimeOpaqueTypeProducerId::try_new("fixture.runtime-plan.opaque")
+        .expect("valid fixture producer");
+    let opaque = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([1; 32]),
+        RuntimeTypeShape::Opaque {
+            producer: producer.clone(),
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        },
+    );
+    let closed = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([2; 32]),
+        RuntimeTypeShape::Result {
+            value: Box::new(opaque.clone()),
+            error: Box::new(opaque),
+        },
+    );
+    assert!(matches!(
+        closed.checked_type().expect("complete opaque Result owner"),
+        RuntimeCheckedType::Result { ok, error }
+            if matches!(*ok, RuntimeCheckedType::Opaque { .. })
+                && matches!(*error, RuntimeCheckedType::Opaque { .. })
+    ));
+
+    let unsupported = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([3; 32]),
+        RuntimeTypeShape::Result {
+            value: Box::new(super::RuntimeNormalizedType::new(
+                RuntimeSemanticTypeId::from_bytes([4; 32]),
+                RuntimeTypeShape::Range(Box::new(super::RuntimeNormalizedType::new(
+                    RuntimeSemanticTypeId::from_bytes([5; 32]),
+                    RuntimeTypeShape::Unit,
+                ))),
+            )),
+            error: Box::new(super::RuntimeNormalizedType::new(
+                RuntimeSemanticTypeId::from_bytes([6; 32]),
+                RuntimeTypeShape::Function {
+                    parameters: Box::new([]),
+                    result: Box::new(super::RuntimeNormalizedType::new(
+                        RuntimeSemanticTypeId::from_bytes([7; 32]),
+                        RuntimeTypeShape::Unit,
+                    )),
+                },
+            )),
+        },
+    );
+    assert_eq!(
+        unsupported.checked_type(),
+        Err(RuntimeCheckedTypeProjectionError::UnsupportedRuntimeShape {
+            semantic_identity: RuntimeSemanticTypeId::from_bytes([4; 32]),
+            path: super::RuntimeTypeProjectionPath::root()
+                .pushed(RuntimeTypeProjectionStep::ResultOk),
+            shape: RuntimeUnsupportedTypeShape::Range,
+        })
+    );
+}
+
+#[test]
+fn checked_variant_selection_retains_both_result_branches() {
+    let ok = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([8; 32]),
+        RuntimeTypeShape::Unit,
+    );
+    let error = super::RuntimeNormalizedType::new(
+        RuntimeSemanticTypeId::from_bytes([9; 32]),
+        RuntimeTypeShape::String,
+    );
+    let selection = RuntimeResolvedVariant::result_ok(ok, error)
+        .checked_selection()
+        .expect("complete Result selection");
+    assert_eq!(selection.ordinal(), 0);
+    assert_eq!(selection.name(), "Ok");
+    assert_eq!(selection.payload(), Some(&RuntimeCheckedType::Unit));
+    assert_eq!(
+        selection.owner(),
+        &RuntimeCheckedType::Result {
+            ok: Box::new(RuntimeCheckedType::Unit),
+            error: Box::new(RuntimeCheckedType::String),
+        }
+    );
 }

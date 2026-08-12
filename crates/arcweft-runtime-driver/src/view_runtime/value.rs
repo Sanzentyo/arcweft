@@ -201,6 +201,7 @@ pub(super) fn runtime_scalar_text(value: &RuntimeValue) -> Option<String> {
         | RuntimeValue::Seq(_)
         | RuntimeValue::Record(_)
         | RuntimeValue::NominalRecord(_)
+        | RuntimeValue::Opaque(_)
         | RuntimeValue::Function(_)
         | RuntimeValue::Variant { .. } => None,
     }
@@ -427,6 +428,7 @@ fn runtime_type_name(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Seq(_) => "sequence",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal record",
+        RuntimeValue::Opaque(_) => "opaque",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }

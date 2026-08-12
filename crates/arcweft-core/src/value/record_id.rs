@@ -18,10 +18,6 @@ pub enum RuntimeRecordFieldIdError {
 }
 
 impl RuntimeRecordFieldId {
-    #[allow(
-        dead_code,
-        reason = "record admission is blocked on the returned contract's missing schema owner"
-    )]
     pub(crate) fn from_accepted_zero_based(
         ordinal: usize,
     ) -> Result<Self, RuntimeRecordFieldIdError> {

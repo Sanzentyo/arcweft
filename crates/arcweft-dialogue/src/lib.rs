@@ -9,13 +9,14 @@ mod presentation_revision;
 pub mod rich_text;
 
 pub use character_dialogue::{
-    CharacterDialogue, CharacterDialogueCleanupValue, CharacterDialogueConfig,
-    CharacterDialogueContentApplication, CharacterDialogueContractIdentity,
-    CharacterDialogueCustomFieldId, CharacterDialogueCustomValue, CharacterDialogueFocusValue,
-    CharacterDialogueHookValue, CharacterDialogueLimits, CharacterDialoguePatch,
-    CharacterDialoguePortraitValue, CharacterDialogueRichTextValue,
-    CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
-    CharacterDialogueRuntimeSchema, CharacterDialogueStageValue, CharacterDialogueStyleValue,
+    CharacterDialogue, CharacterDialogueCharacterType, CharacterDialogueCleanupValue,
+    CharacterDialogueConfig, CharacterDialogueContentApplication,
+    CharacterDialogueContractIdentity, CharacterDialogueCustomFieldId,
+    CharacterDialogueCustomValue, CharacterDialogueFocusValue, CharacterDialogueHookValue,
+    CharacterDialogueLimits, CharacterDialoguePatch, CharacterDialoguePortraitValue,
+    CharacterDialogueRichTextValue, CharacterDialogueRuntimeCustomFieldCatalog,
+    CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeSchema,
+    CharacterDialogueStageValue, CharacterDialogueStyleValue, CharacterDialogueType,
     CharacterDialogueTypedValue, CharacterDialogueValue, CharacterDialogueValueError,
     CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueLocaleId,
     PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath, StructuredPatch,

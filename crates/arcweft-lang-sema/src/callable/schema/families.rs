@@ -4,6 +4,7 @@ use crate::{
     callable::CharacterDialoguePatchContext,
     effect_row::EffectRow,
     effects::EffectSet,
+    env::nominal::standard_agent_error_type,
     types::{CharacterDialogueCharacterType, CharacterDialogueType, EntityKind, MapKind, TypeKind},
 };
 use arcweft_character::id::CharacterId;
@@ -1113,7 +1114,7 @@ fn probe_schema(kind: EntityKind, validator: CallableValidator) -> CallableSigna
 fn agent_result(ok: TypeKind) -> TypeKind {
     TypeKind::Result {
         ok: Box::new(ok),
-        error: Box::new(named("AgentError")),
+        error: Box::new(standard_agent_error_type()),
     }
 }
 

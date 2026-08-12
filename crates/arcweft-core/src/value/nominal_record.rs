@@ -1,9 +1,179 @@
 //! Nominal runtime record identity and ordered field storage.
 
 use crate::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+use crate::pattern::{RuntimeCheckedType, RuntimeSemanticTypeId};
 use crate::value::RuntimeValue;
+use crate::value::{RuntimeRecordFieldId, RuntimeRecordFieldIdError};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeSet;
 use thiserror::Error;
+
+/// Immutable executable field layout for one checked nominal record.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeNominalRecordLayout {
+    nominal: RuntimeNominalTypeId,
+    semantic_identity: RuntimeSemanticTypeId,
+    layout: TypeLayoutHash,
+    fields: Box<[RuntimeNominalRecordLayoutField]>,
+}
+
+/// One defining-order field in an executable nominal record layout.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct RuntimeNominalRecordLayoutField {
+    name: String,
+    checked_type: RuntimeCheckedType,
+}
+
+/// Failure to admit an executable nominal record layout.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeNominalRecordLayoutError {
+    #[error(
+        "nominal record layout has {actual} fields, exceeding the {maximum}-field identity space"
+    )]
+    TooManyFields { actual: usize, maximum: u32 },
+    #[error("nominal record layout contains duplicate field `{name}`")]
+    DuplicateFieldName { name: String },
+    #[error("nominal record layout field {ordinal} (`{name}`) has invalid identity")]
+    InvalidFieldIdentity {
+        ordinal: usize,
+        name: String,
+        source: RuntimeRecordFieldIdError,
+    },
+}
+
+impl RuntimeNominalRecordLayout {
+    /// Admits one complete checked defining-order field projection.
+    pub fn try_from_checked_projection(
+        nominal: RuntimeNominalTypeId,
+        semantic_identity: RuntimeSemanticTypeId,
+        layout: TypeLayoutHash,
+        fields_in_layout_order: Vec<(String, RuntimeCheckedType)>,
+    ) -> Result<Self, RuntimeNominalRecordLayoutError> {
+        if fields_in_layout_order.len() > u32::MAX as usize {
+            return Err(RuntimeNominalRecordLayoutError::TooManyFields {
+                actual: fields_in_layout_order.len(),
+                maximum: u32::MAX,
+            });
+        }
+
+        let mut names = BTreeSet::new();
+        for (name, _) in &fields_in_layout_order {
+            if !names.insert(name.as_str()) {
+                return Err(RuntimeNominalRecordLayoutError::DuplicateFieldName {
+                    name: name.clone(),
+                });
+            }
+        }
+
+        for (ordinal, (name, _)) in fields_in_layout_order.iter().enumerate() {
+            RuntimeRecordFieldId::from_accepted_zero_based(ordinal).map_err(|source| {
+                RuntimeNominalRecordLayoutError::InvalidFieldIdentity {
+                    ordinal,
+                    name: name.clone(),
+                    source,
+                }
+            })?;
+        }
+
+        Ok(Self {
+            nominal,
+            semantic_identity,
+            layout,
+            fields: fields_in_layout_order
+                .into_iter()
+                .map(|(name, checked_type)| RuntimeNominalRecordLayoutField { name, checked_type })
+                .collect(),
+        })
+    }
+
+    /// Canonical runtime nominal identity.
+    #[must_use]
+    pub const fn nominal(&self) -> &RuntimeNominalTypeId {
+        &self.nominal
+    }
+
+    /// Checked semantic projection identity.
+    #[must_use]
+    pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        self.semantic_identity
+    }
+
+    /// Exact transitive runtime layout identity.
+    #[must_use]
+    pub const fn layout(&self) -> TypeLayoutHash {
+        self.layout
+    }
+
+    /// Fields in defining layout order.
+    #[must_use]
+    pub fn fields(&self) -> &[RuntimeNominalRecordLayoutField] {
+        &self.fields
+    }
+
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    /// Derives the accepted field identity for one defining-order ordinal.
+    #[must_use]
+    pub fn field_id(&self, zero_based_ordinal: usize) -> Option<RuntimeRecordFieldId> {
+        if zero_based_ordinal >= self.fields.len() {
+            return None;
+        }
+        RuntimeRecordFieldId::from_accepted_zero_based(zero_based_ordinal).ok()
+    }
+
+    #[must_use]
+    pub fn field_by_id(
+        &self,
+        field: RuntimeRecordFieldId,
+    ) -> Option<&RuntimeNominalRecordLayoutField> {
+        usize::try_from(field.zero_based())
+            .ok()
+            .and_then(|ordinal| self.fields.get(ordinal))
+    }
+
+    #[must_use]
+    pub fn field_by_name(
+        &self,
+        name: &str,
+    ) -> Option<(RuntimeRecordFieldId, &RuntimeNominalRecordLayoutField)> {
+        let (ordinal, field) = self
+            .fields
+            .iter()
+            .enumerate()
+            .find(|(_, field)| field.name == name)?;
+        self.field_id(ordinal).map(|identity| (identity, field))
+    }
+
+    /// Closed checked predicate corresponding to this descriptor.
+    #[must_use]
+    pub fn checked_type(&self) -> RuntimeCheckedType {
+        RuntimeCheckedType::Nominal {
+            nominal: self.nominal.clone(),
+            semantic_identity: self.semantic_identity,
+            layout: self.layout,
+        }
+    }
+}
+
+impl RuntimeNominalRecordLayoutField {
+    #[must_use]
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    #[must_use]
+    pub const fn checked_type(&self) -> &RuntimeCheckedType {
+        &self.checked_type
+    }
+}
 
 /// Runtime value for one nominal record with schema-ordinal fields.
 ///
@@ -98,5 +268,89 @@ impl RuntimeNominalRecordValue {
             });
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    fn layout(fields: Vec<(String, RuntimeCheckedType)>) -> RuntimeNominalRecordLayout {
+        RuntimeNominalRecordLayout::try_from_checked_projection(
+            RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
+            RuntimeSemanticTypeId::from_bytes([3; 32]),
+            TypeLayoutHash::from_bytes([5; 32]),
+            fields,
+        )
+        .expect("accepted layout")
+    }
+
+    #[test]
+    fn nominal_layout_preserves_defining_order_and_derives_field_ids() {
+        let layout = layout(vec![
+            ("alpha".to_owned(), RuntimeCheckedType::Bool),
+            ("zeta".to_owned(), RuntimeCheckedType::String),
+        ]);
+
+        assert_eq!(layout.fields()[0].name(), "alpha");
+        assert_eq!(layout.fields()[1].name(), "zeta");
+        assert_eq!(layout.field_id(0).map(|field| field.get().get()), Some(1));
+        assert_eq!(layout.field_id(1).map(|field| field.get().get()), Some(2));
+        assert_eq!(
+            layout
+                .field_by_name("zeta")
+                .map(|(identity, _)| identity.get().get()),
+            Some(2)
+        );
+        assert!(layout.field_id(2).is_none());
+    }
+
+    #[test]
+    fn nominal_layout_is_structurally_equal_across_distinct_allocations() {
+        let first = Arc::new(layout(vec![("value".to_owned(), RuntimeCheckedType::Bool)]));
+        let second = Arc::new(layout(vec![("value".to_owned(), RuntimeCheckedType::Bool)]));
+
+        assert_eq!(first, second);
+        assert!(!Arc::ptr_eq(&first, &second));
+    }
+
+    #[test]
+    fn nominal_layout_rejects_first_duplicate_name() {
+        let error = RuntimeNominalRecordLayout::try_from_checked_projection(
+            RuntimeNominalTypeId::try_new("game.State").expect("nominal identity"),
+            RuntimeSemanticTypeId::from_bytes([3; 32]),
+            TypeLayoutHash::from_bytes([5; 32]),
+            vec![
+                ("value".to_owned(), RuntimeCheckedType::Bool),
+                ("value".to_owned(), RuntimeCheckedType::String),
+            ],
+        )
+        .expect_err("duplicate field names reject");
+
+        assert_eq!(
+            error,
+            RuntimeNominalRecordLayoutError::DuplicateFieldName {
+                name: "value".to_owned()
+            }
+        );
+    }
+
+    #[test]
+    fn nominal_checked_type_requires_exact_layout_hash() {
+        let layout = layout(Vec::new());
+        let value = RuntimeValue::NominalRecord(RuntimeNominalRecordValue::new(
+            layout.nominal().clone(),
+            layout.layout(),
+            Vec::new(),
+        ));
+        assert!(layout.checked_type().accepts_value(&value));
+
+        let wrong = RuntimeCheckedType::Nominal {
+            nominal: layout.nominal().clone(),
+            semantic_identity: layout.semantic_identity(),
+            layout: TypeLayoutHash::from_bytes([9; 32]),
+        };
+        assert!(!wrong.accepts_value(&value));
     }
 }

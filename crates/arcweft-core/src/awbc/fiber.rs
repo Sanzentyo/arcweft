@@ -1079,6 +1079,9 @@ fn validate_nested_runtime_value(
             .fields()
             .iter()
             .try_for_each(|field| validate_nested_runtime_value(program, field, depth + 1)),
+        RuntimeValue::Opaque(value) => {
+            validate_nested_runtime_value(program, value.payload(), depth + 1)
+        }
         RuntimeValue::Iterator(RuntimeIterator::Values { items, .. }) => items
             .iter()
             .try_for_each(|item| validate_nested_runtime_value(program, item, depth + 1)),
@@ -1774,11 +1777,17 @@ pub(crate) fn runtime_value_matches_type(
         (value, AwbcRuntimeType::Choice(alternatives)) => alternatives
             .iter()
             .any(|alternative| runtime_value_matches_type(program, value, *alternative, depth + 1)),
-        (RuntimeValue::NominalRecord(record), AwbcRuntimeType::Nominal { public_id, .. }) => {
+        (
+            RuntimeValue::NominalRecord(record),
+            AwbcRuntimeType::Nominal {
+                public_id, layout, ..
+            },
+        ) => {
             program
                 .strings
                 .get(public_id.index())
                 .is_some_and(|expected| record.type_id().as_str() == expected)
+                && record.layout().as_bytes() == layout
         }
         _ => false,
     }
@@ -1853,6 +1862,7 @@ fn runtime_value_type_label(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(_) => "sequence",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(record) => record.type_id().as_str(),
+        RuntimeValue::Opaque(_) => "opaque value",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }

@@ -168,6 +168,7 @@ fn nominal_variant_type(owner: &str, case: &str, payload: &str) -> RuntimeChecke
             payload: Some(Box::new(RuntimeCheckedType::Nominal {
                 nominal: RuntimeNominalTypeId::try_new(payload).expect("nominal payload owner"),
                 semantic_identity: RuntimeSemanticTypeId::from_bytes([0x53; 32]),
+                layout: TypeLayoutHash::from_bytes([0x54; 32]),
             })),
         }],
     }

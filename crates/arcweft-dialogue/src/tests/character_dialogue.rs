@@ -4,9 +4,9 @@ use crate::{
     CharacterDialogueCustomValue, CharacterDialogueHookValue, CharacterDialoguePatch,
     CharacterDialogueRichTextValue, CharacterDialogueRuntimeCustomFieldCatalog,
     CharacterDialogueRuntimeCustomFieldDescriptor, CharacterDialogueRuntimeSchema,
-    CharacterDialogueStyleValue, CharacterDialogueTypedValue, CharacterDialogueValueError,
-    CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueContent, DialogueLocaleId,
-    FallbackStylePolicy, InlineFailurePolicy, InlineFallback, LinePlan,
+    CharacterDialogueStyleValue, CharacterDialogueType, CharacterDialogueTypedValue,
+    CharacterDialogueValueError, CharacterDialogueVoice, CharacterDialogueVoiceId, DialogueContent,
+    DialogueLocaleId, FallbackStylePolicy, InlineFailurePolicy, InlineFallback, LinePlan,
     PRODUCTION_CHARACTER_DIALOGUE_LIMITS, PatchField, RuntimeFieldPath, StructuredPatch,
 };
 use arcweft_character::{
@@ -19,7 +19,10 @@ use arcweft_character::{
 };
 use arcweft_core::{
     entry::{RuntimeNominalTypeId, RuntimeValueDigest, TypeLayoutHash},
-    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
+    pattern::{
+        RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+        RuntimeVariantIdentity,
+    },
     plan::RuntimeLineId,
     value::{
         MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeFieldValue, RuntimeNominalRecordError,
@@ -389,6 +392,60 @@ fn runtime_schema_round_trips_exact_nominal_record() {
         "std.character_dialogue"
     );
     assert_eq!(encoded.record().fields().len(), 18);
+}
+
+#[test]
+fn runtime_schema_round_trips_exact_opaque_owner_and_rejects_false_evidence() {
+    let (dialogue, characters, views, custom) = fixture();
+    let schema =
+        CharacterDialogueRuntimeSchema::new(&characters, &views, &custom, dialogue.layout());
+    let exact = CharacterDialogueType::exact(dialogue.character().clone()).runtime_opaque_owner();
+    let encoded = schema.encode(&dialogue).expect("encode");
+    let RuntimeValue::Opaque(opaque) = encoded
+        .try_into_runtime_value(&exact)
+        .expect("exact owner wraps")
+    else {
+        panic!("CharacterDialogue uses its opaque carrier");
+    };
+    assert_eq!(
+        schema
+            .try_decode_opaque(&opaque)
+            .expect("opaque decode")
+            .dialogue(),
+        &dialogue
+    );
+
+    let foreign = RuntimeOpaqueTypeOwner::exact(
+        RuntimeOpaqueTypeProducerId::try_new("std.foreign_dialogue").expect("producer"),
+        exact.semantic_identity(),
+    );
+    assert!(matches!(
+        schema
+            .encode(&dialogue)
+            .expect("encode")
+            .try_into_runtime_value(&foreign),
+        Err(CharacterDialogueValueError::OpaqueProducer { .. })
+    ));
+
+    let wrong_identity = CharacterDialogueType::exact(
+        CharacterId::try_new("character.other").expect("other character"),
+    )
+    .runtime_opaque_owner();
+    assert!(matches!(
+        schema
+            .encode(&dialogue)
+            .expect("encode")
+            .try_into_runtime_value(&wrong_identity),
+        Err(CharacterDialogueValueError::OpaqueSemanticIdentity { .. })
+    ));
+
+    assert!(matches!(
+        schema
+            .encode(&dialogue)
+            .expect("encode")
+            .try_into_runtime_value(&CharacterDialogueType::any().runtime_opaque_owner()),
+        Err(CharacterDialogueValueError::OpaqueValue(_))
+    ));
 }
 
 #[test]

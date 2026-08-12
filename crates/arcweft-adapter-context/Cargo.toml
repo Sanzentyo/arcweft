@@ -7,6 +7,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+arcweft-manifest-model.workspace = true
 arcweft-rust-abi = { workspace = true }
 blake3.workspace = true
 serde = { workspace = true, features = ["derive"] }

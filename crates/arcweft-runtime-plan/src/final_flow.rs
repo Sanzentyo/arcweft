@@ -265,7 +265,7 @@ pub fn lower_runtime_plan_with_stats(
 ) -> Result<RuntimePlanLowerReport, Vec<RuntimePlanLowerError>> {
     facts
         .validate_generation(project)
-        .map_err(|error| vec![semantic_fact_error(error)])?;
+        .map_err(|error| vec![semantic_fact_error(&error)])?;
     if !entry_input.validate_generation(project) {
         return Err(vec![RuntimePlanLowerError::new(
             "checked runtime Entry input belongs to a different accepted HIR generation",
@@ -1072,7 +1072,7 @@ const fn runtime_output_type(shape: &RuntimeTypeShape) -> RuntimePureOutputType 
     }
 }
 
-fn semantic_fact_error(error: RuntimeSemanticFactsError) -> RuntimePlanLowerError {
+fn semantic_fact_error(error: &RuntimeSemanticFactsError) -> RuntimePlanLowerError {
     RuntimePlanLowerError::new(format!(
         "runtime semantic facts do not match the accepted HIR generation: {error}"
     ))

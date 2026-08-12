@@ -995,10 +995,10 @@ fn accepted_external_environment(
     let mut inaccessible = BTreeMap::new();
     for input in facts.environment_inputs() {
         for nominal in input.input().nominal_inventory() {
-            environment.try_insert_nominal_record(AcceptedNominalRecord::try_new(
+            environment.try_insert_nominal_record(AcceptedNominalRecord::try_new_opaque(
                 nominal.id().clone(),
                 nominal.arity(),
-                AcceptedNominalSemantics::Opaque,
+                nominal.runtime_producer().clone(),
                 nominal.origin(),
                 Some(nominal.source().clone()),
             )?)?;

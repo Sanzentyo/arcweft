@@ -214,10 +214,16 @@ pub(crate) fn intern_runtime_type(
         RuntimeCheckedType::Nominal {
             nominal,
             semantic_identity,
+            layout,
         } => AwbcRuntimeType::Nominal {
             public_id: inventory.intern_string(nominal.as_str()),
             semantic_identity: *semantic_identity.as_bytes(),
+            layout: *layout.as_bytes(),
         },
+        RuntimeCheckedType::Opaque { owner } => panic!(
+            "opaque checked type from producer `{}` requires AWBC codec 1",
+            owner.producer().as_str()
+        ),
         RuntimeCheckedType::Variant {
             nominal,
             semantic_identity,

@@ -1032,6 +1032,9 @@ fn validate_replay_safe_value(
             }
             Ok(())
         }
+        RuntimeValue::Opaque(value) => {
+            validate_replay_safe_value(value.payload(), limits, depth + 1, nodes)
+        }
         RuntimeValue::Variant { payload, .. } => {
             if let Some(payload) = payload {
                 validate_replay_safe_value(payload, limits, depth + 1, nodes)?;

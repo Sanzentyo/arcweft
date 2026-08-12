@@ -3,10 +3,7 @@
 use arcweft_lang_syntax::ast::module_path::ModulePathRoot;
 use arcweft_source::SourceSpan;
 
-use crate::{
-    callable::{EnvironmentCallableOwner, ProjectCallablePath, StandardEnvironmentId},
-    types::{AcceptedNominalType, TypeKind},
-};
+use crate::callable::{EnvironmentCallableOwner, ProjectCallablePath, StandardEnvironmentId};
 
 use super::{
     AcceptedNominalSource, AcceptedNominalVisibilityIndex, AcceptedNominalWorld,
@@ -134,11 +131,7 @@ impl Encoder {
     }
 
     fn accepted_nominal_id(&mut self, id: &crate::env::nominal::AcceptedNominalId) {
-        let digest = TypeKind::AcceptedNominal(AcceptedNominalType::new(
-            id.clone(),
-            Box::<[TypeKind]>::default(),
-        ))
-        .semantic_identity_digest();
+        let digest = crate::types::accepted_nominal_semantic_identity_digest(id, &[]);
         self.bytes(digest.as_bytes());
     }
 

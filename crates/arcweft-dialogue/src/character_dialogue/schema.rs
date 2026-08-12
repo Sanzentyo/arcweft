@@ -18,8 +18,14 @@ use arcweft_core::{
         RuntimeBytesFormat, RuntimeNominalTypeId, RuntimeSchemaField, RuntimeTypeSchema,
         RuntimeValueDigest, TypeLayoutHash,
     },
-    pattern::{RuntimeSemanticTypeId, RuntimeVariantIdentity},
-    value::{RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue, runtime_sequence_dense_bytes},
+    pattern::{
+        RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId,
+        RuntimeVariantIdentity,
+    },
+    value::{
+        RuntimeNominalRecordValue, RuntimeOpaqueValue, RuntimeSeq, RuntimeValue,
+        runtime_sequence_dense_bytes,
+    },
 };
 use arcweft_view::{ViewId, ViewRegistry};
 use std::collections::{BTreeMap, BTreeSet};
@@ -198,6 +204,17 @@ impl CharacterDialogueRuntimeCustomFieldCatalog {
 }
 
 impl<'a> CharacterDialogueRuntimeSchema<'a> {
+    /// Canonical producer of all exact and producer-wide `CharacterDialogue` types.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the compile-time canonical producer literal violates the
+    /// core producer identity grammar.
+    #[must_use]
+    pub fn opaque_type_producer() -> RuntimeOpaqueTypeProducerId {
+        super::runtime_type::character_dialogue_opaque_type_producer()
+    }
+
     /// Returns the sole runtime nominal identity for encoded
     /// [`CharacterDialogue`](super::CharacterDialogue) values.
     #[must_use]
@@ -245,6 +262,33 @@ impl<'a> CharacterDialogueRuntimeSchema<'a> {
             record: canonical,
             dialogue,
         })
+    }
+
+    /// Validates and decodes one exact opaque `CharacterDialogue` value.
+    pub fn try_decode_opaque(
+        &self,
+        value: &RuntimeOpaqueValue,
+    ) -> Result<CharacterDialogueValue, CharacterDialogueValueError> {
+        let expected_producer = Self::opaque_type_producer();
+        if value.producer() != &expected_producer {
+            return Err(CharacterDialogueValueError::OpaqueProducer {
+                expected: expected_producer,
+                actual: value.producer().clone(),
+            });
+        }
+        let RuntimeValue::NominalRecord(record) = value.payload() else {
+            return Err(CharacterDialogueValueError::OpaquePayload);
+        };
+        let decoded = self.decode(record)?;
+        let expected = super::CharacterDialogueType::exact(decoded.dialogue.character.clone())
+            .runtime_semantic_identity();
+        if value.semantic_identity() != expected {
+            return Err(CharacterDialogueValueError::OpaqueSemanticIdentity {
+                expected,
+                actual: value.semantic_identity(),
+            });
+        }
+        Ok(decoded)
     }
 
     pub fn encode(
@@ -336,9 +380,34 @@ impl CharacterDialogueValue {
         &self.record
     }
 
-    #[must_use]
-    pub fn into_runtime_value(self) -> RuntimeValue {
-        RuntimeValue::NominalRecord(self.record)
+    /// Wraps the validated record with its exact `CharacterDialogue` owner.
+    pub fn try_into_runtime_value(
+        self,
+        owner: &RuntimeOpaqueTypeOwner,
+    ) -> Result<RuntimeValue, CharacterDialogueValueError> {
+        let expected_producer = CharacterDialogueRuntimeSchema::opaque_type_producer();
+        if owner.producer() != &expected_producer {
+            return Err(CharacterDialogueValueError::OpaqueProducer {
+                expected: expected_producer,
+                actual: owner.producer().clone(),
+            });
+        }
+        if owner.admission() == arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ProducerWide {
+            return owner
+                .try_wrap(RuntimeValue::NominalRecord(self.record))
+                .map_err(Into::into);
+        }
+        let expected = super::CharacterDialogueType::exact(self.dialogue.character.clone())
+            .runtime_semantic_identity();
+        if owner.semantic_identity() != expected {
+            return Err(CharacterDialogueValueError::OpaqueSemanticIdentity {
+                expected,
+                actual: owner.semantic_identity(),
+            });
+        }
+        owner
+            .try_wrap(RuntimeValue::NominalRecord(self.record))
+            .map_err(Into::into)
     }
 }
 

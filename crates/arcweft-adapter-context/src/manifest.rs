@@ -1,9 +1,10 @@
 //! Typed adapter manifest model shared by product adapters, CLI, LSP, and semantic checking.
 
 use arcweft_rust_abi::{
-    ArcweftRustAbiLimits, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
-    ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
-    ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeRef, ArcweftRustVariantPayload,
+    ArcweftRustAbiLimits, ArcweftRustFunction, ArcweftRustManifest,
+    ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustParam,
+    ArcweftRustPurity, ArcweftRustStructShape, ArcweftRustTypeDecl, ArcweftRustTypeKind,
+    ArcweftRustTypeRef, ArcweftRustVariantPayload,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -19,6 +20,7 @@ pub use crate::callable::{
     AdapterToolingParameterDoc, AdapterToolingSubject,
 };
 pub use crate::symbol::{AdapterSymbolPath, AdapterSymbolPathError, AdapterSymbolSegment};
+pub use arcweft_manifest_model::{AdapterOpaqueTypeProducerId, AdapterOpaqueTypeProducerIdError};
 pub use nominal::{
     AdapterEnvironmentOwnerId, AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath,
     AdapterNominalPathError, AdapterNominalPathPrefix, AdapterNominalPathSegment,
@@ -440,6 +442,11 @@ impl AdapterRustType {
     /// Exported Rust ADT declaration.
     pub const fn decl(&self) -> &ArcweftRustTypeDecl {
         &self.decl
+    }
+
+    /// Reviewed opaque producer authority retained by the Rust declaration.
+    pub const fn opaque_producer(&self) -> &ArcweftRustOpaqueTypeProducerId {
+        self.decl.opaque_producer()
     }
 }
 

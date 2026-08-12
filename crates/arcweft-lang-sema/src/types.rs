@@ -7,7 +7,6 @@ use arcweft_lang_syntax::{
 use core::fmt;
 
 mod agent_fields;
-mod character_dialogue;
 mod character_nominal;
 mod compatibility;
 mod digest;
@@ -17,9 +16,10 @@ mod openness;
 mod order;
 mod substitution;
 
-pub use character_dialogue::{CharacterDialogueCharacterType, CharacterDialogueType};
+pub use arcweft_dialogue::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use character_nominal::{CharacterNominalFamily, CharacterNominalType};
 pub use digest::SemanticTypeDigest;
+pub(crate) use digest::accepted_nominal_semantic_identity_digest;
 pub use mismatch::{TypeMismatch, TypeMismatchPathSegment, TypeMismatchReason};
 pub use nominal::{
     AcceptedNominalType, DetachedTypeOwnerId, GenericTypeOwnerId, GenericTypeParameterId,

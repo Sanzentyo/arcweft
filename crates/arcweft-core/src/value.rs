@@ -17,6 +17,7 @@ mod env;
 mod integer;
 mod nesting;
 mod nominal_record;
+mod opaque;
 mod option_value;
 pub mod ownership;
 mod range;
@@ -26,7 +27,11 @@ mod sequence_impls;
 
 pub use integer::{RuntimeInt, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth};
 pub use nesting::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeValueNestingError};
-pub use nominal_record::{RuntimeNominalRecordError, RuntimeNominalRecordValue};
+pub use nominal_record::{
+    RuntimeNominalRecordError, RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError,
+    RuntimeNominalRecordLayoutField, RuntimeNominalRecordValue,
+};
+pub use opaque::{RuntimeOpaqueValue, RuntimeOpaqueValueError};
 pub use option_value::{
     evaluate_core_option_is_some_intrinsic, evaluate_core_option_unwrap_intrinsic,
 };
@@ -154,6 +159,7 @@ pub enum RuntimeValue {
     Seq(RuntimeSeq),
     Record(Vec<RuntimeFieldValue>),
     NominalRecord(RuntimeNominalRecordValue),
+    Opaque(RuntimeOpaqueValue),
     Function(RuntimeFunctionValue),
     Variant {
         owner: RuntimeVariantIdentity,
@@ -2481,6 +2487,7 @@ pub(crate) fn runtime_value_label(value: &RuntimeValue) -> String {
                 record.fields().len()
             )
         }
+        RuntimeValue::Opaque(value) => format!("opaque/{}", value.producer().as_str()),
         RuntimeValue::Function(function) => format!("function/{}", function.arity()),
         RuntimeValue::Variant { name, payload, .. } => {
             if payload.is_some() {

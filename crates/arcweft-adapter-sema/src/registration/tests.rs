@@ -3,9 +3,11 @@ use arcweft_adapter_context::manifest::{
     AdapterCallableGroupIndex, AdapterCallableName, AdapterCallableOverloadIndex,
     AdapterCallableParameterIndex, AdapterCallablePath, AdapterEffectCapability,
     AdapterFreeCallableKind, AdapterFunctionParam, AdapterFunctionSignature, AdapterManifest,
-    AdapterNominalPathPrefix, AdapterParameterGroup, AdapterParameterPassing,
-    AdapterParameterPresence, AdapterSymbol, AdapterSymbolPath, AdapterSymbolSegment,
-    AdapterToolingDoc, AdapterToolingParameterDoc, AdapterToolingSubject, AdapterTypeKind,
+    AdapterNominalDeclaration, AdapterNominalPath, AdapterNominalPathPrefix,
+    AdapterNominalPathSegment, AdapterNominalVisibility, AdapterOpaqueTypeProducerId,
+    AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterSymbol,
+    AdapterSymbolPath, AdapterSymbolSegment, AdapterToolingDoc, AdapterToolingParameterDoc,
+    AdapterToolingSubject, AdapterTypeKind,
 };
 use arcweft_lang_sema::{
     env::{EffectCapability, TypeCheckEnv},
@@ -347,6 +349,54 @@ fn source_backed_adapter_facts_are_independent_of_symbol_insertion_order() {
 }
 
 #[test]
+fn opaque_producer_is_source_backed_and_changes_manifest_identity() {
+    fn manifest(producer: &str) -> AdapterManifest {
+        let path = AdapterNominalPath::try_new([
+            AdapterNominalPathSegment::try_new("Widget").expect("valid path segment")
+        ])
+        .expect("valid path");
+        AdapterManifest::new("fixture", "Fixture")
+            .try_with_nominal_declaration(
+                AdapterNominalDeclaration::try_new(
+                    path,
+                    0,
+                    AdapterOpaqueTypeProducerId::try_new(producer).expect("valid producer"),
+                    AdapterNominalVisibility::Public,
+                    "Widget",
+                )
+                .expect("valid declaration"),
+            )
+            .expect("unique declaration")
+    }
+
+    let left = AdapterSemanticRegistration::new(&manifest("fixture.adapter-sema.left"))
+        .source_backed_facts(12)
+        .expect("left facts");
+    let right = AdapterSemanticRegistration::new(&manifest("fixture.adapter-sema.right"))
+        .source_backed_facts(12)
+        .expect("right facts");
+
+    assert_ne!(
+        left.environment().manifest_digest(),
+        right.environment().manifest_digest()
+    );
+    assert_ne!(
+        left.document().identity().revision(),
+        right.document().identity().revision()
+    );
+    let nominal = &left.environment().nominal_inventory()[0];
+    assert_eq!(
+        nominal.runtime_producer().as_str(),
+        "fixture.adapter-sema.left"
+    );
+    assert!(
+        left.document()
+            .text()
+            .contains("producer=25:fixture.adapter-sema.left")
+    );
+}
+
+#[test]
 fn source_backed_adapter_facts_retain_exact_recursive_type_ranges() {
     use arcweft_lang_sema::registration::EnvironmentTypeProjectionKind;
     use arcweft_source::{SourceDocument, SourceSpan};
@@ -516,6 +566,10 @@ fn rank_rust_manifest() -> ArcweftRustManifest {
     .with_type(ArcweftRustTypeDecl {
         path: rust_type_path("Rank"),
         rust_path: "truck_game::Rank".to_owned(),
+        opaque_producer: arcweft_rust_abi::ArcweftRustOpaqueTypeProducerId::try_new(
+            "fixture.adapter-sema.rust",
+        )
+        .expect("fixture producer is valid"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: vec![

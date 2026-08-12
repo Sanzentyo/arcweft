@@ -187,8 +187,10 @@ pub fn emit_cargo_rerun_hints(options: &MetadataBuildOptions) {
 mod tests {
     use super::*;
     use arcweft_rust_abi::{
-        ArcweftRustFunction, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustParam,
-        ArcweftRustPurity, ArcweftRustTypeRef,
+        ArcweftRustFunction, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage,
+        ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
+        ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment,
+        ArcweftRustTypeRef,
     };
 
     #[test]
@@ -226,5 +228,43 @@ mod tests {
         assert!(!json.contains(&dir.display().to_string()));
         assert!(options.output_path().ends_with("arcweft/truck_game.json"));
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn producer_changes_deterministic_json_and_hash() {
+        let package = ArcweftRustPackage {
+            id: ArcweftRustPackageId::try_new("truck_game").expect("valid package ID"),
+            version: "0.1.0".to_owned(),
+            metadata_hash: None,
+        };
+        let type_path =
+            ArcweftRustTypePath::try_new([
+                ArcweftRustTypePathSegment::try_new("Model").expect("valid path segment")
+            ])
+            .expect("non-empty path");
+        let manifest = |producer: &str| {
+            ArcweftRustManifest::new(package.clone()).with_type(ArcweftRustTypeDecl {
+                path: type_path.clone(),
+                rust_path: "truck_game::Model".to_owned(),
+                opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new(producer)
+                    .expect("valid fixture producer"),
+                parameters: Vec::new(),
+                kind: ArcweftRustTypeKind::Struct {
+                    shape: ArcweftRustStructShape::Unit,
+                },
+            })
+        };
+        let left = manifest("fixture.rust-abi.left")
+            .to_json_pretty()
+            .expect("valid JSON");
+        let right = manifest("fixture.rust-abi.right")
+            .to_json_pretty()
+            .expect("valid JSON");
+
+        assert_ne!(left, right);
+        assert_ne!(
+            blake3::hash(left.as_bytes()),
+            blake3::hash(right.as_bytes())
+        );
     }
 }

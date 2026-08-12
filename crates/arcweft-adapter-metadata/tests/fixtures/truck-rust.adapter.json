@@ -1,5 +1,5 @@
 {
-  "abi_hash": "blake3:3dcd9ee62412b77d378faa808f5975e87e16c692b40bd2fc1f5093b9f3c6fac2",
+  "abi_hash": "blake3:69ecedf29d819880d3a5fcb1058fbecadc3a9581fac68c8e574c1e96e103055a",
   "artifact": {
     "hash": "blake3:be46e89f4e355d945dcef1765b077c4054aafbe857e3b1a4142b7287663ee61a",
     "path": "artifacts/truck-rust.fixture",
@@ -19,6 +19,7 @@
     "types": [
       {
         "name": "TruckResult",
+        "opaque_producer": "fixture.project.external-types",
         "shape": {
           "fields": [
             {
@@ -36,6 +37,7 @@
       },
       {
         "name": "TruckTelemetry",
+        "opaque_producer": "fixture.project.external-types",
         "shape": {
           "fields": [
             {
@@ -61,7 +63,7 @@
     "id": "com.example.truck",
     "version": "1.2.3"
   },
-  "payload_hash": "blake3:9e816b9128414a1c9acc72e405076da5e8f0c9a129a6778a2f98b469e0961b47",
+  "payload_hash": "blake3:46b5fbf8dc329eed43cd08e00de6e2e376a55d5df562f5fd6d4005d25e091b93",
   "requirements": [
     {
       "demand": "required",

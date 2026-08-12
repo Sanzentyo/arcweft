@@ -56,6 +56,7 @@ struct AdapterCallableLine<'a> {
 #[derive(Default)]
 pub(in crate::registration) struct RegistrationSourceMap {
     items: BTreeMap<EnvironmentPublicationItemId, SourceRange>,
+    opaque_producers: BTreeMap<EnvironmentPublicationItemId, SourceRange>,
     types: BTreeMap<(EnvironmentPublicationItemId, EnvironmentTypeSite), SourceRange>,
 }
 
@@ -85,6 +86,17 @@ impl RegistrationSourceMap {
                 item: Box::new(item.clone()),
                 site: Box::new(site),
             })
+    }
+
+    pub(super) fn opaque_producer_range(
+        &self,
+        item: &EnvironmentPublicationItemId,
+    ) -> Result<SourceRange, AdapterRegistrationFactsError> {
+        self.opaque_producers.get(item).copied().ok_or_else(|| {
+            AdapterRegistrationFactsError::MissingOpaqueProducerSource {
+                item: Box::new(item.clone()),
+            }
+        })
     }
 
     fn insert_item(
@@ -117,6 +129,21 @@ impl RegistrationSourceMap {
                 item: Box::new(item.clone()),
                 site: Box::new(site),
             });
+        }
+        Ok(())
+    }
+
+    fn insert_opaque_producer(
+        &mut self,
+        item: EnvironmentPublicationItemId,
+        range: SourceRange,
+    ) -> Result<(), AdapterRegistrationFactsError> {
+        if self.opaque_producers.insert(item.clone(), range).is_some() {
+            return Err(
+                AdapterRegistrationFactsError::DuplicateOpaqueProducerSource {
+                    item: Box::new(item),
+                },
+            );
         }
         Ok(())
     }
@@ -183,18 +210,7 @@ fn render_nominal_declarations(
             owner: owner.clone(),
             path: nominal_path(declaration.path())?,
         };
-        renderer.item_line(item, |text| {
-            text.push_str("nominal path=");
-            adapter_path(text, declaration.path());
-            write!(text, " arity={} visibility=", declaration.arity())
-                .expect("writing to String cannot fail");
-            text.push_str(match declaration.visibility() {
-                arcweft_adapter_context::manifest::AdapterNominalVisibility::Public => "public",
-                arcweft_adapter_context::manifest::AdapterNominalVisibility::Private => "private",
-            });
-            text.push_str(" label=");
-            scalar(text, declaration.source_label());
-        })?;
+        renderer.nominal_line(item, declaration)?;
     }
     Ok(())
 }
@@ -413,16 +429,30 @@ impl Renderer {
         self.text.push('\n');
     }
 
-    fn item_line(
+    fn nominal_line(
         &mut self,
         item: EnvironmentPublicationItemId,
-        render: impl FnOnce(&mut String),
+        declaration: &arcweft_adapter_context::manifest::AdapterNominalDeclaration,
     ) -> Result<(), AdapterRegistrationFactsError> {
         let start = self.text.len();
-        render(&mut self.text);
+        self.text.push_str("nominal path=");
+        adapter_path(&mut self.text, declaration.path());
+        write!(&mut self.text, " arity={}", declaration.arity())
+            .expect("writing to String cannot fail");
+        self.text.push_str(" producer=");
+        let producer_range = scalar_payload(&mut self.text, declaration.opaque_producer().as_str());
+        self.text.push_str(" visibility=");
+        self.text.push_str(match declaration.visibility() {
+            arcweft_adapter_context::manifest::AdapterNominalVisibility::Public => "public",
+            arcweft_adapter_context::manifest::AdapterNominalVisibility::Private => "private",
+        });
+        self.text.push_str(" label=");
+        scalar(&mut self.text, declaration.source_label());
         let end = self.text.len();
         self.text.push('\n');
-        self.map.insert_item(item, SourceRange::new(start, end))
+        self.map
+            .insert_item(item.clone(), SourceRange::new(start, end))?;
+        self.map.insert_opaque_producer(item, producer_range)
     }
 
     fn symbol_line(
@@ -732,13 +762,17 @@ impl Renderer {
         scalar(&mut self.text, rust_type.package().id.as_str());
         self.text.push_str(" accepted=");
         adapter_path(&mut self.text, rust_type.accepted_path());
+        self.text.push_str(" producer=");
+        let producer_range = scalar_payload(&mut self.text, rust_type.opaque_producer().as_str());
         self.text.push_str(" rust-item=");
         scalar(&mut self.text, &rust_type.decl().rust_path);
         self.text.push_str(" shape=");
         self.render_rust_metadata(&item, &rust_type.decl().kind)?;
         let end = self.text.len();
         self.text.push('\n');
-        self.map.insert_item(item, SourceRange::new(start, end))
+        self.map
+            .insert_item(item.clone(), SourceRange::new(start, end))?;
+        self.map.insert_opaque_producer(item, producer_range)
     }
 
     fn render_rust_metadata(
@@ -1128,4 +1162,11 @@ fn optional_scalar(text: &mut String, value: Option<&str>) {
 fn scalar(text: &mut String, value: &str) {
     write!(text, "{}:", value.len()).expect("writing to String cannot fail");
     text.push_str(value);
+}
+
+fn scalar_payload(text: &mut String, value: &str) -> SourceRange {
+    write!(text, "{}:", value.len()).expect("writing to String cannot fail");
+    let start = text.len();
+    text.push_str(value);
+    SourceRange::new(start, text.len())
 }

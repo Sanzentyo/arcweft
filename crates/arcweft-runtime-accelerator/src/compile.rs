@@ -55,6 +55,7 @@ pub(super) fn runtime_value_kind(value: &RuntimeValue) -> String {
         RuntimeValue::Seq(RuntimeSeq::RecordColumns(_)) => "seq_record_columns",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal_record",
+        RuntimeValue::Opaque(_) => "opaque",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
         RuntimeValue::Iterator(_) => "iterator",

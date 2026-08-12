@@ -67,7 +67,8 @@ fn lang_entry_binding_layers_remain_sans_project_and_host_io() {
         .expect("resolved nodes array");
     let sema = package_id(packages, "arcweft-lang-sema");
     let core = package_id(packages, "arcweft-core");
-    let protected_data = [
+    let sans_project_and_host_io = [
+        sema,
         core,
         package_id(packages, "arcweft-data"),
         package_id(packages, "arcweft-data-derive"),
@@ -83,7 +84,6 @@ fn lang_entry_binding_layers_remain_sans_project_and_host_io() {
     ];
 
     for forbidden in [
-        package_id(packages, "arcweft-core"),
         package_id(packages, "arcweft-bundle"),
         package_id(packages, "arcweft-project"),
         package_id(packages, "arcweft-project-loader"),
@@ -97,7 +97,12 @@ fn lang_entry_binding_layers_remain_sans_project_and_host_io() {
         );
     }
 
-    for protected in protected_data {
+    assert!(
+        !has_non_dev_path(nodes, core, sema),
+        "arcweft-core must not reach the higher arcweft-lang-sema layer"
+    );
+
+    for protected in sans_project_and_host_io {
         for forbidden in project_and_manifest_io {
             assert!(
                 !has_non_dev_path(nodes, protected, forbidden),

@@ -1,5 +1,6 @@
 //! Canonical semantic identity encoding for checked types.
 
+use arcweft_core::pattern::RuntimeSemanticTypeIdentityEncoder;
 use arcweft_lang_hir::{
     leaf::{HirPath, HirPathRoot, HirPathSegment},
     symbol::{
@@ -25,8 +26,6 @@ use super::{
     OpenNominalType, ProjectNominalType, TypeKind,
 };
 
-const DOMAIN: &[u8] = b"arcweft.semantic-type.identity.v1\0";
-
 /// Stable semantic identity of one complete checked type.
 #[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
 pub struct SemanticTypeDigest([u8; 32]);
@@ -45,31 +44,40 @@ impl TypeKind {
     /// Returns the canonical typed identity digest used by semantic caches.
     #[must_use]
     pub fn semantic_identity_digest(&self) -> SemanticTypeDigest {
-        let mut encoder = Encoder::new(DOMAIN);
+        let mut encoder = Encoder::new();
         encoder.ty(self);
         SemanticTypeDigest(*encoder.finish().as_bytes())
     }
 }
 
-struct Encoder(blake3::Hasher);
+pub(crate) fn accepted_nominal_semantic_identity_digest(
+    declaration: &AcceptedNominalId,
+    arguments: &[TypeKind],
+) -> SemanticTypeDigest {
+    let mut encoder = Encoder::new();
+    encoder.tag(65);
+    encoder.accepted_nominal_id(declaration);
+    encoder.types(arguments);
+    SemanticTypeDigest(*encoder.finish().as_bytes())
+}
+
+struct Encoder(RuntimeSemanticTypeIdentityEncoder);
 
 impl Encoder {
-    fn new(domain: &[u8]) -> Self {
-        let mut hasher = blake3::Hasher::new();
-        hasher.update(domain);
-        Self(hasher)
+    fn new() -> Self {
+        Self(RuntimeSemanticTypeIdentityEncoder::new())
     }
 
-    fn finish(self) -> blake3::Hash {
-        self.0.finalize()
+    fn finish(self) -> arcweft_core::pattern::RuntimeSemanticTypeId {
+        self.0.finish()
     }
 
     fn tag(&mut self, value: u16) {
-        self.0.update(&value.to_le_bytes());
+        self.0.write_tag(value);
     }
 
     fn byte(&mut self, value: u8) {
-        self.0.update(&[value]);
+        self.0.write_u8(value);
     }
 
     fn bool(&mut self, value: bool) {
@@ -77,24 +85,23 @@ impl Encoder {
     }
 
     fn u16(&mut self, value: u16) {
-        self.0.update(&value.to_le_bytes());
+        self.0.write_u16(value);
     }
 
     fn u32(&mut self, value: u32) {
-        self.0.update(&value.to_le_bytes());
+        self.0.write_u32(value);
     }
 
     fn u64(&mut self, value: u64) {
-        self.0.update(&value.to_le_bytes());
+        self.0.write_u64(value);
     }
 
     fn len(&mut self, value: usize) {
-        self.u32(u32::try_from(value).expect("accepted semantic sequences fit the u32 contract"));
+        self.0.write_len(value);
     }
 
     fn string(&mut self, value: &str) {
-        self.len(value.len());
-        self.0.update(value.as_bytes());
+        self.0.write_str(value);
     }
 
     fn option<T>(&mut self, value: Option<&T>, encode: impl FnOnce(&mut Self, &T)) {
@@ -292,14 +299,7 @@ impl Encoder {
                 self.string(assoc);
             }
             TypeKind::CharacterDialogue(dialogue) => {
-                self.tag(69);
-                match dialogue.character() {
-                    super::CharacterDialogueCharacterType::Exact(character) => {
-                        self.byte(0);
-                        self.string(character.as_str());
-                    }
-                    super::CharacterDialogueCharacterType::Any => self.byte(1),
-                }
+                dialogue.encode_runtime_semantic_identity(&mut self.0);
             }
             TypeKind::DialogueLine(result) => {
                 self.tag(70);
@@ -403,12 +403,12 @@ impl Encoder {
     }
 
     fn callable_declaration(&mut self, id: &CallableDeclarationKey) {
-        self.0.update(id.semantic_digest().as_bytes());
+        self.0.write_bytes(id.semantic_digest().as_bytes());
     }
 
     fn project_nominal_declaration(&mut self, id: &ProjectNominalDeclarationId) {
         self.project_world(id.world());
-        self.0.update(id.revision().as_source_set().as_bytes());
+        self.0.write_bytes(id.revision().as_source_set().as_bytes());
         self.module_path(id.module());
         self.byte(match id.kind() {
             ProjectNominalDeclarationKind::Struct => 0,
@@ -494,7 +494,7 @@ impl Encoder {
 
     fn source_span(&mut self, source: &SourceSpan) {
         self.string(source.source().id().as_str());
-        self.0.update(source.source().revision().as_bytes());
+        self.0.write_bytes(source.source().revision().as_bytes());
         self.u64(source.source().source_len());
         let range = source.range();
         self.u64(u64::try_from(range.start()).expect("source offsets fit u64"));
@@ -654,6 +654,8 @@ impl Encoder {
 
 #[cfg(test)]
 mod tests {
+    use arcweft_character::id::CharacterId;
+    use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
     use arcweft_lang_syntax::{
         ast::{
             module_path::ModulePathRoot,
@@ -667,7 +669,7 @@ mod tests {
             identity::EnvironmentBindingId,
             nominal::{AcceptedNominalId, AcceptedNominalOwnerId},
         },
-        types::{AcceptedNominalType, TypeKind},
+        types::{AcceptedNominalType, CharacterDialogueType, TypeKind},
     };
 
     fn path(name: &str) -> TypePath {
@@ -677,6 +679,10 @@ mod tests {
         )
         .expect("path")
         .into()
+    }
+
+    fn producer() -> RuntimeOpaqueTypeProducerId {
+        RuntimeOpaqueTypeProducerId::try_new("fixture.lang-sema.digest").expect("valid producer")
     }
 
     #[test]
@@ -689,6 +695,7 @@ mod tests {
                 path("Value"),
             ),
             [TypeKind::Vec(Box::new(TypeKind::I32))],
+            producer(),
         ));
         let owner_changed = TypeKind::AcceptedNominal(AcceptedNominalType::new(
             AcceptedNominalId::new(
@@ -698,6 +705,7 @@ mod tests {
                 path("Value"),
             ),
             [TypeKind::Vec(Box::new(TypeKind::I32))],
+            producer(),
         ));
         let argument_changed = TypeKind::AcceptedNominal(AcceptedNominalType::new(
             AcceptedNominalId::new(
@@ -707,6 +715,7 @@ mod tests {
                 path("Value"),
             ),
             [TypeKind::Vec(Box::new(TypeKind::I64))],
+            producer(),
         ));
 
         assert_eq!(
@@ -720,6 +729,26 @@ mod tests {
         assert_ne!(
             first.semantic_identity_digest(),
             argument_changed.semantic_identity_digest()
+        );
+    }
+
+    #[test]
+    fn character_dialogue_producer_and_type_kind_share_one_identity_authority() {
+        let exact = CharacterDialogueType::exact(
+            CharacterId::try_new("character.alice").expect("character ID"),
+        );
+        let any = CharacterDialogueType::any();
+        assert_eq!(
+            TypeKind::CharacterDialogue(exact.clone())
+                .semantic_identity_digest()
+                .as_bytes(),
+            exact.runtime_semantic_identity().as_bytes()
+        );
+        assert_eq!(
+            TypeKind::CharacterDialogue(any.clone())
+                .semantic_identity_digest()
+                .as_bytes(),
+            any.runtime_semantic_identity().as_bytes()
         );
     }
 }

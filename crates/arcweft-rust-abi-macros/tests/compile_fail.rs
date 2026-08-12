@@ -8,6 +8,7 @@ fn rejects_unsupported_abi_shapes() {
 fn compile_fail_cases() -> &'static [&'static str] {
     &[
         "reject_lifetime_generic_type",
+        "reject_missing_opaque_producer",
         "reject_const_generic_type",
         "reject_generic_export",
         "reject_reference_export",

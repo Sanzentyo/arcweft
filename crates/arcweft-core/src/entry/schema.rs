@@ -411,6 +411,12 @@ impl CanonicalRuntimeValueBytes {
                 }
                 Ok(())
             }
+            RuntimeValue::Opaque(value) => {
+                self.u8(16)?;
+                self.string(value.producer().as_str())?;
+                self.extend(value.semantic_identity().as_bytes())?;
+                self.value(value.payload())
+            }
             RuntimeValue::Variant {
                 owner,
                 ordinal,
@@ -1010,6 +1016,7 @@ const fn runtime_value_type(value: &RuntimeValue) -> &'static str {
         RuntimeValue::Seq(_) => "sequence",
         RuntimeValue::Record(_) => "record",
         RuntimeValue::NominalRecord(_) => "nominal record",
+        RuntimeValue::Opaque(_) => "opaque value",
         RuntimeValue::Function(_) => "function",
         RuntimeValue::Variant { .. } => "variant",
     }

@@ -4,13 +4,13 @@ use arcweft_adapter_context::manifest::{
     AdapterEnvironmentOwnerId, AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall,
     AdapterId, AdapterManifest, AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath,
     AdapterNominalPathPrefix, AdapterNominalPathSegment, AdapterNominalTypeRef,
-    AdapterNominalVisibility, AdapterParameterGroup, AdapterParameterPassing,
-    AdapterParameterPresence, AdapterTypeKind,
+    AdapterNominalVisibility, AdapterOpaqueTypeProducerId, AdapterParameterGroup,
+    AdapterParameterPassing, AdapterParameterPresence, AdapterTypeKind,
 };
 use arcweft_rust_abi::{
-    ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustTypeDecl,
-    ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustVariant,
-    ArcweftRustVariantPayload,
+    ArcweftRustManifest, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage, ArcweftRustPackageId,
+    ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment,
+    ArcweftRustVariant, ArcweftRustVariantPayload,
 };
 
 pub const DESKTOP_PLATFORM_ADAPTER_ID: &str = "desktop-platform";
@@ -121,6 +121,8 @@ pub fn desktop_owned_window_manifest() -> AdapterManifest {
                 AdapterNominalDeclaration::try_new(
                     adapter_nominal_path(DESKTOP_ERROR_TYPE),
                     0,
+                    AdapterOpaqueTypeProducerId::try_new("arcweft.desktop.runtime")
+                        .expect("desktop runtime producer is valid"),
                     AdapterNominalVisibility::Public,
                     DESKTOP_ERROR_TYPE,
                 )
@@ -397,6 +399,8 @@ fn unit_enum_type<const N: usize>(
     ArcweftRustTypeDecl {
         path: rust_type_path(name),
         rust_path: rust_path.to_owned(),
+        opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new("arcweft.desktop.runtime")
+            .expect("desktop runtime producer is valid"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: variants

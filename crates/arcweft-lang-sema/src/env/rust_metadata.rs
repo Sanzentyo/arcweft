@@ -516,12 +516,8 @@ fn metadata_catalog_digest(
     hasher.update(b"arcweft.accepted-rust-metadata.v1\0");
     hash_len(&mut hasher, records.len());
     for record in records.values() {
-        hash_type(
-            &mut hasher,
-            &TypeKind::AcceptedNominal(AcceptedNominalType::new(
-                record.id.clone(),
-                Box::<[TypeKind]>::default(),
-            )),
+        hasher.update(
+            crate::types::accepted_nominal_semantic_identity_digest(&record.id, &[]).as_bytes(),
         );
         hash_str(&mut hasher, record.package.as_str());
         hash_str(&mut hasher, record.package_provenance.version());
@@ -633,6 +629,7 @@ fn hash_len(hasher: &mut blake3::Hasher, value: usize) {
 
 #[cfg(test)]
 mod tests {
+    use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
     use arcweft_lang_syntax::ast::module_path::ModulePathRoot;
     use arcweft_lang_syntax::ast::symbol_path::{ProjectSymbolPath, ProjectSymbolSegment};
     use arcweft_lang_syntax::types::TypePath;
@@ -709,7 +706,12 @@ mod tests {
             AcceptedRustTypeMetadataCatalog::try_new([record]).expect("generic metadata catalog");
         let before = catalog.digest();
         let instantiated = catalog
-            .instantiate(&AcceptedNominalType::new(id, [TypeKind::I32]))
+            .instantiate(&AcceptedNominalType::new(
+                id,
+                [TypeKind::I32],
+                RuntimeOpaqueTypeProducerId::try_new("fixture.lang-sema.metadata")
+                    .expect("valid producer"),
+            ))
             .expect("generic metadata instantiation");
         assert!(matches!(
             instantiated.kind(),

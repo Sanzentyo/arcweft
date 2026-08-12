@@ -4,6 +4,7 @@ use core::{fmt, hash::Hasher};
 use std::{collections::BTreeMap, hash::Hash};
 
 use arcweft_character::id::CharacterId;
+use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
 use arcweft_lang_syntax::{
     ast::{
         module_path::{CanonicalModulePath, ModulePathRoot},
@@ -22,6 +23,78 @@ use crate::{
 
 const MAX_OPEN_NAMESPACE_TAIL: u16 = 16;
 const MAX_NOMINAL_ARITY: u16 = 256;
+
+#[derive(Clone, Copy)]
+struct StandardOpaqueNominalSpec {
+    name: &'static str,
+    arity: u16,
+    producer: &'static str,
+}
+
+const STANDARD_AGENT_ERROR: StandardOpaqueNominalSpec = StandardOpaqueNominalSpec {
+    name: "AgentError",
+    arity: 0,
+    producer: "std.agent_error",
+};
+
+const STANDARD_OPAQUE_NOMINALS: [StandardOpaqueNominalSpec; 12] = [
+    StandardOpaqueNominalSpec {
+        name: "Reduction",
+        arity: 1,
+        producer: "std.reduction",
+    },
+    StandardOpaqueNominalSpec {
+        name: "VirtualPath",
+        arity: 0,
+        producer: "std.virtual_path",
+    },
+    StandardOpaqueNominalSpec {
+        name: "ArcError",
+        arity: 0,
+        producer: "std.arc_error",
+    },
+    StandardOpaqueNominalSpec {
+        name: "ReducerError",
+        arity: 0,
+        producer: "std.reducer_error",
+    },
+    STANDARD_AGENT_ERROR,
+    StandardOpaqueNominalSpec {
+        name: "AssetError",
+        arity: 0,
+        producer: "std.asset_error",
+    },
+    StandardOpaqueNominalSpec {
+        name: "ContentLoadError",
+        arity: 0,
+        producer: "std.content_load_error",
+    },
+    StandardOpaqueNominalSpec {
+        name: "DialogueText",
+        arity: 0,
+        producer: "std.dialogue_text",
+    },
+    StandardOpaqueNominalSpec {
+        name: "ImageHandle",
+        arity: 0,
+        producer: "std.image_handle",
+    },
+    StandardOpaqueNominalSpec {
+        name: "PresentationLifetime",
+        arity: 0,
+        producer: "std.presentation_lifetime",
+    },
+    StandardOpaqueNominalSpec {
+        name: "VoiceError",
+        arity: 0,
+        producer: "std.voice_error",
+    },
+    StandardOpaqueNominalSpec {
+        name: "VoiceHandle",
+        arity: 0,
+        producer: "std.voice_handle",
+    },
+];
 
 /// Stable identity of one Rust package contributing accepted type exports.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]
@@ -69,7 +142,9 @@ pub enum AcceptedNominalOrigin {
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub enum AcceptedNominalSemantics {
     Exact(TypeKind),
-    Opaque,
+    Opaque {
+        producer: RuntimeOpaqueTypeProducerId,
+    },
     Character(CharacterNominalType),
 }
 
@@ -319,6 +394,23 @@ impl AcceptedNominalRecord {
         })
     }
 
+    /// Validates and creates one producer-bearing opaque accepted record.
+    pub fn try_new_opaque(
+        id: AcceptedNominalId,
+        arity: u16,
+        producer: RuntimeOpaqueTypeProducerId,
+        origin: AcceptedNominalOrigin,
+        source: Option<SourceSpan>,
+    ) -> Result<Self, AcceptedNominalCatalogError> {
+        Self::try_new(
+            id,
+            arity,
+            AcceptedNominalSemantics::Opaque { producer },
+            origin,
+            source,
+        )
+    }
+
     pub const fn id(&self) -> &AcceptedNominalId {
         &self.id
     }
@@ -354,8 +446,12 @@ impl AcceptedNominalRecord {
         }
         match &self.semantics {
             AcceptedNominalSemantics::Exact(ty) if arguments.is_empty() => Ok(ty.clone()),
-            AcceptedNominalSemantics::Opaque => Ok(TypeKind::AcceptedNominal(
-                crate::types::AcceptedNominalType::new(self.id.clone(), arguments),
+            AcceptedNominalSemantics::Opaque { producer } => Ok(TypeKind::AcceptedNominal(
+                crate::types::AcceptedNominalType::new(
+                    self.id.clone(),
+                    arguments,
+                    producer.clone(),
+                ),
             )),
             AcceptedNominalSemantics::Character(character) if arguments.is_empty() => {
                 Ok(TypeKind::CharacterNominal(character.clone()))
@@ -669,23 +765,6 @@ impl TypeCheckEnv {
             ("DebugStatePath", TypeKind::DebugStatePath),
             ("ObservationFieldPath", TypeKind::ObservationFieldPath),
             ("DisplayText", TypeKind::DisplayText),
-            ("VirtualPath", TypeKind::Named("VirtualPath".to_owned())),
-            ("ArcError", TypeKind::Named("ArcError".to_owned())),
-            ("ReducerError", TypeKind::Named("ReducerError".to_owned())),
-            ("AgentError", TypeKind::Named("AgentError".to_owned())),
-            ("AssetError", TypeKind::Named("AssetError".to_owned())),
-            (
-                "ContentLoadError",
-                TypeKind::Named("ContentLoadError".to_owned()),
-            ),
-            ("DialogueText", TypeKind::Named("DialogueText".to_owned())),
-            ("ImageHandle", TypeKind::Named("ImageHandle".to_owned())),
-            (
-                "PresentationLifetime",
-                TypeKind::Named("PresentationLifetime".to_owned()),
-            ),
-            ("VoiceError", TypeKind::Named("VoiceError".to_owned())),
-            ("VoiceHandle", TypeKind::Named("VoiceHandle".to_owned())),
         ]
         .into_iter()
         .fold(self, |environment, (name, semantics)| {
@@ -696,11 +775,20 @@ impl TypeCheckEnv {
                 )
                 .expect("standard domain atoms have distinct non-reserved paths")
         })
-        .try_with_nominal_record(
-            standard_opaque_record("Reduction", 1, AcceptedNominalOrigin::Domain)
-                .expect("Reduction is a valid one-argument accepted nominal family"),
-        )
-        .expect("Reduction has a distinct non-reserved path")
+        .with_standard_opaque_nominals()
+    }
+
+    fn with_standard_opaque_nominals(self) -> Self {
+        STANDARD_OPAQUE_NOMINALS
+            .into_iter()
+            .fold(self, |environment, spec| {
+                environment
+                    .try_with_nominal_record(
+                        standard_opaque_record(spec, AcceptedNominalOrigin::Domain)
+                            .expect("standard opaque atom has valid typed evidence"),
+                    )
+                    .expect("standard opaque atoms have distinct non-reserved paths")
+            })
     }
 
     /// Atomically registers one exact source-visible accepted nominal record.
@@ -759,22 +847,29 @@ pub(super) fn standard_exact_record(
 }
 
 fn standard_opaque_record(
-    name: &str,
-    arity: u16,
+    spec: StandardOpaqueNominalSpec,
     origin: AcceptedNominalOrigin,
 ) -> Result<AcceptedNominalRecord, AcceptedNominalCatalogError> {
-    let segment = ProjectSymbolSegment::try_new(name.to_owned())
+    let segment = ProjectSymbolSegment::try_new(spec.name.to_owned())
         .expect("environment-owned type names are validated project-symbol segments");
     let path = ProjectSymbolPath::new(ModulePathRoot::ImplicitCrate, [segment])
         .expect("one validated segment is a valid project-symbol path")
         .into();
-    AcceptedNominalRecord::try_new(
+    AcceptedNominalRecord::try_new_opaque(
         AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path),
-        arity,
-        AcceptedNominalSemantics::Opaque,
+        spec.arity,
+        RuntimeOpaqueTypeProducerId::try_new(spec.producer)
+            .expect("fixed standard opaque producer IDs are valid"),
         origin,
         None,
     )
+}
+
+pub(crate) fn standard_agent_error_type() -> TypeKind {
+    standard_opaque_record(STANDARD_AGENT_ERROR, AcceptedNominalOrigin::Domain)
+        .expect("AgentError has valid fixed standard opaque evidence")
+        .try_instantiate([])
+        .expect("AgentError is a zero-argument standard opaque nominal")
 }
 
 fn validate_open_pattern(
@@ -1023,7 +1118,6 @@ fn catalog_digest(
         record.arity.hash(&mut hasher);
         record.semantics.hash(&mut hasher);
         record.origin.hash(&mut hasher);
-        record.source.hash(&mut hasher);
     }
     open.len().hash(&mut hasher);
     for (id, rule) in open {
@@ -1031,7 +1125,6 @@ fn catalog_digest(
         rule.scope.hash(&mut hasher);
         rule.pattern.hash(&mut hasher);
         rule.arity.hash(&mut hasher);
-        rule.source.hash(&mut hasher);
     }
     AcceptedNominalCatalogDigest(hasher.finalize())
 }

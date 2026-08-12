@@ -1096,14 +1096,16 @@ mod tests {
         AdapterHostCall, AdapterId, AdapterManifest, AdapterNominalDeclaration,
         AdapterNominalOwner, AdapterNominalPath, AdapterNominalPathPrefix,
         AdapterNominalPathSegment, AdapterNominalTypeRef, AdapterNominalVisibility,
-        AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterSymbol,
-        AdapterSymbolPath, AdapterSymbolSegment, AdapterToolingDoc,
+        AdapterOpaqueTypeProducerId, AdapterParameterGroup, AdapterParameterPassing,
+        AdapterParameterPresence, AdapterSymbol, AdapterSymbolPath, AdapterSymbolSegment,
+        AdapterToolingDoc,
     };
     use arcweft_rust_abi::{
-        ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest, ArcweftRustPackage,
-        ArcweftRustPackageId, ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape,
-        ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment,
-        ArcweftRustTypeRef, ArcweftRustVariant, ArcweftRustVariantPayload,
+        ArcweftRustField, ArcweftRustFunction, ArcweftRustManifest,
+        ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage, ArcweftRustPackageId,
+        ArcweftRustParam, ArcweftRustPurity, ArcweftRustStructShape, ArcweftRustTypeDecl,
+        ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypePathSegment, ArcweftRustTypeRef,
+        ArcweftRustVariant, ArcweftRustVariantPayload,
     };
     use arcweft_verify::{
         SourceSpan as VerifySourceSpan, ToolActionApplicability, ToolActionCommand,
@@ -1381,6 +1383,7 @@ mod tests {
         .with_type(ArcweftRustTypeDecl {
             path: rust_type_path(["Rank"]),
             rust_path: "truck_game::Rank".to_owned(),
+            opaque_producer: fixture_rust_producer(),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Enum {
                 variants: Vec::new(),
@@ -1474,6 +1477,7 @@ mod tests {
         ArcweftRustTypeDecl {
             path: rust_type_path(["PlayerStats"]),
             rust_path: "quest_logic::PlayerStats".to_owned(),
+            opaque_producer: fixture_rust_producer(),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Struct {
                 shape: ArcweftRustStructShape::Record {
@@ -1504,6 +1508,7 @@ mod tests {
         ArcweftRustTypeDecl {
             path: rust_type_path(["Rank"]),
             rust_path: "quest_logic::Rank".to_owned(),
+            opaque_producer: fixture_rust_producer(),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Enum {
                 variants: vec![
@@ -1529,6 +1534,7 @@ mod tests {
         ArcweftRustTypeDecl {
             path: rust_type_path(["SessionId"]),
             rust_path: "quest_logic::SessionId".to_owned(),
+            opaque_producer: fixture_rust_producer(),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Newtype {
                 inner: ArcweftRustTypeRef::U64,
@@ -1561,6 +1567,11 @@ mod tests {
         }
     }
 
+    fn fixture_rust_producer() -> ArcweftRustOpaqueTypeProducerId {
+        ArcweftRustOpaqueTypeProducerId::try_new("fixture.project.external-types")
+            .expect("fixture producer is valid")
+    }
+
     #[test]
     fn exposes_adapter_manifest_completions_and_hover() {
         let nominal_path = adapter_nominal_path(["CustomApi"]);
@@ -1579,6 +1590,8 @@ mod tests {
                 AdapterNominalDeclaration::try_new(
                     nominal_path,
                     0,
+                    AdapterOpaqueTypeProducerId::try_new("fixture.project.external-types")
+                        .expect("fixture producer is valid"),
                     AdapterNominalVisibility::Public,
                     "CustomApi",
                 )

@@ -145,14 +145,14 @@ impl<'hir> FinalExprLowerer<'hir> {
                 .lower_record_fields(id, record.fields())
                 .map(RuntimeExpr::Record),
             HirExprKind::Record(record) => {
-                self.facts
-                    .nominal(id)
+                let _ = self
+                    .facts
+                    .nominal_record(id)
                     .ok_or_else(|| {
                         format!(
                             "nominal record expression {id:?} requires a typed runtime nominal-expression owner"
                         )
-                    })?
-                    .checked_type()?;
+                    })?;
                 self.lower_record_fields(id, record.fields())
                     .map(RuntimeExpr::Record)
             }
@@ -326,10 +326,19 @@ impl<'hir> FinalExprLowerer<'hir> {
             .facts
             .expression_variant(id)
             .ok_or_else(|| format!("checked variant fact is missing for expression {id:?}"))?;
+        let selection = selected
+            .checked_selection()
+            .map_err(|error| error.to_string())?;
+        if selection.payload().is_some() {
+            return Err(format!(
+                "payload-bearing variant `{}` at {id:?} was selected without a payload",
+                selection.name()
+            ));
+        }
         Ok(RuntimeExpr::Variant {
-            owner: selected.owner().checked_type()?,
-            ordinal: selected.ordinal(),
-            name: selected.name().to_owned(),
+            owner: selection.owner().clone(),
+            ordinal: selection.ordinal(),
+            name: selection.name().to_owned(),
             payload: None,
         })
     }
@@ -385,6 +394,9 @@ impl<'hir> FinalExprLowerer<'hir> {
                 args: arguments,
             }),
             RuntimeResolvedCallTarget::Variant(variant) => {
+                let selection = variant
+                    .checked_selection()
+                    .map_err(|error| error.to_string())?;
                 let payload = match arguments.len() {
                     0 => None,
                     1 => Some(Box::new(
@@ -395,10 +407,16 @@ impl<'hir> FinalExprLowerer<'hir> {
                     )),
                     _ => Some(Box::new(RuntimeExpr::Tuple(arguments))),
                 };
+                if selection.payload().is_some() != payload.is_some() {
+                    return Err(format!(
+                        "variant constructor `{}` at {id:?} has incompatible payload presence",
+                        selection.name()
+                    ));
+                }
                 Ok(RuntimeExpr::Variant {
-                    owner: variant.owner().checked_type()?,
-                    ordinal: variant.ordinal(),
-                    name: variant.name().to_owned(),
+                    owner: selection.owner().clone(),
+                    ordinal: selection.ordinal(),
+                    name: selection.name().to_owned(),
                     payload,
                 })
             }

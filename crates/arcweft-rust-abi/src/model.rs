@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 pub const ARCWEFT_RUST_ABI_SCHEMA_VERSION: u32 = 1;
 
 /// Package-level metadata consumed by Arcweft registration and tooling.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ArcweftRustManifest {
     pub schema_version: u32,
     pub package: ArcweftRustPackage,
@@ -72,13 +72,20 @@ pub struct ArcweftRustTypeParameter {
 }
 
 /// A Rust struct, enum, or newtype exported as an Arcweft nominal declaration.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ArcweftRustTypeDecl {
     pub path: ArcweftRustTypePath,
     pub rust_path: String,
+    pub opaque_producer: crate::ArcweftRustOpaqueTypeProducerId,
     #[serde(default)]
     pub parameters: Vec<ArcweftRustTypeParameter>,
     pub kind: ArcweftRustTypeKind,
+}
+
+impl ArcweftRustTypeDecl {
+    pub const fn opaque_producer(&self) -> &crate::ArcweftRustOpaqueTypeProducerId {
+        &self.opaque_producer
+    }
 }
 
 /// Shape of an exported Rust ADT.

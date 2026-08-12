@@ -11,9 +11,8 @@ use serde::{Deserialize, Serialize};
 pub const AWBC_ABI_VERSION: u32 = 1;
 /// Canonical binary codec version used inside an `AWBC` product section.
 ///
-/// Version 10 persists the exact semantic Flow-to-function binding table.
-/// Earlier readers would reconstruct Flow identity from display strings.
-pub const AWBC_CODEC_VERSION: u16 = 10;
+/// This codec persists the exact semantic Flow-to-function binding table.
+pub const AWBC_CODEC_VERSION: u16 = 1;
 /// Magic at the beginning of a standalone canonical AWBC payload.
 pub const AWBC_MAGIC: [u8; 8] = *b"AWBC\r\n\x1a\n";
 
@@ -630,6 +629,7 @@ pub enum AwbcRuntimeType {
     Nominal {
         public_id: AwbcStringId,
         semantic_identity: [u8; 32],
+        layout: [u8; 32],
     },
     MatrixF32,
     MatrixF64,

@@ -80,6 +80,7 @@ impl RuntimeValue {
                     ownership.join(field.value.ownership())
                 }),
             Self::NominalRecord(record) => values_ownership(record.fields()),
+            Self::Opaque(value) => value.payload().ownership(),
             Self::Function(function) => function.ownership(),
             Self::Variant { payload, .. } => payload
                 .as_deref()

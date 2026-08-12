@@ -21,7 +21,7 @@ use arcweft_character::{
     },
 };
 use arcweft_core::{
-    entry::RuntimeNominalTypeId,
+    entry::{RuntimeNominalTypeId, RuntimeSchemaError},
     pattern::RuntimeCheckedVariantCase,
     plan::{
         FlowRuntimeId, RuntimeIteratorEvidence, RuntimeIteratorIdentityWitnessCalls,
@@ -31,13 +31,13 @@ use arcweft_core::{
     step::RuntimeHostCallMode,
     time::LogicalDuration,
     value::{
-        RuntimeInt, RuntimeIntrinsic, RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth,
-        RuntimeValue, runtime_sequence_from_literal_values,
+        RuntimeInt, RuntimeIntrinsic, RuntimeNominalRecordLayout, RuntimeNominalRecordLayoutError,
+        RuntimeSignedIntWidth, RuntimeUInt, RuntimeUnsignedIntWidth, RuntimeValue,
+        runtime_sequence_from_literal_values,
     },
 };
 use arcweft_dialogue::{
-    CharacterDialogueRuntimeSchema, DialoguePresentationProfile, DialogueProfileRevision,
-    InlineFailurePolicy,
+    DialoguePresentationProfile, DialogueProfileRevision, InlineFailurePolicy,
     character_presentation::{
         CharacterPresentationTargetEvidence, CheckedCharacterPresentationPlan,
     },
@@ -74,7 +74,7 @@ use arcweft_lang_sema::{
         CheckedProjectItemOwner, CheckedProjectNominal, CheckedSelectResolution,
         CheckedStatementRole, CheckedTraitConformance, CheckedTraitIdentity,
         CheckedValueResolution, CheckedVariantOwner, CheckedVariantResolution,
-        FinalSemanticAnalysis, FinalSemanticAnalysisError,
+        FinalSemanticAnalysis, FinalSemanticAnalysisError, NominalSchemaProjectionError,
     },
     types::{ArrayLength, TypeKind},
 };
@@ -84,13 +84,15 @@ use arcweft_runtime_plan::{
     assertion_identity::RuntimeAssertionMode,
     semantic_facts::{
         RuntimeAssertionAdmission, RuntimeCallResultShape, RuntimeCheckedCapture,
-        RuntimeDialogueApplication, RuntimeNormalizedType, RuntimePlanSemanticFactInput,
+        RuntimeCheckedTypeProjectionError, RuntimeDialogueApplication,
+        RuntimeNominalRecordFactError, RuntimeNormalizedType, RuntimePlanSemanticFactInput,
         RuntimePlanSemanticFacts, RuntimeProjectCallable, RuntimeProjectItem,
         RuntimeReductionConstructor, RuntimeRegisteredValueId, RuntimeResolvedCall,
         RuntimeResolvedCallArgument, RuntimeResolvedCallTarget, RuntimeResolvedNominal,
-        RuntimeResolvedSelect, RuntimeResolvedValue, RuntimeResolvedVariant,
-        RuntimeSemanticFactsError, RuntimeSemanticTypeId, RuntimeSequenceKind,
-        RuntimeTraitIdentity, RuntimeTraitMethodFact, RuntimeTypeShape,
+        RuntimeResolvedNominalRecord, RuntimeResolvedSelect, RuntimeResolvedValue,
+        RuntimeResolvedVariant, RuntimeSemanticFactsError, RuntimeSemanticTypeId,
+        RuntimeSequenceKind, RuntimeTraitIdentity, RuntimeTraitMethodFact,
+        RuntimeTypeProjectionPath, RuntimeTypeProjectionStep, RuntimeTypeShape,
     },
 };
 use arcweft_source::ProductSourceRef;
@@ -100,6 +102,8 @@ use arcweft_text_model::{
     RichTextNode, RichTextSpanKind, RichTextStyle,
 };
 use thiserror::Error;
+
+use crate::project::{EntryRuntimeProjectionError, RuntimeSchemaProjection};
 
 /// Failure to project one accepted semantic generation into the closed runtime
 /// fact vocabulary.
@@ -115,6 +119,30 @@ pub enum RuntimeSemanticProjectionError {
     MissingNominal {
         declaration: Box<ProjectNominalDeclarationId>,
     },
+    #[error("checked nominal schema projection failed for `{nominal}`")]
+    NominalSchemaProjection {
+        nominal: String,
+        #[source]
+        source: NominalSchemaProjectionError,
+    },
+    #[error("runtime schema for nominal `{nominal}` cannot be canonically encoded")]
+    NominalLayoutHash {
+        nominal: String,
+        #[source]
+        source: RuntimeSchemaError,
+    },
+    #[error("runtime nominal-record layout projection failed for `{nominal}`")]
+    NominalRecordLayout {
+        nominal: String,
+        #[source]
+        source: RuntimeNominalRecordLayoutError,
+    },
+    #[error("runtime nominal-record fact projection failed for `{nominal}`")]
+    NominalRecordFact {
+        nominal: String,
+        #[source]
+        source: RuntimeNominalRecordFactError,
+    },
     #[error("flow item {owner:?} has no executable absolute or named identity")]
     InvalidFlowIdentity { owner: ItemId },
     #[error("expression literal {owner:?} has no exact runtime value: {reason}")]
@@ -123,6 +151,8 @@ pub enum RuntimeSemanticProjectionError {
     PatternLiteral { owner: PatternId, reason: String },
     #[error("semantic type cannot enter runtime lowering: {reason}")]
     Type { reason: String },
+    #[error(transparent)]
+    CheckedTypeProjection(#[from] RuntimeCheckedTypeProjectionError),
     #[error("value expression {owner:?} has no exact runtime projection: {reason}")]
     Value { owner: ExprId, reason: String },
     #[error("call {owner:?} is not an accepted executable call: {reason}")]
@@ -199,7 +229,7 @@ pub fn project_runtime_semantic_facts(
     }
 
     for (owner, ty) in analysis.types() {
-        input.push_type(owner, runtime_type(ty, symbols)?);
+        input.push_type(owner, runtime_type(ty, symbols, analysis)?);
     }
 
     for (owner, expression) in analysis.expressions() {
@@ -278,12 +308,15 @@ pub fn project_runtime_semantic_facts(
                 }
             }
             CheckedExpressionResolution::Select(select) => {
-                if let Some(select) = runtime_select(select) {
+                if let Some(select) = runtime_select(select, symbols, analysis)? {
                     input.push_select(owner, select);
                 }
             }
             CheckedExpressionResolution::Nominal(nominal) => {
-                input.push_nominal(owner, runtime_nominal(nominal));
+                input.push_nominal_record(
+                    owner,
+                    runtime_nominal_record(nominal, symbols, analysis)?,
+                );
             }
             CheckedExpressionResolution::Variant(variant) => {
                 input.push_expression_variant(owner, runtime_variant(variant, symbols, analysis)?);
@@ -326,7 +359,10 @@ pub fn project_runtime_semantic_facts(
                 );
             }
             CheckedPatternResolution::Nominal(nominal) => {
-                input.push_pattern_nominal(owner, runtime_nominal(nominal));
+                input.push_pattern_nominal_record(
+                    owner,
+                    runtime_nominal_record(nominal, symbols, analysis)?,
+                );
             }
             CheckedPatternResolution::Variant(variant) => {
                 input.push_pattern_variant(owner, runtime_variant(variant, symbols, analysis)?);
@@ -356,7 +392,7 @@ pub fn project_runtime_semantic_facts(
     for (owner, capture) in analysis.captures() {
         input.push_capture(RuntimeCheckedCapture::new(
             owner,
-            runtime_type(capture.ty(), symbols)?,
+            runtime_type(capture.ty(), symbols, analysis)?,
         ));
     }
 
@@ -1000,16 +1036,29 @@ fn lower_dialogue_host_event(
     })
 }
 
+fn runtime_type(
+    ty: &TypeKind,
+    symbols: &ProjectSymbolTable,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
+    runtime_type_at(ty, symbols, analysis, &RuntimeTypeProjectionPath::root())
+}
+
 #[expect(
     clippy::too_many_lines,
     reason = "the closed semantic type vocabulary must be projected exhaustively in one boundary"
 )]
-fn runtime_type(
+fn runtime_type_at(
     ty: &TypeKind,
     symbols: &ProjectSymbolTable,
+    analysis: &FinalSemanticAnalysis,
+    path: &RuntimeTypeProjectionPath,
 ) -> Result<RuntimeNormalizedType, RuntimeSemanticProjectionError> {
     let identity = RuntimeSemanticTypeId::from_bytes(*ty.semantic_identity_digest().as_bytes());
-    let nested = |ty: &TypeKind| runtime_type(ty, symbols).map(Box::new);
+    let nested = |ty: &TypeKind| runtime_type_at(ty, symbols, analysis, path).map(Box::new);
+    let nested_at = |ty: &TypeKind, step| {
+        runtime_type_at(ty, symbols, analysis, &path.pushed(step)).map(Box::new)
+    };
     let shape = match ty {
         TypeKind::Unit => RuntimeTypeShape::Unit,
         TypeKind::Never => RuntimeTypeShape::Never,
@@ -1037,22 +1086,22 @@ fn runtime_type(
         TypeKind::IteratorState { item, .. } => RuntimeTypeShape::Iterator(nested(item)?),
         TypeKind::Vec(item) => RuntimeTypeShape::Sequence {
             kind: RuntimeSequenceKind::Vec,
-            item: nested(item)?,
+            item: nested_at(item, RuntimeTypeProjectionStep::SequenceItem)?,
         },
         TypeKind::Array {
             item,
             len: ArrayLength::Const(length),
         } => RuntimeTypeShape::Array {
-            item: nested(item)?,
+            item: nested_at(item, RuntimeTypeProjectionStep::SequenceItem)?,
             length: *length,
         },
         TypeKind::Slice(item) => RuntimeTypeShape::Sequence {
             kind: RuntimeSequenceKind::Slice,
-            item: nested(item)?,
+            item: nested_at(item, RuntimeTypeProjectionStep::SequenceItem)?,
         },
         TypeKind::Seq(item) => RuntimeTypeShape::Sequence {
             kind: RuntimeSequenceKind::Seq,
-            item: nested(item)?,
+            item: nested_at(item, RuntimeTypeProjectionStep::SequenceItem)?,
         },
         TypeKind::Map { key, value, .. } => RuntimeTypeShape::Map {
             key: nested(key)?,
@@ -1072,10 +1121,12 @@ fn runtime_type(
             error: nested(error)?,
         },
         TypeKind::Result { ok, error } => RuntimeTypeShape::Result {
-            value: nested(ok)?,
-            error: nested(error)?,
+            value: nested_at(ok, RuntimeTypeProjectionStep::ResultOk)?,
+            error: nested_at(error, RuntimeTypeProjectionStep::ResultError)?,
         },
-        TypeKind::Option(item) => RuntimeTypeShape::Option(nested(item)?),
+        TypeKind::Option(item) => {
+            RuntimeTypeShape::Option(nested_at(item, RuntimeTypeProjectionStep::OptionItem)?)
+        }
         TypeKind::ThreadHandle(item) => RuntimeTypeShape::ThreadHandle(nested(item)?),
         TypeKind::Shared(item) => RuntimeTypeShape::Shared(nested(item)?),
         TypeKind::Function {
@@ -1085,7 +1136,7 @@ fn runtime_type(
         } => RuntimeTypeShape::Function {
             parameters: params
                 .iter()
-                .map(|parameter| runtime_type(parameter, symbols))
+                .map(|parameter| runtime_type(parameter, symbols, analysis))
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice(),
             result: nested(return_type)?,
@@ -1096,31 +1147,22 @@ fn runtime_type(
                     declaration: Box::new(nominal.declaration().clone()),
                 }
             })?;
+            let checked = CheckedProjectNominal::new(
+                nominal.declaration().clone(),
+                declaration.owner(),
+                ty.semantic_identity_digest(),
+                nominal.arguments().to_vec(),
+            );
             RuntimeTypeShape::ProjectNominal {
-                nominal: RuntimeResolvedNominal::new(
-                    nominal.declaration().clone(),
-                    declaration.owner(),
-                    identity,
-                ),
+                nominal: runtime_nominal(&checked, symbols, analysis)?,
                 arguments: nominal
                     .arguments()
                     .iter()
-                    .map(|argument| runtime_type(argument, symbols))
+                    .map(|argument| runtime_type(argument, symbols, analysis))
                     .collect::<Result<Vec<_>, _>>()?
                     .into_boxed_slice(),
             }
         }
-        TypeKind::AcceptedNominal(nominal) => RuntimeTypeShape::Named {
-            nominal: RuntimeNominalTypeId::try_new(
-                nominal.declaration().canonical_path().canonical_string(),
-            )
-            .map_err(|error| RuntimeSemanticProjectionError::Type {
-                reason: format!("checked accepted nominal identity is invalid: {error}"),
-            })?,
-        },
-        TypeKind::CharacterDialogue(_) => RuntimeTypeShape::Named {
-            nominal: CharacterDialogueRuntimeSchema::nominal_type_id(),
-        },
         TypeKind::DialogueLine(_) => {
             return Err(RuntimeSemanticProjectionError::Type {
                 reason: "non-escaping DialogueLine operation reached runtime type projection"
@@ -1130,24 +1172,37 @@ fn runtime_type(
         TypeKind::Tuple(items) => RuntimeTypeShape::Tuple(
             items
                 .iter()
-                .map(|item| runtime_type(item, symbols))
+                .enumerate()
+                .map(|(index, item)| {
+                    runtime_type_at(
+                        item,
+                        symbols,
+                        analysis,
+                        &path.pushed(RuntimeTypeProjectionStep::TupleItem(projection_index(
+                            index,
+                        ))),
+                    )
+                })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice(),
         ),
         TypeKind::Choice(items) => RuntimeTypeShape::Choice(
             items
                 .iter()
-                .map(|item| runtime_type(item, symbols))
+                .enumerate()
+                .map(|(index, item)| {
+                    runtime_type_at(
+                        item,
+                        symbols,
+                        analysis,
+                        &path.pushed(RuntimeTypeProjectionStep::ChoiceAlternative(
+                            projection_index(index),
+                        )),
+                    )
+                })
                 .collect::<Result<Vec<_>, _>>()?
                 .into_boxed_slice(),
         ),
-        TypeKind::Named(name) => RuntimeTypeShape::Named {
-            nominal: RuntimeNominalTypeId::try_new(name.clone()).map_err(|error| {
-                RuntimeSemanticProjectionError::Type {
-                    reason: format!("checked named type identity is invalid: {error}"),
-                }
-            })?,
-        },
         TypeKind::Error(poison) => {
             return Err(RuntimeSemanticProjectionError::Type {
                 reason: format!(
@@ -1155,6 +1210,31 @@ fn runtime_type(
                     poison.index()
                 ),
             });
+        }
+        TypeKind::AcceptedNominal(nominal) => {
+            let owner = nominal.runtime_opaque_owner(identity);
+            RuntimeTypeShape::Opaque {
+                producer: owner.producer().clone(),
+                admission: owner.admission(),
+            }
+        }
+        TypeKind::CharacterDialogue(dialogue) => {
+            let owner = dialogue.runtime_opaque_owner();
+            debug_assert_eq!(owner.semantic_identity(), identity);
+            RuntimeTypeShape::Opaque {
+                producer: owner.producer().clone(),
+                admission: owner.admission(),
+            }
+        }
+        TypeKind::Named(type_label) => {
+            return Err(
+                RuntimeCheckedTypeProjectionError::MissingOpaqueProducerEvidence {
+                    semantic_identity: identity,
+                    path: path.clone(),
+                    type_label: type_label.clone(),
+                }
+                .into(),
+            );
         }
         TypeKind::Array { .. }
         | TypeKind::TextCluster
@@ -1188,9 +1268,20 @@ fn runtime_type(
         | TypeKind::Projection { .. }
         | TypeKind::CharacterPatch(_)
         | TypeKind::FocusPatch
-        | TypeKind::CharacterNominal(_) => RuntimeTypeShape::Opaque,
+        | TypeKind::CharacterNominal(_) => {
+            return Err(RuntimeSemanticProjectionError::Type {
+                reason: format!(
+                    "checked type `{}` has no closed runtime representation",
+                    ty.source_label()
+                ),
+            });
+        }
     };
     Ok(RuntimeNormalizedType::new(identity, shape))
+}
+
+fn projection_index(index: usize) -> u32 {
+    u32::try_from(index).expect("semantic type collections fit the u32 projection path contract")
 }
 
 fn runtime_literal(literal: &HirLiteral, ty: &TypeKind) -> Result<RuntimeValue, String> {
@@ -1375,14 +1466,21 @@ fn runtime_flow_identity(
     )
 }
 
-fn runtime_select(select: &CheckedSelectResolution) -> Option<RuntimeResolvedSelect> {
-    Some(match select {
-        CheckedSelectResolution::DialogueView { .. } => return None,
+fn runtime_select(
+    select: &CheckedSelectResolution,
+    symbols: &ProjectSymbolTable,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<Option<RuntimeResolvedSelect>, RuntimeSemanticProjectionError> {
+    Ok(Some(match select {
+        CheckedSelectResolution::DialogueView { .. } => return Ok(None),
         CheckedSelectResolution::Method { name } => {
             RuntimeResolvedSelect::Method { name: name.clone() }
         }
         CheckedSelectResolution::Field { nominal, name } => RuntimeResolvedSelect::Field {
-            nominal: nominal.as_ref().map(runtime_nominal),
+            nominal: nominal
+                .as_ref()
+                .map(|nominal| runtime_nominal(nominal, symbols, analysis))
+                .transpose()?,
             name: name.clone(),
         },
         CheckedSelectResolution::TupleElement { ordinal } => {
@@ -1393,19 +1491,118 @@ fn runtime_select(select: &CheckedSelectResolution) -> Option<RuntimeResolvedSel
             ordinal,
             name,
         } => RuntimeResolvedSelect::RecordElement {
-            nominal: nominal.as_ref().map(runtime_nominal),
+            nominal: nominal
+                .as_ref()
+                .map(|nominal| runtime_nominal(nominal, symbols, analysis))
+                .transpose()?,
             ordinal: *ordinal,
             name: name.clone(),
         },
-    })
+    }))
 }
 
-fn runtime_nominal(nominal: &CheckedProjectNominal) -> RuntimeResolvedNominal {
-    RuntimeResolvedNominal::new(
+fn runtime_nominal(
+    nominal: &CheckedProjectNominal,
+    symbols: &ProjectSymbolTable,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimeResolvedNominal, RuntimeSemanticProjectionError> {
+    let name = nominal.declaration().qualified_name();
+    let shape = analysis
+        .project_nominal_schema(symbols, nominal)
+        .map_err(
+            |source| RuntimeSemanticProjectionError::NominalSchemaProjection {
+                nominal: name.clone(),
+                source,
+            },
+        )?;
+    let schema = RuntimeSchemaProjection::schema(&shape);
+    let layout = RuntimeSchemaProjection::layout_hash(&name, &schema).map_err(|error| {
+        let EntryRuntimeProjectionError::NominalLayoutHash { source, .. } = error else {
+            unreachable!("layout_hash returns only NominalLayoutHash")
+        };
+        RuntimeSemanticProjectionError::NominalLayoutHash {
+            nominal: name,
+            source,
+        }
+    })?;
+    Ok(RuntimeResolvedNominal::new(
         nominal.declaration().clone(),
         nominal.owner(),
         RuntimeSemanticTypeId::from_bytes(*nominal.identity().as_bytes()),
+        layout,
+    ))
+}
+
+fn runtime_nominal_record(
+    nominal: &CheckedProjectNominal,
+    symbols: &ProjectSymbolTable,
+    analysis: &FinalSemanticAnalysis,
+) -> Result<RuntimeResolvedNominalRecord, RuntimeSemanticProjectionError> {
+    let name = nominal.declaration().qualified_name();
+    let declaration = symbols.nominal(nominal.declaration()).ok_or_else(|| {
+        RuntimeSemanticProjectionError::MissingNominal {
+            declaration: Box::new(nominal.declaration().clone()),
+        }
+    })?;
+    let arcweft_lang_hir::symbol::nominal::ProjectNominalBody::Struct { fields } =
+        declaration.body()
+    else {
+        return Err(RuntimeSemanticProjectionError::Type {
+            reason: format!("checked nominal record `{name}` is not a struct"),
+        });
+    };
+    let resolved = runtime_nominal(nominal, symbols, analysis)?;
+    let projected_fields = fields
+        .iter()
+        .map(|field| {
+            let ty =
+                analysis
+                    .ty(field.ty())
+                    .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                        reason: format!(
+                            "nominal record field `{}` has no accepted semantic type",
+                            field.name()
+                        ),
+                    })?;
+            let ty = nominal
+                .instantiate_declaration_type(declaration, ty)
+                .ok_or_else(|| RuntimeSemanticProjectionError::Type {
+                    reason: format!(
+                        "nominal record field `{}` cannot apply its checked nominal arguments",
+                        field.name()
+                    ),
+                })?;
+            let checked_type = runtime_type(&ty, symbols, analysis)?
+                .checked_type()
+                .map_err(|reason| RuntimeSemanticProjectionError::Type {
+                    reason: reason.to_string(),
+                })?;
+            Ok((field.name().as_str().to_owned(), checked_type))
+        })
+        .collect::<Result<Vec<_>, RuntimeSemanticProjectionError>>()?;
+    let layout = RuntimeNominalRecordLayout::try_from_checked_projection(
+        RuntimeNominalTypeId::try_new(name.clone()).map_err(|error| {
+            RuntimeSemanticProjectionError::Type {
+                reason: format!("checked project nominal identity is invalid: {error}"),
+            }
+        })?,
+        resolved.identity(),
+        resolved.layout(),
+        projected_fields,
     )
+    .map(Arc::new)
+    .map_err(
+        |source| RuntimeSemanticProjectionError::NominalRecordLayout {
+            nominal: name.clone(),
+            source,
+        },
+    )?;
+    RuntimeResolvedNominalRecord::try_new(resolved, layout).map_err(|source| {
+        RuntimeSemanticProjectionError::NominalRecordFact {
+            nominal: name,
+            source,
+        }
+    })
 }
 
 #[expect(
@@ -1442,7 +1639,7 @@ fn runtime_variant(
                         .to_owned(),
                 })?;
             RuntimeResolvedVariant::project(
-                runtime_nominal(nominal),
+                runtime_nominal(nominal, symbols, analysis)?,
                 variant.ordinal(),
                 selected,
                 runtime_project_variant_cases(declaration, nominal, symbols, analysis)?,
@@ -1478,10 +1675,12 @@ fn runtime_variant(
                     let payload = case
                         .payload()
                         .map(|payload| {
-                            runtime_type(payload, symbols)?
+                            runtime_type(payload, symbols, analysis)?
                                 .checked_type()
                                 .map(Box::new)
-                                .map_err(|reason| RuntimeSemanticProjectionError::Type { reason })
+                                .map_err(|reason| RuntimeSemanticProjectionError::Type {
+                                    reason: reason.to_string(),
+                                })
                         })
                         .transpose()?;
                     Ok(RuntimeCheckedVariantCase {
@@ -1506,8 +1705,8 @@ fn runtime_variant(
             )
         }
         CheckedVariantOwner::Option { item } => match variant.ordinal() {
-            0 => RuntimeResolvedVariant::option_some(runtime_type(item, symbols)?),
-            1 => RuntimeResolvedVariant::option_none(runtime_type(item, symbols)?),
+            0 => RuntimeResolvedVariant::option_some(runtime_type(item, symbols, analysis)?),
+            1 => RuntimeResolvedVariant::option_none(runtime_type(item, symbols, analysis)?),
             _ => {
                 return Err(RuntimeSemanticProjectionError::Type {
                     reason: "checked Option variant ordinal is outside the closed case set"
@@ -1516,8 +1715,8 @@ fn runtime_variant(
             }
         },
         CheckedVariantOwner::Result { ok, error } => {
-            let ok = runtime_type(ok, symbols)?;
-            let error = runtime_type(error, symbols)?;
+            let ok = runtime_type(ok, symbols, analysis)?;
+            let error = runtime_type(error, symbols, analysis)?;
             match variant.ordinal() {
                 0 => RuntimeResolvedVariant::result_ok(ok, error),
                 1 => RuntimeResolvedVariant::result_err(ok, error),
@@ -1917,8 +2116,8 @@ fn runtime_variant_constructor(
                     "Result constructor did not retain its exact checked Result type",
                 ));
             };
-            let ok = runtime_type(ok, symbols)?;
-            let error = runtime_type(error, symbols)?;
+            let ok = runtime_type(ok, symbols, analysis)?;
+            let error = runtime_type(error, symbols, analysis)?;
             Ok(Some(match kind {
                 arcweft_lang_sema::callable::ResultConstructorKind::Ok => {
                     RuntimeResolvedVariant::result_ok(ok, error)
@@ -1945,7 +2144,7 @@ fn runtime_variant_constructor(
                 ));
             }
             Ok(Some(RuntimeResolvedVariant::option_some(runtime_type(
-                item, symbols,
+                item, symbols, analysis,
             )?)))
         }
         CallableInstantiation::ExpectedEnum { expected } => {
@@ -2003,7 +2202,7 @@ fn runtime_variant_constructor(
                 nominal.arguments().to_vec(),
             );
             Ok(Some(RuntimeResolvedVariant::project(
-                runtime_nominal(&checked_nominal),
+                runtime_nominal(&checked_nominal, symbols, analysis)?,
                 ordinal,
                 variant,
                 runtime_project_variant_cases(declaration, &checked_nominal, symbols, analysis)?,
@@ -2051,10 +2250,12 @@ fn runtime_project_variant_cases(
                                 "project enum payload {owner:?} cannot apply its checked nominal arguments"
                             ),
                         })?;
-                    runtime_type(&ty, symbols)?
+                    runtime_type(&ty, symbols, analysis)?
                         .checked_type()
                         .map(Box::new)
-                        .map_err(|reason| RuntimeSemanticProjectionError::Type { reason })
+                        .map_err(|reason| RuntimeSemanticProjectionError::Type {
+                            reason: reason.to_string(),
+                        })
                 })
                 .transpose()?;
             Ok(RuntimeCheckedVariantCase {

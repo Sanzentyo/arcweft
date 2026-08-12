@@ -3,6 +3,7 @@
 mod identity;
 mod limits;
 mod patch;
+mod runtime_type;
 mod schema;
 mod typed_value;
 
@@ -10,7 +11,9 @@ use crate::{DialogueContent, InlineFailurePolicy, LinePlan};
 use arcweft_character::id::{CharacterId, CharacterLookId};
 use arcweft_core::{
     entry::{RuntimeValueDigest, TypeLayoutHash},
+    pattern::{RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId},
     plan::RuntimeLineId,
+    value::RuntimeOpaqueValueError,
 };
 use arcweft_id::TextKey;
 use arcweft_source::SourceAnchor;
@@ -27,6 +30,7 @@ pub use identity::{
 };
 pub use limits::{CharacterDialogueLimits, PRODUCTION_CHARACTER_DIALOGUE_LIMITS};
 pub use patch::{CharacterDialoguePatch, PatchField, RuntimeFieldPath, StructuredPatch};
+pub use runtime_type::{CharacterDialogueCharacterType, CharacterDialogueType};
 pub use schema::{
     CharacterDialogueRuntimeCustomFieldCatalog, CharacterDialogueRuntimeCustomFieldDescriptor,
     CharacterDialogueRuntimeSchema, CharacterDialogueValue,
@@ -136,6 +140,20 @@ pub enum CharacterDialogueValueError {
         field: CharacterDialogueCustomFieldId,
         view: ViewId,
     },
+    #[error("opaque CharacterDialogue value uses producer {actual:?}, expected {expected:?}")]
+    OpaqueProducer {
+        expected: RuntimeOpaqueTypeProducerId,
+        actual: RuntimeOpaqueTypeProducerId,
+    },
+    #[error("opaque CharacterDialogue payload is not a nominal record")]
+    OpaquePayload,
+    #[error("opaque CharacterDialogue semantic identity does not match decoded character")]
+    OpaqueSemanticIdentity {
+        expected: RuntimeSemanticTypeId,
+        actual: RuntimeSemanticTypeId,
+    },
+    #[error(transparent)]
+    OpaqueValue(#[from] RuntimeOpaqueValueError),
     #[error(transparent)]
     Nominal(#[from] arcweft_core::value::RuntimeNominalRecordError),
     #[error(transparent)]

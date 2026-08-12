@@ -35,6 +35,7 @@ fn validate_value(
             .iter()
             .try_for_each(|field| validate_value(&field.value, depth + 1, maximum)),
         RuntimeValue::NominalRecord(record) => validate_values(record.fields(), depth + 1, maximum),
+        RuntimeValue::Opaque(value) => validate_value(value.payload(), depth + 1, maximum),
         RuntimeValue::Function(function) => function
             .captures
             .iter()

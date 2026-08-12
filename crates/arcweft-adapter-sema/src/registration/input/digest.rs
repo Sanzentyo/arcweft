@@ -62,6 +62,7 @@ fn hash_manifest_nominals(hasher: &mut blake3::Hasher, manifest: &AdapterManifes
     for declaration in nominals {
         hash_nominal_path(hasher, declaration.path());
         hash_u16(hasher, declaration.arity());
+        hash_str(hasher, declaration.opaque_producer().as_str());
         hash_u8(
             hasher,
             match declaration.visibility() {
@@ -95,6 +96,7 @@ fn hash_manifest_rust_metadata(hasher: &mut blake3::Hasher, manifest: &AdapterMa
     for rust_type in rust_types {
         hash_rust_package(hasher, rust_type.package());
         hash_nominal_path(hasher, rust_type.accepted_path());
+        hash_str(hasher, rust_type.opaque_producer().as_str());
         hash_rust_path(hasher, &rust_type.decl().path);
         hash_str(hasher, &rust_type.decl().rust_path);
         hash_len(hasher, rust_type.decl().parameters.len());

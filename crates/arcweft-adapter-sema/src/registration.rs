@@ -10,6 +10,7 @@ use arcweft_adapter_context::manifest::{
     AdapterCallableModelError, AdapterEffectCapability, AdapterEnvironmentOwnerId, AdapterManifest,
     AdapterManifestModelError, AdapterNominalPathError,
 };
+use arcweft_core::entry::RuntimeIdentityError;
 use arcweft_lang_hir::symbol::{
     CallablePackageIdError, ExternalDeclarationSeed, ExternalDeclarationSeedError,
     ProjectDirectBinding, ProjectDirectBindingError,
@@ -39,7 +40,7 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_source::{
     SourceDocument, SourceDocumentError, SourceDocumentId, SourceDocumentIdError, SourceName,
-    SourceSpanError,
+    SourceSpan, SourceSpanError,
 };
 use thiserror::Error;
 
@@ -65,6 +66,13 @@ pub struct SourceBackedAdapterRegistrationParts {
     pub document: Arc<SourceDocument>,
     pub externals: Box<[ExternalRegistrationFact]>,
     pub environment: SourceBackedEnvironmentRegistrationInput,
+}
+
+/// External descriptor family that authored an opaque producer identity.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ExternalOpaqueProducerSourceKind {
+    AdapterNominal,
+    RustExport,
 }
 
 /// Failure while binding adapter facts to one generated source revision.
@@ -133,6 +141,28 @@ pub enum AdapterRegistrationFactsError {
     },
     #[error("missing generated item source for {item:?}")]
     MissingItemSource {
+        item: Box<arcweft_lang_sema::registration::EnvironmentPublicationItemId>,
+    },
+    #[error("invalid {source_kind:?} opaque producer `{producer}`")]
+    InvalidOpaqueProducer {
+        source_kind: ExternalOpaqueProducerSourceKind,
+        producer: String,
+        source_span: SourceSpan,
+        #[source]
+        error: RuntimeIdentityError,
+    },
+    #[error("{source_kind:?} opaque producer `{producer}` uses reserved namespace `std.`")]
+    ReservedOpaqueProducer {
+        source_kind: ExternalOpaqueProducerSourceKind,
+        producer: String,
+        source_span: SourceSpan,
+    },
+    #[error("duplicate generated opaque-producer source for {item:?}")]
+    DuplicateOpaqueProducerSource {
+        item: Box<arcweft_lang_sema::registration::EnvironmentPublicationItemId>,
+    },
+    #[error("missing generated opaque-producer source for {item:?}")]
+    MissingOpaqueProducerSource {
         item: Box<arcweft_lang_sema::registration::EnvironmentPublicationItemId>,
     },
 }

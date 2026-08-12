@@ -5,12 +5,13 @@ use proc_macro2::TokenStream as TokenStream2;
 use quote::{format_ident, quote};
 use std::collections::BTreeMap;
 use syn::{
-    Data, DeriveInput, Fields, FnArg, GenericArgument, GenericParam, Ident, ItemFn, LitStr, Pat,
-    PatIdent, PathArguments, ReturnType, Type, parse_macro_input, parse_quote, spanned::Spanned,
+    Attribute, Data, DeriveInput, Expr, ExprLit, Fields, FnArg, GenericArgument, GenericParam,
+    Ident, ItemFn, Lit, LitStr, Meta, Pat, PatIdent, PathArguments, ReturnType, Type,
+    parse_macro_input, parse_quote, punctuated::Punctuated, spanned::Spanned,
 };
 
 /// Derives `arcweft_rust_abi::ArcweftTypeMetadata` for a Rust ADT.
-#[proc_macro_derive(ArcweftType)]
+#[proc_macro_derive(ArcweftType, attributes(arcweft))]
 pub fn derive_arcweft_type(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     expand_arcweft_type(&input)
@@ -68,6 +69,7 @@ fn parse_export_options(attr: TokenStream) -> ExportOptions {
 }
 
 fn expand_arcweft_type(input: &DeriveInput) -> syn::Result<TokenStream2> {
+    let opaque_producer = opaque_producer_attribute(&input.attrs, input.ident.span())?;
     let parameter_indices = type_parameter_indices(input)?;
     let mut bounded_generics = input.generics.clone();
     for parameter in &mut bounded_generics.params {
@@ -124,12 +126,103 @@ fn expand_arcweft_type(input: &DeriveInput) -> syn::Result<TokenStream2> {
                 arcweft_rust_abi::ArcweftRustTypeDecl {
                     path: #path,
                     rust_path: #rust_path.to_owned(),
+                    opaque_producer: arcweft_rust_abi::ArcweftRustOpaqueTypeProducerId::try_new(#opaque_producer)
+                        .expect("ArcweftType macro validated the opaque producer literal"),
                     parameters: vec![#(#parameters),*],
                     kind: #kind,
                 }
             }
         }
     })
+}
+
+fn opaque_producer_attribute(
+    attributes: &[Attribute],
+    item_span: proc_macro2::Span,
+) -> syn::Result<LitStr> {
+    let mut producer = None;
+    for attribute in attributes
+        .iter()
+        .filter(|attribute| attribute.path().is_ident("arcweft"))
+    {
+        let Meta::List(list) = &attribute.meta else {
+            return Err(malformed_arcweft_type_attribute(attribute));
+        };
+        let options = list
+            .parse_args_with(Punctuated::<Meta, syn::Token![,]>::parse_terminated)
+            .map_err(|_| malformed_arcweft_type_attribute(attribute))?;
+        if options.is_empty() {
+            return Err(malformed_arcweft_type_attribute(attribute));
+        }
+        for option in options {
+            let Meta::NameValue(option) = option else {
+                return Err(malformed_arcweft_type_attribute(attribute));
+            };
+            if !option.path.is_ident("opaque_producer") {
+                return Err(syn::Error::new(
+                    option.path.span(),
+                    "unsupported ArcweftType option; expected opaque_producer",
+                ));
+            }
+            if producer.is_some() {
+                return Err(syn::Error::new(
+                    option.path.span(),
+                    "duplicate ArcweftType opaque_producer option",
+                ));
+            }
+            let Expr::Lit(ExprLit {
+                lit: Lit::Str(value),
+                ..
+            }) = option.value
+            else {
+                return Err(syn::Error::new(
+                    option.value.span(),
+                    "ArcweftType opaque_producer must be a string literal",
+                ));
+            };
+            validate_opaque_producer_literal(&value)?;
+            producer = Some(value);
+        }
+    }
+    producer.ok_or_else(|| {
+        syn::Error::new(
+            item_span,
+            "ArcweftType requires #[arcweft(opaque_producer = \"...\")]",
+        )
+    })
+}
+
+fn malformed_arcweft_type_attribute(attribute: &Attribute) -> syn::Error {
+    syn::Error::new(
+        attribute.span(),
+        "malformed ArcweftType attribute; expected #[arcweft(opaque_producer = \"...\")]",
+    )
+}
+
+fn validate_opaque_producer_literal(value: &LitStr) -> syn::Result<()> {
+    let producer = value.value();
+    if producer.is_empty() {
+        return Err(syn::Error::new(
+            value.span(),
+            "ArcweftType opaque_producer must not be empty",
+        ));
+    }
+    if let Some((byte, _)) = producer
+        .char_indices()
+        .find(|(_, character)| character.is_control())
+    {
+        return Err(syn::Error::new(
+            value.span(),
+            format!("ArcweftType opaque_producer contains a control character at byte {byte}"),
+        ));
+    }
+    if producer.starts_with("std.") {
+        return Err(syn::Error::new(
+            value.span(),
+            "ArcweftType opaque_producer must not use the reserved std. namespace",
+        ));
+    }
+    Ok(())
 }
 
 fn type_parameter_indices(input: &DeriveInput) -> syn::Result<TypeParameters> {

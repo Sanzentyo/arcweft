@@ -1,7 +1,8 @@
 use arcweft_manifest_model::{
-    ActivityId, AdapterExportId, AdapterTypeName, CapabilityId, DependencyDemand, ExternalModuleId,
-    FieldName, FunctionName, GeneratorName, ManifestVisibility, NormalizedProjectPath, PackageId,
-    PackageVersion, RawDigest, SemanticDigest, TargetTriple, TypeReference, WitWorldId,
+    ActivityId, AdapterExportId, AdapterOpaqueTypeProducerId, AdapterTypeName, CapabilityId,
+    DependencyDemand, ExternalModuleId, FieldName, FunctionName, GeneratorName, ManifestVisibility,
+    NormalizedProjectPath, PackageId, PackageVersion, RawDigest, SemanticDigest, TargetTriple,
+    TypeReference, WitWorldId,
 };
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::fmt;
@@ -210,6 +211,7 @@ pub struct AdapterExports {
 pub struct AdapterTypeExport {
     pub name: AdapterTypeName,
     pub visibility: ManifestVisibility,
+    pub opaque_producer: AdapterOpaqueTypeProducerId,
     pub shape: AdapterTypeShape,
 }
 

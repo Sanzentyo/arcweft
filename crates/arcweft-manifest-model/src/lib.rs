@@ -5,6 +5,7 @@ mod canonical;
 mod digest;
 mod identity;
 mod localization;
+mod opaque_producer;
 mod path;
 mod schema;
 
@@ -20,6 +21,7 @@ pub use localization::{
     CharacterNameLocalePolicySpec, CharacterNameLocalePolicySpecError,
     MAX_PROFILE_CHARACTER_NAME_FALLBACKS, ProfileLocalizationSpec,
 };
+pub use opaque_producer::{AdapterOpaqueTypeProducerId, AdapterOpaqueTypeProducerIdError};
 pub use path::{NormalizedProjectPath, NormalizedProjectPathError};
 pub use schema::{
     ActivityBindingSpec, ActivityImplementationSpec, AdapterFamily, BuildSpec, ContentCompression,

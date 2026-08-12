@@ -13,6 +13,10 @@ fn path(segments: &[&str]) -> ArcweftRustTypePath {
     .expect("non-empty path")
 }
 
+fn producer(value: &str) -> ArcweftRustOpaqueTypeProducerId {
+    ArcweftRustOpaqueTypeProducerId::try_new(value).expect("valid fixture producer")
+}
+
 fn manifest() -> ArcweftRustManifest {
     let package_id = package("truck_game");
     ArcweftRustManifest::new(ArcweftRustPackage {
@@ -23,6 +27,7 @@ fn manifest() -> ArcweftRustManifest {
     .with_type(ArcweftRustTypeDecl {
         path: path(&["model", "Rank"]),
         rust_path: "truck_game::model::Rank".to_owned(),
+        opaque_producer: producer("fixture.rust-abi.rank"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Enum {
             variants: vec![ArcweftRustVariant {
@@ -94,6 +99,7 @@ fn declaration_parameter_indices_are_contiguous_and_bound() {
     manifest.types = vec![ArcweftRustTypeDecl {
         path: path(&["Envelope"]),
         rust_path: "truck_game::Envelope".to_owned(),
+        opaque_producer: producer("fixture.rust-abi.envelope"),
         parameters: vec![ArcweftRustTypeParameter {
             index: ArcweftRustTypeParameterIndex::try_from_usize(0).expect("index"),
             name: ArcweftRustTypeParameterName::try_new("T").expect("name"),
@@ -187,6 +193,7 @@ fn display_is_presentation_only_and_preserves_shapes() {
     let tuple = ArcweftRustTypeDecl {
         path: path(&["Point"]),
         rust_path: "game::Point".to_owned(),
+        opaque_producer: producer("fixture.rust-abi.point"),
         parameters: Vec::new(),
         kind: ArcweftRustTypeKind::Struct {
             shape: ArcweftRustStructShape::Tuple {
@@ -197,4 +204,54 @@ fn display_is_presentation_only_and_preserves_shapes() {
 
     assert_eq!(nominal.to_string(), "game::model::Rank<String>");
     assert_eq!(tuple.to_string(), "struct Point(i32, i32)");
+}
+
+#[test]
+fn producer_ids_are_exact_validated_values() {
+    assert_eq!(
+        producer("fixture.rust-abi.valid").as_str(),
+        "fixture.rust-abi.valid"
+    );
+    assert!(matches!(
+        ArcweftRustOpaqueTypeProducerId::try_new(""),
+        Err(ArcweftRustOpaqueTypeProducerIdError::Empty)
+    ));
+    assert!(matches!(
+        ArcweftRustOpaqueTypeProducerId::try_new("fixture\u{0000}bad"),
+        Err(ArcweftRustOpaqueTypeProducerIdError::ControlCharacter { byte: 7 })
+    ));
+    assert!(matches!(
+        ArcweftRustOpaqueTypeProducerId::try_new("std.reserved"),
+        Err(ArcweftRustOpaqueTypeProducerIdError::ReservedStandardNamespace { .. })
+    ));
+}
+
+#[test]
+fn json_schema_and_producer_precedence_are_closed() {
+    let package = r#"{"id":"game","version":"1.0.0"}"#;
+    let unsupported =
+        format!(r#"{{"schema_version":2,"package":{package},"types":[{{}}],"functions":[]}}"#);
+    assert!(matches!(
+        ArcweftRustManifest::from_json(&unsupported),
+        Err(ArcweftRustAbiError::UnsupportedSchema {
+            found: 2,
+            expected: 1
+        })
+    ));
+    let missing =
+        format!(r#"{{"schema_version":1,"package":{package},"types":[{{}}],"functions":[]}}"#);
+    assert!(matches!(
+        ArcweftRustManifest::from_json(&missing),
+        Err(ArcweftRustAbiError::MissingOpaqueProducer { .. })
+    ));
+    let reserved = format!(
+        r#"{{"schema_version":1,"package":{package},"types":[{{"opaque_producer":"std.x"}}],"functions":[]}}"#
+    );
+    assert!(matches!(
+        ArcweftRustManifest::from_json(&reserved),
+        Err(ArcweftRustAbiError::InvalidOpaqueProducer {
+            error: ArcweftRustOpaqueTypeProducerIdError::ReservedStandardNamespace { .. },
+            ..
+        })
+    ));
 }

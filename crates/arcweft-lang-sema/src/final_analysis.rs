@@ -54,6 +54,7 @@ mod analyzer;
 mod error;
 mod input;
 mod model;
+mod nominal_schema;
 mod recovery_diagnostics;
 mod report;
 mod type_rules;
@@ -85,6 +86,7 @@ pub use model::{
     CheckedVariantResolution, CheckedViewCall, CheckedViewCallee, PostfixBracketResolution,
     RegisteredSemanticValueId,
 };
+pub use nominal_schema::NominalSchemaProjectionError;
 pub use recovery_diagnostics::{
     CallableTailRecoveryDiagnostic, CallableTailRecoveryProjectionError,
     project_callable_tail_recovery_diagnostics,

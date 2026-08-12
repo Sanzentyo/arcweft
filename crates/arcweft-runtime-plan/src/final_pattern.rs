@@ -58,6 +58,9 @@ impl<'hir> FinalPatternLowerer<'hir> {
                     .facts
                     .pattern_variant(id)
                     .ok_or_else(|| format!("checked variant fact is missing for pattern {id:?}"))?;
+                let selection = selected
+                    .checked_selection()
+                    .map_err(|error| error.to_string())?;
                 let payload = match variant.payload() {
                     HirVariantPatternPayload::Absent => None,
                     HirVariantPatternPayload::Pattern(payload) => {
@@ -67,10 +70,16 @@ impl<'hir> FinalPatternLowerer<'hir> {
                         return Err(format!("variant pattern {id:?} has a recovered payload"));
                     }
                 };
+                if selection.payload().is_some() != payload.is_some() {
+                    return Err(format!(
+                        "variant pattern `{}` at {id:?} has incompatible payload presence",
+                        selection.name()
+                    ));
+                }
                 Ok(RuntimePattern::Variant {
-                    owner: selected.owner().checked_type()?,
-                    ordinal: selected.ordinal(),
-                    name: selected.name().to_owned(),
+                    owner: selection.owner().clone(),
+                    ordinal: selection.ordinal(),
+                    name: selection.name().to_owned(),
                     payload,
                 })
             }
@@ -85,11 +94,11 @@ impl<'hir> FinalPatternLowerer<'hir> {
                     HirPatternRecordPath::Absent => None,
                     HirPatternRecordPath::Resolved(_) => Some(
                         self.facts
-                            .pattern_nominal(id)
+                            .pattern_nominal_record(id)
                             .ok_or_else(|| {
                                 format!("checked nominal fact is missing for pattern {id:?}")
                             })?
-                            .checked_type()?,
+                            .checked_type(),
                     ),
                     HirPatternRecordPath::Recovered(_) => {
                         return Err(format!("record pattern {id:?} has a recovered path"));
@@ -161,7 +170,7 @@ impl<'hir> FinalPatternLowerer<'hir> {
                     .ok_or_else(|| format!("checked type fact is missing for {ty:?}"))?;
                 Ok(RuntimePattern::Typed {
                     name,
-                    ty: ty.checked_type()?,
+                    ty: ty.checked_type().map_err(|error| error.to_string())?,
                 })
             }
             HirPatternKind::Or { .. } => Err(format!(

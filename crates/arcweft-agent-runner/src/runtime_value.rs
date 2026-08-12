@@ -46,6 +46,7 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
                 .map(runtime_value_to_json)
                 .collect::<Vec<_>>(),
         }),
+        RuntimeValue::Opaque(value) => runtime_value_to_json(value.payload()),
         RuntimeValue::Variant {
             owner,
             ordinal,

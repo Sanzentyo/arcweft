@@ -1,7 +1,7 @@
-use crate::entry::RuntimeNominalTypeId;
+use crate::entry::{RuntimeIdentityError, RuntimeNominalTypeId, TypeLayoutHash};
 use crate::value::{
-    RuntimeBinding, RuntimeEvalError, RuntimeSeq, RuntimeSignedIntWidth, RuntimeUnsignedIntWidth,
-    RuntimeValue, runtime_sequence_values,
+    RuntimeBinding, RuntimeEvalError, RuntimeOpaqueValue, RuntimeOpaqueValueError, RuntimeSeq,
+    RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue, runtime_sequence_values,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -24,6 +24,183 @@ impl RuntimeSemanticTypeId {
     #[must_use]
     pub const fn as_bytes(&self) -> &[u8; 32] {
         &self.0
+    }
+}
+
+/// Canonical semantic-type identity encoder shared by semantic producers.
+///
+/// The domain is fixed at version 1. Producers own their typed fragments while
+/// this lower-layer encoder owns the common byte grammar and digest algorithm.
+pub struct RuntimeSemanticTypeIdentityEncoder(blake3::Hasher);
+
+impl RuntimeSemanticTypeIdentityEncoder {
+    #[must_use]
+    pub fn new() -> Self {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update(b"arcweft.semantic-type.identity.v1\0");
+        Self(hasher)
+    }
+
+    pub fn write_tag(&mut self, value: u16) {
+        self.write_u16(value);
+    }
+
+    pub fn write_u8(&mut self, value: u8) {
+        self.0.update(&[value]);
+    }
+
+    pub fn write_u16(&mut self, value: u16) {
+        self.0.update(&value.to_le_bytes());
+    }
+
+    pub fn write_u32(&mut self, value: u32) {
+        self.0.update(&value.to_le_bytes());
+    }
+
+    pub fn write_u64(&mut self, value: u64) {
+        self.0.update(&value.to_le_bytes());
+    }
+
+    /// Writes a sequence length in the canonical `u32` representation.
+    ///
+    /// # Panics
+    ///
+    /// Panics when `value` exceeds the semantic identity grammar's `u32`
+    /// sequence-length bound.
+    pub fn write_len(&mut self, value: usize) {
+        self.write_u32(
+            u32::try_from(value).expect("accepted semantic sequences fit the u32 contract"),
+        );
+    }
+
+    pub fn write_str(&mut self, value: &str) {
+        self.write_len(value.len());
+        self.write_bytes(value.as_bytes());
+    }
+
+    pub fn write_bytes(&mut self, value: &[u8]) {
+        self.0.update(value);
+    }
+
+    #[must_use]
+    pub fn finish(self) -> RuntimeSemanticTypeId {
+        RuntimeSemanticTypeId::from_bytes(*self.0.finalize().as_bytes())
+    }
+}
+
+impl Default for RuntimeSemanticTypeIdentityEncoder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Stable identity of a producer that validates opaque runtime payloads.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[repr(transparent)]
+pub struct RuntimeOpaqueTypeProducerId(RuntimeNominalTypeId);
+
+impl RuntimeOpaqueTypeProducerId {
+    pub fn try_new(value: impl Into<String>) -> Result<Self, RuntimeIdentityError> {
+        RuntimeNominalTypeId::try_new(value).map(Self)
+    }
+
+    #[must_use]
+    pub const fn from_nominal(value: RuntimeNominalTypeId) -> Self {
+        Self(value)
+    }
+
+    #[must_use]
+    pub const fn nominal(&self) -> &RuntimeNominalTypeId {
+        &self.0
+    }
+
+    #[must_use]
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+/// Whether an opaque checked owner names one exact type or a producer-defined top.
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[repr(u8)]
+pub enum RuntimeOpaqueTypeAdmission {
+    ExactIdentity = 0,
+    ProducerWide = 1,
+}
+
+/// Closed checked owner for one producer-validated opaque type.
+#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+pub struct RuntimeOpaqueTypeOwner {
+    producer: RuntimeOpaqueTypeProducerId,
+    semantic_identity: RuntimeSemanticTypeId,
+    admission: RuntimeOpaqueTypeAdmission,
+}
+
+impl RuntimeOpaqueTypeOwner {
+    #[must_use]
+    pub const fn exact(
+        producer: RuntimeOpaqueTypeProducerId,
+        semantic_identity: RuntimeSemanticTypeId,
+    ) -> Self {
+        Self {
+            producer,
+            semantic_identity,
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        }
+    }
+
+    #[must_use]
+    pub const fn producer_wide(
+        producer: RuntimeOpaqueTypeProducerId,
+        semantic_identity: RuntimeSemanticTypeId,
+    ) -> Self {
+        Self {
+            producer,
+            semantic_identity,
+            admission: RuntimeOpaqueTypeAdmission::ProducerWide,
+        }
+    }
+
+    #[must_use]
+    pub const fn producer(&self) -> &RuntimeOpaqueTypeProducerId {
+        &self.producer
+    }
+
+    #[must_use]
+    pub const fn semantic_identity(&self) -> RuntimeSemanticTypeId {
+        self.semantic_identity
+    }
+
+    #[must_use]
+    pub const fn admission(&self) -> RuntimeOpaqueTypeAdmission {
+        self.admission
+    }
+
+    #[must_use]
+    pub fn accepts_owner(&self, actual: &Self) -> bool {
+        self == actual
+            || (self.admission == RuntimeOpaqueTypeAdmission::ProducerWide
+                && actual.admission == RuntimeOpaqueTypeAdmission::ExactIdentity
+                && self.producer == actual.producer)
+    }
+
+    #[must_use]
+    pub fn accepts_opaque_value(&self, actual: &RuntimeOpaqueValue) -> bool {
+        &self.producer == actual.producer()
+            && (self.admission == RuntimeOpaqueTypeAdmission::ProducerWide
+                || self.semantic_identity == actual.semantic_identity())
+    }
+
+    pub fn try_wrap(&self, payload: RuntimeValue) -> Result<RuntimeValue, RuntimeOpaqueValueError> {
+        if self.admission == RuntimeOpaqueTypeAdmission::ProducerWide {
+            return Err(RuntimeOpaqueValueError::NonConcreteOwner {
+                producer: self.producer.clone(),
+                semantic_identity: self.semantic_identity,
+            });
+        }
+        Ok(RuntimeValue::Opaque(RuntimeOpaqueValue::new_exact(
+            self, payload,
+        )))
     }
 }
 
@@ -109,6 +286,10 @@ pub enum RuntimeCheckedType {
     Nominal {
         nominal: RuntimeNominalTypeId,
         semantic_identity: RuntimeSemanticTypeId,
+        layout: TypeLayoutHash,
+    },
+    Opaque {
+        owner: RuntimeOpaqueTypeOwner,
     },
     Variant {
         nominal: RuntimeNominalTypeId,
@@ -141,14 +322,132 @@ impl RuntimeCheckedType {
     }
 
     #[must_use]
-    pub fn accepts_variant_case(&self, ordinal: u32, name: &str) -> bool {
+    pub fn variant_case(&self, ordinal: u32) -> Option<RuntimeCheckedVariantCase> {
         match self {
             Self::Variant { cases, .. } => usize::try_from(ordinal)
                 .ok()
                 .and_then(|ordinal| cases.get(ordinal))
-                .is_some_and(|case| case.name == name),
-            Self::Result { .. } => matches!((ordinal, name), (0, "Ok") | (1, "Err")),
-            Self::Option(_) => matches!((ordinal, name), (0, "Some") | (1, "None")),
+                .cloned(),
+            Self::Result { ok, error } => match ordinal {
+                0 => Some(RuntimeCheckedVariantCase {
+                    name: "Ok".to_owned(),
+                    payload: Some(ok.clone()),
+                }),
+                1 => Some(RuntimeCheckedVariantCase {
+                    name: "Err".to_owned(),
+                    payload: Some(error.clone()),
+                }),
+                _ => None,
+            },
+            Self::Option(item) => match ordinal {
+                0 => Some(RuntimeCheckedVariantCase {
+                    name: "Some".to_owned(),
+                    payload: Some(item.clone()),
+                }),
+                1 => Some(RuntimeCheckedVariantCase {
+                    name: "None".to_owned(),
+                    payload: None,
+                }),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// Returns whether a runtime value satisfies this exact closed predicate.
+    #[must_use]
+    pub fn accepts_value(&self, value: &RuntimeValue) -> bool {
+        self.accepts_value_at_depth(value, 0)
+    }
+
+    fn accepts_value_at_depth(&self, value: &RuntimeValue, depth: usize) -> bool {
+        if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
+            return false;
+        }
+        match (value, self) {
+            (RuntimeValue::Unit, Self::Unit)
+            | (RuntimeValue::Bool(_), Self::Bool)
+            | (RuntimeValue::F32(_), Self::F32)
+            | (RuntimeValue::F64(_), Self::F64)
+            | (RuntimeValue::String(_), Self::String)
+            | (RuntimeValue::Char(_), Self::Char)
+            | (RuntimeValue::Duration(_), Self::Duration)
+            | (RuntimeValue::EntityRef(_), Self::EntityReference) => true,
+            (RuntimeValue::Int(value), Self::Signed(width)) => value.width() == *width,
+            (RuntimeValue::UInt(value), Self::Unsigned(width)) => value.width() == *width,
+            (RuntimeValue::Seq(sequence), Self::Bytes) => sequence
+                .clone()
+                .into_values()
+                .iter()
+                .all(|value| matches!(value, RuntimeValue::UInt(value) if value.width() == RuntimeUnsignedIntWidth::U8)),
+            (RuntimeValue::Seq(sequence), Self::Sequence(item)) => sequence
+                .clone()
+                .into_values()
+                .iter()
+                .all(|value| item.accepts_value_at_depth(value, depth + 1)),
+            (RuntimeValue::Tuple(values), Self::Tuple(items)) => {
+                values.len() == items.len()
+                    && values
+                        .iter()
+                        .zip(items)
+                        .all(|(value, item)| item.accepts_value_at_depth(value, depth + 1))
+            }
+            (value, Self::Choice(alternatives)) => alternatives
+                .iter()
+                .any(|alternative| alternative.accepts_value_at_depth(value, depth + 1)),
+            (RuntimeValue::Opaque(value), Self::Opaque { owner }) => {
+                owner.accepts_opaque_value(value)
+            }
+            (
+                RuntimeValue::NominalRecord(record),
+                Self::Nominal {
+                    nominal, layout, ..
+                },
+            ) => record.type_id() == nominal && record.layout() == *layout,
+            (
+                RuntimeValue::Variant { owner, .. },
+                Self::Variant {
+                    nominal,
+                    semantic_identity,
+                    ..
+                },
+            ) => {
+                owner
+                    == &RuntimeVariantIdentity::Nominal {
+                        nominal: nominal.clone(),
+                        semantic_identity: *semantic_identity,
+                    }
+            }
+            (
+                RuntimeValue::Variant {
+                    owner,
+                    ordinal,
+                    name,
+                    payload,
+                },
+                Self::Result { ok, error },
+            ) if *owner == RuntimeVariantIdentity::Result => {
+                match (*ordinal, name.as_str(), payload.as_deref()) {
+                    (0, "Ok", Some(value)) => ok.accepts_value_at_depth(value, depth + 1),
+                    (1, "Err", Some(value)) => error.accepts_value_at_depth(value, depth + 1),
+                    _ => false,
+                }
+            }
+            (
+                RuntimeValue::Variant {
+                    owner,
+                    ordinal,
+                    name,
+                    payload,
+                },
+                Self::Option(item),
+            ) if *owner == RuntimeVariantIdentity::Option => {
+                match (*ordinal, name.as_str(), payload.as_deref()) {
+                    (0, "Some", Some(value)) => item.accepts_value_at_depth(value, depth + 1),
+                    (1, "None", None) => true,
+                    _ => false,
+                }
+            }
             _ => false,
         }
     }
@@ -222,7 +521,7 @@ fn collect_pattern_bindings(
             Ok(true)
         }
         RuntimePattern::Typed { name, ty } => {
-            if !runtime_value_matches_pattern_type(value, ty, 0) {
+            if !ty.accepts_value(value) {
                 return Ok(false);
             }
             bindings.push(RuntimeBinding {
@@ -393,7 +692,9 @@ fn collect_variant_pattern_bindings(
     else {
         return Ok(false);
     };
-    if !owner.accepts_variant_case(ordinal, name)
+    if owner
+        .variant_case(ordinal)
+        .is_none_or(|case| case.name != name)
         || owner.variant_identity().as_ref() != Some(actual_owner)
         || ordinal != *actual_ordinal
         || name != actual_name
@@ -404,94 +705,6 @@ fn collect_variant_pattern_bindings(
         (Some(pattern), Some(value)) => collect_pattern_bindings(pattern, value, bindings),
         (None, None | Some(_)) => Ok(true),
         (Some(_), None) => Ok(false),
-    }
-}
-
-fn runtime_value_matches_pattern_type(
-    value: &RuntimeValue,
-    ty: &RuntimeCheckedType,
-    depth: usize,
-) -> bool {
-    if depth > crate::value::MAX_RUNTIME_VALUE_NESTING_DEPTH {
-        return false;
-    }
-    match (value, ty) {
-        (RuntimeValue::Unit, RuntimeCheckedType::Unit)
-        | (RuntimeValue::Bool(_), RuntimeCheckedType::Bool)
-        | (RuntimeValue::F32(_), RuntimeCheckedType::F32)
-        | (RuntimeValue::F64(_), RuntimeCheckedType::F64)
-        | (RuntimeValue::String(_), RuntimeCheckedType::String)
-        | (RuntimeValue::Char(_), RuntimeCheckedType::Char)
-        | (RuntimeValue::Duration(_), RuntimeCheckedType::Duration)
-        | (RuntimeValue::EntityRef(_), RuntimeCheckedType::EntityReference) => true,
-        (RuntimeValue::Int(value), RuntimeCheckedType::Signed(width)) => value.width() == *width,
-        (RuntimeValue::UInt(value), RuntimeCheckedType::Unsigned(width)) => value.width() == *width,
-        (RuntimeValue::Seq(sequence), RuntimeCheckedType::Bytes) => sequence
-            .clone()
-            .into_values()
-            .iter()
-            .all(|value| matches!(value, RuntimeValue::UInt(value) if value.width() == RuntimeUnsignedIntWidth::U8)),
-        (RuntimeValue::Seq(sequence), RuntimeCheckedType::Sequence(item)) => sequence
-            .clone()
-            .into_values()
-            .iter()
-            .all(|value| runtime_value_matches_pattern_type(value, item, depth + 1)),
-        (RuntimeValue::Tuple(values), RuntimeCheckedType::Tuple(items)) => {
-            values.len() == items.len()
-                && values.iter().zip(items).all(|(value, item)| {
-                    runtime_value_matches_pattern_type(value, item, depth + 1)
-                })
-        }
-        (value, RuntimeCheckedType::Choice(alternatives)) => alternatives
-            .iter()
-            .any(|alternative| runtime_value_matches_pattern_type(value, alternative, depth + 1)),
-        (
-            RuntimeValue::NominalRecord(record),
-            RuntimeCheckedType::Nominal { nominal, .. },
-        ) => {
-            record.type_id() == nominal
-        }
-        (
-            RuntimeValue::Variant { owner, .. },
-            RuntimeCheckedType::Variant {
-                nominal,
-                semantic_identity,
-                ..
-            },
-        ) => {
-            owner
-                == &RuntimeVariantIdentity::Nominal {
-                    nominal: nominal.clone(),
-                    semantic_identity: *semantic_identity,
-                }
-        }
-        (
-            RuntimeValue::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-            },
-            RuntimeCheckedType::Result { ok, error },
-        ) if *owner == RuntimeVariantIdentity::Result => match (*ordinal, name.as_str(), payload.as_deref()) {
-            (0, "Ok", Some(value)) => runtime_value_matches_pattern_type(value, ok, depth + 1),
-            (1, "Err", Some(value)) => runtime_value_matches_pattern_type(value, error, depth + 1),
-            _ => false,
-        },
-        (
-            RuntimeValue::Variant {
-                owner,
-                ordinal,
-                name,
-                payload,
-            },
-            RuntimeCheckedType::Option(item),
-        ) if *owner == RuntimeVariantIdentity::Option => match (*ordinal, name.as_str(), payload.as_deref()) {
-            (0, "Some", Some(value)) => runtime_value_matches_pattern_type(value, item, depth + 1),
-            (1, "None", None) => true,
-            _ => false,
-        },
-        _ => false,
     }
 }
 

@@ -7,8 +7,8 @@ use arcweft_core::{
         RuntimeCallableId, RuntimeCallableRole, RuntimeCommandPolicy, RuntimeEntryRoles,
         RuntimeEnumRepr, RuntimeEnumTagStyle, RuntimeFlowExecutable,
         RuntimeFlowExecutableParameter, RuntimeFlowParameterMode, RuntimeFlowRole,
-        RuntimeNominalRole, RuntimeNominalTypeId, RuntimeSchemaField, RuntimeSchemaVariant,
-        RuntimeStatefulEntryRoles, RuntimeTypeSchema, TypeLayoutHash,
+        RuntimeNominalRole, RuntimeNominalTypeId, RuntimeSchemaError, RuntimeSchemaField,
+        RuntimeSchemaVariant, RuntimeStatefulEntryRoles, RuntimeTypeSchema, TypeLayoutHash,
     },
     plan::{
         EntryRuntimeId, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec, RuntimeEntryTarget,
@@ -46,7 +46,7 @@ use arcweft_runtime_plan::flow::{
 use thiserror::Error;
 
 #[derive(Clone, Debug, Error, PartialEq)]
-pub(super) enum EntryRuntimeProjectionError {
+pub(crate) enum EntryRuntimeProjectionError {
     #[error("checked Entry owner {owner:?} is absent from the accepted final-HIR generation")]
     MissingEntryOwner {
         owner: arcweft_lang_hir::identity::ItemId,
@@ -65,6 +65,20 @@ pub(super) enum EntryRuntimeProjectionError {
     InvalidFlowIdentity(String),
     #[error("checked role identity is invalid: {0}")]
     InvalidRoleIdentity(String),
+    #[error("runtime schema for nominal `{nominal}` cannot be canonically encoded")]
+    NominalLayoutHash {
+        nominal: String,
+        #[source]
+        source: RuntimeSchemaError,
+    },
+    #[error(
+        "checked nominal schema digest for `{nominal}` differs from the projected runtime schema hash"
+    )]
+    NominalSchemaDigestMismatch {
+        nominal: String,
+        checked: [u8; 32],
+        projected: TypeLayoutHash,
+    },
     #[error(
         "stateful entry `{entry}` requires an explicit selected-adapter command constructor policy"
     )]
@@ -510,22 +524,45 @@ fn runtime_flow_role(
     })
 }
 
-struct RuntimeSchemaProjection;
+pub(crate) struct RuntimeSchemaProjection;
 
 impl RuntimeSchemaProjection {
     fn nominal(
         checked: &CheckedNominalRole,
     ) -> Result<RuntimeNominalRole, EntryRuntimeProjectionError> {
+        let nominal = nominal_identity(checked.key());
+        let schema = Self::schema(checked.schema());
+        let layout = Self::layout_hash(&nominal, &schema)?;
+        let checked_digest = *checked.schema_digest().as_bytes();
+        if layout.as_bytes() != &checked_digest {
+            return Err(EntryRuntimeProjectionError::NominalSchemaDigestMismatch {
+                nominal,
+                checked: checked_digest,
+                projected: layout,
+            });
+        }
         Ok(RuntimeNominalRole {
-            identity: RuntimeNominalTypeId::try_new(nominal_identity(checked.key())).map_err(
-                |error| EntryRuntimeProjectionError::InvalidRoleIdentity(error.to_string()),
-            )?,
-            layout: TypeLayoutHash::from_bytes(*checked.schema_digest().as_bytes()),
-            schema: Self::schema(checked.schema()),
+            identity: RuntimeNominalTypeId::try_new(nominal).map_err(|error| {
+                EntryRuntimeProjectionError::InvalidRoleIdentity(error.to_string())
+            })?,
+            layout,
+            schema,
         })
     }
 
-    fn schema(shape: &TypeShape) -> RuntimeTypeSchema {
+    pub(crate) fn layout_hash(
+        nominal: &str,
+        schema: &RuntimeTypeSchema,
+    ) -> Result<TypeLayoutHash, EntryRuntimeProjectionError> {
+        schema
+            .try_layout_hash()
+            .map_err(|source| EntryRuntimeProjectionError::NominalLayoutHash {
+                nominal: nominal.to_owned(),
+                source,
+            })
+    }
+
+    pub(crate) fn schema(shape: &TypeShape) -> RuntimeTypeSchema {
         match shape {
             TypeShape::Unit => RuntimeTypeSchema::Unit,
             TypeShape::Bool => RuntimeTypeSchema::Bool,

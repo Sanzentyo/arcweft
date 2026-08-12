@@ -1418,7 +1418,10 @@ impl PureEvaluator {
         name: &str,
         payload: Option<&RuntimeExpr>,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        if !owner.accepts_variant_case(ordinal, name) {
+        if owner
+            .variant_case(ordinal)
+            .is_none_or(|case| case.name != name)
+        {
             return Err(RuntimeEvalError::PatternMismatch(format!(
                 "variant owner {owner:?} case {ordinal} `{name}`"
             )));

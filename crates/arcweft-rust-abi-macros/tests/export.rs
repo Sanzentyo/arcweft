@@ -5,18 +5,21 @@ use arcweft_rust_abi::{
 use arcweft_rust_abi_macros::{ArcweftType, arcweft_export};
 
 #[derive(ArcweftType)]
+#[arcweft(opaque_producer = "fixture.rust-abi.player-score")]
 struct PlayerScore {
     score: i32,
     label: String,
 }
 
 #[derive(ArcweftType)]
+#[arcweft(opaque_producer = "fixture.rust-abi.rank")]
 enum Rank {
     Gold,
     Silver { threshold: i32 },
 }
 
 #[derive(ArcweftType)]
+#[arcweft(opaque_producer = "fixture.rust-abi.pair")]
 struct Pair<Z, A> {
     first: Z,
     second: A,
@@ -33,6 +36,10 @@ fn score_to_rank(score: i32, label: String) -> Rank {
 fn derive_emits_struct_and_enum_metadata() {
     let player = PlayerScore::arcweft_type_decl();
     assert_eq!(player.path.to_string(), "PlayerScore");
+    assert_eq!(
+        player.opaque_producer().as_str(),
+        "fixture.rust-abi.player-score"
+    );
     let ArcweftRustTypeKind::Struct {
         shape: ArcweftRustStructShape::Record { fields },
     } = player.kind
@@ -44,6 +51,7 @@ fn derive_emits_struct_and_enum_metadata() {
     assert_eq!(fields[1].ty, ArcweftRustTypeRef::String);
 
     let rank = Rank::arcweft_type_decl();
+    assert_eq!(rank.opaque_producer().as_str(), "fixture.rust-abi.rank");
     let ArcweftRustTypeKind::Enum { variants } = rank.kind else {
         panic!("expected enum metadata");
     };
@@ -80,6 +88,10 @@ fn generic_derive_preserves_argument_and_template_order() {
     );
 
     let declaration = Pair::<i32, String>::arcweft_type_decl();
+    assert_eq!(
+        declaration.opaque_producer().as_str(),
+        "fixture.rust-abi.pair"
+    );
     assert_eq!(declaration.parameters[0].name.as_str(), "Z");
     assert_eq!(declaration.parameters[0].index.get(), 0);
     assert_eq!(declaration.parameters[1].name.as_str(), "A");

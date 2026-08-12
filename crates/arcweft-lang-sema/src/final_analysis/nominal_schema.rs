@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::fmt;
+use thiserror::Error;
 
 use arcweft_data::{BytesFormat, FieldShape, TypeShape, VariantShape};
 use arcweft_lang_hir::{
@@ -14,70 +14,115 @@ use arcweft_lang_hir::{
 };
 
 use crate::{
-    final_analysis::FinalSemanticAnalysis,
+    final_analysis::{CheckedProjectNominal, FinalSemanticAnalysis},
     types::{GenericTypeOwnerId, GenericTypeParameterId, MapKind, TypeKind},
 };
 
-/// Entry-owned data-shape projection over already checked nominal types.
+/// Generation-bound data-shape projection over already checked nominal types.
 ///
 /// Name selection, imports, aliases, arity, and generic argument validation are
 /// owned by the normal semantic nominal resolver. This adapter only projects
 /// its accepted `TypeKind` products into the persistence schema required by an
 /// entry; it never resolves authored paths itself.
-pub(super) struct NominalSchemaExpander<'a> {
+struct NominalSchemaExpander<'a> {
     symbols: &'a ProjectSymbolTable,
     analysis: &'a FinalSemanticAnalysis,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub(super) struct NominalSchemaError {
-    path: Vec<String>,
-    reason: String,
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum NominalSchemaProjectionError {
+    #[error("checked nominal belongs to a different project-symbol generation")]
+    GenerationMismatch,
+    #[error("checked project nominal `{nominal}` is absent from its symbol world")]
+    MissingDeclaration { nominal: String },
+    #[error("checked project nominal `{nominal}` has owner {actual:?}, expected {expected:?}")]
+    OwnerMismatch {
+        nominal: String,
+        expected: arcweft_lang_hir::identity::ItemId,
+        actual: arcweft_lang_hir::identity::ItemId,
+    },
+    #[error("checked project nominal `{nominal}` expected {expected} argument(s), found {actual}")]
+    WrongArity {
+        nominal: String,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("accepted final semantic analysis has no type fact for {ty:?}")]
+    MissingTypeFact { ty: TypeId },
+    #[error("{path}: {reason}")]
+    InvalidShape { path: String, reason: String },
 }
 
-impl NominalSchemaError {
+impl NominalSchemaProjectionError {
     fn new(reason: impl Into<String>) -> Self {
-        Self {
-            path: Vec::new(),
+        Self::InvalidShape {
+            path: "nominal".to_owned(),
             reason: reason.into(),
         }
     }
 
-    fn within(mut self, segment: impl Into<String>) -> Self {
-        self.path.insert(0, segment.into());
-        self
+    fn within(self, segment: impl Into<String>) -> Self {
+        match self {
+            Self::InvalidShape { path, reason } => Self::InvalidShape {
+                path: format!("{} -> {path}", segment.into()),
+                reason,
+            },
+            other => other,
+        }
     }
 }
 
-impl fmt::Display for NominalSchemaError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if self.path.is_empty() {
-            formatter.write_str(&self.reason)
-        } else {
-            write!(formatter, "{}: {}", self.path.join(" -> "), self.reason)
+impl FinalSemanticAnalysis {
+    /// Projects one checked project nominal into its canonical data shape.
+    pub fn project_nominal_schema(
+        &self,
+        symbols: &ProjectSymbolTable,
+        nominal: &CheckedProjectNominal,
+    ) -> Result<TypeShape, NominalSchemaProjectionError> {
+        if nominal.declaration().world() != symbols.world()
+            || nominal.declaration().revision() != *symbols.revision()
+        {
+            return Err(NominalSchemaProjectionError::GenerationMismatch);
         }
+        let declaration = symbols.nominal(nominal.declaration()).ok_or_else(|| {
+            NominalSchemaProjectionError::MissingDeclaration {
+                nominal: nominal.declaration().qualified_name(),
+            }
+        })?;
+        if declaration.owner() != nominal.owner() {
+            return Err(NominalSchemaProjectionError::OwnerMismatch {
+                nominal: nominal.declaration().qualified_name(),
+                expected: declaration.owner(),
+                actual: nominal.owner(),
+            });
+        }
+        if declaration.type_parameters().len() != nominal.arguments().len() {
+            return Err(NominalSchemaProjectionError::WrongArity {
+                nominal: nominal.declaration().qualified_name(),
+                expected: declaration.type_parameters().len(),
+                actual: nominal.arguments().len(),
+            });
+        }
+        NominalSchemaExpander::new(symbols, self).schema_checked(declaration, nominal.arguments())
     }
 }
 
 impl<'a> NominalSchemaExpander<'a> {
-    pub(super) const fn new(
-        symbols: &'a ProjectSymbolTable,
-        analysis: &'a FinalSemanticAnalysis,
-    ) -> Self {
+    const fn new(symbols: &'a ProjectSymbolTable, analysis: &'a FinalSemanticAnalysis) -> Self {
         Self { symbols, analysis }
     }
 
-    pub(super) fn schema(
+    fn schema_checked(
         &self,
         declaration: &ProjectNominalDeclaration,
-    ) -> Result<TypeShape, NominalSchemaError> {
-        if !declaration.type_parameters().is_empty() {
-            return Err(NominalSchemaError::new(format!(
-                "generic project type `{}` requires checked type arguments",
-                declaration.id().qualified_name()
-            )));
-        }
-        self.schema_with_stack(declaration, &[], &BTreeMap::new(), &mut BTreeSet::new())
+        arguments: &[TypeKind],
+    ) -> Result<TypeShape, NominalSchemaProjectionError> {
+        self.schema_with_stack(
+            declaration,
+            arguments,
+            &BTreeMap::new(),
+            &mut BTreeSet::new(),
+        )
     }
 
     fn schema_with_stack(
@@ -86,19 +131,18 @@ impl<'a> NominalSchemaExpander<'a> {
         arguments: &[TypeKind],
         inherited: &BTreeMap<GenericTypeParameterId, TypeKind>,
         stack: &mut BTreeSet<ProjectNominalDeclarationId>,
-    ) -> Result<TypeShape, NominalSchemaError> {
+    ) -> Result<TypeShape, NominalSchemaProjectionError> {
         if !stack.insert(declaration.id().clone()) {
             return Ok(TypeShape::Named(canonical_nominal_name(declaration.id())));
         }
 
         if declaration.type_parameters().len() != arguments.len() {
             stack.remove(declaration.id());
-            return Err(NominalSchemaError::new(format!(
-                "checked project type `{}` expected {} argument(s), found {}",
-                declaration.id().qualified_name(),
-                declaration.type_parameters().len(),
-                arguments.len()
-            )));
+            return Err(NominalSchemaProjectionError::WrongArity {
+                nominal: declaration.id().qualified_name(),
+                expected: declaration.type_parameters().len(),
+                actual: arguments.len(),
+            });
         }
 
         let mut substitutions = inherited.clone();
@@ -141,7 +185,7 @@ impl<'a> NominalSchemaExpander<'a> {
                 .map(|variants| {
                     TypeShape::enumeration(canonical_nominal_name(declaration.id()), variants)
                 }),
-            ProjectNominalBody::TypeAlias { .. } => Err(NominalSchemaError::new(
+            ProjectNominalBody::TypeAlias { .. } => Err(NominalSchemaProjectionError::new(
                 "entry data schemas must start from a project struct or enum, not an alias",
             )),
         };
@@ -155,12 +199,11 @@ impl<'a> NominalSchemaExpander<'a> {
         root: TypeId,
         substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
         stack: &mut BTreeSet<ProjectNominalDeclarationId>,
-    ) -> Result<TypeShape, NominalSchemaError> {
-        let ty = self.analysis.ty(root).ok_or_else(|| {
-            NominalSchemaError::new(format!(
-                "accepted final semantic analysis has no type fact for {root:?}"
-            ))
-        })?;
+    ) -> Result<TypeShape, NominalSchemaProjectionError> {
+        let ty = self
+            .analysis
+            .ty(root)
+            .ok_or(NominalSchemaProjectionError::MissingTypeFact { ty: root })?;
         self.type_shape(ty, substitutions, stack, &mut BTreeSet::new())
     }
 
@@ -170,10 +213,10 @@ impl<'a> NominalSchemaExpander<'a> {
         substitutions: &BTreeMap<GenericTypeParameterId, TypeKind>,
         stack: &mut BTreeSet<ProjectNominalDeclarationId>,
         generic_stack: &mut BTreeSet<GenericTypeParameterId>,
-    ) -> Result<TypeShape, NominalSchemaError> {
+    ) -> Result<TypeShape, NominalSchemaProjectionError> {
         let mut recurse = |inner: &TypeKind,
                            generic_stack: &mut BTreeSet<GenericTypeParameterId>|
-         -> Result<TypeShape, NominalSchemaError> {
+         -> Result<TypeShape, NominalSchemaProjectionError> {
             self.type_shape(inner, substitutions, stack, generic_stack)
         };
 
@@ -213,22 +256,21 @@ impl<'a> NominalSchemaExpander<'a> {
             ),
             TypeKind::ProjectNominal(nominal) => {
                 let declaration = self.symbols.nominal(nominal.declaration()).ok_or_else(|| {
-                    NominalSchemaError::new(format!(
-                        "checked project nominal `{}` is absent from its symbol world",
-                        nominal.declaration().qualified_name()
-                    ))
+                    NominalSchemaProjectionError::MissingDeclaration {
+                        nominal: nominal.declaration().qualified_name(),
+                    }
                 })?;
                 self.schema_with_stack(declaration, nominal.arguments(), substitutions, stack)?
             }
             TypeKind::GenericParam(parameter) => {
                 if !generic_stack.insert(parameter.clone()) {
-                    return Err(NominalSchemaError::new(format!(
+                    return Err(NominalSchemaProjectionError::new(format!(
                         "cyclic generic substitution for parameter #{}",
                         parameter.ordinal()
                     )));
                 }
                 let replacement = substitutions.get(parameter).ok_or_else(|| {
-                    NominalSchemaError::new(format!(
+                    NominalSchemaProjectionError::new(format!(
                         "unbound generic parameter #{} in checked data schema",
                         parameter.ordinal()
                     ))
@@ -238,13 +280,13 @@ impl<'a> NominalSchemaExpander<'a> {
                 shape
             }
             TypeKind::Error(poison) => {
-                return Err(NominalSchemaError::new(format!(
+                return Err(NominalSchemaProjectionError::new(format!(
                     "poisoned type {} cannot define a persisted data schema",
                     poison.index()
                 )));
             }
             unsupported => {
-                return Err(NominalSchemaError::new(format!(
+                return Err(NominalSchemaProjectionError::new(format!(
                     "checked type `{}` is not a canonical persisted data shape",
                     unsupported.source_label()
                 )));

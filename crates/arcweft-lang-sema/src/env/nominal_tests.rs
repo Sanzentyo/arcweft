@@ -1,3 +1,4 @@
+use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
 use arcweft_lang_syntax::{
     ast::{
         module_path::{CanonicalModulePath, ModulePathRoot, ModuleSegment},
@@ -5,6 +6,7 @@ use arcweft_lang_syntax::{
     },
     types::TypePath,
 };
+use arcweft_source::{SourceDocument, SourceDocumentId, SourceName, SourceRange, SourceSpan};
 
 use super::{
     TypeCheckEnv,
@@ -20,6 +22,16 @@ use super::{
 use crate::nominal::{AcceptedNominalCatalogLimitKind, AcceptedNominalCatalogLimits};
 use crate::types::{AcceptedNominalType, TypeKind};
 
+fn producer(value: &str) -> RuntimeOpaqueTypeProducerId {
+    RuntimeOpaqueTypeProducerId::try_new(value).expect("valid test producer")
+}
+
+fn opaque_semantics(value: &str) -> AcceptedNominalSemantics {
+    AcceptedNominalSemantics::Opaque {
+        producer: producer(value),
+    }
+}
+
 fn path(source: &str) -> TypePath {
     let segments = source
         .split('.')
@@ -31,13 +43,19 @@ fn path(source: &str) -> TypePath {
 }
 
 fn standard_record(source: &str, semantics: AcceptedNominalSemantics) -> AcceptedNominalRecord {
-    AcceptedNominalRecord::try_new(
-        AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path(source)),
-        0,
-        semantics,
-        AcceptedNominalOrigin::Domain,
-        None,
-    )
+    let id = AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path(source));
+    match semantics {
+        AcceptedNominalSemantics::Opaque { producer } => AcceptedNominalRecord::try_new_opaque(
+            id,
+            0,
+            producer,
+            AcceptedNominalOrigin::Domain,
+            None,
+        ),
+        semantics => {
+            AcceptedNominalRecord::try_new(id, 0, semantics, AcceptedNominalOrigin::Domain, None)
+        }
+    }
     .expect("test accepted nominal record")
 }
 
@@ -89,6 +107,7 @@ fn accepted_nominal_display_is_owner_independent_but_identity_is_not() {
             path.clone(),
         ),
         [],
+        producer("fixture.lang-sema.alpha"),
     ));
     let beta = TypeKind::AcceptedNominal(AcceptedNominalType::new(
         AcceptedNominalId::new(
@@ -96,6 +115,7 @@ fn accepted_nominal_display_is_owner_independent_but_identity_is_not() {
             path,
         ),
         [],
+        producer("fixture.lang-sema.beta"),
     ));
 
     assert_eq!(alpha.source_label(), "vendor.Rank");
@@ -113,7 +133,7 @@ fn exact_catalog_is_ordered_and_digest_is_insertion_independent() {
         "domain.Alpha",
         AcceptedNominalSemantics::Exact(TypeKind::Duration),
     );
-    let beta = standard_record("domain.Beta", AcceptedNominalSemantics::Opaque);
+    let beta = standard_record("domain.Beta", opaque_semantics("fixture.lang-sema.beta"));
     let first = AcceptedNominalCatalog::try_new(
         [beta.clone(), alpha.clone()],
         [],
@@ -138,6 +158,41 @@ fn exact_catalog_is_ordered_and_digest_is_insertion_independent() {
 }
 
 #[test]
+fn catalog_digest_tracks_producer_but_excludes_source_span() {
+    fn source(id: &str) -> SourceSpan {
+        let text = "opaque declaration";
+        let document = SourceDocument::try_new(
+            SourceDocumentId::try_new(id).expect("source ID"),
+            SourceName::Generated,
+            text,
+        )
+        .expect("source document");
+        document
+            .span(SourceRange::new(0, text.len()))
+            .expect("source span")
+    }
+
+    fn catalog(producer_id: &str, source_id: &str) -> AcceptedNominalCatalog {
+        let record = AcceptedNominalRecord::try_new_opaque(
+            AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("domain.Opaque")),
+            0,
+            producer(producer_id),
+            AcceptedNominalOrigin::Domain,
+            Some(source(source_id)),
+        )
+        .expect("opaque record");
+        AcceptedNominalCatalog::try_new([record], [], AcceptedNominalCatalogLimits::PRODUCTION)
+            .expect("catalog")
+    }
+
+    let first = catalog("fixture.lang-sema.first", "generated://first");
+    let moved = catalog("fixture.lang-sema.first", "generated://moved");
+    let changed = catalog("fixture.lang-sema.changed", "generated://first");
+    assert_eq!(first.digest(), moved.digest());
+    assert_ne!(first.digest(), changed.digest());
+}
+
+#[test]
 fn duplicate_exact_path_is_rejected_deterministically() {
     let environment = AcceptedNominalRecord::try_new(
         AcceptedNominalId::new(
@@ -147,7 +202,7 @@ fn duplicate_exact_path_is_rejected_deterministically() {
             path("domain.Value"),
         ),
         0,
-        AcceptedNominalSemantics::Opaque,
+        opaque_semantics("fixture.lang-sema.alpha"),
         AcceptedNominalOrigin::Adapter,
         None,
     )
@@ -160,7 +215,7 @@ fn duplicate_exact_path_is_rejected_deterministically() {
             path("domain.Value"),
         ),
         0,
-        AcceptedNominalSemantics::Opaque,
+        opaque_semantics("fixture.lang-sema.alpha"),
         AcceptedNominalOrigin::RustExport,
         None,
     )
@@ -191,7 +246,7 @@ fn exact_records_reject_reserved_paths_and_nonzero_exact_arity() {
     let reserved = AcceptedNominalRecord::try_new(
         AcceptedNominalId::new(AcceptedNominalOwnerId::Standard, path("Ref")),
         0,
-        AcceptedNominalSemantics::Opaque,
+        opaque_semantics("fixture.lang-sema.alpha"),
         AcceptedNominalOrigin::Standard,
         None,
     );
@@ -226,7 +281,7 @@ fn accepted_record_instantiation_checks_arity_and_preserves_exact_identity() {
     let record = AcceptedNominalRecord::try_new(
         id.clone(),
         1,
-        AcceptedNominalSemantics::Opaque,
+        opaque_semantics("fixture.lang-sema.alpha"),
         AcceptedNominalOrigin::RustExport,
         None,
     )
@@ -469,8 +524,8 @@ fn open_lookup_accepts_only_explicit_scope_pattern_and_arity() {
 #[test]
 fn catalog_limits_and_typecheck_environment_updates_are_atomic() {
     let limits = AcceptedNominalCatalogLimits::try_new(1, 1).expect("small limits");
-    let alpha = standard_record("domain.Alpha", AcceptedNominalSemantics::Opaque);
-    let beta = standard_record("domain.Beta", AcceptedNominalSemantics::Opaque);
+    let alpha = standard_record("domain.Alpha", opaque_semantics("fixture.lang-sema.alpha"));
+    let beta = standard_record("domain.Beta", opaque_semantics("fixture.lang-sema.beta"));
     assert!(matches!(
         AcceptedNominalCatalog::try_new([alpha, beta], [], limits),
         Err(AcceptedNominalCatalogError::Limit {
@@ -532,10 +587,6 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         ("Duration", TypeKind::Duration),
         ("DebugStatePath", TypeKind::DebugStatePath),
         ("ObservationFieldPath", TypeKind::ObservationFieldPath),
-        ("VirtualPath", TypeKind::Named("VirtualPath".to_owned())),
-        ("ArcError", TypeKind::Named("ArcError".to_owned())),
-        ("ReducerError", TypeKind::Named("ReducerError".to_owned())),
-        ("AgentError", TypeKind::Named("AgentError".to_owned())),
     ] {
         let record = environment
             .nominal_catalog()
@@ -549,12 +600,41 @@ fn standard_environment_projects_domain_and_structural_nominals_exactly() {
         assert_eq!(record.arity(), 0);
     }
 
+    for (name, expected_producer) in [
+        ("VirtualPath", "std.virtual_path"),
+        ("ArcError", "std.arc_error"),
+        ("ReducerError", "std.reducer_error"),
+        ("AgentError", "std.agent_error"),
+        ("AssetError", "std.asset_error"),
+        ("ContentLoadError", "std.content_load_error"),
+        ("DialogueText", "std.dialogue_text"),
+        ("ImageHandle", "std.image_handle"),
+        ("PresentationLifetime", "std.presentation_lifetime"),
+        ("VoiceError", "std.voice_error"),
+        ("VoiceHandle", "std.voice_handle"),
+    ] {
+        let record = environment
+            .nominal_catalog()
+            .exact(&path(name))
+            .expect("standard opaque atom is accepted evidence");
+        assert!(matches!(
+            record.semantics(),
+            AcceptedNominalSemantics::Opaque { producer }
+                if producer.as_str() == expected_producer
+        ));
+        assert_eq!(record.arity(), 0);
+    }
+
     let reduction = environment
         .nominal_catalog()
         .exact(&path("Reduction"))
         .expect("Reduction is accepted as a typed generic family");
     assert_eq!(reduction.origin(), AcceptedNominalOrigin::Domain);
-    assert_eq!(reduction.semantics(), &AcceptedNominalSemantics::Opaque);
+    assert!(matches!(
+        reduction.semantics(),
+        AcceptedNominalSemantics::Opaque { producer }
+            if producer.as_str() == "std.reduction"
+    ));
     assert_eq!(reduction.arity(), 1);
 
     let dialogue = environment
@@ -597,7 +677,7 @@ fn rust_export_publishes_typed_package_and_exact_path_atomically() {
             path("Rank"),
         ),
         0,
-        AcceptedNominalSemantics::Opaque,
+        opaque_semantics("fixture.lang-sema.reduction"),
         AcceptedNominalOrigin::RustExport,
         None,
     )
@@ -615,7 +695,11 @@ fn rust_export_publishes_typed_package_and_exact_path_atomically() {
         &AcceptedNominalOwnerId::RustPackage(package)
     );
     assert_eq!(record.origin(), AcceptedNominalOrigin::RustExport);
-    assert_eq!(record.semantics(), &AcceptedNominalSemantics::Opaque);
+    assert!(matches!(
+        record.semantics(),
+        AcceptedNominalSemantics::Opaque { producer }
+            if producer.as_str() == "fixture.lang-sema.reduction"
+    ));
 }
 
 #[test]

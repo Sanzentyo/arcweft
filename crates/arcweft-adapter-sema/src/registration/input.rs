@@ -5,6 +5,7 @@ pub(super) mod source;
 
 use std::sync::Arc;
 
+use arcweft_core::pattern::RuntimeOpaqueTypeProducerId;
 use arcweft_lang_hir::symbol::CallablePackageId;
 use arcweft_lang_sema::{
     callable::{
@@ -46,20 +47,64 @@ use arcweft_lang_syntax::ast::{
 };
 use arcweft_lang_syntax::types::TypePath;
 use arcweft_rust_abi::{
-    ArcweftRustField, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustStructShape,
-    ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypeRef, ArcweftRustVariant,
-    ArcweftRustVariantPayload,
+    ArcweftRustField, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage, ArcweftRustPackageId,
+    ArcweftRustStructShape, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypeRef,
+    ArcweftRustVariant, ArcweftRustVariantPayload,
 };
 use arcweft_source::{SourceDocument, SourceSpan};
 
 use arcweft_adapter_context::manifest::{
     AdapterCallableName, AdapterCallablePath, AdapterEffectCapability, AdapterEnvironmentOwnerId,
     AdapterFreeCallableKind, AdapterFunctionSignature, AdapterManifest, AdapterNominalOwner,
-    AdapterNominalPath, AdapterNominalTypeRef, AdapterNominalVisibility, AdapterParameterPassing,
-    AdapterParameterPresence, AdapterRustPackageMountTable, AdapterToolingSubject, AdapterTypeKind,
+    AdapterNominalPath, AdapterNominalTypeRef, AdapterNominalVisibility,
+    AdapterOpaqueTypeProducerId, AdapterParameterPassing, AdapterParameterPresence,
+    AdapterRustPackageMountTable, AdapterToolingSubject, AdapterTypeKind,
 };
 
-use super::AdapterRegistrationFactsError;
+use super::{AdapterRegistrationFactsError, ExternalOpaqueProducerSourceKind};
+
+enum ExternalOpaqueProducer<'a> {
+    Adapter(&'a AdapterOpaqueTypeProducerId),
+    Rust(&'a ArcweftRustOpaqueTypeProducerId),
+}
+
+impl ExternalOpaqueProducer<'_> {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Adapter(producer) => producer.as_str(),
+            Self::Rust(producer) => producer.as_str(),
+        }
+    }
+
+    const fn source_kind(&self) -> ExternalOpaqueProducerSourceKind {
+        match self {
+            Self::Adapter(_) => ExternalOpaqueProducerSourceKind::AdapterNominal,
+            Self::Rust(_) => ExternalOpaqueProducerSourceKind::RustExport,
+        }
+    }
+
+    fn project(
+        &self,
+        source: SourceSpan,
+    ) -> Result<RuntimeOpaqueTypeProducerId, AdapterRegistrationFactsError> {
+        let producer = self.as_str();
+        if producer.starts_with("std.") {
+            return Err(AdapterRegistrationFactsError::ReservedOpaqueProducer {
+                source_kind: self.source_kind(),
+                producer: producer.to_owned(),
+                source_span: source,
+            });
+        }
+        RuntimeOpaqueTypeProducerId::try_new(producer).map_err(|error| {
+            AdapterRegistrationFactsError::InvalidOpaqueProducer {
+                source_kind: self.source_kind(),
+                producer: producer.to_owned(),
+                source_span: source,
+                error,
+            }
+        })
+    }
+}
 
 struct TypeSource<'a> {
     document: &'a SourceDocument,
@@ -111,6 +156,14 @@ fn item_source(
     item: &EnvironmentPublicationItemId,
 ) -> Result<SourceSpan, AdapterRegistrationFactsError> {
     Ok(document.span(source_map.item_range(item)?)?)
+}
+
+fn opaque_producer_source(
+    document: &SourceDocument,
+    source_map: &source::RegistrationSourceMap,
+    item: &EnvironmentPublicationItemId,
+) -> Result<SourceSpan, AdapterRegistrationFactsError> {
+    Ok(document.span(source_map.opaque_producer_range(item)?)?)
 }
 
 pub(super) fn environment_input(
@@ -201,6 +254,8 @@ impl<'a> EnvironmentInputProjector<'a> {
                     owner: self.owner.clone(),
                     path: path.clone(),
                 };
+                let producer_source =
+                    opaque_producer_source(self.document, self.source_map, &item)?;
                 Ok(AcceptedNominalInventoryInput::new(
                     AcceptedNominalId::new(
                         AcceptedNominalOwnerId::Environment(
@@ -209,6 +264,8 @@ impl<'a> EnvironmentInputProjector<'a> {
                         path,
                     ),
                     declaration.arity(),
+                    ExternalOpaqueProducer::Adapter(declaration.opaque_producer())
+                        .project(producer_source)?,
                     match declaration.visibility() {
                         AdapterNominalVisibility::Public => AcceptedNominalInputVisibility::Visible,
                         AdapterNominalVisibility::Private => {
@@ -291,6 +348,7 @@ impl<'a> EnvironmentInputProjector<'a> {
             accepted_path,
         };
         let source = item_source(self.document, self.source_map, &item)?;
+        let producer_source = opaque_producer_source(self.document, self.source_map, &item)?;
         nominal_inventory.push(AcceptedNominalInventoryInput::new(
             id.clone(),
             u16::try_from(rust_type.decl().parameters.len()).map_err(|_| {
@@ -298,6 +356,8 @@ impl<'a> EnvironmentInputProjector<'a> {
                     value: rust_type.decl().parameters.len(),
                 }
             })?,
+            ExternalOpaqueProducer::Rust(rust_type.decl().opaque_producer())
+                .project(producer_source)?,
             AcceptedNominalInputVisibility::Visible,
             AcceptedNominalOrigin::RustExport,
             source.clone(),

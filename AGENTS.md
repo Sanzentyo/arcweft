@@ -41,6 +41,15 @@ Arcweft source files use the `.arcw` extension.
   lints, deterministic generated artifacts, and structured dependency graphs.
   Source spelling and file placement are review aids, not acceptance evidence.
 - Prefer deterministic runtime and build behavior.
+- Keep every Arcweft-owned version marker fixed at `1`. This includes schema,
+  codec, wire, protocol, ABI, save, snapshot, cache, digest-domain,
+  generated-source, and equivalent contract versions. Evolve unreleased
+  shapes in place: do not bump a version, add `V2`/`V3` types or domains,
+  retain an old reader/writer, or treat the replaced shape as a legacy format.
+  When an active cut touches an existing non-`1` marker, reconcile that
+  boundary to `1` instead of incrementing it. A compatibility exception
+  requires explicit user direction backed by a released artifact, persisted
+  user data, or a known external consumer.
 - Do not use `unsafe` unless it is isolated behind a clearly named boundary
   with a documented invariant.
 - Preserve user changes. Do not reset, discard, overwrite, or broadly move a

@@ -7,13 +7,18 @@ use crate::manifest::{
     AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall, AdapterManifest,
     AdapterManifestModelError, AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath,
     AdapterNominalPathError, AdapterNominalPathPrefix, AdapterNominalPathSegment,
-    AdapterNominalTypeRef, AdapterNominalVisibility, AdapterParameterGroup,
-    AdapterParameterPassing, AdapterParameterPresence, AdapterSymbol, AdapterSymbolPath,
-    AdapterSymbolPathError, AdapterSymbolSegment, AdapterToolingDoc, AdapterToolingSubject,
-    AdapterTypeKind, AdapterTypeModelError,
+    AdapterNominalTypeRef, AdapterNominalVisibility, AdapterOpaqueTypeProducerId,
+    AdapterOpaqueTypeProducerIdError, AdapterParameterGroup, AdapterParameterPassing,
+    AdapterParameterPresence, AdapterSymbol, AdapterSymbolPath, AdapterSymbolPathError,
+    AdapterSymbolSegment, AdapterToolingDoc, AdapterToolingSubject, AdapterTypeKind,
+    AdapterTypeModelError,
 };
 use arcweft_rust_abi::{ArcweftRustIdentityError, ArcweftRustPackageId};
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Deserializer, Serialize,
+    de::{IgnoredAny, MapAccess, Visitor},
+};
+use std::fmt;
 use thiserror::Error;
 
 /// Current stable project-local adapter manifest schema version.
@@ -23,7 +28,7 @@ const MAX_TYPE_DEPTH: usize = 256;
 const MAX_TYPE_NODES: usize = 4_096;
 
 /// Serializable final-shape adapter manifest file.
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AdapterManifestFile {
     schema_version: u32,
     id: String,
@@ -46,10 +51,43 @@ pub struct AdapterManifestFile {
     tooling_docs: Vec<AdapterToolingDocFile>,
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+struct AdapterManifestWire {
+    schema_version: u32,
+    id: String,
+    display_name: String,
+    #[serde(default)]
+    nominal_types: Vec<AdapterNominalDeclarationWire>,
+    #[serde(default)]
+    rust_package_mounts: Vec<AdapterRustPackageMountFile>,
+    #[serde(default)]
+    symbols: Vec<AdapterSymbolFile>,
+    #[serde(default)]
+    methods: Vec<AdapterMethodFile>,
+    #[serde(default)]
+    functions: Vec<AdapterFunctionFile>,
+    #[serde(default)]
+    effects: Vec<String>,
+    #[serde(default)]
+    host_calls: Vec<AdapterHostCallFile>,
+    #[serde(default)]
+    tooling_docs: Vec<AdapterToolingDocFile>,
+}
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 struct AdapterNominalDeclarationFile {
     path: Vec<String>,
     arity: u16,
+    opaque_producer: AdapterOpaqueTypeProducerId,
+    visibility: AdapterNominalVisibility,
+    source_label: String,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+struct AdapterNominalDeclarationWire {
+    path: Vec<String>,
+    arity: u16,
+    opaque_producer: String,
     visibility: AdapterNominalVisibility,
     source_label: String,
 }
@@ -188,6 +226,56 @@ enum AdapterNominalOwnerFile {
     RustPackage { package: String },
 }
 
+/// Serialized source syntax used for one adapter manifest.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdapterManifestSourceFormat {
+    Json,
+    Toml,
+}
+
+/// Stable classification of an adapter manifest value at an invalid field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AdapterManifestValueKind {
+    Null,
+    Boolean,
+    Integer,
+    IntegerOutOfRange,
+    Float,
+    String,
+    Array,
+    Object,
+}
+
+/// Exact structural defect in the schema header.
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AdapterManifestSchemaHeaderProblem {
+    #[error("manifest root must be an object/table")]
+    RootNotObject,
+    #[error("schema_version appears more than once")]
+    DuplicateSchemaVersion,
+    #[error("schema_version has wrong value kind {found:?}")]
+    WrongType { found: AdapterManifestValueKind },
+    #[error("schema_version integer is outside u32")]
+    IntegerOutOfRange,
+}
+
+/// Stable authored location of one adapter-native producer field.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AdapterManifestFieldSite {
+    format: AdapterManifestSourceFormat,
+    nominal_index: usize,
+}
+
+impl AdapterManifestFieldSite {
+    pub const fn format(self) -> AdapterManifestSourceFormat {
+        self.format
+    }
+
+    pub const fn nominal_index(self) -> usize {
+        self.nominal_index
+    }
+}
+
 /// Errors while parsing project-local adapter manifests.
 #[derive(Debug, Error)]
 pub enum AdapterManifestCodecError {
@@ -195,8 +283,32 @@ pub enum AdapterManifestCodecError {
     Json(#[from] serde_json::Error),
     #[error("failed to parse adapter manifest TOML: {0}")]
     Toml(#[from] toml::de::Error),
-    #[error("unsupported adapter manifest schema {found}, expected {expected}")]
-    UnsupportedSchema { found: u32, expected: u32 },
+    #[error("adapter manifest {format:?} is missing schema_version")]
+    MissingSchemaVersion { format: AdapterManifestSourceFormat },
+    #[error("adapter manifest {format:?} has malformed schema_version: {problem}")]
+    MalformedSchemaVersion {
+        format: AdapterManifestSourceFormat,
+        problem: AdapterManifestSchemaHeaderProblem,
+    },
+    #[error("unsupported adapter manifest {format:?} schema {found}, expected {expected}")]
+    UnsupportedSchema {
+        format: AdapterManifestSourceFormat,
+        found: u32,
+        expected: u32,
+    },
+    #[error("adapter manifest nominal row {site:?} is missing opaque_producer")]
+    MissingOpaqueProducer { site: AdapterManifestFieldSite },
+    #[error("adapter manifest nominal row {site:?} has malformed opaque_producer kind {found:?}")]
+    MalformedOpaqueProducer {
+        site: AdapterManifestFieldSite,
+        found: AdapterManifestValueKind,
+    },
+    #[error("adapter manifest nominal row {site:?} has invalid opaque_producer: {error}")]
+    InvalidOpaqueProducer {
+        site: AdapterManifestFieldSite,
+        #[source]
+        error: AdapterOpaqueTypeProducerIdError,
+    },
     #[error(transparent)]
     Model(#[from] AdapterCallableModelError),
     #[error(transparent)]
@@ -216,16 +328,24 @@ pub enum AdapterManifestCodecError {
 impl AdapterManifestFile {
     /// Parses a JSON adapter manifest.
     pub fn from_json(source: &str) -> Result<Self, AdapterManifestCodecError> {
-        let file = serde_json::from_str::<Self>(source)?;
-        file.validate_schema_version()?;
-        Ok(file)
+        let value = serde_json::from_str::<serde_json::Value>(source)?;
+        let format = AdapterManifestSourceFormat::Json;
+        let version = json_schema_version(source, &value)?;
+        validate_schema_version(format, version)?;
+        validate_json_opaque_producers(&value)?;
+        let file = serde_json::from_value::<AdapterManifestWire>(value)?;
+        Self::from_wire(file, format)
     }
 
     /// Parses a TOML adapter manifest.
     pub fn from_toml(source: &str) -> Result<Self, AdapterManifestCodecError> {
-        let file = toml::from_str::<Self>(source)?;
-        file.validate_schema_version()?;
-        Ok(file)
+        let value = toml::from_str::<toml::Value>(source)?;
+        let format = AdapterManifestSourceFormat::Toml;
+        let version = toml_schema_version(&value)?;
+        validate_schema_version(format, version)?;
+        validate_toml_opaque_producers(&value)?;
+        let file = value.try_into::<AdapterManifestWire>()?;
+        Self::from_wire(file, format)
     }
 
     /// Manifest schema version parsed from the source file.
@@ -249,6 +369,7 @@ impl AdapterManifestFile {
                 manifest.try_with_nominal_declaration(AdapterNominalDeclaration::try_new(
                     nominal_path(declaration.path)?,
                     declaration.arity,
+                    declaration.opaque_producer,
                     declaration.visibility,
                     declaration.source_label,
                 )?)?;
@@ -301,15 +422,290 @@ impl AdapterManifestFile {
         Ok(manifest)
     }
 
-    fn validate_schema_version(&self) -> Result<(), AdapterManifestCodecError> {
-        if self.schema_version == ADAPTER_MANIFEST_SCHEMA_VERSION {
-            Ok(())
-        } else {
-            Err(AdapterManifestCodecError::UnsupportedSchema {
-                found: self.schema_version,
-                expected: ADAPTER_MANIFEST_SCHEMA_VERSION,
+    fn from_wire(
+        file: AdapterManifestWire,
+        format: AdapterManifestSourceFormat,
+    ) -> Result<Self, AdapterManifestCodecError> {
+        let nominal_types = file
+            .nominal_types
+            .into_iter()
+            .enumerate()
+            .map(|(nominal_index, declaration)| {
+                let site = AdapterManifestFieldSite {
+                    format,
+                    nominal_index,
+                };
+                Ok(AdapterNominalDeclarationFile {
+                    path: declaration.path,
+                    arity: declaration.arity,
+                    opaque_producer: AdapterOpaqueTypeProducerId::try_new(
+                        declaration.opaque_producer,
+                    )
+                    .map_err(|error| {
+                        AdapterManifestCodecError::InvalidOpaqueProducer { site, error }
+                    })?,
+                    visibility: declaration.visibility,
+                    source_label: declaration.source_label,
+                })
             })
+            .collect::<Result<Vec<_>, AdapterManifestCodecError>>()?;
+        Ok(Self {
+            schema_version: file.schema_version,
+            id: file.id,
+            display_name: file.display_name,
+            nominal_types,
+            rust_package_mounts: file.rust_package_mounts,
+            symbols: file.symbols,
+            methods: file.methods,
+            functions: file.functions,
+            effects: file.effects,
+            host_calls: file.host_calls,
+            tooling_docs: file.tooling_docs,
+        })
+    }
+}
+
+fn validate_schema_version(
+    format: AdapterManifestSourceFormat,
+    found: u32,
+) -> Result<(), AdapterManifestCodecError> {
+    if found == ADAPTER_MANIFEST_SCHEMA_VERSION {
+        Ok(())
+    } else {
+        Err(AdapterManifestCodecError::UnsupportedSchema {
+            format,
+            found,
+            expected: ADAPTER_MANIFEST_SCHEMA_VERSION,
+        })
+    }
+}
+
+fn json_schema_version(
+    source: &str,
+    value: &serde_json::Value,
+) -> Result<u32, AdapterManifestCodecError> {
+    if !value.is_object() {
+        return Err(AdapterManifestCodecError::MalformedSchemaVersion {
+            format: AdapterManifestSourceFormat::Json,
+            problem: AdapterManifestSchemaHeaderProblem::RootNotObject,
+        });
+    }
+    let mut deserializer = serde_json::Deserializer::from_str(source);
+    deserializer
+        .deserialize_map(JsonSchemaHeaderVisitor)
+        .map_err(AdapterManifestCodecError::Json)?
+}
+
+struct JsonSchemaHeaderVisitor;
+
+impl<'de> Visitor<'de> for JsonSchemaHeaderVisitor {
+    type Value = Result<u32, AdapterManifestCodecError>;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("an adapter manifest JSON object")
+    }
+
+    fn visit_map<A>(self, mut map: A) -> Result<Self::Value, A::Error>
+    where
+        A: MapAccess<'de>,
+    {
+        let mut schema = None;
+        let mut duplicate = false;
+        while let Some(key) = map.next_key::<String>()? {
+            if key == "schema_version" {
+                let value = map.next_value::<serde_json::Value>()?;
+                if schema.is_some() {
+                    duplicate = true;
+                } else {
+                    schema = Some(json_u32_header(&value));
+                }
+            } else {
+                map.next_value::<IgnoredAny>()?;
+            }
         }
+        if duplicate {
+            return Ok(Err(AdapterManifestCodecError::MalformedSchemaVersion {
+                format: AdapterManifestSourceFormat::Json,
+                problem: AdapterManifestSchemaHeaderProblem::DuplicateSchemaVersion,
+            }));
+        }
+        Ok(
+            schema.unwrap_or(Err(AdapterManifestCodecError::MissingSchemaVersion {
+                format: AdapterManifestSourceFormat::Json,
+            })),
+        )
+    }
+}
+
+fn json_u32_header(value: &serde_json::Value) -> Result<u32, AdapterManifestCodecError> {
+    let problem = match value {
+        serde_json::Value::Number(number) => {
+            if let Some(value) = number.as_u64() {
+                return u32::try_from(value).map_err(|_| {
+                    AdapterManifestCodecError::MalformedSchemaVersion {
+                        format: AdapterManifestSourceFormat::Json,
+                        problem: AdapterManifestSchemaHeaderProblem::IntegerOutOfRange,
+                    }
+                });
+            }
+            if number.as_i64().is_some() {
+                AdapterManifestSchemaHeaderProblem::IntegerOutOfRange
+            } else {
+                AdapterManifestSchemaHeaderProblem::WrongType {
+                    found: AdapterManifestValueKind::Float,
+                }
+            }
+        }
+        other => AdapterManifestSchemaHeaderProblem::WrongType {
+            found: json_value_kind(other),
+        },
+    };
+    Err(AdapterManifestCodecError::MalformedSchemaVersion {
+        format: AdapterManifestSourceFormat::Json,
+        problem,
+    })
+}
+
+fn toml_schema_version(value: &toml::Value) -> Result<u32, AdapterManifestCodecError> {
+    let Some(table) = value.as_table() else {
+        return Err(AdapterManifestCodecError::MalformedSchemaVersion {
+            format: AdapterManifestSourceFormat::Toml,
+            problem: AdapterManifestSchemaHeaderProblem::RootNotObject,
+        });
+    };
+    let Some(value) = table.get("schema_version") else {
+        return Err(AdapterManifestCodecError::MissingSchemaVersion {
+            format: AdapterManifestSourceFormat::Toml,
+        });
+    };
+    let Some(integer) = value.as_integer() else {
+        return Err(AdapterManifestCodecError::MalformedSchemaVersion {
+            format: AdapterManifestSourceFormat::Toml,
+            problem: AdapterManifestSchemaHeaderProblem::WrongType {
+                found: toml_value_kind(value),
+            },
+        });
+    };
+    u32::try_from(integer).map_err(|_| AdapterManifestCodecError::MalformedSchemaVersion {
+        format: AdapterManifestSourceFormat::Toml,
+        problem: AdapterManifestSchemaHeaderProblem::IntegerOutOfRange,
+    })
+}
+
+fn validate_json_opaque_producers(
+    root: &serde_json::Value,
+) -> Result<(), AdapterManifestCodecError> {
+    let Some(rows) = root
+        .as_object()
+        .and_then(|object| object.get("nominal_types"))
+        .and_then(serde_json::Value::as_array)
+    else {
+        return Ok(());
+    };
+    let producers = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(nominal_index, row)| {
+            row.as_object().map(|row| {
+                let site = AdapterManifestFieldSite {
+                    format: AdapterManifestSourceFormat::Json,
+                    nominal_index,
+                };
+                let producer = row
+                    .get("opaque_producer")
+                    .ok_or(AdapterManifestCodecError::MissingOpaqueProducer { site })?;
+                let producer = producer.as_str().ok_or(
+                    AdapterManifestCodecError::MalformedOpaqueProducer {
+                        site,
+                        found: json_value_kind(producer),
+                    },
+                )?;
+                Ok((site, producer))
+            })
+        })
+        .collect::<Result<Vec<_>, AdapterManifestCodecError>>()?;
+    validate_opaque_producer_spellings(&producers)
+}
+
+fn validate_toml_opaque_producers(root: &toml::Value) -> Result<(), AdapterManifestCodecError> {
+    let Some(rows) = root
+        .as_table()
+        .and_then(|table| table.get("nominal_types"))
+        .and_then(toml::Value::as_array)
+    else {
+        return Ok(());
+    };
+    let producers = rows
+        .iter()
+        .enumerate()
+        .filter_map(|(nominal_index, row)| {
+            row.as_table().map(|row| {
+                let site = AdapterManifestFieldSite {
+                    format: AdapterManifestSourceFormat::Toml,
+                    nominal_index,
+                };
+                let producer = row
+                    .get("opaque_producer")
+                    .ok_or(AdapterManifestCodecError::MissingOpaqueProducer { site })?;
+                let producer = producer.as_str().ok_or(
+                    AdapterManifestCodecError::MalformedOpaqueProducer {
+                        site,
+                        found: toml_value_kind(producer),
+                    },
+                )?;
+                Ok((site, producer))
+            })
+        })
+        .collect::<Result<Vec<_>, AdapterManifestCodecError>>()?;
+    validate_opaque_producer_spellings(&producers)
+}
+
+fn validate_opaque_producer_spellings(
+    producers: &[(AdapterManifestFieldSite, &str)],
+) -> Result<(), AdapterManifestCodecError> {
+    for &(site, producer) in producers {
+        match AdapterOpaqueTypeProducerId::try_new(producer) {
+            Err(
+                error @ (AdapterOpaqueTypeProducerIdError::Empty
+                | AdapterOpaqueTypeProducerIdError::ControlCharacter { .. }),
+            ) => {
+                return Err(AdapterManifestCodecError::InvalidOpaqueProducer { site, error });
+            }
+            Ok(_) | Err(AdapterOpaqueTypeProducerIdError::ReservedStandardNamespace { .. }) => {}
+        }
+    }
+    for &(site, producer) in producers {
+        if let Err(error @ AdapterOpaqueTypeProducerIdError::ReservedStandardNamespace { .. }) =
+            AdapterOpaqueTypeProducerId::try_new(producer)
+        {
+            return Err(AdapterManifestCodecError::InvalidOpaqueProducer { site, error });
+        }
+    }
+    Ok(())
+}
+
+fn json_value_kind(value: &serde_json::Value) -> AdapterManifestValueKind {
+    match value {
+        serde_json::Value::Null => AdapterManifestValueKind::Null,
+        serde_json::Value::Bool(_) => AdapterManifestValueKind::Boolean,
+        serde_json::Value::Number(number) if number.is_i64() || number.is_u64() => {
+            AdapterManifestValueKind::Integer
+        }
+        serde_json::Value::Number(_) => AdapterManifestValueKind::Float,
+        serde_json::Value::String(_) => AdapterManifestValueKind::String,
+        serde_json::Value::Array(_) => AdapterManifestValueKind::Array,
+        serde_json::Value::Object(_) => AdapterManifestValueKind::Object,
+    }
+}
+
+fn toml_value_kind(value: &toml::Value) -> AdapterManifestValueKind {
+    match value {
+        toml::Value::String(_) | toml::Value::Datetime(_) => AdapterManifestValueKind::String,
+        toml::Value::Integer(_) => AdapterManifestValueKind::Integer,
+        toml::Value::Float(_) => AdapterManifestValueKind::Float,
+        toml::Value::Boolean(_) => AdapterManifestValueKind::Boolean,
+        toml::Value::Array(_) => AdapterManifestValueKind::Array,
+        toml::Value::Table(_) => AdapterManifestValueKind::Object,
     }
 }
 
@@ -552,6 +948,7 @@ effects = ["custom.read"]
 [[nominal_types]]
 path = ["CustomApi"]
 arity = 0
+opaque_producer = "fixture.adapter-codec.shared"
 visibility = "public"
 source_label = "CustomApi"
 
@@ -683,8 +1080,108 @@ display_name = "Custom File"
         assert!(matches!(
             error,
             AdapterManifestCodecError::UnsupportedSchema {
+                format: AdapterManifestSourceFormat::Toml,
                 found: 2,
                 expected: ADAPTER_MANIFEST_SCHEMA_VERSION
+            }
+        ));
+    }
+
+    #[test]
+    fn unsupported_schema_is_rejected_before_missing_producer() {
+        let error = AdapterManifestFile::from_json(
+            r#"{
+  "schema_version": 2,
+  "id": "fixture",
+  "display_name": "Fixture",
+  "nominal_types": [{
+    "path": ["Widget"],
+    "arity": 0,
+    "visibility": "public",
+    "source_label": "Widget"
+  }]
+}"#,
+        )
+        .expect_err("unsupported schema is rejected before its body is interpreted");
+        assert!(matches!(
+            error,
+            AdapterManifestCodecError::UnsupportedSchema {
+                format: AdapterManifestSourceFormat::Json,
+                found: 2,
+                expected: ADAPTER_MANIFEST_SCHEMA_VERSION
+            }
+        ));
+    }
+
+    #[test]
+    fn current_schema_requires_and_validates_producer_in_authored_order() {
+        let missing = AdapterManifestFile::from_json(
+            r#"{
+  "schema_version": 1,
+  "id": "fixture",
+  "display_name": "Fixture",
+  "nominal_types": [{
+    "path": ["Widget"],
+    "arity": 0,
+    "visibility": "public",
+    "source_label": "Widget"
+  }]
+}"#,
+        )
+        .expect_err("producer is mandatory");
+        assert!(matches!(
+            missing,
+            AdapterManifestCodecError::MissingOpaqueProducer { site }
+                if site.format() == AdapterManifestSourceFormat::Json
+                    && site.nominal_index() == 0
+        ));
+
+        let reserved = AdapterManifestFile::from_toml(
+            r#"
+schema_version = 1
+id = "fixture"
+display_name = "Fixture"
+
+[[nominal_types]]
+path = ["Widget"]
+arity = 0
+opaque_producer = "std.claimed"
+visibility = "public"
+source_label = "Widget"
+"#,
+        )
+        .expect_err("reserved producer is rejected");
+        assert!(matches!(
+            reserved,
+            AdapterManifestCodecError::InvalidOpaqueProducer {
+                site,
+                error: AdapterOpaqueTypeProducerIdError::ReservedStandardNamespace { .. }
+            } if site.format() == AdapterManifestSourceFormat::Toml
+                && site.nominal_index() == 0
+        ));
+    }
+
+    #[test]
+    fn json_header_preflight_rejects_duplicate_and_wrong_root() {
+        let duplicate = AdapterManifestFile::from_json(
+            r#"{"schema_version":1,"schema_version":1,"id":"x","display_name":"X"}"#,
+        )
+        .expect_err("duplicate schema header is rejected");
+        assert!(matches!(
+            duplicate,
+            AdapterManifestCodecError::MalformedSchemaVersion {
+                format: AdapterManifestSourceFormat::Json,
+                problem: AdapterManifestSchemaHeaderProblem::DuplicateSchemaVersion
+            }
+        ));
+
+        let root = AdapterManifestFile::from_json("[]")
+            .expect_err("non-object root is rejected as a malformed header");
+        assert!(matches!(
+            root,
+            AdapterManifestCodecError::MalformedSchemaVersion {
+                format: AdapterManifestSourceFormat::Json,
+                problem: AdapterManifestSchemaHeaderProblem::RootNotObject
             }
         ));
     }

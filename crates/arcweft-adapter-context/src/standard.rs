@@ -5,9 +5,9 @@ use crate::manifest::{
     AdapterCallableParameterIndex, AdapterEffectCapability, AdapterEnvironmentOwnerId,
     AdapterFunctionParam, AdapterFunctionSignature, AdapterHostCall, AdapterId, AdapterManifest,
     AdapterNominalDeclaration, AdapterNominalOwner, AdapterNominalPath, AdapterNominalPathSegment,
-    AdapterNominalTypeRef, AdapterNominalVisibility, AdapterParameterGroup,
-    AdapterParameterPassing, AdapterParameterPresence, AdapterRegistry, AdapterSymbol,
-    AdapterSymbolPath, AdapterSymbolSegment, AdapterTypeKind,
+    AdapterNominalTypeRef, AdapterNominalVisibility, AdapterOpaqueTypeProducerId,
+    AdapterParameterGroup, AdapterParameterPassing, AdapterParameterPresence, AdapterRegistry,
+    AdapterSymbol, AdapterSymbolPath, AdapterSymbolSegment, AdapterTypeKind,
 };
 
 /// Adapter id for the default Sans I/O environment.
@@ -50,6 +50,7 @@ pub fn native_http_manifest() -> AdapterManifest {
     declare_nominals(
         AdapterManifest::new(NATIVE_HTTP_ADAPTER_ID, "Native HTTP"),
         ["HttpRequestContext"],
+        "arcweft.adapter.native-http",
     )
     .with_symbol(adapter_symbol(
         ["request"],
@@ -68,6 +69,7 @@ pub fn inference_tensor_manifest() -> AdapterManifest {
     let manifest = declare_nominals(
         AdapterManifest::new(INFERENCE_TENSOR_ADAPTER_ID, "Inference Tensor"),
         ["Conv2dApi", "InferApi", "TensorF32"],
+        "arcweft.adapter.inference-tensor",
     )
     .with_symbol(adapter_symbol(["conv2d"], inference_nominal("Conv2dApi")))
     .with_symbol(adapter_symbol(["infer"], inference_nominal("InferApi")));
@@ -249,6 +251,7 @@ pub fn math_manifest() -> AdapterManifest {
 fn declare_nominals<const N: usize>(
     mut manifest: AdapterManifest,
     names: [&str; N],
+    opaque_producer: &str,
 ) -> AdapterManifest {
     for name in names {
         manifest = manifest
@@ -256,6 +259,8 @@ fn declare_nominals<const N: usize>(
                 AdapterNominalDeclaration::try_new(
                     nominal_path(name),
                     0,
+                    AdapterOpaqueTypeProducerId::try_new(opaque_producer)
+                        .expect("standard opaque producer IDs are valid"),
                     AdapterNominalVisibility::Public,
                     name,
                 )

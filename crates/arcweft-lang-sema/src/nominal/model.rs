@@ -119,6 +119,10 @@ pub enum TypeNameResolution {
     Alias(ResolvedAliasReference),
     External(ExternalNominalResolution),
     Accepted(AcceptedNominalType),
+    AcceptedExact {
+        accepted: AcceptedNominalId,
+        ty: TypeKind,
+    },
     Open(ResolvedOpenNominal),
     Failed(TypeResolutionFailure),
     Poisoned(TypePoisonId),

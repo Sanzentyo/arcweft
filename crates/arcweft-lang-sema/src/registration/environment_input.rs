@@ -5,7 +5,10 @@
 
 use std::collections::BTreeSet;
 
-use arcweft_core::entry::{RuntimeNominalTypeId, TypeLayoutHash};
+use arcweft_core::{
+    entry::{RuntimeNominalTypeId, TypeLayoutHash},
+    pattern::RuntimeOpaqueTypeProducerId,
+};
 use arcweft_dialogue::CharacterDialogueCustomFieldId;
 use arcweft_lang_hir::symbol::ProjectSymbolWorldId;
 use arcweft_rust_abi::ArcweftRustTypeParameterIndex;
@@ -186,6 +189,7 @@ pub enum AcceptedNominalInputVisibility {
 pub struct AcceptedNominalInventoryInput {
     id: AcceptedNominalId,
     arity: u16,
+    runtime_producer: RuntimeOpaqueTypeProducerId,
     visibility: AcceptedNominalInputVisibility,
     origin: AcceptedNominalOrigin,
     source: SourceSpan,
@@ -361,6 +365,7 @@ impl AcceptedNominalInventoryInput {
     pub fn new(
         id: AcceptedNominalId,
         arity: u16,
+        runtime_producer: RuntimeOpaqueTypeProducerId,
         visibility: AcceptedNominalInputVisibility,
         origin: AcceptedNominalOrigin,
         source: SourceSpan,
@@ -369,6 +374,7 @@ impl AcceptedNominalInventoryInput {
         Self {
             id,
             arity,
+            runtime_producer,
             visibility,
             origin,
             source,
@@ -382,6 +388,10 @@ impl AcceptedNominalInventoryInput {
 
     pub const fn arity(&self) -> u16 {
         self.arity
+    }
+
+    pub const fn runtime_producer(&self) -> &RuntimeOpaqueTypeProducerId {
+        &self.runtime_producer
     }
 
     pub const fn visibility(&self) -> AcceptedNominalInputVisibility {

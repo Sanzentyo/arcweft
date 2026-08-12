@@ -451,6 +451,7 @@ fn canonical_codec_round_trips_choice_and_nominal_runtime_types() {
     program.runtime_types.push(AwbcRuntimeType::Nominal {
         public_id: nominal_name,
         semantic_identity: [17; 32],
+        layout: [18; 32],
     });
     program
         .runtime_types
@@ -463,14 +464,14 @@ fn canonical_codec_round_trips_choice_and_nominal_runtime_types() {
         u16::from_le_bytes([encoded[8], encoded[9]]),
         AWBC_CODEC_VERSION
     );
-    assert_eq!(AWBC_CODEC_VERSION, 10);
-    let mut stale_v7 = encoded.clone();
-    stale_v7[8..10].copy_from_slice(&7_u16.to_le_bytes());
+    assert_eq!(AWBC_CODEC_VERSION, 1);
+    let mut unsupported_version = encoded.clone();
+    unsupported_version[8..10].copy_from_slice(&2_u16.to_le_bytes());
     assert_eq!(
-        AwbcProgram::decode_canonical(&stale_v7, AwbcDecodeBudget::default())
-            .expect_err("v7 reader identity must not accept v8 runtime-type payloads"),
+        AwbcProgram::decode_canonical(&unsupported_version, AwbcDecodeBudget::default())
+            .expect_err("codec rejects an unsupported version"),
         AwbcCodecError::UnsupportedCodecVersion {
-            actual: 7,
+            actual: 2,
             expected: AWBC_CODEC_VERSION,
         }
     );
@@ -527,6 +528,7 @@ fn verifier_rejects_variant_constant_with_obsolete_nominal_type() {
     program.runtime_types.push(AwbcRuntimeType::Nominal {
         public_id: AwbcStringId(1),
         semantic_identity: [23; 32],
+        layout: [24; 32],
     });
     program.constants.push(AwbcConstant::Variant {
         ty: AwbcTypeId(0),

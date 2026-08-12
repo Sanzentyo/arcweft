@@ -1,6 +1,7 @@
 use crate::{
-    ArcweftRustIdentityError, ArcweftRustManifest, ArcweftRustStructShape, ArcweftRustTypeKind,
-    ArcweftRustTypePath, ArcweftRustTypeRef, ArcweftRustVariantPayload,
+    ArcweftRustIdentityError, ArcweftRustManifest, ArcweftRustOpaqueTypeProducerIdError,
+    ArcweftRustStructShape, ArcweftRustTypeKind, ArcweftRustTypePath, ArcweftRustTypeRef,
+    ArcweftRustVariantPayload,
 };
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
@@ -120,6 +121,13 @@ impl ArcweftRustTypeSite {
 /// A structured violation of the final Rust ABI manifest model.
 #[derive(Clone, Debug, Eq, Error, PartialEq)]
 pub enum ArcweftRustManifestError {
+    #[error("unsupported Rust ABI schema {found}; expected {expected}")]
+    UnsupportedSchema { found: u32, expected: u32 },
+    #[error("Rust type declaration {declaration} has invalid opaque producer: {error}")]
+    InvalidOpaqueProducer {
+        declaration: usize,
+        error: ArcweftRustOpaqueTypeProducerIdError,
+    },
     #[error("invalid Rust package identity: {error}")]
     InvalidPackage { error: ArcweftRustIdentityError },
     #[error("invalid path for Rust type declaration {declaration}: {error}")]
@@ -194,6 +202,22 @@ pub enum ArcweftRustManifestError {
 impl ArcweftRustManifest {
     /// Validates the entire manifest and every recursive type graph.
     pub fn validate(&self, limits: ArcweftRustAbiLimits) -> Result<(), ArcweftRustManifestError> {
+        if self.schema_version != crate::ARCWEFT_RUST_ABI_SCHEMA_VERSION {
+            return Err(ArcweftRustManifestError::UnsupportedSchema {
+                found: self.schema_version,
+                expected: crate::ARCWEFT_RUST_ABI_SCHEMA_VERSION,
+            });
+        }
+        for (declaration, type_declaration) in self.types.iter().enumerate() {
+            type_declaration.opaque_producer().as_str();
+            crate::ArcweftRustOpaqueTypeProducerId::validate(
+                type_declaration.opaque_producer().as_str(),
+            )
+            .map_err(|error| ArcweftRustManifestError::InvalidOpaqueProducer {
+                declaration,
+                error,
+            })?;
+        }
         self.package
             .id
             .validate()

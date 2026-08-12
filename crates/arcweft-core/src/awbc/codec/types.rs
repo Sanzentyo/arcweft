@@ -229,10 +229,12 @@ impl Wire for AwbcRuntimeType {
             Self::Nominal {
                 public_id,
                 semantic_identity,
+                layout,
             } => {
                 writer.write_u8(22);
                 public_id.write_wire(writer)?;
                 semantic_identity.write_wire(writer)?;
+                layout.write_wire(writer)?;
             }
         }
         Ok(())
@@ -272,6 +274,7 @@ impl Wire for AwbcRuntimeType {
             22 => Self::Nominal {
                 public_id: AwbcStringId::read_wire(reader)?,
                 semantic_identity: <[u8; 32]>::read_wire(reader)?,
+                layout: <[u8; 32]>::read_wire(reader)?,
             },
             tag => {
                 return Err(AwbcCodecError::UnknownTag {

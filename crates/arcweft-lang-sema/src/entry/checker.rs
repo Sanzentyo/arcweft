@@ -31,7 +31,7 @@ use crate::{
         CallTargetFact, CallableCandidateId, CallableFamily, CheckedCallableCatalog,
         CheckedCallableFacts,
     },
-    final_analysis::FinalSemanticAnalysis,
+    final_analysis::{CheckedProjectNominal, FinalSemanticAnalysis},
     types::TypeKind,
 };
 
@@ -43,10 +43,8 @@ use super::{
 };
 
 mod contract;
-mod nominal;
 
 use contract::{EntryContractBuilder, ReducerContractNominals};
-use nominal::NominalSchemaExpander;
 
 /// Source-backed failure produced while constructing checked entry bindings.
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -125,7 +123,6 @@ struct EntryCheckContext<'a> {
     symbols: &'a ProjectSymbolTable,
     analysis: &'a FinalSemanticAnalysis,
     callables: &'a CheckedCallableCatalog,
-    nominals: NominalSchemaExpander<'a>,
 }
 
 struct ResolvedCallable<'a> {
@@ -181,7 +178,6 @@ impl<'a> EntryCheckContext<'a> {
             symbols,
             analysis,
             callables,
-            nominals: NominalSchemaExpander::new(symbols, analysis),
         }
     }
 
@@ -827,7 +823,16 @@ impl<'a> EntryCheckContext<'a> {
             ));
             return None;
         }
-        match self.nominals.schema(declaration) {
+        let checked_nominal = CheckedProjectNominal::new(
+            checked.declaration().clone(),
+            declaration.owner(),
+            TypeKind::ProjectNominal(checked.clone()).semantic_identity_digest(),
+            checked.arguments().to_vec(),
+        );
+        match self
+            .analysis
+            .project_nominal_schema(self.symbols, &checked_nominal)
+        {
             Ok(schema) => Some(CheckedNominalRole {
                 key: BoundNominalTypeKey::new(
                     self.project.package().clone(),

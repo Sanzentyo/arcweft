@@ -269,6 +269,7 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
             Ok(())
         }
         RuntimeValue::NominalRecord(record) => validate_config_string_values(record.fields()),
+        RuntimeValue::Opaque(value) => validate_config_strings(value.payload()),
         RuntimeValue::Variant {
             payload: Some(payload),
             ..
@@ -373,6 +374,9 @@ fn count_structured_leaves(
             for field in record.fields() {
                 count_structured_leaves(field, depth + 1, leaves)?;
             }
+        }
+        RuntimeValue::Opaque(value) => {
+            count_structured_leaves(value.payload(), depth + 1, leaves)?;
         }
         RuntimeValue::Variant {
             payload: Some(payload),

@@ -174,6 +174,7 @@ impl ExternalModuleFactBuilder {
             let declaration = AdapterNominalDeclaration::try_new(
                 nominal_path,
                 0,
+                export.opaque_producer.clone(),
                 visibility,
                 export.name.to_string(),
             )

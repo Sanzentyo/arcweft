@@ -910,7 +910,8 @@ mod tests {
 
     use arcweft_adapter_context::manifest::{
         AdapterManifest, AdapterNominalDeclaration, AdapterNominalPath, AdapterNominalPathPrefix,
-        AdapterNominalPathSegment, AdapterNominalVisibility, AdapterRegistry,
+        AdapterNominalPathSegment, AdapterNominalVisibility, AdapterOpaqueTypeProducerId,
+        AdapterRegistry,
     };
     use arcweft_compiler::project::ProjectCompilationSession;
     use arcweft_lang_syntax::incremental::SyntaxDatabase;
@@ -920,10 +921,11 @@ mod tests {
     };
     use arcweft_runtime_host::RuntimeHostRunnerKind;
     use arcweft_rust_abi::{
-        ArcweftRustManifest, ArcweftRustPackage, ArcweftRustPackageId, ArcweftRustTypeDecl,
-        ArcweftRustTypeKind, ArcweftRustTypeParameter, ArcweftRustTypeParameterIndex,
-        ArcweftRustTypeParameterName, ArcweftRustTypePath, ArcweftRustTypePathSegment,
-        ArcweftRustTypeRef, ArcweftRustVariant, ArcweftRustVariantPayload,
+        ArcweftRustManifest, ArcweftRustOpaqueTypeProducerId, ArcweftRustPackage,
+        ArcweftRustPackageId, ArcweftRustTypeDecl, ArcweftRustTypeKind, ArcweftRustTypeParameter,
+        ArcweftRustTypeParameterIndex, ArcweftRustTypeParameterName, ArcweftRustTypePath,
+        ArcweftRustTypePathSegment, ArcweftRustTypeRef, ArcweftRustVariant,
+        ArcweftRustVariantPayload,
     };
     use lsp_types::{
         DidOpenTextDocumentParams, GotoDefinitionResponse, HoverContents, MarkedString,
@@ -1646,6 +1648,10 @@ source = "src/main.arcw"
         .with_type(ArcweftRustTypeDecl {
             path: type_path("Rank"),
             rust_path: "tooling_types::Rank".to_owned(),
+            opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new(
+                "fixture.project.external-types",
+            )
+            .expect("fixture producer is valid"),
             parameters: Vec::new(),
             kind: ArcweftRustTypeKind::Enum {
                 variants: vec![ArcweftRustVariant {
@@ -1657,6 +1663,10 @@ source = "src/main.arcw"
         .with_type(ArcweftRustTypeDecl {
             path: type_path("Envelope"),
             rust_path: "tooling_types::Envelope".to_owned(),
+            opaque_producer: ArcweftRustOpaqueTypeProducerId::try_new(
+                "fixture.project.external-types",
+            )
+            .expect("fixture producer is valid"),
             parameters: vec![ArcweftRustTypeParameter {
                 index: parameter_index,
                 name: ArcweftRustTypeParameterName::try_new("T").expect("generic parameter name"),
@@ -1676,6 +1686,8 @@ source = "src/main.arcw"
                 AdapterNominalDeclaration::try_new(
                     private_path,
                     0,
+                    AdapterOpaqueTypeProducerId::try_new("fixture.project.external-types")
+                        .expect("fixture producer is valid"),
                     AdapterNominalVisibility::Private,
                     "PrivateOnly",
                 )

@@ -5,8 +5,8 @@ use arcweft_adapter_context::manifest::{
     AdapterCallableParameterIndex, AdapterCallablePath, AdapterEnvironmentOwnerId,
     AdapterFunctionParam, AdapterFunctionSignature, AdapterManifest, AdapterNominalDeclaration,
     AdapterNominalOwner, AdapterNominalPath, AdapterNominalPathSegment, AdapterNominalTypeRef,
-    AdapterNominalVisibility, AdapterParameterGroup, AdapterParameterPassing,
-    AdapterParameterPresence, AdapterTypeKind,
+    AdapterNominalVisibility, AdapterOpaqueTypeProducerId, AdapterParameterGroup,
+    AdapterParameterPassing, AdapterParameterPresence, AdapterTypeKind,
 };
 use arcweft_adapter_sema::registration::AdapterSemanticRegistration;
 use arcweft_compiler::incremental::{BuildSnapshotRequest, snapshot_compiled_project};
@@ -418,6 +418,8 @@ fn nominal_manifest(adapter: &str, path: &str, nested_option: bool) -> AdapterMa
             AdapterNominalDeclaration::try_new(
                 nominal_path,
                 0,
+                AdapterOpaqueTypeProducerId::try_new("fixture.project.external-types")
+                    .expect("fixture producer is valid"),
                 AdapterNominalVisibility::Public,
                 "persistent nominal",
             )

@@ -174,7 +174,9 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
                 payload,
             } => {
                 assert!(
-                    owner.accepts_variant_case(*ordinal, name),
+                    owner
+                        .variant_case(*ordinal)
+                        .is_some_and(|case| case.name == *name),
                     "checked runtime variant case must match its typed owner and ordinal"
                 );
                 let ty = crate::awbc_lower::pattern::intern_runtime_type(self.inventory, owner);

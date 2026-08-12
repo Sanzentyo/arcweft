@@ -3102,7 +3102,7 @@ effects {}
         report.expression(tail).expect("function tail fact").ty(),
         &TypeKind::Result {
             ok: Box::new(TypeKind::Unit),
-            error: Box::new(TypeKind::Named("AgentError".to_owned())),
+            error: Box::new(crate::env::nominal::standard_agent_error_type()),
         }
     );
 }
