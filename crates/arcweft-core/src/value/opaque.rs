@@ -291,6 +291,10 @@ mod tests {
             }))
             .is_err()
         );
+        assert!(serde_json::from_str::<RuntimeOpaqueTypeProducerId>(r#""""#).is_err());
+        assert!(
+            serde_json::from_str::<RuntimeOpaqueTypeProducerId>(r#""bad\u0001producer""#).is_err()
+        );
     }
 
     #[test]

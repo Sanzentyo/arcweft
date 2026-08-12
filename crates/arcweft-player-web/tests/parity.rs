@@ -64,7 +64,7 @@ fn native_headless_demo_frame_matches_browser_frame_observation_contract() {
     let report = demo_frame_report();
     let complete_report = demo_frame_report_at(2_500);
 
-    assert_eq!(report.schema_version, "arcweft.web_frame_observation.v3");
+    assert_eq!(report.schema_version, "arcweft.web_frame_observation.v1");
     assert_eq!(
         report.viewport,
         WebFrameViewport {
@@ -364,7 +364,7 @@ fn web_frame_report_serializes_canonical_prepared_text_evidence() {
             .iter()
             .all(|glyph| glyph.rgba.len() == 4 && glyph.source_start < glyph.source_end)
     );
-    serde_json::to_string(&report).expect("serialize v3 report");
+    serde_json::to_string(&report).expect("serialize v1 report");
 }
 
 #[test]

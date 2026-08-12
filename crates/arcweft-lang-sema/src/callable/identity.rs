@@ -1646,7 +1646,7 @@ struct CheckedCallableDigestEncoder {
 impl CheckedCallableDigestEncoder {
     fn new() -> Self {
         let mut hasher = blake3::Hasher::new();
-        hasher.update(b"arcweft.checked-callable.v2\0");
+        hasher.update(b"arcweft.checked-callable.v1\0");
         Self { hasher }
     }
 

@@ -22,7 +22,7 @@ pub enum VerifiedEffectBuildError {
     InvalidDigest(#[from] IdentifierError),
 }
 
-/// Creates a schema-v2 effect proof from closed semantic row evidence.
+/// Creates a schema-v1 effect proof from closed semantic row evidence.
 ///
 /// The builder is fail-closed for a missing analyzed node. The legacy
 /// `declared` slot is populated with the closed inferred row, not with the

@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{artifact::EffectCapability, ids::StableHash};
 
-/// Compiler-verified transitive effect closure stored in schema-v2 artifacts.
+/// Compiler-verified transitive effect closure stored in schema-v1 artifacts.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct VerifiedEffectSummary {
     /// Version of the semantic closure rules, independent from the compiler version.

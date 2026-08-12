@@ -144,23 +144,23 @@ fn patch_artifact(base: &[u8], target: &[u8]) -> BundlePatchArtifact {
 }
 
 #[test]
-fn patch_schema_two_is_the_only_decoded_schema() {
+fn patch_schema_one_is_the_only_decoded_schema() {
     let base = content_pack(br#"{"kind":"content","rev":1}"#, b"old", true);
     let target = content_pack(br#"{"kind":"content","rev":2}"#, b"new", true);
     let mut artifact = patch_artifact(&base, &target);
 
     assert_eq!(artifact.manifest.schema_version, PATCH_PLAN_SCHEMA_VERSION);
-    artifact.manifest.schema_version = 1;
+    artifact.manifest.schema_version = 2;
 
-    let error = encode_patch_bundle(&artifact).expect_err("schema 1 is not accepted");
+    let error = encode_patch_bundle(&artifact).expect_err("schema 2 is not accepted");
     assert!(matches!(
         error,
-        PatchBundleError::UnsupportedSchema { actual: 1, .. }
+        PatchBundleError::UnsupportedSchema { actual: 2, .. }
     ));
 }
 
 #[test]
-fn patch_bytes_are_deterministic_and_round_trip_schema_two() {
+fn patch_bytes_are_deterministic_and_round_trip_schema_one() {
     let base = content_pack(br#"{"kind":"content","rev":1}"#, b"old", true);
     let target = content_pack(br#"{"kind":"content","rev":1}"#, b"new", false);
     let artifact = patch_artifact(&base, &target);

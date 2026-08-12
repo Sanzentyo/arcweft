@@ -27,7 +27,7 @@ use std::collections::BTreeSet;
 use thiserror::Error;
 
 pub const BUNDLE_SESSION_SAVE_SCHEMA_ID: &str = "arcweft.bundle_session";
-pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 2;
+pub const BUNDLE_SESSION_SAVE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct BundleSessionSnapshot {

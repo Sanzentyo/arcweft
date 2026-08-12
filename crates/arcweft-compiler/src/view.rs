@@ -624,7 +624,7 @@ impl AuthoredViewBodyLowerer<'_> {
 }
 
 fn view_schema_hash(view: &ViewId, parameters: &BTreeMap<LocalId, String>) -> u64 {
-    let mut hasher = blake3::Hasher::new_derive_key("arcweft.view.state-schema.v2");
+    let mut hasher = blake3::Hasher::new_derive_key("arcweft.view.state-schema.v1");
     hasher.update(view.as_str().as_bytes());
     for name in parameters.values() {
         hasher.update(&[0]);

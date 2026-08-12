@@ -19,7 +19,7 @@ pub(crate) fn layout_hash(
     ruby: &[TextLayoutRuby],
 ) -> TextLayoutHash {
     let mut hasher = blake3::Hasher::new();
-    hasher.update(b"arcweft.text-layout.v2\0");
+    hasher.update(b"arcweft.text-layout.v1\0");
     put_bytes(&mut hasher, document.text().as_bytes());
     hasher.update(&document.revision().get().to_le_bytes());
     hasher.update(&inventory.as_bytes());

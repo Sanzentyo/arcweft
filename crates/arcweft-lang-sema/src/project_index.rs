@@ -35,7 +35,7 @@ pub use entry_roles::{
 pub use nominal::{ProjectNominalIndexRecord, ProjectNominalReferenceEdge};
 
 /// Semantic index schema supported by this crate.
-pub const PROJECT_SEMANTIC_INDEX_SCHEMA_VERSION: u32 = 2;
+pub const PROJECT_SEMANTIC_INDEX_SCHEMA_VERSION: u32 = 1;
 
 /// Stable hash of the project program that produced a semantic index.
 #[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd)]

@@ -21,7 +21,7 @@ impl ArcweftBundle {
     /// root, this includes manifest and source metadata as well as executable
     /// and presentation resources that have a dedicated compact AWFB wire.
     pub fn logical_identity(&self) -> Result<LogicalBundleIdentity, BundleCodecError> {
-        const DOMAIN: &[u8] = b"arcweft.logical-bundle.v2\0";
+        const DOMAIN: &[u8] = b"arcweft.logical-bundle.v1\0";
         let bytes = self.to_json_bytes()?;
         let mut transcript = Vec::with_capacity(DOMAIN.len() + bytes.len() + 73);
         transcript.extend_from_slice(DOMAIN);

@@ -1,6 +1,6 @@
-//! Sans I/O AWFB patch schema 2 model.
+//! Sans I/O AWFB patch schema 1 model.
 //!
-//! Patch artifacts are a single schema-2 format in this implementation. The
+//! Patch artifacts are a single schema-1 format in this implementation. The
 //! patch bundle manifest binds base and target artifact identities, the `PatchPlan`
 //! section carries the descriptor operations plus optional target manifest bytes,
 //! changed embedded payloads are carried as `AssetBlob` sections, and core
@@ -28,7 +28,7 @@ use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use thiserror::Error;
 
-pub const PATCH_PLAN_SCHEMA_VERSION: u32 = 2;
+pub const PATCH_PLAN_SCHEMA_VERSION: u32 = 1;
 const PATCH_PAYLOAD_CARRIER_KIND: BundleSectionKind = BundleSectionKind::AssetBlob;
 
 #[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize, serde::Serialize)]
@@ -1627,7 +1627,7 @@ fn patch_payload_carrier_matches(carrier: &SectionDescriptor, logical: &SectionD
 fn patch_plan_section_id() -> SectionId {
     let mut id = [0_u8; 16];
     id[..4].copy_from_slice(&BundleSectionKind::PatchPlan.encoded().to_le_bytes());
-    id[4..].copy_from_slice(&BundleDigest::of(b"arcweft-awfb-v2-patch-plan").as_bytes()[..12]);
+    id[4..].copy_from_slice(&BundleDigest::of(b"arcweft-awfb-v1-patch-plan").as_bytes()[..12]);
     SectionId::from_bytes(id)
 }
 

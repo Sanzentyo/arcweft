@@ -663,7 +663,7 @@ fn validate_compiled_limits(
 fn fingerprint_generics(
     bindings: &BTreeMap<ModuleSegment, GenericTypeBinding>,
 ) -> GenericTypeScopeFingerprint {
-    let mut hasher = Blake3Hasher::new(b"arcweft-generic-type-scope-v2\0");
+    let mut hasher = Blake3Hasher::new(b"arcweft-generic-type-scope-v1\0");
     hasher.write_usize(bindings.len());
     for (name, binding) in bindings {
         name.hash(&mut hasher);

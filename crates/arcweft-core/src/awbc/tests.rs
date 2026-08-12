@@ -7,7 +7,10 @@ use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{FlowContractHash, RuntimeFlowExecutable};
-use crate::pattern::RuntimeOpaqueTypeAdmission;
+use crate::pattern::{
+    RuntimeOpaqueTypeAdmission, RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId,
+    RuntimeSemanticTypeId,
+};
 use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
 use crate::value::{RuntimeFunctionValue, RuntimeValue};
 
@@ -652,6 +655,56 @@ fn verifier_rejects_non_opaque_and_missing_opaque_constant_references() {
             index: 99,
             ..
         }
+    ));
+}
+
+#[test]
+fn fiber_snapshot_serde_preserves_opaque_owner_and_rejects_tampering() {
+    let (mut program, exact, _wide) = opaque_program();
+    program.frame_layouts[0].slots.push(AwbcFrameSlot {
+        name: None,
+        ty: exact,
+        role: AwbcFrameSlotRole::Temporary,
+        scope_depth: 0,
+    });
+    program.canonicalize_string_table();
+    let owner = program
+        .opaque_owner(exact)
+        .expect("opaque owner projection succeeds")
+        .expect("type row is opaque");
+    let value = owner
+        .try_wrap(RuntimeValue::String("saved".to_owned()))
+        .expect("exact owner wraps saved value");
+    let mut fiber = FiberState::for_entry(&program, AwbcEntryId(0), 0, 64)
+        .expect("opaque snapshot fiber initializes");
+    fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .set_register(AwbcRegisterId(0), value)
+        .expect("write opaque register");
+    let encoded = serde_json::to_vec(&fiber).expect("fiber snapshot serializes");
+    let mut restored: FiberState =
+        serde_json::from_slice(&encoded).expect("fiber snapshot deserializes");
+    restored
+        .validate_for_program(&program)
+        .expect("restored opaque register validates");
+
+    let foreign = RuntimeOpaqueTypeOwner::exact(
+        RuntimeOpaqueTypeProducerId::try_new("producer.foreign").expect("valid producer"),
+        RuntimeSemanticTypeId::from_bytes([41; 32]),
+    )
+    .try_wrap(RuntimeValue::String("saved".to_owned()))
+    .expect("foreign exact owner wraps");
+    restored
+        .active_frame_mut()
+        .expect("active frame")
+        .set_register(AwbcRegisterId(0), foreign)
+        .expect("tamper opaque register");
+    assert!(matches!(
+        restored
+            .validate_for_program(&program)
+            .expect_err("foreign opaque owner must reject on restore validation"),
+        super::fiber::FiberStateError::InvalidRuntimeValue { .. }
     ));
 }
 

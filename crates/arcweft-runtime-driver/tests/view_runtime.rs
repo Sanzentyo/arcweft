@@ -184,7 +184,7 @@ fn handle(id: &str, view: &str) -> PresentationHandleRecord {
 fn runtime_snapshot_requires_the_strict_axis_seed_registry_field() {
     assert_eq!(
         arcweft_runtime_driver::session_save::BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
-        2,
+        1,
         "the final dialogue-content generation identity is a breaking unpublished save schema"
     );
     let runtime = BundleViewRuntime::try_new(None, None, None).unwrap();

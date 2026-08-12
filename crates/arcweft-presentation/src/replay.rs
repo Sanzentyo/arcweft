@@ -26,7 +26,7 @@ pub struct RouteFingerprint {
 
 /// Hash the parts of presentation state that affect input routing.
 pub fn routing_hash(layers: &LayerTree, hits: &HitTree, state: &InteractionState) -> RoutingHash {
-    let mut hasher = StableHasher::new("arcweft.presentation.routing.v2");
+    let mut hasher = StableHasher::new("arcweft.presentation.routing.v1");
     hash_layer_tree(&mut hasher, layers);
     hash_hit_tree(&mut hasher, hits);
     hash_interaction_state(&mut hasher, state);
@@ -41,7 +41,7 @@ pub fn route_fingerprint(
     routed: &RoutedInput,
 ) -> RouteFingerprint {
     let route_hash = routing_hash(layers, hits, state);
-    let mut hasher = StableHasher::new("arcweft.presentation.route-decision.v2");
+    let mut hasher = StableHasher::new("arcweft.presentation.route-decision.v1");
     hasher.u64(routed.raw_epoch().0);
     hash_route_decision(&mut hasher, routed.decision());
     RouteFingerprint {

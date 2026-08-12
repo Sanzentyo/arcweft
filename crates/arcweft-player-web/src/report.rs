@@ -53,7 +53,7 @@ pub struct WebDialogueObservation {
 impl WebObservationReport {
     pub fn from_step(step: &BundleSessionStep, queued_task_events: usize) -> Self {
         Self {
-            schema_version: "arcweft.web_observation.v3".to_owned(),
+            schema_version: "arcweft.web_observation.v1".to_owned(),
             step_index: step.index,
             logical_tick: step.clock.tick().0,
             logical_dt_millis: step.clock.dt_millis(),
@@ -255,7 +255,7 @@ impl WebFrameObservationReport {
     #[must_use]
     pub fn from_prepared_frame(frame: &PreparedFrame) -> Self {
         Self {
-            schema_version: "arcweft.web_frame_observation.v3".to_owned(),
+            schema_version: "arcweft.web_frame_observation.v1".to_owned(),
             fx_diagnostics: frame.fx_diagnostics.clone(),
             viewport: WebFrameViewport {
                 logical_width_milli: f64_milli(f64::from(frame.viewport.logical_width)),

@@ -26,8 +26,8 @@ use super::{
 pub struct NominalResolverSchemaVersion(u16);
 
 impl NominalResolverSchemaVersion {
-    /// First schema keyed exclusively by qualified final-HIR identities.
-    pub const CURRENT: Self = Self(2);
+    /// Schema keyed exclusively by qualified final-HIR identities.
+    pub const CURRENT: Self = Self(1);
 
     pub const fn value(self) -> u16 {
         self.0
@@ -186,7 +186,7 @@ impl CheckedTypeReferenceCache {
 }
 
 fn structural_digest(module: TypeResolutionModule<'_>, root: TypeId) -> HirTypeStructuralDigest {
-    let mut hasher = Blake3Hasher::new(b"arcweft-final-hir-type-structure-v2\0");
+    let mut hasher = Blake3Hasher::new(b"arcweft-final-hir-type-structure-v1\0");
     let mut pending = vec![root];
     let mut seen = BTreeSet::new();
     while let Some(owner) = pending.pop() {
@@ -269,6 +269,6 @@ mod tests {
 
     #[test]
     fn final_hir_resolver_schema_version_is_explicit() {
-        assert_eq!(NominalResolverSchemaVersion::CURRENT.value(), 2);
+        assert_eq!(NominalResolverSchemaVersion::CURRENT.value(), 1);
     }
 }

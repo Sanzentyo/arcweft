@@ -688,7 +688,7 @@ impl BytecodeUnitObject {
 
     pub fn bytecode_descriptor_digest_for(facts: &BytecodeUnitFactsObject) -> BuildDigest {
         let mut bytes = Vec::new();
-        put_string(&mut bytes, "bytecode-unit-descriptor-v2");
+        put_string(&mut bytes, "bytecode-unit-descriptor-v1");
         put_digest(&mut bytes, facts.identity.runtime_plan_unit_digest);
         put_digest(&mut bytes, facts.hir_body_digest);
         put_digest(&mut bytes, facts.typecheck_gate_digest);
@@ -821,7 +821,7 @@ impl LinkPlanObject {
 
     pub fn link_descriptor_digest_for(descriptor: &LinkDescriptorObject) -> BuildDigest {
         let mut bytes = Vec::new();
-        put_string(&mut bytes, "link-plan-descriptor-v2");
+        put_string(&mut bytes, "link-plan-descriptor-v1");
         put_named_digests(&mut bytes, &descriptor.ordered_unit_identities);
         put_digest(&mut bytes, descriptor.entrypoint_digest);
         put_digest(&mut bytes, descriptor.resource_section_digest);

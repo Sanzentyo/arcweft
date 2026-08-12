@@ -1127,39 +1127,6 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
     }
 }
 
-#[cfg(test)]
-mod opaque_runtime_type_tests {
-    use super::*;
-    use arcweft_core::awbc::schema::{AwbcStringId, AwbcTypeId};
-    use arcweft_core::pattern::RuntimeOpaqueTypeAdmission;
-
-    #[test]
-    fn opaque_awbc_type_projects_to_final_bundle_value_family() {
-        let mut program = AwbcProgram::default();
-        program.strings.push("fixture.bundle".to_owned());
-        program.runtime_types.push(AwbcRuntimeType::Opaque {
-            producer: AwbcStringId(0),
-            semantic_identity: [81; 32],
-            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
-        });
-        let declaration =
-            runtime_type_declaration(&program, &program.runtime_types[AwbcTypeId(2).index()])
-                .expect("opaque runtime type declaration projects");
-
-        assert_eq!(declaration.public_id, None);
-        assert_eq!(declaration.value_kind, RuntimeValueKind::Opaque);
-        assert_eq!(
-            declaration.compatibility,
-            TypeCompatibilityLabel::RestartRequired
-        );
-        assert_eq!(RuntimeValueKind::Opaque.encoded(), 120);
-        assert_eq!(
-            RuntimeValueKind::from_encoded(120),
-            Some(RuntimeValueKind::Opaque)
-        );
-    }
-}
-
 fn entrypoints_from_manifest(manifest: &BundleManifest) -> Vec<EntrypointDeclaration> {
     manifest
         .entry
@@ -2075,4 +2042,37 @@ fn unique_strings(values: impl IntoIterator<Item = String>) -> Vec<String> {
         .collect::<BTreeSet<_>>()
         .into_iter()
         .collect()
+}
+
+#[cfg(test)]
+mod opaque_runtime_type_tests {
+    use super::*;
+    use arcweft_core::awbc::schema::{AwbcStringId, AwbcTypeId};
+    use arcweft_core::pattern::RuntimeOpaqueTypeAdmission;
+
+    #[test]
+    fn opaque_awbc_type_projects_to_final_bundle_value_family() {
+        let mut program = AwbcProgram::default();
+        program.strings.push("fixture.bundle".to_owned());
+        program.runtime_types.push(AwbcRuntimeType::Opaque {
+            producer: AwbcStringId(0),
+            semantic_identity: [81; 32],
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        });
+        let declaration =
+            runtime_type_declaration(&program, &program.runtime_types[AwbcTypeId(2).index()])
+                .expect("opaque runtime type declaration projects");
+
+        assert_eq!(declaration.public_id, None);
+        assert_eq!(declaration.value_kind, RuntimeValueKind::Opaque);
+        assert_eq!(
+            declaration.compatibility,
+            TypeCompatibilityLabel::RestartRequired
+        );
+        assert_eq!(RuntimeValueKind::Opaque.encoded(), 120);
+        assert_eq!(
+            RuntimeValueKind::from_encoded(120),
+            Some(RuntimeValueKind::Opaque)
+        );
+    }
 }

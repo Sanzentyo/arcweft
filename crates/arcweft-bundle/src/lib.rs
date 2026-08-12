@@ -51,7 +51,7 @@ use yaml_rust2::yaml::Hash;
 #[cfg(feature = "format-yaml")]
 use yaml_rust2::{Yaml, YamlEmitter, YamlLoader};
 
-pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 6;
+pub const ARCWEFT_BUNDLE_SCHEMA_VERSION: u32 = 1;
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ArcweftBundle {

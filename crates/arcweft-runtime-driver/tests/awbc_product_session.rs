@@ -17,6 +17,7 @@ use arcweft_core::{
     bytecode::BytecodeProgram,
     effect::{RuntimeAssertionGuardId, RuntimeAssertionProfile, RuntimeEffectExpr},
     entry::{EntryBindingIdentity, RuntimeEntryRoles},
+    pattern::{RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimeSemanticTypeId},
     plan::{
         EntryRuntimeId, FlowOp, FlowRuntimeId, RuntimeEntryKind, RuntimeEntrySpec,
         RuntimeEntryTarget, RuntimeFlow, RuntimePlan,
@@ -520,6 +521,71 @@ fn session_save_round_trips_awbc_function_values() {
 }
 
 #[test]
+fn session_save_round_trips_opaque_values_and_rejects_invalid_producer_atomically() {
+    let bytes = product_awfb_bytes("entry.main");
+    let mut session = product_session_from_bytes(&bytes);
+    let mut snapshot = session.snapshot_session().expect("snapshot exports");
+    snapshot
+        .executor
+        .state
+        .fiber
+        .active_frame_mut()
+        .expect("active frame")
+        .root_cleanups
+        .push(FiberScopeCleanup {
+            key: "handle.opaque".to_owned(),
+            effect: AwbcEffectPlanId(0),
+            args: vec![opaque_runtime_value()],
+        });
+
+    session
+        .restore_session_snapshot(snapshot.clone())
+        .expect("opaque cleanup state restores");
+    let encoded = session
+        .export_session_save_bytes()
+        .expect("opaque cleanup state encodes");
+    let mut restored = product_session_from_bytes(&bytes);
+    restored
+        .import_session_save_bytes(&encoded, &arcweft_save::SaveDecodeOptions::default())
+        .expect("opaque cleanup state imports");
+    assert_eq!(
+        restored
+            .snapshot_session()
+            .expect("restored snapshot exports")
+            .executor,
+        snapshot.executor
+    );
+
+    let mut tampered = serde_json::to_value(snapshot).expect("snapshot becomes JSON");
+    let producer = tampered
+        .pointer_mut("/executor/state/fiber/frames/0/root_cleanups/0/args/0/Opaque/producer")
+        .expect("opaque producer is explicit persisted evidence");
+    *producer = serde_json::Value::String(String::new());
+    let tampered = arcweft_save::encode_typed_json_save(
+        &tampered,
+        arcweft_save::SaveSchemaId::new(BUNDLE_SESSION_SAVE_SCHEMA_ID),
+        BUNDLE_SESSION_SAVE_SCHEMA_VERSION,
+    )
+    .expect("tampered payload enters only the outer save envelope");
+    let before = restored.snapshot_session().expect("live snapshot exports");
+    let error = restored
+        .import_session_save_bytes(&tampered, &arcweft_save::SaveDecodeOptions::default())
+        .expect_err("invalid opaque producer must reject at decode");
+    assert!(
+        matches!(
+            &error,
+            BundleSessionSaveError::Decode { message }
+                if message.contains("cannot be empty")
+        ),
+        "{error:?}"
+    );
+    assert_eq!(
+        restored.snapshot_session().expect("live snapshot remains"),
+        before
+    );
+}
+
+#[test]
 fn session_save_rejects_stale_awbc_function_ids() {
     let bytes = product_awfb_bytes("entry.main");
     let mut session = product_session_from_bytes(&bytes);
@@ -966,6 +1032,15 @@ fn captured_awbc_runtime_function_value() -> RuntimeValue {
             value: RuntimeValue::String("saved value".to_owned()),
         }],
     ))
+}
+
+fn opaque_runtime_value() -> RuntimeValue {
+    RuntimeOpaqueTypeOwner::exact(
+        RuntimeOpaqueTypeProducerId::try_new("fixture.session-save").expect("valid producer"),
+        RuntimeSemanticTypeId::from_bytes([91; 32]),
+    )
+    .try_wrap(RuntimeValue::String("saved opaque payload".to_owned()))
+    .expect("exact opaque owner wraps")
 }
 
 fn minimal_awbc_program(entry: &str) -> AwbcProgram {

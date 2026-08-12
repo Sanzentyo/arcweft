@@ -671,7 +671,7 @@ impl<'de> Deserialize<'de> for FxDefinition {
 impl FxAbiHash {
     pub fn for_definition(parameters: &[FxParameter], graph: &FxGraph) -> Self {
         let mut hasher = blake3::Hasher::new();
-        hash_str(&mut hasher, "arcweft.fx-abi.v3");
+        hash_str(&mut hasher, "arcweft.fx-abi.v1");
         let mut parameters = parameters.iter().collect::<Vec<_>>();
         parameters.sort_by(|left, right| left.name.cmp(&right.name));
         hash_usize(&mut hasher, parameters.len());
@@ -709,7 +709,7 @@ impl FxAbiHash {
 impl FxSemanticHash {
     pub fn for_graph(graph: &FxGraph) -> Self {
         let mut hasher = blake3::Hasher::new();
-        hash_str(&mut hasher, "arcweft.fx-semantic.v3");
+        hash_str(&mut hasher, "arcweft.fx-semantic.v1");
         hash_graph(&mut hasher, graph);
         Self::from_bytes(*hasher.finalize().as_bytes())
     }

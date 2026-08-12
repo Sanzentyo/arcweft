@@ -13,7 +13,7 @@ use crate::resource_codec::table::{
 use crate::resource_codec::wire::ProductResourceEnvelope;
 use arcweft_source::ProductSourceId;
 
-const SOURCE_MAP_SCHEMA: u32 = 3;
+const SOURCE_MAP_SCHEMA: u32 = 1;
 const FIELD_SOURCE_MAP_TRANSCRIPT: FieldId = FieldId(1);
 const DISPLAY_PATH: u8 = 1;
 const DISPLAY_MEMORY: u8 = 2;

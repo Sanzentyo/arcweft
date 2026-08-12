@@ -3,7 +3,7 @@ use crate::value::{
     RuntimeBinding, RuntimeEvalError, RuntimeOpaqueValue, RuntimeOpaqueValueError, RuntimeSeq,
     RuntimeSignedIntWidth, RuntimeUnsignedIntWidth, RuntimeValue, runtime_sequence_values,
 };
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeSet;
 
 /// Stable semantic identity for a checked type after alias and projection
@@ -95,7 +95,7 @@ impl Default for RuntimeSemanticTypeIdentityEncoder {
 }
 
 /// Stable identity of a producer that validates opaque runtime payloads.
-#[derive(Clone, Debug, Deserialize, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
+#[derive(Clone, Debug, Eq, Hash, Ord, PartialEq, PartialOrd, Serialize)]
 #[repr(transparent)]
 pub struct RuntimeOpaqueTypeProducerId(RuntimeNominalTypeId);
 
@@ -117,6 +117,16 @@ impl RuntimeOpaqueTypeProducerId {
     #[must_use]
     pub fn as_str(&self) -> &str {
         self.0.as_str()
+    }
+}
+
+impl<'de> Deserialize<'de> for RuntimeOpaqueTypeProducerId {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::try_new(value).map_err(serde::de::Error::custom)
     }
 }
 

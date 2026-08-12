@@ -110,8 +110,8 @@ impl RuntimeCallableId {
     #[must_use]
     pub fn from_checked_digest(digest: [u8; 32]) -> Self {
         const HEX: &[u8; 16] = b"0123456789abcdef";
-        let mut identity = String::with_capacity("arcweft.checked.v2.".len() + 64);
-        identity.push_str("arcweft.checked.v2.");
+        let mut identity = String::with_capacity("arcweft.checked.v1.".len() + 64);
+        identity.push_str("arcweft.checked.v1.");
         for byte in digest {
             identity.push(char::from(HEX[usize::from(byte >> 4)]));
             identity.push(char::from(HEX[usize::from(byte & 0x0f)]));
