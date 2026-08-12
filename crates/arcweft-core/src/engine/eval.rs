@@ -713,16 +713,17 @@ impl Engine {
         fields: &[RuntimeFieldExpr],
         pure_backend: &mut impl RuntimeCallBackend,
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        fields
+        let fields = fields
             .iter()
             .map(|field| {
-                Ok(RuntimeFieldValue {
-                    name: field.name.clone(),
-                    value: self.evaluate_expr_with_backend(&field.value, pure_backend)?,
-                })
+                Ok((
+                    field.name.clone(),
+                    self.evaluate_expr_with_backend(&field.value, pure_backend)?,
+                ))
             })
-            .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeValue::Record)
+            .collect::<Result<Vec<_>, _>>()?;
+        RuntimeValue::try_record(fields)
+            .map_err(|error| RuntimeEvalError::PatternMismatch(error.to_string()))
     }
 
     fn evaluate_nominal_record_expr(
@@ -772,8 +773,8 @@ impl Engine {
         match value {
             RuntimeValue::Record(fields) => fields
                 .into_iter()
-                .find(|candidate| candidate.name == field)
-                .map(|field| field.value)
+                .find(|candidate| candidate.name() == field)
+                .map(RuntimeFieldValue::into_value)
                 .ok_or_else(|| RuntimeEvalError::MissingField {
                     field: field.to_owned(),
                     value: "record".to_owned(),
@@ -863,7 +864,7 @@ impl Engine {
                         value: "record".to_owned(),
                     })
                 },
-                |field| Ok(field.value),
+                |field| Ok(field.into_value()),
             ),
             RuntimeValue::Seq(RuntimeSeq::RecordColumns(records)) => records
                 .field_by_ordinal(ordinal)
@@ -1547,8 +1548,8 @@ fn evaluate_runtime_method_call(
             [RuntimeValue::String(key) | RuntimeValue::EntityRef(key)],
         ) => fields
             .iter()
-            .find(|field| field.name == *key)
-            .map_or(RuntimeValue::Unit, |field| field.value.clone()),
+            .find(|field| field.name() == *key)
+            .map_or(RuntimeValue::Unit, |field| field.value().clone()),
         (receiver, method, args) => RuntimeValue::String(format!(
             "{}.{method}({})",
             runtime_value_label(&receiver),
@@ -1566,8 +1567,8 @@ fn runtime_record_string_field(value: &RuntimeValue, field: &str) -> Option<Stri
     };
     fields
         .iter()
-        .find(|candidate| candidate.name == field)
-        .and_then(|candidate| match &candidate.value {
+        .find(|candidate| candidate.name() == field)
+        .and_then(|candidate| match candidate.value() {
             RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Some(value.clone()),
             _ => None,
         })

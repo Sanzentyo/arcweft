@@ -430,34 +430,44 @@ fn update_path(
     match value {
         RuntimeValue::Tuple(values) => update_fixed_values(values, index, tail, replacement),
         RuntimeValue::Record(fields) => {
+            let mut rebuilt = fields
+                .iter()
+                .map(|field| (field.name().to_owned(), field.value().clone()))
+                .collect::<Vec<_>>();
             if tail.is_empty() {
                 if let Some(replacement) = replacement {
-                    let field = fields.get_mut(index).ok_or_else(|| {
+                    let (_, field) = rebuilt.get_mut(index).ok_or_else(|| {
                         CharacterDialogueValueError::Field {
                             field: "structured_patch",
                             reason: format!("record field ordinal {index} is absent"),
                         }
                     })?;
-                    field.value = replacement;
-                } else if index < fields.len() {
-                    fields.remove(index);
+                    *field = replacement;
+                } else if index < rebuilt.len() {
+                    rebuilt.remove(index);
                 } else {
                     return Err(CharacterDialogueValueError::Field {
                         field: "structured_patch",
                         reason: format!("record field ordinal {index} is absent"),
                     });
                 }
-                Ok(())
             } else {
-                let field =
-                    fields
+                let (_, field) =
+                    rebuilt
                         .get_mut(index)
                         .ok_or_else(|| CharacterDialogueValueError::Field {
                             field: "structured_patch",
                             reason: format!("record field ordinal {index} is absent"),
                         })?;
-                update_path(&mut field.value, tail, replacement)
+                update_path(field, tail, replacement)?;
             }
+            *value = RuntimeValue::try_record(rebuilt).map_err(|error| {
+                CharacterDialogueValueError::Field {
+                    field: "structured_patch",
+                    reason: error.to_string(),
+                }
+            })?;
+            Ok(())
         }
         RuntimeValue::NominalRecord(record) => {
             let type_id = record.type_id().clone();

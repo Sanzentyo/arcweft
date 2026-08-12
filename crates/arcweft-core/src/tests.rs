@@ -13,6 +13,15 @@ use arcweft_interaction_model::{
     payload::InteractionPayload,
 };
 
+macro_rules! runtime_record {
+    ([$(RuntimeFieldValue { name: $name:expr, value: $value:expr, }),* $(,)?]) => {
+        $crate::value::RuntimeValue::try_record(vec![$(($name, $value)),*])
+            .expect("test record fields are unique")
+    };
+}
+
+pub(crate) use runtime_record;
+
 mod executor;
 mod flow;
 mod line_task;

@@ -694,8 +694,9 @@ pub struct RecordSeq {
 
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RecordSeqField {
-    pub name: String,
-    pub values: RuntimeSeq,
+    field: RuntimeRecordFieldId,
+    name: String,
+    values: RuntimeSeq,
 }
 
 #[derive(Clone, Debug, Error, PartialEq)]
@@ -708,6 +709,29 @@ pub enum RuntimeSeqError {
     },
     #[error("record sequence contains duplicate field `{field}`")]
     DuplicateRecordField { field: String },
+    #[error("record sequence has {actual} fields, exceeding the {maximum}-field identity space")]
+    TooManyRecordFields { actual: usize, maximum: u32 },
+    #[error("record sequence field {ordinal} (`{field}`) has invalid identity")]
+    InvalidRecordFieldIdentity {
+        ordinal: usize,
+        field: String,
+        #[source]
+        source: RuntimeRecordFieldIdError,
+    },
+}
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum RuntimeRecordAdmissionError {
+    #[error("runtime record has duplicate field name `{name}`")]
+    DuplicateName { name: String },
+    #[error("runtime record has too many fields")]
+    TooManyFields,
+    #[error("runtime record field `{name}` has invalid identity")]
+    InvalidFieldIdentity {
+        name: String,
+        #[source]
+        source: RuntimeRecordFieldIdError,
+    },
 }
 
 /// Storage value for `isize`-semantic runtime integers.
@@ -864,8 +888,39 @@ pub struct DenseSeqStorage<T> {
 /// One field inside a runtime record value.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 pub struct RuntimeFieldValue {
-    pub name: String,
-    pub value: RuntimeValue,
+    field: RuntimeRecordFieldId,
+    name: String,
+    value: RuntimeValue,
+}
+
+impl RuntimeFieldValue {
+    pub(crate) const fn new_accepted(
+        field: RuntimeRecordFieldId,
+        name: String,
+        value: RuntimeValue,
+    ) -> Self {
+        Self { field, name, value }
+    }
+
+    pub const fn field(&self) -> RuntimeRecordFieldId {
+        self.field
+    }
+
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub const fn value(&self) -> &RuntimeValue {
+        &self.value
+    }
+
+    pub(crate) const fn value_mut(&mut self) -> &mut RuntimeValue {
+        &mut self.value
+    }
+
+    pub(crate) fn into_value(self) -> RuntimeValue {
+        self.value
+    }
 }
 
 /// Expression subset executable by the Sans I/O flow runtime.
@@ -2504,25 +2559,28 @@ fn record_rows_to_columnar(
 ) -> Result<RecordSeq, Vec<RuntimeValue>> {
     let len = rows.len();
     let Some(first) = rows.first() else {
-        return RecordSeq::new(0, Vec::new()).map_err(|_| Vec::new());
+        return RecordSeq::try_from_accepted_fields(0, Vec::new()).map_err(|_| Vec::new());
     };
-    let names = first
+    if !record_field_order_is_accepted(first) {
+        return Err(rows.into_iter().map(RuntimeValue::Record).collect());
+    }
+    let identities = first
         .iter()
-        .map(|field| field.name.clone())
+        .map(|field| (field.field(), field.name().to_owned()))
         .collect::<Vec<_>>();
     if rows
         .iter()
-        .any(|row| !record_field_order_matches(row, &names))
+        .any(|row| !record_field_order_matches(row, &identities))
     {
         return Err(rows.into_iter().map(RuntimeValue::Record).collect());
     }
-    let mut columns = names
+    let mut columns = identities
         .iter()
-        .map(|name| (name.clone(), Vec::with_capacity(len)))
+        .map(|(_, name)| (name.clone(), Vec::with_capacity(len)))
         .collect::<Vec<_>>();
     for row in &mut rows {
         for (ordinal, field) in row.drain(..).enumerate() {
-            columns[ordinal].1.push(field.value);
+            columns[ordinal].1.push(field.into_value());
         }
     }
     let fields = columns
@@ -2532,18 +2590,32 @@ fn record_rows_to_columnar(
             let RuntimeValue::Seq(values) = value else {
                 unreachable!("sequence literal lowering always returns a sequence");
             };
-            RecordSeqField { name, values }
+            (name, values)
         })
         .collect();
-    RecordSeq::new(len, fields).map_err(|_| rows.into_iter().map(RuntimeValue::Record).collect())
+    RecordSeq::try_from_accepted_fields(len, fields)
+        .map_err(|_| rows.into_iter().map(RuntimeValue::Record).collect())
 }
 
-fn record_field_order_matches(row: &[RuntimeFieldValue], names: &[String]) -> bool {
-    row.len() == names.len()
+fn record_field_order_is_accepted(row: &[RuntimeFieldValue]) -> bool {
+    row.iter().enumerate().all(|(ordinal, field)| {
+        RuntimeRecordFieldId::from_accepted_zero_based(ordinal)
+            .is_ok_and(|expected| expected == field.field())
+            && !row[..ordinal]
+                .iter()
+                .any(|previous| previous.name() == field.name())
+    })
+}
+
+fn record_field_order_matches(
+    row: &[RuntimeFieldValue],
+    identities: &[(RuntimeRecordFieldId, String)],
+) -> bool {
+    row.len() == identities.len()
         && row
             .iter()
-            .zip(names)
-            .all(|(field, name)| field.name == *name)
+            .zip(identities)
+            .all(|(field, (field_id, name))| field.field() == *field_id && field.name() == name)
 }
 
 pub(crate) fn runtime_value_into_sequence_values(

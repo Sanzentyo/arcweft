@@ -7,10 +7,7 @@ use super::{
 use crate::{FallbackStylePolicy, InlineFailurePolicy, InlineFallback};
 use arcweft_core::{
     entry::{RuntimeNominalTypeId, RuntimeSchemaError, TypeLayoutHash},
-    value::{
-        MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeFieldValue, RuntimeNominalRecordValue, RuntimeSeq,
-        RuntimeValue,
-    },
+    value::{MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue},
 };
 use core::hash::{Hash, Hasher};
 use serde::{Deserialize, Deserializer, Serialize};
@@ -264,7 +261,7 @@ fn validate_config_strings(value: &RuntimeValue) -> Result<(), CharacterDialogue
         }
         RuntimeValue::Record(fields) => {
             for field in fields {
-                validate_config_strings(&field.value)?;
+                validate_config_strings(field.value())?;
             }
             Ok(())
         }
@@ -367,7 +364,7 @@ fn count_structured_leaves(
         }
         RuntimeValue::Record(fields) => {
             for field in fields {
-                count_structured_leaves(&field.value, depth + 1, leaves)?;
+                count_structured_leaves(field.value(), depth + 1, leaves)?;
             }
         }
         RuntimeValue::NominalRecord(record) => {
@@ -462,25 +459,29 @@ fn normalize_runtime_value(
             .map(RuntimeSeq::values)
             .map(RuntimeValue::Seq),
         RuntimeValue::Record(fields) => {
-            if let Some(pair) = fields.windows(2).find(|pair| pair[0].name >= pair[1].name) {
+            if let Some(pair) = fields
+                .windows(2)
+                .find(|pair| pair[0].name() >= pair[1].name())
+            {
                 return Err(CharacterDialogueValueError::Field {
                     field: "typed_value",
                     reason: format!(
                         "anonymous record fields are not in canonical order near `{}`",
-                        pair[1].name
+                        pair[1].name()
                     ),
                 });
             }
-            fields
+            let fields = fields
                 .into_iter()
                 .map(|field| {
-                    normalize_runtime_value(field.value).map(|value| RuntimeFieldValue {
-                        name: field.name,
-                        value,
-                    })
+                    let name = field.name().to_owned();
+                    normalize_runtime_value(field.value().clone()).map(|value| (name, value))
                 })
-                .collect::<Result<Vec<_>, _>>()
-                .map(RuntimeValue::Record)
+                .collect::<Result<Vec<_>, _>>()?;
+            RuntimeValue::try_record(fields).map_err(|error| CharacterDialogueValueError::Field {
+                field: "typed_value",
+                reason: error.to_string(),
+            })
         }
         RuntimeValue::NominalRecord(record) => {
             let type_id = record.type_id().clone();

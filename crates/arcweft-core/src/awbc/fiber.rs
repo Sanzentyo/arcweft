@@ -1074,7 +1074,7 @@ fn validate_nested_runtime_value(
         RuntimeValue::Seq(sequence) => validate_nested_runtime_sequence(program, sequence, depth),
         RuntimeValue::Record(fields) => fields
             .iter()
-            .try_for_each(|field| validate_nested_runtime_value(program, &field.value, depth + 1)),
+            .try_for_each(|field| validate_nested_runtime_value(program, field.value(), depth + 1)),
         RuntimeValue::NominalRecord(record) => record
             .fields()
             .iter()
@@ -1126,7 +1126,7 @@ fn validate_nested_runtime_sequence(
             .iter()
             .try_for_each(|column| validate_nested_runtime_sequence(program, column, depth + 1)),
         RuntimeSeq::RecordColumns(records) => records.fields().iter().try_for_each(|field| {
-            validate_nested_runtime_sequence(program, &field.values, depth + 1)
+            validate_nested_runtime_sequence(program, field.values(), depth + 1)
         }),
         RuntimeSeq::Dense(_) => Ok(()),
     }
@@ -1754,7 +1754,7 @@ pub(crate) fn runtime_value_matches_type(
         (RuntimeValue::Record(values), AwbcRuntimeType::Record { fields, .. }) => {
             values.len() == fields.len()
                 && values.iter().zip(fields).all(|(value, field)| {
-                    runtime_value_matches_type(program, &value.value, field.ty, depth + 1)
+                    runtime_value_matches_type(program, value.value(), field.ty, depth + 1)
                 })
         }
         (

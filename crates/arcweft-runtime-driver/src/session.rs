@@ -70,7 +70,7 @@ use arcweft_core::step::{
 use arcweft_core::task::{
     CancelScopeId, LogicalEpoch, RuntimeNeedState, TaskEvent, TaskEventKind, TaskSequence,
 };
-use arcweft_core::value::{RuntimeBinding, RuntimeFieldValue, RuntimePayload, RuntimeValue};
+use arcweft_core::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
 use arcweft_interaction_model::audio::{AudioCommandEnvelope, AudioEvent};
 use arcweft_interaction_model::id::Identifier;
 use arcweft_interaction_model::input::{
@@ -645,7 +645,7 @@ impl BundleSession {
                 let call = self.waiting_action_receive_calls.remove(index);
                 self.pending_host_call_results.push(RuntimeHostCallResult {
                     id: call.request,
-                    outcome: Ok(action_receive_payload(action_id, payload)),
+                    outcome: action_receive_payload(action_id, payload),
                 });
             } else {
                 index += 1;
@@ -1152,10 +1152,10 @@ impl BundleSession {
                         ) {
                             self.pending_host_call_results.push(RuntimeHostCallResult {
                                 id: request.id,
-                                outcome: Ok(action_receive_payload(
+                                outcome: action_receive_payload(
                                     &action_id,
                                     invocation.payload.as_deref(),
-                                )),
+                                ),
                             });
                         } else {
                             self.waiting_action_receive_calls
@@ -1255,17 +1255,25 @@ fn action_invocation_from_input_event(
     Some(ActionInvocation { payload })
 }
 
-fn action_receive_payload(action_id: &str, payload: Option<&str>) -> RuntimePayload {
-    RuntimePayload::from(RuntimeValue::Record(vec![
-        RuntimeFieldValue {
-            name: "action".to_owned(),
-            value: RuntimeValue::EntityRef(action_id.to_owned()),
-        },
-        RuntimeFieldValue {
-            name: "value".to_owned(),
-            value: RuntimeValue::String(payload.unwrap_or_default().to_owned()),
-        },
-    ]))
+fn action_receive_payload(
+    action_id: &str,
+    payload: Option<&str>,
+) -> Result<RuntimePayload, RuntimeHostCallError> {
+    RuntimeValue::try_record(vec![
+        (
+            "action".to_owned(),
+            RuntimeValue::EntityRef(action_id.to_owned()),
+        ),
+        (
+            "value".to_owned(),
+            RuntimeValue::String(payload.unwrap_or_default().to_owned()),
+        ),
+    ])
+    .map(RuntimePayload::from)
+    .map_err(|error| RuntimeHostCallError {
+        kind: RuntimeHostCallErrorKind::Failed,
+        message: error.to_string(),
+    })
 }
 
 fn runtime_input_is_untargeted_dialogue_advance(event: &RoutedInputEvent) -> bool {

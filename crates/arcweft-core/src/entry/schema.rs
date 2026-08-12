@@ -383,21 +383,24 @@ impl CanonicalRuntimeValueBytes {
                 self.u8(13)?;
                 self.len(fields.len())?;
                 let mut fields = fields.iter().collect::<Vec<_>>();
-                fields.sort_unstable_by(|left, right| left.name.cmp(&right.name));
-                if fields.windows(2).any(|pair| pair[0].name == pair[1].name) {
+                fields.sort_unstable_by(|left, right| left.name().cmp(right.name()));
+                if fields
+                    .windows(2)
+                    .any(|pair| pair[0].name() == pair[1].name())
+                {
                     return Err(RuntimeSchemaError::DuplicateField {
                         path: "$".to_owned(),
                         field: fields
                             .windows(2)
-                            .find(|pair| pair[0].name == pair[1].name)
+                            .find(|pair| pair[0].name() == pair[1].name())
                             .expect("duplicate was just detected")[0]
-                            .name
-                            .clone(),
+                            .name()
+                            .to_owned(),
                     });
                 }
                 for field in fields {
-                    self.string(&field.name)?;
-                    self.value(&field.value)?;
+                    self.string(field.name())?;
+                    self.value(field.value())?;
                 }
                 Ok(())
             }
@@ -812,10 +815,10 @@ impl<'a> SchemaValidationState<'a> {
     ) -> Result<(), RuntimeSchemaError> {
         let mut actual = BTreeMap::new();
         for field in values {
-            if actual.insert(field.name.as_str(), &field.value).is_some() {
+            if actual.insert(field.name(), field.value()).is_some() {
                 return Err(RuntimeSchemaError::DuplicateField {
                     path: path.to_owned(),
-                    field: field.name.clone(),
+                    field: field.name().to_owned(),
                 });
             }
         }

@@ -12,11 +12,11 @@ use arcweft_agent_protocol::{
 };
 use arcweft_core::value::{RuntimePayload, RuntimeValue};
 
-use crate::runtime_value::runtime_field;
+use crate::runtime_value::{runtime_field, runtime_record};
 
 pub(crate) fn runtime_payload_from_response(response: &AgentHostResponse) -> RuntimePayload {
     RuntimePayload::new(match response {
-        AgentHostResponse::Observation(observation) => RuntimeValue::Record(vec![
+        AgentHostResponse::Observation(observation) => runtime_record(vec![
             runtime_field("tick", RuntimeValue::u64(observation.tick)),
             runtime_field(
                 "frame_id",
@@ -34,7 +34,7 @@ pub(crate) fn runtime_payload_from_response(response: &AgentHostResponse) -> Run
             runtime_field("objects", runtime_observed_objects(&observation.payload)),
             runtime_field("signals", runtime_agent_value_fields(&observation.signals)),
         ]),
-        AgentHostResponse::Action(result) => RuntimeValue::Record(vec![
+        AgentHostResponse::Action(result) => runtime_record(vec![
             runtime_field("accepted", RuntimeValue::Bool(result.accepted)),
             runtime_field("before_tick", RuntimeValue::u64(result.before_tick)),
             runtime_field("after_tick", RuntimeValue::u64(result.after_tick)),
@@ -47,7 +47,7 @@ pub(crate) fn runtime_payload_from_response(response: &AgentHostResponse) -> Run
                 RuntimeValue::String(result.after_state_hash.clone()),
             ),
         ]),
-        AgentHostResponse::Capture(result) => RuntimeValue::Record(vec![
+        AgentHostResponse::Capture(result) => runtime_record(vec![
             runtime_field("uri", RuntimeValue::String(result.uri.as_str().to_owned())),
             runtime_field(
                 "content_hash",
@@ -121,7 +121,7 @@ pub(crate) fn project_graph_neighborhood(
 }
 
 fn runtime_entity_metadata_payload(metadata: &RequiredEntity) -> RuntimeValue {
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field(
             "id",
             RuntimeValue::String(metadata.public_id.as_str().to_owned()),
@@ -142,7 +142,7 @@ fn runtime_entity_source_anchor_payload(
     source: Option<&arcweft_agent_protocol::artifact::RequiredEntitySourceAnchor>,
 ) -> RuntimeValue {
     let Some(source) = source else {
-        return RuntimeValue::Record(vec![
+        return runtime_record(vec![
             runtime_field("has_source", RuntimeValue::Bool(false)),
             runtime_field("path", RuntimeValue::String(String::new())),
             runtime_field("start_byte", RuntimeValue::u64(0)),
@@ -153,7 +153,7 @@ fn runtime_entity_source_anchor_payload(
             runtime_field("end_column", RuntimeValue::u32(0)),
         ]);
     };
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field("has_source", RuntimeValue::Bool(true)),
         runtime_field("path", RuntimeValue::String(source.path.clone())),
         runtime_field("start_byte", RuntimeValue::u64(source.start_byte)),
@@ -180,7 +180,7 @@ fn runtime_entity_source_anchor_payload(
 fn runtime_project_graph_neighborhood_payload(
     neighborhood: &AgentProjectGraphNeighborhood,
 ) -> RuntimeValue {
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field(
             "root",
             RuntimeValue::String(neighborhood.root.as_str().to_owned()),
@@ -225,7 +225,7 @@ pub(crate) fn runtime_project_graph_symbol_payload(
 ) -> RuntimeValue {
     let flow_control = symbol.flow_control;
     let project_summary = symbol.project_summary;
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field(
             "symbol_id",
             RuntimeValue::String(symbol.symbol_id.as_str().to_owned()),
@@ -328,7 +328,7 @@ pub(crate) fn runtime_project_graph_symbol_payload(
 }
 
 fn runtime_project_graph_edge_payload(edge: &AgentProjectGraphEdge) -> RuntimeValue {
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field(
             "from_symbol_id",
             RuntimeValue::String(edge.from_symbol_id.as_str().to_owned()),
@@ -345,7 +345,7 @@ pub(crate) fn runtime_rag_context_payload(value: &serde_json::Value) -> RuntimeV
         .get("items")
         .and_then(serde_json::Value::as_array)
         .map_or(0, Vec::len);
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field("summary", RuntimeValue::String(rag_context_summary(value))),
         runtime_field(
             "item_count",
@@ -382,7 +382,7 @@ fn rag_context_summary(value: &serde_json::Value) -> String {
 }
 
 pub(crate) fn runtime_resource_payload(value: &serde_json::Value) -> RuntimeValue {
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field("uri", runtime_json_string_field(value, "uri")),
         runtime_field("kind", runtime_json_string_field(value, "kind")),
         runtime_field("mime_type", runtime_json_string_field(value, "mime_type")),
@@ -396,7 +396,7 @@ fn runtime_action_targets(actions: &[AgentActionTarget]) -> RuntimeValue {
         actions
             .iter()
             .map(|action| {
-                RuntimeValue::Record(vec![
+                runtime_record(vec![
                     runtime_field("id", RuntimeValue::String(action.id.clone())),
                     runtime_field("target", RuntimeValue::String(action.target.clone())),
                     runtime_field(
@@ -426,7 +426,7 @@ fn runtime_observed_objects(payload: &serde_json::Value) -> RuntimeValue {
 }
 
 fn runtime_observed_object(object: &serde_json::Value) -> RuntimeValue {
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field("id", runtime_json_string_field(object, "id")),
         runtime_field("parent_id", runtime_json_string_field(object, "parent_id")),
         runtime_field("entity", runtime_json_string_field(object, "entity")),
@@ -457,7 +457,7 @@ fn runtime_observed_object(object: &serde_json::Value) -> RuntimeValue {
 
 fn runtime_bbox(value: Option<&serde_json::Value>) -> RuntimeValue {
     let Some(value) = value else {
-        return RuntimeValue::Record(vec![
+        return runtime_record(vec![
             runtime_field("space", RuntimeValue::String(String::new())),
             runtime_field("x", RuntimeValue::u32(0)),
             runtime_field("y", RuntimeValue::u32(0)),
@@ -465,7 +465,7 @@ fn runtime_bbox(value: Option<&serde_json::Value>) -> RuntimeValue {
             runtime_field("height", RuntimeValue::u32(0)),
         ]);
     };
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field("space", runtime_json_string_field(value, "space")),
         runtime_field("x", runtime_json_u32_field(value, "x")),
         runtime_field("y", runtime_json_u32_field(value, "y")),
@@ -475,7 +475,7 @@ fn runtime_bbox(value: Option<&serde_json::Value>) -> RuntimeValue {
 }
 
 fn runtime_agent_value_fields(values: &BTreeMap<String, AgentValue>) -> RuntimeValue {
-    RuntimeValue::Record(
+    runtime_record(
         values
             .iter()
             .map(|(name, value)| runtime_field(name, runtime_agent_value_payload(value)))
@@ -495,7 +495,7 @@ fn runtime_agent_value_payload(value: &AgentValue) -> RuntimeValue {
         AgentValue::List(values) => RuntimeValue::Seq(arcweft_core::value::RuntimeSeq::values(
             values.iter().map(runtime_agent_value_payload).collect(),
         )),
-        AgentValue::Map(values) => RuntimeValue::Record(
+        AgentValue::Map(values) => runtime_record(
             values
                 .iter()
                 .map(|(name, value)| runtime_field(name, runtime_agent_value_payload(value)))
@@ -551,7 +551,7 @@ fn runtime_resource_body_payload(value: Option<&serde_json::Value>) -> RuntimeVa
         .unwrap_or_default();
     let body = value.get("body");
     match kind {
-        "json" => RuntimeValue::Record(vec![
+        "json" => runtime_record(vec![
             runtime_field("kind", RuntimeValue::String(kind.to_owned())),
             runtime_field(
                 "json",
@@ -565,7 +565,7 @@ fn runtime_resource_body_payload(value: Option<&serde_json::Value>) -> RuntimeVa
             runtime_field("base64", RuntimeValue::String(String::new())),
             runtime_field("encoding", RuntimeValue::String(String::new())),
         ]),
-        "text" => RuntimeValue::Record(vec![
+        "text" => runtime_record(vec![
             runtime_field("kind", RuntimeValue::String(kind.to_owned())),
             runtime_field("json", RuntimeValue::String(String::new())),
             runtime_field(
@@ -603,7 +603,7 @@ fn runtime_bytes_base64_body_payload(kind: &str, body: Option<&serde_json::Value
         .and_then(serde_json::Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field("kind", RuntimeValue::String(kind.to_owned())),
         runtime_field("json", RuntimeValue::String(String::new())),
         runtime_field("value", runtime_bytes_base64_value(body)),
@@ -614,7 +614,7 @@ fn runtime_bytes_base64_body_payload(kind: &str, body: Option<&serde_json::Value
 }
 
 fn runtime_empty_resource_body() -> RuntimeValue {
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field("kind", RuntimeValue::String(String::new())),
         runtime_field("json", RuntimeValue::String(String::new())),
         runtime_field("value", RuntimeValue::Unit),
@@ -625,7 +625,7 @@ fn runtime_empty_resource_body() -> RuntimeValue {
 }
 
 fn runtime_bytes_base64_value(body: Option<&serde_json::Value>) -> RuntimeValue {
-    RuntimeValue::Record(vec![
+    runtime_record(vec![
         runtime_field(
             "encoding",
             RuntimeValue::String(
@@ -664,7 +664,7 @@ fn runtime_value_from_json(value: &serde_json::Value) -> RuntimeValue {
                 .map(runtime_value_from_json)
                 .collect::<Vec<_>>(),
         ),
-        serde_json::Value::Object(values) => RuntimeValue::Record(
+        serde_json::Value::Object(values) => runtime_record(
             values
                 .iter()
                 .map(|(key, value)| runtime_field(key, runtime_value_from_json(value)))

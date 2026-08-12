@@ -22,8 +22,7 @@ use crate::step::{
     RuntimeStepOptions,
 };
 use crate::value::{
-    RuntimeBinding, RuntimeExpr, RuntimeFieldValue, RuntimeFunctionValue, RuntimePayload,
-    RuntimeSeq, RuntimeValue,
+    RuntimeBinding, RuntimeExpr, RuntimeFunctionValue, RuntimePayload, RuntimeSeq, RuntimeValue,
 };
 
 fn reducer_ok(state: RuntimeValue) -> RuntimeValue {
@@ -31,7 +30,7 @@ fn reducer_ok(state: RuntimeValue) -> RuntimeValue {
 }
 
 fn reducer_ok_with_commands(state: RuntimeValue, commands: Vec<RuntimeValue>) -> RuntimeValue {
-    RuntimeValue::result_ok(RuntimeValue::Record(vec![
+    RuntimeValue::result_ok(crate::tests::runtime_record!([
         RuntimeFieldValue {
             name: "state".to_owned(),
             value: state,
@@ -201,7 +200,7 @@ fn reducer_rejection() -> RuntimeValue {
     RuntimeValue::result_err(nominal_variant(
         "ReducerError",
         "ReducerError",
-        Some(RuntimeValue::Record(vec![
+        Some(crate::tests::runtime_record!([
             RuntimeFieldValue {
                 name: "code".to_owned(),
                 value: RuntimeValue::String("not_allowed".to_owned()),
@@ -218,7 +217,7 @@ fn command_value(payload: RuntimeValue) -> RuntimeValue {
     nominal_variant(
         "Command",
         "Command",
-        Some(RuntimeValue::Record(vec![
+        Some(crate::tests::runtime_record!([
             RuntimeFieldValue {
                 name: "constructor".to_owned(),
                 value: RuntimeValue::EntityRef("command.save".to_owned()),

@@ -33,7 +33,7 @@ fn validate_value(
         RuntimeValue::Seq(sequence) => validate_sequence(sequence, depth + 1, maximum),
         RuntimeValue::Record(fields) => fields
             .iter()
-            .try_for_each(|field| validate_value(&field.value, depth + 1, maximum)),
+            .try_for_each(|field| validate_value(field.value(), depth + 1, maximum)),
         RuntimeValue::NominalRecord(record) => validate_values(record.fields(), depth + 1, maximum),
         RuntimeValue::Opaque(value) => validate_value(value.payload(), depth + 1, maximum),
         RuntimeValue::Function(function) => function
@@ -113,7 +113,7 @@ fn validate_sequence(
             ensure_depth(item_depth, maximum)?;
             rows.fields()
                 .iter()
-                .try_for_each(|field| validate_sequence(&field.values, item_depth + 1, maximum))
+                .try_for_each(|field| validate_sequence(field.values(), item_depth + 1, maximum))
         }
     }
 }

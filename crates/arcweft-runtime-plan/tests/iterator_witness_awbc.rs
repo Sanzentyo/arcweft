@@ -15,7 +15,7 @@ use arcweft_core::pure::VmRuntimePureCallBackend;
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
-use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeFieldValue, RuntimeValue};
+use arcweft_core::value::{RuntimeBinaryOp, RuntimeExpr, RuntimeValue};
 use arcweft_runtime_plan::awbc_lower::AwbcLowerer;
 use arcweft_text_model::DialogueContentCatalog;
 
@@ -144,16 +144,11 @@ fn counter_trait_identity(id: usize, method_name: &str) -> RuntimeTraitMethodIde
 }
 
 fn counter_state() -> RuntimeValue {
-    RuntimeValue::Record(vec![
-        RuntimeFieldValue {
-            name: "current".to_owned(),
-            value: RuntimeValue::i64(0),
-        },
-        RuntimeFieldValue {
-            name: "end".to_owned(),
-            value: RuntimeValue::i64(1),
-        },
+    RuntimeValue::try_record(vec![
+        ("current".to_owned(), RuntimeValue::i64(0)),
+        ("end".to_owned(), RuntimeValue::i64(1)),
     ])
+    .expect("test record fields are unique")
 }
 
 fn self_field(field: &str) -> RuntimeExpr {

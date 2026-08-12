@@ -12,8 +12,8 @@ use arcweft_core::{
     entry::RuntimeCallableId,
     plan::RuntimePureHelperId,
     value::{
-        RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeFieldValue, RuntimeISizeValue,
-        RuntimeSeq, RuntimeUSizeValue,
+        RuntimeBinaryOp, RuntimeCallTarget, RuntimeExpr, RuntimeISizeValue, RuntimeSeq,
+        RuntimeUSizeValue,
     },
 };
 
@@ -119,10 +119,11 @@ fn data_external_call_rejects_wrong_data_format_owner_and_ordinal() {
 fn data_external_call_round_trips_dynamic_avro() {
     let mut accelerator =
         RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
-    let value = RuntimeValue::Record(vec![arcweft_core::value::RuntimeFieldValue {
-        name: "speaker".to_owned(),
-        value: RuntimeValue::String("alice".to_owned()),
-    }]);
+    let value = RuntimeValue::try_record(vec![(
+        "speaker".to_owned(),
+        RuntimeValue::String("alice".to_owned()),
+    )])
+    .expect("test record fields are unique");
     let format = data_format_value(DataFormat::Avro);
 
     let encoded = accelerator
@@ -145,16 +146,16 @@ fn data_external_call_encodes_shape_required_formats_and_rejects_dynamic_decode(
     for variant in ["Csv", "ArrowIpc", "Parquet", "ArcweftBinary"] {
         let mut accelerator =
             RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
-        let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::Record(vec![
-            RuntimeFieldValue {
-                name: "line".to_owned(),
-                value: RuntimeValue::String("hello".to_owned()),
-            },
-            RuntimeFieldValue {
-                name: "speaker".to_owned(),
-                value: RuntimeValue::String("alice".to_owned()),
-            },
-        ])]));
+        let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![
+            RuntimeValue::try_record(vec![
+                ("line".to_owned(), RuntimeValue::String("hello".to_owned())),
+                (
+                    "speaker".to_owned(),
+                    RuntimeValue::String("alice".to_owned()),
+                ),
+            ])
+            .expect("test record fields are unique"),
+        ]));
         let format = data_format_value(
             DataFormat::from_variant_name(variant).expect("tested data format is registered"),
         );
@@ -186,16 +187,16 @@ fn data_external_call_decodes_shape_required_formats_with_explicit_shape() {
     for variant in ["Csv", "ArrowIpc", "Parquet", "ArcweftBinary"] {
         let mut accelerator =
             RuntimePureAccelerator::with_config(RuntimePureAcceleratorConfig::default(), &[]);
-        let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![RuntimeValue::Record(vec![
-            RuntimeFieldValue {
-                name: "line".to_owned(),
-                value: RuntimeValue::String("hello".to_owned()),
-            },
-            RuntimeFieldValue {
-                name: "speaker".to_owned(),
-                value: RuntimeValue::String("alice".to_owned()),
-            },
-        ])]));
+        let value = RuntimeValue::Seq(RuntimeSeq::Values(vec![
+            RuntimeValue::try_record(vec![
+                ("line".to_owned(), RuntimeValue::String("hello".to_owned())),
+                (
+                    "speaker".to_owned(),
+                    RuntimeValue::String("alice".to_owned()),
+                ),
+            ])
+            .expect("test record fields are unique"),
+        ]));
         let format = data_format_value(
             DataFormat::from_variant_name(variant).expect("tested data format is registered"),
         );

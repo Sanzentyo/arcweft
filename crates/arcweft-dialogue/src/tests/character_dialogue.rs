@@ -25,8 +25,8 @@ use arcweft_core::{
     },
     plan::RuntimeLineId,
     value::{
-        MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeFieldValue, RuntimeNominalRecordError,
-        RuntimeNominalRecordValue, RuntimeSeq, RuntimeValue,
+        MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeNominalRecordError, RuntimeNominalRecordValue,
+        RuntimeSeq, RuntimeValue,
     },
 };
 use arcweft_id::TextKey;
@@ -299,16 +299,11 @@ fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
         CharacterDialogueTypedValue::try_new(
             None,
             layout,
-            RuntimeValue::Record(vec![
-                RuntimeFieldValue {
-                    name: "alpha".to_owned(),
-                    value: RuntimeValue::Bool(true),
-                },
-                RuntimeFieldValue {
-                    name: "beta".to_owned(),
-                    value: RuntimeValue::Bool(false),
-                },
-            ]),
+            RuntimeValue::try_record(vec![
+                ("alpha".to_owned(), RuntimeValue::Bool(true)),
+                ("beta".to_owned(), RuntimeValue::Bool(false)),
+            ])
+            .expect("test record fields are unique"),
         )
         .expect("structural value"),
     )
@@ -332,7 +327,7 @@ fn structured_clear_preserves_nominal_shape_but_not_anonymous_record_fields() {
         panic!("style remains anonymous");
     };
     assert_eq!(fields.len(), 1);
-    assert_eq!(fields[0].name, "beta");
+    assert_eq!(fields[0].name(), "beta");
 }
 
 #[test]
@@ -766,16 +761,17 @@ fn typed_values_normalize_nested_negative_zero_and_reject_record_reordering() {
     let value = CharacterDialogueTypedValue::try_new(
         None,
         layout,
-        RuntimeValue::Record(vec![RuntimeFieldValue {
-            name: "value".to_owned(),
-            value: RuntimeValue::Tuple(vec![RuntimeValue::F32(-0.0), RuntimeValue::F64(-0.0)]),
-        }]),
+        RuntimeValue::try_record(vec![(
+            "value".to_owned(),
+            RuntimeValue::Tuple(vec![RuntimeValue::F32(-0.0), RuntimeValue::F64(-0.0)]),
+        )])
+        .expect("test record fields are unique"),
     )
     .expect("typed value");
     let RuntimeValue::Record(fields) = value.value() else {
         panic!("record");
     };
-    let RuntimeValue::Tuple(values) = &fields[0].value else {
+    let RuntimeValue::Tuple(values) = fields[0].value() else {
         panic!("tuple");
     };
     assert!(matches!(&values[0], RuntimeValue::F32(value) if value.to_bits() == 0));
@@ -785,16 +781,11 @@ fn typed_values_normalize_nested_negative_zero_and_reject_record_reordering() {
         CharacterDialogueTypedValue::try_new(
             None,
             layout,
-            RuntimeValue::Record(vec![
-                RuntimeFieldValue {
-                    name: "beta".to_owned(),
-                    value: RuntimeValue::Bool(true),
-                },
-                RuntimeFieldValue {
-                    name: "alpha".to_owned(),
-                    value: RuntimeValue::Bool(false),
-                },
-            ]),
+            RuntimeValue::try_record(vec![
+                ("beta".to_owned(), RuntimeValue::Bool(true)),
+                ("alpha".to_owned(), RuntimeValue::Bool(false)),
+            ])
+            .expect("test record fields are unique"),
         ),
         Err(CharacterDialogueValueError::Field {
             field: "typed_value",

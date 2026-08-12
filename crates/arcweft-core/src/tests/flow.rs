@@ -368,7 +368,7 @@ fn counter_trait_identity(id: usize, method_name: &str) -> RuntimeTraitMethodIde
 }
 
 fn counter_state() -> RuntimeValue {
-    RuntimeValue::Record(vec![
+    crate::tests::runtime_record!([
         RuntimeFieldValue {
             name: "current".to_owned(),
             value: RuntimeValue::i64(0),
@@ -2004,7 +2004,7 @@ fn engine_runs_if_and_match_blocks_from_runtime_values() {
 
 #[test]
 fn match_evaluates_scrutinee_once_and_discards_rejected_arm_bindings() {
-    let state = RuntimeValue::Record(vec![RuntimeFieldValue {
+    let state = crate::tests::runtime_record!([RuntimeFieldValue {
         name: "count".to_owned(),
         value: RuntimeValue::i64(0),
     }]);
@@ -2077,7 +2077,7 @@ fn match_evaluates_scrutinee_once_and_discards_rejected_arm_bindings() {
     );
     assert_eq!(
         engine.fiber().env.get("state"),
-        Some(&RuntimeValue::Record(vec![RuntimeFieldValue {
+        Some(&crate::tests::runtime_record!([RuntimeFieldValue {
             name: "count".to_owned(),
             value: RuntimeValue::i64(1),
         }]))
@@ -2701,7 +2701,7 @@ fn custom_host_request_spread_preserves_concrete_payload_values() {
 
 #[test]
 fn custom_host_request_preserves_nested_record_variant_and_refs() {
-    let nested_payload = RuntimeValue::Record(vec![
+    let nested_payload = crate::tests::runtime_record!([
         RuntimeFieldValue {
             name: "actor".to_owned(),
             value: RuntimeValue::EntityRef("character.alice".to_owned()),

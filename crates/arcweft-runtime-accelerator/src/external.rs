@@ -308,7 +308,8 @@ fn runtime_value_to_data_value(value: &RuntimeValue) -> Result<Value, RuntimeEva
         RuntimeValue::Record(fields) => fields
             .iter()
             .map(|field| {
-                runtime_value_to_data_value(&field.value).map(|value| (field.name.clone(), value))
+                runtime_value_to_data_value(field.value())
+                    .map(|value| (field.name().to_owned(), value))
             })
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map(Value::Record),
@@ -363,12 +364,12 @@ fn data_value_to_runtime_value(value: Value) -> Result<RuntimeValue, RuntimeEval
             .map(RuntimeValue::Seq),
         Value::Map(values) | Value::Record(values) => values
             .into_iter()
-            .map(|(name, value)| {
-                data_value_to_runtime_value(value)
-                    .map(|value| arcweft_core::value::RuntimeFieldValue { name, value })
-            })
+            .map(|(name, value)| data_value_to_runtime_value(value).map(|value| (name, value)))
             .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeValue::Record),
+            .and_then(|fields| {
+                RuntimeValue::try_record(fields)
+                    .map_err(|error| data_runtime_error("data.decode", error.to_string()))
+            }),
         Value::Enum { .. } => Err(data_runtime_error(
             "data.decode",
             "enum values require an explicit TypeShape so their typed owner and case ordinal are preserved",
@@ -439,11 +440,13 @@ fn data_value_to_runtime_value_with_shape(
         (Value::Map(values), TypeShape::Map { value, .. }) => values
             .into_iter()
             .map(|(name, item)| {
-                data_value_to_runtime_value_with_shape(item, value)
-                    .map(|value| arcweft_core::value::RuntimeFieldValue { name, value })
+                data_value_to_runtime_value_with_shape(item, value).map(|value| (name, value))
             })
             .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeValue::Record),
+            .and_then(|fields| {
+                RuntimeValue::try_record(fields)
+                    .map_err(|error| data_runtime_error("data.decode", error.to_string()))
+            }),
         (Value::Record(values), TypeShape::Record { fields, .. }) => values
             .into_iter()
             .map(|(name, value)| {
@@ -457,10 +460,13 @@ fn data_value_to_runtime_value_with_shape(
                         )
                     })?;
                 data_value_to_runtime_value_with_shape(value, &field.value_shape())
-                    .map(|value| arcweft_core::value::RuntimeFieldValue { name, value })
+                    .map(|value| (name, value))
             })
             .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeValue::Record),
+            .and_then(|fields| {
+                RuntimeValue::try_record(fields)
+                    .map_err(|error| data_runtime_error("data.decode", error.to_string()))
+            }),
         (Value::Enum { variant, payload }, shape @ TypeShape::Enum { name, variants, .. }) => {
             let (ordinal, case) = variants
                 .iter()
@@ -764,7 +770,7 @@ fn infer_data_shape(value: &Value) -> TypeShape {
 
 fn type_shape_to_runtime_value(shape: &TypeShape) -> RuntimeValue {
     match shape {
-        TypeShape::Record { name, fields, .. } => RuntimeValue::Record(vec![
+        TypeShape::Record { name, fields, .. } => data_record(vec![
             data_field("kind", RuntimeValue::String("record".to_owned())),
             data_field("name", RuntimeValue::String(name.clone())),
             data_field(
@@ -773,7 +779,7 @@ fn type_shape_to_runtime_value(shape: &TypeShape) -> RuntimeValue {
                     fields
                         .iter()
                         .map(|field| {
-                            RuntimeValue::Record(vec![
+                            data_record(vec![
                                 data_field("name", RuntimeValue::String(field.wire_name.clone())),
                                 data_field("shape", type_shape_to_runtime_value(&field.shape)),
                             ])
@@ -782,15 +788,15 @@ fn type_shape_to_runtime_value(shape: &TypeShape) -> RuntimeValue {
                 )),
             ),
         ]),
-        TypeShape::Seq(item) => RuntimeValue::Record(vec![
+        TypeShape::Seq(item) => data_record(vec![
             data_field("kind", RuntimeValue::String("seq".to_owned())),
             data_field("item", type_shape_to_runtime_value(item)),
         ]),
-        TypeShape::Bytes { .. } => RuntimeValue::Record(vec![data_field(
+        TypeShape::Bytes { .. } => data_record(vec![data_field(
             "kind",
             RuntimeValue::String("bytes".to_owned()),
         )]),
-        TypeShape::Enum { name, variants, .. } => RuntimeValue::Record(vec![
+        TypeShape::Enum { name, variants, .. } => data_record(vec![
             data_field("kind", RuntimeValue::String("enum".to_owned())),
             data_field("name", RuntimeValue::String(name.clone())),
             data_field(
@@ -803,11 +809,11 @@ fn type_shape_to_runtime_value(shape: &TypeShape) -> RuntimeValue {
                 )),
             ),
         ]),
-        TypeShape::Named(name) => RuntimeValue::Record(vec![
+        TypeShape::Named(name) => data_record(vec![
             data_field("kind", RuntimeValue::String("named".to_owned())),
             data_field("name", RuntimeValue::String(name.clone())),
         ]),
-        other => RuntimeValue::Record(vec![data_field(
+        other => data_record(vec![data_field(
             "kind",
             RuntimeValue::String(type_shape_kind_label(other).to_owned()),
         )]),
@@ -941,8 +947,8 @@ fn runtime_record_field<'a>(
 ) -> Result<&'a RuntimeValue, RuntimeEvalError> {
     fields
         .iter()
-        .find(|field| field.name == name)
-        .map(|field| &field.value)
+        .find(|field| field.name() == name)
+        .map(arcweft_core::value::RuntimeFieldValue::value)
         .ok_or_else(|| data_runtime_error("data.decode", format!("{context} is missing `{name}`")))
 }
 
@@ -993,11 +999,12 @@ fn type_shape_kind_label(shape: &TypeShape) -> &'static str {
     }
 }
 
-fn data_field(name: &str, value: RuntimeValue) -> arcweft_core::value::RuntimeFieldValue {
-    arcweft_core::value::RuntimeFieldValue {
-        name: name.to_owned(),
-        value,
-    }
+fn data_field(name: &str, value: RuntimeValue) -> (String, RuntimeValue) {
+    (name.to_owned(), value)
+}
+
+fn data_record(fields: Vec<(String, RuntimeValue)>) -> RuntimeValue {
+    RuntimeValue::try_record(fields).expect("data type-shape record has fixed unique fields")
 }
 
 fn encode_dynamic_avro(value: &Value) -> arcweft_data::Result<Vec<u8>> {

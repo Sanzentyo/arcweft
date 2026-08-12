@@ -447,11 +447,11 @@ impl AwbcInventory {
                 ty: self.dynamic_ty(),
                 field_names: fields
                     .iter()
-                    .map(|field| self.intern_string(&field.name))
+                    .map(|field| self.intern_string(field.name()))
                     .collect(),
                 fields: fields
                     .iter()
-                    .map(|field| self.constant_runtime_value(&field.value))
+                    .map(|field| self.constant_runtime_value(field.value()))
                     .collect(),
             },
             RuntimeValue::NominalRecord(record) => {

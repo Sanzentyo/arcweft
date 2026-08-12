@@ -1,4 +1,4 @@
-use arcweft_core::value::{RuntimeFieldValue, RuntimeValue};
+use arcweft_core::value::{RuntimeRecordAdmissionError, RuntimeValue};
 use arcweft_presentation::fx::{
     Angle, FiniteF32, FxColor, FxRuntimeType, FxRuntimeValue, FxVec2, Length, Opacity, Seconds,
     Transform2D,
@@ -9,6 +9,8 @@ use thiserror::Error;
 /// Strict failure to cross from general runtime values into the closed View/Fx scalar domain.
 #[derive(Clone, Debug, Error, PartialEq)]
 pub enum BundleViewValueConversionError {
+    #[error("runtime record admission failed: {0}")]
+    RecordAdmission(#[from] RuntimeRecordAdmissionError),
     #[error("runtime value has type {actual}, expected {expected:?}")]
     Type {
         expected: FxRuntimeType,
@@ -143,19 +145,18 @@ pub(super) fn runtime_to_fx(
                     "opacity",
                 ],
             )?;
-            let length = |field| match runtime_to_fx(
-                required_field(&fields, field)?,
-                FxRuntimeType::Length,
-            )? {
-                FxRuntimeValue::Length(value) => Ok(value),
-                _ => unreachable!("Length conversion returns Length"),
+            let length = |field| -> Result<Length, BundleViewValueConversionError> {
+                match runtime_to_fx(required_field(&fields, field)?, FxRuntimeType::Length)? {
+                    FxRuntimeValue::Length(value) => Ok(value),
+                    _ => unreachable!("Length conversion returns Length"),
+                }
             };
-            let angle =
-                |field| match runtime_to_fx(required_field(&fields, field)?, FxRuntimeType::Angle)?
-                {
+            let angle = |field| -> Result<Angle, BundleViewValueConversionError> {
+                match runtime_to_fx(required_field(&fields, field)?, FxRuntimeType::Angle)? {
                     FxRuntimeValue::Angle(value) => Ok(value),
                     _ => unreachable!("Angle conversion returns Angle"),
-                };
+                }
+            };
             let value = Transform2D {
                 translate_x: length("translate_x")?,
                 translate_y: length("translate_y")?,
@@ -248,39 +249,37 @@ pub(super) fn fx_to_runtime(
             RuntimeValue::Int(arcweft_core::value::RuntimeInt::i32(value))
         }
         FxRuntimeValue::F32(value) => RuntimeValue::F32(value.get()),
-        FxRuntimeValue::Length(value) => RuntimeValue::Record(vec![RuntimeFieldValue {
-            name: "px".to_owned(),
-            value: RuntimeValue::F32(value.pixels()),
-        }]),
-        FxRuntimeValue::Angle(value) => RuntimeValue::Record(vec![RuntimeFieldValue {
-            name: "rad".to_owned(),
-            value: RuntimeValue::F32(value.radians()),
-        }]),
+        FxRuntimeValue::Length(value) => {
+            RuntimeValue::try_record(vec![("px".to_owned(), RuntimeValue::F32(value.pixels()))])?
+        }
+        FxRuntimeValue::Angle(value) => {
+            RuntimeValue::try_record(vec![("rad".to_owned(), RuntimeValue::F32(value.radians()))])?
+        }
         FxRuntimeValue::Seconds(value) => RuntimeValue::Duration(
             arcweft_core::time::LogicalDuration::from_nanos(seconds_to_nanos(value.seconds())?),
         ),
-        FxRuntimeValue::Color(value) => RuntimeValue::Record(vec![
+        FxRuntimeValue::Color(value) => RuntimeValue::try_record(vec![
             runtime_field("red", value.red().value().get()),
             runtime_field("green", value.green().value().get()),
             runtime_field("blue", value.blue().value().get()),
             runtime_field("alpha", value.alpha().value().get()),
-        ]),
-        FxRuntimeValue::Vec2(value) => RuntimeValue::Record(vec![
+        ])?,
+        FxRuntimeValue::Vec2(value) => RuntimeValue::try_record(vec![
             runtime_field("x", value.x.get()),
             runtime_field("y", value.y.get()),
-        ]),
-        FxRuntimeValue::Transform2D(value) => RuntimeValue::Record(vec![
-            runtime_record_field("translate_x", "px", value.translate_x.pixels()),
-            runtime_record_field("translate_y", "px", value.translate_y.pixels()),
+        ])?,
+        FxRuntimeValue::Transform2D(value) => RuntimeValue::try_record(vec![
+            runtime_record_field("translate_x", "px", value.translate_x.pixels())?,
+            runtime_record_field("translate_y", "px", value.translate_y.pixels())?,
             runtime_field("scale_x", value.scale_x.get()),
             runtime_field("scale_y", value.scale_y.get()),
-            runtime_record_field("skew_x", "rad", value.skew_x.radians()),
-            runtime_record_field("skew_y", "rad", value.skew_y.radians()),
-            runtime_record_field("rotation", "rad", value.rotation.radians()),
-            runtime_record_field("origin_x", "px", value.origin_x.pixels()),
-            runtime_record_field("origin_y", "px", value.origin_y.pixels()),
+            runtime_record_field("skew_x", "rad", value.skew_x.radians())?,
+            runtime_record_field("skew_y", "rad", value.skew_y.radians())?,
+            runtime_record_field("rotation", "rad", value.rotation.radians())?,
+            runtime_record_field("origin_x", "px", value.origin_x.pixels())?,
+            runtime_record_field("origin_y", "px", value.origin_y.pixels())?,
             runtime_field("opacity", value.opacity.get()),
-        ]),
+        ])?,
     })
 }
 
@@ -301,18 +300,19 @@ fn seconds_to_nanos(seconds: f32) -> Result<u64, BundleViewValueConversionError>
     Ok(nanos as u64)
 }
 
-fn runtime_field(name: &str, value: f32) -> RuntimeFieldValue {
-    RuntimeFieldValue {
-        name: name.to_owned(),
-        value: RuntimeValue::F32(value),
-    }
+fn runtime_field(name: &str, value: f32) -> (String, RuntimeValue) {
+    (name.to_owned(), RuntimeValue::F32(value))
 }
 
-fn runtime_record_field(name: &str, unit: &str, value: f32) -> RuntimeFieldValue {
-    RuntimeFieldValue {
-        name: name.to_owned(),
-        value: RuntimeValue::Record(vec![runtime_field(unit, value)]),
-    }
+fn runtime_record_field(
+    name: &str,
+    unit: &str,
+    value: f32,
+) -> Result<(String, RuntimeValue), RuntimeRecordAdmissionError> {
+    Ok((
+        name.to_owned(),
+        RuntimeValue::try_record(vec![runtime_field(unit, value)])?,
+    ))
 }
 
 fn exact_record<'a>(
@@ -327,10 +327,10 @@ fn exact_record<'a>(
         });
     };
     let mut indexed = BTreeMap::new();
-    for RuntimeFieldValue { name, value } in fields {
-        if indexed.insert(name.as_str(), value).is_some() {
+    for field in fields {
+        if indexed.insert(field.name(), field.value()).is_some() {
             return Err(BundleViewValueConversionError::DuplicateField {
-                field: name.clone(),
+                field: field.name().to_owned(),
             });
         }
     }

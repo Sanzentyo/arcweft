@@ -472,9 +472,9 @@ fn set_runtime_record_field(
     let RuntimeValue::Record(fields) = target else {
         return Err(target.clone());
     };
-    let Some(field) = fields.iter_mut().find(|field| field.name == field_name) else {
+    let Some(field) = fields.iter_mut().find(|field| field.name() == field_name) else {
         return Err(RuntimeValue::Record(fields.clone()));
     };
-    field.value = value;
+    *field.value_mut() = value;
     Ok(())
 }

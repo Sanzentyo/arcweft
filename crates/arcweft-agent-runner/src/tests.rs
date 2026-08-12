@@ -1174,16 +1174,21 @@ fn custom_task_attach_records_runtime_resource_payload() {
     let request = HostTaskRequest::Custom {
         capability: arcweft_core::task::HostCapabilityId("agent".to_owned()),
         operation: "attach".to_owned(),
-        args: vec![RuntimePayload::new(RuntimeValue::Record(vec![
-            runtime_field(
-                "uri",
-                RuntimeValue::String("arcweft://session/cli/observation/latest.json".to_owned()),
-            ),
-            runtime_field(
-                "kind",
-                RuntimeValue::String("observation_latest".to_owned()),
-            ),
-        ]))],
+        args: vec![RuntimePayload::new(
+            RuntimeValue::try_record(vec![
+                runtime_field(
+                    "uri",
+                    RuntimeValue::String(
+                        "arcweft://session/cli/observation/latest.json".to_owned(),
+                    ),
+                ),
+                runtime_field(
+                    "kind",
+                    RuntimeValue::String("observation_latest".to_owned()),
+                ),
+            ])
+            .expect("test record fields are unique"),
+        )],
         named_args: Vec::new(),
     };
     let request = agent_host_request_from_task(&request).expect("attach task lowers");

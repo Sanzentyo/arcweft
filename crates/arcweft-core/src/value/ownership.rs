@@ -77,7 +77,7 @@ impl RuntimeValue {
             Self::Record(fields) => fields
                 .iter()
                 .fold(RuntimeValueOwnership::Unrestricted, |ownership, field| {
-                    ownership.join(field.value.ownership())
+                    ownership.join(field.value().ownership())
                 }),
             Self::NominalRecord(record) => values_ownership(record.fields()),
             Self::Opaque(value) => value.payload().ownership(),
@@ -118,7 +118,7 @@ impl RuntimeSeq {
                 .fields()
                 .iter()
                 .fold(RuntimeValueOwnership::Unrestricted, |ownership, field| {
-                    ownership.join(field.values.ownership())
+                    ownership.join(field.values().ownership())
                 }),
         }
     }
@@ -146,10 +146,7 @@ fn values_ownership(values: &[RuntimeValue]) -> RuntimeValueOwnership {
 mod tests {
     use super::*;
     use crate::pattern::RuntimeVariantIdentity;
-    use crate::value::{
-        RecordSeq, RecordSeqField, RuntimeBinding, RuntimeExpr, RuntimeFieldValue,
-        RuntimeFunctionValue, TupleSeq,
-    };
+    use crate::value::{RuntimeBinding, RuntimeExpr, RuntimeFunctionValue, TupleSeq};
 
     #[test]
     fn join_is_affine_if_either_side_is_affine() {
@@ -176,9 +173,9 @@ mod tests {
     #[test]
     fn current_nested_value_graph_is_recursively_unrestricted() {
         let value = RuntimeValue::Tuple(vec![
-            RuntimeValue::Record(vec![RuntimeFieldValue {
-                name: "payload".to_owned(),
-                value: RuntimeValue::Variant {
+            RuntimeValue::try_record(vec![(
+                "payload".to_owned(),
+                RuntimeValue::Variant {
                     owner: RuntimeVariantIdentity::Result,
                     ordinal: 0,
                     name: "Ok".to_owned(),
@@ -186,7 +183,8 @@ mod tests {
                         RuntimeValue::String("value".to_owned()),
                     ])))),
                 },
-            }]),
+            )])
+            .unwrap(),
             RuntimeValue::Bool(true),
         ]);
 
@@ -205,16 +203,7 @@ mod tests {
             )
             .unwrap(),
         );
-        let record = RuntimeSeq::RecordColumns(
-            RecordSeq::new(
-                1,
-                vec![RecordSeqField {
-                    name: "field".to_owned(),
-                    values: tuple,
-                }],
-            )
-            .unwrap(),
-        );
+        let record = RuntimeSeq::record_columns(1, vec![("field".to_owned(), tuple)]).unwrap();
 
         assert_eq!(record.ownership(), RuntimeValueOwnership::Unrestricted);
     }

@@ -796,7 +796,12 @@ fn runtime_value_to_headers(value: &RuntimeValue) -> Option<Vec<(String, String)
     match value {
         RuntimeValue::Record(fields) => fields
             .iter()
-            .map(|field| Some((field.name.clone(), runtime_value_to_string(&field.value))))
+            .map(|field| {
+                Some((
+                    field.name().to_owned(),
+                    runtime_value_to_string(field.value()),
+                ))
+            })
             .collect(),
         RuntimeValue::Seq(RuntimeSeq::Values(items)) | RuntimeValue::Tuple(items) => {
             items.iter().map(runtime_value_to_header_pair).collect()
@@ -825,8 +830,8 @@ fn runtime_value_to_header_pair(value: &RuntimeValue) -> Option<(String, String)
 fn record_field<'a>(fields: &'a [RuntimeFieldValue], name: &str) -> Option<&'a RuntimeValue> {
     fields
         .iter()
-        .find(|field| field.name == name)
-        .map(|field| &field.value)
+        .find(|field| field.name() == name)
+        .map(RuntimeFieldValue::value)
 }
 
 fn runtime_value_to_bytes(value: &RuntimeValue) -> Result<Vec<u8>, String> {

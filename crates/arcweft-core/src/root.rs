@@ -14,7 +14,7 @@ use crate::pattern::RuntimeVariantIdentity;
 use crate::plan::{
     EntryRuntimeId, FlowRuntimeId, RuntimeEntryRoles, RuntimePlan, RuntimePlanError,
 };
-use crate::value::{RuntimeBinding, RuntimeFieldValue, RuntimePayload, RuntimeValue};
+use crate::value::{RuntimeBinding, RuntimePayload, RuntimeValue};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
@@ -858,8 +858,9 @@ fn record_fields(
         return Err(format!("{owner} payload must be a record"));
     };
     let mut map = BTreeMap::new();
-    for RuntimeFieldValue { name, value } in fields {
-        if map.insert(name.clone(), value).is_some() {
+    for field in fields {
+        let name = field.name().to_owned();
+        if map.insert(name.clone(), field.into_value()).is_some() {
             return Err(format!("{owner} contains duplicate field `{name}`"));
         }
     }
@@ -1013,13 +1014,13 @@ fn validate_replay_safe_value(
         RuntimeValue::Record(fields) => {
             let mut names = BTreeSet::new();
             for field in fields {
-                if !names.insert(field.name.as_str()) {
+                if !names.insert(field.name()) {
                     return Err(format!(
                         "replay-safe payload contains duplicate field `{}`",
-                        field.name
+                        field.name()
                     ));
                 }
-                validate_replay_safe_value(&field.value, limits, depth + 1, nodes)?;
+                validate_replay_safe_value(field.value(), limits, depth + 1, nodes)?;
             }
             Ok(())
         }

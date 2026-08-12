@@ -1,0 +1,39 @@
+error: cannot construct `RuntimeFieldValue` with struct literal syntax due to private fields
+ --> tests/ui/runtime_record_carriers_are_private.rs:4:13
+  |
+4 |     let _ = RuntimeFieldValue {
+  |             ^^^^^^^^^^^^^^^^^
+5 |         name: "field".to_owned(),
+  |         ------------------------ private field
+6 |         value: RuntimeValue::Unit,
+  |         ------------------------- private field
+  |
+  = note: ...and other private field `field` that was not provided
+help: you might have meant to use the `new_accepted` associated function
+  |
+4 -     let _ = RuntimeFieldValue {
+5 -         name: "field".to_owned(),
+6 -         value: RuntimeValue::Unit,
+7 -     };
+4 +     let _ = RuntimeFieldValue::new_accepted(_, _, _);
+  |
+
+error: cannot construct `RecordSeqField` with struct literal syntax due to private fields
+  --> tests/ui/runtime_record_carriers_are_private.rs:8:13
+   |
+ 8 |     let _ = RecordSeqField {
+   |             ^^^^^^^^^^^^^^
+ 9 |         name: "field".to_owned(),
+   |         ------------------------ private field
+10 |         values: RuntimeSeq::values(Vec::new()),
+   |         -------------------------------------- private field
+   |
+   = note: ...and other private field `field` that was not provided
+help: you might have meant to use the `new_accepted` associated function
+   |
+ 8 -     let _ = RecordSeqField {
+ 9 -         name: "field".to_owned(),
+10 -         values: RuntimeSeq::values(Vec::new()),
+11 -     };
+ 8 +     let _ = RecordSeqField::new_accepted(_, _, _);
+   |

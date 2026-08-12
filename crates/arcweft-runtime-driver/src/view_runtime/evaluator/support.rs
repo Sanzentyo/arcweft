@@ -4,7 +4,7 @@ use crate::view_runtime::{
     ViewOccurrenceKey,
 };
 use arcweft_bundle::resource_codec::ViewAwaitBranchSpan;
-use arcweft_core::value::{RuntimeFieldValue, RuntimeValue};
+use arcweft_core::value::RuntimeValue;
 use arcweft_presentation::fx::{FxId, FxInstanceId};
 use std::collections::BTreeMap;
 
@@ -109,7 +109,7 @@ fn resolve_record_path<'a>(
         };
         value = fields
             .iter()
-            .find_map(|RuntimeFieldValue { name, value }| (name == segment).then_some(value))?;
+            .find_map(|field| (field.name() == segment).then_some(field.value()))?;
     }
     Some(value)
 }

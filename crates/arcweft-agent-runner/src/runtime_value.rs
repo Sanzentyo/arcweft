@@ -33,7 +33,12 @@ pub(crate) fn runtime_value_to_json(value: &RuntimeValue) -> serde_json::Value {
         RuntimeValue::Record(fields) => serde_json::Value::Object(
             fields
                 .iter()
-                .map(|field| (field.name.clone(), runtime_value_to_json(&field.value)))
+                .map(|field| {
+                    (
+                        field.name().to_owned(),
+                        runtime_value_to_json(field.value()),
+                    )
+                })
                 .collect(),
         ),
         RuntimeValue::NominalRecord(record) => serde_json::json!({
@@ -198,8 +203,8 @@ pub(crate) fn runtime_record_get<'a>(
 ) -> Result<&'a RuntimeValue, String> {
     fields
         .iter()
-        .find(|field| field.name == name)
-        .map(|field| &field.value)
+        .find(|field| field.name() == name)
+        .map(RuntimeFieldValue::value)
         .ok_or_else(|| format!("record is missing `{name}`"))
 }
 
@@ -209,11 +214,12 @@ pub(crate) fn runtime_record_string(
 ) -> Result<String, String> {
     runtime_record_get(fields, name).and_then(runtime_string)
 }
-pub(crate) fn runtime_field(name: &str, value: RuntimeValue) -> RuntimeFieldValue {
-    RuntimeFieldValue {
-        name: name.to_owned(),
-        value,
-    }
+pub(crate) fn runtime_field(name: &str, value: RuntimeValue) -> (String, RuntimeValue) {
+    (name.to_owned(), value)
+}
+
+pub(crate) fn runtime_record(fields: Vec<(String, RuntimeValue)>) -> RuntimeValue {
+    RuntimeValue::try_record(fields).expect("agent runtime payload record has fixed unique fields")
 }
 
 pub(crate) fn runtime_string(value: &RuntimeValue) -> Result<String, String> {
@@ -350,7 +356,9 @@ pub(crate) fn runtime_agent_value_map(
     };
     fields
         .iter()
-        .map(|field| runtime_agent_value(&field.value).map(|value| (field.name.clone(), value)))
+        .map(|field| {
+            runtime_agent_value(field.value()).map(|value| (field.name().to_owned(), value))
+        })
         .collect()
 }
 
@@ -383,7 +391,9 @@ fn runtime_agent_value(value: &RuntimeValue) -> Result<AgentValue, String> {
             .map(AgentValue::List),
         RuntimeValue::Record(fields) => fields
             .iter()
-            .map(|field| runtime_agent_value(&field.value).map(|value| (field.name.clone(), value)))
+            .map(|field| {
+                runtime_agent_value(field.value()).map(|value| (field.name().to_owned(), value))
+            })
             .collect::<Result<BTreeMap<_, _>, _>>()
             .map(AgentValue::Map),
         other => Err(format!("unsupported Agent value `{}`", value_label(other))),

@@ -1,0 +1,11 @@
+error[E0599]: no associated function or constant named `new` found for struct `RecordSeq` in the current scope
+ --> tests/ui/record_seq_new_is_absent.rs:4:24
+  |
+4 |     let _ = RecordSeq::new(0, Vec::new());
+  |                        ^^^ associated function or constant not found in `RecordSeq`
+  |
+help: there is a method `ne` with a similar name, but with different arguments
+ --> $RUST/core/src/cmp.rs
+  |
+  |     fn ne(&self, other: &Rhs) -> bool {
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

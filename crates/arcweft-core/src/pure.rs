@@ -1400,16 +1400,12 @@ impl PureEvaluator {
         &mut self,
         fields: &[RuntimeFieldExpr],
     ) -> Result<RuntimeValue, RuntimeEvalError> {
-        fields
+        let fields = fields
             .iter()
-            .map(|field| {
-                Ok(RuntimeFieldValue {
-                    name: field.name.clone(),
-                    value: self.evaluate_expr(&field.value)?,
-                })
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map(RuntimeValue::Record)
+            .map(|field| Ok((field.name.clone(), self.evaluate_expr(&field.value)?)))
+            .collect::<Result<Vec<_>, _>>()?;
+        RuntimeValue::try_record(fields)
+            .map_err(|error| RuntimeEvalError::PatternMismatch(error.to_string()))
     }
 
     fn evaluate_nominal_record_expr(
@@ -1870,8 +1866,8 @@ impl PureEvaluator {
         match value {
             RuntimeValue::Record(fields) => fields
                 .into_iter()
-                .find(|candidate| candidate.name == field)
-                .map(|field| field.value)
+                .find(|candidate| candidate.name() == field)
+                .map(RuntimeFieldValue::into_value)
                 .ok_or_else(|| RuntimeEvalError::MissingField {
                     field: field.to_owned(),
                     value: "record".to_owned(),
@@ -1959,7 +1955,7 @@ impl PureEvaluator {
                         value: "record".to_owned(),
                     })
                 },
-                |field| Ok(field.value),
+                |field| Ok(field.into_value()),
             ),
             RuntimeValue::Seq(RuntimeSeq::RecordColumns(records)) => records
                 .field_by_ordinal(ordinal)
@@ -2090,8 +2086,8 @@ impl PureEvaluator {
                 [RuntimeValue::String(key) | RuntimeValue::EntityRef(key)],
             ) => Ok(fields
                 .iter()
-                .find(|field| field.name == *key)
-                .map_or(RuntimeValue::Unit, |field| field.value.clone())),
+                .find(|field| field.name() == *key)
+                .map_or(RuntimeValue::Unit, |field| field.value().clone())),
             (receiver, _, _) => Err(RuntimeEvalError::UnsupportedPure {
                 name: method.to_owned(),
                 reason: format!(
@@ -2108,8 +2104,8 @@ impl PureEvaluator {
         };
         fields
             .iter()
-            .find(|candidate| candidate.name == field)
-            .and_then(|candidate| match &candidate.value {
+            .find(|candidate| candidate.name() == field)
+            .and_then(|candidate| match candidate.value() {
                 RuntimeValue::String(value) | RuntimeValue::EntityRef(value) => Some(value.clone()),
                 _ => None,
             })

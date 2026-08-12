@@ -4,7 +4,7 @@ use arcweft_core::plan::{RuntimePlan, RuntimeRouteBindingSource, RuntimeRouteSpe
 use arcweft_core::step::{
     RuntimeStepBudget, RuntimeStepInput, RuntimeStepMode, RuntimeStepOptions,
 };
-use arcweft_core::value::{RuntimeBinding, RuntimeFieldValue, RuntimeValue};
+use arcweft_core::value::{RuntimeBinding, RuntimeValue};
 use arcweft_host_adapter::HostCallPolicy;
 use arcweft_runtime_accelerator::{RuntimePureAccelerator, RuntimePureAcceleratorConfig};
 use std::io::{Read, Write};
@@ -284,20 +284,21 @@ fn request_bindings(
         });
     std::iter::once(RuntimeBinding {
         name: "request".to_owned(),
-        value: RuntimeValue::Record(vec![
-            RuntimeFieldValue {
-                name: "method".to_owned(),
-                value: RuntimeValue::String(request.method.clone()),
-            },
-            RuntimeFieldValue {
-                name: "path".to_owned(),
-                value: RuntimeValue::String(request.path.clone()),
-            },
-            RuntimeFieldValue {
-                name: "body".to_owned(),
-                value: RuntimeValue::String(request.body.clone()),
-            },
-        ]),
+        value: RuntimeValue::try_record(vec![
+            (
+                "method".to_owned(),
+                RuntimeValue::String(request.method.clone()),
+            ),
+            (
+                "path".to_owned(),
+                RuntimeValue::String(request.path.clone()),
+            ),
+            (
+                "body".to_owned(),
+                RuntimeValue::String(request.body.clone()),
+            ),
+        ])
+        .expect("HTTP request runtime record has fixed unique fields"),
     })
     .chain(route_param_bindings)
     .collect()

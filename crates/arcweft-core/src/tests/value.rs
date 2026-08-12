@@ -5,18 +5,18 @@ use crate::{
     time::LogicalDuration,
     value::{
         DenseSeqKind, MAX_RUNTIME_VALUE_NESTING_DEPTH, RuntimeBinaryOp, RuntimeBinding, RuntimeEnv,
-        RuntimeExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeIterator,
-        RuntimeNominalRecordValue, RuntimeRange, RuntimeSeq, RuntimeUnaryOp, RuntimeValue,
-        RuntimeValueNestingError, evaluate_core_iter_collect_intrinsic,
-        evaluate_std_float_intrinsic, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
-        runtime_sequence_dense_chars, runtime_sequence_dense_durations,
-        runtime_sequence_dense_entity_refs, runtime_sequence_dense_f32, runtime_sequence_dense_f64,
-        runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
-        runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
-        runtime_sequence_dense_strings, runtime_sequence_dense_u8, runtime_sequence_dense_u16,
-        runtime_sequence_dense_u32, runtime_sequence_dense_u64, runtime_sequence_dense_u128,
-        runtime_sequence_dense_units, runtime_sequence_dense_usize,
-        runtime_sequence_from_literal_values, runtime_sequence_repeat_value, runtime_value_label,
+        RuntimeExpr, RuntimeIntrinsic, RuntimeIterator, RuntimeNominalRecordValue, RuntimeRange,
+        RuntimeSeq, RuntimeUnaryOp, RuntimeValue, RuntimeValueNestingError,
+        evaluate_core_iter_collect_intrinsic, evaluate_std_float_intrinsic,
+        runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_chars,
+        runtime_sequence_dense_durations, runtime_sequence_dense_entity_refs,
+        runtime_sequence_dense_f32, runtime_sequence_dense_f64, runtime_sequence_dense_i8,
+        runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+        runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_strings,
+        runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
+        runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_units,
+        runtime_sequence_dense_usize, runtime_sequence_from_literal_values,
+        runtime_sequence_repeat_value, runtime_value_label,
     },
 };
 
@@ -27,7 +27,7 @@ fn nominal_and_anonymous_records_have_distinct_identity_and_bytes() {
         TypeLayoutHash::from_bytes([7; 32]),
         vec![RuntimeValue::i32(1)],
     ));
-    let anonymous = RuntimeValue::Record(vec![RuntimeFieldValue {
+    let anonymous = crate::tests::runtime_record!([RuntimeFieldValue {
         name: "value".to_owned(),
         value: RuntimeValue::i32(1),
     }]);
@@ -869,11 +869,11 @@ fn compound_literal_sequences_use_columnar_storage_when_shape_is_stable() {
     );
 
     let RuntimeValue::Seq(record_seq) = runtime_sequence_from_literal_values(vec![
-        RuntimeValue::Record(vec![RuntimeFieldValue {
+        crate::tests::runtime_record!([RuntimeFieldValue {
             name: "score".to_owned(),
             value: RuntimeValue::i64(1),
         }]),
-        RuntimeValue::Record(vec![RuntimeFieldValue {
+        crate::tests::runtime_record!([RuntimeFieldValue {
             name: "score".to_owned(),
             value: RuntimeValue::i64(2),
         }]),
@@ -929,11 +929,11 @@ fn compound_literal_sequences_fall_back_when_shape_changes() {
     assert!(matches!(tuple_seq, RuntimeSeq::Values(_)));
 
     let RuntimeValue::Seq(record_seq) = runtime_sequence_from_literal_values(vec![
-        RuntimeValue::Record(vec![RuntimeFieldValue {
+        crate::tests::runtime_record!([RuntimeFieldValue {
             name: "score".to_owned(),
             value: RuntimeValue::i64(1),
         }]),
-        RuntimeValue::Record(vec![RuntimeFieldValue {
+        crate::tests::runtime_record!([RuntimeFieldValue {
             name: "label".to_owned(),
             value: RuntimeValue::String("two".to_owned()),
         }]),

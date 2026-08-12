@@ -632,10 +632,8 @@ fn awbc_product_parity_match_guard_false_continues_to_next_arm() {
     reason = "the parity case keeps scrutinee evaluation and arm-scope invariants in one structured/AWBC comparison"
 )]
 fn awbc_product_parity_match_scrutinee_is_once_and_arm_bindings_are_scoped() {
-    let initial_state = RuntimeValue::Record(vec![arcweft_core::value::RuntimeFieldValue {
-        name: "count".to_owned(),
-        value: RuntimeValue::i64(0),
-    }]);
+    let initial_state = RuntimeValue::try_record(vec![("count".to_owned(), RuntimeValue::i64(0))])
+        .expect("test record fields are unique");
     let incremented_count = RuntimeExpr::Binary {
         lhs: Box::new(RuntimeExpr::Field {
             target: Box::new(RuntimeExpr::Local("state".to_owned())),
@@ -718,10 +716,8 @@ fn awbc_product_parity_match_scrutinee_is_once_and_arm_bindings_are_scoped() {
         vec![RuntimeStepInput::default()],
     );
 
-    let expected_state = RuntimeValue::Record(vec![arcweft_core::value::RuntimeFieldValue {
-        name: "count".to_owned(),
-        value: RuntimeValue::i64(1),
-    }]);
+    let expected_state = RuntimeValue::try_record(vec![("count".to_owned(), RuntimeValue::i64(1))])
+        .expect("test record fields are unique");
     for fiber in [&steps[0].structured_fiber, &steps[0].awbc_fiber] {
         assert_eq!(fiber.env.get("state"), Some(&expected_state));
         assert_eq!(

@@ -529,13 +529,14 @@ fn execute_instruction(
                         .iter()
                         .zip(field_names)
                         .map(|(register_id, field_name)| {
-                            Ok(crate::value::RuntimeFieldValue {
-                                name: string(program, *field_name)?.to_owned(),
-                                value: register(fiber, *register_id)?.clone(),
-                            })
+                            Ok((
+                                string(program, *field_name)?.to_owned(),
+                                register(fiber, *register_id)?.clone(),
+                            ))
                         })
                         .collect::<Result<Vec<_>, VmError>>()?;
-                    RuntimeValue::Record(fields)
+                    RuntimeValue::try_record(fields)
+                        .map_err(|error| VmError::Runtime(error.to_string()))?
                 }
                 Some(_) => {
                     return Err(VmError::Runtime(
@@ -595,7 +596,7 @@ fn execute_instruction(
             };
             let value = items
                 .get(*ordinal as usize)
-                .map(|field| field.value.clone())
+                .map(|field| field.value().clone())
                 .ok_or_else(|| VmError::Runtime("record projection out of bounds".to_owned()))?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
@@ -608,8 +609,8 @@ fn execute_instruction(
             };
             let value = items
                 .iter()
-                .find(|item| item.name == field)
-                .map(|field| field.value.clone())
+                .find(|item| item.name() == field)
+                .map(|field| field.value().clone())
                 .ok_or_else(|| VmError::Runtime(format!("missing field `{field}`")))?;
             fiber.active_frame_mut()?.set_register(*dst, value)?;
         }
@@ -1038,10 +1039,13 @@ fn set_record_field_value(
             runtime_value_label(target)
         )));
     };
-    let Some(field_value) = fields.iter_mut().find(|candidate| candidate.name == field) else {
+    let Some(field_value) = fields
+        .iter_mut()
+        .find(|candidate| candidate.name() == field)
+    else {
         return Err(VmError::Runtime(format!("missing field `{field}`")));
     };
-    field_value.value = value;
+    *field_value.value_mut() = value;
     Ok(())
 }
 
@@ -1392,18 +1396,15 @@ pub(crate) fn constant_value(
                         .map_err(|error| VmError::Runtime(error.to_string()))
                 }
                 Some(AwbcRuntimeType::Record { .. } | AwbcRuntimeType::Dynamic) => {
-                    Ok(RuntimeValue::Record(
-                        values
-                            .into_iter()
-                            .zip(field_names)
-                            .map(|(value, field_name)| {
-                                Ok(crate::value::RuntimeFieldValue {
-                                    name: string(program, *field_name)?.to_owned(),
-                                    value,
-                                })
-                            })
-                            .collect::<Result<Vec<_>, VmError>>()?,
-                    ))
+                    let fields = values
+                        .into_iter()
+                        .zip(field_names)
+                        .map(|(value, field_name)| {
+                            Ok((string(program, *field_name)?.to_owned(), value))
+                        })
+                        .collect::<Result<Vec<_>, VmError>>()?;
+                    RuntimeValue::try_record(fields)
+                        .map_err(|error| VmError::Runtime(error.to_string()))
                 }
                 Some(_) => Err(VmError::Runtime(
                     "record constant references a non-record type".to_owned(),
@@ -1578,7 +1579,7 @@ pub(crate) fn test_pattern(
                         (*rest || values.len() == fields.len())
                             && fields.iter().all(|field| {
                                 values.get(field.field as usize).is_some_and(|value| {
-                                    test_pattern(program, field.pattern, &value.value)
+                                    test_pattern(program, field.pattern, value.value())
                                         .unwrap_or(false)
                                 })
                             })
@@ -1673,7 +1674,7 @@ pub(crate) fn bind_pattern(
                         let value = values.get(field.field as usize).ok_or_else(|| {
                             VmError::Runtime("record pattern field is absent".to_owned())
                         })?;
-                        bind_pattern(program, fiber, field.pattern, &value.value)?;
+                        bind_pattern(program, fiber, field.pattern, value.value())?;
                     }
                 }
                 RuntimeValue::NominalRecord(record) => {

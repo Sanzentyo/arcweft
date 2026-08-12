@@ -11,12 +11,12 @@ use crate::pure::{
 };
 use crate::value::{
     RuntimeBinaryOp, RuntimeBinding, RuntimeCallTarget, RuntimeEvalError, RuntimeExpr,
-    RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeFieldValue, RuntimeIntrinsic, RuntimeSeq,
-    RuntimeValue, runtime_sequence_dense_bool, runtime_sequence_dense_bytes,
-    runtime_sequence_dense_i8, runtime_sequence_dense_i16, runtime_sequence_dense_i32,
-    runtime_sequence_dense_i64, runtime_sequence_dense_i128, runtime_sequence_dense_isize,
-    runtime_sequence_dense_u8, runtime_sequence_dense_u16, runtime_sequence_dense_u32,
-    runtime_sequence_dense_u64, runtime_sequence_dense_u128, runtime_sequence_dense_usize,
+    RuntimeExprMatchArm, RuntimeFieldExpr, RuntimeIntrinsic, RuntimeSeq, RuntimeValue,
+    runtime_sequence_dense_bool, runtime_sequence_dense_bytes, runtime_sequence_dense_i8,
+    runtime_sequence_dense_i16, runtime_sequence_dense_i32, runtime_sequence_dense_i64,
+    runtime_sequence_dense_i128, runtime_sequence_dense_isize, runtime_sequence_dense_u8,
+    runtime_sequence_dense_u16, runtime_sequence_dense_u32, runtime_sequence_dense_u64,
+    runtime_sequence_dense_u128, runtime_sequence_dense_usize,
     runtime_sequence_from_literal_values, runtime_sequence_values,
     runtime_value_into_sequence_values,
 };
@@ -232,11 +232,11 @@ fn vm_pure_backend_projects_record_columns_by_ordinal() {
         ordinal: 0,
     });
     let rows = runtime_sequence_from_literal_values(vec![
-        RuntimeValue::Record(vec![RuntimeFieldValue {
+        crate::tests::runtime_record!([RuntimeFieldValue {
             name: "score".to_owned(),
             value: RuntimeValue::i64(1),
         }]),
-        RuntimeValue::Record(vec![RuntimeFieldValue {
+        crate::tests::runtime_record!([RuntimeFieldValue {
             name: "score".to_owned(),
             value: RuntimeValue::i64(2),
         }]),
@@ -591,7 +591,7 @@ fn vm_pure_backend_checks_sequence_contains_and_record_get() {
         },
         [RuntimeBinding {
             name: "actions".to_owned(),
-            value: RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::Record(vec![
+            value: RuntimeValue::Seq(RuntimeSeq::values(vec![crate::tests::runtime_record!([
                 RuntimeFieldValue {
                     name: "target".to_owned(),
                     value: RuntimeValue::String("choice.opening.listen".to_owned()),
@@ -613,7 +613,7 @@ fn vm_pure_backend_checks_sequence_contains_and_record_get() {
         },
         [RuntimeBinding {
             name: "actions".to_owned(),
-            value: RuntimeValue::Seq(RuntimeSeq::values(vec![RuntimeValue::Record(vec![
+            value: RuntimeValue::Seq(RuntimeSeq::values(vec![crate::tests::runtime_record!([
                 RuntimeFieldValue {
                     name: "target".to_owned(),
                     value: RuntimeValue::String("choice.opening.listen".to_owned()),
@@ -626,7 +626,7 @@ fn vm_pure_backend_checks_sequence_contains_and_record_get() {
         .expect("pure helper evaluates sequence index");
     assert_eq!(
         index.value,
-        RuntimeValue::Record(vec![RuntimeFieldValue {
+        crate::tests::runtime_record!([RuntimeFieldValue {
             name: "target".to_owned(),
             value: RuntimeValue::String("choice.opening.listen".to_owned()),
         }])
@@ -641,7 +641,7 @@ fn vm_pure_backend_checks_sequence_contains_and_record_get() {
         },
         [RuntimeBinding {
             name: "signals".to_owned(),
-            value: RuntimeValue::Record(vec![RuntimeFieldValue {
+            value: crate::tests::runtime_record!([RuntimeFieldValue {
                 name: "signal.ready".to_owned(),
                 value: RuntimeValue::Bool(true),
             }]),
@@ -667,7 +667,7 @@ fn vm_pure_backend_requires_observed_object_by_role() {
         [RuntimeBinding {
             name: "objects".to_owned(),
             value: RuntimeValue::Seq(RuntimeSeq::values(vec![
-                RuntimeValue::Record(vec![
+                crate::tests::runtime_record!([
                     RuntimeFieldValue {
                         name: "id".to_owned(),
                         value: RuntimeValue::String("object.background".to_owned()),
@@ -677,7 +677,7 @@ fn vm_pure_backend_requires_observed_object_by_role() {
                         value: RuntimeValue::String("background".to_owned()),
                     },
                 ]),
-                RuntimeValue::Record(vec![
+                crate::tests::runtime_record!([
                     RuntimeFieldValue {
                         name: "id".to_owned(),
                         value: RuntimeValue::String("object.dialogue.0.0".to_owned()),
@@ -698,8 +698,11 @@ fn vm_pure_backend_requires_observed_object_by_role() {
     assert!(matches!(
         result.value,
         RuntimeValue::Record(ref fields)
-            if fields.iter().any(|field| field.name == "id"
-                && field.value == RuntimeValue::String("object.dialogue.0.0".to_owned()))
+            if fields.iter().any(|field| {
+                field.name() == "id"
+                    && field.value()
+                        == &RuntimeValue::String("object.dialogue.0.0".to_owned())
+            })
     ));
     assert_eq!(result.stats.evaluated_method_calls, 1);
 }

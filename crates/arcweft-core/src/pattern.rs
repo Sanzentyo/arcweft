@@ -609,12 +609,13 @@ fn collect_record_pattern_bindings(
                 return Ok(false);
             }
             for field in fields {
-                let Some(value_field) =
-                    values.iter().find(|candidate| candidate.name == field.name)
+                let Some(value_field) = values
+                    .iter()
+                    .find(|candidate| candidate.name() == field.name)
                 else {
                     return Ok(false);
                 };
-                if !collect_pattern_bindings(&field.pattern, &value_field.value, bindings)? {
+                if !collect_pattern_bindings(&field.pattern, value_field.value(), bindings)? {
                     return Ok(false);
                 }
             }

@@ -1,0 +1,15 @@
+error[E0308]: mismatched types
+ --> tests/ui/record_columns_rejects_raw_carriers.rs:5:43
+  |
+5 |     let _ = RuntimeSeq::record_columns(0, fields);
+  |             --------------------------    ^^^^^^ expected `Vec<(String, RuntimeSeq)>`, found `Vec<RecordSeqField>`
+  |             |
+  |             arguments to this function are incorrect
+  |
+  = note: expected struct `std::vec::Vec<(std::string::String, RuntimeSeq)>`
+             found struct `std::vec::Vec<RecordSeqField>`
+note: associated function defined here
+ --> src/value/sequence_impls.rs
+  |
+  |     pub fn record_columns(
+  |            ^^^^^^^^^^^^^^
