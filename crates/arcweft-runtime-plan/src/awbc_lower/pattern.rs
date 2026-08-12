@@ -220,10 +220,11 @@ pub(crate) fn intern_runtime_type(
             semantic_identity: *semantic_identity.as_bytes(),
             layout: *layout.as_bytes(),
         },
-        RuntimeCheckedType::Opaque { owner } => panic!(
-            "opaque checked type from producer `{}` requires AWBC codec 1",
-            owner.producer().as_str()
-        ),
+        RuntimeCheckedType::Opaque { owner } => AwbcRuntimeType::Opaque {
+            producer: inventory.intern_string(owner.producer().as_str()),
+            semantic_identity: *owner.semantic_identity().as_bytes(),
+            admission: owner.admission(),
+        },
         RuntimeCheckedType::Variant {
             nominal,
             semantic_identity,

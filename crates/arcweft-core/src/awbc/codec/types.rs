@@ -12,6 +12,7 @@ use crate::awbc::schema::{
     AwbcTableRange, AwbcTaskPlanId, AwbcTraitMethodId, AwbcTypeId, AwbcUnsignedIntKind,
     AwbcVariantCase, AwbcVariantIdentity,
 };
+use crate::pattern::RuntimeOpaqueTypeAdmission;
 
 wire_id!(
     AwbcStringId,
@@ -178,6 +179,11 @@ impl Wire for AwbcVariantIdentity {
     }
 }
 
+wire_enum!(RuntimeOpaqueTypeAdmission, "opaque type admission", {
+    0 => RuntimeOpaqueTypeAdmission::ExactIdentity,
+    1 => RuntimeOpaqueTypeAdmission::ProducerWide,
+});
+
 impl Wire for AwbcRuntimeType {
     fn write_wire(&self, writer: &mut Writer) -> Result<(), AwbcCodecError> {
         match self {
@@ -236,6 +242,16 @@ impl Wire for AwbcRuntimeType {
                 semantic_identity.write_wire(writer)?;
                 layout.write_wire(writer)?;
             }
+            Self::Opaque {
+                producer,
+                semantic_identity,
+                admission,
+            } => {
+                writer.write_u8(23);
+                producer.write_wire(writer)?;
+                semantic_identity.write_wire(writer)?;
+                admission.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -275,6 +291,11 @@ impl Wire for AwbcRuntimeType {
                 public_id: AwbcStringId::read_wire(reader)?,
                 semantic_identity: <[u8; 32]>::read_wire(reader)?,
                 layout: <[u8; 32]>::read_wire(reader)?,
+            },
+            23 => Self::Opaque {
+                producer: AwbcStringId::read_wire(reader)?,
+                semantic_identity: <[u8; 32]>::read_wire(reader)?,
+                admission: RuntimeOpaqueTypeAdmission::read_wire(reader)?,
             },
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
@@ -375,6 +396,11 @@ impl Wire for AwbcConstant {
             }
             Self::TensorF32 { shape, values } => write_tensor_f32_constant(writer, shape, values)?,
             Self::TensorF64 { shape, values } => write_tensor_f64_constant(writer, shape, values)?,
+            Self::Opaque { ty, payload } => {
+                writer.write_u8(18);
+                ty.write_wire(writer)?;
+                payload.write_wire(writer)?;
+            }
         }
         Ok(())
     }
@@ -435,6 +461,10 @@ impl Wire for AwbcConstant {
                     .collect::<Result<Vec<_>, _>>()?;
                 Self::TensorF64 { shape, values }
             }
+            18 => Self::Opaque {
+                ty: AwbcTypeId::read_wire(reader)?,
+                payload: AwbcConstantId::read_wire(reader)?,
+            },
             tag => {
                 return Err(AwbcCodecError::UnknownTag {
                     kind: "constant",
@@ -557,5 +587,53 @@ impl Wire for AwbcFunctionFlags {
 
     fn read_wire(reader: &mut Reader<'_>) -> Result<Self, AwbcCodecError> {
         u32::read_wire(reader).map(Self)
+    }
+}
+
+#[cfg(test)]
+mod opaque_wire_tests {
+    use super::*;
+    use crate::awbc::codec::AwbcDecodeBudget;
+
+    #[test]
+    fn opaque_type_and_constant_rows_have_canonical_tags_and_admission_bytes() {
+        let ty = AwbcRuntimeType::Opaque {
+            producer: AwbcStringId(7),
+            semantic_identity: [9; 32],
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        };
+        let mut writer = Writer::default();
+        ty.write_wire(&mut writer).expect("encode opaque type");
+        let mut expected = vec![23, 7];
+        expected.extend([9; 32]);
+        expected.push(0);
+        assert_eq!(writer.finish(), expected);
+
+        let constant = AwbcConstant::Opaque {
+            ty: AwbcTypeId(3),
+            payload: AwbcConstantId(5),
+        };
+        let mut writer = Writer::default();
+        constant
+            .write_wire(&mut writer)
+            .expect("encode opaque constant");
+        assert_eq!(writer.finish(), vec![18, 3, 5]);
+    }
+
+    #[test]
+    fn opaque_type_decode_rejects_unknown_admission_tag() {
+        let mut bytes = vec![23, 0];
+        bytes.extend([0; 32]);
+        bytes.push(2);
+        let mut reader = Reader::new(&bytes, &AwbcDecodeBudget::default());
+        assert_eq!(
+            AwbcRuntimeType::read_wire(&mut reader)
+                .expect_err("unknown opaque admission must reject"),
+            AwbcCodecError::UnknownTag {
+                kind: "opaque type admission",
+                tag: 2,
+                offset: 34,
+            }
+        );
     }
 }

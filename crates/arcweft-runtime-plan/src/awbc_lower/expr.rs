@@ -48,7 +48,8 @@ impl<'a, 'b> AwbcExprLowerer<'a, 'b> {
     pub fn lower(&mut self, expr: &RuntimeExpr) -> AwbcRegisterId {
         match expr {
             RuntimeExpr::Value(value) => {
-                let dst = self.frame.temp(self.inventory.dynamic_ty());
+                let ty = self.inventory.intern_runtime_value_type(value);
+                let dst = self.frame.temp(ty);
                 let constant = self.inventory.constant_runtime_value(value);
                 self.inventory
                     .push_instruction(AwbcInstruction::LoadConst { dst, constant });

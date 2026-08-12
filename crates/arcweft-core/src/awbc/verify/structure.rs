@@ -6,14 +6,15 @@
 use super::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::awbc::schema::{
     AWBC_ABI_VERSION, AwbcAudioCommandId, AwbcAudioValueRef, AwbcBlockId, AwbcCodeLocation,
-    AwbcConstant, AwbcEffectKind, AwbcEffectPlan, AwbcEffectSetId, AwbcEntryKind, AwbcEntryTarget,
-    AwbcFrameSlotRole, AwbcFunctionId, AwbcFunctionKind, AwbcLineTaskNode, AwbcLineTaskTrigger,
-    AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource, AwbcRuntimeType,
-    AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod, AwbcTraitReceiverMode,
-    AwbcTypeId, AwbcVariantIdentity,
+    AwbcConstant, AwbcConstantId, AwbcEffectKind, AwbcEffectPlan, AwbcEffectSetId, AwbcEntryKind,
+    AwbcEntryTarget, AwbcFrameSlotRole, AwbcFunctionId, AwbcFunctionKind, AwbcLineTaskNode,
+    AwbcLineTaskTrigger, AwbcPattern, AwbcPatternId, AwbcProgram, AwbcRouteBindingSource,
+    AwbcRuntimeType, AwbcSignatureId, AwbcStringId, AwbcTableRange, AwbcTraitMethod,
+    AwbcTraitReceiverMode, AwbcTypeId, AwbcVariantIdentity,
 };
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowParameterMode};
+use crate::pattern::RuntimeOpaqueTypeAdmission;
 use std::collections::BTreeSet;
 
 pub(super) struct Verifier<'program, 'context> {
@@ -157,6 +158,15 @@ fn verify_runtime_types(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             AwbcRuntimeType::Nominal { public_id, .. } => {
                 check_string(program, *public_id, &at)?;
             }
+            AwbcRuntimeType::Opaque { producer, .. } => {
+                check_string(program, *producer, &at)?;
+                ty.try_opaque_owner(&program.strings).map_err(|error| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: at.clone(),
+                        message: error.to_string(),
+                    }
+                })?;
+            }
             AwbcRuntimeType::Unit
             | AwbcRuntimeType::Bool
             | AwbcRuntimeType::Int(_)
@@ -292,6 +302,30 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
                     }
                 }
             }
+            AwbcConstant::Opaque { ty, payload } => {
+                check_index(program.runtime_types.len(), ty.0, "runtime_types", &at)?;
+                check_index(program.constants.len(), payload.0, "constants", &at)?;
+                if payload.index() >= index {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at,
+                        message: "opaque constant payload must precede its owner row".to_owned(),
+                    });
+                }
+                let owner = program.opaque_owner(*ty).map_err(|error| {
+                    AwbcVerifyError::InvalidInvariant {
+                        at: format!("constant {index}"),
+                        message: error.to_string(),
+                    }
+                })?;
+                if !owner.is_some_and(|owner| {
+                    owner.admission() == RuntimeOpaqueTypeAdmission::ExactIdentity
+                }) {
+                    return Err(AwbcVerifyError::InvalidInvariant {
+                        at: format!("constant {index}"),
+                        message: "opaque constant requires an exact opaque type row".to_owned(),
+                    });
+                }
+            }
             AwbcConstant::Range { start, end, .. } => {
                 if let Some(start) = start {
                     check_index(program.constants.len(), start.0, "constants", &at)?;
@@ -316,6 +350,95 @@ fn verify_constants(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
             | AwbcConstant::Bytes(_) => {}
         }
     }
+    verify_constant_graph(program)?;
+    Ok(())
+}
+
+fn verify_constant_graph(program: &AwbcProgram) -> Result<(), AwbcVerifyError> {
+    let mut complete = BTreeSet::new();
+    for index in 0..program.constants.len() {
+        verify_constant_graph_from(
+            program,
+            AwbcConstantId(u32::try_from(index).map_err(|_| {
+                AwbcVerifyError::InvalidInvariant {
+                    at: "constants".to_owned(),
+                    message: "constant table exceeds the u32 index space".to_owned(),
+                }
+            })?),
+            0,
+            &mut BTreeSet::new(),
+            &mut complete,
+        )?;
+    }
+    Ok(())
+}
+
+fn verify_constant_graph_from(
+    program: &AwbcProgram,
+    id: crate::awbc::schema::AwbcConstantId,
+    depth: usize,
+    visiting: &mut BTreeSet<crate::awbc::schema::AwbcConstantId>,
+    complete: &mut BTreeSet<crate::awbc::schema::AwbcConstantId>,
+) -> Result<(), AwbcVerifyError> {
+    if complete.contains(&id) {
+        return Ok(());
+    }
+    if depth > 64 {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: format!("constant {}", id.0),
+            message: "constant graph exceeds depth 64".to_owned(),
+        });
+    }
+    if !visiting.insert(id) {
+        return Err(AwbcVerifyError::InvalidInvariant {
+            at: format!("constant {}", id.0),
+            message: "constant graph contains a cycle".to_owned(),
+        });
+    }
+    let constant = &program.constants[id.index()];
+    let mut visit =
+        |child| verify_constant_graph_from(program, child, depth + 1, visiting, complete);
+    match constant {
+        AwbcConstant::Tuple(items) | AwbcConstant::Sequence(items) => {
+            for child in items {
+                visit(*child)?;
+            }
+        }
+        AwbcConstant::Record { fields, .. } => {
+            for child in fields {
+                visit(*child)?;
+            }
+        }
+        AwbcConstant::Variant { payload, .. } => {
+            if let Some(child) = payload {
+                visit(*child)?;
+            }
+        }
+        AwbcConstant::Range { start, end, .. } => {
+            if let Some(child) = start {
+                visit(*child)?;
+            }
+            if let Some(child) = end {
+                visit(*child)?;
+            }
+        }
+        AwbcConstant::Opaque { payload, .. } => visit(*payload)?,
+        AwbcConstant::Unit
+        | AwbcConstant::Bool(_)
+        | AwbcConstant::Int { .. }
+        | AwbcConstant::UInt { .. }
+        | AwbcConstant::F32Bits(_)
+        | AwbcConstant::F64Bits(_)
+        | AwbcConstant::String(_)
+        | AwbcConstant::Char(_)
+        | AwbcConstant::DurationNanos(_)
+        | AwbcConstant::EntityRef(_)
+        | AwbcConstant::Bytes(_)
+        | AwbcConstant::TensorF32 { .. }
+        | AwbcConstant::TensorF64 { .. } => {}
+    }
+    visiting.remove(&id);
+    complete.insert(id);
     Ok(())
 }
 
@@ -1943,7 +2066,7 @@ pub(super) fn block_is_in_function(
     block.index() < verifier.block_owner.len() && verifier.block_owner[block.index()] == function
 }
 
-pub(super) fn types_compatible(
+pub(crate) fn types_compatible(
     program: &AwbcProgram,
     expected: AwbcTypeId,
     actual: AwbcTypeId,
@@ -1975,6 +2098,17 @@ fn types_compatible_inner(
         return false;
     }
     let compatible = match (expected_type, actual_type) {
+        (AwbcRuntimeType::Opaque { .. }, AwbcRuntimeType::Opaque { .. }) => expected_type
+            .try_opaque_owner(&program.strings)
+            .ok()
+            .flatten()
+            .zip(
+                actual_type
+                    .try_opaque_owner(&program.strings)
+                    .ok()
+                    .flatten(),
+            )
+            .is_some_and(|(expected, actual)| expected.accepts_owner(&actual)),
         (AwbcRuntimeType::Choice(expected), AwbcRuntimeType::Choice(actual)) => {
             actual.iter().all(|actual| {
                 expected

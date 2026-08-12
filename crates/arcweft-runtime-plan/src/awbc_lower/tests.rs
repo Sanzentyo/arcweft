@@ -1,14 +1,15 @@
 use super::*;
 use arcweft_core::awbc::fiber::FiberState;
 use arcweft_core::awbc::schema::{
-    AwbcEffectKind, AwbcEntryId, AwbcEntryTarget, AwbcFunctionId, AwbcInstruction, AwbcProgram,
-    AwbcTerminator, AwbcTrapCode,
+    AwbcConstant, AwbcEffectKind, AwbcEntryId, AwbcEntryTarget, AwbcFunctionId, AwbcInstruction,
+    AwbcProgram, AwbcRuntimeType, AwbcTerminator, AwbcTrapCode,
 };
 use arcweft_core::awbc::vm::{self, VmError, VmExit, VmHost, VmObservation, VmStepOptions};
 use arcweft_core::effect::{LineEffectRequest, RuntimeCall};
 use arcweft_core::entry::{EntryBindingIdentity, RuntimeCallableId, RuntimeEntryRoles};
 use arcweft_core::pattern::{
-    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimePattern, RuntimeSemanticTypeId,
+    RuntimeCheckedType, RuntimeCheckedVariantCase, RuntimeOpaqueTypeAdmission,
+    RuntimeOpaqueTypeOwner, RuntimeOpaqueTypeProducerId, RuntimePattern, RuntimeSemanticTypeId,
     RuntimeVariantIdentity,
 };
 use arcweft_core::plan::{
@@ -46,6 +47,121 @@ fn with_test_entry(plan: RuntimePlan, flow: FlowRuntimeId) -> RuntimePlan {
         target: RuntimeEntryTarget::Flow(flow),
         roles: RuntimeEntryRoles::None,
     }])
+}
+
+#[test]
+fn opaque_checked_types_and_values_lower_to_exact_awbc_rows() {
+    let producer =
+        RuntimeOpaqueTypeProducerId::try_new("fixture.runtime-plan").expect("valid producer");
+    let owner =
+        RuntimeOpaqueTypeOwner::exact(producer, RuntimeSemanticTypeId::from_bytes([61; 32]));
+    let checked = RuntimeCheckedType::Opaque {
+        owner: owner.clone(),
+    };
+    let value = owner
+        .try_wrap(RuntimeValue::String("payload".to_owned()))
+        .expect("exact owner wraps a payload");
+    let mut inventory = AwbcInventory::new("test.arcw", AwbcLowerOptions::default());
+    inventory.intern_runtime_primitives();
+
+    let ty = super::pattern::intern_runtime_type(&mut inventory, &checked);
+    let result = RuntimeCheckedType::Result {
+        ok: Box::new(RuntimeCheckedType::Unit),
+        error: Box::new(checked.clone()),
+    };
+    let ok_owner = super::pattern::intern_runtime_type(&mut inventory, &result);
+    let error_owner = super::pattern::intern_runtime_type(&mut inventory, &result);
+    let constant = inventory.constant_runtime_value(&value);
+    let mut program = inventory.finish();
+    program.canonicalize_string_table();
+
+    assert!(matches!(
+        program.runtime_types.get(ty.index()),
+        Some(AwbcRuntimeType::Opaque {
+            semantic_identity,
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+            ..
+        }) if semantic_identity == &[61; 32]
+    ));
+    assert_eq!(ok_owner, error_owner);
+    assert!(matches!(
+        program.constants.get(constant.index()),
+        Some(AwbcConstant::Opaque { ty: actual, payload })
+            if *actual == ty && payload.index() < constant.index()
+    ));
+    program
+        .verify(
+            arcweft_core::awbc::verify::AwbcVerifyBudget::default(),
+            arcweft_core::awbc::verify::AwbcVerifyContext {
+                require_entrypoint: false,
+                ..arcweft_core::awbc::verify::AwbcVerifyContext::default()
+            },
+        )
+        .expect("lowered opaque rows verify");
+}
+
+#[test]
+fn result_err_opaque_payload_uses_exact_type_and_rejects_foreign_producer() {
+    let expected_producer =
+        RuntimeOpaqueTypeProducerId::try_new("fixture.expected").expect("valid producer");
+    let foreign_producer =
+        RuntimeOpaqueTypeProducerId::try_new("fixture.foreign").expect("valid producer");
+    let expected_owner = RuntimeOpaqueTypeOwner::exact(
+        expected_producer,
+        RuntimeSemanticTypeId::from_bytes([71; 32]),
+    );
+    let foreign_owner = RuntimeOpaqueTypeOwner::exact(
+        foreign_producer,
+        RuntimeSemanticTypeId::from_bytes([71; 32]),
+    );
+    let result_owner = RuntimeCheckedType::Result {
+        ok: Box::new(RuntimeCheckedType::Unit),
+        error: Box::new(RuntimeCheckedType::Opaque {
+            owner: expected_owner.clone(),
+        }),
+    };
+    let lower = |payload_owner: &RuntimeOpaqueTypeOwner| {
+        let payload = payload_owner
+            .try_wrap(RuntimeValue::String("error".to_owned()))
+            .expect("exact owner wraps payload");
+        let plan = RuntimePlan::new(
+            vec![RuntimeFlow {
+                id: flow_id("main"),
+                ops: vec![FlowOp::ReturnExpr(RuntimeExpr::Variant {
+                    owner: result_owner.clone(),
+                    ordinal: 1,
+                    name: "Err".to_owned(),
+                    payload: Some(Box::new(RuntimeExpr::Value(payload))),
+                })],
+            }],
+            Vec::new(),
+        )
+        .expect("result plan builds");
+        AwbcLowerer::new(
+            &with_test_entry(plan, flow_id("main")),
+            &arcweft_text_model::DialogueContentCatalog::new(),
+            "test.arcw",
+        )
+        .lower()
+    };
+
+    let report = lower(&expected_owner).expect("matching opaque Err lowers");
+    let returned = run_entry(&report.program, &mut TestPureHelperHost);
+    assert!(matches!(
+        returned,
+        VmExit::Returned(Some(RuntimeValue::Variant {
+            owner: RuntimeVariantIdentity::Result,
+            ordinal: 1,
+            ref name,
+            payload: Some(_),
+        })) if name == "Err"
+    ));
+
+    let error = lower(&foreign_owner).expect_err("foreign opaque Err must reject");
+    assert!(matches!(
+        error,
+        AwbcLowerError::Verify(arcweft_core::awbc::verify::AwbcVerifyError::TypeMismatch { .. })
+    ));
 }
 
 fn run_entry(program: &AwbcProgram, host: &mut impl VmHost) -> VmExit {

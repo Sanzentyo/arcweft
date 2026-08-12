@@ -268,6 +268,20 @@ impl AwbcInventory {
         self.intern_type(AwbcRuntimeType::String)
     }
 
+    pub(crate) fn intern_runtime_value_type(&mut self, value: &RuntimeValue) -> AwbcTypeId {
+        match value {
+            RuntimeValue::Opaque(value) => {
+                let producer = self.intern_string(value.producer().as_str());
+                self.intern_type(AwbcRuntimeType::Opaque {
+                    producer,
+                    semantic_identity: *value.semantic_identity().as_bytes(),
+                    admission: arcweft_core::pattern::RuntimeOpaqueTypeAdmission::ExactIdentity,
+                })
+            }
+            _ => self.dynamic_ty(),
+        }
+    }
+
     pub fn intern_type(&mut self, ty: AwbcRuntimeType) -> AwbcTypeId {
         if let Some((index, _)) = self
             .program
@@ -447,10 +461,11 @@ impl AwbcInventory {
                     record.type_id().as_str()
                 )
             }
-            RuntimeValue::Opaque(value) => panic!(
-                "opaque runtime value from producer `{}` requires a checked opaque AWBC constant row",
-                value.producer().as_str()
-            ),
+            RuntimeValue::Opaque(opaque) => {
+                let ty = self.intern_runtime_value_type(value);
+                let payload = self.constant_runtime_value(opaque.payload());
+                AwbcConstant::Opaque { ty, payload }
+            }
             RuntimeValue::Variant {
                 owner,
                 ordinal,

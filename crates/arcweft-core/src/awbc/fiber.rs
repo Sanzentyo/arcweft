@@ -1702,7 +1702,8 @@ pub(crate) fn runtime_value_matches_type(
     if depth > 64 {
         return false;
     }
-    let Some(ty) = program.runtime_types.get(ty.index()) else {
+    let type_id = ty;
+    let Some(ty) = program.runtime_types.get(type_id.index()) else {
         return false;
     };
     match (value, ty) {
@@ -1724,6 +1725,11 @@ pub(crate) fn runtime_value_matches_type(
         | (RuntimeValue::TensorF64(_), AwbcRuntimeType::TensorF64) => true,
         (RuntimeValue::Int(value), AwbcRuntimeType::Int(kind)) => signed_kind(*value) == *kind,
         (RuntimeValue::UInt(value), AwbcRuntimeType::UInt(kind)) => unsigned_kind(*value) == *kind,
+        (RuntimeValue::Opaque(value), AwbcRuntimeType::Opaque { .. }) => program
+            .opaque_owner(type_id)
+            .ok()
+            .flatten()
+            .is_some_and(|owner| owner.accepts_opaque_value(value)),
         (RuntimeValue::Tuple(values), AwbcRuntimeType::Tuple(types)) => {
             values.len() == types.len()
                 && values

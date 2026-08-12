@@ -12,6 +12,7 @@ pub mod parity;
 pub mod product_step;
 pub mod schema;
 mod schema_impls;
+pub mod type_projection;
 pub mod verify;
 pub mod vm;
 

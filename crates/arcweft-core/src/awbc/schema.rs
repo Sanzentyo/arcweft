@@ -1,6 +1,7 @@
 use crate::entry::{
     EntryBindingIdentity, RuntimeCallableRole, RuntimeEntryRoles, RuntimeFlowExecutable,
 };
+use crate::pattern::RuntimeOpaqueTypeAdmission;
 use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
 use arcweft_interaction_model::audio::{
     AudioEffectParameterKind, AudioLoopMode, MicrophoneConstraints,
@@ -426,6 +427,7 @@ fn visit_runtime_type_strings(
             }
         }
         AwbcRuntimeType::Nominal { public_id, .. } => visit_string_id(public_id, visitor),
+        AwbcRuntimeType::Opaque { producer, .. } => visit_string_id(producer, visitor),
         AwbcRuntimeType::Unit
         | AwbcRuntimeType::Bool
         | AwbcRuntimeType::Int(_)
@@ -465,7 +467,8 @@ fn visit_constant_strings(constant: &mut AwbcConstant, visitor: &mut dyn FnMut(&
         | AwbcConstant::Range { .. }
         | AwbcConstant::Bytes(_)
         | AwbcConstant::TensorF32 { .. }
-        | AwbcConstant::TensorF64 { .. } => {}
+        | AwbcConstant::TensorF64 { .. }
+        | AwbcConstant::Opaque { .. } => {}
         AwbcConstant::Variant { case_name, .. } => visit_string_id(case_name, visitor),
         AwbcConstant::Record { field_names, .. } => {
             for field_name in field_names {
@@ -631,6 +634,12 @@ pub enum AwbcRuntimeType {
         semantic_identity: [u8; 32],
         layout: [u8; 32],
     },
+    /// Opaque checked-type identity and its producer-owned admission rule.
+    Opaque {
+        producer: AwbcStringId,
+        semantic_identity: [u8; 32],
+        admission: RuntimeOpaqueTypeAdmission,
+    },
     MatrixF32,
     MatrixF64,
     TensorF32,
@@ -728,6 +737,11 @@ pub enum AwbcConstant {
     TensorF64 {
         shape: Vec<u32>,
         values: Vec<u64>,
+    },
+    /// Opaque payload stored behind its checked opaque runtime type.
+    Opaque {
+        ty: AwbcTypeId,
+        payload: AwbcConstantId,
     },
 }
 

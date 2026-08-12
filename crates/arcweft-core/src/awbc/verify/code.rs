@@ -1895,6 +1895,9 @@ fn constant_matches_type(
         (AwbcConstant::Variant { ty: actual, .. }, AwbcRuntimeType::Variant { .. }) => {
             actual == &ty
         }
+        (AwbcConstant::Opaque { ty: actual, .. }, AwbcRuntimeType::Opaque { .. }) => {
+            types_compatible(program, ty, *actual)
+        }
         _ => false,
     }
 }

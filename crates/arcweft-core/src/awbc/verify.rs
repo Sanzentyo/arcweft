@@ -3,6 +3,9 @@
 mod code;
 mod structure;
 
+#[cfg(test)]
+pub(crate) use structure::types_compatible;
+
 use super::schema::{AWBC_ABI_VERSION, AwbcDigest, AwbcProgram};
 use std::collections::BTreeSet;
 use thiserror::Error;

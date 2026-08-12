@@ -7,6 +7,7 @@ use super::schema::*;
 use super::verify::{AwbcVerifyBudget, AwbcVerifyContext, AwbcVerifyError};
 use crate::effect::RuntimeAssertionGuardId;
 use crate::entry::{FlowContractHash, RuntimeFlowExecutable};
+use crate::pattern::RuntimeOpaqueTypeAdmission;
 use crate::plan::{FlowRuntimeId, RuntimeFlowTargetError};
 use crate::value::{RuntimeFunctionValue, RuntimeValue};
 
@@ -482,6 +483,176 @@ fn canonical_codec_round_trips_choice_and_nominal_runtime_types() {
         .expect("verify typed runtime type table");
 
     assert_eq!(decoded, program);
+}
+
+fn opaque_program() -> (AwbcProgram, AwbcTypeId, AwbcTypeId) {
+    let mut program = minimal_program();
+    program.strings.push("producer.dialogue".to_owned());
+    let exact = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::Opaque {
+        producer: AwbcStringId(1),
+        semantic_identity: [41; 32],
+        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+    });
+    let wide = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::Opaque {
+        producer: AwbcStringId(1),
+        semantic_identity: [42; 32],
+        admission: RuntimeOpaqueTypeAdmission::ProducerWide,
+    });
+    (program, exact, wide)
+}
+
+#[test]
+fn opaque_codec_owner_compatibility_and_vm_materialization_share_core_authority() {
+    let (mut program, exact, wide) = opaque_program();
+    program.strings.push("producer.foreign".to_owned());
+    let foreign = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::Opaque {
+        producer: AwbcStringId(2),
+        semantic_identity: [41; 32],
+        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+    });
+    let other_identity = AwbcTypeId(
+        u32::try_from(program.runtime_types.len()).expect("test type table fits AWBC index"),
+    );
+    program.runtime_types.push(AwbcRuntimeType::Opaque {
+        producer: AwbcStringId(1),
+        semantic_identity: [44; 32],
+        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+    });
+    let payload = AwbcConstantId(
+        u32::try_from(program.constants.len()).expect("test constant table fits AWBC index"),
+    );
+    program
+        .constants
+        .push(AwbcConstant::String(AwbcStringId(0)));
+    let opaque = AwbcConstantId(
+        u32::try_from(program.constants.len()).expect("test constant table fits AWBC index"),
+    );
+    program
+        .constants
+        .push(AwbcConstant::Opaque { ty: exact, payload });
+    program.canonicalize_string_table();
+
+    let encoded = program.encode_canonical().expect("encode opaque AWBC rows");
+    let decoded = AwbcProgram::decode_canonical(&encoded, AwbcDecodeBudget::default())
+        .expect("decode opaque AWBC rows");
+    decoded
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect("verify opaque AWBC rows");
+    assert!(super::verify::types_compatible(&decoded, wide, exact));
+    assert!(!super::verify::types_compatible(&decoded, exact, wide));
+    assert!(!super::verify::types_compatible(&decoded, wide, foreign));
+    assert!(!super::verify::types_compatible(
+        &decoded,
+        exact,
+        other_identity
+    ));
+
+    let value = super::vm::constant_value(&decoded, opaque).expect("materialize opaque constant");
+    assert!(super::fiber::runtime_value_matches_type(
+        &decoded, &value, exact, 0
+    ));
+    assert!(super::fiber::runtime_value_matches_type(
+        &decoded, &value, wide, 0
+    ));
+    let RuntimeValue::Opaque(value) = value else {
+        panic!("opaque constant materializes an opaque runtime value");
+    };
+    assert_eq!(value.payload(), &RuntimeValue::String("main".to_owned()));
+}
+
+#[test]
+fn verifier_rejects_wide_or_cyclic_opaque_constants_and_invalid_producers() {
+    let (mut program, _exact, wide) = opaque_program();
+    program.constants.push(AwbcConstant::Unit);
+    program.constants.push(AwbcConstant::Opaque {
+        ty: wide,
+        payload: AwbcConstantId(0),
+    });
+    program.canonicalize_string_table();
+    let error = program
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("wide opaque constant must reject");
+    assert!(
+        matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
+            if message == "opaque constant requires an exact opaque type row"),
+        "{error:?}"
+    );
+
+    let (mut cyclic, exact, _wide) = opaque_program();
+    cyclic.constants.push(AwbcConstant::Opaque {
+        ty: exact,
+        payload: AwbcConstantId(0),
+    });
+    cyclic.canonicalize_string_table();
+    let error = cyclic
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("cyclic opaque constant must reject");
+    assert!(
+        matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
+            if message == "opaque constant payload must precede its owner row"),
+        "{error:?}"
+    );
+
+    let mut invalid = minimal_program();
+    invalid.strings.push(String::new());
+    invalid.runtime_types.push(AwbcRuntimeType::Opaque {
+        producer: AwbcStringId(1),
+        semantic_identity: [43; 32],
+        admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+    });
+    invalid.canonicalize_string_table();
+    let error = invalid
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("invalid opaque producer must reject");
+    assert!(
+        matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
+            if message.contains("identity cannot be empty")),
+        "{error:?}"
+    );
+}
+
+#[test]
+fn verifier_rejects_non_opaque_and_missing_opaque_constant_references() {
+    let mut non_opaque = minimal_program();
+    non_opaque.constants.push(AwbcConstant::Unit);
+    non_opaque.constants.push(AwbcConstant::Opaque {
+        ty: AwbcTypeId(0),
+        payload: AwbcConstantId(0),
+    });
+    let error = non_opaque
+        .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+        .expect_err("non-opaque type reference must reject");
+    assert!(
+        matches!(&error, AwbcVerifyError::InvalidInvariant { message, .. }
+            if message == "opaque constant requires an exact opaque type row"),
+        "{error:?}"
+    );
+
+    let (mut missing, exact, _wide) = opaque_program();
+    missing.constants.push(AwbcConstant::Opaque {
+        ty: exact,
+        payload: AwbcConstantId(99),
+    });
+    missing.canonicalize_string_table();
+    assert!(matches!(
+        missing
+            .verify(AwbcVerifyBudget::default(), AwbcVerifyContext::default())
+            .expect_err("missing opaque payload must reject"),
+        AwbcVerifyError::IndexOutOfBounds {
+            table: "constants",
+            index: 99,
+            ..
+        }
+    ));
 }
 
 #[test]

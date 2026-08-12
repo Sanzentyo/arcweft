@@ -83,6 +83,7 @@ pub enum RuntimeValueKind {
     Variant,
     Choice,
     Nominal,
+    Opaque,
     Matrix,
     Tensor,
     TaskHandle,
@@ -951,6 +952,7 @@ impl RuntimeValueKind {
             Self::Dynamic => 117,
             Self::Choice => 118,
             Self::Nominal => 119,
+            Self::Opaque => 120,
         }
     }
 
@@ -975,6 +977,7 @@ impl RuntimeValueKind {
             117 => Some(Self::Dynamic),
             118 => Some(Self::Choice),
             119 => Some(Self::Nominal),
+            120 => Some(Self::Opaque),
             _ => None,
         }
     }
@@ -1073,7 +1076,8 @@ fn runtime_type_declaration(
         compatibility: match ty {
             AwbcRuntimeType::Record { .. }
             | AwbcRuntimeType::Variant { .. }
-            | AwbcRuntimeType::Nominal { .. } => TypeCompatibilityLabel::RestartRequired,
+            | AwbcRuntimeType::Nominal { .. }
+            | AwbcRuntimeType::Opaque { .. } => TypeCompatibilityLabel::RestartRequired,
             _ => TypeCompatibilityLabel::CodeCompatible,
         },
     })
@@ -1114,11 +1118,45 @@ fn runtime_value_kind(ty: &AwbcRuntimeType) -> RuntimeValueKind {
         AwbcRuntimeType::Variant { .. } => RuntimeValueKind::Variant,
         AwbcRuntimeType::Choice(_) => RuntimeValueKind::Choice,
         AwbcRuntimeType::Nominal { .. } => RuntimeValueKind::Nominal,
+        AwbcRuntimeType::Opaque { .. } => RuntimeValueKind::Opaque,
         AwbcRuntimeType::MatrixF32 | AwbcRuntimeType::MatrixF64 => RuntimeValueKind::Matrix,
         AwbcRuntimeType::TensorF32 | AwbcRuntimeType::TensorF64 => RuntimeValueKind::Tensor,
         AwbcRuntimeType::TaskHandle => RuntimeValueKind::TaskHandle,
         AwbcRuntimeType::NeedHandle => RuntimeValueKind::NeedHandle,
         AwbcRuntimeType::Dynamic => RuntimeValueKind::Dynamic,
+    }
+}
+
+#[cfg(test)]
+mod opaque_runtime_type_tests {
+    use super::*;
+    use arcweft_core::awbc::schema::{AwbcStringId, AwbcTypeId};
+    use arcweft_core::pattern::RuntimeOpaqueTypeAdmission;
+
+    #[test]
+    fn opaque_awbc_type_projects_to_final_bundle_value_family() {
+        let mut program = AwbcProgram::default();
+        program.strings.push("fixture.bundle".to_owned());
+        program.runtime_types.push(AwbcRuntimeType::Opaque {
+            producer: AwbcStringId(0),
+            semantic_identity: [81; 32],
+            admission: RuntimeOpaqueTypeAdmission::ExactIdentity,
+        });
+        let declaration =
+            runtime_type_declaration(&program, &program.runtime_types[AwbcTypeId(2).index()])
+                .expect("opaque runtime type declaration projects");
+
+        assert_eq!(declaration.public_id, None);
+        assert_eq!(declaration.value_kind, RuntimeValueKind::Opaque);
+        assert_eq!(
+            declaration.compatibility,
+            TypeCompatibilityLabel::RestartRequired
+        );
+        assert_eq!(RuntimeValueKind::Opaque.encoded(), 120);
+        assert_eq!(
+            RuntimeValueKind::from_encoded(120),
+            Some(RuntimeValueKind::Opaque)
+        );
     }
 }
 

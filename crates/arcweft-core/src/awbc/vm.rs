@@ -1376,6 +1376,18 @@ pub(crate) fn constant_value(
                 .transpose()?
                 .map(Box::new),
         }),
+        AwbcConstant::Opaque { ty, payload } => {
+            let owner = program
+                .opaque_owner(*ty)
+                .map_err(|error| VmError::Runtime(error.to_string()))?
+                .ok_or_else(|| {
+                    VmError::Runtime("opaque constant references a non-opaque type".to_owned())
+                })?;
+            let payload = constant_value(program, *payload)?;
+            owner
+                .try_wrap(payload)
+                .map_err(|error| VmError::Runtime(error.to_string()))
+        }
         AwbcConstant::Range {
             start,
             end,
