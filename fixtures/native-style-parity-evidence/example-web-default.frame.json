@@ -1,5 +1,5 @@
 {
-  "schema_version": "arcweft.web_frame_observation.v3",
+  "schema_version": "arcweft.web_frame_observation.v1",
   "checkpoint": "default",
   "visual_time_millis": 9000,
   "fx_diagnostics": [],

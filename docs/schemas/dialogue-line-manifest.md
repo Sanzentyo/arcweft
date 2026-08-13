@@ -6,7 +6,7 @@ stage timeline, history, and Agent observation.
 
 ```json
 {
-  "schema_version": 3,
+  "schema_version": 1,
   "line_id": "say.opening.alice.002",
   "text_key": "text.opening.alice.002",
   "speaker": "character.alice",

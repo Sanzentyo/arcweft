@@ -98,7 +98,7 @@ A choice terminator:
 ## Await and await-many
 
 `AwbcTaskPlan` carries both a stable task public ID and a stable need ID. This is
-part of AWBC codec version 2.
+part of AWBC codec version 1.
 
 Single await:
 

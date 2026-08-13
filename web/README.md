@@ -74,7 +74,7 @@ WebGPU). The smoke checks canvas-only rendering, semantic input, and the typed
 frame observation summary used by the native/Web parity tests. Set
 `ARW_PLAYWRIGHT_CHANNEL` to use another installed Playwright browser channel.
 It also verifies `[p]` as a same-dialogue page transition through the dialogue
-instance, stage, page index, and page count in `arcweft.web_observation.v3`.
+instance, stage, page index, and page count in `arcweft.web_observation.v1`.
 
 `web/arcw.toml` uses the schema-1 project asset root at `web/assets/`.
 The bundler admits only assets referenced by `src/main.arcw`; browser-served fonts

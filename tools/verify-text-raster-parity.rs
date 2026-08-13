@@ -1067,7 +1067,7 @@ fn compare_text_raster(
     let aggregate = aggregate_report(&runs);
     let passed = failure_reasons.is_empty();
     TextRasterReport {
-        schema_version: "arcweft.text_raster_parity.v2",
+        schema_version: "arcweft.text_raster_parity.v1",
         checkpoint: args.checkpoint.clone(),
         contract: "canonical prepared glyph paint evidence plus text-mask/layout identity with backend-specific antialias allowance",
         passed,

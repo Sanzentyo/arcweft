@@ -236,7 +236,7 @@ async function installDeterministicClock(page) {
 async function assertFrameObservation(page, expected) {
   const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
   expect(
-    frame?.schema_version === "arcweft.web_frame_observation.v3",
+    frame?.schema_version === "arcweft.web_frame_observation.v1",
     "unexpected frame observation schema",
   );
   expect(

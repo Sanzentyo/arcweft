@@ -10,8 +10,7 @@
   ],
   "properties": {
     "schema_version": {
-      "type": "integer",
-      "minimum": 4
+      "const": 1
     },
     "executable_payload": {
       "const": "awbc_v1"

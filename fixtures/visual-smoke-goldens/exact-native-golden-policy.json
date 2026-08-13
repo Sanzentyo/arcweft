@@ -1,5 +1,5 @@
 {
-  "schema": "arcweft.exact_native_golden.policy.v2",
+  "schema": "arcweft.exact_native_golden.policy.v1",
   "fixture": "exact_native_golden_policy",
   "tier": "tier2_environment_gated",
   "default_fast_path": false,

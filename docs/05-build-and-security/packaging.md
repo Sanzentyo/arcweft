@@ -104,7 +104,7 @@ The product `.awfb` codec is the AWFB v1 fixed-header container owned by
 range, a canonical section index, embedded/external section descriptors, BLAKE3
 stored/content digests, bundle-kind section validation, unknown required-section
 rejection, optional unknown-section skipping, and read budgets. Product
-manifests at schema version 4 and later declare
+manifests at schema version 1 declare
 `executable_payload = "awbc_v1"`, and their `ProgramBytecode` section is exactly
 canonical bytes from `AwbcProgram::encode_canonical()`. Structured
 `BytecodeProgram` data remains an inspection/export surface only and is not read

@@ -365,7 +365,7 @@ async function assertCanvasOnlySample(page, checkpoint) {
     .count();
   expect(domGameText === 0, "DOM game text renderer is present");
   const frame = await page.evaluate(() => window.__arcweftLastFrameObservation);
-  expect(frame?.schema_version === "arcweft.web_frame_observation.v3", "bad frame schema");
+  expect(frame?.schema_version === "arcweft.web_frame_observation.v1", "bad frame schema");
   expect(
     frame.image_count === expectedImageCount,
     `expected ${expectedImageCount} image assets, got ${frame.image_count}`,

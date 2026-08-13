@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 1,
   "bundle_kind": "game",
   "executable_payload": "awbc_v1",
   "manifest": {

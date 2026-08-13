@@ -8,7 +8,7 @@ Make CSS-style parity useful again after dialogue body layout moved to `RenderSt
 
 ### 1. Paragraph evidence shape
 
-Each styled paragraph report uses schema `arcweft.web_frame_observation.v3` / `arcweft.css_style_native_frame_observation.v3` and emits:
+Each styled paragraph report uses schema `arcweft.web_frame_observation.v1` / `arcweft.css_style_native_frame_observation.v1` and emits:
 
 - paragraph text, paragraph bounds, byte length, and `visible_end`;
 - default font/style evidence: font size, line height, RGBA, family, weight, and slant;
