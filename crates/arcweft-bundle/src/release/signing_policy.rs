@@ -33,7 +33,7 @@ pub enum SigningPolicyMode {
 #[serde(rename_all = "snake_case")]
 pub enum SigningSubjectKind {
     AwfbBundle,
-    PatchV2Artifact,
+    PatchArtifact,
     MaterializedTargetBundle,
     AwfrReleaseArchive,
     ExternalPayload,
@@ -186,7 +186,7 @@ impl SigningPolicy {
             key_epoch,
             VerificationTrustGenerationPolicy::default(),
             [
-                SigningSubjectKind::PatchV2Artifact,
+                SigningSubjectKind::PatchArtifact,
                 SigningSubjectKind::MaterializedTargetBundle,
             ],
         )
@@ -204,7 +204,7 @@ impl SigningPolicy {
             verification_trust,
             [
                 SigningSubjectKind::AwfbBundle,
-                SigningSubjectKind::PatchV2Artifact,
+                SigningSubjectKind::PatchArtifact,
                 SigningSubjectKind::MaterializedTargetBundle,
                 SigningSubjectKind::AwfrReleaseArchive,
                 SigningSubjectKind::VerificationTrustManifest,
@@ -225,7 +225,7 @@ impl SigningPolicy {
             verification_trust,
             [
                 SigningSubjectKind::AwfbBundle,
-                SigningSubjectKind::PatchV2Artifact,
+                SigningSubjectKind::PatchArtifact,
                 SigningSubjectKind::MaterializedTargetBundle,
                 SigningSubjectKind::AwfrReleaseArchive,
                 SigningSubjectKind::VerificationTrustManifest,
@@ -390,7 +390,7 @@ impl SigningDigestTranscript {
         Ok(transcript)
     }
 
-    pub fn patch_v2_artifact(
+    pub fn patch_artifact(
         patch_artifact: ArtifactIdentity,
         target_artifact: ArtifactIdentity,
         whole_file_digest: BundleDigest,
@@ -400,7 +400,7 @@ impl SigningDigestTranscript {
     ) -> Result<Self, SigningPolicyError> {
         let transcript = Self {
             schema_version: SIGNING_TRANSCRIPT_SCHEMA_VERSION,
-            subject: SigningSubjectKind::PatchV2Artifact,
+            subject: SigningSubjectKind::PatchArtifact,
             channel,
             signer_id: signer_id.into(),
             key_epoch,
@@ -590,7 +590,7 @@ impl SigningDigestTranscript {
                 require("artifact_identity", self.artifact_identity.is_some())?;
                 require("whole_file_digest", self.whole_file_digest.is_some())?;
             }
-            SigningSubjectKind::PatchV2Artifact => {
+            SigningSubjectKind::PatchArtifact => {
                 require("patch artifact_identity", self.artifact_identity.is_some())?;
                 require(
                     "target_artifact_identity",
@@ -671,7 +671,7 @@ impl SigningSubjectKind {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AwfbBundle => "awfb_bundle",
-            Self::PatchV2Artifact => "patch_v2_artifact",
+            Self::PatchArtifact => "patch_artifact",
             Self::MaterializedTargetBundle => "materialized_target_bundle",
             Self::AwfrReleaseArchive => "awfr_release_archive",
             Self::ExternalPayload => "external_payload",
@@ -811,6 +811,35 @@ mod tests {
         assert_ne!(
             stable.digest().expect("digest"),
             beta.digest().expect("digest")
+        );
+    }
+
+    #[test]
+    fn patch_subject_is_schema_neutral_and_round_trips() {
+        let subject = SigningSubjectKind::PatchArtifact;
+        let encoded = serde_json::to_string(&subject).expect("serialize patch subject");
+        assert_eq!(encoded, "\"patch_artifact\"");
+        assert_eq!(
+            serde_json::from_str::<SigningSubjectKind>(&encoded)
+                .expect("deserialize patch subject"),
+            subject
+        );
+        assert_eq!(subject.as_str(), "patch_artifact");
+
+        let transcript = SigningDigestTranscript::patch_artifact(
+            artifact(BundleKind::Patch, b"patch"),
+            artifact(BundleKind::Program, b"target"),
+            BundleDigest::of(b"patch file"),
+            "release-key",
+            ReleaseChannel::new("stable").expect("channel"),
+            1,
+        )
+        .expect("patch transcript");
+        assert_eq!(transcript.subject, subject);
+        transcript.validate().expect("transcript validates");
+        assert_eq!(
+            transcript.digest().expect("first digest"),
+            transcript.digest().expect("second digest")
         );
     }
 

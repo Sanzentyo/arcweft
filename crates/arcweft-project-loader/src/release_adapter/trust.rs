@@ -195,7 +195,7 @@ pub fn inspect_release_trust(
 
 fn requires_awfb_family_signature(policy: &SigningPolicy) -> bool {
     policy.requires_signature(SigningSubjectKind::AwfbBundle)
-        || policy.requires_signature(SigningSubjectKind::PatchV2Artifact)
+        || policy.requires_signature(SigningSubjectKind::PatchArtifact)
         || policy.requires_signature(SigningSubjectKind::MaterializedTargetBundle)
 }
 
