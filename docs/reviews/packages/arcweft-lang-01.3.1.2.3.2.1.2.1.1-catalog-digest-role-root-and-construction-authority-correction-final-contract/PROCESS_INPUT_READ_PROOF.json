@@ -1,0 +1,20 @@
+{
+  "premise": {
+    "bytes": 250,
+    "lines": 1,
+    "sha256": "cfa897a0ad93deb92fd454079df0a789edbbd40d85c8377324da703c8aefe0a1",
+    "terminal_64_sha256": "048b8fe6d03295c23be01d941373c5fe4086d1c6347685b50fe629c9049b4ff1"
+  },
+  "request": {
+    "bytes": 16206,
+    "lines": 298,
+    "sha256": "3a2eeaec01994f984db20d6349dfea31eceb0c5cafc2b345099584117fb972c5",
+    "terminal_64_sha256": "b67f1c94207698dd8aaf906ae35adf6afae650242a8090ab025d10f80d85d2b5"
+  },
+  "rust_skill": {
+    "bytes": 5045,
+    "lines": 57,
+    "sha256": "1a28f552adf5efde95205bee8d56590aeb82346c48ebdf3fdbbaff5deca33665",
+    "terminal_64_sha256": "b493901af2f04c4139b51c0b5334cb0c7630e2a55ca1e2cd2ed005e5c2b8ec90"
+  }
+}

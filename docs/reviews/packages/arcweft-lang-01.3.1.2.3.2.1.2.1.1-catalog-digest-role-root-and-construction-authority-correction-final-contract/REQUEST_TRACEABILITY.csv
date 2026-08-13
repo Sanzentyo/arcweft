@@ -1,0 +1,91 @@
+id,request_line,requirement,contract_artifact,closure,status
+REQ-0001,20,"This is a design-only request. It must not return production code, a patch, an",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0002,29,- one serialized `RuntimeGenerationContractDeclaration` shared by raw,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0003,31,- non-circular producer payload roots and exact derived-versus-claimed nominal,PRODUCER_CONSUMER_DELETION_INVENTORY.csv,exact owner/caller migration followed by bypass deletion,CLOSED
+REQ-0004,33,- one non-Serde `AdmittedRuntimeGeneration` aggregate reused by admitted plan,SERDE_AND_WIRE_BOUNDARY.md,raw assertions only on wire; re-admission required; no admitted-handle serde,CLOSED
+REQ-0005,35,- standalone AWBC admission from its complete embedded generation contract;,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0006,36,- raw plans/programs remain untrusted quarantine and operational publication,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0007,38,- `RuntimeGenerationIdentity` is the BLAKE3 digest of the canonical contract,CANONICAL_DIGEST_GRAMMAR.md,"exact domain-separated, acyclic v1 framing and vectors",CLOSED
+REQ-0008,40,"- CharacterDialogue uses the exact `std.character_dialogue` producer, derived",PRODUCER_CONSUMER_DELETION_INVENTORY.csv,exact owner/caller migration followed by bypass deletion,CLOSED
+REQ-0009,43,- producer-ID lookup returns a non-exclusive admitted-shape view rather than a,PRODUCER_CONSUMER_DELETION_INVENTORY.csv,exact owner/caller migration followed by bypass deletion,CLOSED
+REQ-0010,45,- `RuntimeNominalRecordValue::try_from_accepted_layout` remains crate-private;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0011,46,- all A1-A3 record carrier/layout/field-ID results and the accepted exact,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0012,48,"- no `Dynamic`, source-name reconstruction, copied operational side table,",API_AND_TYPE_SHAPES.md,non-Serde generation/role/producer-scoped construction capability,CLOSED
+REQ-0013,104,1. Define the canonical `CharacterCatalog` digest owner and transcript. Pin,CANONICAL_DIGEST_GRAMMAR.md,"exact domain-separated, acyclic v1 framing and vectors",CLOSED
+REQ-0014,110,2. Define the canonical `ViewRegistry` digest owner and transcript with the,CANONICAL_DIGEST_GRAMMAR.md,"exact domain-separated, acyclic v1 framing and vectors",CLOSED
+REQ-0015,115,3. Give exact Rust-shaped APIs by which `CharacterCatalog` and `ViewRegistry`,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0016,119,4. Define `CharacterDialogueRuntimeRoleDeclaration` (or the uniquely selected,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0017,122,"5. For Stage, Portrait, Focus, Cleanup, Hook, and RichText, provide an exact",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0018,127,6. Define how the standard library registers exactly one declaration for each,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0019,129,"`Named`, string tables, display labels, or path recognition must not remain",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0020,131,"7. Define `RuntimeProjectRootFact`, `RuntimeProducerFact`, and every root",PRODUCER_CONSUMER_DELETION_INVENTORY.csv,exact owner/caller migration followed by bypass deletion,CLOSED
+REQ-0021,134,"8. Define root-ID creation. If it is a digest, pin its domain and canonical",CANONICAL_DIGEST_GRAMMAR.md,"exact domain-separated, acyclic v1 framing and vectors",CLOSED
+REQ-0022,136,exact existing owner and lossless projection. Core must not derive IDs from,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0023,138,9. Supply an exhaustive table mapping every current `RuntimePlan` typed,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0024,143,10. Supply the equivalent exhaustive AWBC table mapping and exact plan-to-AWBC,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0025,146,11. Define `RuntimeNominalRecordAdmissionDomain<'generation>` and the project,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0026,151,12. Define the AWBC `MakeRecord` authority coordinate and wire/lowering rule.,API_AND_TYPE_SHAPES.md,non-Serde generation/role/producer-scoped construction capability,CLOSED
+REQ-0027,156,13. Define the typed checked-value validation owner/API that replaces boolean,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0028,161,"14. Define exact mapping from checked-value failures into nominal-tree,",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0029,164,15. Correct the compile-clean implementation order so the lower shared,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0030,174,1. catalog-local syntax and structural validation;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0031,175,2. canonical identity/order/duplicate checks;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0032,176,3. canonical transcript construction under fixed domain `1`;,API_AND_TYPE_SHAPES.md,non-Serde generation/role/producer-scoped construction capability,CLOSED
+REQ-0033,177,4. digest recomputation;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0034,178,5. declared-versus-actual digest comparison;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0035,179,6. generation identity comparison;,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0036,180,7. referenced View/character relationship checks;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0037,181,8. atomic admitted-wrapper publication.,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0038,185,1. nesting and shared work budget;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0039,186,2. outer runtime shape;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0040,187,3. checked owner;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0041,188,4. ordinal and name;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0042,189,5. payload presence;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0043,190,6. recursive payload;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0044,191,7. evaluate every Choice alternative in source order under the shared budget;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0045,192,8. zero-match ordered branch evidence or first two matching indices;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0046,193,9. nominal admitted-shape lookup/tree validation;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0047,194,10. domain publication.,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0048,198,1. AWBC structural instruction/type/reference checks;,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0049,199,2. admitted generation and execution-site root coordinate;,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0050,200,3. project/producer domain selection;,PRODUCER_CONSUMER_DELETION_INVENTORY.csv,exact owner/caller migration followed by bypass deletion,CLOSED
+REQ-0051,201,4. exact nominal/semantic/layout lookup;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0052,202,5. domain authorization membership;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0053,203,6. field count and field checked-value validation;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0054,204,7. crate-private construction;,API_AND_TYPE_SHAPES.md,non-Serde generation/role/producer-scoped construction capability,CLOSED
+REQ-0055,205,8. register publication.,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0056,213,- `crates/arcweft-character` manifest/catalog identities and every field that,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0057,215,"- `crates/arcweft-view` registry, descriptors, generated/anonymous identities,",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0058,217,"- `crates/arcweft-interaction-model`, `arcweft-dialogue`, and",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0059,219,- current standard callable family rows and every `TypeKind::Named` dialogue,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0060,221,"- `arcweft-runtime-plan::{semantic_facts,lower,awbc_lower,inventory}` and every",PRODUCER_CONSUMER_DELETION_INVENTORY.csv,exact owner/caller migration followed by bypass deletion,CLOSED
+REQ-0061,224,"- `arcweft-core::{pattern,plan,value::nominal_record}` and",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0062,227,"- AWBC `MakeRecord` schema, lowering, verifier, VM, AOT/JIT/codegen consumers;",PRODUCER_CONSUMER_DELETION_INVENTORY.csv,exact owner/caller migration followed by bypass deletion,CLOSED
+REQ-0063,228,"- dialogue schema/typed-value/patch, runtime-driver restore/replay/View, bundle,",SERDE_AND_WIRE_BOUNDARY.md,raw assertions only on wire; re-admission required; no admitted-handle serde,CLOSED
+REQ-0064,230,"- all raw scalar/digest constructors, boolean `accepts_value` uses, root-ID",API_AND_TYPE_SHAPES.md,non-Serde generation/role/producer-scoped construction capability,CLOSED
+REQ-0065,235,"- changing each included CharacterCatalog field changes its digest, while",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0066,237,"- every character ordering, duplicate, limit, malformed identity, and retired",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0067,239,"- the same matrix for ViewRegistry, including anonymous/generated Views and",TEST_MATRIX.csv / ACCEPTANCE_COMMANDS.md,"positive, negative, compile-fail, property, integration, deletion evidence",CLOSED
+REQ-0068,241,- cross-generation or stale Character/View digests reject before schema/value,DECISIONS.md § Version policy,Arcweft-owned schema/ABI/codec/protocol versions remain 1,CLOSED
+REQ-0069,243,- all six base roles register once from typed facts and project to the exact,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0070,244,required closed semantic/runtime types without name recognition;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0071,245,"- missing, duplicate, wrong-world, unresolved, leaked role-coordinate, and",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0072,247,"- Style is exactly ordered `Choice([EntityRef, RichText])` and cannot be",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0073,249,- every plan root and AWBC root round-trips the same typed coordinate and root,ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0074,252,"- a nominal reachable only through one plan/AWBC table is admitted, while",ADMISSION_AND_CONSTRUCTION_STATE_MACHINE.md,pair admission yields one admitted generation; failure is atomic,CLOSED
+REQ-0075,254,"- project `MakeRecord` succeeds only through project authority, producer",API_AND_TYPE_SHAPES.md,non-Serde generation/role/producer-scoped construction capability,CLOSED
+REQ-0076,257,- malformed/forged `MakeRecord` domain coordinates fail verifier/admission;,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0077,258,- Choice zero-match retains ordered typed branch failures; ambiguous Choice,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0078,261,- one shared work budget and nesting limit apply across Choice branches and,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0079,263,"- nominal-tree, dialogue, restore, View, and VM errors preserve typed checked",ERROR_MODEL.md,typed deterministic error taxonomy and context,CLOSED
+REQ-0080,265,"- lower shared ID/role relocation preserves accepted serde spelling, 128-byte",SERDE_AND_WIRE_BOUNDARY.md,raw assertions only on wire; re-admission required; no admitted-handle serde,CLOSED
+REQ-0081,267,"- focused tests, workspace check, Clippy, structure audit, codec/golden/tamper",SERDE_AND_WIRE_BOUNDARY.md,raw assertions only on wire; re-admission required; no admitted-handle serde,CLOSED
+REQ-0082,272,"- Do not reopen the accepted generation body, producer-root closure, admitted",PRODUCER_CONSUMER_DELETION_INVENTORY.csv,exact owner/caller migration followed by bypass deletion,CLOSED
+REQ-0083,274,"- Do not invent a second semantic generation ID, catalog, root map, role table,",FINAL_CONTRACT.md § Role-root closure,"closed role enum, completeness/uniqueness, core-only admitted root",CLOSED
+REQ-0084,276,- Do not use Serde/debug/display/source text or iteration order as canonical,SERDE_AND_WIRE_BOUNDARY.md,raw assertions only on wire; re-admission required; no admitted-handle serde,CLOSED
+REQ-0085,279,"- Do not treat `RuntimeNominalRecordLayout`, a catalog key, a root ID, a",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0086,281,"- Do not make dialogue depend on runtime-plan, sema, compiler, HIR, syntax,",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0087,283,"- Do not retain `Named` role success, boolean-only authority validation,",API_AND_TYPE_SHAPES.md,non-Serde generation/role/producer-scoped construction capability,CLOSED
+REQ-0088,286,"- Do not add compatibility aliases, old readers, optional fields, defaults,",FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0089,288,- Do not return production code or an implementation overlay.,FINAL_CONTRACT.md and REQUEST_TRACEABILITY.csv,normatively retained and resolved by the single-authority graph,CLOSED
+REQ-0090,294,"It must contain `OPEN_QUESTIONS=0`, exact Rust-shaped owners/APIs/errors,",DECISIONS.md § Closed decisions,closed with OPEN_QUESTIONS=0,CLOSED
