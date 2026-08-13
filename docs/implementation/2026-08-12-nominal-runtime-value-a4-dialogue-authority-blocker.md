@@ -47,3 +47,12 @@ versions at `1` and does not reopen A1-A3, opaque ownership, activation, View,
 or Stream decisions.
 
 No A4 production code or compatibility path was added in this blocker cut.
+
+## 2026-08-13 returned-package adjudication
+
+The `.1.2` archive returned and was integrity-verified, but its proposed
+producer authorization and independent AWBC execution authority remain
+underdesigned. The current status and the narrower `.1.2.1` request supersede
+this note as active blocker evidence:
+
+`docs/implementation/2026-08-13-nominal-runtime-value-authority-package-intake-and-blocker.md`

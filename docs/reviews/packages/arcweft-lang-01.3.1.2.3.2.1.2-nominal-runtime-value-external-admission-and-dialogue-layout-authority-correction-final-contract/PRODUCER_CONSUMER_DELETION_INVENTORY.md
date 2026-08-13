@@ -1,0 +1,68 @@
+# Producer, consumer, and deletion inventory
+
+This inventory is normative. `exact pinned source` means the immutable blob at the pinned commit was inspected. `compile closure` means the owner is required by an exhaustive Rust migration and must be confirmed by the named workspace gate; it is not falsely reported as locally compiled here.
+
+| ID | Layer | Owner/path | Symbol or behavior | Required action | Gate | Evidence |
+|---|---|---|---|---|---|---|
+| INV-001 | core value | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordLayout | retain accepted descriptor; add catalog key use only | G2 | exact pinned source |
+| INV-002 | core value | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordValue::try_from_accepted_layout | retain crate-private; only admission handle calls it | G2/G8 | exact pinned source |
+| INV-003 | core value | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordValue::new | delete public unchecked constructor | G8 | exact pinned source |
+| INV-004 | core value | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordValue::validate_against_layout | retain restored/existing-value validator | G2 | exact pinned source |
+| INV-005 | core value | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordValue::validate_shape | delete identity/layout/count-only second authority | G8 | exact pinned source |
+| INV-006 | core value | crates/arcweft-core/src/value/nominal_record.rs | catalog declaration/operational handles/errors | add to original owner; no helper crate/trait | G2 | design closure + source owner |
+| INV-007 | core checked type | crates/arcweft-core/src/pattern.rs | RuntimeCheckedType::accepts_value Variant | extend inherent impl to exact case/payload validation | G1 | exact pinned source defect |
+| INV-008 | core checked type | crates/arcweft-core/src/pattern.rs | RuntimeCheckedType nominal/opaque/composites | retain closed vocabulary and opaque atomicity | G1/G2 | exact pinned source + child contract |
+| INV-009 | core plan | crates/arcweft-core/src/plan.rs | RuntimePlan | add private catalog declaration and consuming try_admit | G3 | exact pinned source |
+| INV-010 | core plan | crates/arcweft-core/src/plan/entry_inventory.rs | RuntimePlanError | add typed NominalRecordCatalog source variant | G3 | exact pinned source |
+| INV-011 | core plan | crates/arcweft-core/src/plan.rs | runtime APIs accepting raw RuntimePlan | migrate execution/activation to AdmittedRuntimePlan | G3/G7 | compile closure |
+| INV-012 | core pure | arcweft-core pure/value evaluators | nominal value construction | obtain project admission handle; no raw constructor | G4 | parent inventory + compile closure |
+| INV-013 | core engine | arcweft-core structured engine | nominal expression execution | admitted handle after authored scatter | G4 | parent inventory + compile closure |
+| INV-014 | core AWBC | arcweft-core AWBC verifier | nominal descriptors and checked values | verify catalog keys/field predicates | G4 | parent inventory + compile closure |
+| INV-015 | core AWBC | arcweft-core AWBC VM/fiber | nominal construction/reconstruction | use admitted handle; reject missing catalog | G4 | parent inventory + compile closure |
+| INV-016 | core ownership | crates/arcweft-core/src/value/ownership | value traversal | require caller validation; retain shared RuntimeValuePath visitor | G4/G7 | exact path source + parent inventory |
+| INV-017 | core nesting | crates/arcweft-core/src/value/nesting.rs | aggregate traversal | run only after active validation | G4/G7 | parent inventory + compile closure |
+| INV-018 | core root | arcweft-core root validators | root RuntimeValue ingress | map expected type/catalog; validate before traversal | G4/G7 | parent inventory + compile closure |
+| INV-019 | core replay | arcweft-core root/replay validators | replayed RuntimeValue ingress | typed descriptor validation before replay | G4/G7 | parent inventory + runtime-driver source |
+| INV-020 | runtime-plan | crates/arcweft-runtime-plan/src/semantic_facts.rs | nominal layout Arc interning map | retain/export generation catalog instead of dropping map | G3 | exact pinned source |
+| INV-021 | runtime-plan | semantic facts and final projection | producer authorization rows | derive from accepted closed role/custom checked types | G3 | design closure + accepted facts |
+| INV-022 | runtime-plan | final_expr.rs/final_pattern.rs | nominal carriers | reference canonical catalog keys/Arcs; no identity-only fallback | G3/G4 | parent inventory + compile closure |
+| INV-023 | runtime-plan | awbc_lower | nominal checked types/layout catalog | lower exact admitted references or typed failure | G4 | parent inventory + compile closure |
+| INV-024 | compiler | arcweft-compiler project/runtime bridge | catalog projection | emit descriptor once using existing schema hash owner | G3 | parent contract + compile closure |
+| INV-025 | dialogue schema | crates/arcweft-dialogue/src/character_dialogue/schema.rs | CharacterDialogueRuntimeSchema.expected_layout | delete; add role types and producer capability | G5 | exact pinned source |
+| INV-026 | dialogue schema | same | CharacterDialogue root nominal record | replace with exact opaque 18-tuple; delete nominal ID/layout path | G5 | exact pinned source |
+| INV-027 | dialogue schema | same | CharacterDialogueValue.record | replace with RuntimeOpaqueValue + domain value | G5 | exact pinned source |
+| INV-028 | dialogue schema | same | custom_entry_type_id/custom_entry_layout | delete nominal wrapper and schema | G5 | exact pinned source |
+| INV-029 | dialogue schema | same | RuntimeTypeSchema::Named("Dynamic") | delete; custom descriptor supplies closed RuntimeCheckedType | G5 | exact pinned source |
+| INV-030 | dialogue schema | same | inline_failure_type_id/inline_failure_layout | delete wrapper; retain direct closed variant | G5 | exact pinned source |
+| INV-031 | dialogue schema | same | layout_value/decode_layout custom metadata | delete when no other owner uses them | G5 | exact pinned source |
+| INV-032 | dialogue domain | crates/arcweft-dialogue/src/character_dialogue.rs | CharacterDialogue.layout and layout() | delete field/accessor/constructor parameter | G5 | exact pinned source |
+| INV-033 | dialogue domain | same | digest/canonical bytes via nominal record | move behind active schema opaque encoding | G5 | exact pinned source |
+| INV-034 | dialogue typed value | character_dialogue/typed_value.rs | nominal_type/layout side scalars | delete; expected type lives in active schema | G6 | exact pinned source |
+| INV-035 | dialogue typed value | same | direct Deserialize and raw try_new | delete; schema role/custom methods admit raw RuntimeValue | G6 | exact pinned source |
+| INV-036 | dialogue typed value | same | normalize_runtime_value nominal branch | replace with catalog-aware checked-type recursion | G6 | exact pinned source |
+| INV-037 | dialogue typed value | same | empty_runtime_value nominal/record fallbacks | replace with checked-type-directed empty; delete fallbacks | G6 | exact pinned source |
+| INV-038 | dialogue typed value | same | replace_runtime_value/raw struct update | delete; schema returns newly admitted wrapper | G6 | exact pinned source |
+| INV-039 | dialogue patch | character_dialogue/patch.rs | RuntimeFieldPath(Vec<u16>) | delete; StructuredPatch uses RuntimeValuePath | G6 | exact pinned source |
+| INV-040 | dialogue patch | same | descriptorless nominal rebuild | preflight and rebuild through admission handle | G6 | exact pinned source |
+| INV-041 | dialogue patch | same | mutation-before-complete-validation | preflight all paths/eligibility; atomic candidate publish | G6 | exact pinned source |
+| INV-042 | dialogue tests | arcweft-dialogue tests/helpers | raw nominal/custom/inline constructors | delete/replace with admitted fixtures | G5/G8 | compile closure |
+| INV-043 | runtime driver | crates/arcweft-runtime-driver/src/session.rs | bundle session construction | raw plan -> try_admit before runtime generation | G7 | exact pinned source |
+| INV-044 | runtime driver | generation_runtime.rs / swap.rs | generation/hot-swap plans | store/use AdmittedRuntimePlan and catalog | G7 | tree inspection + compile closure |
+| INV-045 | runtime driver | crates/arcweft-runtime-driver/src/view_runtime.rs | View values/restore | validate expected tree/dialogue before mount/traversal | G7 | exact pinned source |
+| INV-046 | runtime driver | crates/arcweft-runtime-driver/src/session_save.rs | InvalidRuntimeValue string flattening | add typed nominal/dialogue source variants | G7 | exact pinned source |
+| INV-047 | runtime driver | session replay/root modules | restore/replay RuntimeValue | validate before ownership/replay/activation | G7 | exact tree + compile closure |
+| INV-048 | bundle | crates/arcweft-bundle | plan/value decode entry points | return quarantine; driver performs active typed admission | G7/G10 | workspace inventory + compile closure |
+| INV-049 | save | crates/arcweft-save | RuntimeValue restore entry points | map active owner/type and validate before traversal | G7/G10 | parent inventory + compile closure |
+| INV-050 | View | crates/arcweft-view and generated View products | typed runtime value projection | retain expected checked types/catalog references | G7 | workspace inventory + compile closure |
+| INV-051 | agent | agent runtime/projections | inspect/reproduce runtime values | inspect admitted only; no nominal reconstruction | G7 | request inventory + compile closure |
+| INV-052 | CLI | CLI/runtime adapters | inspect/reproduce runtime values | inspect admitted only; no nominal reconstruction | G7 | request inventory + compile closure |
+| INV-053 | accelerator | runtime accelerator projections | value transfer/reproduction | preserve admitted identity; no raw constructor | G7 | request inventory + compile closure |
+| INV-054 | tests | arcweft-core trybuild | public new/validate_shape/handle fields | external compile-fail fixtures | G2/G8 | required test closure |
+| INV-055 | tests | internal obsolete call-site fixtures | new/validate_shape/RuntimeFieldPath | internal compile-fail/deletion closure | G8 | required test closure |
+| INV-056 | structural | workspace structure audit | fallbacks/dual readers/copied tables | fail if any prohibited surface remains | G9/G10 | required gate |
+
+## Deletion completeness rule
+
+Search output is discovery evidence only. Acceptance requires typed owners plus compilation/tests. Once all call sites migrate, old declarations are deleted immediately; no deprecation alias, feature-gated friend, compatibility reader, or string-search result substitutes for compile closure.
+
+The mandatory deletion symbols and behaviors are INV-003, INV-005, INV-025 through INV-041, and all descriptorless reconstruction sites discovered by INV-012 through INV-053.

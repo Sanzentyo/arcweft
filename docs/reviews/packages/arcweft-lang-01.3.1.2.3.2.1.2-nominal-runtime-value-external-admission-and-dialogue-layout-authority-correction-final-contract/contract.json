@@ -1,0 +1,58 @@
+{
+  "all_arcweft_owned_versions": 1,
+  "assignment_kind": "design-only",
+  "character_dialogue_representation": "exact std.character_dialogue opaque value with producer-owned tuple18 payload",
+  "compatibility_layer": false,
+  "contract_id": "Lang-01.3.1.2.3.2.1.2",
+  "custom_entry_representation": "sorted tuple2(field_id,value) validated by closed active descriptor",
+  "dynamic_checked_type_added": false,
+  "inline_failure_representation": "direct closed nominal variant; no nominal-record wrapper",
+  "name": "arcweft-lang-01.3.1.2.3.2.1.2-nominal-runtime-value-external-admission-and-dialogue-layout-authority-correction-final-contract",
+  "normative_files": [
+    "AUTHORITY_AND_CATALOG.md",
+    "CHARACTER_DIALOGUE_REPRESENTATION.md",
+    "DESCRIPTOR_LOOKUP_AND_TRANSFORMATION.md",
+    "FINAL_CONTRACT.md",
+    "IMPLEMENTATION_ORDER.md",
+    "IMPLEMENTATION_STATUS.md",
+    "MANIFEST.sha256",
+    "NON_GOALS.md",
+    "OPEN_QUESTIONS.txt",
+    "PACKAGE_STATUS.txt",
+    "PARENT_ARTIFACTS.sha256",
+    "PERSISTENCE_ACTIVATION_AND_CODEC.md",
+    "PRODUCER_CONSUMER_DELETION_INVENTORY.csv",
+    "PRODUCER_CONSUMER_DELETION_INVENTORY.md",
+    "README.md",
+    "REQUIREMENTS_TRACEABILITY.md",
+    "RUST_OWNERS_AND_APIS.md",
+    "SOURCE_REQUEST.md",
+    "TEST_MATRIX.csv",
+    "TEST_MATRIX.md",
+    "VALIDATION_ERROR_AND_PATH_PRECEDENCE.md",
+    "VALIDATION_EVIDENCE.md",
+    "contract.json"
+  ],
+  "old_reader_retained": false,
+  "open_questions": 0,
+  "parent_artifacts": [
+    {
+      "name": "arcweft-lang-01.3.1.2.3.2.1-nominal-record-and-record-sequence-owner-reconciliation-correction-final-contract.zip",
+      "sha256": "4b15a5eaea31663a9323f41f75345b2acb6faa0ea3a61784eeeabd482a13966a"
+    },
+    {
+      "name": "arcweft-lang-01.3.1.2.3.2.1.1-opaque-composite-checked-type-owner-reconciliation-correction-final-contract.zip",
+      "sha256": "93af482a2914ca4a9e6b985aa7a09c040f569bd71141611dcaa4d579ac01640c"
+    }
+  ],
+  "pinned_commit": "98ccafa5f0113a50f8a0f5e985df5f695c401588",
+  "production_overlay": false,
+  "selected_authority": "admitted runtime-plan nominal catalog with non-Serde producer/value admission handles",
+  "status": "READY_FOR_IMPLEMENTATION",
+  "validation": {
+    "archive_integrity_checks": "performed by builder",
+    "cargo_commands_run": false,
+    "local_git_checkout": false,
+    "static_exact_commit_source_inspection": true
+  }
+}
