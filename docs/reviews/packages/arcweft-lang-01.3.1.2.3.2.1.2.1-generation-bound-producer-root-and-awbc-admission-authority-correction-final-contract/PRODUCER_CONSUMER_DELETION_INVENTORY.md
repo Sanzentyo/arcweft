@@ -1,0 +1,162 @@
+# Producer, consumer, deletion, and execution-boundary inventory
+
+Total rows: **154**.
+
+Rows marked `exact pinned source` record directly inspected current-source evidence. Rows marked compile/request closure are normative migration targets whose closure is proved by workspace compilation and typed tests, not by source-spelling search.
+
+| ID | Layer | Owner/path | Surface | Current state | Final decision | Gate | Evidence |
+|---|---|---|---|---|---|---|---|
+| GBA-INV-001 | core plan | crates/arcweft-core/src/plan.rs | RuntimePlan fields | No generation contract/catalog authority | Add required private generation_contract; raw remains quarantine | G4 | exact pinned source |
+| GBA-INV-002 | core plan | crates/arcweft-core/src/plan.rs | RuntimePlan::new | Builds raw plan without generation facts | Bridge must attach canonical declaration; no executable return | G3/G4 | exact pinned source |
+| GBA-INV-003 | core plan | crates/arcweft-core/src/plan.rs | RuntimePlan::verify | Structural diagnostic | Retain diagnostic only; never admission token | G4 | exact pinned source |
+| GBA-INV-004 | core plan | crates/arcweft-core/src/plan.rs | RuntimePlan::try_admit | Absent | Add consuming whole-generation admission | G4 | request + source gap |
+| GBA-INV-005 | core plan | crates/arcweft-core/src/plan.rs | AdmittedRuntimePlan | Absent | Add non-Serde wrapper sharing one admitted aggregate | G4 | request + source gap |
+| GBA-INV-006 | core plan | crates/arcweft-core/src/plan/entry_inventory.rs | RuntimePlanError | Existing owner for plan failures | Extend original enum with typed generation/root correlation sources | G4 | exact pinned source |
+| GBA-INV-007 | core generation | crates/arcweft-core/src/plan/generation_contract.rs | RuntimeGenerationIdentity | Absent | Add BLAKE3 canonical-body identity newtype | G1 | design owner |
+| GBA-INV-008 | core generation | crates/arcweft-core/src/plan/generation_contract.rs | RuntimeGenerationContractDeclaration | Absent | Add sole raw serialized authority declaration | G1 | design owner |
+| GBA-INV-009 | core generation | crates/arcweft-core/src/plan/generation_contract.rs | AdmittedRuntimeGeneration | Absent | Add private Arc-backed operational aggregate | G4 | design owner |
+| GBA-INV-010 | core producer | crates/arcweft-core/src/plan/producer_contract.rs | RuntimeProjectRootDeclaration | Absent | Add typed independent project root | G1 | design owner |
+| GBA-INV-011 | core producer | crates/arcweft-core/src/plan/producer_contract.rs | RuntimeProducerPayloadContractDeclaration | Parent proposed ID+keys only | Replace with independent payload roots plus claimed closure | G1 | returned package defect |
+| GBA-INV-012 | core producer | crates/arcweft-core/src/plan/producer_contract.rs | RuntimeProducerPayloadRootSet | Absent | Add Checked and CharacterDialogue typed variants | G1 | design owner |
+| GBA-INV-013 | core producer | crates/arcweft-core/src/plan/producer_contract.rs | producer authorization comparison | Parent row could self-authorize | Derive closure from roots; require exact claimed-set equality | G4 | request split reason |
+| GBA-INV-014 | core producer | crates/arcweft-core/src/plan/producer_contract.rs | root traversal limits | Not defined for producer admission | Use exact depth/work/root/catalog limits | G1/G4 | request decision |
+| GBA-INV-015 | core producer | crates/arcweft-core/src/plan/producer_contract.rs | root traversal errors | Absent | Add typed root/path/limit/lookup errors | G1 | design owner |
+| GBA-INV-016 | core producer | crates/arcweft-core/src/plan/producer_contract.rs | claimed key ordering | Parent sorted keys but circular | Retain canonical sorted diagnostic set; never traversal seed | G1/G4 | corrected parent |
+| GBA-INV-017 | core catalog | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordCatalogDeclaration | Parent design included producer rows | Layouts only; move producer contracts to generation owner | G1 | parent package correction |
+| GBA-INV-018 | core catalog | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordProducerDeclaration | Parent ID+keys declaration | Delete without alias | G1/G9 | parent package correction |
+| GBA-INV-019 | core catalog | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordCatalog | Absent operational catalog | Build only inside admitted aggregate | G4 | parent design retained |
+| GBA-INV-020 | core catalog | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordCatalog::producer | Parent public ID lookup described as authority | Replace with admitted non-exclusive producer_shape view | G4 | request D15 |
+| GBA-INV-021 | core catalog | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordProducerShape | Absent | Private-field non-Serde generation-bound view | G4 | design owner |
+| GBA-INV-022 | core catalog | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordShape | Absent | Only public external construction path to crate-private primitive | G4 | parent authority corrected |
+| GBA-INV-023 | core nominal | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordValue::new | Public unchecked constructor | Delete at final A4 cut | G9 | exact pinned source |
+| GBA-INV-024 | core nominal | crates/arcweft-core/src/value/nominal_record.rs | try_from_accepted_layout | Crate-private checked primitive | Retain crate-private; call only through admitted shape | G4/G9 | exact pinned source |
+| GBA-INV-025 | core nominal | crates/arcweft-core/src/value/nominal_record.rs | validate_shape | Public identity/layout/count validator | Delete as second authority | G9 | exact pinned source |
+| GBA-INV-026 | core nominal | crates/arcweft-core/src/value/nominal_record.rs | validate_against_layout | Exact restored/existing validator | Retain behind admitted descriptor lookup | G4 | exact pinned source |
+| GBA-INV-027 | core nominal | crates/arcweft-core/src/value/nominal_record.rs | RuntimeNominalRecordError order | Nominal/layout/count/ID/field | Retain exact order | G4/G9 | exact pinned source |
+| GBA-INV-028 | core checked type | crates/arcweft-core/src/pattern.rs | RuntimeCheckedType | Closed enum; current Named absent | Add no Dynamic; add canonical encoder in original owner | G1 | exact pinned source |
+| GBA-INV-029 | core checked type | crates/arcweft-core/src/pattern.rs | RuntimeCheckedType::accepts_value Choice | Boolean any/first success behavior | Authority validation requires unique typed branch | G1/G7 | exact pinned source |
+| GBA-INV-030 | core checked type | crates/arcweft-core/src/pattern.rs | RuntimeCheckedType::accepts_value Variant | 507 source owner-only; G1 commit corrects | Retain accepted exact owner/ordinal/name/presence/payload behavior | G0 | accepted commit 1648894 |
+| GBA-INV-031 | core checked type | crates/arcweft-core/src/pattern.rs | RuntimeSemanticTypeIdentityEncoder | Existing BLAKE3 typed encoder | Reuse lower typed identity principles; no display parsing | G1/G2 | exact pinned source |
+| GBA-INV-032 | core value | crates/arcweft-core/src/value/ownership/path.rs | RuntimeValuePath | Existing typed value path | Use for root/tree/dialogue/patch errors | G4/G7 | parent exact source evidence |
+| GBA-INV-033 | core value | crates/arcweft-core/src/value/nesting.rs | nesting limits | Existing runtime value depth | Reuse as checked-type depth; add work limits | G1/G4 | required owner closure |
+| GBA-INV-034 | core pure | crates/arcweft-core/src/pure.rs | nominal construction/validation | May use raw layouts/constructor | Obtain admitted project shape; no descriptorless fallback | G4/G9 | parent inventory + compile closure |
+| GBA-INV-035 | core structured | crates/arcweft-core/src/structured.rs | nominal structured transforms | Potential raw reconstruction | Use admitted shape and validate; delete fallback | G4/G9 | parent inventory + compile closure |
+| GBA-INV-036 | core root | crates/arcweft-core/src/root.rs | root value ingress/replay | Raw RuntimeValue traversal possible | Validate under admitted generation before traversal | G8 | request inventory |
+| GBA-INV-037 | core replay | crates/arcweft-core/src/replay.rs | replay transitions | Generation/catalog not mandatory | Require identity and admitted tree validation | G8 | request inventory |
+| GBA-INV-038 | core ownership | crates/arcweft-core/src/value/ownership | ownership traversal | Can encounter unvalidated values | Admission validation precedes traversal | G8 | request inventory |
+| GBA-INV-039 | core nesting | crates/arcweft-core/src/value/nesting.rs | nested nominal walk | Catalog authority not carried | Borrow admitted generation/tree validator | G4/G8 | request inventory |
+| GBA-INV-040 | core AWBC | crates/arcweft-core/src/awbc/schema.rs | AwbcProgram fields | Public raw tables; no generation contract | Add required private generation_contract and accessor | G5 | exact pinned source |
+| GBA-INV-041 | core AWBC | crates/arcweft-core/src/awbc/schema.rs | AWBC version constants | ABI/codec version 1 | Remain exactly 1 | G5/G11 | exact pinned source |
+| GBA-INV-042 | core AWBC | crates/arcweft-core/src/awbc/codec.rs | program encoder | Header then tables; no authority section | Encode generation contract after header | G5 | exact pinned source |
+| GBA-INV-043 | core AWBC | crates/arcweft-core/src/awbc/codec.rs | program decoder | Can produce raw verified program | Decode raw quarantine; no execution | G5 | exact pinned source |
+| GBA-INV-044 | core AWBC | crates/arcweft-core/src/awbc/codec.rs | program/product digest | Does not cover producer roots | Include exact generation-contract bytes | G5 | exact pinned source |
+| GBA-INV-045 | core AWBC | crates/arcweft-core/src/awbc/verify.rs | AwbcProgram::verify | Structural verification only | Retain structural role; not admission | G5 | exact pinned source |
+| GBA-INV-046 | core AWBC | crates/arcweft-core/src/awbc/admission.rs | AwbcProgram::try_admit | Absent | Add standalone whole-product admission | G5 | design owner |
+| GBA-INV-047 | core AWBC | crates/arcweft-core/src/awbc/admission.rs | AdmittedAwbcProduct | Absent | Add non-Serde wrapper | G5 | design owner |
+| GBA-INV-048 | core AWBC | crates/arcweft-core/src/awbc/type_projection.rs | runtime type projection | Closed types projected without generation roots | Preserve typed root coordinates and correlation | G3/G5 | request inventory |
+| GBA-INV-049 | core AWBC | crates/arcweft-core/src/awbc/vm.rs | step | Public raw program | Crate-private admitted product | G6 | exact pinned source |
+| GBA-INV-050 | core AWBC | crates/arcweft-core/src/awbc/vm.rs | step_with_host | Public raw program | Crate-private admitted product | G6 | exact pinned source |
+| GBA-INV-051 | core AWBC | crates/arcweft-core/src/awbc/vm.rs | MakeRecord | Uses raw program layout then checked primitive | Resolve admitted shape; typed errors | G5/G6 | exact pinned source |
+| GBA-INV-052 | core AWBC | crates/arcweft-core/src/awbc/vm.rs | nominal VM error mapping | String flattening | Typed path/source variant | G5/G6 | exact pinned source |
+| GBA-INV-053 | core AWBC | crates/arcweft-core/src/awbc/fiber.rs | FiberState::for_function | Accepts raw AwbcProgram | Admitted-only crate-private | G6 | exact pinned source |
+| GBA-INV-054 | core AWBC | crates/arcweft-core/src/awbc/fiber.rs | FiberState::for_entry | Accepts raw AwbcProgram | Admitted-only crate-private | G6 | exact pinned source |
+| GBA-INV-055 | core AWBC | crates/arcweft-core/src/awbc/fiber.rs | fiber resume/restore | No semantic generation proof | Store/compare RuntimeGenerationIdentity | G6/G8 | request inventory |
+| GBA-INV-056 | core AWBC | crates/arcweft-core/src/awbc/product_step.rs | AwbcProductStepExecutor::for_entry | Owns raw verified program | Own admitted product | G6 | exact pinned source |
+| GBA-INV-057 | core AWBC | crates/arcweft-core/src/awbc/product_step.rs | for_function | Raw program verifier path | Admitted-only | G6 | exact pinned source |
+| GBA-INV-058 | core AWBC | crates/arcweft-core/src/awbc/product_step.rs | replace_program_preserving_state | Raw replacement after verify | Delete; admitted atomic replacement | G6 | exact pinned source |
+| GBA-INV-059 | core AWBC | crates/arcweft-core/src/awbc/product_step.rs | product-step state | No generation identity | Retain identity and compare on replacement | G6 | request requirement |
+| GBA-INV-060 | core executor | crates/arcweft-core/src/executor.rs | ArcweftRuntimeExecutor::from_awbc_product | Accepts raw AwbcProgram | Replace with consuming try_ admission convenience | G6 | exact pinned source |
+| GBA-INV-061 | core executor | crates/arcweft-core/src/executor.rs | from_awbc_product_function | Accepts raw AwbcProgram | Replace with consuming try_ admission convenience | G6 | exact pinned source |
+| GBA-INV-062 | core executor | crates/arcweft-core/src/executor.rs | replace_product_awbc_program | Raw program replacement | Delete; accept admitted product | G6 | exact pinned source |
+| GBA-INV-063 | core engine | crates/arcweft-core/src/engine.rs | Engine::new | Raw RuntimePlan path | Require AdmittedRuntimePlan; raw try convenience fully admits | G6 | request named surface |
+| GBA-INV-064 | core engine | crates/arcweft-core/src/engine.rs | Engine::for_flow | Raw RuntimePlan path | Require AdmittedRuntimePlan | G6 | request named surface |
+| GBA-INV-065 | core engine | crates/arcweft-core/src/engine.rs | Engine::for_entry | Raw RuntimePlan path | Require AdmittedRuntimePlan | G6 | request named surface |
+| GBA-INV-066 | core bytecode | crates/arcweft-core/src/bytecode.rs | BytecodeProgram::from_runtime_plan | Ambiguous raw conversion | Delete; from_raw_runtime_plan | G6 | exact pinned source |
+| GBA-INV-067 | core bytecode | crates/arcweft-core/src/bytecode.rs | BytecodeProgram::into_runtime_plan | Returns raw plan | Delete; into_raw_runtime_plan | G6 | exact pinned source |
+| GBA-INV-068 | core bytecode | crates/arcweft-core/src/bytecode.rs | BytecodeProgram AWBC conversion | Raw program can flow to runtime | Explicit raw extraction or try_admit | G6 | exact pinned source |
+| GBA-INV-069 | core AOT | crates/arcweft-core/src/aot.rs | AOT conversion boundary | May consume raw plan/AWBC | Require admitted product and identity | G8 | request inventory |
+| GBA-INV-070 | core codegen | crates/arcweft-core/src/codegen.rs | runtime codegen | May lack admitted catalog | Admitted-only or typed unsupported | G8 | request inventory |
+| GBA-INV-071 | interaction model | crates/arcweft-interaction-model/src/dialogue.rs | CharacterDialogueRuntimeRole | Absent shared typed coordinate | Add closed enum | G2 | design owner |
+| GBA-INV-072 | sema | crates/arcweft-lang-sema/src/types.rs | TypeKind | Named role placeholders | Add original enum CharacterDialogueRole variant | G2 | request + developer owner rule |
+| GBA-INV-073 | sema | crates/arcweft-lang-sema/src/character_dialogue.rs | CharacterDialogue custom registry | Accepted descriptors and source-inclusive digest | Retain source owner; expose typed projection facts | G2 | exact pinned source |
+| GBA-INV-074 | sema | crates/arcweft-lang-sema/src/character_dialogue/runtime_types.rs | AcceptedCharacterDialogueRuntimeTypes | Absent | Add sole accepted role owner | G2 | design owner |
+| GBA-INV-075 | sema | crates/arcweft-lang-sema/src/callable/schema/families.rs | DialogueStage Named | Unresolved Named | Typed Stage coordinate | G2 | exact pinned source |
+| GBA-INV-076 | sema | crates/arcweft-lang-sema/src/callable/schema/families.rs | DialoguePortrait Named | Unresolved Named | Typed Portrait coordinate | G2 | exact pinned source |
+| GBA-INV-077 | sema | crates/arcweft-lang-sema/src/callable/schema/families.rs | DialogueFocus Named | Unresolved Named | Typed Focus coordinate | G2 | exact pinned source |
+| GBA-INV-078 | sema | crates/arcweft-lang-sema/src/callable/schema/families.rs | DialogueCleanup Named | Unresolved Named | Typed Cleanup coordinate | G2 | exact pinned source |
+| GBA-INV-079 | sema | crates/arcweft-lang-sema/src/callable/schema/families.rs | DialogueHook Named | Unresolved Named | Typed Hook coordinate | G2 | exact pinned source |
+| GBA-INV-080 | sema | crates/arcweft-lang-sema/src/callable/schema/families.rs | RichTextStyle Named | Unresolved Named | Typed RichText; Style derived choice | G2 | exact pinned source |
+| GBA-INV-081 | sema | crates/arcweft-lang-sema/src/callable/schema/families.rs | DialogueContent Named | Current runtime projection failure risk | Resolve through its own typed accepted owner; no role-name fallback | G2/G3 | request split reason |
+| GBA-INV-082 | runtime plan | crates/arcweft-runtime-plan/src/semantic_facts.rs | RuntimePlanSemanticFacts | Normalizes types and interns nominal Arc layouts | Own generation projection APIs | G3 | exact pinned source |
+| GBA-INV-083 | runtime plan | crates/arcweft-runtime-plan/src/semantic_facts.rs | RuntimeNormalizedType::checked_type | Rejects unresolved Named/opaque evidence | Retain; add leaked role-coordinate typed error | G3 | exact pinned source |
+| GBA-INV-084 | runtime plan | crates/arcweft-runtime-plan/src/semantic_facts.rs | RuntimeResolvedNominalRecord map | Interned map currently not full runtime authority | Emit canonical catalog once | G3 | exact pinned source |
+| GBA-INV-085 | runtime plan | crates/arcweft-runtime-plan/src/semantic_facts.rs | RuntimeCharacterDialogueProducerFacts | Absent | Add sole closed role/custom projection owner | G3 | design owner |
+| GBA-INV-086 | runtime plan | crates/arcweft-runtime-plan/src/lower.rs | final RuntimePlan lowering | No generation contract | Attach single canonical declaration | G3 | request inventory |
+| GBA-INV-087 | runtime plan | crates/arcweft-runtime-plan/src/awbc_lower.rs | AWBC lowering | Builds raw program independently | Clone exact same generation declaration into AWBC | G3/G5 | exact pinned source |
+| GBA-INV-088 | runtime plan | crates/arcweft-runtime-plan/src/awbc/inventory.rs | AWBC typed inventory | No producer-root closure | Emit typed project root coordinates | G3 | request inventory |
+| GBA-INV-089 | compiler | crates/arcweft-compiler/src/project.rs | project/runtime bridge | Can return raw plan/product | Return raw quarantine plus exact generation facts; runtime caller admits | G3/G8 | request inventory |
+| GBA-INV-090 | compiler | crates/arcweft-compiler/src/runtime.rs | runtime bridge | Potential verify-only path | Consume through admission before executor | G6/G8 | request inventory |
+| GBA-INV-091 | compiler | crates/arcweft-compiler/src/awbc.rs | AWBC product bridge | Raw independently executable artifact | Embed full generation contract | G3/G5 | request inventory |
+| GBA-INV-092 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | CharacterDialogueRuntimeSchema fields | Expected layout/raw catalogs; no generation | Store specialized generation admission and admitted catalogs | G7 | exact pinned source |
+| GBA-INV-093 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | schema constructor | Independent role/custom/producer parts | Only try_from_generation | G7 | exact pinned source + request |
+| GBA-INV-094 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | CharacterDialogueRuntimeRoleTypes::new | Parent proposed public arbitrary seven types | No public new; admitted borrowed view | G7 | returned package defect |
+| GBA-INV-095 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | custom catalog constructor | Accepts caller digest and descriptors | Constructor computes digest; operational view only | G7 | exact pinned source |
+| GBA-INV-096 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | custom descriptor nominal/layout scalars | Current side authority | Closed checked type only | G7 | parent retained correction |
+| GBA-INV-097 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | root representation | Current nominal record | Replace directly with exact opaque tuple18 | G7 | retained .1.2 |
+| GBA-INV-098 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | custom entry representation | Current nominal wrapper/Dynamic | Sorted tuple2 with closed descriptor | G7 | retained .1.2 |
+| GBA-INV-099 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | inline failure representation | Current nominal wrapper | Direct closed variant | G7 | retained .1.2 |
+| GBA-INV-100 | dialogue | crates/arcweft-dialogue/src/character_dialogue/schema.rs | voice encoding | Nested encode_option(encode_voice) | Retain exact nested Option + voice variant | G7 | exact pinned source |
+| GBA-INV-101 | dialogue | crates/arcweft-dialogue/src/character_dialogue/typed_value.rs | CharacterDialogueTypedValue Deserialize | Direct raw deserialization | Delete Deserialize; schema admission only | G7 | exact pinned source |
+| GBA-INV-102 | dialogue | crates/arcweft-dialogue/src/character_dialogue/typed_value.rs | role wrapper constructors | Arbitrary typed value wrapping | Crate-private/from schema | G7 | exact pinned source |
+| GBA-INV-103 | dialogue | crates/arcweft-dialogue/src/character_dialogue/typed_value.rs | normalize_runtime_value | Descriptorless nominal rebuild | Generation-bound shape rebuild and validate | G7/G9 | exact pinned source |
+| GBA-INV-104 | dialogue | crates/arcweft-dialogue/src/character_dialogue/typed_value.rs | empty_runtime_value | Anonymous empty fallback | Checked-type-directed; no fallback | G7/G9 | exact pinned source |
+| GBA-INV-105 | dialogue | crates/arcweft-dialogue/src/character_dialogue/patch.rs | RuntimeFieldPath | Dialogue-local ordinal path | Delete; RuntimeValuePath | G7 | exact pinned source |
+| GBA-INV-106 | dialogue | crates/arcweft-dialogue/src/character_dialogue/patch.rs | StructuredPatch preflight | Can mutate before all validation | All-path preflight then atomic candidate | G7 | exact pinned source |
+| GBA-INV-107 | dialogue | crates/arcweft-dialogue/src/character_dialogue.rs | CharacterDialogue::try_new | Carries layout authority | Remove layout; domain-only construction | G7 | exact pinned source |
+| GBA-INV-108 | dialogue | crates/arcweft-dialogue/src/character_dialogue.rs | CharacterDialogue::digest/canonical_bytes | Can reconstruct without admitted schema | Schema-owned only | G7 | request inventory |
+| GBA-INV-109 | dialogue | crates/arcweft-dialogue/src/character_dialogue.rs | CharacterDialogue::patched | Can use independent patch context | Require same generation schema | G7 | request inventory |
+| GBA-INV-110 | dialogue catalog | crates/arcweft-dialogue/src/character_catalog.rs | CharacterCatalog | Raw catalog not generation-correlated | Add non-Serde admitted wrapper/digest check | G7 | request requirement |
+| GBA-INV-111 | view catalog | crates/arcweft-view/src/registry.rs | ViewRegistry | Raw registry not generation-correlated | Add non-Serde admitted wrapper/digest check | G7/G8 | request requirement |
+| GBA-INV-112 | dialogue errors | crates/arcweft-dialogue/src/character_dialogue/schema.rs | CharacterDialogueValueError | Some string/generic mappings | Add typed generation/role/custom/catalog/tree sources | G7 | parent evidence + request |
+| GBA-INV-113 | dialogue tests | crates/arcweft-dialogue/tests | nominal helper fixtures | Use unchecked new/layout scalars | Replace with admitted generation fixtures | G7/G9 | compile closure |
+| GBA-INV-114 | runtime driver | crates/arcweft-runtime-driver/src/generation_runtime.rs | GenerationRuntimeImage | Owns host ProgramGeneration/runtime but no semantic contract | Own admitted aggregate and RuntimeGenerationIdentity | G8 | exact pinned source |
+| GBA-INV-115 | runtime driver | crates/arcweft-runtime-driver/src/generation_runtime.rs | into_runtime | Can drop generation authority | Delete or return authority with runtime | G8 | exact pinned source |
+| GBA-INV-116 | runtime driver | crates/arcweft-runtime-driver/src/swap.rs | GenerationId(u64) | Host slot could be mistaken for semantic identity | Retain host-local only; never authority | G8 | exact pinned source |
+| GBA-INV-117 | runtime driver | crates/arcweft-runtime-driver/src/session.rs | session construction | Can receive raw executor/program | Require admitted generation image | G8 | exact pinned source |
+| GBA-INV-118 | runtime driver | crates/arcweft-runtime-driver/src/session.rs | hot swap | Candidate may verify raw program | Admit candidate fully before state change | G8 | exact pinned source |
+| GBA-INV-119 | runtime driver | crates/arcweft-runtime-driver/src/session_save.rs | save generation evidence | No mandatory semantic identity | Persist RuntimeGenerationIdentity | G8 | exact pinned source |
+| GBA-INV-120 | runtime driver | crates/arcweft-runtime-driver/src/session_save.rs | restore RuntimeValue | May flatten invalid values | Typed validate before ownership/session restore | G8 | exact pinned source |
+| GBA-INV-121 | runtime driver | crates/arcweft-runtime-driver/src/view_runtime.rs | View mount/input | Raw values/catalogs possible | Admitted generation/View registry before mount | G8 | exact pinned source |
+| GBA-INV-122 | runtime driver | crates/arcweft-runtime-driver/src/root_runtime.rs | root/replay ingress | Raw RuntimeValue traversal | Generation/tree validation first | G8 | request inventory |
+| GBA-INV-123 | runtime driver | crates/arcweft-runtime-driver/src/persistence.rs | runtime persistence | Generation-blind decode path | Quarantine then admit/correlate | G8 | request inventory |
+| GBA-INV-124 | bundle | crates/arcweft-bundle | AWFB/bundle decode and activation | Raw plan/AWBC can be returned/executed | Decode quarantine; plan-paired admission before activation | G8 | request inventory |
+| GBA-INV-125 | save | crates/arcweft-save | snapshot/session restore | RuntimeValue and program generation can be mixed | Persist/compare identity then validate | G8 | request inventory |
+| GBA-INV-126 | view | crates/arcweft-view | generated View products | May carry typed values without aggregate | Borrow admitted generation and registry | G8 | request inventory |
+| GBA-INV-127 | native player | crates/arcweft-player-native | startup/restore | Potential raw BytecodeProgram path | High-level consuming admission pipeline | G8 | request inventory |
+| GBA-INV-128 | web player | crates/arcweft-player-web | Wasm startup/restore | Caller-modifiable raw program/string identity | Rust-owned admitted state and typed errors | G8 | request inventory |
+| GBA-INV-129 | headless player | crates/arcweft-player-headless | batch execution | Potential raw executor path | Admitted generation image only | G8 | request inventory |
+| GBA-INV-130 | agent runner | crates/arcweft-agent | run/preview | Verify-only or raw program path | Same full admission path | G8 | request inventory |
+| GBA-INV-131 | MCP | crates/arcweft-mcp | execution tools | Raw artifact callable | Consume and admit before run | G8 | request inventory |
+| GBA-INV-132 | CLI | crates/arcweft-cli | run/replay/verify | Verify result may be conflated with execution | Verify diagnostic only; run fully admits | G8 | request inventory |
+| GBA-INV-133 | accelerator | crates/arcweft-runtime-accelerator | compiled runtime projection | May copy layout/type tables | Take admitted product; no second authority | G8 | request inventory |
+| GBA-INV-134 | JIT | crates/arcweft-jit | JIT input/cache | Raw AWBC/cache key lacks generation | Admitted product; identity/body cache key | G8 | request inventory |
+| GBA-INV-135 | AOT | crates/arcweft-aot | AOT artifact conversion | Raw plan/AWBC boundary | Admitted authority or explicit raw quarantine | G8 | request inventory |
+| GBA-INV-136 | codegen | crates/arcweft-codegen | generated executable binding | Potential raw fallback | Admitted-only or typed unsupported | G8 | request inventory |
+| GBA-INV-137 | compiler tests | crates/arcweft-compiler/tests | project/AWBC fixtures | May build raw programs directly | Canonical raw builders and real admission | G3/G5/G9 | compile closure |
+| GBA-INV-138 | core tests | crates/arcweft-core/tests | VM/fiber/product-step fixtures | Raw program constructors | Admitted fixtures; malformed raw only for negative tests | G5/G6/G9 | compile closure |
+| GBA-INV-139 | dialogue tests | crates/arcweft-dialogue/tests | role/custom/voice fixtures | Independent catalogs/types/digests | One admitted generation fixture | G7/G9 | compile closure |
+| GBA-INV-140 | driver tests | crates/arcweft-runtime-driver/tests | session/hot-swap/restore fixtures | Generation-blind combinations | Identity/canonical body cross-product matrix | G8/G10 | compile closure |
+| GBA-INV-141 | trybuild external | crates/arcweft-core/tests/ui | handle visibility/constructor tests | Absent or incomplete | Compile-fail private fields/constructors/Serde/Default/raw execution | G6/G9 | required test owner |
+| GBA-INV-142 | structure audit | scripts/structure-audit | authority/fallback audit | Existing audit not aware of new paths | Add semantic structural checks, not source spelling only | G10 | root AGENTS policy |
+| GBA-INV-143 | codec | crates/arcweft-core/src/awbc/codec.rs | contract section absent marker | Could be made optional during migration | No optional marker; old reader deleted | G5 | constraint |
+| GBA-INV-144 | codec | crates/arcweft-bundle | bundle version | Version 1 | Remain 1; new AWBC bytes replace old | G8/G11 | constraint |
+| GBA-INV-145 | codec | crates/arcweft-save | save version | Version 1 | Remain 1; add generation identity directly | G8/G11 | constraint |
+| GBA-INV-146 | correlation | all runtime caches | cache key | May use plan/product digest subset | Include RuntimeGenerationIdentity and contract digest/body relation | G8 | request requirement |
+| GBA-INV-147 | correlation | all restore contexts | generation token | Lifetime/host ID may be implicit | Required semantic identity; no Option | G8 | request requirement |
+| GBA-INV-148 | correlation | Character/View catalogs | catalog digests | Independent raw objects | Admitted wrappers with exact identity/digest | G7/G8 | request requirement |
+| GBA-INV-149 | deletion | workspace | source/name/hash reconstruction | Potential legacy fallback | Delete; typed facts only | G2/G9 | constraint |
+| GBA-INV-150 | deletion | workspace | duplicate operational catalogs | Plan/AWBC/VM could each build maps | One aggregate per generation image | G5/G8/G9 | constraint |
+| GBA-INV-151 | deletion | workspace | compatibility aliases | Could preserve old APIs | Forbidden; direct replacement | G6/G9 | constraint |
+| GBA-INV-152 | validation | workspace | raw RuntimePlan call sites | Broad surface | Closed by compilation and typed tests | G6/G10 | request inventory |
+| GBA-INV-153 | validation | workspace | raw AwbcProgram call sites | Broad surface | Closed by compilation and typed tests | G6/G10 | request inventory |
+| GBA-INV-154 | validation | workspace | all Arcweft-owned versions | Multiple version constants | Every touched and untouched version exactly 1 | G10/G11 | constraint |

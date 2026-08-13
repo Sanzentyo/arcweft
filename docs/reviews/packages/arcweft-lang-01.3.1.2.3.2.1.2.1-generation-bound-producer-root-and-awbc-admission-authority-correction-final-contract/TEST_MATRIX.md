@@ -1,0 +1,328 @@
+# Positive, negative, precedence, compile-fail, and full-gate test matrix
+
+Total rows: **320**.
+
+The CSV is normative for machine-readable planning. Compile-fail rows cover external visibility/trait guarantees; internal obsolete call sites are closed by workspace compilation and typed tests.
+
+| ID | Area | Gate | Kind | Fixture | Operation | Expected | Owner |
+|---|---|---|---|---|---|---|---|
+| GBA-T-001 | identity | G1 | positive | canonical declaration | recompute identity | claimed identity equals BLAKE3 canonical body | arcweft-core generation/codec unit |
+| GBA-T-002 | identity | G1 | negative | change one project-root byte | recompute identity | identity changes | arcweft-core generation/codec unit |
+| GBA-T-003 | identity | G1 | negative | change one producer root checked type | recompute identity | identity changes | arcweft-core generation/codec unit |
+| GBA-T-004 | identity | G1 | negative | change one claimed authorization key | recompute identity | identity changes | arcweft-core generation/codec unit |
+| GBA-T-005 | identity | G1 | negative | change custom clearable only | recompute identity | identity changes through custom payload | arcweft-core generation/codec unit |
+| GBA-T-006 | identity | G1 | negative | change accepted View only | recompute identity | identity changes | arcweft-core generation/codec unit |
+| GBA-T-007 | identity | G1 | negative | same claimed identity/different body | join artifacts | IdentityCollision | arcweft-core generation/codec unit |
+| GBA-T-008 | identity | G1 | positive | independent byte-identical declarations | join artifacts | identity and body match | arcweft-core generation/codec unit |
+| GBA-T-009 | grammar | G1 | negative | noncanonical project root order | decode/admit | NonCanonicalOrder before traversal | arcweft-core generation/codec unit |
+| GBA-T-010 | grammar | G1 | negative | duplicate project root ID | decode/admit | Duplicate root | arcweft-core generation/codec unit |
+| GBA-T-011 | grammar | G1 | negative | noncanonical producer order | decode/admit | producer order error | arcweft-core generation/codec unit |
+| GBA-T-012 | grammar | G1 | negative | duplicate producer ID | decode/admit | DuplicateProducer | arcweft-core generation/codec unit |
+| GBA-T-013 | grammar | G1 | negative | noncanonical catalog-key order | decode/admit | catalog order error | arcweft-core generation/codec unit |
+| GBA-T-014 | grammar | G1 | negative | duplicate catalog key | decode/admit | DuplicateLayout | arcweft-core generation/codec unit |
+| GBA-T-015 | grammar | G1 | negative | unknown checked-type tag | decode | typed codec error with offset | arcweft-core generation/codec unit |
+| GBA-T-016 | grammar | G1 | negative | u32 length over limit | decode | limit error before allocation | arcweft-core generation/codec unit |
+| GBA-T-017 | grammar | G1 | positive | every RuntimeCheckedType variant | encode/decode | byte-identical round trip | arcweft-core generation/codec unit |
+| GBA-T-018 | grammar | G1 | negative | Variant duplicate/empty case name | admit | typed variant declaration error | arcweft-core generation/codec unit |
+| GBA-T-019 | grammar | G1 | positive | Opaque exact owner | encode/decode | owner/admission bytes stable | arcweft-core generation/codec unit |
+| GBA-T-020 | grammar | G1 | positive | Opaque producer-wide static root | admit | closed static root accepted; no concrete wrap | arcweft-core generation/codec unit |
+| GBA-T-021 | root traversal | G1/G4 | positive | Never | derive closure | no key and no child | core producer-contract unit |
+| GBA-T-022 | root traversal | G1/G4 | positive | Unit | derive closure | no key | core producer-contract unit |
+| GBA-T-023 | root traversal | G1/G4 | positive | Bool | derive closure | no key | core producer-contract unit |
+| GBA-T-024 | root traversal | G1/G4 | positive | Signed/Unsigned | derive closure | no key | core producer-contract unit |
+| GBA-T-025 | root traversal | G1/G4 | positive | F32/F64 | derive closure | no key | core producer-contract unit |
+| GBA-T-026 | root traversal | G1/G4 | positive | String/Char/Duration | derive closure | no key | core producer-contract unit |
+| GBA-T-027 | root traversal | G1/G4 | positive | EntityRef/Bytes | derive closure | no key | core producer-contract unit |
+| GBA-T-028 | root traversal | G1/G4 | positive | Sequence(Nominal A) | derive closure | A key | core producer-contract unit |
+| GBA-T-029 | root traversal | G1/G4 | positive | Option(Nominal A) | derive closure | A key | core producer-contract unit |
+| GBA-T-030 | root traversal | G1/G4 | positive | Result(Nominal A, Nominal B) | derive closure | A then B keys | core producer-contract unit |
+| GBA-T-031 | root traversal | G1/G4 | positive | Tuple([B,A]) | derive closure | visit ordinal 0 then 1 | core producer-contract unit |
+| GBA-T-032 | root traversal | G1/G4 | positive | Choice([A,B]) | derive closure | visit both in source order | core producer-contract unit |
+| GBA-T-033 | root traversal | G1/G4 | positive | Variant cases [A,B] | derive closure | visit payloads by ordinal | core producer-contract unit |
+| GBA-T-034 | root traversal | G1/G4 | positive | Opaque exact | derive closure | validate owner and stop | core producer-contract unit |
+| GBA-T-035 | root traversal | G1/G4 | positive | Opaque producer-wide | derive closure | validate owner and stop | core producer-contract unit |
+| GBA-T-036 | root traversal | G1/G4 | positive | Nominal A with primitive fields | derive closure | A key and defining-order fields | core producer-contract unit |
+| GBA-T-037 | root traversal | G1/G4 | positive | Nominal A containing B | derive closure | A then B keys | core producer-contract unit |
+| GBA-T-038 | root traversal | G1/G4 | positive | recursive Nominal A | derive closure | terminate through visited set | core producer-contract unit |
+| GBA-T-039 | root traversal | G1/G4 | positive | diamond A->C, B->C | derive closure | C traversed once per closure | core producer-contract unit |
+| GBA-T-040 | limits | G1/G4 | boundary | project roots 65,536 | admit generation | accepted at limit | core producer-contract unit |
+| GBA-T-041 | limits | G1/G4 | boundary | project roots 65,537 | admit generation | Limit | core producer-contract unit |
+| GBA-T-042 | limits | G1/G4 | boundary | producers 1,024 | admit generation | accepted at limit | core producer-contract unit |
+| GBA-T-043 | limits | G1/G4 | boundary | producers 1,025 | admit generation | Limit | core producer-contract unit |
+| GBA-T-044 | limits | G1/G4 | boundary | generic producer roots 4,096 | admit generation | accepted at limit | core producer-contract unit |
+| GBA-T-045 | limits | G1/G4 | boundary | generic producer roots 4,097 | admit generation | Limit | core producer-contract unit |
+| GBA-T-046 | limits | G1/G4 | boundary | custom fields 4,096 | admit generation | accepted at limit | core producer-contract unit |
+| GBA-T-047 | limits | G1/G4 | boundary | custom fields 4,097 | admit generation | Limit | core producer-contract unit |
+| GBA-T-048 | limits | G1/G4 | boundary | accepted Views 256 | admit generation | accepted at limit | core producer-contract unit |
+| GBA-T-049 | limits | G1/G4 | boundary | accepted Views 257 | admit generation | Limit | core producer-contract unit |
+| GBA-T-050 | limits | G1/G4 | boundary | catalog layouts 65,536 | admit generation | accepted at limit | core producer-contract unit |
+| GBA-T-051 | limits | G1/G4 | boundary | catalog layouts 65,537 | admit generation | Limit | core producer-contract unit |
+| GBA-T-052 | limits | G1/G4 | boundary | root work 65,536 | admit generation | accepted at limit | core producer-contract unit |
+| GBA-T-053 | limits | G1/G4 | boundary | root work 65,537 | admit generation | Work | core producer-contract unit |
+| GBA-T-054 | limits | G1/G4 | boundary | generation work 1,048,576 | admit generation | accepted at limit | core producer-contract unit |
+| GBA-T-055 | limits | G1/G4 | boundary | generation work 1,048,577 | admit generation | Work | core producer-contract unit |
+| GBA-T-056 | limits | G1/G4 | boundary | nesting exactly MAX_RUNTIME_VALUE_NESTING_DEPTH | admit generation | accepted | core producer-contract unit |
+| GBA-T-057 | limits | G1/G4 | boundary | nesting one over maximum | admit generation | Depth | core producer-contract unit |
+| GBA-T-058 | producer authorization | G4 | negative | extra producer/key absent from roots | RuntimePlan::try_admit | ExtraAuthorization | core plan/admission unit |
+| GBA-T-059 | producer authorization | G4 | negative | missing key derived from root | RuntimePlan::try_admit | MissingAuthorization | core plan/admission unit |
+| GBA-T-060 | producer authorization | G4 | negative | producer row only names otherwise unreachable layout | RuntimePlan::try_admit | ExtraAuthorization then UnreachableLayout cannot be legitimized | core plan/admission unit |
+| GBA-T-061 | producer authorization | G4 | negative | claimed key duplicated | RuntimePlan::try_admit | DuplicateAuthorization | core plan/admission unit |
+| GBA-T-062 | producer authorization | G4 | negative | claimed key noncanonical order | RuntimePlan::try_admit | NonCanonicalOrder | core plan/admission unit |
+| GBA-T-063 | producer authorization | G4 | negative | claimed key absent from catalog | RuntimePlan::try_admit | MissingLayout after exact-set comparison where applicable | core plan/admission unit |
+| GBA-T-064 | producer authorization | G4 | positive | catalog layout reachable only from project root | RuntimePlan::try_admit | accepted as project closure | core plan/admission unit |
+| GBA-T-065 | producer authorization | G4 | positive | catalog layout reachable only from producer root | RuntimePlan::try_admit | accepted as producer closure | core plan/admission unit |
+| GBA-T-066 | producer authorization | G4 | negative | catalog layout unreachable from all roots | RuntimePlan::try_admit | UnreachableLayout | core plan/admission unit |
+| GBA-T-067 | producer authorization | G4 | negative | reachable key missing catalog descriptor | RuntimePlan::try_admit | MissingLayout | core plan/admission unit |
+| GBA-T-068 | producer authorization | G4 | negative | same key conflicting descriptor | RuntimePlan::try_admit | ConflictingLayout | core plan/admission unit |
+| GBA-T-069 | producer authorization | G4 | negative | descriptor key scalar mismatch | RuntimePlan::try_admit | LayoutKeyMismatch | core plan/admission unit |
+| GBA-T-070 | producer authorization | G4 | positive | producer roots A; claimed A | RuntimePlan::try_admit | accepted | core plan/admission unit |
+| GBA-T-071 | producer authorization | G4 | negative | producer roots A+B; claimed A | RuntimePlan::try_admit | first missing B | core plan/admission unit |
+| GBA-T-072 | producer authorization | G4 | negative | producer roots A; claimed A+B | RuntimePlan::try_admit | first extra B | core plan/admission unit |
+| GBA-T-073 | producer authorization | G4 | positive | two producers share key A | RuntimePlan::try_admit | both exact closures accepted | core plan/admission unit |
+| GBA-T-074 | producer authorization | G4 | negative | producer A claims B's exclusive root key | RuntimePlan::try_admit | ExtraAuthorization for A | core plan/admission unit |
+| GBA-T-075 | producer authorization | G4 | negative | CharacterDialogue payload under wrong producer ID | RuntimePlan::try_admit | CharacterDialogueProducer before traversal | core plan/admission unit |
+| GBA-T-076 | producer authorization | G4 | negative | unknown payload kind | RuntimePlan::try_admit | codec/declaration error | core plan/admission unit |
+| GBA-T-077 | producer authorization | G4 | positive | empty generic root set and empty claim | RuntimePlan::try_admit | accepted if producer contract itself is meaningful and catalog unaffected | core plan/admission unit |
+| GBA-T-078 | dialogue role projection | G2/G3 | negative | exactly six typed base declarations | accept/project roles | seven runtime roles with derived Style | sema/runtime-plan unit |
+| GBA-T-079 | dialogue role projection | G2/G3 | negative | missing Stage declaration | accept/project roles | MissingRole(Stage) with source owner | sema/runtime-plan unit |
+| GBA-T-080 | dialogue role projection | G2/G3 | negative | missing RichText declaration | accept/project roles | MissingRole(RichText) | sema/runtime-plan unit |
+| GBA-T-081 | dialogue role projection | G2/G3 | negative | duplicate Hook declaration | accept/project roles | DuplicateRole(Hook) | sema/runtime-plan unit |
+| GBA-T-082 | dialogue role projection | G2/G3 | negative | authored Style declaration | accept/project roles | UnexpectedAuthoredRole(Style) | sema/runtime-plan unit |
+| GBA-T-083 | dialogue role projection | G2/G3 | negative | Stage declaration contains unresolved Named | accept/project roles | UnresolvedRoleType(Stage) | sema/runtime-plan unit |
+| GBA-T-084 | dialogue role projection | G2/G3 | negative | RichText declaration leaks CharacterDialogueRole coordinate | accept/project roles | UnresolvedRoleType(RichText) | sema/runtime-plan unit |
+| GBA-T-085 | dialogue role projection | G2/G3 | negative | role accepted world differs from custom registry | accept/project roles | AcceptedWorldMismatch | sema/runtime-plan unit |
+| GBA-T-086 | dialogue role projection | G2/G3 | positive | style exact Choice(EntityRef, RichText) | accept/project roles | accepted | sema/runtime-plan unit |
+| GBA-T-087 | dialogue role projection | G2/G3 | negative | serialized Style swaps branch order | accept/project roles | StyleMismatch | sema/runtime-plan unit |
+| GBA-T-088 | dialogue role projection | G2/G3 | negative | serialized Style substitutes Bool | accept/project roles | StyleMismatch | sema/runtime-plan unit |
+| GBA-T-089 | dialogue role projection | G2/G3 | positive | current DialogueStage spelling absent | accept/project roles | no name lookup; typed fixture still projects | sema/runtime-plan unit |
+| GBA-T-090 | dialogue role projection | G2/G3 | positive | current RichTextStyle spelling absent | accept/project roles | no name lookup; typed fixture still projects | sema/runtime-plan unit |
+| GBA-T-091 | dialogue role projection | G2/G3 | negative | all role sources retained | accept/project roles | projection error reports exact role/type/span | sema/runtime-plan unit |
+| GBA-T-092 | custom catalog | G2/G3/G4/G7 | negative | empty custom descriptor set | construct/admit catalog | canonical empty digest | sema/core/dialogue unit |
+| GBA-T-093 | custom catalog | G2/G3/G4/G7 | positive | one canonical descriptor | construct/admit catalog | computed digest accepted | sema/core/dialogue unit |
+| GBA-T-094 | custom catalog | G2/G3/G4/G7 | negative | caller supplies mismatched raw digest | construct/admit catalog | DigestMismatch | sema/core/dialogue unit |
+| GBA-T-095 | custom catalog | G2/G3/G4/G7 | positive | change field ID only | construct/admit catalog | digest changes | sema/core/dialogue unit |
+| GBA-T-096 | custom catalog | G2/G3/G4/G7 | positive | change checked type only | construct/admit catalog | digest changes | sema/core/dialogue unit |
+| GBA-T-097 | custom catalog | G2/G3/G4/G7 | positive | change clearable only | construct/admit catalog | digest changes | sema/core/dialogue unit |
+| GBA-T-098 | custom catalog | G2/G3/G4/G7 | positive | add accepted View | construct/admit catalog | digest changes | sema/core/dialogue unit |
+| GBA-T-099 | custom catalog | G2/G3/G4/G7 | positive | remove accepted View | construct/admit catalog | digest changes | sema/core/dialogue unit |
+| GBA-T-100 | custom catalog | G2/G3/G4/G7 | negative | reorder accepted Views in raw Serde | construct/admit catalog | NonCanonicalViewOrder | sema/core/dialogue unit |
+| GBA-T-101 | custom catalog | G2/G3/G4/G7 | negative | duplicate accepted View | construct/admit catalog | DuplicateView | sema/core/dialogue unit |
+| GBA-T-102 | custom catalog | G2/G3/G4/G7 | negative | reorder raw fields | construct/admit catalog | NonCanonicalFieldOrder | sema/core/dialogue unit |
+| GBA-T-103 | custom catalog | G2/G3/G4/G7 | negative | duplicate field ID | construct/admit catalog | DuplicateField | sema/core/dialogue unit |
+| GBA-T-104 | custom catalog | G2/G3/G4/G7 | negative | unknown View in admitted registry | construct/admit catalog | MissingView before value validation | sema/core/dialogue unit |
+| GBA-T-105 | custom catalog | G2/G3/G4/G7 | negative | custom checked type contains missing nominal | construct/admit catalog | producer root NominalLookup | sema/core/dialogue unit |
+| GBA-T-106 | custom catalog | G2/G3/G4/G7 | negative | custom checked type contains wrong producer nominal claim | construct/admit catalog | authorization equality failure | sema/core/dialogue unit |
+| GBA-T-107 | custom catalog | G2/G3/G4/G7 | negative | custom registry world mismatch | construct/admit catalog | AcceptedWorldMismatch | sema/core/dialogue unit |
+| GBA-T-108 | custom catalog | G2/G3/G4/G7 | positive | same semantic descriptors/different source spans | construct/admit catalog | same runtime digest | sema/core/dialogue unit |
+| GBA-T-109 | custom catalog | G2/G3/G4/G7 | positive | source-inclusive sema digest changes only | construct/admit catalog | runtime digest unchanged; sema evidence still distinct | sema/core/dialogue unit |
+| GBA-T-110 | custom catalog | G2/G3/G4/G7 | positive | 4,096 fields | construct/admit catalog | accepted at limit | sema/core/dialogue unit |
+| GBA-T-111 | custom catalog | G2/G3/G4/G7 | negative | 4,097 fields | construct/admit catalog | Limit | sema/core/dialogue unit |
+| GBA-T-112 | voice | G7 | positive | voice absent | encode/decode tuple index 5 | Option None ordinal1 name None no payload | dialogue unit/golden |
+| GBA-T-113 | voice | G7 | positive | voice Auto | encode/decode tuple index 5 | Option Some -> Voice Auto ordinal0 no payload | dialogue unit/golden |
+| GBA-T-114 | voice | G7 | positive | voice Id | encode/decode tuple index 5 | Option Some -> Voice Id ordinal1 EntityRef payload | dialogue unit/golden |
+| GBA-T-115 | voice | G7 | negative | flat three-case voice value | encode/decode tuple index 5 | PayloadShape/owner failure | dialogue unit/golden |
+| GBA-T-116 | voice | G7 | negative | outer Some with no payload | encode/decode tuple index 5 | payload presence error | dialogue unit/golden |
+| GBA-T-117 | voice | G7 | negative | outer None with payload | encode/decode tuple index 5 | payload presence error | dialogue unit/golden |
+| GBA-T-118 | voice | G7 | negative | outer wrong owner | encode/decode tuple index 5 | owner error before ordinal | dialogue unit/golden |
+| GBA-T-119 | voice | G7 | negative | outer wrong ordinal | encode/decode tuple index 5 | ordinal error before name | dialogue unit/golden |
+| GBA-T-120 | voice | G7 | negative | outer right ordinal/wrong name | encode/decode tuple index 5 | name error | dialogue unit/golden |
+| GBA-T-121 | voice | G7 | negative | inner wrong nominal owner | encode/decode tuple index 5 | inner owner error | dialogue unit/golden |
+| GBA-T-122 | voice | G7 | negative | inner Auto with payload | encode/decode tuple index 5 | payload presence error | dialogue unit/golden |
+| GBA-T-123 | voice | G7 | negative | inner Id without payload | encode/decode tuple index 5 | payload presence error | dialogue unit/golden |
+| GBA-T-124 | voice | G7 | negative | inner Id with String | encode/decode tuple index 5 | payload checked-type error | dialogue unit/golden |
+| GBA-T-125 | voice | G7 | positive | canonical encode/decode each voice state | encode/decode tuple index 5 | byte-identical nested representation | dialogue unit/golden |
+| GBA-T-126 | variant | G0/G7 | positive | nominal Variant correct owner/ordinal/name/payload | typed validation | accepted | core/dialogue unit |
+| GBA-T-127 | variant | G0/G7 | negative | wrong owner with valid case spelling | typed validation | owner failure | core/dialogue unit |
+| GBA-T-128 | variant | G0/G7 | negative | correct owner/out-of-range ordinal | typed validation | ordinal failure | core/dialogue unit |
+| GBA-T-129 | variant | G0/G7 | negative | correct ordinal/wrong name | typed validation | name failure | core/dialogue unit |
+| GBA-T-130 | variant | G0/G7 | negative | payload required but missing | typed validation | presence failure | core/dialogue unit |
+| GBA-T-131 | variant | G0/G7 | negative | payload forbidden but present | typed validation | presence failure | core/dialogue unit |
+| GBA-T-132 | variant | G0/G7 | negative | payload wrong type | typed validation | payload failure | core/dialogue unit |
+| GBA-T-133 | variant | G0/G7 | positive | Option Some/None exact intrinsic cases | typed validation | accepted | core/dialogue unit |
+| GBA-T-134 | variant | G0/G7 | positive | Result Ok/Err exact intrinsic cases | typed validation | accepted | core/dialogue unit |
+| GBA-T-135 | choice | G1/G4/G7 | positive | Style EntityRef only | admit/validate/transform | unique branch 0 | core/dialogue unit |
+| GBA-T-136 | choice | G1/G4/G7 | positive | Style RichText only | admit/validate/transform | unique branch 1 | core/dialogue unit |
+| GBA-T-137 | choice | G1/G4/G7 | negative | value matches neither Style branch | admit/validate/transform | ChoiceNoMatch with ordered branch evidence | core/dialogue unit |
+| GBA-T-138 | choice | G1/G4/G7 | negative | value matches two generic alternatives | admit/validate/transform | ChoiceAmbiguous first two indices | core/dialogue unit |
+| GBA-T-139 | choice | G1/G4/G7 | negative | Choice later branch contains malformed nominal root | admit/validate/transform | admission fails despite earlier valid branch | core/dialogue unit |
+| GBA-T-140 | choice | G1/G4/G7 | positive | Choice root A\|B | admit/validate/transform | authorization closure contains A and B | core/dialogue unit |
+| GBA-T-141 | choice | G1/G4/G7 | positive | reorder Choice alternatives | admit/validate/transform | generation identity changes | core/dialogue unit |
+| GBA-T-142 | choice | G1/G4/G7 | positive | normalize unique branch | admit/validate/transform | uses selected branch | core/dialogue unit |
+| GBA-T-143 | choice | G1/G4/G7 | negative | clear output matches two branches | admit/validate/transform | ChoiceAmbiguous; no publication | core/dialogue unit |
+| GBA-T-144 | choice | G1/G4/G7 | negative | Choice work budget exhausted | admit/validate/transform | typed Work with branch path | core/dialogue unit |
+| GBA-T-145 | RuntimePlan admission | G4/G6/G9 | negative | structurally invalid plan plus bad generation contract | try_admit/compile | existing RuntimePlanError first | core plan unit/trybuild |
+| GBA-T-146 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/malformed producer roots | try_admit/compile | GenerationContract::Producer | core plan unit/trybuild |
+| GBA-T-147 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/custom digest mismatch | try_admit/compile | GenerationContract::Custom | core plan unit/trybuild |
+| GBA-T-148 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/catalog conflict | try_admit/compile | GenerationContract::Catalog | core plan unit/trybuild |
+| GBA-T-149 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/project traversal failure | try_admit/compile | ProjectRoot typed source | core plan unit/trybuild |
+| GBA-T-150 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/producer traversal failure | try_admit/compile | ProducerRoot typed source | core plan unit/trybuild |
+| GBA-T-151 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/authorization mismatch | try_admit/compile | Missing/ExtraAuthorization | core plan unit/trybuild |
+| GBA-T-152 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/unreachable layout | try_admit/compile | UnreachableLayout | core plan unit/trybuild |
+| GBA-T-153 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/root inventory differs from declaration | try_admit/compile | typed plan correlation error | core plan unit/trybuild |
+| GBA-T-154 | RuntimePlan admission | G4/G6/G9 | negative | valid plan/claimed identity mismatch | try_admit/compile | Identity | core plan unit/trybuild |
+| GBA-T-155 | RuntimePlan admission | G4/G6/G9 | positive | fully canonical plan | try_admit/compile | AdmittedRuntimePlan | core plan unit/trybuild |
+| GBA-T-156 | RuntimePlan admission | G4/G6/G9 | compile_fail | admitted plan has no Serde | try_admit/compile | compile fail | core plan unit/trybuild |
+| GBA-T-157 | RuntimePlan admission | G4/G6/G9 | compile_fail | admitted plan has no Deref | try_admit/compile | compile fail | core plan unit/trybuild |
+| GBA-T-158 | RuntimePlan admission | G4/G6/G9 | compile_fail | admitted plan has no into_runtime_plan | try_admit/compile | compile fail | core plan unit/trybuild |
+| GBA-T-159 | RuntimePlan admission | G4/G6/G9 | compile_fail | raw verify success passed to Engine | try_admit/compile | compile fail/no conversion | core plan unit/trybuild |
+| GBA-T-160 | RuntimePlan admission | G4/G6/G9 | positive | raw plan cloned after deserialization | try_admit/compile | still cannot execute without try_admit | core plan unit/trybuild |
+| GBA-T-161 | AWBC admission | G5/G6/G9 | negative | AWBC header wrong magic + bad contract | decode/try_admit/compile | header error first | core AWBC unit/trybuild |
+| GBA-T-162 | AWBC admission | G5/G6/G9 | negative | AWBC ABI version !=1 | decode/try_admit/compile | version error | core AWBC unit/trybuild |
+| GBA-T-163 | AWBC admission | G5/G6/G9 | negative | AWBC codec version !=1 | decode/try_admit/compile | version error | core AWBC unit/trybuild |
+| GBA-T-164 | AWBC admission | G5/G6/G9 | negative | structurally invalid table + bad contract | decode/try_admit/compile | AwbcVerifyError first | core AWBC unit/trybuild |
+| GBA-T-165 | AWBC admission | G5/G6/G9 | negative | truncated generation section | decode/try_admit/compile | AwbcCodecError with offset/section | core AWBC unit/trybuild |
+| GBA-T-166 | AWBC admission | G5/G6/G9 | negative | contract length over limit | decode/try_admit/compile | limit before allocation | core AWBC unit/trybuild |
+| GBA-T-167 | AWBC admission | G5/G6/G9 | negative | valid tables/custom digest mismatch | decode/try_admit/compile | AwbcAdmissionError::GenerationContract | core AWBC unit/trybuild |
+| GBA-T-168 | AWBC admission | G5/G6/G9 | negative | valid tables/extra producer key | decode/try_admit/compile | ExtraAuthorization source | core AWBC unit/trybuild |
+| GBA-T-169 | AWBC admission | G5/G6/G9 | negative | valid tables/root inventory mismatch | decode/try_admit/compile | AwbcRootInventoryError | core AWBC unit/trybuild |
+| GBA-T-170 | AWBC admission | G5/G6/G9 | negative | valid tables/identity mismatch | decode/try_admit/compile | Identity | core AWBC unit/trybuild |
+| GBA-T-171 | AWBC admission | G5/G6/G9 | positive | canonical standalone AWBC | decode/try_admit/compile | AdmittedAwbcProduct | core AWBC unit/trybuild |
+| GBA-T-172 | AWBC admission | G5/G6/G9 | positive | plan-paired byte-identical contract | decode/try_admit/compile | wrapper reuses plan aggregate | core AWBC unit/trybuild |
+| GBA-T-173 | AWBC admission | G5/G6/G9 | negative | plan-paired different identity | decode/try_admit/compile | RuntimeGenerationMismatch | core AWBC unit/trybuild |
+| GBA-T-174 | AWBC admission | G5/G6/G9 | negative | plan-paired same identity/different body | decode/try_admit/compile | ContractCollision | core AWBC unit/trybuild |
+| GBA-T-175 | AWBC admission | G5/G6/G9 | positive | AWBC generation bytes changed only | decode/try_admit/compile | program/product digest changes | core AWBC unit/trybuild |
+| GBA-T-176 | AWBC admission | G5/G6/G9 | positive | AWBC roundtrip | decode/try_admit/compile | generation contract byte-identical | core AWBC unit/trybuild |
+| GBA-T-177 | AWBC admission | G5/G6/G9 | negative | old AWBC without generation section | decode/try_admit/compile | decode failure; no old reader | core AWBC unit/trybuild |
+| GBA-T-178 | AWBC admission | G5/G6/G9 | negative | optional/empty generation marker | decode/try_admit/compile | decode failure | core AWBC unit/trybuild |
+| GBA-T-179 | AWBC admission | G5/G6/G9 | compile_fail | standalone admitted product attached to plan | decode/try_admit/compile | no API/compile fail | core AWBC unit/trybuild |
+| GBA-T-180 | AWBC admission | G5/G6/G9 | compile_fail | admitted product has no Serde | decode/try_admit/compile | compile fail | core AWBC unit/trybuild |
+| GBA-T-181 | AWBC admission | G5/G6/G9 | compile_fail | admitted product has no Deref | decode/try_admit/compile | compile fail | core AWBC unit/trybuild |
+| GBA-T-182 | AWBC admission | G5/G6/G9 | compile_fail | admitted product has no into_program | decode/try_admit/compile | compile fail | core AWBC unit/trybuild |
+| GBA-T-183 | execution API | G6/G9 | compile_fail | external call awbc::vm::step(raw) | compile/run | function not public/signature mismatch | core compile/integration |
+| GBA-T-184 | execution API | G6/G9 | compile_fail | internal call vm::step(raw) | compile/run | compile fail; admitted product required | core compile/integration |
+| GBA-T-185 | execution API | G6/G9 | compile_fail | external FiberState::for_entry(raw) | compile/run | not public/admitted required | core compile/integration |
+| GBA-T-186 | execution API | G6/G9 | compile_fail | internal FiberState::for_function(raw) | compile/run | compile fail | core compile/integration |
+| GBA-T-187 | execution API | G6/G9 | compile_fail | AwbcProductStepExecutor::for_entry(raw) | compile/run | compile fail | core compile/integration |
+| GBA-T-188 | execution API | G6/G9 | compile_fail | replace_program_preserving_state(raw) | compile/run | method absent | core compile/integration |
+| GBA-T-189 | execution API | G6/G9 | compile_fail | ArcweftRuntimeExecutor::from_awbc_product old name | compile/run | method absent | core compile/integration |
+| GBA-T-190 | execution API | G6/G9 | compile_fail | ArcweftRuntimeExecutor::from_awbc_product_function old name | compile/run | method absent | core compile/integration |
+| GBA-T-191 | execution API | G6/G9 | compile_fail | replace_product_awbc_program(raw) | compile/run | method absent | core compile/integration |
+| GBA-T-192 | execution API | G6/G9 | negative | try_from_awbc_product malformed raw | compile/run | typed admission error; no executor | core compile/integration |
+| GBA-T-193 | execution API | G6/G9 | positive | try_from_awbc_product canonical raw | compile/run | executor published after admission | core compile/integration |
+| GBA-T-194 | execution API | G6/G9 | compile_fail | Engine::new(raw plan) | compile/run | compile fail | core compile/integration |
+| GBA-T-195 | execution API | G6/G9 | compile_fail | Engine::for_flow(raw plan) | compile/run | compile fail | core compile/integration |
+| GBA-T-196 | execution API | G6/G9 | compile_fail | Engine::for_entry(raw plan) | compile/run | compile fail | core compile/integration |
+| GBA-T-197 | execution API | G6/G9 | negative | Engine::try_from_raw_plan invalid | compile/run | typed admission error; no engine | core compile/integration |
+| GBA-T-198 | execution API | G6/G9 | positive | Engine::try_from_raw_plan valid | compile/run | engine owns admitted plan | core compile/integration |
+| GBA-T-199 | execution API | G6/G9 | compile_fail | BytecodeProgram::from_runtime_plan old name | compile/run | method absent | core compile/integration |
+| GBA-T-200 | execution API | G6/G9 | compile_fail | BytecodeProgram::into_runtime_plan old name | compile/run | method absent | core compile/integration |
+| GBA-T-201 | execution API | G6/G9 | positive | BytecodeProgram::into_raw_runtime_plan | compile/run | returns quarantine only | core compile/integration |
+| GBA-T-202 | execution API | G6/G9 | positive | BytecodeProgram::try_admit | compile/run | admitted enum | core compile/integration |
+| GBA-T-203 | nominal shape | G4/G9 | compile_fail | external construct RuntimeNominalRecordValue::new after G9 | lookup/construct/compile | compile fail | core unit/trybuild |
+| GBA-T-204 | nominal shape | G4/G9 | compile_fail | internal stale call RuntimeNominalRecordValue::new after G9 | lookup/construct/compile | workspace compile fail until migrated | core unit/trybuild |
+| GBA-T-205 | nominal shape | G4/G9 | compile_fail | external call try_from_accepted_layout | lookup/construct/compile | privacy compile fail | core unit/trybuild |
+| GBA-T-206 | nominal shape | G4/G9 | compile_fail | external construct RuntimeNominalRecordShape fields | lookup/construct/compile | privacy compile fail | core unit/trybuild |
+| GBA-T-207 | nominal shape | G4/G9 | compile_fail | Serde deserialize RuntimeNominalRecordShape | lookup/construct/compile | trait missing compile fail | core unit/trybuild |
+| GBA-T-208 | nominal shape | G4/G9 | compile_fail | Default producer shape | lookup/construct/compile | trait missing compile fail | core unit/trybuild |
+| GBA-T-209 | nominal shape | G4/G9 | negative | producer_shape unknown ID | lookup/construct/compile | ProducerNotAdmitted | core unit/trybuild |
+| GBA-T-210 | nominal shape | G4/G9 | positive | producer_shape exact admitted ID | lookup/construct/compile | borrowed non-exclusive shape | core unit/trybuild |
+| GBA-T-211 | nominal shape | G4/G9 | negative | shape require missing nominal | lookup/construct/compile | Missing | core unit/trybuild |
+| GBA-T-212 | nominal shape | G4/G9 | negative | shape require stale semantic | lookup/construct/compile | StaleSemanticIdentity | core unit/trybuild |
+| GBA-T-213 | nominal shape | G4/G9 | negative | shape require stale layout | lookup/construct/compile | StaleLayout | core unit/trybuild |
+| GBA-T-214 | nominal shape | G4/G9 | negative | shape require key authorized to other producer | lookup/construct/compile | WrongProducer | core unit/trybuild |
+| GBA-T-215 | nominal shape | G4/G9 | negative | shape construct wrong field count | lookup/construct/compile | RuntimeNominalRecordError::FieldCount | core unit/trybuild |
+| GBA-T-216 | nominal shape | G4/G9 | negative | shape construct wrong field type | lookup/construct/compile | first defining-order field error | core unit/trybuild |
+| GBA-T-217 | nominal shape | G4/G9 | positive | shape construct valid fields | lookup/construct/compile | canonical nominal value | core unit/trybuild |
+| GBA-T-218 | nominal shape | G4/G9 | compile_fail | shape used after aggregate drop | lookup/construct/compile | borrow checker compile fail | core unit/trybuild |
+| GBA-T-219 | dialogue schema | G7/G9 | compile_fail | arbitrary Bool supplied as Style through old role constructor | construct/encode/decode/compile | method absent/compile fail | dialogue unit/integration |
+| GBA-T-220 | dialogue schema | G7/G9 | negative | raw role declaration Style=Bool | construct/encode/decode/compile | StyleMismatch during generation admission | dialogue unit/integration |
+| GBA-T-221 | dialogue schema | G7/G9 | negative | schema uses generation A admission and generation B Character catalog | construct/encode/decode/compile | RuntimeGenerationMismatch first | dialogue unit/integration |
+| GBA-T-222 | dialogue schema | G7/G9 | negative | schema uses generation A admission and generation B View registry | construct/encode/decode/compile | RuntimeGenerationMismatch first | dialogue unit/integration |
+| GBA-T-223 | dialogue schema | G7/G9 | negative | schema uses wrong producer payload | construct/encode/decode/compile | exact producer error | dialogue unit/integration |
+| GBA-T-224 | dialogue schema | G7/G9 | negative | schema custom digest mismatch | construct/encode/decode/compile | custom correlation error | dialogue unit/integration |
+| GBA-T-225 | dialogue schema | G7/G9 | negative | schema Character digest mismatch | construct/encode/decode/compile | Character catalog admission error | dialogue unit/integration |
+| GBA-T-226 | dialogue schema | G7/G9 | negative | schema View digest mismatch | construct/encode/decode/compile | View catalog admission error | dialogue unit/integration |
+| GBA-T-227 | dialogue schema | G7/G9 | negative | schema role nominal missing catalog key | construct/encode/decode/compile | lookup error | dialogue unit/integration |
+| GBA-T-228 | dialogue schema | G7/G9 | negative | schema role nominal wrong producer | construct/encode/decode/compile | WrongProducer | dialogue unit/integration |
+| GBA-T-229 | dialogue schema | G7/G9 | positive | fully correlated generation/catalogs | construct/encode/decode/compile | schema published | dialogue unit/integration |
+| GBA-T-230 | dialogue schema | G7/G9 | compile_fail | schema operational views have no Serde | construct/encode/decode/compile | compile fail | dialogue unit/integration |
+| GBA-T-231 | dialogue schema | G7/G9 | compile_fail | schema operational custom catalog no public constructor | construct/encode/decode/compile | compile fail | dialogue unit/integration |
+| GBA-T-232 | dialogue schema | G7/G9 | compile_fail | schema operational role types no public new | construct/encode/decode/compile | compile fail | dialogue unit/integration |
+| GBA-T-233 | dialogue schema | G7/G9 | negative | encode value under generation A with schema B | construct/encode/decode/compile | generation mismatch | dialogue unit/integration |
+| GBA-T-234 | dialogue schema | G7/G9 | negative | decode value under generation A with schema B | construct/encode/decode/compile | generation mismatch | dialogue unit/integration |
+| GBA-T-235 | dialogue schema | G7/G9 | positive | digest/equality/hash across different generations | construct/encode/decode/compile | generation participates/rejects | dialogue unit/integration |
+| GBA-T-236 | dialogue value | G7/G9 | positive | exact opaque tuple18 | encode/decode/normalize/clear/patch | encode/decode roundtrip | dialogue unit/integration |
+| GBA-T-237 | dialogue value | G7/G9 | negative | old root nominal record | encode/decode/normalize/clear/patch | reject; no reader | dialogue unit/integration |
+| GBA-T-238 | dialogue value | G7/G9 | negative | tuple length 17 | encode/decode/normalize/clear/patch | PayloadShape before field validation | dialogue unit/integration |
+| GBA-T-239 | dialogue value | G7/G9 | negative | tuple length 19 | encode/decode/normalize/clear/patch | PayloadShape before field validation | dialogue unit/integration |
+| GBA-T-240 | dialogue value | G7/G9 | positive | custom tuple2 sorted | encode/decode/normalize/clear/patch | accepted | dialogue unit/integration |
+| GBA-T-241 | dialogue value | G7/G9 | negative | custom tuple2 duplicate ID | encode/decode/normalize/clear/patch | DuplicateCustomField | dialogue unit/integration |
+| GBA-T-242 | dialogue value | G7/G9 | negative | custom tuple2 out of order | encode/decode/normalize/clear/patch | NonCanonicalCustomOrder | dialogue unit/integration |
+| GBA-T-243 | dialogue value | G7/G9 | negative | old four-field custom wrapper | encode/decode/normalize/clear/patch | reject; no fallback | dialogue unit/integration |
+| GBA-T-244 | dialogue value | G7/G9 | positive | direct inline-failure variant | encode/decode/normalize/clear/patch | accepted exact owner/case/payload | dialogue unit/integration |
+| GBA-T-245 | dialogue value | G7/G9 | negative | old inline nominal wrapper | encode/decode/normalize/clear/patch | reject; no reader | dialogue unit/integration |
+| GBA-T-246 | dialogue value | G7/G9 | negative | nested nominal missing descriptor | encode/decode/normalize/clear/patch | typed Lookup path | dialogue unit/integration |
+| GBA-T-247 | dialogue value | G7/G9 | negative | nested nominal stale semantic | encode/decode/normalize/clear/patch | typed StaleSemanticIdentity path | dialogue unit/integration |
+| GBA-T-248 | dialogue value | G7/G9 | negative | nested nominal stale layout | encode/decode/normalize/clear/patch | typed StaleLayout path | dialogue unit/integration |
+| GBA-T-249 | dialogue value | G7/G9 | negative | nested nominal wrong producer | encode/decode/normalize/clear/patch | typed WrongProducer path | dialogue unit/integration |
+| GBA-T-250 | dialogue value | G7/G9 | positive | normalize valid nominal | encode/decode/normalize/clear/patch | rebuild through shape and validate | dialogue unit/integration |
+| GBA-T-251 | dialogue value | G7/G9 | negative | normalize wrong nested value | encode/decode/normalize/clear/patch | typed error; original unchanged | dialogue unit/integration |
+| GBA-T-252 | dialogue value | G7/G9 | positive | clear clearable custom Option | encode/decode/normalize/clear/patch | None | dialogue unit/integration |
+| GBA-T-253 | dialogue value | G7/G9 | negative | clear nonclearable custom | encode/decode/normalize/clear/patch | typed rejection | dialogue unit/integration |
+| GBA-T-254 | dialogue value | G7/G9 | negative | patch duplicate paths | encode/decode/normalize/clear/patch | preflight overlap; no mutation | dialogue unit/integration |
+| GBA-T-255 | dialogue value | G7/G9 | negative | patch late invalid replacement | encode/decode/normalize/clear/patch | no partial publication | dialogue unit/integration |
+| GBA-T-256 | dialogue value | G7/G9 | negative | patch generation mismatch | encode/decode/normalize/clear/patch | failure before path resolution | dialogue unit/integration |
+| GBA-T-257 | generation correlation | G8/G9 | negative | ProgramGeneration host slot same, semantic identities differ | activate/restore/swap/compile | reject semantic mismatch | driver/bundle/save/player integration |
+| GBA-T-258 | generation correlation | G8/G9 | positive | host slots differ, semantic identity/body same | activate/restore/swap/compile | allowed as separate host images | driver/bundle/save/player integration |
+| GBA-T-259 | generation correlation | G8/G9 | negative | plan A + AWBC B | activate/restore/swap/compile | reject before VM/fiber | driver/bundle/save/player integration |
+| GBA-T-260 | generation correlation | G8/G9 | negative | producer shape A + schema B | activate/restore/swap/compile | borrow/type path impossible or mismatch | driver/bundle/save/player integration |
+| GBA-T-261 | generation correlation | G8/G9 | negative | role types A + custom catalog B | activate/restore/swap/compile | mismatch before schema | driver/bundle/save/player integration |
+| GBA-T-262 | generation correlation | G8/G9 | negative | Character catalog A + View registry B | activate/restore/swap/compile | mismatch before schema | driver/bundle/save/player integration |
+| GBA-T-263 | generation correlation | G8/G9 | negative | save A restored into generation B | activate/restore/swap/compile | RuntimeGenerationMismatch before ownership | driver/bundle/save/player integration |
+| GBA-T-264 | generation correlation | G8/G9 | negative | fiber A resumed with product B | activate/restore/swap/compile | RuntimeGenerationMismatch before frame execution | driver/bundle/save/player integration |
+| GBA-T-265 | generation correlation | G8/G9 | negative | root replay A under generation B | activate/restore/swap/compile | mismatch before transition | driver/bundle/save/player integration |
+| GBA-T-266 | generation correlation | G8/G9 | negative | View state A mounted under B | activate/restore/swap/compile | mismatch before mount | driver/bundle/save/player integration |
+| GBA-T-267 | generation correlation | G8/G9 | negative | hot-swap malformed candidate | activate/restore/swap/compile | old image unchanged | driver/bundle/save/player integration |
+| GBA-T-268 | generation correlation | G8/G9 | positive | hot-swap same identity/same body | activate/restore/swap/compile | atomic replacement allowed | driver/bundle/save/player integration |
+| GBA-T-269 | generation correlation | G8/G9 | negative | hot-swap same identity/different body | activate/restore/swap/compile | IdentityCollision | driver/bundle/save/player integration |
+| GBA-T-270 | generation correlation | G8/G9 | positive | hot-swap different identity valid migration | activate/restore/swap/compile | new handles only after migration success | driver/bundle/save/player integration |
+| GBA-T-271 | generation correlation | G8/G9 | positive | bundle plan/AWBC identical contract | activate/restore/swap/compile | one aggregate | driver/bundle/save/player integration |
+| GBA-T-272 | generation correlation | G8/G9 | negative | bundle plan/AWBC differing contract | activate/restore/swap/compile | bundle activation failure | driver/bundle/save/player integration |
+| GBA-T-273 | generation correlation | G8/G9 | positive | AWBC-only bundle canonical | activate/restore/swap/compile | standalone admitted aggregate | driver/bundle/save/player integration |
+| GBA-T-274 | generation correlation | G8/G9 | negative | snapshot lacks required generation identity | activate/restore/swap/compile | version-1 decode failure; no legacy reader | driver/bundle/save/player integration |
+| GBA-T-275 | generation correlation | G8/G9 | compile_fail | GenerationRuntimeImage::into_runtime old escape | activate/restore/swap/compile | method absent | driver/bundle/save/player integration |
+| GBA-T-276 | generation correlation | G8/G9 | compile_fail | player raw program injection | activate/restore/swap/compile | no public raw VM path | driver/bundle/save/player integration |
+| GBA-T-277 | precedence | G4/G5/G7/G8 | negative | bad header + bad plan roots | trigger combined faults | header | unit/integration precedence |
+| GBA-T-278 | precedence | G4/G5/G7/G8 | negative | bad structural plan + bad custom digest | trigger combined faults | structural plan | unit/integration precedence |
+| GBA-T-279 | precedence | G4/G5/G7/G8 | negative | bad role declaration + bad custom digest | trigger combined faults | role declaration | unit/integration precedence |
+| GBA-T-280 | precedence | G4/G5/G7/G8 | negative | bad custom digest + catalog conflict | trigger combined faults | custom digest | unit/integration precedence |
+| GBA-T-281 | precedence | G4/G5/G7/G8 | negative | catalog conflict + root missing key | trigger combined faults | catalog conflict | unit/integration precedence |
+| GBA-T-282 | precedence | G4/G5/G7/G8 | negative | project root error + producer root error | trigger combined faults | project root | unit/integration precedence |
+| GBA-T-283 | precedence | G4/G5/G7/G8 | negative | producer root error + authorization mismatch | trigger combined faults | producer root | unit/integration precedence |
+| GBA-T-284 | precedence | G4/G5/G7/G8 | negative | missing authorization + extra authorization | trigger combined faults | first sorted set difference | unit/integration precedence |
+| GBA-T-285 | precedence | G4/G5/G7/G8 | negative | unreachable row + identity mismatch | trigger combined faults | unreachable row | unit/integration precedence |
+| GBA-T-286 | precedence | G4/G5/G7/G8 | negative | identity mismatch + attempted wrapper publication | trigger combined faults | identity; no wrapper | unit/integration precedence |
+| GBA-T-287 | precedence | G4/G5/G7/G8 | negative | schema generation mismatch + wrong producer | trigger combined faults | generation | unit/integration precedence |
+| GBA-T-288 | precedence | G4/G5/G7/G8 | negative | schema wrong producer + custom mismatch | trigger combined faults | producer | unit/integration precedence |
+| GBA-T-289 | precedence | G4/G5/G7/G8 | negative | schema custom mismatch + nominal lookup | trigger combined faults | custom | unit/integration precedence |
+| GBA-T-290 | precedence | G4/G5/G7/G8 | negative | nominal missing + stale semantic | trigger combined faults | Missing | unit/integration precedence |
+| GBA-T-291 | precedence | G4/G5/G7/G8 | negative | nominal stale semantic + stale layout | trigger combined faults | StaleSemanticIdentity | unit/integration precedence |
+| GBA-T-292 | precedence | G4/G5/G7/G8 | negative | nominal stale layout + wrong producer | trigger combined faults | StaleLayout | unit/integration precedence |
+| GBA-T-293 | precedence | G4/G5/G7/G8 | negative | nominal wrong producer + bad fields | trigger combined faults | WrongProducer | unit/integration precedence |
+| GBA-T-294 | precedence | G4/G5/G7/G8 | negative | nominal wrong identity + bad layout | trigger combined faults | Type | unit/integration precedence |
+| GBA-T-295 | precedence | G4/G5/G7/G8 | negative | nominal bad layout + count | trigger combined faults | Layout | unit/integration precedence |
+| GBA-T-296 | precedence | G4/G5/G7/G8 | negative | nominal count + field type | trigger combined faults | FieldCount | unit/integration precedence |
+| GBA-T-297 | full gate | G10/G11 | regression | A1 nominal defining order | run/audit | retained tests green | workspace |
+| GBA-T-298 | full gate | G10/G11 | regression | A2 authored evaluation/scatter | run/audit | retained tests green | workspace |
+| GBA-T-299 | full gate | G10/G11 | regression | A3 anonymous/column carriers | run/audit | retained tests green | workspace |
+| GBA-T-300 | full gate | G10/G11 | regression | .1.2 opaque tuple/transform | run/audit | retained tests green | workspace |
+| GBA-T-301 | full gate | G10/G11 | regression | accepted G1 closed variants | run/audit | retained tests green | workspace |
+| GBA-T-302 | full gate | G10/G11 | regression | anonymous versus nominal bytes | run/audit | remain distinct | workspace |
+| GBA-T-303 | full gate | G10/G11 | full_gate | AWBC ABI version | run/audit | exactly 1 | workspace |
+| GBA-T-304 | full gate | G10/G11 | full_gate | AWBC codec version | run/audit | exactly 1 | workspace |
+| GBA-T-305 | full gate | G10/G11 | full_gate | bundle version | run/audit | exactly 1 | workspace |
+| GBA-T-306 | full gate | G10/G11 | full_gate | save version | run/audit | exactly 1 | workspace |
+| GBA-T-307 | full gate | G10/G11 | full_gate | replay version | run/audit | exactly 1 | workspace |
+| GBA-T-308 | full gate | G10/G11 | full_gate | custom digest domain suffix | run/audit | v1 | workspace |
+| GBA-T-309 | full gate | G10/G11 | full_gate | generation digest domain suffix | run/audit | v1 | workspace |
+| GBA-T-310 | full gate | G10/G11 | full_gate | workspace fmt | run/audit | green | workspace |
+| GBA-T-311 | full gate | G10/G11 | full_gate | workspace check all targets/features | run/audit | green | workspace |
+| GBA-T-312 | full gate | G10/G11 | full_gate | workspace tests all targets/features | run/audit | green | workspace |
+| GBA-T-313 | full gate | G10/G11 | full_gate | workspace clippy -D warnings | run/audit | green | workspace |
+| GBA-T-314 | full gate | G10/G11 | full_gate | structure audit | run/audit | no fallback/dual authority | workspace |
+| GBA-T-315 | full gate | G10/G11 | full_gate | nextest all features | run/audit | green | workspace |
+| GBA-T-316 | full gate | G10/G11 | full_gate | doc tests | run/audit | green | workspace |
+| GBA-T-317 | full gate | G10/G11 | full_gate | llvm-cov | run/audit | report produced; critical branches covered | workspace |
+| GBA-T-318 | full gate | G10/G11 | full_gate | miri core | run/audit | green | workspace |
+| GBA-T-319 | full gate | G10/G11 | full_gate | miri dialogue | run/audit | green | workspace |
+| GBA-T-320 | full gate | G10/G11 | full_gate | cargo audit | run/audit | no disallowed advisory | workspace |
